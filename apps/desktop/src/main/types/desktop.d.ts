@@ -2,20 +2,19 @@
  * Type declarations for the desktop bridge exposed by the preload script.
  */
 
-// The key allowlist lives with the code that enforces it, so this can't drift.
-import type { RendererConfigKey } from "../security";
-
 export interface DesktopBridge {
   isDesktop: true;
   config: {
-    get: (key: RendererConfigKey) => Promise<unknown>;
-    set: (key: RendererConfigKey, value: unknown) => Promise<boolean>;
+    get: (key: string) => Promise<unknown>;
+    set: (key: string, value: unknown) => Promise<boolean>;
+    getAll: () => Promise<Record<string, unknown>>;
   };
   app: {
     version: () => Promise<string>;
     platform: string;
     cloudUrls: () => Promise<{ api: string; dashboard: string }>;
   };
+  navigate: (url: string) => Promise<void>;
   onboarding: {
     complete: (apiUrl: string, dashboardUrl: string) => Promise<boolean>;
     openExternal: (url: string) => Promise<void>;
@@ -23,7 +22,6 @@ export interface DesktopBridge {
   };
   system: {
     browseFolder: () => Promise<string | null>;
-    browseFile: () => Promise<string | null>;
   };
   reset: () => Promise<boolean>;
 }

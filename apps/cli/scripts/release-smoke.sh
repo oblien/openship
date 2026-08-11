@@ -131,74 +131,10 @@ else
   rm -rf "$WORK"
 fi
 
-# ── C6: extracted payload resolves all externals by parent-walk (tarball install) ─
-# The published tarball ships its OWN node_modules beside dist/. Extract it to a
-# temp dir with NO ambient node_modules above it and load the full import graph
-# under node — proves ssh2/dockerode/commander/etc. resolve exactly as they will
-# on a user's box, and that the payload carries zero native .node addons (the
-# reason the payload is arch-independent and built once).
-group "C6 — extracted payload (tarball install layout)"
-PAYLOAD="$(ls -1t "$CLI_DIR"/.cli-payload/openship-cli-*.tar.gz 2>/dev/null | head -n1)"
-if [ -z "$PAYLOAD" ] && [ "${SMOKE_PAYLOAD:-}" = "1" ]; then
-  (cd "$CLI_DIR" && bun run build:payload) >/dev/null 2>&1 || fail "build:payload failed"
-  PAYLOAD="$(ls -1t "$CLI_DIR"/.cli-payload/openship-cli-*.tar.gz 2>/dev/null | head -n1)"
-fi
-if [ -z "$PAYLOAD" ]; then
-  printf '  \033[33m—\033[0m %s\n' "no payload tarball — build it with: bun run --cwd apps/cli build:payload (or SMOKE_PAYLOAD=1)"
-elif ! command -v node >/dev/null 2>&1; then
-  fail "node not on PATH — cannot verify the payload"
-else
-  PWORK="$(mktemp -d)"
-  tar -xzf "$PAYLOAD" -C "$PWORK"
-  NODES="$(find "$PWORK" -name '*.node' 2>/dev/null | head -n1)"
-  if [ -n "$NODES" ]; then
-    fail "payload contains a native .node addon → $NODES (breaks arch-independence)"
-  else
-    pass "payload carries zero native .node addons (arch-independent)"
-  fi
-  v="$(node "$PWORK/dist/index.js" --version 2>&1)"
-  if [ "$?" -eq 0 ] && printf '%s' "$v" | grep -qE "$VER_RE"; then
-    pass "extracted payload: --version → $v"
-  else
-    fail "extracted payload: --version failed → $v"
-  fi
-  if node "$PWORK/dist/index.js" up --help 2>&1 | grep -qF -- "--compose"; then
-    pass "extracted payload: up --help renders (all externals resolve by parent-walk)"
-  else
-    fail "extracted payload: up --help failed (an external didn't resolve)"
-  fi
-  rm -rf "$PWORK"
-fi
-
-# ── C7: npm `bin` shebang is `node`, not `sh` (Windows launcher — #460) ─────
-# npm reads the shebang of the `bin` file to generate openship.cmd/.ps1 on
-# Windows. dist/index.js is a `#!/usr/bin/env sh` polyglot on purpose; if it
-# were the `bin`, npm emits `sh.exe` calls that break every Windows install.
-# The `bin` must be dist/node-entry.js with a plain `#!/usr/bin/env node`.
-group "C7 — npm bin shebang (Windows launcher regression, #460)"
-NODE_ENTRY="$CLI_DIR/dist/node-entry.js"
-BIN_FIELD="$(cd "$CLI_DIR" && node -e 'process.stdout.write(require("./package.json").bin.openship||"")' 2>/dev/null)"
-if [ "$BIN_FIELD" != "./dist/node-entry.js" ]; then
-  fail "package.json bin.openship is '$BIN_FIELD' (expected ./dist/node-entry.js — npm would read index.js's sh polyglot)"
-elif [ ! -f "$NODE_ENTRY" ]; then
-  fail "no dist/node-entry.js — tsup Bundle 2 didn't emit the npm bin target"
-elif ! head -n1 "$NODE_ENTRY" | grep -qx '#!/usr/bin/env node'; then
-  fail "dist/node-entry.js first line is '$(head -n1 "$NODE_ENTRY")' (expected #!/usr/bin/env node — npm would emit sh.exe launchers)"
-elif head -n1 "$NODE_ENTRY" | grep -q 'env sh'; then
-  fail "dist/node-entry.js carries the sh polyglot shebang — Windows launchers will call sh.exe (#460)"
-else
-  v="$(node "$NODE_ENTRY" --version 2>&1)"
-  if [ "$?" -eq 0 ] && printf '%s' "$v" | grep -qE "$VER_RE"; then
-    pass "bin=dist/node-entry.js, shebang=#!/usr/bin/env node, --version → $v"
-  else
-    fail "node dist/node-entry.js --version failed → $v"
-  fi
-fi
-
 # ── verdict ─────────────────────────────────────────────────────────────
 echo
 if [ "$FAILED" -eq 0 ]; then
-  printf '\033[32m✔ release smoke passed — the built CLI launches (node/bun/shebang/no-node), the npm bin has a node shebang, the payload resolves standalone, and the server boots.\033[0m\n'
+  printf '\033[32m✔ release smoke passed — the built CLI launches (node/bun/shebang/no-node) and the server boots.\033[0m\n'
 else
   printf '\033[31m✗ release smoke FAILED — do not publish.\033[0m\n'
   exit 1

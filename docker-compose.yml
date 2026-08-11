@@ -33,14 +33,8 @@
 #
 # REMOTE ACCESS: reaching this from another machine (LAN IP or a reverse proxy)
 # requires OPENSHIP_PUBLIC_URL in .env — else the dashboard loads but login is
-# rejected (403 ORIGIN_REJECTED). Behind a proxy also set TRUST_PROXY=true.
-#
-# BIND INTERFACE: the api/dashboard/web ports publish on 127.0.0.1 (loopback)
-# by default, so nothing is exposed off-box unless you say so — a same-host
-# reverse proxy still reaches them over loopback. If your proxy runs on ANOTHER
-# machine (or you want direct off-box access), set OPENSHIP_BIND_ADDR to the
-# interface to publish on, e.g. OPENSHIP_BIND_ADDR=0.0.0.0 (all) or a specific
-# LAN IP. Prefer fronting with a proxy over binding 0.0.0.0.
+# rejected (403 ORIGIN_REJECTED). Behind a proxy also set TRUST_PROXY=true. Set
+# OPENSHIP_BIND_ADDR to publish the ports on one interface instead of all.
 # ──────────────────────────────────────────────────────────
 
 services:
@@ -86,9 +80,8 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     ports:
-      # Loopback by default (nothing exposed off-box); OPENSHIP_BIND_ADDR opts
-      # into a public/LAN interface. See the "BIND INTERFACE" note above.
-      - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${API_PORT:-4000}:${API_PORT:-4000}"
+      # Publish on all interfaces by default; OPENSHIP_BIND_ADDR pins one.
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${API_PORT:-4000}:${API_PORT:-4000}"
     # Mode + secrets (CLOUD_MODE, DEPLOY_MODE, OPENSHIP_TARGET, Oblien, GitHub
     # App, auth secrets, …) all come from .env. The values below OVERRIDE it
     # with the fixed internal port + in-cluster service DNS (compose
@@ -119,7 +112,7 @@ services:
       dockerfile: apps/dashboard/Dockerfile
     restart: unless-stopped
     ports:
-      - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
     env_file:
       - .env
     environment:
@@ -137,7 +130,7 @@ services:
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
-      - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${WEB_PORT:-3000}:${WEB_PORT:-3000}"
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${WEB_PORT:-3000}:${WEB_PORT:-3000}"
     environment:
       NODE_ENV: production
       PORT: "${WEB_PORT:-3000}"

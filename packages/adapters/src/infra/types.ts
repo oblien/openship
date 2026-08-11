@@ -26,20 +26,6 @@ export interface RoutingProvider {
   removeRoute(domain: string): Promise<void>;
 
   /**
-   * Re-emit vhosts an older generator wrote, so a fix to the EMITTED config shape reaches
-   * a box that isn't redeploying. Converged boxes do nothing; see
-   * `NginxProvider.reapplyStoredRoutes`.
-   *
-   * Optional: only a provider that keeps generated config on disk has anything to replay.
-   * Cloud routes through Oblien's API and desktop has no edge at all.
-   */
-  reapplyStoredRoutes?(): Promise<{
-    scanned: number;
-    repaired: string[];
-    failed: { slug: string; reason: string }[];
-  }>;
-
-  /**
    * Does a static `root` actually resolve WHERE THE PROXY LOOKS?
    *
    * Optional: only a provider that serves files from a path answers. The point is
@@ -52,33 +38,6 @@ export interface RoutingProvider {
    * Advisory: implementations never throw — `checked:false` means "no signal".
    */
   probeStaticRoot?(servedPath: string): Promise<OutputProbeResult>;
-
-  /**
-   * Serve edge-target challenge tokens for `host`, so Openship Cloud's shared edge
-   * can prove this box controls a routing target it is asked to forward to.
-   *
-   * Optional for the same reason `probeStaticRoot` is: only a provider that owns an
-   * HTTP surface on this box can answer, and "this provider has no
-   * `serveEdgeChallenge`" is a clean, reportable reason rather than a silent no-op.
-   * Cloud routes through Oblien's own edge and has nothing to serve from.
-   *
-   * Call with `{ host }` alone at edge-ensure to make the box ABLE to answer before
-   * any challenge exists (the location serves a directory, so it is valid empty), and
-   * with `{ host, tokens }` from the verify flow to serve the issued tokens.
-   *
-   * `tokens` is a LIST because a re-issued verification resets the token while an
-   * older record may still be probed, and because two orgs can target one box. Every
-   * token given is served, and none is ever removed — Oblien re-probes the same token
-   * near its 90-day expiry, so dropping one silently breaks that route months later.
-   */
-  serveEdgeChallenge?(input: { host: string; tokens?: readonly string[] }): Promise<{
-    served: boolean;
-    /** How it is answered — an existing vhost for the host, or our own single-purpose one. */
-    via: "existing-vhost" | "challenge-vhost" | null;
-    /** Set when an unmanaged//stale vhost already claims the host; names the file. */
-    claimedBy?: string;
-    reason?: string;
-  }>;
 }
 
 // ─── SSL ─────────────────────────────────────────────────────────────────────

@@ -9,31 +9,17 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { isServicesFramework, type WorkloadType } from "@repo/core";
+import { isServicesFramework } from "@repo/core";
 import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
-import { usePlatform } from "@/context/PlatformContext";
 import { projectsApi, servicesApi, type Service } from "@/lib/api";
 import { PROJECT_INFO_NOT_FOUND, useProjectInfo } from "@/hooks/useProjectEndpoints";
-import { dedupeServerLogs } from "./server-log-dedup";
 
 interface ProjectDomain {
   domain: string;
   primary?: boolean;
   [key: string]: any;
-}
-
-/** The server-computed canonical access URL (see api resolveProjectAccess).
- *  `url` is a full href, `host` the bare display hostname, `urls` every public
- *  href (primary first). The single source of truth for "where does this
- *  project live" across the sidebar and the Domains card. */
-export interface ProjectAccess {
-  url: string | null;
-  host: string | null;
-  kind: "custom" | "free" | "local" | "none";
-  isLocal: boolean;
-  urls: string[];
 }
 
 interface ProjectOptions {
@@ -61,13 +47,10 @@ interface BasicProjectData {
   framework: string;
   options?: ProjectOptions;
   domains?: ProjectDomain[];
-  access?: ProjectAccess;
   buildImage?: string;
   hasMultipleServices?: boolean;
   serviceCount?: number;
   activeDeploymentId?: string | null;
-  /** Operator switch, derived server-side from `disabled_at` (enrichProject). */
-  enabled?: boolean;
   deployTarget?: "cloud" | "server" | "local";
   cloudWorkspaceId?: string | null;
   deletedAt?: string | null;
@@ -138,10 +121,6 @@ interface BuildData {
   composePath: string;
   hasBuild: boolean;
   hasServer: boolean;
-  /** Resolved runtime workload (#538). Flows in from `projectData.options`
-   *  (getInfo sets it). A worker shares `hasServer=false` with a static site;
-   *  only this distinguishes "runs a process" from "edge-served files". */
-  workloadType?: WorkloadType;
   isLoading: boolean;
   error: string | null;
 }
@@ -239,10 +218,6 @@ interface ProjectSettingsContextType {
     sourceMode?: "branch" | "manual";
   }) => Promise<ProjectEnvironment | null>;
   domain: string;
-  /** The canonical access URL — server-computed, correct for service-scoped-only
-   *  projects and target-aware for the localhost fallback. What display surfaces
-   *  (sidebar, Domains card) should read instead of deriving their own. */
-  access: ProjectAccess;
   /** Shared domain selection driving the overview URL + analytics (multi-domain projects). */
   selectedDomain: string;
   setSelectedDomain: (domain: string) => void;
@@ -273,9 +248,6 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   initialProjectData,
 }) => {
   const { t } = useI18n();
-  // Mirrors the API's `isServerHost` (= platform target "selfhosted"), which is
-  // exactly the gate on the health-watch job that feeds the Health tab.
-  const { isServerHost } = usePlatform();
   const [projectData, setProjectData] = useState<BasicProjectData>(
     initialProjectData || {
       id: "",
@@ -425,51 +397,6 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       "",
     [projectData.domains],
   );
-
-  // The canonical access URL. Server-computed (resolveProjectAccess) is the
-  // truth; the fallback below is the ONE remaining client derivation, kept only
-  // for cloud version-skew — an older SaaS getInfo won't send `access`. It
-  // mirrors the server precedence: a verified domain wins; else localhost only
-  // when the project is purely local; else "none" (never a misleading localhost).
-  const access = useMemo<ProjectAccess>(() => {
-    if (projectData.access) return projectData.access;
-
-    const rows = (projectData.domains || []) as any[];
-    const verified = rows.filter((d) => d?.verified);
-    const primary = verified.find((d) => d.primary || d.isPrimary) ?? verified[0] ?? null;
-    if (primary) {
-      const host = String(primary.domain || primary.hostname || "").trim();
-      if (host) {
-        const urls = Array.from(
-          new Set(
-            [primary, ...verified.filter((d) => d !== primary)]
-              .map((d) => String(d.domain || d.hostname || "").trim())
-              .filter(Boolean),
-          ),
-        ).map((h) => `https://${h}`);
-        return {
-          url: `https://${host}`,
-          host,
-          kind: primary.domainType === "custom" ? "custom" : "free",
-          isLocal: false,
-          urls,
-        };
-      }
-    }
-
-    const target = projectData.cloudWorkspaceId
-      ? "cloud"
-      : (projectData as any).serverId
-        ? "server"
-        : (projectData.deployTarget ?? "local");
-    if (target === "local") {
-      const port =
-        Number((projectData as any).port ?? projectData.options?.productionPort) || 3000;
-      const host = `localhost:${port}`;
-      return { url: `http://${host}`, host, kind: "local", isLocal: true, urls: [] };
-    }
-    return { url: null, host: null, kind: "none", isLocal: false, urls: [] };
-  }, [projectData]);
 
   // Shared domain selection driving the overview URL + analytics: the sidebar
   // switcher writes it, OverviewTab/MonitoringTab read it to refetch per-domain.
@@ -808,27 +735,76 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     }));
   }, []);
 
-  // Server Logs Management — dedup/sort logic lives in ./server-log-dedup (pure, unit-tested).
-  const addServerLog = useCallback((log: any) => {
-    setServerLogsData((prev) => ({
-      ...prev,
-      logs: dedupeServerLogs([log, ...prev.logs]),
-    }));
+  // Server Logs Management
+  const MAX_SERVER_LOGS = 100;
+
+  const getServerLogKey = useCallback((log: any) => {
+    if (!log || typeof log !== "object") return String(log);
+    const parsedTimestamp =
+      typeof log.timestamp === "string" ? Date.parse(log.timestamp) : Number.NaN;
+    const timestampKey = Number.isFinite(parsedTimestamp)
+      ? Math.floor(parsedTimestamp / 1000)
+      : String(log.timestamp ?? "");
+
+    return [
+      timestampKey,
+      log.ip,
+      log.method,
+      log.path,
+      log.statusCode,
+      log.responseTime,
+      log.requestSize,
+      log.responseSize,
+    ].join("|");
   }, []);
 
-  const mergeServerLogs = useCallback((logs: any[]) => {
-    setServerLogsData((prev) => ({
-      ...prev,
-      logs: dedupeServerLogs([...prev.logs, ...logs]),
-    }));
-  }, []);
+  const dedupeServerLogs = useCallback(
+    (logs: any[]) => {
+      const seen = new Set<string>();
+      const merged: any[] = [];
 
-  const setServerLogs = useCallback((logs: any[]) => {
-    setServerLogsData((prev) => ({
-      ...prev,
-      logs: dedupeServerLogs(logs),
-    }));
-  }, []);
+      for (const log of logs) {
+        const key = getServerLogKey(log);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(log);
+        if (merged.length >= MAX_SERVER_LOGS) break;
+      }
+
+      return merged;
+    },
+    [getServerLogKey],
+  );
+
+  const addServerLog = useCallback(
+    (log: any) => {
+      setServerLogsData((prev) => ({
+        ...prev,
+        logs: dedupeServerLogs([log, ...prev.logs]),
+      }));
+    },
+    [dedupeServerLogs],
+  );
+
+  const mergeServerLogs = useCallback(
+    (logs: any[]) => {
+      setServerLogsData((prev) => ({
+        ...prev,
+        logs: dedupeServerLogs([...prev.logs, ...logs]),
+      }));
+    },
+    [dedupeServerLogs],
+  );
+
+  const setServerLogs = useCallback(
+    (logs: any[]) => {
+      setServerLogsData((prev) => ({
+        ...prev,
+        logs: dedupeServerLogs(logs),
+      }));
+    },
+    [dedupeServerLogs],
+  );
 
   const clearServerLogs = useCallback(() => {
     setServerLogsData((prev) => ({
@@ -887,12 +863,6 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       { id: "services", label: tl.services, icon: "layers.png" },
       { id: "domains", label: tl.domains, icon: "server-59-1658435258.png" },
       { id: "deployments", label: tl.deployments, icon: "heart%20rate-118-1658433496.png" },
-      { id: "health", label: tl.health, icon: "heart%20rate-118-1658433496.png" },
-      // Shown on cloud AND self-hosted, deliberately: both halves of the tab work
-      // in both modes through adapters that already exist — resource usage via
-      // RuntimeAdapter.getUsage (dockerode | Oblien metrics) and visitor geography
-      // via the traffic-source resolver (OpenResty mgmt API | Oblien analytics).
-      { id: "monitoring", label: tl.monitoring, icon: "chart-1658432731.png" },
       { id: "source", label: tl.source, icon: "git%20branch-159-1658431404.png" },
       { id: "webhooks", label: tl.webhooks, icon: "git%20branch-159-1658431404.png" },
       { id: "runtime", label: tl.runtime, icon: "setting-40-1662364403.png" },
@@ -906,18 +876,13 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       // service under Services — so hide the Configuration (runtime) tab there.
       // A schema app keeps it, though: it's the home of the 2-mode config.
       if (isServicesProject && !isSchemaApp && tab.id === "runtime") return false;
-      // Health is fed by the self-hosted container health watch, so it needs BOTH
-      // halves to be true: the control plane has to be the always-on self-hosted
-      // one that runs the watch job (not SaaS, not desktop), and the workload has
-      // to be a container we can poll (Oblien exposes no stability probe).
-      if (tab.id === "health" && (!isServerHost || isCloud)) return false;
       // The Webhooks tab is shown on cloud too: the managed GitHub push→deploy
       // entry, custom deploy hooks, and the delivery feed all apply on SaaS. Only
       // the `job` action + the self-hosted webhook-domain picker are gated by mode
       // inside the tab (job is refused server-side in CLOUD_MODE).
       return true;
     });
-  }, [t, isServicesProject, isSchemaApp, projectData.deployTarget, isServerHost]);
+  }, [t, isServicesProject, isSchemaApp, projectData.deployTarget]);
 
   const defaultTab = tabs[0].id;
   const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || defaultTab);
@@ -980,7 +945,6 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       environments,
       createEnvironment,
       domain,
-      access,
       selectedDomain,
       setSelectedDomain,
       slug,
@@ -1020,7 +984,6 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       environments,
       createEnvironment,
       domain,
-      access,
       selectedDomain,
       slug,
       activeTab,

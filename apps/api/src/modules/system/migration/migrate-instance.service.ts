@@ -90,7 +90,6 @@ export async function migrateInstanceToServer(
       const preflight = await runPreflight({
         serverId: ctx.input.serverId,
         domain: ctx.input.domain,
-        organizationId: ctx.input.organizationId,
       });
       if (!preflight.ready) {
         throw new MigrationPreflightFailedError(preflight.checks);

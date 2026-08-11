@@ -1,6 +1,6 @@
 {
   "name": "openship",
-  "version": "0.6.1",
+  "version": "0.5.0",
   "description": "Openship CLI - deploy, manage, and open your Openship platform from the terminal",
   "license": "Apache-2.0",
   "repository": {
@@ -18,10 +18,7 @@
   ],
   "type": "module",
   "bin": {
-    "openship": "./dist/node-entry.js"
-  },
-  "engines": {
-    "node": ">=22"
+    "openship": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -29,7 +26,6 @@
   ],
   "scripts": {
     "build": "tsup && bun run build/stage-server.ts",
-    "build:payload": "tsup && bun run build/stage-server.ts && bun run build/stage-cli-payload.ts",
     "cli": "bun dist/index.js",
     "dev": "bun run build && bun run build/stage-dashboard.ts && OPENSHIP_DASHBOARD_DIR=\"$(cd ../dashboard/.next/standalone && pwd)\" bun dist/index.js",
     "lint": "tsc --noEmit",
@@ -39,13 +35,12 @@
     "prepack": "cp ../../README.md README.md"
   },
   "dependencies": {
-    "@bomb.sh/tab": "^0.0.22",
     "@clack/prompts": "^0.11.0",
     "@repo/adapters": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/onboarding": "workspace:*",
-    "chalk": "^5.6.2",
     "commander": "^14.0.3",
+    "chalk": "^5.6.2",
     "dockerode": "^4.0.9",
     "open": "^10.2.0",
     "ora": "^9.3.0",

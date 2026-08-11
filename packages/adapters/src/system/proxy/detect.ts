@@ -14,8 +14,7 @@ import {
   probeListeningPort,
   type PortOccupant,
 } from "../../runtime/port-conflict";
-import { waitForPortFree } from "../port-listen";
-import { tryExec } from "../probe-exec";
+import { OPENRESTY_LUA_DIR } from "../../infra/openresty-lua";
 import type {
   SystemLog,
   EdgeOccupant,
@@ -55,6 +54,14 @@ export class EdgeMigrateRequested extends Error {
   ) {
     super("Edge migration requested by user");
     this.name = "EdgeMigrateRequested";
+  }
+}
+
+async function tryExec(executor: CommandExecutor, command: string): Promise<string | null> {
+  try {
+    return await executor.exec(command);
+  } catch {
+    return null;
   }
 }
 
@@ -179,22 +186,11 @@ export async function sanitizeEdgeVhosts(
  * `.State.Status` can't be misread: `restarting` for a crash loop, `exited` for dead.
  * Anything else — including an unreadable answer — is treated as fine, so the worst
  * case is missing a broken edge (which the next step reports anyway).
- *
- * This is also the ONLY honest "is the edge up" question on the box: a crash-looping
- * container reports `.State.Running == true` and appears in plain `docker ps`, so
- * every running-only probe (`resolveOurEdgeContainer`, `docker ps --filter name=`)
- * says yes while nothing is being served. Pass `container` to ask about a specific
- * one — a container renamed via OPENSHIP_EDGE_CONTAINER isn't `openship-edge`, and
- * inspecting the default name instead silently answers about a container that
- * doesn't exist (unreadable → "fine").
  */
-export async function edgeIsBroken(
-  executor: CommandExecutor,
-  container = EDGE_CONTAINER_NAME,
-): Promise<boolean> {
+export async function edgeIsBroken(executor: CommandExecutor): Promise<boolean> {
   const status = await tryExec(
     executor,
-    `docker inspect -f '{{.State.Status}}' ${sq(container)} 2>/dev/null`,
+    `docker inspect -f '{{.State.Status}}' ${sq(EDGE_CONTAINER_NAME)} 2>/dev/null`,
   );
   const state = (status ?? "").trim();
   return state === "restarting" || state === "exited" || state === "dead";
@@ -204,11 +200,11 @@ export async function edgeIsBroken(
  * Why the edge container isn't running, from its own log on the box `executor`
  * reaches. Parsing is {@link edgeFailureReason}, so every caller agrees on the cause.
  */
-export async function edgeCrashReason(
-  executor: CommandExecutor,
-  container = EDGE_CONTAINER_NAME,
-): Promise<string | null> {
-  const logs = await tryExec(executor, `docker logs --tail 40 ${sq(container)} 2>&1`);
+export async function edgeCrashReason(executor: CommandExecutor): Promise<string | null> {
+  const logs = await tryExec(
+    executor,
+    `docker logs --tail 40 ${sq(EDGE_CONTAINER_NAME)} 2>&1`,
+  );
   return logs ? edgeFailureReason(logs) : null;
 }
 
@@ -336,47 +332,6 @@ export async function resolveOurEdgeContainer(
   return resolved;
 }
 
-/**
- * The edge container's identity + run state INCLUDING when it's stopped — the
- * "track if installed" probe, deliberately distinct from
- * {@link resolveOurEdgeContainer} (RUNNING-only, on the takeover hot path where a
- * stopped edge must read as "no edge"). A `docker ps -a` pass so a
- * provisioned-but-stopped edge still resolves (`running:false`, `exists:true`)
- * instead of vanishing from tracking. Matches by NAME first, then by our image for
- * a container renamed via OPENSHIP_EDGE_CONTAINER. The `.Image` field carries the
- * created-with ref, which is what drift compares against the pinned ref — no extra
- * `docker inspect`.
- *
- * Three outcomes, not two — the distinction the drift cache depends on:
- *   - a match → `{ exists: true, … }`;
- *   - the query RAN and no line matched (incl. empty output) → `exists:false`, a
- *     CONFIDENT absence the caller may act on (drop the tracked row);
- *   - the `docker ps -a` itself failed (daemon momentarily unreachable, an SSH
- *     hiccup) → `null`, i.e. "couldn't tell". Collapsing this into `exists:false`
- *     is what let a transient probe error DELETE a live edge's cached row; `null`
- *     tells the caller to keep the last-known state instead.
- */
-export async function detectEdgeContainer(
-  executor: CommandExecutor,
-): Promise<{ name: string | null; running: boolean; image: string | null; exists: boolean } | null> {
-  const out = await tryExec(
-    executor,
-    `docker ps -a --format '{{.Names}}\t{{.Image}}\t{{.State}}' 2>/dev/null`,
-  );
-  // `null` = the command threw (inconclusive). An empty string = it ran and there
-  // are no containers — a real absence, not a failure.
-  if (out === null) return null;
-  const absent = { name: null, running: false, image: null, exists: false };
-  for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    const [name, image, state] = line.split("\t");
-    if (!name) continue;
-    if (name === EDGE_CONTAINER_NAME || isOurEdgeContainer(name, image)) {
-      return { name, image: image || null, running: state === "running", exists: true };
-    }
-  }
-  return absent;
-}
-
 async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string | null> {
   const byName = await tryExec(
     executor,
@@ -394,6 +349,23 @@ async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string 
   return null;
 }
 
+/**
+ * Is our OpenResty Lua deployed on the HOST filesystem — i.e. is OUR BARE-HOST
+ * edge present? Deliberately distinct from `ourEdgeContainerRunning`: callers on
+ * the bare-install path (stop-then-reinstall a host OpenResty) must key on THIS,
+ * not on a running container — a host `pkill -f openresty` would also hit a
+ * host-networked container's process and kill our own containerized edge.
+ * `probeEdge` also uses the two signals separately for the bare-host regression
+ * guard (stale Lua + a foreign nginx must NOT read as ours).
+ */
+export async function ourLuaOnHost(executor: CommandExecutor): Promise<boolean> {
+  const lua = await tryExec(
+    executor,
+    `test -f ${OPENRESTY_LUA_DIR}/site_logger.lua && echo ok`,
+  );
+  return Boolean(lua && lua.includes("ok"));
+}
+
 async function detectDockerOnPort(
   executor: CommandExecutor,
   port: number,
@@ -407,6 +379,25 @@ async function detectDockerOnPort(
   const [name, image] = line.split("\t");
   if (!name) return null;
   return { name, image: image ?? "" };
+}
+
+/**
+ * Is the process listening on the edge port actually OUR OpenResty (vs a foreign
+ * system nginx that shares the "nginx" process name)? Confirm the real binary —
+ * OpenResty resolves under an `openresty` prefix, a distro nginx under /usr/sbin.
+ * Prefer the ps args we already have; fall back to the /proc exe symlink.
+ */
+async function listenerIsOurOpenResty(
+  executor: CommandExecutor,
+  listener: { pid?: number | null; rawCommand?: string; command?: string } | null,
+): Promise<boolean> {
+  if (!listener) return false;
+  if (/openresty/i.test(`${listener.rawCommand ?? ""} ${listener.command ?? ""}`)) return true;
+  if (listener.pid) {
+    const exe = await tryExec(executor, `readlink -f /proc/${listener.pid}/exe 2>/dev/null || true`);
+    if (exe && /openresty/i.test(exe)) return true;
+  }
+  return false;
 }
 
 /** `nginx: worker process` / `openresty: worker process …` (the child that shows
@@ -450,7 +441,7 @@ async function resolveProxyMaster(
 async function probeEdgePort(
   executor: CommandExecutor,
   port: number,
-  ours: { containerRunning: boolean },
+  ours: { containerRunning: boolean; luaOnHost: boolean },
 ): Promise<EdgeOccupant | null> {
   const listener = await resolveProxyMaster(executor, await probeListeningPort(executor, port));
   const docker = await detectDockerOnPort(executor, port);
@@ -472,30 +463,24 @@ async function probeEdgePort(
   // edge can't co-bind with it, so `containerRunning` must not claim it.
   const foreignDockerProxy = Boolean(docker) && !isOurEdgeContainer(docker?.name, docker?.image);
 
-  // "Ours" means EXACTLY ONE THING: our edge CONTAINER. Two shapes of the same
-  // fact, because host networking hides the publish:
-  //   - OUR edge container publishes this port (bridged `openship-edge`) — the
+  // "Ours" has three shapes:
+  //   - OUR edge CONTAINER publishes this port (bridged `openship-edge`) — the
   //     docker occupant IS our edge image/name.
-  //   - our edge container is RUNNING and healthy (host-networked → no docker
-  //     publish match). A running edge container OWNS 80/443, so the host-process
-  //     occupant here IS its OpenResty — marked ours WITHOUT depending on the
-  //     listener's binary path (the host may render the master as
-  //     `nginx: master process nginx …` with no `openresty` prefix, and
+  //   - our edge CONTAINER is RUNNING (host-networked → no docker publish match;
+  //     its Lua lives inside the container). A running edge container OWNS
+  //     80/443, so the host-process occupant here IS its OpenResty — mark it ours
+  //     WITHOUT depending on the listener's binary path (the host may render the
+  //     master as `nginx: master process nginx …` with no `openresty` prefix, and
   //     `readlink /proc/<pid>/exe` can be denied). THIS is the self-takeover lock:
   //     our own edge must never read as foreign and get killed by the takeover.
-  //
-  // A BARE HOST OpenResty is NOT ours, even one an older Openship installed. The
-  // edge is a container; a host OpenResty is a proxy to MIGRATE FROM, exactly like
-  // a distro nginx or a Caddy (`canImportProxy("openresty")` is true and
-  // `scanOpenshipEdge` reads both bare sites-enabled layouts). Calling it "ours"
-  // was the whole bug: `classification` came back `ours`, `canProceedClean` was
-  // true, the consent gate returned immediately, nothing stopped it, and the edge
-  // container then crash-looped forever on
-  // `bind() to 0.0.0.0:80 failed (98: Address already in use)` while every surface
-  // reported the edge installed and running.
+  //   - BARE host: our Lua is on disk AND the process ACTUALLY LISTENING resolves
+  //     under an `openresty` prefix — the strict check that keeps a distro
+  //     /usr/sbin/nginx from being claimed as ours just because stale Lua remains
+  //     (the hekai regression).
   const managedByOpenship =
     isOurEdgeContainer(docker?.name, docker?.image) ||
-    (ours.containerRunning && !foreignDockerProxy);
+    (ours.containerRunning && !foreignDockerProxy) ||
+    (!docker && ours.luaOnHost && (await listenerIsOurOpenResty(executor, listener)));
 
   return {
     port,
@@ -515,34 +500,25 @@ async function probeEdgePort(
 
 /** Detect and classify what owns ports 80/443. Read-only. */
 export async function probeEdge(executor: CommandExecutor): Promise<EdgeStatus> {
-  // ONE "ours" signal: a HEALTHY edge CONTAINER (the self-takeover lock).
-  //
-  // The health gate is load-bearing, not defensive: a crash-looping edge is still
-  // "running" to docker, and the lock would then claim whatever ACTUALLY holds :80
-  // — the very proxy that caused the crash loop — as ours, so the consent gate
-  // returns clean and nothing is ever stopped. `edgeIsBroken` answers "no" when it
-  // can't tell, so the lock still holds for a healthy edge on a box where inspect
-  // is unreadable.
-  const container = await resolveOurEdgeContainer(executor);
-  const containerRunning = Boolean(container) && !(await edgeIsBroken(executor, container!));
+  // Two independent "ours" signals: a running edge CONTAINER is authoritative on
+  // its own (self-takeover lock); Lua-on-host only counts alongside a listener
+  // that resolves to our OpenResty (bare-host regression guard). Kept separate
+  // so probeEdgePort can apply each rule correctly.
+  const containerRunning = await ourEdgeContainerRunning(executor);
+  const luaOnHost = await ourLuaOnHost(executor);
 
-  const occupants: EdgeOccupant[] = [];
+  const all: EdgeOccupant[] = [];
   for (const port of EDGE_PORTS) {
-    const occ = await probeEdgePort(executor, port, { containerRunning });
-    if (occ) occupants.push(occ);
+    const occ = await probeEdgePort(executor, port, { containerRunning, luaOnHost });
+    if (occ) all.push(occ);
   }
 
-  const foreign = occupants.filter((o) => !o.managedByOpenship);
+  const foreign = all.filter((o) => !o.managedByOpenship);
 
   let classification: EdgeStatus["classification"];
-  if (occupants.length === 0) classification = "free";
+  if (all.length === 0) classification = "free";
   else if (foreign.length === 0) classification = "ours";
-  // `known` = we recognize it AND can import its config, which is what makes the
-  // migrate offer real. `openresty` belongs here now: with a containerized edge a
-  // host OpenResty is a migration SOURCE (see `canImportProxy`), and excluding it
-  // sent the one proxy whose vhosts we parse most reliably — our own former bare
-  // edge — down the `unknown`/takeover-only path, i.e. "drop every site it serves".
-  else if (foreign.every((o) => o.proxy)) classification = "known";
+  else if (foreign.every((o) => o.proxy && o.proxy !== "openresty")) classification = "known";
   else classification = "unknown";
 
   return {
@@ -580,38 +556,17 @@ export function stopTargetsForStatus(status: EdgeStatus): EdgeStopTarget[] {
   return out;
 }
 
-/** Outcome of {@link freeEdgeTargets} — did the ports ACTUALLY come free. */
-export interface EdgeFreeResult {
-  /** True when no stopped port was observed still holding a LISTEN socket. */
-  freed: boolean;
-  /** Ports still bound afterwards (conclusive readings only — never a guess). */
-  stillBound: number[];
-}
-
 /**
  * Stop AND disable the identified owners of the edge ports so they don't
  * resurrect on reboot and re-grab 80/443 before OpenResty — services get
  * `disable`d, containers get their restart policy cleared. Never a blind
  * `fuser -k`; a bare process falls back to graceful-then-hard kill.
- *
- * Then PROVE the ports are free, because "I stopped its owner" and ":80 is
- * bindable" are different facts and only the second one lets our edge start: a
- * unit takes a moment to release the socket and its master may respawn a worker
- * in between. Every takeover path — nginx, caddy, apache, and now a legacy bare
- * host OpenResty — funnels through here, so this is the single place that
- * guarantee lives, and the single place callers read it from instead of starting
- * a container that loses the race and crash-loops on
- * `bind() … (98: Address already in use)` while `docker run` exits 0.
  */
 export async function freeEdgeTargets(
   executor: CommandExecutor,
   targets: EdgeStopTarget[],
   onLog: (message: string, level?: "info" | "warn" | "error") => void,
-  // Per-port budget for the socket to drain. The caller owns this: an interactive
-  // takeover can afford to wait, a per-deploy re-ensure can't sit for half a minute
-  // on two ports it already expects to be free.
-  opts: { timeoutMs?: number } = {},
-): Promise<EdgeFreeResult> {
+): Promise<void> {
   for (const t of targets) {
     const where = t.port ? ` (port ${t.port})` : "";
     if (t.container) {
@@ -633,27 +588,5 @@ export async function freeEdgeTargets(
       await tryExec(executor, `kill -9 ${t.pid} 2>/dev/null || true`);
     }
   }
-
-  // Verify the ports we were asked about; an EdgeStopTarget may carry none (a
-  // pre-accepted policy names units, not ports), in which case both edge ports
-  // are what we were freeing.
-  const named = [...new Set(targets.map((t) => t.port).filter((p): p is number => typeof p === "number"))];
-  const stillBound: number[] = [];
-  for (const port of named.length ? named : [...EDGE_PORTS]) {
-    const { free, checked } = await waitForPortFree(executor, port, {
-      ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
-    });
-    // `checked:false` = we couldn't read the socket table at all. Not evidence of
-    // anything, so it must not read as "still bound" and block a takeover that in
-    // fact worked.
-    if (!checked) {
-      onLog(`Couldn't confirm port ${port} was released (socket table unreadable) — continuing.`, "warn");
-      continue;
-    }
-    if (!free) {
-      stillBound.push(port);
-      onLog(`Port ${port} is STILL bound after stopping its owner.`, "error");
-    }
-  }
-  return { freed: stillBound.length === 0, stillBound };
+  await new Promise((r) => setTimeout(r, 1000));
 }

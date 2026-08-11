@@ -4,18 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // (gate → preflight → up → import) is exercised without real docker / ss / fs.
 const h = vi.hoisted(() => ({
   hasDocker: true,
-  /** #486 preflight: the pinned image tag is (by default) present in the registry. */
-  pinnedReady: true,
-  /** #488: an install whose `.env` lost secrets a surviving data volume still needs. */
-  secretRotation: null as { volume: string; keys: string[] } | null,
-  /** #487: a data volume whose Postgres cluster we can't locate. */
-  pgDataRisk: null as { volume: string } | null,
   composeUpResult: { ok: true, apiPort: "4000", dashPort: "3001" },
   composeUpCalls: 0,
-  /** Images fetched BEFORE the edge preflight can stop anyone's proxy. `envChanged`
-   *  travels from here to composeUp — the prefetch's materialize is the only one that
-   *  still sees what the containers were created with (#509). */
-  prefetchResult: { ok: true, envChanged: false },
+  /** Images fetched BEFORE the edge preflight can stop anyone's proxy. */
+  prefetchResult: true,
   prefetchCalls: 0,
   internalToken: "tok" as string | null,
   /** Ports the stack will publish — moved off the preference when busy. */
@@ -34,6 +26,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("../../src/lib/compose", () => ({
   hasDockerCompose: () => h.hasDocker,
+  composeIsViableDefault: () => true,
   // Host ports are resolved ONCE before `.env` is written, then passed to both
   // compose steps — a busy 4000/3001 fails `up` outright, so it has to move.
   resolveComposePorts: async (p: { api?: string; dashboard?: string }) => {
@@ -59,19 +52,6 @@ vi.mock("../../src/lib/compose", () => ({
     return h.composeUpResult;
   },
   composeInternalToken: () => h.internalToken,
-  // #486: the tag preflight runs before the prefetch spinner. Its own logic (registry
-  // probe, diagnostics) is covered in compose-env-preserve.test.ts; here it's a gate.
-  pinnedImagesReady: () => h.pinnedReady,
-  // #488: regenerating secrets over an initialised data volume can't work, so the
-  // command stops on it. The detection itself is covered in compose-env-preserve;
-  // here it's a gate, and what matters is that it fires before anything is touched.
-  composeSecretRotationRisk: (o: { resetSecrets?: boolean }) =>
-    o?.resetSecrets ? null : h.secretRotation,
-  renderSecretRotationRefusal: (r: { keys: string[] }) =>
-    `Refusing to continue: ${r.keys.join(", ")}`,
-  // #487: same shape for the PGDATA-layout refusal that sits beside it.
-  composePgDataRisk: () => h.pgDataRisk,
-  renderPgDataRefusal: (r: { volume: string }) => `Refusing to continue: ${r.volume}`,
   // Default install: pulls published images. The dev/from-source build path has
   // its own unit test (compose-source-build.test.ts).
   sourceBuildDir: () => null,
@@ -96,32 +76,22 @@ vi.mock("@repo/adapters/proxy", async (importOriginal) => ({
   edgeIsBroken: async () => e.edgeBroken,
   edgeCrashReason: async () => e.edgeCrashReason,
 }));
-vi.mock("@repo/adapters", async () => {
-  const ops = await import("../../../../packages/adapters/src/system/environment-ops");
-  const fixtures = await import("../../../../packages/adapters/src/system/environment.fixtures");
-  return {
-    // The restore hint printed when the edge crash-loops names this host's own service
-    // command, so the resolver is reached from `up`. Pinned to a fixture rather than
-    // measured: the machine running the suite is not the machine these cases describe.
-    // The real `envOps` on top of it, so the command still comes from the one table.
-    envOps: ops.envOps,
-    resolveLocalEnvironmentSync: () => fixtures.profileFixture(),
-    LocalExecutor: class {
-      /**
-       * `waitForEdgeRunning` polls `docker inspect -f '{{.State.Running}}'` through
-       * this executor before importing migrated sites. There's no docker in the
-       * harness, so report the edge as up — otherwise the import gate never opens
-       * and the assertion below sees zero registered sites.
-       *
-       * Not optional: an executor stub without `exec` throws
-       * "exec.exec is not a function" from inside the poll loop.
-       */
-      async exec(): Promise<string> {
-        return "true\n";
-      }
-    },
-  };
-});
+vi.mock("@repo/adapters", () => ({
+  LocalExecutor: class {
+    /**
+     * `waitForEdgeRunning` polls `docker inspect -f '{{.State.Running}}'` through
+     * this executor before importing migrated sites. There's no docker in the
+     * harness, so report the edge as up — otherwise the import gate never opens
+     * and the assertion below sees zero registered sites.
+     *
+     * Not optional: an executor stub without `exec` throws
+     * "exec.exec is not a function" from inside the poll loop.
+     */
+    async exec(): Promise<string> {
+      return "true\n";
+    }
+  },
+}));
 
 vi.mock("../../src/lib/edge-preflight", () => ({
   planAndApplyHostEdge: async () => {
@@ -166,11 +136,8 @@ let con: ReturnType<typeof captureConsole>;
 
 beforeEach(() => {
   h.hasDocker = true;
-  h.pinnedReady = true;
-  h.secretRotation = null;
-  h.pgDataRisk = null;
   h.composeUpResult = { ok: true, apiPort: "4000", dashPort: "3001" };
-  h.prefetchResult = { ok: true, envChanged: false };
+  h.prefetchResult = true;
   h.prefetchCalls = 0;
   h.composeUpCalls = 0;
   h.internalToken = "tok";
@@ -195,7 +162,6 @@ beforeEach(() => {
   // Clear any option values commander retained from a previous parse.
   (upCommand as any).setOptionValue?.("edge", undefined);
   (upCommand as any).setOptionValue?.("compose", undefined);
-  (upCommand as any).setOptionValue?.("resetSecrets", undefined);
   con = captureConsole();
 });
 
@@ -225,55 +191,11 @@ describe("openship up --compose (edge chain)", () => {
     expect(r.code).toBe(0);
   });
 
-  // #486: a pinned tag the registry lacks stops the run before the spinner, the
-  // prefetch, or the proxy-stopping preflight — nothing on the box is touched.
-  it("exits before fetching or the preflight when the pinned image tag is missing", async () => {
-    h.pinnedReady = false;
-    const r = await runCommand(upCommand, ["--compose"]);
-    expect(r.code).toBe(1);
-    expect(h.prefetchCalls).toBe(0);
-    expect(h.composeUpCalls).toBe(0);
-    expect(e.calls).toBe(0); // preflight never ran, so no proxy was stopped
-  });
-
-  // #488: the prefetch rewrites `.env` on its way to pulling, so the secret check
-  // has to land ahead of it — once the file is replaced the original secrets are
-  // gone and the operator has nothing left to restore from.
-  it("exits before the prefetch when the run would regenerate an install's secrets", async () => {
-    h.secretRotation = { volume: "openship_postgres_data", keys: ["POSTGRES_PASSWORD"] };
-    const r = await runCommand(upCommand, ["--compose"]);
-    expect(r.code).toBe(1);
-    expect(h.prefetchCalls).toBe(0);
-    expect(h.composeUpCalls).toBe(0);
-    expect(e.calls).toBe(0);
-    expect(con.text()).toContain("POSTGRES_PASSWORD");
-  });
-
-  it("--reset-secrets waives that stop and brings the stack up", async () => {
-    h.secretRotation = { volume: "openship_postgres_data", keys: ["POSTGRES_PASSWORD"] };
-    const r = await runCommand(upCommand, ["--compose", "--reset-secrets"]);
-    expect(r.code).toBe(0);
-    expect(h.prefetchCalls).toBe(1);
-    expect(h.composeUpCalls).toBe(1);
-  });
-
-  // #487: same fetch-first hazard — the prefetch would write a guessed OPENSHIP_PGDATA,
-  // so a volume whose cluster we can't locate has to stop the run ahead of it.
-  it("exits before the prefetch when the data volume's Postgres layout is ambiguous", async () => {
-    h.pgDataRisk = { volume: "openship_postgres_data" };
-    const r = await runCommand(upCommand, ["--compose"]);
-    expect(r.code).toBe(1);
-    expect(h.prefetchCalls).toBe(0);
-    expect(h.composeUpCalls).toBe(0);
-    expect(e.calls).toBe(0);
-    expect(con.text()).toContain("openship_postgres_data");
-  });
-
   // The whole point of prefetching: a ~500MB pull must not happen with the
   // operator's proxy already stopped, and a pull that FAILS must not have taken
   // their sites down for a problem that never touched the proxy.
   it("does NOT touch the proxy when the image fetch fails", async () => {
-    h.prefetchResult = { ok: false, envChanged: false };
+    h.prefetchResult = false;
     const r = await runCommand(upCommand, ["--compose"]);
     expect(r.code).toBe(1);
     expect(h.prefetchCalls).toBe(1);

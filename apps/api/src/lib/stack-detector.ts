@@ -7,8 +7,7 @@
  *
  * Supports:
  *   JS/TS:   Next.js, Nuxt, SvelteKit, Astro, Vite, Angular, Gatsby, Remix,
- *            TanStack Start, CRA, Vue, Express, Fastify, Hono, NestJS, Koa,
- *            AdonisJS, Elysia
+ *            CRA, Vue, Express, Fastify, Hono, NestJS, Koa, AdonisJS, Elysia
  *   Go:      Standard, Gin, Fiber, Echo
  *   Rust:    Standard, Actix, Axum, Rocket
  *   Python:  Standard, Django, Flask, FastAPI
@@ -239,10 +238,6 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   { stack: "sveltekit" },
   { stack: "astro" },
   { stack: "remix" },
-  // TanStack Start is Vite-based and often ships vite.config.* — must win over
-  // the generic vite SPA rule so imports get fullstack defaults (.output server)
-  // instead of static Vite (empty start). #400
-  { stack: "tanstack-start" },
   { stack: "angular" },
   { stack: "gatsby" },
   // Vite matches on its own root markers, but a backend framework (Laravel/

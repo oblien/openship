@@ -34,28 +34,6 @@
       "project": "Projeto",
       "hostedOn": "Alojado em"
     },
-    "projectMenu": {
-      "rename": "Renomear projeto",
-      "copyId": "Copiar ID do projeto",
-      "idCopied": "ID do projeto copiado",
-      "copyFailed": "Não foi possível copiar para a área de transferência",
-      "pause": "Pausar projeto",
-      "resume": "Retomar projeto",
-      "delete": "Excluir projeto"
-    },
-    "rename": {
-      "title": "Renomear projeto",
-      "description": "Altera o nome exibido. Nada é reimplantado.",
-      "label": "Nome do projeto",
-      "placeholder": "Meu projeto",
-      "identityNote": "O projeto mantém a identidade “{slug}” — sua URL, os nomes dos contêineres e os volumes não mudam. Para alterar a URL, edite o domínio em “Domínios e rotas”.",
-      "save": "Salvar",
-      "cancel": "Cancelar",
-      "toast": {
-        "renamed": "Renomeado para {name}",
-        "failed": "Falha ao renomear o projeto"
-      }
-    },
     "statusActive": "Ativo",
     "statusDisabled": "Desativado",
     "hostedCloud": "Openship Cloud",
@@ -123,19 +101,6 @@
       "toast": {
         "saved": "Roteamento definido como {mode}",
         "failed": "Falha ao atualizar o roteamento"
-      }
-    },
-    "internalAlias": {
-      "title": "Nome de host interno",
-      "description": "Nome personalizado que outros serviços usam para alcançar este app de forma privada",
-      "intro": "Defina um nome DNS adicional para este app na sua rede de projeto privada. Ele é resolvido junto com o padrão (o slug do projeto) — outros serviços vinculados podem usar qualquer um. O acesso público permanece inalterado; isto nunca expõe uma porta.",
-      "label": "Alias de nome de host",
-      "hint": "Apenas letras, dígitos e hífens. Deixe vazio para usar o slug do projeto.",
-      "save": "Salvar",
-      "toast": {
-        "saved": "Nome de host interno atualizado",
-        "failed": "Não foi possível atualizar o nome de host interno",
-        "invalid": "Digite ao menos uma letra ou dígito"
       }
     }
   },
@@ -221,8 +186,7 @@
       "staticNoServer": "Estático (sem servidor)",
       "modeSandboxed": "Isolado (contentor)",
       "modeDirect": "Direto (processo do anfitrião)",
-      "modeDefault": "Predefinido (resolvido na implementação)",
-      "modeStatic": "Nenhum — servido como ficheiros estáticos"
+      "modeDefault": "Predefinido (resolvido na implementação)"
     },
     "storage": {
       "title": "Armazenamento persistente",

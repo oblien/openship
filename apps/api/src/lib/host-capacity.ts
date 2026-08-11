@@ -142,33 +142,6 @@ export async function getHostCapacity(
   return run;
 }
 
-/**
- * Capacity, but only when the reading actually describes the machine asked about.
- *
- * The fallback above is deliberate for a resource CEILING (a number the operator
- * typed is better accepted than blocked), yet wrong for a decision that can
- * REFUSE: `probe` falls back to this API host's own `os.*`, and the cache is
- * keyed org+serverId, so a `source: "local"` reading can legitimately come back
- * for a remote box whose daemon was briefly unreachable. Believing it would match
- * an app's requirement against the orchestrator's RAM and refuse a deploy to a
- * 64 GB server. A `local` number is the truth only when the deploy lands here.
- *
- * Anything else collapses to UNKNOWN, which every consumer treats as "don't
- * enforce" — the one safe direction for a check that can say no.
- */
-export async function getTrustedHostCapacity(
-  serverId: string | undefined,
-  organizationId: string,
-  opts: { isLocalTarget: boolean },
-): Promise<HostCapacity> {
-  const capacity = await getHostCapacity(serverId, organizationId, {
-    localFallback: opts.isLocalTarget,
-  }).catch(() => ({ ...UNKNOWN_CAPACITY }));
-  if (capacity.source === "docker") return capacity;
-  if (capacity.source === "local" && opts.isLocalTarget) return capacity;
-  return { ...UNKNOWN_CAPACITY };
-}
-
 /** Drop cached capacity for a server (or a whole org). Call after a server is
  *  resized/removed so the next read re-probes. */
 export async function invalidateHostCapacity(

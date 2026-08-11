@@ -16,17 +16,8 @@ import {
   isBehind,
   GITHUB_REPO,
   normalizeRollbackWindow,
-  normalizeAliasStrict,
-  aliasConflictsWithSiblings,
-  normalizeFramework,
-  deriveProjectDeployTarget,
-  resolveWorkload,
-  toWorkloadType,
-  type DeployTarget,
   type ReleaseSource,
   type UpdatableIdentity,
-  type WorkloadType,
-  type ProductionMode,
 } from "@repo/core";
 import type { ResourceConfig } from "@repo/adapters";
 import { encodeResources } from "../../lib/resources";
@@ -47,7 +38,6 @@ import { ensureSharedWebhook } from "./project-git-webhook";
 import {
   deriveEnvironmentPublicEndpoints,
   deriveNextProjectRouteState,
-  listProjectRouteRows,
   persistProjectRouteState,
   reapplyProjectLiveRoutes,
   resolveProjectRouteState,
@@ -58,7 +48,6 @@ import { applyProjectRouting } from "../domains/routing-apply.service";
 import { syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
-import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
 import { getFolderSession } from "./folder/session-store";
 import type {
@@ -94,20 +83,6 @@ const GIT_SOURCE_IDENTITY_KEYS = new Set([
   "installationId",
 ]);
 
-/**
- * The project's INFRASTRUCTURE identity — settable at creation, immutable after.
- * `slug` names the `openship-<slug>` network, the `openship-<slug>-<svc>`
- * containers, the `openship-<slug>-<vol>` named volumes, and the monorepo app row
- * (matched by `service.name === project.slug`). Repointing it via PATCH renamed
- * nothing on the host: the live containers kept the old name while the next deploy
- * recreated them under the new slug against EMPTY volumes, and the free
- * `<slug>.opsh.io` hostname moved out from under the running app. It had no caller
- * and no collision check. Creation still accepts an explicit slug
- * (CreateProjectBody/EnsureProjectBody, both guarded); the free hostname is edited
- * on its own terms in the Domains tab.
- */
-const PROJECT_IDENTITY_KEYS = new Set(["slug"]);
-
 /** Derived from the route validator so the accepted fields can't drift from it. */
 type EnsureProjectBody = TEnsureProjectBody;
 
@@ -116,58 +91,20 @@ type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[numb
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Where a project runs, for every read surface. This is the one place that
- *  resolution happens, so enrichProject, its batch variant, and getGitInfo cannot
- *  answer it differently. Server *name* resolution stays at the call site because
- *  single vs batch fetch it differently (one `server.get` vs a prefetched map).
- *
- *  The target is DERIVED (`deriveProjectDeployTarget`) from the cloud binding and the
- *  server id resolved here, NOT read from `meta.deployTarget` as it used to be. That
- *  snapshot is per-deploy state a fresh or partial redeploy can drop, and the drop was
- *  silent: a cloud project then reported `deployTarget: null`, which flips `isCloud`
- *  below — swapping the resource ceilings the dashboard renders — and switches off every
- *  cloud gate in the dashboard, where `deployTarget === "cloud"` IS the cloud test. It
- *  also left the two fields disagreeing, since `serverId` already coalesced to its
- *  column while the target did not. */
-function readDeployMeta(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
-  dep: Deployment | null | undefined,
-): { deployTarget: DeployTarget | null; serverId: string | null } {
-  const meta = (dep?.meta ?? null) as { serverId?: string } | null;
-  // Snapshot first, column second, and deliberately so: meta.serverId is where the live
-  // release ACTUALLY runs, the column is where the project is bound, and this projection
-  // answers the former. The column fills in when a fresh or partial deploy dropped the
-  // snapshot, or when a deleted server nulled the column (ON DELETE SET NULL) — the same
-  // coalesce `resolveOrgServer` and `project.repo.countActiveByServer` use, so the id
-  // here names the machine a deploy would actually reach. Pinned by
-  // test/modules/projects/enrich-project-server-id.test.ts.
-  const serverId = meta?.serverId ?? p.serverId ?? null;
-  // Bound to nothing and never deployed: no target yet. Answering "local" here would be
-  // picking one on the operator's behalf — the hosting badge renders none, and the deploy
-  // wizard seeds a validated target rather than inheriting a guess from this projection.
-  if (!p.cloudWorkspaceId && !serverId && !p.activeDeploymentId) {
-    return { deployTarget: null, serverId: null };
-  }
-  const deployTarget = deriveProjectDeployTarget({ cloudWorkspaceId: p.cloudWorkspaceId, serverId });
-  // The pair must agree. A cloud-bound project can still carry a server id — from the
-  // column it was bound to before it moved, or from the snapshot of that last deploy —
-  // and emitting both is how a card ends up labelled "Cloud" while holding a server's
-  // name, or a wizard hydrates its target from one field and its destination from the
-  // other. The target won; the id it didn't come from goes.
-  return { deployTarget, serverId: deployTarget === "server" ? serverId : null };
-}
-
-/** `readDeployMeta` for callers that don't already hold the active deployment row.
- *  Exported so the project DETAIL read resolves the target through this rule instead
- *  of re-deriving it inline — the detail payload is what the deploy wizard hydrates
- *  its target from, so a second copy of the rule there is a wrong destination. */
-export async function resolveProjectDeployTarget(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
-): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
-  const activeDep = p.activeDeploymentId
-    ? ((await repos.deployment.findById(p.activeDeploymentId)) ?? null)
-    : null;
-  return readDeployMeta(p, activeDep);
+/** The deploy target + server aren't project columns — they live in the active
+ *  deployment's `meta` JSON. This is the one place that parse happens, so every
+ *  caller (enrichProject, its batch variant, getGitInfo) reads them the same
+ *  way. Server *name* resolution stays at the call site because single vs batch
+ *  fetch it differently (one `server.get` vs a prefetched map). */
+function readDeployMeta(dep: Deployment | null | undefined): {
+  deployTarget: string | null;
+  serverId: string | null;
+} {
+  const meta = (dep?.meta ?? null) as { deployTarget?: string; serverId?: string } | null;
+  return {
+    deployTarget: meta?.deployTarget ?? null,
+    serverId: meta?.serverId ?? null,
+  };
 }
 
 // The attention predicates live in a dependency-free leaf module so the
@@ -202,22 +139,6 @@ function readActiveDeploymentSummary(dep: Deployment | null | undefined): {
   };
 }
 
-/**
- * Whether the operator has this project switched ON — the ONE derived name every
- * client reads for that question.
- *
- * `disabled_at` is the storage (a timestamp: when the intent was recorded), and
- * both the project detail panel and the org "pause all" action want the boolean.
- * Each had guessed at its own field name — `project.active` and `project.enabled`
- * — and neither was ever sent, so both silently read `undefined` and defaulted to
- * "on": a disabled project rendered as Active, and "pause all" saw zero running
- * projects and did nothing. Derived here, in the one place that computes a
- * project's client-facing fields, so a third surface can't invent a fourth name.
- */
-function readEnabled(p: Project): { enabled: boolean } {
-  return { enabled: !p.disabledAt };
-}
-
 /** Enrich a project row with computed fields. `deployTarget` is the
  *  only signal the dashboard needs — `deployTarget === "cloud"` IS
  *  the cloud-project test; the dashboard combines it with its own
@@ -227,18 +148,18 @@ export async function enrichProject(p: Project) {
   const production = p.resources as ResourceConfig | null;
   const build = p.buildResources as ResourceConfig | null;
 
+  // Resolve deploy target + server (id + name) from the active deployment's meta
+  let deployTarget: string | null = null;
+  let serverId: string | null = null;
+  let serverName: string | null = null;
   let activeDep: Deployment | null = null;
   if (p.activeDeploymentId) {
     activeDep = (await repos.deployment.findById(p.activeDeploymentId)) ?? null;
-  }
-  const { deployTarget, serverId } = readDeployMeta(p, activeDep);
-  let serverName: string | null = null;
-  if (serverId) {
-    // Org-scoped: the meta half of `serverId` above is a client-supplied snapshot
-    // value, so an unscoped read leaks a foreign server's name/sshHost into this
-    // projection. Same gate as build-status.service.ts.
-    const server = await repos.server.getInOrganization(serverId, p.organizationId);
-    serverName = server?.name || server?.sshHost || null;
+    ({ deployTarget, serverId } = readDeployMeta(activeDep));
+    if (serverId) {
+      const server = await repos.server.get(serverId);
+      serverName = server?.name || server?.sshHost || null;
+    }
   }
 
   return {
@@ -246,7 +167,6 @@ export async function enrichProject(p: Project) {
     deployTarget,
     serverId,
     serverName,
-    ...readEnabled(p),
     ...readActiveDeploymentSummary(activeDep),
     // isCloud decides the fallback when nothing is configured: the metered free
     // tier on cloud, NO limits self-hosted (the machine is the cap).
@@ -281,11 +201,6 @@ export async function enrichProjectsBatch(
     const meta = d.meta as { serverId?: string } | null;
     if (meta?.serverId) serverIds.add(meta.serverId);
   }
-  // Prefetch the durable column's servers too — readDeployMeta coalesces to it when the
-  // snapshot dropped serverId, so its name must be in the map (see below).
-  for (const p of projects) {
-    if (p.serverId) serverIds.add(p.serverId);
-  }
   const servers = await repos.server
     .getMany(Array.from(serverIds))
     .catch(() => new Map<string, Server>());
@@ -294,15 +209,17 @@ export async function enrichProjectsBatch(
     const production = p.resources as ResourceConfig | null;
     const build = p.buildResources as ResourceConfig | null;
 
+    let deployTarget: string | null = null;
+    let serverId: string | null = null;
+    let serverName: string | null = null;
     let activeDep: Deployment | null = null;
     if (p.activeDeploymentId) {
       activeDep = deployments.get(p.activeDeploymentId) ?? null;
-    }
-    const { deployTarget, serverId } = readDeployMeta(p, activeDep);
-    let serverName: string | null = null;
-    if (serverId) {
-      const server = servers.get(serverId);
-      serverName = server?.name || server?.sshHost || null;
+      ({ deployTarget, serverId } = readDeployMeta(activeDep));
+      if (serverId) {
+        const server = servers.get(serverId);
+        serverName = server?.name || server?.sshHost || null;
+      }
     }
 
     return {
@@ -310,7 +227,6 @@ export async function enrichProjectsBatch(
       deployTarget,
       serverId,
       serverName,
-      ...readEnabled(p),
       ...readActiveDeploymentSummary(activeDep),
       // isCloud decides the fallback when nothing is configured: the metered
       // free tier on cloud, NO limits self-hosted (the machine is the cap).
@@ -401,56 +317,6 @@ async function ensureProjectApp(
   return { app, created: true };
 }
 
-/**
- * The workload axis is THREE columns kept in lockstep (issue #538): the explicit
- * `workloadType` (the source of truth — `web` | `worker` | `static`) and its two
- * legacy mirrors `hasServer` / `productionMode` that older readers and rollback
- * snapshots still depend on. Historically the coupling `hasServer===false ⇒
- * productionMode="static"` was re-derived at every write site, and there was no
- * way to express `worker`. This is the single choke point: give it whatever the
- * caller expressed (any of the three, in priority order workloadType > hasServer
- * > productionMode) and it returns all three columns, consistent by
- * construction. Returns `null` when the caller expressed nothing about the axis,
- * so an update leaves those columns untouched.
- */
-function resolveWorkloadColumns(intent: {
-  workloadType?: string | null;
-  hasServer?: boolean;
-  productionMode?: ProductionMode;
-}): { workloadType: WorkloadType; hasServer: boolean; productionMode: ProductionMode } | null {
-  const explicit = toWorkloadType(intent.workloadType);
-  // Fold the weaker signals into a workload only when nothing stronger was
-  // given. `worker` is NOT reachable from a legacy signal — a portless worker
-  // has never had a legacy encoding, so it only ever arrives via an explicit
-  // `workloadType`. In particular productionMode "standalone" is a self-
-  // contained WEB server (Next standalone output), not a worker.
-  const seed: WorkloadType | undefined =
-    explicit ??
-    (intent.hasServer !== undefined
-      ? intent.hasServer
-        ? "web"
-        : "static"
-      : intent.productionMode === "static"
-        ? "static"
-        : intent.productionMode === "host" || intent.productionMode === "standalone"
-          ? "web"
-          : undefined);
-  if (seed === undefined) return null;
-  const workload = resolveWorkload(seed, undefined);
-  return {
-    workloadType: workload,
-    // Only a web workload has a listening server; a worker and a static site
-    // both have `hasServer=false` — the legacy boolean can't tell them apart,
-    // which is exactly why `workloadType` exists.
-    hasServer: workload === "web",
-    // An explicit productionMode wins (e.g. a Next "standalone" web app that is
-    // still hasServer=true); otherwise map from the workload.
-    productionMode:
-      intent.productionMode ??
-      (workload === "static" ? "static" : workload === "worker" ? "standalone" : "host"),
-  };
-}
-
 function buildProductionProjectInput(
   groupId: string,
   data: TCreateProjectBody,
@@ -459,13 +325,6 @@ function buildProductionProjectInput(
   organizationId: string,
 ): Omit<NewProject, "id"> {
   const source = resolveProjectSource(data);
-  // Workload triad, resolved once. Absent any axis signal a new project is a web
-  // app (hasServer=true / host) — the historical create default.
-  const workload = resolveWorkloadColumns({
-    workloadType: data.workloadType,
-    hasServer: data.hasServer,
-    productionMode: data.productionMode,
-  }) ?? { workloadType: "web" as WorkloadType, hasServer: true, productionMode: "host" as ProductionMode };
 
   return {
     organizationId,
@@ -484,7 +343,7 @@ function buildProductionProjectInput(
     releaseSource: source.releaseSource,
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
-    framework: normalizeFramework(data.framework),
+    framework: data.framework ?? "unknown",
     packageManager: data.packageManager ?? "npm",
     installCommand: data.installCommand,
     buildCommand: data.buildCommand,
@@ -497,15 +356,10 @@ function buildProductionProjectInput(
     composePath: normalizeComposePath(data.composePath),
     startCommand: data.startCommand,
     buildImage: data.buildImage,
-    productionMode: workload.productionMode,
+    productionMode: data.productionMode ?? (data.hasServer === false ? "static" : "host"),
     port: data.port ?? 3000,
-    hasServer: workload.hasServer,
+    hasServer: data.hasServer ?? true,
     hasBuild: data.hasBuild ?? true,
-    workloadType: workload.workloadType,
-    // Source/build axes are explicit OVERRIDES only — null means "derive at
-    // read time from framework/source", which is what every existing row does.
-    sourceKind: data.sourceKind ?? null,
-    buildKind: data.buildKind ?? null,
     workspacePrepareCommand:
       data.projectType === "monorepo"
         ? data.monorepoWorkspace?.prepareCommand ?? null
@@ -514,7 +368,6 @@ function buildProductionProjectInput(
     rollbackWindow:
       data.rollbackWindow !== undefined ? normalizeRollbackWindow(data.rollbackWindow) : null,
     cloudArchiveStrategy: data.cloudArchiveStrategy ?? undefined,
-    defaultRollbackStrategy: data.defaultRollbackStrategy ?? undefined,
     // Edge→app upstream addressing. Omitted → schema default "auto" (loopback-
     // port). The wizard seeds this from the user's route-strategy default.
     routeStrategy: data.routeStrategy ?? undefined,
@@ -545,20 +398,12 @@ async function persistMonorepoApps(
   // so a client echoing them back sends the sentinel — unmask-merge against the
   // stored row before persisting, same rule as persistComposeServices, else an
   // edit clobbers the stored secret / ships "••••••••" into the container.
-  //
-  // The rows are read for the hostname gate too (#342): a sub-app's custom domain
-  // becomes a vhost like any other, so a bogus one is refused here — except when
-  // the row already carries it, which is just this payload echoing stored state back.
-  const needsRows =
-    data.monorepoApps.some((app) => hasMaskedValue(app.environment)) ||
-    customHostnamesOf(data.monorepoApps).length > 0;
-  const storedRows = needsRows
-    ? await repos.service.listByProjectKind(projectId, "monorepo").catch(() => [])
-    : [];
-  const storedEnvByName = new Map<string, Record<string, string>>(
-    storedRows.map((row) => [row.name, (row.environment as Record<string, string> | null) ?? {}]),
-  );
-  assertValidCustomDomains(data.monorepoApps, { known: customHostnamesOf(storedRows) });
+  const storedEnvByName = new Map<string, Record<string, string>>();
+  if (data.monorepoApps.some((app) => hasMaskedValue(app.environment))) {
+    for (const row of await repos.service.listByProjectKind(projectId, "monorepo").catch(() => [])) {
+      storedEnvByName.set(row.name, (row.environment as Record<string, string> | null) ?? {});
+    }
+  }
 
   await repos.service.syncMonorepoApps(
     projectId,
@@ -614,15 +459,6 @@ async function persistComposeServices(
 ): Promise<void> {
   if (!data.services?.length) return;
 
-  // #342: a compose service's custom domain becomes a vhost like the project's own,
-  // so it gets the same shape gate — exempting hostnames the stored rows already
-  // carry, so re-syncing a project that holds a bad one isn't refused outright.
-  // Only reads the rows when a custom hostname is actually in play.
-  if (customHostnamesOf(data.services).length) {
-    const rows = await repos.service.listByProject(projectId).catch(() => []);
-    assertValidCustomDomains(data.services, { known: customHostnamesOf(rows) });
-  }
-
   let services: ParsedComposeServiceInput[] = data.services;
   if (services.some((svc) => hasMaskedValue(svc.environment))) {
     // Same precedence as requestBuildAccess: stored rows first, then the upload
@@ -659,29 +495,6 @@ async function createProductionProject(
   slug: string,
   organizationId: string,
 ) {
-  // Multi-tenant SaaS: never trust a client-supplied installationId. It binds the
-  // project to a GitHub App installation, and the push-webhook fan-out deploys by
-  // matching project.installationId to the DELIVERY's installation (webhook-push.ts
-  // triggerBranchDeployments). A tenant could otherwise claim another org's
-  // installation id (or just reference another org's repo string) and get fanned into
-  // that org's pushes — leaking the repo's commit metadata into their delivery feed
-  // and triggering unauthorized deploys. Resolve the installation from the caller's
-  // OWN org + owner; if this org hasn't installed the App on that owner, drop it so
-  // the project can never match — and thus never join — another org's push delivery.
-  //
-  // Sits HERE, at the funnel, and not at the callers: it used to live in
-  // createProject only, so `ensureProject` — which reaches creation directly, and is
-  // the path the folder-upload deploy flow takes — wrote the raw body value AND
-  // force-enables autoDeploy. Same shape as every other gate we have had to move:
-  // put it where the row is written, not on one of the roads leading there.
-  // (linkProjectRepo resolves it server-side on its own path.)
-  if (env.CLOUD_MODE) {
-    const owner = data.gitOwner?.trim();
-    data.installationId = owner
-      ? ((await getInstallationIdByOrg(organizationId, owner)) ?? undefined)
-      : undefined;
-  }
-
   // Atomic free-domain gate — same rule and shape as updateProject. When the
   // caller EXPLICITLY sends endpoints, a free (*.opsh.io) route only resolves
   // behind the Openship Cloud edge, so refuse BEFORE any group/project row is
@@ -694,17 +507,6 @@ async function createProductionProject(
       normalizeStoredPublicEndpoints(data.publicEndpoints),
     );
   }
-  // Same placement, same reason as the free-endpoint gate above: refuse a bogus
-  // custom hostname BEFORE ensureProjectApp writes a project-group row, so a rejected
-  // create leaves nothing behind (the funnel and the persist* helpers below would
-  // each catch it, but only after that row exists). Unconditional: a brand-new
-  // project has no prior hostnames, so everything in the body is net-new. #342
-  // `services` only exists on the ensure body (which creates through here too).
-  assertValidCustomDomains([
-    { publicEndpoints: data.publicEndpoints },
-    ...(data.monorepoApps ?? []),
-    ...((data as Partial<EnsureProjectBody>).services ?? []),
-  ]);
   const { app, created: appCreated } = await ensureProjectApp(data, slug, organizationId);
   const routing = deriveNextProjectRouteState({
     slug,
@@ -788,8 +590,6 @@ export async function createServicesProjectWithId(opts: {
       packageManager: "npm",
       hasServer: true,
       hasBuild: opts.hasBuild ?? false,
-      workloadType: "web", // has running containers/servers; keep the axis column in sync
-
       // services ⇒ docker runtime (same rule buildProductionProjectInput applies).
       runtimeMode: opts.runtimeMode === "bare" ? "bare" : "docker",
     });
@@ -913,11 +713,11 @@ async function uniqueProjectSlug(organizationId: string, baseSlug: string) {
 
 /**
  * A cheap "current version" label for an app environment — the real axis for
- * apps (which have no meaningful git branch). Release/self → semver;
+ * apps (which have no meaningful git branch). Release/self/webmail → semver;
  * image apps → the running image tag. Null for git projects (they keep branch).
  */
 async function resolveEnvVersion(row: Project, latest: Deployment | null): Promise<string | null> {
-  if (row.appTemplateId === "openship") return readApiVersion();
+  if (row.appTemplateId === "openship" || row.appTemplateId === "mail-webmail") return readApiVersion();
   if (isReleaseProvider(row.gitProvider)) {
     const pinned = (row.releaseSource as ReleaseSource | null)?.pinnedVersion;
     return latest?.releaseVersion ?? pinned ?? null;
@@ -1047,7 +847,7 @@ export async function ensureProject(
       throw new NotFoundError("Project", data.projectId ?? desiredSlug);
     }
     const update: Record<string, unknown> = {};
-    if (data.framework !== undefined) update.framework = normalizeFramework(data.framework);
+    if (data.framework !== undefined) update.framework = data.framework;
     if (data.packageManager !== undefined) update.packageManager = data.packageManager;
     if (data.installCommand !== undefined) update.installCommand = data.installCommand;
     if (data.buildCommand !== undefined) update.buildCommand = data.buildCommand;
@@ -1059,21 +859,13 @@ export async function ensureProject(
     if (data.startCommand !== undefined) update.startCommand = data.startCommand;
     if (data.buildImage !== undefined) update.buildImage = data.buildImage;
     if (data.port !== undefined) update.port = data.port;
-    // Workload axis (workloadType / hasServer / productionMode) — one choke
-    // point keeps the three columns in lockstep (issue #538). Only written when
-    // the caller touched the axis.
-    const wl = resolveWorkloadColumns({
-      workloadType: data.workloadType,
-      hasServer: data.hasServer,
-      productionMode: data.productionMode as ProductionMode | undefined,
-    });
-    if (wl) {
-      update.workloadType = wl.workloadType;
-      update.hasServer = wl.hasServer;
-      update.productionMode = wl.productionMode;
+    if (data.productionMode !== undefined) update.productionMode = data.productionMode;
+    if (data.hasServer !== undefined) {
+      update.hasServer = data.hasServer;
+      if (data.productionMode === undefined && data.hasServer === false) {
+        update.productionMode = "static";
+      }
     }
-    if (data.sourceKind !== undefined) update.sourceKind = data.sourceKind;
-    if (data.buildKind !== undefined) update.buildKind = data.buildKind;
     if (data.hasBuild !== undefined) update.hasBuild = data.hasBuild;
     if (data.projectType === "monorepo" && data.monorepoWorkspace !== undefined) {
       update.workspacePrepareCommand = data.monorepoWorkspace.prepareCommand ?? null;
@@ -1217,8 +1009,24 @@ export async function createProject(
   const existing = await findProjectByAppSlug(organizationId, slug);
   if (existing) throw new ConflictError(`Project "${data.name}" already exists`);
 
-  // installationId is resolved server-side inside createProductionProject, which
-  // both creating entry points share — see the comment there.
+  // Multi-tenant SaaS: never trust a client-supplied installationId. It binds
+  // the project to a GitHub App installation, and the push-webhook fan-out
+  // deploys by matching project.installationId to the DELIVERY's installation
+  // (webhook-push.ts triggerBranchDeployments). A tenant could otherwise claim
+  // another org's installation id (or just reference another org's repo string)
+  // and get fanned into that org's pushes — leaking the repo's commit metadata
+  // into their delivery feed and triggering unauthorized deploys. Resolve the
+  // installation from the caller's OWN org + owner; if this org hasn't installed
+  // the App on that owner, drop it (null) so the project can never match — and
+  // thus never join — another org's push delivery. (linkProjectRepo already
+  // resolves it server-side; this closes the direct-create path.)
+  if (env.CLOUD_MODE) {
+    const owner = data.gitOwner?.trim();
+    data.installationId = owner
+      ? ((await getInstallationIdByOrg(organizationId, owner)) ?? undefined)
+      : undefined;
+  }
+
   const p = await createProductionProject(data, slug, organizationId);
 
   return enrichProject(p);
@@ -1234,17 +1042,6 @@ export async function updateProject(
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  // Reject a bogus custom hostname before the field edits below are committed — the
-  // route sync happens after them, so validating there alone would 400 a request
-  // that had already written the rest of the patch. Net-new only (the endpoint list
-  // is authoritative, so a save echoes back hostnames the project already has —
-  // including any bad one predating this gate, which must stay removable). #342
-  if (data.publicEndpoints !== undefined) {
-    assertValidCustomDomains([{ publicEndpoints: data.publicEndpoints }], {
-      known: (await listProjectRouteRows(projectId).catch(() => [])).map((row) => row.hostname),
-    });
-  }
-
   // SECURITY (mass-assignment): pick ONLY the allow-listed editable fields from
   // the (unvalidated, type-cast) request body. A raw `{ ...data }` spread let a
   // project:write caller write arbitrary project columns — e.g. activeDeploymentId
@@ -1259,27 +1056,15 @@ export async function updateProject(
     // no sibling fan-out. gitUrl is derived by the linker, so it's not set here
     // either (deriving it from an owner/repo we don't apply would desync it).
     if (GIT_SOURCE_IDENTITY_KEYS.has(key)) continue;
-    if (PROJECT_IDENTITY_KEYS.has(key)) continue;
     if (raw[key] !== undefined) update[key] = raw[key];
   }
-  // A rename changes the DISPLAY NAME only — `slug` is deliberately NOT
-  // recomputed. The slug is this project's infrastructure identity, not a label:
-  // it names the `openship-<slug>` docker network, the `openship-<slug>-<svc>`
-  // service containers, the `openship-<slug>-<vol>` named volumes
-  // (scopeVolumeBinds), the monorepo app row (matched by `service.name ===
-  // project.slug`), and it seeded the free `<slug>.opsh.io` hostname. Writing a
-  // new slug here moved the LIVE public URL (deregistering the old hostname)
-  // while the running containers kept the old name — and the next deploy then
-  // recreated them under the new slug against brand-new EMPTY volumes. The URL
-  // stays editable on its own terms in the Domains tab.
-  //
-  // The collision check stays: the slug namespace remains reserved per org, so
-  // names can't silently converge (same rule as createProject).
   if (data.name && data.name !== p.name) {
-    const existing = await repos.project.findBySlugInOrg(organizationId, slugify(data.name));
+    const newSlug = slugify(data.name);
+    const existing = await repos.project.findBySlugInOrg(organizationId, newSlug);
     if (existing && existing.id !== projectId) {
       throw new ConflictError(`Project "${data.name}" already exists`);
     }
+    update.slug = newSlug;
   }
 
   if (data.rollbackWindow !== undefined) {
@@ -1341,50 +1126,16 @@ export async function updateProject(
     update.defaultRollbackStrategy = data.defaultRollbackStrategy;
   }
 
-  // ── internalAlias (single-app east-west hostname) ──────────────────
-  // Normalize to a DNS label; empty/null clears it back to the default
-  // `<slug>` alias. Reject an entry that carries no usable characters so a
-  // garbage value never becomes the misleading `"service"` fallback.
-  if (data.internalAlias !== undefined) {
-    if (data.internalAlias === null || String(data.internalAlias).trim() === "") {
-      update.internalAlias = null;
-    } else {
-      const alias = normalizeAliasStrict(String(data.internalAlias));
-      if (!alias) {
-        throw new ValidationError(
-          "internalAlias must contain at least one letter or digit",
-        );
-      }
-      // Reject an internalAlias that collides with a sidecar service's name or
-      // custom alias on this project's network (embedded DNS is first-match).
-      // Skip the check on a no-op re-save of the current value so a value that
-      // already coexists stays editable. Not checked against the project's own
-      // slug: internalAlias == slug is the same single-app container answering to
-      // both names, not a collision. Runs BEFORE repos.project.update below.
-      if (alias !== normalizeAliasStrict(p.internalAlias)) {
-        const siblings = await repos.service.listByProject(projectId).catch(() => []);
-        if (aliasConflictsWithSiblings(alias, siblings)) {
-          throw new ValidationError(
-            "internalAlias collides with a service name or alias on this project",
-          );
-        }
-      }
-      update.internalAlias = alias;
-    }
-  }
-
   await repos.project.update(projectId, update);
 
   // Reconcile routes AFTER persisting the project (best-effort) — a route-sync
   // failure must not discard the field edits already committed; the next deploy
   // re-syncs. Same ordering as updateOptions.
-  // Whether the per-domain re-apply below runs. Read again by the routingConfig branch,
-  // which must not add a SECOND concurrent writer to the same vhost.
-  // No slug term: the slug is immutable here (PROJECT_IDENTITY_KEYS), so a rename
-  // never re-syncs routes — which is the point. Its hostname is edited as a domain.
-  const routesReapplied =
-    data.publicEndpoints !== undefined || update.port !== undefined;
-  if (routesReapplied) {
+  if (
+    data.publicEndpoints !== undefined ||
+    update.slug !== undefined ||
+    update.port !== undefined
+  ) {
     // Snapshot the live hostnames before the sync so re-application can tear
     // down any the edit drops — AND so the free-cloud gate only fires for
     // NET-NEW free routes.
@@ -1417,16 +1168,16 @@ export async function updateProject(
       await assertFreeEndpointsAllowed(organizationId, netNew);
     }
 
-    // Best-effort ONLY for an incidental re-sync (a port edit) — the field edit
-    // is already committed and the next deploy re-syncs routes. But when the
-    // caller EXPLICITLY sent publicEndpoints, the domain add/edit IS the
+    // Best-effort ONLY for incidental re-syncs (a slug/port edit) — the field
+    // edit is already committed and the next deploy re-syncs routes. But when
+    // the caller EXPLICITLY sent publicEndpoints, the domain add/edit IS the
     // operation: swallowing a failure here would return success while nothing
     // was persisted (silent drop). Fail loudly so the real reason (e.g. a slug
     // conflict) surfaces to the user instead of a false success.
     try {
       await syncProjectRouteState(p, {
         nextPublicEndpoints: data.publicEndpoints,
-        slug: p.slug,
+        slug: typeof update.slug === "string" ? update.slug : p.slug,
       });
     } catch (err) {
       if (data.publicEndpoints !== undefined) throw err;
@@ -1442,13 +1193,7 @@ export async function updateProject(
     const refreshed = await repos.project.findById(projectId);
     if (refreshed) {
       void (async () => {
-        // `managedEdgeSyncedByCaller`: the `syncProjectManagedEdge` below already
-        // covers every managed hostname on the project, including the ones added by
-        // this edit. Letting the re-apply sync them too raced its own follow-up —
-        // two challenges for one target, the second resetting the first's token.
-        await reapplyProjectLiveRoutes(refreshed, previousHostnames, {
-          managedEdgeSyncedByCaller: true,
-        }).catch((err) =>
+        await reapplyProjectLiveRoutes(refreshed, previousHostnames).catch((err) =>
           console.warn(
             `[updateProject] live route re-apply failed (non-fatal): ${safeErrorMessage(err)}`,
           ),
@@ -1479,38 +1224,18 @@ export async function updateProject(
   // best-effort internally.
   if (data.routingConfig !== undefined) {
     await applyProjectRouting(projectId);
-    // `applyProjectRouting` only emits the COMPOSITE (1 static + 1 server) and migration
-    // fan-out shapes — for a single-app or lone-static project it builds no registers and
-    // returns having written nothing, so the Domains-tab save reported success and changed
-    // nothing on the edge. The per-domain path is what carries the rules for those, so run
-    // it here.
-    //
-    // Skipped when the block above already queued one: that re-apply is fire-and-forget,
-    // and two writers on one vhost can interleave their snapshot/rollback — the loser
-    // restores a file the winner had already replaced.
-    if (!routesReapplied) {
-      const forRouting = await repos.project.findById(projectId);
-      if (forRouting) {
-        await reapplyProjectLiveRoutes(forRouting, []).catch((err) =>
-          console.warn(
-            `[updateProject] routing re-apply failed (non-fatal, applies next deploy): ${safeErrorMessage(err)}`,
-          ),
-        );
-      }
-    }
   }
 
   if (p.groupId) {
-    // The display name fans out to the group row so the app-level name stays in
-    // step — it's what the on-server manifest records as `appName`
-    // (openship-manifest-sync), which is how a re-scan recovers our own projects.
-    // The group's SLUG deliberately does NOT move with it: same immutable identity
-    // as the project's, and it's what `findProjectByAppSlug` resolves against.
-    // Repo identity is owned by linkProjectRepo, which does its OWN group + sibling
-    // propagation — the generic editor no longer sets git source, so it must not
-    // fan it out either.
-    if (typeof update.name === "string") {
-      await repos.projectGroup.update(p.groupId, { name: update.name });
+    // Only non-source fields fan out here (name/slug). Repo identity is owned by
+    // linkProjectRepo, which does its OWN group + sibling propagation — the
+    // generic editor no longer sets git source, so it must not fan it out either.
+    const appUpdate: Record<string, unknown> = {};
+    if (typeof update.name === "string") appUpdate.name = update.name;
+    if (typeof update.slug === "string" && p.environmentSlug === "production")
+      appUpdate.slug = update.slug;
+    if (Object.keys(appUpdate).length > 0) {
+      await repos.projectGroup.update(p.groupId, appUpdate);
     }
   }
   const updated = await repos.project.findById(projectId);
@@ -1636,7 +1361,6 @@ export async function createProjectEnvironment(
     sleepMode: base.sleepMode,
     rollbackWindow: base.rollbackWindow,
     cloudArchiveStrategy: base.cloudArchiveStrategy,
-    defaultRollbackStrategy: base.defaultRollbackStrategy,
     webhookId: null,
     webhookDomain: null,
     autoDeploy: base.autoDeploy,
@@ -1651,252 +1375,176 @@ export async function createProjectEnvironment(
   return environmentSummary(created);
 }
 
-// ─── Source drift ────────────────────────────────────────────────────────────
+// ─── Git info ────────────────────────────────────────────────────────────────
 
 /**
- * Drift — "is what's running behind what the source offers?" — has two halves,
- * and they have nothing in common but the comparison:
- *
- *   UPSTREAM ("what does the source offer?")  network. GitHub branch HEAD, the
- *     newest release tag, a registry digest per service. Rate-limited, slow, and
- *     no local event tells us when it changes — it can only be POLLED, which is
- *     why `update_status` caches it and `updates:scan` refreshes it.
- *
- *   DEPLOYED ("what is actually running?")  local. The active deployment's row.
- *     Free to read, and mutated by seven different code paths (deploy success,
- *     rollback, reconcile, activate, clear, self-deploy, migrate).
- *
- * Only the upstream half is cached. Caching the deployed half is what produced
- * "update available a1b2c3d → e4f5g6h" on a project whose deployment list showed
- * it shipped e4f5g6h days earlier: the row froze mid-window, and of the seven
- * writers only one could ever have invalidated it. Deriving it on read makes
- * that whole class of staleness unrepresentable — no invalidation hook to
- * forget, because there is nothing local left to invalidate.
- *
- * The upstream half is cached UNDER THE SOURCE IDENTITY it was polled for — a
- * branch key, a release-source key, an image ref. Change the branch or the tag
- * and the cached answer stops matching the question (`upstreamMatchesSource`),
- * so the reader re-polls instead of comparing against another source's HEAD.
- * That's why editing a project's source needs no invalidation call: a cache keyed
- * by what it describes cannot be asked the wrong question.
- *
- * So: `resolveUpstreamDrift` (cache this) + `resolveDeployedDrift` (never cache)
- * + `evaluateDrift` (compare). This module owns the three primitives and knows
- * nothing about the cache; `updates.service` owns the storage and the freshness
- * policy, and is the one place any surface asks "is this project behind?".
+ * Commit-drift check for the "your project is outdated" banner. Compares the
+ * branch HEAD on GitHub to the commit the ACTIVE deployment shipped. Fetched
+ * on-demand by the project page. Conservative: an unknown HEAD (API failure /
+ * rate limit) or a project with no successful deploy yet reports `behind:false`
+ * so we never show a false "outdated" nudge.
  */
-
 /**
- * The cacheable half. Every variant carries the source identity it was resolved
- * for, so a cached copy can be matched against the project's current source.
- * Commit carries the FULL sha, not a display prefix — a truncated value can't be
- * compared.
+ * Source-drift status for the "your deploy is behind — redeploy" dashboard
+ * nudge. Dispatches on the project's source shape and returns a `mode`-tagged
+ * union so the client can render the right banner:
+ *   - commit  → git-backed: compares the branch HEAD sha against the deployed sha
+ *   - release → release/dist: compares the newest advertised semver against the
+ *               deployed release version ("new version available vX→vY")
+ * Unsupported sources (local, upload, git project with no owner/repo) return
+ * `{ supported:false }` and the banner stays hidden.
  */
-export type UpstreamDrift =
-  | { supported: false }
-  | {
-      supported: true;
-      mode: "commit";
-      /** `owner/repo#branch` this HEAD was read from. */
-      key: string;
-      latestSha: string | null;
-      latestMessage: string | null;
-    }
-  | {
-      supported: true;
-      mode: "release";
-      /** Fingerprint of the release source this version came from. */
-      key: string;
-      latestVersion: string | null;
-      pinned: boolean;
-    }
-  | {
-      supported: true;
-      mode: "image";
-      /** Image ref → the digest that tag resolved to. Keyed by ref, so a retagged
-       *  service is a miss rather than a comparison against another tag's digest. */
-      digestByRef: Record<string, string | null>;
-    };
-
-/** What `evaluateDrift` (and so `getProjectDrift`) hands back to callers. */
-export type DriftStatus = Awaited<ReturnType<typeof evaluateDrift>>;
-
-/** Which of the three drift shapes a project has, from local fields only. */
-export function driftMode(p: Project): "commit" | "release" | "image" {
-  if (isReleaseProvider(p.gitProvider)) return "release";
-  if (p.appTemplateId === "openship") return "release";
-  return p.gitOwner && p.gitRepo ? "commit" : "image";
-}
-
-/** Git branch a commit-source project tracks. */
-export function projectBranch(p: Project): string {
-  return p.gitBranch?.trim() || "main";
-}
-
-/** Source identity for a commit project — everything that determines its HEAD. */
-export function commitSourceKey(p: Project): string {
-  return `${p.gitOwner ?? ""}/${p.gitRepo ?? ""}#${projectBranch(p)}`;
-}
-
-/**
- * Source identity for a release project. Only the fields `resolveLatestVersion`
- * actually consults: change any of them and the cached version is a different
- * question's answer.
- */
-export function releaseSourceKey(p: Project): string {
-  if (!isReleaseProvider(p.gitProvider)) return `self:${p.appTemplateId ?? ""}`;
-  const s = (p.releaseSource as ReleaseSource | null) ?? null;
-  if (!s) return "none";
-  return [s.mode, s.repo ?? "", s.versionUrl ?? "", s.pinnedVersion ?? ""].join("|");
-}
-
-/** Image services whose upstream digest is worth resolving (image-only, enabled). */
-async function imageServicesOf(p: Project) {
-  const services = await repos.service.listByProject(p.id).catch(() => []);
-  return services.filter((s) => s.image && !s.build && (s.enabled ?? true));
-}
-
-/**
- * Is there anything running to BE behind? Nothing to compare means drift is not a
- * question worth a network round-trip, so readers skip the poll entirely rather
- * than resolving a HEAD they'd only discard.
- *
- * The self-app qualifies without a deployment row: it reports the running API's
- * own version (see `resolveDeployedDrift`).
- */
-export function hasDeployedSide(p: Project): boolean {
-  return Boolean(p.activeDeploymentId) || p.appTemplateId === "openship";
-}
-
-/**
- * Does a previously-polled upstream still answer the question this project is
- * asking NOW? False for a repointed branch/repo, a swapped release source, a
- * retagged image — and for a project whose whole drift shape changed.
- *
- * This is what lets the cache carry no invalidation hooks: instead of every
- * source edit remembering to clear a row, the row simply stops matching and the
- * reader re-polls. Cheap (local fields; one indexed service read for image apps).
- */
-export async function upstreamMatchesSource(p: Project, u: UpstreamDrift): Promise<boolean> {
-  if (!u.supported || u.mode !== driftMode(p)) return false;
-  if (u.mode === "commit") return u.key === commitSourceKey(p);
-  if (u.mode === "release") return u.key === releaseSourceKey(p);
-  const services = await imageServicesOf(p);
-  if (services.length === 0) return false;
-  // Every current ref must have been polled — a service added or retagged since
-  // has no digest here, and guessing from a sibling's is how a retag reads as
-  // "behind forever".
-  return services.every((s) => Object.hasOwn(u.digestByRef, s.image!));
-}
-
-/**
- * Resolve the upstream half. `ctx` is only needed for the git-commit branch
- * (GitHub auth); release/image sources need none. A null ctx no longer means
- * "skip the check" — background sweeps pass an org-owner actor, see
- * `updates.service`.
- */
-export async function resolveUpstreamDrift(
+export async function getProjectCommitStatus(
+  // Nullable so the background updates:scan (no user session) can reuse this one
+  // resolver: the git-commit branch needs GitHub auth from ctx and is skipped
+  // when absent (git projects still get checked on-demand from their page); the
+  // release/image/self branches need no ctx.
   ctx: RequestContext | null,
-  p: Project,
-): Promise<UpstreamDrift> {
-  const mode = driftMode(p);
+  projectId: string,
+  organizationId: string,
+) {
+  const p = await repos.project.findById(projectId);
+  assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  if (mode === "release") {
-    // Self-app + webmail ship from the oblien/openship release stream but carry
-    // no releaseSource (they deploy via localPath/migration), so they'd otherwise
-    // fall through to unsupported.
-    if (!isReleaseProvider(p.gitProvider)) {
-      const latestVersion = await resolveLatestReleaseTag(GITHUB_REPO).catch(() => null);
-      return {
-        supported: true,
-        mode: "release",
-        key: releaseSourceKey(p),
-        latestVersion,
-        pinned: false,
-      };
-    }
-    const source = (p.releaseSource as ReleaseSource | null) ?? null;
-    if (!source) return { supported: false };
-    const latestVersion = source.pinnedVersion
-      ? source.pinnedVersion.replace(/^v/, "")
-      : await resolveLatestVersion(source);
-    return {
-      supported: true,
-      mode: "release",
-      key: releaseSourceKey(p),
-      latestVersion,
-      pinned: Boolean(source.pinnedVersion),
-    };
+  if (isReleaseProvider(p.gitProvider)) {
+    return getReleaseDriftStatus(p);
   }
 
-  if (mode === "image") {
+  // Self-app + webmail: both ship from the oblien/openship release stream but
+  // carry no releaseSource (they deploy via localPath/migration), so they'd
+  // otherwise fall through to {supported:false}. Compare the running version
+  // against the latest published release.
+  if (p.appTemplateId === "openship" || p.appTemplateId === "mail-webmail") {
+    return getSelfReleaseDrift(p);
+  }
+
+  // Commit-source: only GitHub-backed projects have a remote branch HEAD to compare against.
+  if (!p.gitOwner || !p.gitRepo) {
     // Repo-less services/app projects (n8n/Convex/…): image-tag/digest drift.
-    const imageServices = await imageServicesOf(p);
-    if (imageServices.length === 0) return { supported: false };
-    const refs = [...new Set(imageServices.map((s) => s.image!))];
-    const digestByRef: Record<string, string | null> = {};
-    await Promise.all(
-      refs.map(async (ref) => {
-        digestByRef[ref] = await resolveLatestImageDigest(ref).catch(() => null);
-      }),
-    );
-    return { supported: true, mode: "image", digestByRef };
+    // Returns {supported:false} when the project has no image services.
+    return getImageDriftStatus(p);
   }
 
+  const branch = p.gitBranch?.trim() || "main";
   const head = ctx
-    ? await getLatestCommit(ctx, p.gitOwner!, p.gitRepo!, projectBranch(p)).catch(() => null)
+    ? await getLatestCommit(ctx, p.gitOwner, p.gitRepo, branch).catch(() => null)
     : null;
+
+  let deployedSha: string | null = null;
+  if (p.activeDeploymentId) {
+    const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+    deployedSha = dep?.commitSha ?? null;
+  }
+
+  const latestSha = head?.sha ?? null;
+  const behind = Boolean(latestSha && deployedSha && latestSha !== deployedSha);
+
+  // Is the latest commit already being deployed? If so the dashboard suppresses
+  // the "new commit available — redeploy" nudge: there's nothing to redeploy,
+  // it's in flight. (Only worth checking when we're actually behind.)
+  const latestInProgress = behind && latestSha
+    ? Boolean(await repos.deployment.findInProgressByCommit(projectId, latestSha))
+    : false;
+
   return {
-    supported: true,
-    mode: "commit",
-    key: commitSourceKey(p),
-    latestSha: head?.sha ?? null,
+    supported: true as const,
+    mode: "commit" as const,
+    behind,
+    latestInProgress,
+    branch,
+    latestSha,
     latestMessage: head?.message ?? null,
+    deployedSha,
   };
 }
 
-/** The live half, per mode. Local reads only — cheap enough to do on every read. */
-type DeployedDrift =
-  | { mode: "commit"; deployedSha: string | null }
-  | { mode: "release"; currentVersion: string | null }
-  | {
-      mode: "image";
-      deployedByService: Map<string, { ref?: string; digest?: string }>;
-    };
+/**
+ * Release/dist drift: compare the newest advertised version (github latest
+ * release tag, or a `versionUrl`) against the deployed release version. A
+ * `pinnedVersion` source has no drift — it's fixed. The self-app (openship
+ * template) never deploys through the pipeline, so its `current` falls back to
+ * the running API's own version.
+ */
+async function getReleaseDriftStatus(p: Project) {
+  const source = (p.releaseSource as ReleaseSource | null) ?? null;
+  if (!source) return { supported: false as const };
+
+  let current: string | null = null;
+  if (p.activeDeploymentId) {
+    const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+    current = dep?.releaseVersion ?? null;
+  }
+  if (!current && p.appTemplateId === "openship") {
+    current = readApiVersion();
+  }
+
+  const latest = source.pinnedVersion
+    ? source.pinnedVersion.replace(/^v/, "")
+    : await resolveLatestVersion(source);
+
+  const behind = Boolean(latest && current && compareSemver(latest, current) > 0);
+
+  const latestInProgress =
+    behind && latest
+      ? Boolean(
+          await repos.deployment
+            .findInProgressByReleaseVersion(p.id, latest)
+            .catch(() => undefined),
+        )
+      : false;
+
+  return {
+    supported: true as const,
+    mode: "release" as const,
+    behind,
+    latestInProgress,
+    latestVersion: latest,
+    currentVersion: current,
+    pinned: Boolean(source.pinnedVersion),
+  };
+}
 
 /**
- * What's actually running. Mirrors `resolveUpstreamDrift`'s dispatch so the two
- * halves always describe the same source shape.
+ * Self-app / webmail release drift. Both are `isApp` projects that deploy from a
+ * prebuilt dist (no releaseSource), but their version tracks the running API
+ * (`readApiVersion`) and their upstream is the openship release stream. Compare
+ * the running version against the latest published release tag.
  */
-export async function resolveDeployedDrift(
-  p: Project,
-  mode: "commit" | "release" | "image",
-): Promise<DeployedDrift> {
-  if (mode === "commit") {
-    let deployedSha: string | null = null;
-    if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
-      deployedSha = dep?.commitSha ?? null;
-    }
-    return { mode: "commit", deployedSha };
-  }
+async function getSelfReleaseDrift(p: Project) {
+  const current = readApiVersion();
+  const latest = await resolveLatestReleaseTag(GITHUB_REPO).catch(() => null);
+  const behind = Boolean(latest && current && compareSemver(latest, current) > 0);
+  const latestInProgress =
+    behind && latest
+      ? Boolean(
+          await repos.deployment.findInProgressByReleaseVersion(p.id, latest).catch(() => undefined),
+        )
+      : false;
+  return {
+    supported: true as const,
+    mode: "release" as const,
+    behind,
+    latestInProgress,
+    latestVersion: latest,
+    currentVersion: current,
+    pinned: false,
+  };
+}
 
-  if (mode === "release") {
-    // The self-app without a releaseSource tracks the running API's own
-    // version — it never ships a releaseVersion through the pipeline.
-    if (!isReleaseProvider(p.gitProvider) && p.appTemplateId === "openship") {
-      return { mode: "release", currentVersion: readApiVersion() };
-    }
-    let currentVersion: string | null = null;
-    if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
-      currentVersion = dep?.releaseVersion ?? null;
-    }
-    if (!currentVersion && p.appTemplateId === "openship") currentVersion = readApiVersion();
-    return { mode: "release", currentVersion };
-  }
+/**
+ * Image-tag/digest drift for repo-less services/app projects (template apps like
+ * n8n/Convex). For each image-only service, compare the content digest actually
+ * running (recorded on the active deployment's service_deployment row) against
+ * the current digest the tag resolves to in the registry. `behind` if ANY
+ * service's tag has moved. Fail-soft: a service whose latest digest can't be
+ * resolved (private/unknown registry) simply reports `behind:false`.
+ */
+async function getImageDriftStatus(p: Project) {
+  const services = await repos.service.listByProject(p.id).catch(() => []);
+  const imageServices = services.filter((s) => s.image && !s.build && (s.enabled ?? true));
+  if (imageServices.length === 0) return { supported: false as const };
 
-  const deployedByService = new Map<string, { ref?: string; digest?: string }>();
+  const deployedByService = new Map<string, { digest?: string; ref?: string }>();
   if (p.activeDeploymentId) {
     const sds = await repos.service.listByDeployment(p.activeDeploymentId).catch(() => []);
     for (const sd of sds) {
@@ -1906,130 +1554,51 @@ export async function resolveDeployedDrift(
       });
     }
   }
-  return { mode: "image", deployedByService };
-}
 
-/**
- * Compare a (possibly cached) upstream state against the live deployed state.
- *
- * Conservative by design: an unresolvable upstream (API failure, rate limit,
- * private registry) or a project with no successful deploy reports
- * `behind:false`, so we never show an "outdated" nudge we can't substantiate.
- */
-export async function evaluateDrift(p: Project, upstream: UpstreamDrift) {
-  if (!upstream.supported) return { supported: false as const };
-  // A cached upstream describes the source it was polled from. If the project has
-  // since been repointed (different repo, branch, release source), it answers a
-  // question we're no longer asking — treat it as unknown, not as drift.
-  if (upstream.mode !== driftMode(p)) return { supported: false as const };
-
-  const deployed = await resolveDeployedDrift(p, upstream.mode);
-
-  if (upstream.mode === "commit" && deployed.mode === "commit") {
-    const latestSha = upstream.key === commitSourceKey(p) ? upstream.latestSha : null;
-    const { deployedSha } = deployed;
-    const behind = Boolean(latestSha && deployedSha && latestSha !== deployedSha);
-    // Is the latest commit already deploying? Then there's nothing to redeploy —
-    // it's in flight, so the nudge is suppressed. Computed live, which is why
-    // pressing Update quiets every surface immediately.
-    const latestInProgress =
-      behind && latestSha
-        ? Boolean(await repos.deployment.findInProgressByCommit(p.id, latestSha).catch(() => undefined))
-        : false;
-    return {
-      supported: true as const,
-      mode: "commit" as const,
-      behind,
-      latestInProgress,
-      branch: projectBranch(p),
-      latestSha,
-      latestMessage: latestSha ? upstream.latestMessage : null,
-      deployedSha,
-    };
-  }
-
-  if (upstream.mode === "release" && deployed.mode === "release") {
-    const latest = upstream.key === releaseSourceKey(p) ? upstream.latestVersion : null;
-    const current = deployed.currentVersion;
-    const behind = Boolean(latest && current && compareSemver(latest, current) > 0);
-    const latestInProgress =
-      behind && latest
-        ? Boolean(
-            await repos.deployment
-              .findInProgressByReleaseVersion(p.id, latest)
-              .catch(() => undefined),
-          )
-        : false;
-    return {
-      supported: true as const,
-      mode: "release" as const,
-      behind,
-      latestInProgress,
-      latestVersion: latest,
-      currentVersion: current,
-      pinned: upstream.pinned,
-    };
-  }
-
-  if (upstream.mode === "image" && deployed.mode === "image") {
-    // The live service list, not the polled one: a service added, removed or
-    // retagged since the poll must be reflected now, not at the next scan.
-    const imageServices = await imageServicesOf(p);
-    if (imageServices.length === 0) return { supported: false as const };
-
-    const services = imageServices.map((svc) => {
-      const ref = svc.image!;
-      const running = deployed.deployedByService.get(svc.id);
-      // Keyed by the service's CURRENT ref — a retag since the poll is a miss.
-      const latestDigest = Object.hasOwn(upstream.digestByRef, ref)
-        ? upstream.digestByRef[ref]
-        : null;
+  const serviceStatuses = await Promise.all(
+    imageServices.map(async (svc) => {
+      const deployed = deployedByService.get(svc.id);
+      const latestDigest = await resolveLatestImageDigest(svc.image!).catch(() => null);
       const current: UpdatableIdentity = {
         kind: "image",
-        ref: running?.ref ?? ref,
-        digest: running?.digest,
+        ref: deployed?.ref ?? svc.image!,
+        digest: deployed?.digest,
       };
       const latest: UpdatableIdentity = {
         kind: "image",
-        ref,
+        ref: svc.image!,
         digest: latestDigest ?? undefined,
       };
       return {
         serviceId: svc.id,
         name: svc.name,
-        ref,
-        deployedDigest: running?.digest ?? null,
+        ref: svc.image!,
+        deployedDigest: deployed?.digest ?? null,
         latestDigest,
-        // Fail-soft: a digest we couldn't resolve is not evidence of drift.
         behind: latestDigest ? isBehind(current, latest) : false,
       };
-    });
-    return {
-      supported: true as const,
-      mode: "image" as const,
-      behind: services.some((s) => s.behind),
-      latestInProgress: false,
-      services,
-    };
-  }
+    }),
+  );
 
-  return { supported: false as const };
+  return {
+    supported: true as const,
+    mode: "image" as const,
+    behind: serviceStatuses.some((s) => s.behind),
+    latestInProgress: false,
+    services: serviceStatuses,
+  };
 }
-
-// The composition of these three — for the project page's banner, the Apps tab,
-// the home card and the issues feed alike — lives in `updates.service`
-// (`getProjectDrift` / `listOrganizationUpdates`). There is deliberately no
-// second entry point here: two compositions is how one surface starts answering
-// "is this behind?" differently from another.
-
-// ─── Git info ────────────────────────────────────────────────────────────────
 
 export async function getGitInfo(projectId: string, organizationId: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  // Same one rule as the cards and the detail read.
-  const { deployTarget } = await resolveProjectDeployTarget(p);
+  // Resolve deploy target from active deployment meta
+  let deployTarget: string | null = null;
+  if (p.activeDeploymentId) {
+    const dep = await repos.deployment.findById(p.activeDeploymentId);
+    ({ deployTarget } = readDeployMeta(dep));
+  }
 
   return {
     gitProvider: p.gitProvider,
@@ -2096,19 +1665,13 @@ export async function updateOptions(
   if (options.packageManager !== undefined) update.packageManager = options.packageManager;
   if (options.buildImage !== undefined) update.buildImage = options.buildImage;
   if (options.framework !== undefined) update.framework = options.framework;
-  // Workload axis — same single choke point as the update path above (#538).
-  const optWorkload = resolveWorkloadColumns({
-    workloadType: options.workloadType as string | null | undefined,
-    hasServer: options.hasServer as boolean | undefined,
-    productionMode: options.productionMode as ProductionMode | undefined,
-  });
-  if (optWorkload) {
-    update.workloadType = optWorkload.workloadType;
-    update.hasServer = optWorkload.hasServer;
-    update.productionMode = optWorkload.productionMode;
+  if (options.productionMode !== undefined) update.productionMode = options.productionMode;
+  if (options.hasServer !== undefined) {
+    update.hasServer = options.hasServer;
+    if (options.productionMode === undefined && options.hasServer === false) {
+      update.productionMode = "static";
+    }
   }
-  if (options.sourceKind !== undefined) update.sourceKind = options.sourceKind;
-  if (options.buildKind !== undefined) update.buildKind = options.buildKind;
   if (options.hasBuild !== undefined) update.hasBuild = options.hasBuild;
   // Runtime isolation mode (bare/docker) — editable in the Runtime tab; read by
   // buildConfigSnapshot so every deploy/redeploy respects the saved choice.
@@ -2143,13 +1706,7 @@ export async function listProjectDeployments(
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  const result = await repos.deployment.listByProject(projectId, opts);
-  // Project favicon → the dashboard uses it as each row's logo instead of the
-  // framework/Docker glyph (twin of deploymentService.listDeployments).
-  return {
-    ...result,
-    rows: result.rows.map((d) => ({ ...d, favicon: p.favicon ?? null })),
-  };
+  return repos.deployment.listByProject(projectId, opts);
 }
 
 // ─── Deployment session ──────────────────────────────────────────────────────

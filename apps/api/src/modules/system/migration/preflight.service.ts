@@ -33,7 +33,6 @@ export type DomainChoice =
 export interface PreflightInput {
   serverId: string;
   domain: DomainChoice;
-  organizationId: string;
 }
 
 export interface PreflightResult {
@@ -50,7 +49,7 @@ export interface PreflightResult {
 /** Run all preflight checks in parallel, return a structured result. */
 export async function runPreflight(input: PreflightInput): Promise<PreflightResult> {
   const [ssh, releaseDist, domain] = await Promise.all([
-    checkSshReachable(input.serverId, input.organizationId),
+    checkSshReachable(input.serverId),
     checkReleaseDistPresent(),
     checkDomainReady(input),
   ]);
@@ -65,11 +64,8 @@ export async function runPreflight(input: PreflightInput): Promise<PreflightResu
 
 async function checkSshReachable(
   serverId: string,
-  organizationId: string,
 ): Promise<{ ok: boolean; detail: string }> {
-  const server = await repos.server
-    .getInOrganization(serverId, organizationId)
-    .catch(() => undefined);
+  const server = await repos.server.get(serverId).catch(() => undefined);
   if (!server) {
     return { ok: false, detail: `Server ${serverId} not found.` };
   }
@@ -102,11 +98,7 @@ async function checkDomainReady(
   input: PreflightInput,
 ): Promise<{ ok: boolean; detail: string }> {
   if (input.domain.kind === "custom") {
-    return checkCustomDomain(
-      input.serverId,
-      input.domain.hostname,
-      input.organizationId,
-    );
+    return checkCustomDomain(input.serverId, input.domain.hostname);
   }
   return checkFreeSubdomainAvailable(input.domain.slug);
 }
@@ -122,11 +114,8 @@ async function checkDomainReady(
 async function checkCustomDomain(
   serverId: string,
   hostname: string,
-  organizationId: string,
 ): Promise<{ ok: boolean; detail: string }> {
-  const server = await repos.server
-    .getInOrganization(serverId, organizationId)
-    .catch(() => undefined);
+  const server = await repos.server.get(serverId).catch(() => undefined);
   if (!server) {
     return { ok: false, detail: `Server ${serverId} not found.` };
   }

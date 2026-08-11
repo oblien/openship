@@ -19,15 +19,12 @@
 
 import type { Context } from "hono";
 import { repos } from "@repo/db";
-import { resolveCallSource, type AuditSource } from "./call-source";
 
 export interface AuditContext {
   organizationId: string;
   actorUserId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
-  /** Where the action came in from. Filled by `auditContextFrom`. */
-  source?: AuditSource | null;
 }
 
 export interface AuditEventInput {
@@ -36,9 +33,6 @@ export interface AuditEventInput {
   resourceId?: string | null;
   before?: unknown;
   after?: unknown;
-  /** Overrides the context's source. For emitters with no request to read
-   *  (crons, Better Auth hooks, webhook deliveries). */
-  source?: AuditSource | null;
 }
 
 export const audit = {
@@ -55,7 +49,6 @@ export const audit = {
         after: (event.after ?? null) as never,
         ipAddress: ctx.ipAddress ?? null,
         userAgent: ctx.userAgent ?? null,
-        source: event.source ?? ctx.source ?? null,
       });
     } catch (err) {
       console.error("[audit] failed to record event", event.eventType, err);
@@ -78,6 +71,5 @@ export function auditContextFrom(
     actorUserId: actorUserId ?? null,
     ipAddress: c.var.clientIp,
     userAgent: c.req.header("user-agent") ?? null,
-    source: resolveCallSource(c),
   };
 }

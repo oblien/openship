@@ -1,6 +1,6 @@
 {
   "name": "openship",
-  "version": "0.6.1",
+  "version": "0.5.0",
   "description": "Open-source, self-hostable deployment platform",
   "license": "Apache-2.0",
   "repository": {
@@ -25,9 +25,6 @@
     "build:server": "bun run --cwd apps/api build-release",
     "build:email": "bun run --cwd apps/email build",
     "update:geoip": "node scripts/update-geoip.mjs",
-    "update:cloudflare-ips": "node scripts/update-cloudflare-ips.mjs",
-    "update:world-map": "node scripts/update-world-map.mjs",
-    "update:country-hues": "node scripts/update-country-hues.mjs",
     "start:desktop": "node apps/desktop/build/run.mjs",
     "dev:all": "turbo run dev --concurrency=20",
     "dev:api": "turbo run dev --filter=@repo/api...",
@@ -40,8 +37,8 @@
     "dev:email": "turbo run dev --filter=@repo/email",
     "dev:turbo": "turbo run dev",
     "clean": "ps -A -o pid,command 2>/dev/null | grep -E 'src/index\\.ts|next/dist/bin/next' | grep -v grep | awk '{print $1}' | xargs -I {} kill -9 {} 2>/dev/null; for p in 4000 4100 3001 3002; do pid=$(lsof -ti tcp:$p 2>/dev/null); [ -n \"$pid\" ] && kill -9 $pid 2>/dev/null; done; echo 'cleaned'",
-    "lint": "turbo run lint --filter=!@repo/email",
-    "test": "turbo run test --filter=!@repo/email --concurrency=1",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:generate": "turbo run db:generate --filter=@repo/db",
     "db:push": "turbo run db:push --filter=@repo/db",

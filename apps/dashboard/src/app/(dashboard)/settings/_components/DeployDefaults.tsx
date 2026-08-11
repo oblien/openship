@@ -1,29 +1,22 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Check, Loader2, Plus, Server, Cloud, Rocket, X } from "lucide-react";
+import { Check, Loader2, Server, Cloud, Cpu, Rocket, X } from "lucide-react";
 import { BlurIp } from "@/components/BlurIp";
 import { settingsApi } from "@/lib/api";
 import { systemApi } from "@/lib/api/system";
 import type { ServerInfo } from "@/lib/api/system";
 import type { DefaultDeployTarget } from "@/lib/api/settings";
-import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 // Static target options. "server" gets a server-id sub-picker below.
-//
-// A default is a BINDING, so there are only two: a server row, or a cloud
-// workspace. There is deliberately no "This Machine" — when Openship runs on a
-// server, that machine is already the "This Server" row in the picker below, and
-// choosing the other name for it dropped the row's real address (a deploy then
-// reported `http://localhost:<port>` for a VPS). Desktop still deploys to its own
-// machine; it just derives that instead of storing it.
 const TARGET_OPTIONS: {
   value: DefaultDeployTarget;
   icon: React.ElementType;
 }[] = [
+  { value: "local", icon: Cpu },
   { value: "server", icon: Server },
   { value: "cloud", icon: Cloud },
 ];
@@ -36,7 +29,6 @@ export function DeployDefaults() {
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const openAddServer = useAddServerModal();
 
   const load = useCallback(async () => {
     try {
@@ -112,7 +104,7 @@ export function DeployDefaults() {
           <p className="text-sm text-muted-foreground mb-4">
             {t.settings.deployDefaults.intro}
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {TARGET_OPTIONS.map(({ value, icon: ModeIcon }) => {
               const active = target === value;
               return (
@@ -148,29 +140,9 @@ export function DeployDefaults() {
                 {t.settings.deployDefaults.defaultServer}
               </p>
               {servers.length === 0 ? (
-                // Picking "server" with none connected left the setting
-                // unsaveable. Add one here and it becomes the saved default.
-                <div className="px-1 py-1.5 space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    {t.settings.deployDefaults.noServers}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() =>
-                      openAddServer((created) => {
-                        setServers((prev) =>
-                          prev.some((s) => s.id === created.id) ? prev : [...prev, created],
-                        );
-                        void save("server", created.id);
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
-                  >
-                    <Plus className="size-3.5" />
-                    {t.widgets.shared.serverSelector.addServer}
-                  </button>
-                </div>
+                <p className="text-xs text-muted-foreground px-1 py-1.5">
+                  {t.settings.deployDefaults.noServers}
+                </p>
               ) : (
                 <div className="space-y-1.5">
                   {servers.map((s) => {
@@ -233,11 +205,12 @@ function labelFor(
   target: DefaultDeployTarget,
   serverId: string | null,
   servers: ServerInfo[],
-  labels: { yourServer: string; cloud: string },
+  labels: { yourServer: string; cloud: string; local: string },
 ): string {
   if (target === "server") {
     const s = servers.find((srv) => srv.id === serverId);
     return s ? (s.name || s.sshHost) : labels.yourServer;
   }
-  return labels.cloud;
+  if (target === "cloud") return labels.cloud;
+  return labels.local;
 }

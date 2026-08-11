@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useLogStream } from "@/hooks/useSSEConnection";
 import { useDeployment } from "@/context/DeploymentContext";
-import { workloadOf } from "@/context/deployment/types";
 import TerminalSurface from "./TerminalSurface";
 
 interface BuildTerminalProps {
@@ -78,7 +77,7 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
     if (
       !enableContainerStreaming ||
       !state.projectId ||
-      workloadOf(config.options) === "static" ||
+      !config.options.hasServer ||
       !canStreamContainer.current ||
       !terminalInstanceRef.current
     ) {
@@ -122,7 +121,7 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
         terminalInstanceRef.current.write(' [Failed to Start Container Stream]\r\n');
       }
     }
-  }, [enableContainerStreaming, state.projectId, config.options.hasServer, config.options.workloadType, isStreamingContainer, logStream, onContainerStreamStart]);
+  }, [enableContainerStreaming, state.projectId, config.options.hasServer, isStreamingContainer, logStream, onContainerStreamStart]);
 
   // Effect to start container streaming when deployment succeeds
   useEffect(() => {
@@ -130,10 +129,10 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
     const canStream = canStreamContainer.current;
     
     if (
-      state.deploymentSuccess &&
+      state.deploymentSuccess && 
       enableContainerStreaming &&
-      workloadOf(config.options) !== "static" &&
-      canStream &&
+      config.options.hasServer && 
+      canStream && 
       state.projectId && 
       !isStreamingContainer &&
       !hasStartedStreamingRef.current &&
@@ -149,7 +148,7 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
       
       return () => clearTimeout(timeoutId);
     }
-  }, [enableContainerStreaming, state.deploymentSuccess, config.options.hasServer, config.options.workloadType, state.projectId, isStreamingContainer]);
+  }, [enableContainerStreaming, state.deploymentSuccess, config.options.hasServer, state.projectId, isStreamingContainer]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -21,9 +21,8 @@ own (npm), buy the ready-to-use boxed version (the desktop app), or wire it into
 
 <Tab value="Install script">
 
-The fastest way. One command installs the `openship` command as a self-contained, checksum-verified
-bundle that runs under **Node** — it uses your system Node when it's recent enough and otherwise fetches
-an official Node build just for Openship, never touching your global tools. No Node or npm setup required.
+The fastest way. One command downloads the **Bun** runtime (if you don't already have it) and installs
+the `openship` command — no Node or npm required.
 
 ```bash
 curl -fsSL https://get.openship.io | sh
@@ -42,8 +41,8 @@ prefix sets the variable only for `curl`; the piped `sh` never sees it.)
 </Callout>
 
 <Callout title="Can't find the openship command afterward?" type="info">
-The installer adds Openship's bin folder to your `PATH`. If your shell still can't find `openship`,
-open a new terminal — or on macOS/Linux run `export PATH="$HOME/.openship/bin:$PATH"` — and try again.
+The installer adds Bun's global bin folder to your `PATH`. If your shell still can't find `openship`,
+open a new terminal — or on macOS/Linux run `export PATH="$HOME/.bun/bin:$PATH"` — and try again.
 </Callout>
 
 When it finishes you'll have the `openship` command. Now jump to [Run Openship](#run-openship) below.
@@ -52,8 +51,7 @@ When it finishes you'll have the `openship` command. Now jump to [Run Openship](
 
 <Tab value="npm">
 
-Already have **Node.js 22 or newer** and a package manager? Install the CLI globally with
-whichever one you use:
+Already have Node.js and a package manager? Install the CLI globally with whichever one you use:
 
 ```bash
 npm i -g openship
@@ -66,31 +64,6 @@ bun add -g openship       # bun
 ```
 
 That gives you the same `openship` command as the install script. Head to [Run Openship](#run-openship).
-
-<Callout title="On an older Node? The CLI offers to fix it" type="info">
-This is the one install path that runs on **your** Node — the install script above resolves its
-own (system Node when it's 22+, otherwise it downloads one).
-
-If you run `openship` on something older, it doesn't just refuse. It first looks for a Node 22 this
-machine has already downloaded and quietly uses that; if there isn't one, it offers to fetch an
-official Node 22 (~50 MB, checksum-verified) into `~/.openship/runtime` and use it **for Openship
-only** — your system Node is left exactly as it is. Later runs pick it up automatically, so you're
-asked once.
-
-Non-interactive (CI, a provisioning script)? `OPENSHIP_VENDOR_NODE=1` accepts that offer without
-prompting; `OPENSHIP_VENDOR_NODE=0` declines it. Below Node 20 the CLI cannot run at all, so
-without one of those it stops and tells you why; on 20 or 21 it warns and continues.
-</Callout>
-
-<Callout title="Upgraded Node and lost the openship command?" type="info">
-Version managers (nvm, fnm, volta) keep global packages **per Node version**, so installing a
-newer Node leaves the CLI behind with the old one and `openship` drops off your `PATH`. Reinstall
-it on the new version:
-
-```bash
-npm i -g openship
-```
-</Callout>
 
 </Tab>
 
@@ -198,14 +171,6 @@ machine, also set `OPENSHIP_PUBLIC_URL` (and `TRUST_PROXY=true` behind a reverse
 dashboard loads but login is rejected.
 </Callout>
 
-<Callout title="This path doesn't set up host control" type="warn">
-`openship up` provisions the container→host SSH channel for you; running this file yourself doesn't. The stack
-comes up fine and deploys work, but the operations that touch the host machine — a `:80`/`:443` takeover, the
-mail engine, a catalog app whose config file is written on the host — refuse until you provision it. The five
-manual steps are in `.env.example` under **Host operations from the container**, with the failure mode and
-verification in [Troubleshooting → Host control channel](/docs/troubleshooting/host-channel).
-</Callout>
-
 <Callout title="The root docker-compose.yml is a different file" type="info">
 The compose file at the repo **root** is the SaaS / from-source **control plane** — it builds from source and
 ships the marketing site, with no edge and no Docker socket. It does **not** self-host your apps. For
@@ -262,18 +227,6 @@ The control plane can operate the machine it runs on: free ports `80`/`443` from
 config, scan listening ports, open a host shell. On a Compose install that channel is an **SSH key to the host**
 that `openship up` generates and authorizes for the invoking user (reached over the internal
 `host.docker.internal` bridge, never the public IP).
-
-<Callout title="It can be present in name only" type="warn">
-Generating a key and writing the address isn't the same as a working channel, and the difference doesn't show
-up at install time. Two things on the host decide it: an **sshd** that's listening where containers can reach
-it, and a firewall that allows container→host traffic — this address is host-local, so it crosses
-`filter/INPUT` where a default-deny `ufw` lives, while every published port is DNAT'd and skips it. So the
-stack can read healthy while host operations are dead. `openship up` probes the channel for real and offers the
-firewall rule; `openship doctor` re-checks it later. If you install by running `docker/docker-compose.yml`
-yourself, none of that is provisioned for you — see the manual steps in `.env.example`. Either way, the repair
-and the failure it produces are in
-[Troubleshooting → Host control channel](/docs/troubleshooting/host-channel).
-</Callout>
 
 You can withhold it:
 

@@ -33,10 +33,6 @@ export interface InstallInputs {
         localEdge?: boolean;
         edgeTakeover?: boolean;
         edgeMigrate?: boolean;
-        /** Corrected static roots (by primary hostname) the wizard copied into the
-         *  edge's static bind mount host-side, for adopted static sites the container
-         *  edge couldn't reach. Forwarded to self-register. See #456. */
-        staticRootOverrides?: Record<string, string>;
       }
     | { kind: "none" };
 }
@@ -351,7 +347,6 @@ export async function headlessProvision(opts: {
       localEdge: d.localEdge,
       edgeTakeover: d.edgeTakeover,
       edgeMigrate: d.edgeMigrate,
-      ...(d.staticRootOverrides ? { staticRootOverrides: d.staticRootOverrides } : {}),
     });
     let slug = d.slug;
     let res = await internalPost(port, "/api/system/self-register", freeBody(slug), token);

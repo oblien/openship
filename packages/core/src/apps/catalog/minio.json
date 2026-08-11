@@ -90,7 +90,7 @@
     "title": "S3 connection",
     "description": "Use these with any S3 client — the endpoint is the S3 API URL, the keys are the root user / password.",
     "outputs": [
-      { "id": "console", "label": "Console", "source": "publicUrl:minio:9001", "kind": "url" },
+      { "id": "console", "label": "Console", "source": "publicUrl:minio:9001" },
       {
         "id": "endpoint",
         "label": "S3 endpoint",

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localOnly } from "../../middleware/local-only";
 import { authMiddleware } from "../../middleware/auth";
 import { secureRouter } from "../../lib/secure-router";
 import { issueTicket, terminalWsHandler } from "./terminal.controller";
@@ -19,9 +20,9 @@ import { repos } from "@repo/db";
 const r = secureRouter(new Hono(), {
   module: "terminal",
   basePath: "/api/terminal",
-  localOnly: true,
 });
 
+r.use("*", localOnly);
 
 // Ticket endpoint - normal HTTP auth.
 r.post("/ticket", { tag: "terminal:write" }, issueTicket);

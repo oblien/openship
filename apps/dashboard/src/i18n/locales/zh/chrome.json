@@ -22,11 +22,6 @@
     "backToSetup": "返回设置",
     "personal": "个人"
   },
-  "mailRail": {
-    "selectServer": "选择邮件服务器",
-    "switchServer": "切换邮件服务器",
-    "setupIncomplete": "设置未完成"
-  },
   "migration": {
     "inProgressTitle": "迁移进行中",
     "inProgressBody": "正在迁移你的数据。切换完成后本页面将自动刷新——通常需要 30-90 秒。",

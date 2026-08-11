@@ -101,10 +101,6 @@
     "serverOnPort": "ポート {port} のサーバー",
     "serverPortNotSet": "サーバーポートが未設定です",
     "staticFromEdge": "エッジから配信する静的コンテンツ",
-    "modeServer": "サーバー",
-    "modeWorker": "ワーカー",
-    "modeStatic": "静的",
-    "workerModeDesc": "ポートや公開URLを持たず継続的に実行 — キューコンシューマー、cron、ボットなど。",
     "buildSettingsTitle": "ビルド設定"
   },
   "projectSettings": {

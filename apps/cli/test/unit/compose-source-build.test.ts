@@ -38,12 +38,6 @@ vi.mock("node:fs", () => ({
     h.written.set(String(p), String(data));
     h.existing.add(String(p));
   },
-  renameSync: (from: string, to: string) => {
-    h.written.set(String(to), h.written.get(String(from)) ?? "");
-    h.existing.add(String(to));
-    h.written.delete(String(from));
-    h.existing.delete(String(from));
-  },
 }));
 
 vi.mock("../../src/lib/source-install", () => ({

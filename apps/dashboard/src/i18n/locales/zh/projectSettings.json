@@ -34,28 +34,6 @@
       "project": "项目",
       "hostedOn": "托管于"
     },
-    "projectMenu": {
-      "rename": "重命名项目",
-      "copyId": "复制项目 ID",
-      "idCopied": "已复制项目 ID",
-      "copyFailed": "无法复制到剪贴板",
-      "pause": "暂停项目",
-      "resume": "恢复项目",
-      "delete": "删除项目"
-    },
-    "rename": {
-      "title": "重命名项目",
-      "description": "仅更改显示名称，不会重新部署。",
-      "label": "项目名称",
-      "placeholder": "我的项目",
-      "identityNote": "项目标识“{slug}”保持不变 — 其 URL、容器名称和卷都不会改变。要更改 URL，请在“域名与路由”中编辑域名。",
-      "save": "保存",
-      "cancel": "取消",
-      "toast": {
-        "renamed": "已重命名为 {name}",
-        "failed": "重命名项目失败"
-      }
-    },
     "statusActive": "已激活",
     "statusDisabled": "已禁用",
     "hostedCloud": "Openship Cloud",
@@ -123,19 +101,6 @@
       "toast": {
         "saved": "路由已设为 {mode}",
         "failed": "更新路由失败"
-      }
-    },
-    "internalAlias": {
-      "title": "内部主机名",
-      "description": "其他服务在私有网络中访问此应用所用的自定义名称",
-      "intro": "为此应用在其私有项目网络中设置一个额外的 DNS 名称。它与默认名称（项目 slug）并存解析——其他关联服务可使用任意一个。公共访问不受影响；这绝不会暴露端口。",
-      "label": "主机名别名",
-      "hint": "仅限字母、数字和连字符。留空则使用项目 slug。",
-      "save": "保存",
-      "toast": {
-        "saved": "内部主机名已更新",
-        "failed": "无法更新内部主机名",
-        "invalid": "请至少输入一个字母或数字"
       }
     }
   },
@@ -221,8 +186,7 @@
       "staticNoServer": "静态（无服务器）",
       "modeSandboxed": "沙盒化（容器）",
       "modeDirect": "直接（主机进程）",
-      "modeDefault": "默认（部署时解析）",
-      "modeStatic": "无 — 以静态文件形式提供"
+      "modeDefault": "默认（部署时解析）"
     },
     "storage": {
       "title": "持久化存储",

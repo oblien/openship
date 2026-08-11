@@ -288,13 +288,8 @@ POST /api/mail/admin/:serverId/test-email
 
 ## Deploy webmail
 
-Installs the **webmail** app from the app catalog, pointed at this mail server's IMAP/SMTP, then queues a
-deployment and starts it. Returns `{ deploymentId, projectId }` so the dashboard can redirect to
-`/build/[deploymentId]`. Re-deploying an existing webmail reuses its project (and its stored sessions).
-
-The IMAP/SMTP backend is derived from the mail server — `mail.<domain>` on 993/465 — so there is nothing
-to configure here. To point a webmail at a mailbox host you run elsewhere, install the `webmail` app from
-`/apps` (or use `POST /api/mail/webmail/deploy-external`) instead.
+Creates (or reuses) a `webmail-<serverId>` project, queues a deployment, and starts the build. Returns
+`{ deploymentId, projectId }` so the dashboard can redirect to `/build/[deploymentId]`.
 
 ```
 POST /api/mail/webmail/deploy-project
@@ -304,11 +299,8 @@ POST /api/mail/webmail/deploy-project
   type={{
     mailServerId: { type: 'string', description: 'The mail server this webmail fronts.', required: true },
     hostname: { type: 'string', description: 'Fully-qualified hostname to serve webmail at.', required: true },
+    internalPort: { type: 'number', description: 'Internal port for the webmail container.' },
     target: { type: 'object', description: 'Where to deploy — see below.', required: true },
-    replaceLegacy: {
-      type: 'boolean',
-      description: 'Consent to replace a pre-catalog webmail. Only needed after a 409 LEGACY_WEBMAIL.',
-    },
   }}
 />
 
@@ -323,18 +315,6 @@ curl -X POST https://your-host/api/mail/webmail/deploy-project \
   -H "Content-Type: application/json" \
   -d '{"mailServerId":"srv_123","hostname":"mail.example.com","target":{"kind":"self","serverId":"srv_123"}}'
 ```
-
-### Replacing a pre-catalog webmail
-
-Openship 0.6.1 and earlier shipped webmail as a prebuilt bundle rather than an image. Those installs can't be
-redeployed — they have to be **replaced** by the catalog app. `GET /api/mail/status` reports one as
-`webmail.legacy: true`, and a deploy over it is refused with `409` and `"code": "LEGACY_WEBMAIL"` until you
-retry the same request with `replaceLegacy: true`.
-
-The replace tears the old project down — container, routes, host state directory, project row — and then
-installs the webmail app at the same hostname. Mailboxes, mail data and every message live on the mail server
-and are untouched; the old webmail's sign-in sessions and per-user settings are not, so everyone signs in
-again. If the old install can't be removed, nothing is installed and the existing webmail keeps running.
 
 ## Errors you might see
 
@@ -351,12 +331,6 @@ The `:serverId` doesn't belong to your organization (or doesn't exist). List you
 <Callout title="409 — Setup already running" type="warn">
 Only one install runs per instance at a time, and per-server writes (reset, postmaster rotation) are refused
 while its setup is active. Wait for it to finish, or cancel it with `POST /api/mail/setup/cancel`.
-</Callout>
-
-<Callout title="409 — LEGACY_WEBMAIL" type="warn">
-The webmail linked to this mail server predates the catalog app, so it can only be replaced. Retry the same
-`deploy-project` call with `replaceLegacy: true` once you've confirmed the operator accepts losing the old
-webmail's sessions and per-user settings.
 </Callout>
 
 <Callout title="502 — Scan / adopt failed" type="warn">

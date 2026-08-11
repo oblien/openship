@@ -1,38 +1,7 @@
-import { DeployError, safeErrorMessage, type ProxySettings } from "@repo/core";
-import { edgeDownExplanation } from "../system/edge-exec-error";
-import { resolveServedStaticPath } from "./stack-output";
+import { DeployError, safeErrorMessage } from "@repo/core";
+import { posix as pathPosix } from "node:path";
 
-/**
- * Docker refuses inspect/exec against a container that is mid-restart with
- * "Container <id> is restarting, wait until the container is running". During a
- * deploy the app container can still be in its post-start stabilization window
- * (a normal 1–2 restart "dependency wait" — see the deploy stabilization watch,
- * #335) when routing resolves its upstream, so this error is TRANSIENT, not a
- * real routing failure. We retry briefly before recording a warning so a settling
- * container doesn't falsely mark the project "Action Required".
- *
- * NOT the sole retry gate: a crash-looping EDGE container surfaces the same daemon
- * phrase, because `explainDown` joins the enriched edge-down explanation to the raw
- * daemon line in one blob — so this predicate matches edge-down failures too. The
- * caller checks `edgeDownExplanation` FIRST and never retries those (retrying just
- * execs into the same dead edge); this predicate then only ever sees a genuine
- * app-container restart.
- */
-function isContainerRestartingError(message: string): boolean {
-  return /is restarting, wait until the container is running/i.test(message);
-}
-
-const ROUTE_RETRY_DELAY_MS = 1500;
-const ROUTE_MAX_ATTEMPTS = 5;
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-import type {
-  RouteConfig,
-  RouteHeaderRule,
-  RouteHostRedirect,
-  RouteProxyLocation,
-  RouteRedirect,
-} from "../types";
+import type { RouteConfig, RouteHostRedirect } from "../types";
 import type { BuildLogger } from "./build-pipeline";
 import type { DeployRouting, DeploySsl } from "./deploy-pipeline";
 
@@ -55,41 +24,6 @@ export interface RouteRegistrationOptions {
   webhookDomain?: string | null;
   /** The proxy target for webhook requests (e.g. http://127.0.0.1:4000/api/webhooks/) */
   webhookProxy?: string;
-  /**
-   * Reverse-proxy tunables applied to EVERY domain of this deployment — upload
-   * size limit, timeouts, buffering, gzip.
-   *
-   * An option rather than part of each `routeTarget`, because it is a property of
-   * the project, not of a particular upstream: every vhost the project owns gets
-   * the same values, and threading it through `resolveRoute`/`resolveTargetUrl`
-   * would make each of them re-answer a question the project already answered.
-   */
-  proxy?: ProxySettings;
-  /**
-   * The project's compiled `vercel.json` routing rules — rewrite locations, redirects,
-   * response headers, and the `cleanUrls` / `trailingSlash` URL shape.
-   *
-   * Options rather than part of each `routeTarget`, for exactly the reason `proxy` is:
-   * they are properties of the PROJECT, not of a particular upstream, so every vhost it
-   * owns gets the same ones.
-   *
-   * They have to travel this way because `registerRoute` REPLACES the whole vhost file —
-   * a registration that omits them does not leave them alone, it deletes them. Without
-   * them here a plain single-app or static deploy silently dropped whatever a domain edit
-   * or "Retry routing" had installed, so a working redirect stopped working on the next
-   * push with nothing in the log.
-   *
-   * `proxyLocations` is topology-FREE by construction: this path compiles without a
-   * `backendTargetUrl`, so a rewrite to a PATH (`/api/(.*)` → `/api/index.js`, a function
-   * on Vercel) is already reported as skipped upstream and never arrives here. Only a
-   * full-URL destination — which carries its own origin — reaches this option, so
-   * applying it to every domain cannot mis-target the way a resolved backend would.
-   */
-  proxyLocations?: RouteProxyLocation[];
-  redirects?: RouteRedirect[];
-  headerRules?: RouteHeaderRule[];
-  cleanUrls?: boolean;
-  trailingSlash?: boolean;
 }
 
 /**
@@ -178,13 +112,14 @@ export async function registerResolvedRoutes(
         targetUrl,
       };
     } else if (hasPathTarget && typeof staticRoot === "string") {
+      const targetPath = domain.targetPath!;
       routeConfig = {
         domain: domain.hostname,
         tls: domain.tls,
         terminatesTlsLocally: domain.terminatesTlsLocally,
-        // Shared rule — see resolveServedStaticPath. The live re-apply and the
-        // output probe resolve the same path through it.
-        staticRoot: resolveServedStaticPath(staticRoot, domain.targetPath!),
+        staticRoot: targetPath === "/"
+          ? staticRoot
+          : pathPosix.join(staticRoot, targetPath.slice(1)),
       };
     } else {
       throw new DeployError("Resolved route target is invalid", "INVALID_ROUTE_TARGET");
@@ -193,23 +128,6 @@ export async function registerResolvedRoutes(
     if (domain.redirectHost) {
       routeConfig.redirectHost = domain.redirectHost;
     }
-
-    // Project-wide proxy tunables. Set for a static root too: `client_max_body_size`
-    // and the body timeouts govern the REQUEST, which nginx reads before it decides
-    // whether the response comes from a file or an upstream.
-    if (options?.proxy) {
-      routeConfig.proxy = options.proxy;
-    }
-
-    // Compiled vercel.json rules, for the same reason and in the same way as `proxy`.
-    // `cleanUrls`/`trailingSlash` are honoured by registerRoute for a staticRoot route
-    // only (a proxied app's framework owns its URL shape), so they are safe to pass on
-    // both branches; redirects, headers and rewrite locations apply to either.
-    if (options?.proxyLocations?.length) routeConfig.proxyLocations = options.proxyLocations;
-    if (options?.redirects?.length) routeConfig.redirects = options.redirects;
-    if (options?.headerRules?.length) routeConfig.headerRules = options.headerRules;
-    if (options?.cleanUrls) routeConfig.cleanUrls = true;
-    if (options?.trailingSlash !== undefined) routeConfig.trailingSlash = options.trailingSlash;
 
     // Add webhook proxy location if this domain is the project's webhook domain
     if (options?.webhookDomain && domain.hostname === options.webhookDomain && options.webhookProxy) {
@@ -242,54 +160,16 @@ export async function registerResolvedRoutes(
   };
 
   for (const domain of domains) {
-    let lastError = "";
-    for (let attempt = 1; attempt <= ROUTE_MAX_ATTEMPTS; attempt++) {
-      try {
-        await registerOne(domain);
-        lastError = "";
-        break;
-      } catch (err) {
-        lastError = safeErrorMessage(err);
-        // The EDGE container being down is not a transient this project grows out of:
-        // every registerRoute execs into the edge, so if it is crash-looping, retrying
-        // just execs into the same dead container four more times (6s wasted) and still
-        // fails. Its blob carries the daemon's raw "is restarting" line alongside the
-        // enriched explanation, so isContainerRestartingError alone would false-positive
-        // here — the marker is the discriminator. Stop now; the warning below explains it.
-        if (edgeDownExplanation(lastError)) break;
-        // Only a genuine app-container restart (its post-start stabilization window) is
-        // worth waiting on — any other failure (bad upstream, invalid target, nginx
-        // reload error) is recorded immediately so real problems aren't hidden behind a delay.
-        if (attempt < ROUTE_MAX_ATTEMPTS && isContainerRestartingError(lastError)) {
-          logger.log(
-            `Routing ${domain.hostname}: target container is still starting up — ` +
-              `retrying (${attempt}/${ROUTE_MAX_ATTEMPTS - 1})…\n`,
-            "warn",
-          );
-          await sleep(ROUTE_RETRY_DELAY_MS);
-          continue;
-        }
-        break;
-      }
-    }
-    if (lastError) {
+    try {
+      await registerOne(domain);
+    } catch (err) {
       // A failed domain never fails the deploy — the container is already up.
-      const edgeDown = edgeDownExplanation(lastError);
-      if (edgeDown) {
-        // The edge is what's down, not this project — "fix DNS/routing and retry" would
-        // send the operator after the wrong thing (and it reads absurd for a static app
-        // with no container of its own). Surface the one-line explanation (cause +
-        // remedy) instead of the raw daemon blob, and carry the marker into the warning
-        // so downstream (deployWarning, the routing-unsynced flag) recognises edge-down.
-        logger.log(`Routing ${domain.hostname} could not be applied — ${edgeDown}\n`, "warn");
-        warnings.push(`${domain.hostname}: ${edgeDown}`);
-      } else {
-        logger.log(
-          `Routing failed for ${domain.hostname} (deploy continues; the app is up — fix DNS/routing and retry): ${lastError}\n`,
-          "warn",
-        );
-        warnings.push(`${domain.hostname}: ${lastError}`);
-      }
+      const message = safeErrorMessage(err);
+      logger.log(
+        `Routing failed for ${domain.hostname} (deploy continues; the app is up — fix DNS/routing and retry): ${message}\n`,
+        "warn",
+      );
+      warnings.push(`${domain.hostname}: ${message}`);
     }
   }
 

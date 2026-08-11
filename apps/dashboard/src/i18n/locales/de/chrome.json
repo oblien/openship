@@ -22,11 +22,6 @@
     "backToSetup": "Zurück zur Einrichtung",
     "personal": "Persönlich"
   },
-  "mailRail": {
-    "selectServer": "Mailserver auswählen",
-    "switchServer": "Mailserver wechseln",
-    "setupIncomplete": "Einrichtung unvollständig"
-  },
   "migration": {
     "inProgressTitle": "Migration läuft",
     "inProgressBody": "Deine Daten werden übertragen. Diese Seite wird aktualisiert, sobald die Umstellung abgeschlossen ist — in der Regel 30 bis 90 Sekunden.",

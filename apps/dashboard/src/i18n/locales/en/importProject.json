@@ -102,10 +102,6 @@
     "serverPortNotSet": "Server port not set",
     "staticFromEdge": "Static from edge",
     "staticPathHint": "Served as static files from the edge — nothing runs as a process.",
-    "modeServer": "Server",
-    "modeWorker": "Worker",
-    "modeStatic": "Static",
-    "workerModeDesc": "Runs continuously with no port or public URL — a queue consumer, cron, or bot.",
     "buildSettingsTitle": "Build Settings"
   },
   "projectSettings": {

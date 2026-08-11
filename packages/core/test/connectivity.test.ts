@@ -59,21 +59,6 @@ describe("classifyConnectivityError", () => {
     expect(classifyConnectivityError("Channel open failure: open failed").code).toBe("protocol_error");
   });
 
-  it("classifies a socket destroyed with no reply, rather than leaving it unknown", () => {
-    // The Amazon Linux report: the Docker-over-SSH bridge destroyed the socket without
-    // writing a response, dockerode surfaced Node's "socket hang up", and this classifier
-    // had no row for it — so the one failure whose real cause was recoverable ("dockerd
-    // isn't running") was the one that came back as `unknown`.
-    for (const m of [
-      "socket hang up",
-      "request to http://localhost/v1.41/version failed, reason: socket hang up",
-      "write EPIPE",
-      "Premature close",
-    ]) {
-      expect(classifyConnectivityError(m).code).toBe("protocol_error");
-    }
-  });
-
   it("honours an explicit tag over the message heuristics", () => {
     // Message looks unreachable, but the server tagged it as auth.
     expect(classifyConnectivityError("ECONNREFUSED", "auth_failed").code).toBe("auth_failed");

@@ -80,29 +80,3 @@ export function resolveStaticOutputPath(base: string, outputDirectory: string): 
   }
   return resolved;
 }
-
-/**
- * The directory a ROUTED PATH serves from, beneath a static deploy's doc root:
- * `/` serves the root itself, `/docs` serves `<root>/docs`.
- *
- * THE definition of that rule. It decides whether a static site 404s, and it had
- * three independent copies — the deploy-time route registration, the live route
- * re-apply, and the post-deploy output probe. Any drift between them means the
- * vhost is pointed at one directory while the check that audits it looks at
- * another, so a real 404 reads as healthy (or a healthy site as broken).
- *
- * Confines the result for the same reason {@link resolveStaticOutputPath} does:
- * `targetPath` is operator input from the Domains tab, and a `../` in it would
- * aim a public document root at the host filesystem. The nginx renderer rejects
- * traversal too — this is the earlier of the two gates, not a replacement.
- */
-export function resolveServedStaticPath(staticRoot: string, routedPath: string): string {
-  const root = staticRoot.replace(/\/+$/, "");
-  const relative = routedPath.replace(/^\/+/, "");
-  if (!relative) return root;
-  const resolved = pathPosix.normalize(pathPosix.join(root, relative));
-  if (resolved !== root && !resolved.startsWith(`${root}/`)) {
-    throw new Error(`Invalid route path "${routedPath}": escapes the deployment's static root.`);
-  }
-  return resolved;
-}

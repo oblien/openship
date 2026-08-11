@@ -83,12 +83,6 @@ export const SYSTEM = {
     SESSION_TTL_SECONDS: 4 * 60 * 60, // 4 hours
     /** Keep-alive heartbeat interval (ms) - prevents proxy/CDN drops */
     HEARTBEAT_INTERVAL_MS: 25_000,
-    /**
-     * How long a finished handler waits for already-queued frames to flush
-     * before the stream closes. Bounded because a client that has gone away
-     * never drains, and that must not hold the response open.
-     */
-    TERMINAL_DRAIN_TIMEOUT_MS: 5_000,
     /** Maximum active sessions in the cache */
     MAX_SESSIONS: 500,
     /** Background sweep interval for stale sessions (ms) */

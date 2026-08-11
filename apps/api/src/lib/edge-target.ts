@@ -2,7 +2,6 @@ import { SYSTEM } from "@repo/core";
 import { repos } from "@repo/db";
 import { env } from "../config/env";
 import { getInstanceReachability } from "./public-url";
-import { isIpLiteral, resolveInstancePublicIp, resolveLocalServerHost } from "./server-target";
 
 /**
  * The host Openship Cloud's shared edge (Oblien) dials for a free `<slug>.opsh.io`
@@ -19,19 +18,11 @@ import { isIpLiteral, resolveInstancePublicIp, resolveLocalServerHost } from "./
  * Returns `{ host: null, reason }` (never throws) when no public host resolves, so
  * callers can WARN + continue (the app still deploys; the free URL is marked
  * Action Required) instead of silently wiring a dead route.
- *
- * An IP ALWAYS wins over a hostname (see `resolveEdgeTargetHost`). The edge is
- * addressed by IP so the box's own OpenResty decides what to serve, matching on
- * the `Host:` header the edge forwards; a hostname target hands that decision to
- * whatever the name resolves to instead.
  */
 export interface EdgeTargetResult {
   host: string | null;
   /** Set when `host` is null — a user-facing reason the edge can't be wired. */
   reason?: string;
-  /** Set when `host` is a HOSTNAME, not an IP — the route is wired, but on
-   *  borrowed DNS. Callers surface it; it never blocks the sync. */
-  warning?: string;
 }
 
 const NO_PUBLIC_HOST =
@@ -67,42 +58,6 @@ export function isCloudEdgeHost(value: string): boolean {
   if (!h) return false;
   const base = SYSTEM.DOMAINS.CLOUD_DOMAIN.toLowerCase();
   return h === base || h.endsWith(`.${base}`);
-}
-
-/**
- * THE target string. Openship Cloud keys a target verification on a normalized
- * `scheme://host:port`, and it must be byte-comparable with the string we later
- * route — verifying `http://1.2.3.4` and routing `1.2.3.4:8080` is a permanent
- * `target_unverified` that looks like a Cloud-side bug from here.
- *
- * So this is deliberately shared by BOTH sides: the box calls it to name what it
- * asks to verify, and `syncCloudEdgeProxy` calls it to name what it routes. Two
- * copies of "add http:// if missing" agreeing today is not the same as being
- * unable to disagree.
- *
- * `:80` on http is dropped because it is the default and the two spellings
- * normalize identically upstream; the scheme and host are lowercased because DNS
- * is case-insensitive and a mixed-case declared name would otherwise produce a
- * second, unequal target for the same box.
- */
-export function canonicalEdgeTarget(target: string): string {
-  const raw = target.trim();
-  if (!raw) return "";
-  const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
-  try {
-    const url = new URL(withScheme);
-    const scheme = url.protocol.toLowerCase();
-    const port =
-      (scheme === "http:" && url.port === "80") || (scheme === "https:" && url.port === "443")
-        ? ""
-        : url.port;
-    // `url.hostname` keeps IPv6 bracketed, which is the form a URL must carry.
-    return `${scheme}//${url.hostname.toLowerCase()}${port ? `:${port}` : ""}`;
-  } catch {
-    // Unparseable input is passed through with only the scheme added. Rejecting it
-    // here would turn a target the upstream might well accept into a local failure.
-    return withScheme;
-  }
 }
 
 /** Loopback / RFC-1918 / link-local / unspecified — unreachable from the internet. */
@@ -159,70 +114,16 @@ function hostFrom(value: string | null | undefined): string | null {
 
 type Candidate = string | null | undefined;
 
-/** Reachable from the internet AND not the Cloud edge itself (a `.opsh.io`
- *  target self-loops). Named "usable", not "public": a cloud host is public and
- *  still unusable. */
-function isUsableTarget(host: string): boolean {
-  return !isNonPublicHost(host) && !isCloudEdgeHost(host);
-}
-
-/** Usable edge targets from `candidates`, in the order given. */
-function usableTargets(candidates: readonly Candidate[]): string[] {
-  const out: string[] = [];
+/** First usable edge target in `candidates` (order = precedence), else null. Skips
+ *  unreachable hosts AND the Cloud edge's own domain (a `.opsh.io` target
+ *  self-loops). Named "usable", not "public": a cloud host is public and still
+ *  unusable. */
+function firstUsableTarget(candidates: readonly Candidate[]): string | null {
   for (const c of candidates) {
     const h = hostFrom(c);
-    if (h && isUsableTarget(h)) out.push(h);
+    if (h && !isNonPublicHost(h) && !isCloudEdgeHost(h)) return h;
   }
-  return out;
-}
-
-/**
- * A hostname target is FINE, and this note says what it depends on — it is not a
- * failure report. The edge dials the target and forwards `Host: <slug>.opsh.io`,
- * so any address that reaches this box on :80 works: OpenResty matches the vhost
- * on the Host header, which is why hostname targets have been serving correctly.
- *
- * What differs is that the edge re-resolves the NAME on each request, so the route
- * inherits whatever that name points at over time. The two ways that bites, both
- * of which look like "the free URL does nothing": a CDN/proxy put in front of the
- * domain (it has no zone for `<slug>.opsh.io`), or a vhost on it that redirects to
- * its canonical https:// (the visitor lands on that domain, not the app). An IP
- * can't drift that way, hence the pointer — advice, not a defect.
- */
-const hostnameTargetWarning = (host: string, fix: string) =>
-  `routed by name ("${host}") rather than by IP. That serves fine while the name resolves to this ` +
-  `server on port 80, but Openship Cloud's edge re-resolves it per request, so putting a CDN/proxy in ` +
-  `front of it — or an https redirect on it — would stop the free URL reaching this app. ${fix}`;
-
-const HOSTNAME_FIX_INSTANCE = "Set SERVER_IP to this server's public IP to pin it.";
-const HOSTNAME_FIX_SERVER = "Use the server's IP address in Settings → Servers to pin it.";
-
-/** TTL for the public-IP probe. The probe is 3 sequential HTTP echoes with a 4s
- *  timeout each, and free-domain sync runs per domain in a loop — re-probing for
- *  every hostname in the same edit is pure latency. */
-const IP_PROBE_TTL_MS = 5 * 60_000;
-let probedIp: { at: number; ip: string | null } | null = null;
-
-/**
- * This box's own public IP: the value stored on the `isLocal` server row at
- * registration first (a pure read), then a live echo probe. The probe exists
- * because the stored value is only as good as what was known at registration —
- * a box registered before detection landed, or with HOST_DOMAIN set (which the
- * row prefers for DISPLAY), has a hostname or `127.0.0.1` there and would
- * otherwise fall through to a hostname target forever.
- */
-async function resolveInstanceEdgeIp(organizationId: string): Promise<string | null> {
-  const usableIp = (v: string | null) => (v && isIpLiteral(v) && isUsableTarget(v) ? v : null);
-
-  const stored = usableIp(await resolveLocalServerHost(organizationId).catch(() => null));
-  if (stored) return stored;
-
-  if (probedIp && Date.now() - probedIp.at < IP_PROBE_TTL_MS) return probedIp.ip;
-  // Skips the network on desktop / CLOUD_MODE, where a "public IP" would be a
-  // laptop's NAT address — those boxes fall through to the hostname candidates.
-  const ip = usableIp(await resolveInstancePublicIp().catch(() => null));
-  probedIp = { at: Date.now(), ip };
-  return ip;
+  return null;
 }
 
 /**
@@ -232,20 +133,12 @@ async function resolveInstanceEdgeIp(organizationId: string): Promise<string | n
  *
  * - Remote server (row is NOT `isLocal`): its `sshHost` is the reachable address.
  * - `isLocal "This Server"` / no server: this box runs the workload, so use the
- *   INSTANCE's own public address — never the display `sshHost`.
- *
- * For the instance, DECLARED beats GUESSED, and an IP breaks the tie among equals:
- *   1. a declared IP   — `preferHost` / OPENSHIP_PUBLIC_URL / SERVER_IP
- *   2. a declared name  — the same three, then the verified self-app domain /
- *                         HOST_DOMAIN. Serves fine; carries a `warning` saying the
- *                         edge resolves it per request.
- *   3. the box's registered/probed IP — only when nothing was declared, because
- *      the probe reports the EGRESS address, which on a NAT'd/load-balanced host
- *      isn't the inbound one. Ranking a guess over a working stated address would
- *      break routes that serve today.
+ *   INSTANCE's public address — a caller-supplied `preferHost`, OPENSHIP_PUBLIC_URL
+ *   host, SERVER_IP, the verified self-app domain, or HOST_DOMAIN — never the
+ *   display `sshHost`.
  *
  * `preferHost` is a candidate, NOT an override: setup passes the operator's
- * `--public-url` host here and it gets the same guards as everything else.
+ * `--public-url` host here and it gets the same two guards as everything else.
  * Trusting it blindly is what wired `<slug>.opsh.io` at itself.
  */
 export async function resolveEdgeTargetHost(
@@ -265,44 +158,26 @@ export async function resolveEdgeTargetHost(
         // A server row pointing at the shared edge is fixed on the ROW, not in env.
         return { host: null, reason: cloudEdgeTargetReason(host, CLOUD_EDGE_FIX_SERVER) };
       }
-      // The row's address is the only one we have for a remote box (we can't probe
-      // ITS public IP from here), so a name is used as-is — but still flagged.
-      return isIpLiteral(host)
-        ? { host }
-        : { host, warning: hostnameTargetWarning(host, HOSTNAME_FIX_SERVER) };
+      return { host };
     }
     // isLocal row → fall through to the instance's own public address.
   }
 
-  // The instance's own candidates, in precedence order WITHIN their kind. Split
-  // into two stages only so the reachability lookup stays LAZY — env answering
-  // first must not cost a self-app read. Both stages are named arrays and the
-  // failure reason below reads those same arrays, so a source added here is
-  // automatically considered there; spelling the list out twice is how they drift.
+  // The instance's own candidates, in precedence order. Split into two stages only
+  // so the reachability lookup stays LAZY — env answering first must not cost a
+  // probe. Both stages are named arrays and the failure reason below reads those
+  // same arrays, so a source added here is automatically considered there; spelling
+  // the list out twice is how the two drift.
   const envCandidates: readonly Candidate[] = [preferHost, env.OPENSHIP_PUBLIC_URL, env.SERVER_IP];
-  const envUsable = usableTargets(envCandidates);
+  const fromEnv = firstUsableTarget(envCandidates);
+  if (fromEnv) return { host: fromEnv };
 
-  // 1. A DECLARED IP wins outright — the operator stated this box's address.
-  const envIp = envUsable.find(isIpLiteral);
-  if (envIp) return { host: envIp };
-
-  // 2. A DECLARED NAME beats a probed IP, and this ordering is deliberate.
-  //
-  // A name works whenever it resolves to this box on :80, which is the normal case
-  // and is why port-based free domains have been serving fine on hostname targets.
-  // The probe below, by contrast, reports the box's EGRESS address — on a NAT'd,
-  // load-balanced or floating-IP host that is not the address the internet reaches
-  // it on. Preferring the probe would swap a working, operator-stated route for a
-  // guess, so it only runs when nothing was declared at all (where the alternative
-  // is no route). It also keeps this path free of a network call.
+  // No env seed — fall back to the verified self-app domain (the box's real
+  // public URL once the operator added a domain in the Domains tab).
   const reach = await getInstanceReachability().catch(() => null);
   const reachCandidates: readonly Candidate[] = [reach?.url, env.HOST_DOMAIN];
-  const name = envUsable[0] ?? usableTargets(reachCandidates)[0];
-  if (name) return { host: name, warning: hostnameTargetWarning(name, HOSTNAME_FIX_INSTANCE) };
-
-  // 3. Nothing declared — the box's registered/probed IP, which beats no route.
-  const ownIp = await resolveInstanceEdgeIp(organizationId);
-  if (ownIp) return { host: ownIp };
+  const fromReach = firstUsableTarget(reachCandidates);
+  if (fromReach) return { host: fromReach };
 
   // Distinguish "no address at all" from "the only address we have is the Cloud
   // edge". Both leave the free URL unwired, but the fixes are different, and a

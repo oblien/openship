@@ -18,12 +18,6 @@ import type { OpenshipReadiness } from "../types";
 
 export type OpenshipRuntime = "bare" | "docker";
 export type OpenshipProductionMode = "host" | "static" | "standalone";
-/** The runtime WORKLOAD (issue #538): a `web` app listens on a port and is
- *  routed, a `worker` is a portless long-running container reached by nothing, a
- *  `static` site is served as files. The modern spelling of the runtime axis;
- *  `productionMode` stays supported and maps onto it (host/standalone → web,
- *  static → static) so existing configs keep working. */
-export type OpenshipWorkload = "web" | "worker" | "static";
 export type OpenshipDomainType = "free" | "custom";
 export type OpenshipRestart = "no" | "always" | "on-failure" | "unless-stopped";
 /** Cloud sizing presets, plus "unlimited" — no caps, the self-hosted default
@@ -36,7 +30,6 @@ export const OPENSHIP_PRODUCTION_MODES: readonly OpenshipProductionMode[] = [
   "static",
   "standalone",
 ];
-export const OPENSHIP_WORKLOADS: readonly OpenshipWorkload[] = ["web", "worker", "static"];
 export const OPENSHIP_DOMAIN_TYPES: readonly OpenshipDomainType[] = ["free", "custom"];
 export const OPENSHIP_RESTARTS: readonly OpenshipRestart[] = [
   "no",
@@ -175,12 +168,6 @@ export interface OpenshipConfig {
   // ── Runtime ──
   runtime?: OpenshipRuntime;
   productionMode?: OpenshipProductionMode;
-  /**
-   * The runtime workload: `web` (port + route), `worker` (portless long-running
-   * container, no route), or `static` (files). The modern spelling of the runtime
-   * axis; when both are set, `workload` wins over `productionMode` (#538).
-   */
-  workload?: OpenshipWorkload;
   port?: number;
   // ── Env ──
   env?: OpenshipEnv;

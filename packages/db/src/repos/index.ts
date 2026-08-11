@@ -47,23 +47,6 @@ export {
   type NewServerModuleStatus,
 } from "./server-module-status.repo";
 export {
-  createServerContainerStatusRepo,
-  type ServerContainerStatus,
-  type NewServerContainerStatus,
-  type ServerContainerComponent,
-} from "./server-container-status.repo";
-export {
-  createEdgeTargetVerificationRepo,
-  type EdgeTargetVerification,
-  type NewEdgeTargetVerification,
-} from "./edge-target-verification.repo";
-export {
-  createServiceIncidentRepo,
-  incidentSeverity,
-  type ServiceIncident,
-  type NewServiceIncident,
-} from "./service-incident.repo";
-export {
   createCloudWebhookBindingRepo,
   type CloudWebhookBinding,
   type NewCloudWebhookBinding,
@@ -125,11 +108,6 @@ export {
   type NewServerAnalyticsGeo,
 } from "./analytics.repo";
 export {
-  createResourceUsageRepo,
-  type ResourceUsageRow,
-  type NewResourceUsage,
-} from "./resource-usage.repo";
-export {
   createTerminalSessionRepo,
   type TerminalSession,
   type NewTerminalSession,
@@ -170,12 +148,6 @@ export {
 export { createMemberRepo, type Member, type MemberRole } from "./member.repo";
 export { createInvitationRepo, type Invitation } from "./invitation.repo";
 export { createAuditEventRepo, type AuditEvent, type NewAuditEvent } from "./audit-event.repo";
-export {
-  createAuditSettingsRepo,
-  AUDIT_SETTINGS_DEFAULTS,
-  type AuditSettings,
-  type AuditSettingsView,
-} from "./audit-settings.repo";
 export { createJobRunRepo, type JobRun, type NewJobRun } from "./job-run.repo";
 export { createJobRepo, type Job, type NewJob } from "./job.repo";
 export {
@@ -240,9 +212,6 @@ import { createIncomingWebhookRepo } from "./incoming-webhook.repo";
 import { createSystemNoticeRepo } from "./system-notice.repo";
 import { createUpdateStatusRepo } from "./update-status.repo";
 import { createServerModuleStatusRepo } from "./server-module-status.repo";
-import { createServerContainerStatusRepo } from "./server-container-status.repo";
-import { createEdgeTargetVerificationRepo } from "./edge-target-verification.repo";
-import { createServiceIncidentRepo } from "./service-incident.repo";
 import { createCloudWebhookBindingRepo } from "./cloud-webhook-binding.repo";
 import { createProjectConnectionRepo } from "./project-connection.repo";
 import { createCustomAppTemplateRepo } from "./custom-app-template.repo";
@@ -257,7 +226,6 @@ import { createGithubDeployKeyRepo } from "./github-deploy-key.repo";
 import { createServerTunnelRepo } from "./server-tunnel.repo";
 import { createMailServerRepo } from "./mail-server.repo";
 import { createAnalyticsRepo } from "./analytics.repo";
-import { createResourceUsageRepo } from "./resource-usage.repo";
 import { createTerminalSessionRepo } from "./terminal-session.repo";
 import { createServiceTerminalSessionRepo } from "./service-terminal-session.repo";
 import { createCloudHandoffCodeRepo } from "./cloud-handoff-code.repo";
@@ -274,7 +242,6 @@ import { createDockerMigrationRunRepo } from "./docker-migration.repo";
 import { createMemberRepo } from "./member.repo";
 import { createInvitationRepo } from "./invitation.repo";
 import { createAuditEventRepo } from "./audit-event.repo";
-import { createAuditSettingsRepo } from "./audit-settings.repo";
 import { createJobRunRepo } from "./job-run.repo";
 import { createJobRepo } from "./job.repo";
 import { createOrphanedResourceRepo } from "./orphaned-resource.repo";
@@ -300,10 +267,6 @@ import { createBillingUsageSnapshotRepo } from "./billing-usage-snapshot.repo";
  *
  * For testing, create isolated repos with `createUserRepo(testDb)` etc.
  */
-// Built before `repos` because the audit-event repo consults the per-org
-// recording switch inside create(), and both must share one memo.
-const auditSettingsRepo = createAuditSettingsRepo(db);
-
 export const repos = {
   user: createUserRepo(db),
   session: createSessionRepo(db),
@@ -320,9 +283,6 @@ export const repos = {
   notice: createSystemNoticeRepo(db),
   updateStatus: createUpdateStatusRepo(db),
   serverModuleStatus: createServerModuleStatusRepo(db),
-  serverContainerStatus: createServerContainerStatusRepo(db),
-  edgeTargetVerification: createEdgeTargetVerificationRepo(db),
-  serviceIncident: createServiceIncidentRepo(db),
   cloudWebhookBinding: createCloudWebhookBindingRepo(db),
   projectConnection: createProjectConnectionRepo(db),
   customAppTemplate: createCustomAppTemplateRepo(db),
@@ -337,7 +297,6 @@ export const repos = {
   serverTunnel: createServerTunnelRepo(db),
   mailServer: createMailServerRepo(db),
   analytics: createAnalyticsRepo(db),
-  resourceUsage: createResourceUsageRepo(db),
   terminalSession: createTerminalSessionRepo(db),
   serviceTerminalSession: createServiceTerminalSessionRepo(db),
   cloudHandoffCode: createCloudHandoffCodeRepo(db),
@@ -351,8 +310,7 @@ export const repos = {
   dockerMigrationRun: createDockerMigrationRunRepo(db),
   member: createMemberRepo(db),
   invitation: createInvitationRepo(db),
-  auditSettings: auditSettingsRepo,
-  auditEvent: createAuditEventRepo(db, auditSettingsRepo),
+  auditEvent: createAuditEventRepo(db),
   jobRun: createJobRunRepo(db),
   job: createJobRepo(db),
   orphanedResource: createOrphanedResourceRepo(db),

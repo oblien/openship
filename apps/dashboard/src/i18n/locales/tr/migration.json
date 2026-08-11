@@ -124,9 +124,6 @@
     "bind": "sunucu yolu",
     "nVolumes": "{n} disk birimi",
     "nEnv": "{n} ortam değişkeni",
-    "envFromImage": "{n} değişken imajdan geliyor",
-    "envFromImageHint": "Yapılandırma olarak içe aktarılmadı — imaj bunları çalışma zamanında sağlıyor. Kaynaktan yeniden derlemeden önce değerleri sabitlemek için içe aktarın.",
-    "envFromImageImport": "Yine de içe aktar",
     "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı."
   },
   "reimport": {

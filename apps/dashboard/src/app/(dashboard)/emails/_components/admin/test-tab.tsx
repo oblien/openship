@@ -12,7 +12,6 @@ import { Send } from "lucide-react";
 import { SectionCard } from "./_shared/section-card";
 import { SendTestMailModal } from "./SendTestMailModal";
 import { useI18n } from "@/components/i18n-provider";
-import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 
 interface Props {
   serverId: string;
@@ -20,36 +19,24 @@ interface Props {
 
 export function TestTab({ serverId }: Props) {
   const { t } = useI18n();
-  // Heading lives in the page header in mail view — see ../../_lib/mail-section.
-  // This tab's card IS its heading, so hoisting leaves the button on its own
-  // rather than a card whose title repeats the page's.
-  const hoisted = useMailRailOwnsTabs(serverId);
   const [open, setOpen] = useState(false);
-
-  const sendButton = (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-    >
-      <Send className="size-3.5" />
-      {t.emailsAdmin.test.sendButton}
-    </button>
-  );
 
   return (
     <div className="space-y-4">
-      {hoisted ? (
-        sendButton
-      ) : (
-        <SectionCard
-          icon={Send}
-          title={t.emailsAdmin.test.title}
-          description={t.emailsAdmin.test.description}
+      <SectionCard
+        icon={Send}
+        title={t.emailsAdmin.test.title}
+        description={t.emailsAdmin.test.description}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          {sendButton}
-        </SectionCard>
-      )}
+          <Send className="size-3.5" />
+          {t.emailsAdmin.test.sendButton}
+        </button>
+      </SectionCard>
 
       <SendTestMailModal
         open={open}

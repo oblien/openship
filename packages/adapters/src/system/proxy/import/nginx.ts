@@ -6,13 +6,6 @@
  * can't interpret is returned as a warning, never silently dropped.
  */
 
-import {
-  PROXY_DIRECTIVES,
-  parseProxyValue,
-  sanitizeProxySettings,
-  type ProxySettings,
-} from "@repo/core";
-
 import type { CommandExecutor } from "../../../types";
 import type { ImportedSite, ProxyScanResult } from "../../types";
 import { EDGE_HOST_PATHS, OPENRESTY_DEFAULT_PATHS } from "../../../infra/openresty-lua";
@@ -20,36 +13,10 @@ import { containerCommand } from "../../edge-container-executor";
 import { resolveOurEdgeContainer } from "../detect";
 import { collapseByHost, extractBlocks, stripComments, tryExec } from "./parse-utils";
 
-/**
- * The fully-resolved config dump from the first of `bins` that yields one. `-T`
- * inlines every `include`, so a cert in a snippet (`include snippets/ssl-<host>.conf`)
- * or a vhost kept under a custom `--conf-path`/conf.d is visible — a plain cat of the
- * top-level files sees NEITHER. It reads config off disk without touching the running
- * master, so it works for a proxy a takeover already stopped. Null when no binary
- * produces a server block.
- *
- * `nginx` and `openresty` are different binaries: an OpenResty box usually has no
- * `nginx` on PATH, so both are worth trying (in caller-chosen order). Skipping the
- * `openresty` attempt is how an OpenResty box silently dropped to the include-blind
- * cat and lost every snippet-declared cert — the edge then served the self-signed
- * placeholder on :443 and a fronting Cloudflare in Full/Strict answered 525.
- */
-async function dumpResolvedConfig(
-  executor: CommandExecutor,
-  bins: string[],
-): Promise<string | null> {
-  for (const bin of bins) {
-    const dumped = await tryExec(executor, `${bin} -T 2>/dev/null`);
-    if (dumped && /server\s*\{/.test(dumped)) return dumped;
-  }
-  return null;
-}
-
 async function loadNginxConfig(executor: CommandExecutor): Promise<string> {
-  const dumped = await dumpResolvedConfig(executor, ["nginx", "openresty"]);
-  if (dumped) return dumped;
-  // Fallback: concatenate the usual include targets. Include-blind — a cert in a
-  // snippet won't be seen here, which is why the `-T` dumps above are tried first.
+  const dumped = await tryExec(executor, "nginx -T 2>/dev/null");
+  if (dumped && /server\s*\{/.test(dumped)) return dumped;
+  // Fallback: concatenate the usual include targets.
   const cat = await tryExec(
     executor,
     "cat /etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null",
@@ -108,12 +75,13 @@ function resolveProxyTarget(
 }
 
 /**
- * Every `location <path> { … }` in a server block with its body, in source order.
- * Balanced-brace matched so a nested `if {}` / `types {}` inside a location doesn't
- * truncate it.
+ * `location <path> { … proxy_pass … }` targets within a server block, in source
+ * order. `proxy_pass` is only valid inside a location (or `if`) in nginx, so
+ * this — not a server-level scan — is where real routes live. Balanced-brace
+ * matched so a nested `if {}` inside a location doesn't truncate it.
  */
-function locationBlocks(serverBody: string): { path: string; body: string }[] {
-  const out: { path: string; body: string }[] = [];
+function extractLocationProxies(serverBody: string): { path: string; proxyPass: string }[] {
+  const out: { path: string; proxyPass: string }[] = [];
   const re = /(?:^|[\s;}])location\s+([^{]+?)\s*\{/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(serverBody)) !== null) {
@@ -126,42 +94,12 @@ function locationBlocks(serverBody: string): { path: string; body: string }[] {
       else if (serverBody[i] === "}") depth--;
     }
     if (depth !== 0) break; // unbalanced — stop
-    out.push({ path, body: serverBody.slice(openIdx + 1, i - 1) });
+    const locBody = serverBody.slice(openIdx + 1, i - 1);
     re.lastIndex = i;
+    const pp = firstDirective(locBody, "proxy_pass");
+    if (pp) out.push({ path, proxyPass: pp });
   }
   return out;
-}
-
-/**
- * `location <path> { … proxy_pass … }` targets within a server block, in source
- * order. `proxy_pass` is only valid inside a location (or `if`) in nginx, so
- * this — not a server-level scan — is where real routes live.
- */
-function extractLocationProxies(serverBody: string): { path: string; proxyPass: string }[] {
-  const out: { path: string; proxyPass: string }[] = [];
-  for (const loc of locationBlocks(serverBody)) {
-    const pp = firstDirective(loc.body, "proxy_pass");
-    if (pp) out.push({ path: loc.path, proxyPass: pp });
-  }
-  return out;
-}
-
-/** Blank out quoted tokens so a directive-shaped word inside a VALUE can't be read
- *  as a directive. The edge's not-found page is one ~1.6 KB single-quoted token. */
-function withoutQuotedValues(body: string): string {
-  return body.replace(/'[^'\n]*'/g, "''").replace(/"[^"\n]*"/g, '""');
-}
-
-const SERVING_DIRECTIVE_RE =
-  /(?:^|[;{}\s])(?:proxy_pass|root|alias|fastcgi_pass|uwsgi_pass|scgi_pass|grpc_pass)\s/;
-
-/**
- * Does this location serve anything — proxy to a backend, or map a URI onto the
- * filesystem? A `return`-only location does not: it carries no route to migrate and
- * nothing that identifies the block as a site.
- */
-function servesNothing(locationBody: string): boolean {
-  return !SERVING_DIRECTIVE_RE.test(withoutQuotedValues(locationBody));
 }
 
 /**
@@ -198,7 +136,7 @@ function isHttpsUpgradeForSelf(body: string, names: string[]): boolean {
 }
 
 /**
- * Does every `location` in this block exist only to answer a CHALLENGE?
+ * Does every `location` in this block exist only to answer ACME challenges?
  *
  * certbot's `--webroot` leaves blocks whose sole content is
  * `location /.well-known/acme-challenge/ { root /var/www/certbot; }` — and
@@ -207,72 +145,18 @@ function isHttpsUpgradeForSelf(body: string, names: string[]): boolean {
  * static vhost for a directory with no index, which the edge answers with a 500
  * (`try_files` → `/index.html` → redirect cycle). Our edge answers ACME itself,
  * so these carry nothing to migrate.
- *
- * The same reasoning covers Openship's own edge-target challenge vhost
- * (`_oblien-challenge-<slug>.conf`): a block whose only location answers
- * `/.well-known/oblien-proxy-challenge/` is scaffolding proving we control a
- * routing target, not a site. Recognising it HERE rather than in each consumer is
- * what keeps it out of the orphan sweep, the domain-claim warning
- * (`untrackedSiteFor`) and the migrate importer at once — all three read this.
- *
- * A `return`-only sibling location does not change that answer, and the reason is
- * concrete: that challenge vhost claims a whole hostname, so it must also answer
- * `/` — without a `location /` nginx falls back to its compiled-in `root html` and
- * serves the OpenResty welcome page to anyone who visits the box by IP (#431). It
- * carries the shared not-found page for that, which serves no files and proxies
- * nowhere. Judging on what a location SERVES rather than on how many there are is
- * what lets both be true at once.
  */
-const CHALLENGE_LOCATION_RE = /\.well-known\/(acme-challenge|oblien-proxy-challenge)/i;
-
 function isAcmeWebrootOnly(body: string): boolean {
-  const locations = locationBlocks(body);
-  if (locations.length === 0) {
+  const paths = [...body.matchAll(/(?:^|[\s;}])location\s+([^{]+?)\s*\{/g)].map((m) =>
+    m[1].trim(),
+  );
+  if (paths.length === 0) {
     // No locations at all — a bare `root` with nothing serving it is only ACME
     // scaffolding when the path itself says so (certbot's nonexistent webroot).
     const root = firstDirective(body, "root") ?? "";
     return /letsencrypt|acme|certbot/i.test(root);
   }
-  // A challenge location must be PRESENT (otherwise a redirect-only vhost with a
-  // stray `root` would qualify by having nothing that serves), and nothing beside
-  // it may serve anything.
-  if (!locations.some((l) => CHALLENGE_LOCATION_RE.test(l.path))) return false;
-  return locations.every((l) => CHALLENGE_LOCATION_RE.test(l.path) || servesNothing(l.body));
-}
-
-/**
- * Read the curated reverse-proxy tunables back out of a `server {}` body.
- *
- * The inverse of `renderProxyOptions`, driven by the SAME `PROXY_DIRECTIVES` table,
- * so the two cannot describe different directive sets. Two results, because they
- * answer different questions:
- *
- *   `raw`   — every declared directive present in the block, verbatim. This is what
- *             the box is actually serving, and it's what the UI must show. A vhost
- *             we didn't write can legally hold `client_max_body_size 20M` or
- *             `proxy_read_timeout 1d`; rendering "not set" for a value that IS set
- *             would be a lie, and the operator would chase a limit that isn't there.
- *   `settings` — the subset that survives `sanitizeProxySettings`, i.e. what can be
- *             adopted into `routingConfig.proxy` and re-rendered unchanged.
- */
-function parseProxyDirectives(body: string): {
-  settings?: ProxySettings;
-  raw?: Record<string, string>;
-} {
-  const raw: Record<string, string> = {};
-  const candidate: Record<string, string | number | boolean> = {};
-  for (const spec of PROXY_DIRECTIVES) {
-    const found = firstDirective(body, spec.directive);
-    if (found === undefined) continue;
-    raw[spec.key] = found;
-    const parsed = parseProxyValue(spec, found);
-    if (parsed !== undefined) candidate[spec.key] = parsed;
-  }
-  const settings = sanitizeProxySettings(candidate);
-  return {
-    ...(settings ? { settings } : {}),
-    ...(Object.keys(raw).length > 0 ? { raw } : {}),
-  };
+  return paths.every((p) => /\.well-known\/acme-challenge/i.test(p));
 }
 
 function parseServer(
@@ -346,9 +230,6 @@ function parseServer(
   const site: ImportedSite = { serverNames: names, ssl, target, source };
   if (routes) site.routes = routes;
   if (certPath && keyPath) site.tls = { certPath, keyPath };
-  const tunables = parseProxyDirectives(body);
-  if (tunables.settings) site.proxy = tunables.settings;
-  if (tunables.raw) site.proxyRaw = tunables.raw;
   return { site, warnings };
 }
 
@@ -417,32 +298,6 @@ const OUR_EDGE_SITE_GLOBS = [
  * The blocks are plain nginx (`server_name` + `proxy_pass http://host:<port>` +
  * `ssl_certificate`), so the same parser applies. Read-only; empty if unreadable.
  */
-/**
- * Scan a FOREIGN host OpenResty holding — or having held — the edge ports: a legacy
- * bare Openship edge, or a hand-rolled one.
- *
- * Unlike {@link scanOpenshipEdge} (which reads OUR edge's KNOWN site trees), this
- * can't assume where the vhosts live, so it dumps the fully-resolved config
- * (`openresty -T`) — the one read that follows every `include` regardless of layout,
- * and that works even after a takeover has stopped the proxy. That gap is exactly
- * what hid a legacy bare edge's sites from the migrate offer: the fixed-glob read
- * missed vhosts `include`d from a non-default path, so the scan returned zero and the
- * consent gate collapsed to takeover-only — silently dropping every site the box was
- * serving. Falls back to the known openship site trees when no `openresty` binary is
- * on PATH to dump.
- *
- * NOT folded into `scanOpenshipEdge`: a bare `openresty` binary left behind after a
- * bare→container conversion would make `-T` dump the ORPHANED bare config over the
- * container's own sites on the "ours" read path.
- */
-export async function scanForeignOpenResty(
-  executor: CommandExecutor,
-): Promise<ProxyScanResult> {
-  const dump = await dumpResolvedConfig(executor, ["openresty"]);
-  if (dump) return parseNginxConfig(dump);
-  return scanOpenshipEdge(executor);
-}
-
 export async function scanOpenshipEdge(executor: CommandExecutor): Promise<ProxyScanResult> {
   const cat = `cat ${OUR_EDGE_SITE_GLOBS.join(" ")} 2>/dev/null`;
   const raw = await tryExec(executor, cat);

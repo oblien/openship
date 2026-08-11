@@ -32,7 +32,6 @@ import {
 import { RotateCw } from "lucide-react";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
 import type { TerminalErrorCode } from "@/lib/api";
-import { TerminalCardShell } from "@/components/terminal/TerminalCardShell";
 import "@xterm/xterm/css/xterm.css";
 
 export interface ServiceTerminalHandle {
@@ -50,8 +49,6 @@ interface ServiceTerminalProps {
   onResumeTokenChange?: (token: string | null) => void;
   theme?: TerminalTheme;
   className?: string;
-  /** Titlebar label for the shared shell (usually the service name). */
-  name?: string;
 }
 
 const darkTheme = {
@@ -150,7 +147,6 @@ export const ServiceTerminal = forwardRef<
     onResumeTokenChange,
     theme = "dark",
     className = "",
-    name = "Terminal",
   },
   ref,
 ) {
@@ -409,23 +405,12 @@ export const ServiceTerminal = forwardRef<
   }, [pty]);
 
   return (
-    <TerminalCardShell
-      name={name}
-      className={className}
-      status={
-        banner?.showReconnect ? (
-          <button
-            type="button"
-            onClick={handleReconnect}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-          >
-            <RotateCw className="size-3" />
-            Reconnect
-          </button>
-        ) : undefined
-      }
-      overlay={
-        banner ? (
+    <div className={`relative flex h-full w-full flex-col gap-2 ${className}`}>
+      {/* Status as a plain subheader line under the tab's "Terminal" header —
+          no boxed banner, no border. Only shown while connecting / errored /
+          exited; once connected it disappears and just the terminal remains. */}
+      {banner && (
+        <div className="flex items-center justify-between gap-3">
           <span
             className={
               "text-xs " +
@@ -434,15 +419,25 @@ export const ServiceTerminal = forwardRef<
           >
             {banner.message}
           </span>
-        ) : undefined
-      }
-    >
+          {banner.showReconnect && (
+            <button
+              type="button"
+              onClick={handleReconnect}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            >
+              <RotateCw className="size-3" />
+              Reconnect
+            </button>
+          )}
+        </div>
+      )}
+
       <div
         ref={containerRef}
-        className="h-full w-full overflow-hidden rounded-lg"
+        className="min-h-0 flex-1 overflow-hidden rounded-lg"
         style={{ fontSmooth: "antialiased", WebkitFontSmoothing: "antialiased" }}
       />
-    </TerminalCardShell>
+    </div>
   );
 });
 

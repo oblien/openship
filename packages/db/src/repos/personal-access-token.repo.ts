@@ -1,13 +1,7 @@
 import { and, desc, eq, isNull, isNotNull } from "drizzle-orm";
-import {
-  generateId,
-  serializeSourceAccessScope,
-  type Permission,
-  type ResourceType,
-  type SourceAccessScope,
-} from "@repo/core";
+import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { personalAccessToken, personalAccessTokenGrant } from "../schema";
+import { personalAccessToken } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -121,86 +115,45 @@ export function createPersonalAccessTokenRepo(db: Database) {
     },
 
     /**
-     * Create-or-update the grant-holder for an OAuth MCP client binding AND replace
-     * its resource grants, in one transaction.
-     *
-     * The two writes must not be separable. Done as upsert-then-delete-then-insert
-     * across two awaits, a failure in the window leaves the binding `scoped: true`
-     * holding ZERO grants — which is deny-all. At first consent that is merely a
-     * client that never worked; on a re-scope it is a live agent that silently lost
-     * all access mid-save. `oauth.repo.disconnectMcpClient` already spans both
-     * tables for the same reason.
-     *
-     * `unrevoke` is deliberately a parameter rather than always-true: a fresh
-     * consent IS a new authorization and should clear `revokedAt`, but an edit to an
-     * existing binding must never resurrect one that was revoked out from under it.
+     * Create-or-update the grant-holder for an OAuth MCP client binding. The
+     * caller then writes the resource grants via `patGrant` keyed by the
+     * returned id. `scoped` mirrors the PAT model: true when the binding
+     * carries resource grants, false when the client acts with the user's role.
      */
-    async upsertOAuthBindingWithGrants(input: {
+    async upsertOAuthBinding(input: {
       userId: string;
       organizationId: string | null;
       oauthClientId: string;
       readOnly: boolean;
       scoped: boolean;
-      unrevoke: boolean;
-      grants: ReadonlyArray<{
-        resourceType: ResourceType;
-        resourceId: string;
-        permissions: Permission[];
-        scope?: SourceAccessScope | null;
-      }>;
     }): Promise<PersonalAccessToken> {
-      return db.transaction(async (tx) => {
-        const [row] = await tx
-          .insert(personalAccessToken)
-          .values({
-            id: generateId("pat"),
-            userId: input.userId,
+      const [row] = await db
+        .insert(personalAccessToken)
+        .values({
+          id: generateId("pat"),
+          userId: input.userId,
+          organizationId: input.organizationId,
+          oauthClientId: input.oauthClientId,
+          name: `MCP client ${input.oauthClientId}`,
+          // Binding rows are never presented as a bearer — a random, unique,
+          // non-guessable hash keeps the unique constraint happy and can never
+          // collide with a real token's SHA-256 hash.
+          tokenPrefix: "mcp-oauth",
+          tokenHash: `oauth-binding:${generateId("patbind")}`,
+          readOnly: input.readOnly,
+          scoped: input.scoped,
+        })
+        .onConflictDoUpdate({
+          target: [personalAccessToken.userId, personalAccessToken.oauthClientId],
+          set: {
             organizationId: input.organizationId,
-            oauthClientId: input.oauthClientId,
-            name: `MCP client ${input.oauthClientId}`,
-            // Binding rows are never presented as a bearer — a random, unique,
-            // non-guessable hash keeps the unique constraint happy and can never
-            // collide with a real token's SHA-256 hash.
-            tokenPrefix: "mcp-oauth",
-            tokenHash: `oauth-binding:${generateId("patbind")}`,
             readOnly: input.readOnly,
             scoped: input.scoped,
-          })
-          .onConflictDoUpdate({
-            target: [personalAccessToken.userId, personalAccessToken.oauthClientId],
-            set: {
-              organizationId: input.organizationId,
-              readOnly: input.readOnly,
-              scoped: input.scoped,
-              ...(input.unrevoke ? { revokedAt: null } : {}),
-            },
-          })
-          .returning();
-        const binding = row!;
-
-        // Wholesale replacement: re-authorizing overwrites. The binding id is stable
-        // across the upsert, so issued OAuth tokens keep resolving to it.
-        await tx
-          .delete(personalAccessTokenGrant)
-          .where(eq(personalAccessTokenGrant.tokenId, binding.id));
-
-        if (input.scoped && input.grants.length > 0) {
-          await tx.insert(personalAccessTokenGrant).values(
-            input.grants.map((g) => ({
-              id: generateId("patgrant"),
-              tokenId: binding.id,
-              resourceType: g.resourceType,
-              resourceId: g.resourceId,
-              permissionsJson: JSON.stringify(g.permissions),
-              // Normalized on write so a pattern the matcher would reject is never
-              // stored as though it were enforceable.
-              scopeJson: serializeSourceAccessScope(g.scope ?? undefined),
-            })),
-          );
-        }
-
-        return binding;
-      });
+            revokedAt: null,
+          },
+        })
+        .returning();
+      return row!;
     },
 
     /** Revoke one of the user's own tokens. Returns false if not found/already revoked. */

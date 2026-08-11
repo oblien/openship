@@ -1,6 +1,6 @@
 {
   "name": "@repo/api",
-  "version": "0.6.1",
+  "version": "0.5.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,6 @@
     "start": "node --env-file-if-exists=.env dist/index.js",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {

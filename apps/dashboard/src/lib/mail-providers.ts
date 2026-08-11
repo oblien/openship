@@ -14,8 +14,6 @@
  * neutral glyph if a mark is missing/offline.
  */
 
-import type { RelayProviderId } from "@repo/core";
-
 /** Real brand logo via the favicon service — the actual brand favicon. */
 const brandLogo = (domain: string): string =>
   `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
@@ -38,13 +36,8 @@ export interface MailProvider {
   logo?: string;
   /** Explicit brand-logo URL — wins over `logo`. For brands not on simpleicons. */
   logoSrc?: string;
-  /**
-   * The outbound-relay id the API stores for this provider — a key into
-   * `@repo/core` RELAY_PROVIDERS, which owns the send-side facts (host template,
-   * SPF include, MAIL FROM support). `custom` for providers we only speak plain
-   * SMTP to. This catalog stays the UI/IMAP half: logos, hints, mailbox hosts.
-   */
-  backendProvider: RelayProviderId;
+  /** How the API tags this backend ("ses" is a UI hint; otherwise "custom"). */
+  backendProvider: "ses" | "custom";
   imapHost: string;
   imapPort: number;
   smtpHost: string;
@@ -96,7 +89,7 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     id: "oracle",
     label: "Oracle Cloud",
     logoSrc: brandLogo("oracle.com"),
-    backendProvider: "oracle",
+    backendProvider: "custom",
     sendOnly: true,
     imapHost: "",
     imapPort: 993,
@@ -108,7 +101,7 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     id: "resend",
     label: "Resend",
     logoSrc: brandLogo("resend.com"),
-    backendProvider: "resend",
+    backendProvider: "custom",
     sendOnly: true,
     imapHost: "",
     imapPort: 993,
@@ -121,7 +114,7 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     id: "sendgrid",
     label: "SendGrid",
     logoSrc: brandLogo("sendgrid.com"),
-    backendProvider: "sendgrid",
+    backendProvider: "custom",
     sendOnly: true,
     imapHost: "",
     imapPort: 993,
@@ -134,7 +127,7 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     id: "mailgun",
     label: "Mailgun",
     logoSrc: brandLogo("mailgun.com"),
-    backendProvider: "mailgun",
+    backendProvider: "custom",
     sendOnly: true,
     imapHost: "",
     imapPort: 993,
@@ -146,7 +139,7 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     id: "postmark",
     label: "Postmark",
     logoSrc: brandLogo("postmarkapp.com"),
-    backendProvider: "postmark",
+    backendProvider: "custom",
     sendOnly: true,
     imapHost: "",
     imapPort: 993,

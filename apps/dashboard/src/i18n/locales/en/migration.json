@@ -172,9 +172,6 @@
     "bind": "host path",
     "nVolumes": "{n} volumes",
     "nEnv": "{n} env vars",
-    "envFromImage": "{n} vars come from the image",
-    "envFromImageHint": "Not imported as config — the image supplies these at runtime. Import them to pin the values before you rebuild from source.",
-    "envFromImageImport": "Import anyway",
     "alreadyManaged": "{count} container(s) already managed by Openship were skipped."
   },
   "reimport": {

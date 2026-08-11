@@ -14,12 +14,6 @@ import { transaction } from "../../../src/modules/mail/admin/psql-runner";
 function capturingExecutor(sink: string[]): CommandExecutor {
   return {
     exec: async (cmd: string) => {
-      // `transaction()` resolves the box's mail topology first, and only the
-      // container flavor builds the `docker exec … psql` command under test.
-      // Answering the detection probe as a live engine keeps this a test of the
-      // QUOTING, not of engine discovery — an unanswered probe resolves to
-      // flavor "none" and throws before any SQL is built.
-      if (cmd.includes("{{.Config.Image}}")) return "true\topenship/mail:latest";
       sink.push(cmd);
       return "";
     },
@@ -48,14 +42,11 @@ describe("psql-runner transaction() — command injection is neutralized", () =>
     const cmds: string[] = [];
     await transaction(capturingExecutor(cmds), [EVIL_STATEMENT]);
     const cmd = cmds[0];
-    expect(cmd).toContain("docker exec openship-mail-db psql -U postgres -d vmail");
+    expect(cmd).toContain("sudo -u postgres psql -d vmail");
     expect(cmd).toContain(" -c '");
     // Everything after `-c '` up to the closing quote is a single argv token;
     // any inner single quote is escaped as '\'' so the payload can't break out.
-    // (docker exec passes `-c <sql>` straight to psql — no second shell parse.)
-    expect(
-      cmd.startsWith("docker exec openship-mail-db psql -U postgres -d vmail -A -t -v ON_ERROR_STOP=1 -c '"),
-    ).toBe(true);
+    expect(cmd.startsWith("sudo -u postgres psql -d vmail -A -t -v ON_ERROR_STOP=1 -c '")).toBe(true);
     expect(cmd.endsWith("'")).toBe(true);
   });
 

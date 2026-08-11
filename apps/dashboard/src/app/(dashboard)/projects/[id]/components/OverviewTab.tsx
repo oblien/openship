@@ -3,7 +3,6 @@
 import React from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { workloadOf } from "@/context/deployment/types";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
@@ -67,20 +66,15 @@ export const OverviewTab = () => {
           ? t.projects.overview.platformLocal
           : "-";
   const hasGit = !!(projectData.gitOwner && projectData.gitRepo);
-  // A worker shares hasServer=false with a static site, so classify via the
-  // resolved workload — otherwise a worker mislabels as "Static" (#538).
-  const workload = workloadOf({
-    workloadType: projectData.workloadType ?? projectData.options?.workloadType,
-    hasServer: projectData.hasServer ?? projectData.options?.hasServer,
-  });
-  const modeLabel =
-    workload === "static"
-      ? t.projects.overview.modeStatic
-      : workload === "worker"
-        ? t.projects.overview.modeWorker
-        : projectData.productionMode === "standalone"
-          ? t.projects.overview.modeStandalone
-          : t.projects.overview.modeServer;
+  const isStaticRuntime =
+    projectData.hasServer === false ||
+    projectData.options?.hasServer === false ||
+    projectData.productionMode === "static";
+  const modeLabel = isStaticRuntime
+    ? t.projects.overview.modeStatic
+    : projectData.productionMode === "standalone"
+      ? t.projects.overview.modeStandalone
+      : t.projects.overview.modeServer;
 
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -180,11 +174,8 @@ export const OverviewTab = () => {
 
   return (
     <div className="space-y-5">
-      {/* Only a catalog app's curated connection (URLs + generated keys) belongs on
-          the overview. A plain project's synthesized internal address is edited in
-          Settings → Advanced (single-app alias) and shown per service in the service
-          detail panel — surfacing it here too just clutters a plain project. Card
-          self-hides when the app declares no connection outputs. */}
+      {/* Catalog-app connection details (URLs + generated keys) — surfaced so the
+          user copies them into the app; nothing renders for apps without one. */}
       {projectData.isApp && (
         <ConnectionCard
           projectId={projectData.id}
@@ -215,10 +206,10 @@ export const OverviewTab = () => {
             value={modeLabel}
             loading={showProjectInfoSkeleton}
           />
-          {/* Port row shown when loading (we don't know the workload yet) or
-              when it's a web app. A worker runs a process but listens on no
-              port, and a static site has none either — both hide the row. */}
-          {(showProjectInfoSkeleton || workload === "web") && (
+          {/* Port row shown when loading (we don't know hasServer yet)
+              or when there's an actual server runtime. Once project
+              info hydrates and we know it's static, the row is hidden. */}
+          {(showProjectInfoSkeleton || !isStaticRuntime) && (
             <Item
               label={t.projects.overview.port}
               value={String(projectData.port || 3000)}
@@ -374,7 +365,7 @@ export const OverviewTab = () => {
                 className="absolute inset-0 w-full h-full text-primary"
                 viewBox="0 0 1000 200"
                 preserveAspectRatio="none"
-                style={{ color: "var(--primary)" }}
+                style={{ color: "hsl(var(--primary))" }}
               >
                 <defs>
                   <linearGradient id="overviewAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">

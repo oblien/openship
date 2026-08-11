@@ -1,21 +1,19 @@
 /**
  * Edge-ownership consent gate — decides how to make ports 80/443 ours to bind
  * without ever blind-killing a foreign proxy. Lives with the rest of the edge
- * module (not in the generic component installer): `ensureContainerEdge` calls this
- * before it stops or starts anything.
+ * module (not in the generic component installer): `installOpenResty` calls this
+ * at the top of its run.
  */
 
-import { AppError } from "@repo/core";
 import type { CommandExecutor } from "../../types";
-import type {
-  EdgeConflictDetails,
-  EdgeStatus,
-  InstallerConfig,
-  SystemLog,
-  SystemLogCallback,
-} from "../types";
-import { EdgeConflictError, EdgeMigrateRequested, probeEdge } from "./detect";
-import { beginEdgeTakeover, rollbackEdgeTakeover } from "./takeover-journal";
+import type { EdgeConflictDetails, InstallerConfig, SystemLog, SystemLogCallback } from "../types";
+import {
+  EdgeConflictError,
+  EdgeMigrateRequested,
+  freeEdgeTargets,
+  probeEdge,
+  stopTargetsForStatus,
+} from "./detect";
 import { importSites } from "./index";
 
 function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
@@ -32,73 +30,28 @@ function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
  *      "a service is already running" prompt): "override" stops it and takes
  *      over; "cancel" aborts. ("migrate" is signalled to the caller.)
  *   4. neither                  → throw EdgeConflictError (never guess).
- *
- * Whatever holds the ports goes through here, INCLUDING a deprecated bare-host
- * OpenResty an older Openship installed: the edge is a container now, so a host
- * OpenResty is a proxy to migrate from like any other. There is no second
- * "decommission the legacy edge" path — a second path is precisely how this gate got
- * bypassed (detect called that proxy "ours", so `canProceedClean` was true and we
- * returned without stopping anything, then the edge container crash-looped on
- * `bind() … (98: Address already in use)` while every surface reported success).
- *
- * Returns the probe alongside the decision so the caller doesn't re-run `probeEdge`
- * (several shell-outs per port) and act on a second, possibly different answer.
  */
 export async function ensureEdgeClear(
   executor: CommandExecutor,
   config: InstallerConfig | undefined,
   onLog: SystemLogCallback,
-): Promise<{ tookOver: boolean; status: EdgeStatus }> {
+): Promise<{ tookOver: boolean }> {
   const status = await probeEdge(executor);
-  if (status.canProceedClean) return { tookOver: false, status };
+  if (status.canProceedClean) return { tookOver: false };
 
-  // Journaled, and proven. `beginEdgeTakeover` snapshots how to restore what it's
-  // about to stop (so the caller's failure path can put it back, and so a crash
-  // mid-flight is repaired at next boot by `recoverInterruptedTakeover`) and then
-  // waits for the sockets to be RELEASED. Throwing when they aren't is the point:
-  // issuing a stop is not the same fact as ":80 is bindable", and every caller that
-  // conflated them started a container that lost the race and then reported success
-  // because `docker run` exited 0.
   const takeover = async () => {
     onLog(log(
       `Taking over ports from ${status.occupants.map((o) => o.command ?? o.port).join(", ")}...`,
       "warn",
     ));
-    const freed = await beginEdgeTakeover(
-      executor,
-      status,
-      onLog,
-      config?.edgePolicy?.stopTargets ?? [],
-    );
-    if (!freed.freed) {
-      // We stopped it and it didn't let go — so put it back before failing. This is
-      // OUR postcondition to honor: the caller hasn't started anything yet and has no
-      // journal of its own, so nobody downstream can undo this.
-      await rollbackEdgeTakeover(executor, onLog);
-      const plural = freed.stillBound.length > 1;
-      const ports =
-        `port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ` +
-        `${plural ? "are" : "is"} still in use, so the edge can't bind. Nothing was installed`;
-      throw new AppError(
-        // The advice has to match the actual cause. Told to hunt for another holder, an
-        // operator retries the same unprivileged takeover forever — and "stopped the
-        // existing proxy" is untrue on this arm, since the stop is what was refused.
-        freed.privilegeDegraded
-          ? `The ${ports} — and Openship could not run the stop as root on this host (see the ` +
-            "privilege warning above), so stopping the existing proxy was almost certainly " +
-            "refused. Retrying as this user will fail the same way: reconnect as root, or as a " +
-            "user with passwordless sudo."
-          : `Stopped the existing proxy, but ${ports} and the previous proxy has been restored — ` +
-            "find what else is holding the port and retry.",
-        409,
-        "EDGE_PORTS_STILL_BOUND",
-      );
-    }
+    const configured = config?.edgePolicy?.stopTargets ?? [];
+    const targets = configured.length ? configured : stopTargetsForStatus(status);
+    await freeEdgeTargets(executor, targets, (m, l) => onLog(log(m, l)));
   };
 
   if (config?.edgePolicy?.mode === "takeover") {
     await takeover();
-    return { tookOver: true, status };
+    return { tookOver: true };
   }
 
   if (config?.promptUser) {
@@ -148,7 +101,7 @@ export async function ensureEdgeClear(
     }
     if (action === "override") {
       await takeover();
-      return { tookOver: true, status };
+      return { tookOver: true };
     }
     // "cancel" (or anything unexpected) → leave the box untouched.
     throw new EdgeConflictError(status);

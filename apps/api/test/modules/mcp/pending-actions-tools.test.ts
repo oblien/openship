@@ -42,11 +42,6 @@ const REQUIRED_MCP_ROUTES: Array<{ method: string; path: string; why: string }> 
     path: "/api/deployments/:id/skip-port-check",
     why: "dismisses a port advisory surfaced by the pending list",
   },
-  {
-    method: "GET",
-    path: "/api/projects/:id/incidents",
-    why: "container-runtime health (crash loops, unhealthy/down) — the health story pending-actions deliberately does not cover",
-  },
 ];
 
 describe("pending-actions MCP exposure", () => {

@@ -163,31 +163,12 @@
       "pruned": "Sabitlenemiyor — arşiv zaten temizlenmiş"
     },
     "deleteDeployment": "Dağıtımı Sil",
+    "confirmRollback": "Bu sürüme geri dönülsün mü?\n\nYalnızca uygulama kodu geri yüklenir. Veritabanı ve birim verileri değişmez.",
     "rollbackFailed": "Geri alma başarısız oldu",
     "pinFailed": "Dağıtım sabitlenemedi",
     "unpinFailed": "Dağıtım sabitlemesi kaldırılamadı",
     "rollbackModeInstant": "Anında geri yükleme — bu sürümün saklanan imajı kullanılır, yeniden derleme yok.",
     "rollbackModeRebuild": "Yeniden derleme — bu sürümün imajı sunucuda yok, commit'i tekrar derlenecek.",
     "rollbackModeMixed": "Çoğunlukla anında — {count} servis imajını yitirdi ve yeniden derlenecek."
-  },
-  "rollbackConfirm": {
-    "title": "Bu sürüme geri dönülsün mü?",
-    "dataUnchanged": "Yalnızca uygulama kodu geri yüklenir. Veritabanı ve volume verileri değişmez.",
-    "envHeading": "Ortam değişkenleri",
-    "envSummaryOverlay": "{count} değişken değişecek — bu sürümün değerleri mevcut değerlerin üzerine uygulanır.",
-    "envSummaryReplace": "{count} değişken değişecek — bu sürümün ortamı kaydedildiği gibi kullanılır.",
-    "envNoChanges": "Hiçbir ortam değişkeni değişmiyor.",
-    "envUnchanged": "Mevcut konteyner yeniden oluşturulmaz, yalnızca yeniden başlatılır; ortamı değişmez.",
-    "envNoValues": "Değerler burada asla gösterilmez.",
-    "envTruncated": "{total} kaydın {shown} tanesi gösteriliyor.",
-    "dirFrozenWins": "bu sürümün değerine döner",
-    "dirRemovedSince": "geri gelir — bu sürümden sonra silinmiş",
-    "dirAddedSinceKept": "şu anki hâliyle kalır — bu sürümden sonra eklenmiş",
-    "dirAddedSinceDropped": "kaldırılır — bu sürümden sonra eklenmiş",
-    "scopeAmbiguous": "servis kapsamı olmadan kaydedilmiş, bu yüzden tek bir değer tüm servislere uygulanır",
-    "untouchedHeading": "Bu sürümden sonra eklenen servisler",
-    "untouchedNote": "Bunlar çalışmaya devam eder ve değiştirilmez: {names}",
-    "confirm": "Geri dön",
-    "cancel": "İptal"
   }
 }

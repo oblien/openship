@@ -15,10 +15,10 @@
  * `:::PORT` (or Node's default dual-stack) shows in tcp6 — either counts.
  */
 
-import type { ExecOnly } from "../types";
-
 /** Minimal command surface this probe needs. A full `CommandExecutor` satisfies it. */
-export type PortProbeExecutor = ExecOnly;
+export interface PortProbeExecutor {
+  exec(command: string, opts?: { timeout?: number }): Promise<string>;
+}
 
 export interface PortProbeResult {
   /** True if a LISTEN socket on the port was found. */
@@ -126,50 +126,4 @@ export async function waitForPortListening(
   return anyConclusive
     ? { listening: false, checked: true }
     : { listening: false, checked: false };
-}
-
-/** Outcome of {@link waitForPortFree}. `checked:false` = inconclusive, same rule. */
-export interface PortFreeResult {
-  /** True if the port was observed with no LISTEN socket on it. */
-  free: boolean;
-  /** True if the probe produced at least one real reading. */
-  checked: boolean;
-}
-/**
- * The mirror of {@link waitForPortListening}: poll until the port is NOT listening.
- *
- * Exists because "I stopped the thing holding :80" and ":80 is actually free" are
- * different facts, and only the second one lets a replacement bind. A stopped
- * systemd unit takes a moment to release the socket, and its master may respawn a
- * worker in between — so the caller that skipped this step started a container that
- * lost the race and crash-looped on `bind() … (98: Address already in use)`, then
- * reported success because `docker run` had exited 0.
- *
- * NEVER throws, and `checked:false` means "no reading" — a caller must not treat an
- * unusable executor as proof the port is free.
- */
-export async function waitForPortFree(
-  executor: PortProbeExecutor,
-  port: number,
-  opts: { timeoutMs?: number; intervalMs?: number } = {},
-): Promise<PortFreeResult> {
-  const timeoutMs = opts.timeoutMs ?? 15_000;
-  const intervalMs = opts.intervalMs ?? 500;
-  const deadline = Date.now() + timeoutMs;
-  let anyConclusive = false;
-
-  try {
-    for (;;) {
-      const result = await probePortListeningOnce(executor, port);
-      if (result === false) return { free: true, checked: true };
-      if (result === true) anyConclusive = true;
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      await delay(Math.min(intervalMs, remaining));
-    }
-  } catch {
-    return { free: false, checked: false };
-  }
-
-  return anyConclusive ? { free: false, checked: true } : { free: false, checked: false };
 }

@@ -26,7 +26,6 @@ import { stop as stopService } from "../lib/service";
 import { readInstallMethod, composeUninstall } from "../lib/compose";
 import { rollbackHostEdge } from "../lib/edge-preflight";
 import { OS_DIR } from "../lib/paths";
-import { startUnitHint } from "../lib/this-host";
 
 export const uninstallCommand = new Command("uninstall")
   .description(
@@ -96,9 +95,6 @@ export const uninstallCommand = new Command("uninstall")
       }
     }
 
-    // This host's own way of starting a service, not systemd's — the same hint is
-    // printed by `up` and by the edge import, and all three read it from one place.
-    const back = startUnitHint("nginx");
     console.log(
       chalk.green("\n  ✔ Openship uninstalled.\n") +
         // A takeover that SUCCEEDED cleared its journal, so we have no record of
@@ -107,9 +103,7 @@ export const uninstallCommand = new Command("uninstall")
           ? ""
           : chalk.dim(
               "  If Openship took over :80/:443 from another proxy, re-enable it:\n" +
-                (back
-                  ? `    ${back}   (or caddy / apache2)\n`
-                  : "    start it the way this host starts services (nginx / caddy / apache2)\n"),
+                "    sudo systemctl enable --now nginx   (or caddy / apache2)\n",
             )) +
         chalk.dim("  Deployed apps are still running — `docker ps` to review them.\n"),
     );

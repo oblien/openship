@@ -21,7 +21,6 @@ import {
   recordDomainDns,
   deleteDomainDns,
 } from "./domain-dns.service";
-import { relaySpfInclude } from "./outbound-relay.service";
 
 const DOMAIN_RE = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/i;
 
@@ -198,13 +197,11 @@ export async function createDomain(
         const state = await readState(exec);
         const installDomain = state?.domain ?? null;
         // A domain added while the relay routes ALL domains (scope="all", or a
-        // legacy relay with no scope) inherits the relay provider's SPF include
-        // so it can send through the relay immediately. "selected"-scope relays
-        // don't auto-enroll new domains — the operator adds them in the Sending
-        // tab, and that path republishes DNS via `applyRelayToState`.
+        // legacy relay with no scope) inherits the SES SPF include so it can
+        // send through the relay immediately. "selected"-scope relays don't
+        // auto-enroll new domains — the operator adds them in the Sending tab.
         const relay = state?.outboundRelay;
-        const relayInclude =
-          relay?.enabled && relay.scope !== "selected" ? relaySpfInclude(relay) : undefined;
+        const relayInclude = !!(relay?.enabled && relay.scope !== "selected");
         // Pull the same IPs step 11 detected for the primary install so
         // additional domains publish identical SPF shape: `mx ip4:… ip6:… -all`.
         // Falling back to mx-only SPF (no IPs) still passes, but the explicit
@@ -251,7 +248,7 @@ export async function createDomain(
         dkimValue,
         ipv4,
         ipv6,
-        { spfInclude: relayInclude },
+        { sesInclude: relayInclude },
       );
       await recordDomainDns(serverId, domain, records, postmasterPassword);
       if (dkimError) {

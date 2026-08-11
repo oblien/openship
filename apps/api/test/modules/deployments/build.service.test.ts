@@ -43,10 +43,7 @@ const {
   syncProjectRouteState: vi.fn(),
 }));
 
-// Partial, not a replacement: the graph reaches `lib/auth`, which reads `schema` and
-// `getDriver()` at module scope. Only `repos` is under test.
-vi.mock("@repo/db", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock("@repo/db", () => ({
   repos,
 }));
 
@@ -85,7 +82,6 @@ vi.mock("../../../src/modules/deployments/smart-route", () => ({
 
 import {
   requestBuildAccess,
-  resolveSnapshotTarget,
   triggerDeployment,
   type DeploymentConfigSnapshot,
 } from "../../../src/modules/deployments/build.service";
@@ -176,82 +172,6 @@ function baseSnapshot(): DeploymentConfigSnapshot {
     composeServices: composeServices as any,
   };
 }
-
-/**
- * The single place that decides a snapshot's target. The durable `project.serverId`
- * (Fix 2a) is what stops a server-hosted project from regressing to "local" on a
- * fresh/partial snapshot — the root of the Access-URL-shows-localhost bug — so the
- * priority order here is load-bearing, not cosmetic.
- */
-describe("resolveSnapshotTarget", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  function project(overrides: Record<string, unknown> = {}) {
-    return {
-      id: "project-1",
-      activeDeploymentId: null,
-      cloudWorkspaceId: null,
-      serverId: null,
-      runtimeMode: null,
-      ...overrides,
-    } as any;
-  }
-
-  it("uses the durable project.serverId even when there is no active deployment", async () => {
-    const t = await resolveSnapshotTarget(project({ serverId: "srv_1" }));
-    expect(t).toMatchObject({ deployTarget: "server", serverId: "srv_1" });
-    expect(repos.deployment.findById).not.toHaveBeenCalled();
-  });
-
-  // The regression itself: the last deploy mis-resolved and stamped "local", but the
-  // project is durably bound to a server, so the NEXT deploy must stay on the server
-  // rather than inherit the bad "local" from active meta.
-  it("keeps a server-bound project on the server even when active meta says local", async () => {
-    repos.deployment.findById.mockResolvedValue({
-      meta: { deployTarget: "local" } as DeploymentConfigSnapshot,
-    });
-    const t = await resolveSnapshotTarget(
-      project({ activeDeploymentId: "dep_old", serverId: "srv_1" }),
-    );
-    expect(t).toMatchObject({ deployTarget: "server", serverId: "srv_1" });
-  });
-
-  it("lets cloud win over a stray serverId and drops the serverId", async () => {
-    const t = await resolveSnapshotTarget(
-      project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }),
-    );
-    expect(t.deployTarget).toBe("cloud");
-    expect(t.serverId).toBeUndefined();
-  });
-
-  it("lets an explicit override win over the durable binding", async () => {
-    const t = await resolveSnapshotTarget(
-      project({ serverId: "srv_1" }),
-      { deployTarget: "server", serverId: "srv_override" },
-    );
-    expect(t).toMatchObject({ deployTarget: "server", serverId: "srv_override" });
-  });
-
-  // Legacy rows not yet backfilled with project.serverId still resolve via the
-  // active deployment's stamped meta — step 5 in the precedence.
-  it("infers server from legacy active-meta serverId when the column is empty", async () => {
-    repos.deployment.findById.mockResolvedValue({
-      meta: { serverId: "srv_legacy" } as DeploymentConfigSnapshot,
-    });
-    const t = await resolveSnapshotTarget(
-      project({ activeDeploymentId: "dep_old", serverId: null }),
-    );
-    expect(t).toMatchObject({ deployTarget: "server", serverId: "srv_legacy" });
-  });
-
-  it("resolves to local (undefined target, no serverId) with no cloud, no server, no meta", async () => {
-    const t = await resolveSnapshotTarget(project());
-    expect(t.deployTarget).toBeUndefined();
-    expect(t.serverId).toBeUndefined();
-  });
-});
 
 describe("triggerDeployment", () => {
   beforeEach(() => {
@@ -418,9 +338,7 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
     expect(result.deployment_id).toBe("dep-1");
     // Persisted as real service rows...
-    expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", scannedServices, {
-      removeMissing: false,
-    });
+    expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", scannedServices);
     // ...and carried in the snapshot, in services mode.
     expect(resolveServicePipelineMode).toHaveBeenCalledWith(
       expect.objectContaining({ id: "project-1" }),
@@ -443,9 +361,7 @@ describe("requestBuildAccess — folder-upload compose services", () => {
       services: requested as any,
     });
 
-    expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", requested, {
-      removeMissing: false,
-    });
+    expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", requested);
   });
 
   // #336: the wizard sees env masked, so a deploy request can echo "••••••••".
@@ -463,11 +379,9 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
     await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: requested as any });
 
-    expect(repos.service.syncFromCompose).toHaveBeenCalledWith(
-      "project-1",
-      [expect.objectContaining({ name: "api", environment: { API_TOKEN: "real-token" } })],
-      { removeMissing: false },
-    );
+    expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", [
+      expect.objectContaining({ name: "api", environment: { API_TOKEN: "real-token" } }),
+    ]);
   });
 
   it("#336: drops a masked value with no recovery source (never persists the sentinel)", async () => {
@@ -479,11 +393,9 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
     await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: requested as any });
 
-    expect(repos.service.syncFromCompose).toHaveBeenCalledWith(
-      "project-1",
-      [expect.objectContaining({ name: "api", environment: { REAL: "keep" } })],
-      { removeMissing: false },
-    );
+    expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", [
+      expect.objectContaining({ name: "api", environment: { REAL: "keep" } }),
+    ]);
   });
 
   it("leaves an existing services project's own rows alone", async () => {

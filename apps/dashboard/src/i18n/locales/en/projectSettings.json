@@ -12,7 +12,6 @@
     "kindImage": "Container image",
     "current": "Current version",
     "latest": "Latest version",
-    "repository": "Repository",
     "notChecked": "Not checked yet",
     "upToDate": "Up to date",
     "updateAvailable": "Update available",
@@ -70,26 +69,10 @@
     "hideLogs": "Hide logs",
     "deployLogs": "deploy logs",
     "back": "Back",
-    "phaseImages": "Preparing images",
-    "phaseServices": "Starting services",
-    "phaseAppSetup": "Finishing setup",
-    "phaseReady": "Live",
-    "phaseQueued": "Queued…",
-    "stepperTitle": "Installation steps",
-    "firstLoginTitle": "First login",
-    "firstLoginUser": "Username",
-    "firstLoginPassword": "Password",
     "destinationTitle": "Where to install",
     "destinationHint": "Pick the server or cloud this app runs on.",
-    "descMore": "More",
-    "descLess": "Less",
-    "needsTitle": "What it needs",
-    "needsMemory": "{value} RAM",
-    "needsCpu": "{value}",
-    "hostFitTitle": "This server is smaller than {app} needs",
-    "hostFitMemory": "Needs {needed} of RAM — this one has {available}",
-    "hostFitCpu": "Needs {needed} — this one has {available}",
-    "hostFitHint": "Install it on a bigger machine, or pick another destination.",
+    "destLocal": "This machine",
+    "destLocalDesc": "Run it here, on this Openship host.",
     "routePortLabel": "Port only (no domain)",
     "routePortDesc": "Reachable at the host address and port — no domain or Cloud needed.",
     "routeFreeLabel": "Free subdomain",
@@ -108,17 +91,6 @@
     "tcpInternalDesc": "Only other services in this app can reach it.",
     "tcpFirewallNote": "Open port {port} on your server firewall to connect from outside.",
     "desktopReachNote": "On desktop you can open it on localhost — or forward the port from Servers → Ports for a remote server.",
-    "statusInstalling": "Installing",
-    "statusLive": "Live",
-    "statusCancelled": "Cancelled",
-    "statusFailed": "Failed",
-    "stopInstall": "Stop install",
-    "stopping": "Stopping…",
-    "installCancelled": "Install cancelled",
-    "startOver": "Start over",
-    "breadcrumbApps": "Apps",
-    "appEyebrow": "App",
-    "stopFailed": "Couldn't stop the install",
     "mail": {
       "title": "Set up mail",
       "subtitle": "Deploy webmail on your own domain, or connect an existing mailbox.",
@@ -133,11 +105,8 @@
         "gmail": "Gmail",
         "fastmail": "Fastmail"
       },
-      "sendOnlyNote": "{provider} only sends mail — it holds no mailboxes. IMAP has to point at wherever your mail is actually stored.",
-      "sendOnlyNoInbox": "No inbox yet? Set up a mail server here, then relay sending through {provider} →",
-      "imapOnOurServer": "Mailboxes read from {host} — this instance's own mail server. Only sending goes through {provider}.",
-      "relayNote": "This instance already runs a mail server. If the mailboxes are on it, relay sending from its Delivery → Sending tab instead: IMAP stays local and only sending goes to {provider}, per domain or per address, and its own webmail keeps working.",
-      "relayCta": "Configure the relay instead →",
+      "sesNote": "Amazon SES only sends mail — point IMAP at wherever your mail is stored and read.",
+      "sesSelfHostCta": "Don't have an inbox? Self-host one now and relay send through SES →",
       "hostname": "Webmail address",
       "hostnameHint": "The public URL people open to read their mail, e.g. mail.example.com.",
       "imapHost": "IMAP host",
@@ -159,28 +128,6 @@
       "status": "Status",
       "project": "Project",
       "hostedOn": "Hosted On"
-    },
-    "projectMenu": {
-      "rename": "Rename project",
-      "copyId": "Copy project ID",
-      "idCopied": "Project ID copied",
-      "copyFailed": "Couldn't copy to the clipboard",
-      "pause": "Pause project",
-      "resume": "Resume project",
-      "delete": "Delete project"
-    },
-    "rename": {
-      "title": "Rename project",
-      "description": "Changes the display name. Nothing is redeployed.",
-      "label": "Project name",
-      "placeholder": "My project",
-      "identityNote": "The project keeps the identity “{slug}” — its URL, container names and volumes don't change. To change the URL, edit the domain under Domains & Routes.",
-      "save": "Save",
-      "cancel": "Cancel",
-      "toast": {
-        "renamed": "Renamed to {name}",
-        "failed": "Failed to rename the project"
-      }
     },
     "statusActive": "Active",
     "statusDisabled": "Disabled",
@@ -249,19 +196,6 @@
       "toast": {
         "saved": "Routing set to {mode}",
         "failed": "Failed to update routing"
-      }
-    },
-    "internalAlias": {
-      "title": "Internal hostname",
-      "description": "Custom name other services use to reach this app privately",
-      "intro": "Set an extra DNS name for this app on its private project network. It resolves alongside the default (the project slug) — other linked services can use either. Public access is unchanged; this never exposes a port.",
-      "label": "Hostname alias",
-      "hint": "Letters, digits and dashes only. Leave empty to use the project slug.",
-      "save": "Save",
-      "toast": {
-        "saved": "Internal hostname updated",
-        "failed": "Couldn't update the internal hostname",
-        "invalid": "Enter at least one letter or digit"
       }
     }
   },
@@ -375,8 +309,7 @@
       "staticNoServer": "Static (no server)",
       "modeSandboxed": "Sandboxed (container)",
       "modeDirect": "Direct (host process)",
-      "modeDefault": "Default (resolved at deploy)",
-      "modeStatic": "None — served as static files"
+      "modeDefault": "Default (resolved at deploy)"
     },
     "storage": {
       "title": "Persistent storage",

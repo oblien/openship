@@ -163,31 +163,12 @@
       "pruned": "Impossible d'épingler — l'artéfact a déjà été purgé"
     },
     "deleteDeployment": "Supprimer le déploiement",
+    "confirmRollback": "Revenir à cette version ?\n\nSeul le code de l'application est restauré. Les données de base et de volumes ne changent pas.",
     "rollbackFailed": "Échec du rollback",
     "pinFailed": "Échec de l'épinglage du déploiement",
     "unpinFailed": "Échec du désépinglage du déploiement",
     "rollbackModeInstant": "Restauration instantanée — réutilise l'image conservée de cette version, sans reconstruction.",
     "rollbackModeRebuild": "Reconstruction — l'image de cette version n'est plus sur l'hôte, son commit est reconstruit.",
     "rollbackModeMixed": "Presque instantané — {count} service(s) ont perdu leur image et seront reconstruits."
-  },
-  "rollbackConfirm": {
-    "title": "Revenir à cette version ?",
-    "dataUnchanged": "Seul le code de l'application est restauré. Les données de base de données et de volumes ne changent pas.",
-    "envHeading": "Variables d'environnement",
-    "envSummaryOverlay": "{count} variable(s) changent — les valeurs de cette version sont réappliquées par-dessus les actuelles.",
-    "envSummaryReplace": "{count} variable(s) changent — l'environnement de cette version est utilisé tel qu'il a été capturé.",
-    "envNoChanges": "Aucune variable d'environnement ne change.",
-    "envUnchanged": "Le conteneur existant est redémarré et non recréé : son environnement reste intact.",
-    "envNoValues": "Les valeurs ne sont jamais affichées ici.",
-    "envTruncated": "Affichage de {shown} sur {total}.",
-    "dirFrozenWins": "revient à la valeur de cette version",
-    "dirRemovedSince": "réapparaît — supprimée depuis cette version",
-    "dirAddedSinceKept": "conservée telle quelle — ajoutée après cette version",
-    "dirAddedSinceDropped": "supprimée — ajoutée après cette version",
-    "scopeAmbiguous": "capturée sans portée de service : une seule valeur s'applique à tous les services",
-    "untouchedHeading": "Services ajoutés après cette version",
-    "untouchedNote": "Ils continuent de tourner et ne sont pas touchés : {names}",
-    "confirm": "Revenir",
-    "cancel": "Annuler"
   }
 }

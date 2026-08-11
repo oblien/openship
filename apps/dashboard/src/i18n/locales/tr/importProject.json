@@ -101,10 +101,6 @@
     "serverOnPort": "{port} portundaki sunucu",
     "serverPortNotSet": "Sunucu portu ayarlanmadı",
     "staticFromEdge": "Edge üzerinden sunulan statik içerik",
-    "modeServer": "Sunucu",
-    "modeWorker": "Worker",
-    "modeStatic": "Statik",
-    "workerModeDesc": "Bağlantı noktası veya genel URL olmadan sürekli çalışır — bir kuyruk tüketicisi, cron veya bot.",
     "staticPathHint": "Edge üzerinden statik dosyalar olarak sunulur — hiçbir işlem çalışmaz.",
     "buildSettingsTitle": "Derleme Ayarları"
   },

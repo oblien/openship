@@ -44,22 +44,6 @@
     "addDomain": "Domain hinzufügen",
     "reviewDns": "DNS-Einträge prüfen"
   },
-  "webmail": {
-    "title": "Webmail",
-    "subtitle": "Der Mail-Client, in dem sich Ihre Nutzer anmelden.",
-    "opening": "Webmail-Projekt wird geöffnet …",
-    "noServerTitle": "Noch kein Mailserver",
-    "noServerBody": "Webmail ist nur ein Client – es braucht einen Mailserver zum Anmelden. Richten Sie zuerst einen ein und kommen Sie dann hierher zurück.",
-    "installTitle": "Webmail ist nicht installiert",
-    "installBody": "Stellen Sie den Webmail-Client bereit, damit Postfächer im Browser gelesen werden können. Er wird als gewöhnliches openship-Projekt installiert – Sie verwalten ihn also unter Projekte wie alles andere, was Sie bereitstellen.",
-    "adoptTitle": "Webmail wird hier nicht verwaltet",
-    "chooseTitle": "Welcher Mailserver?",
-    "chooseBody": "Jeder Mailserver hat sein eigenes Webmail. Wählen Sie die Domain, die Sie öffnen möchten.",
-    "incompleteTitle": "Mailserver ist noch nicht bereit",
-    "incompleteBody": "{server} wird noch eingerichtet. Webmail meldet sich dort an – schließen Sie also zuerst den Mailserver ab und installieren Sie Webmail dann von hier aus.",
-    "incompleteAction": "Mail-Einrichtung abschließen",
-    "runningNote": "Unter {hostname} läuft bereits ein Webmail, das hier aber von nichts verwaltet wird. Die Installation übernimmt es in ein Projekt, statt ein zweites aufzusetzen."
-  },
   "domains": {
     "heading": "Domains",
     "description": "Jede Zeile entspricht einer Zeile in vmail.domain auf dem Mail-VPS. Zusätzliche Domains nehmen Mail an, sobald ihr MX-Eintrag hierher zeigt.",
@@ -225,45 +209,6 @@
     "dnsScanDesc": "Live-Prüfung des öffentlichen DNS für jeden Eintrag, den dieser Server erwartet.",
     "rescan": "Erneut scannen",
     "dnsEmpty": "Noch keine DNS-Einträge hinterlegt. Schließe den Installationsassistenten ab, um den Scan zu befüllen.",
-    "delivery": {
-      "title": "Ausgehender Versand",
-      "desc": "Wohin dieser Server Mail übergibt – und ob auf dem Weg nach draußen etwas hängt.",
-      "sendPath": "Versandweg",
-      "direct": "Direkt an die Empfänger",
-      "directHint": "Nachrichten gehen direkt von diesem Server an den Mailserver des jeweiligen Empfängers.",
-      "relay": "Versand über {host}",
-      "relayAll": "Alle Absender auf diesem Server versenden über das Relay.",
-      "relaySelected": "Nur ausgewählte Absender nutzen das Relay: {domains}",
-      "queue": "Warteschlange",
-      "queueEmpty": "Leer – es wartet nichts auf den Versand.",
-      "queueOne": "{count} Nachricht wartet auf den Versand.",
-      "queueOther": "{count} Nachrichten warten auf den Versand.",
-      "sampled": "Die Warteschlange ist größer als der ausgelesene Bereich; die Gründe unten sind daher die neuesten.",
-      "reasons": "Warum Mail zurückgestellt wird",
-      "affectedOne": "{count} Nachricht",
-      "affectedOther": "{count} Nachrichten",
-      "kind": {
-        "auth": "Authentifizierung abgelehnt",
-        "tls": "Verschlüsselung fehlgeschlagen",
-        "network": "Keine Verbindung möglich",
-        "rejected": "Vom Empfänger abgewiesen",
-        "other": "Zurückgestellt"
-      },
-      "hint": {
-        "authRelay": "Dein Relay hat diese Zugangsdaten abgelehnt. Gib SMTP-Benutzernamen und Passwort im Tab „Sending“ neu ein.",
-        "auth": "Die nächste Station hat die Authentifizierung abgelehnt.",
-        "tls": "TLS mit der nächsten Station konnte nicht verhandelt werden.",
-        "network": "Dieser Server konnte die nächste Station nicht erreichen. Prüfe, ob die ausgehenden Ports 25 und 587 offen sind.",
-        "rejected": "Der Empfänger hat die Nachricht vorerst abgewiesen. Postfix versucht es weiter.",
-        "other": "Postfix versucht es nach eigenem Zeitplan erneut."
-      },
-      "status": {
-        "ok": "Versendet",
-        "warn": "Verzögert",
-        "fail": "Kein Versand",
-        "unknown": "Unbekannt"
-      }
-    },
     "logs": "Protokolle",
     "openLogs": "Protokolle öffnen",
     "up": "Aktiv seit {time}",
@@ -317,10 +262,7 @@
       "partDown": "{names} ausgefallen",
       "partNotInstalled": "{names} nicht installiert",
       "partDnsOne": "{count} DNS-Eintrag fehlt",
-      "partDnsOther": "{count} DNS-Einträge fehlen",
-      "partDelivery": "ausgehende Mail wird nicht zugestellt",
-      "almostSubQueueOne": "{count} Nachricht wartet auf den Versand – siehe Ausgehender Versand unten.",
-      "almostSubQueueOther": "{count} Nachrichten warten auf den Versand – siehe Ausgehender Versand unten."
+      "partDnsOther": "{count} DNS-Einträge fehlen"
     },
     "time": {
       "secondsAgo": "vor {n} Sek.",
@@ -335,9 +277,7 @@
     "schedules": {
       "manual": "Nur manuell",
       "daily": "Täglich",
-      "weekly": "Wöchentlich",
-      "monthly": "Monatlich",
-      "custom": "Benutzerdefiniert (Cron)"
+      "weekly": "Wöchentlich"
     },
     "whatTitle": "Was gesichert wird",
     "whatDesc": "Konten und Authentifizierung sind immer enthalten; Nachrichtendaten und Schlüssel sind optional.",
@@ -353,31 +293,6 @@
     "noDest": "Noch keine Sicherungsziele. Füge auf der Seite „Sicherungen“ eines hinzu (z. B. einen bestehenden Server).",
     "destinationLabel": "Ziel",
     "autoLabel": "Automatische Sicherungen",
-    "timeLabel": "Uhrzeit",
-    "timeHint": "Serverzeit",
-    "weekdayLabel": "Wochentag",
-    "dayOfMonthLabel": "Tag des Monats",
-    "cronLabel": "Cron-Ausdruck",
-    "cronHint": "Fünf Felder, ausgewertet in der Zeitzone des Servers.",
-    "scheduleJobHint": "Automatische Sicherungen laufen als geplanter Job.",
-    "manageDest": "Verwalten",
-    "retentionTitle": "Aufbewahrung",
-    "retentionDesc": "Wie viel Verlauf am Ziel bleibt. Ältere Sicherungen werden bei der täglichen Aufräumung samt Dateien gelöscht.",
-    "keepCountLabel": "Letzte behalten",
-    "keepCountUnit": "Sicherungen",
-    "keepDaysLabel": "Löschen nach",
-    "keepDaysUnit": "Tagen",
-    "retentionNoLimit": "Kein Limit",
-    "retentionUnlimitedWarning": "Es wird nichts gelöscht — dieses Ziel wächst weiter.",
-    "weekdays": {
-      "sun": "Sonntag",
-      "mon": "Montag",
-      "tue": "Dienstag",
-      "wed": "Mittwoch",
-      "thu": "Donnerstag",
-      "fri": "Freitag",
-      "sat": "Samstag"
-    },
     "saveSettings": "Einstellungen speichern",
     "backupNow": "Jetzt sichern",
     "recentTitle": "Letzte Sicherungen",
@@ -386,7 +301,6 @@
     "migrate": "Migrieren",
     "toastTitle": "Sicherung",
     "pickDest": "Wähle zuerst ein Sicherungsziel.",
-    "scheduleIncomplete": "Wähle eine Uhrzeit für diesen Zeitplan, oder stelle ihn auf manuell zurück.",
     "saved": "Sicherungseinstellungen gespeichert.",
     "saveFailed": "Sicherungseinstellungen konnten nicht gespeichert werden",
     "started": "Sicherung gestartet. Sie erscheint unten, während sie läuft.",
@@ -462,16 +376,6 @@
     "body": "Brandneue Versanddomains haben noch keine Reputation, daher stufen Anbieter frühe Mail in den ersten 24–48 Stunden möglicherweise als Spam ein. Das ist normal. Markiere Nachrichten in deinem Test-Postfach als „Kein Spam“, und die Zustellbarkeit verbessert sich schnell. ",
     "dismissLink": "Ich weiß, das ausblenden",
     "dismiss": "Schließen"
-  },
-  "engine": {
-    "downTitle": "Die Mail-Engine auf diesem Server läuft nicht",
-    "downBody": "Solange sie gestoppt ist, wird keine Mail zugestellt oder angenommen, und jeder Tab hier braucht sie. Sie wieder zu starten ist sicher – es wird nichts neu installiert und keine Konfiguration geändert.",
-    "legacyNote": "Dieser Server nutzt die alte, direkt auf dem Host installierte Engine (systemd Postfix/Dovecot) – es gibt also keinen Container zum Prüfen.",
-    "start": "Engine starten",
-    "missingTitle": "Keine Mail-Engine auf diesem Server",
-    "missingBody": "Openship findet hier keine Mail-Engine – weder den Engine-Container noch die Postfix-/Dovecot-Units. Führe das Mail-Setup erneut aus, um sie neu zu installieren.",
-    "rerunSetup": "Mail-Setup erneut ausführen",
-    "cardBlocked": "Nicht verfügbar, bis die Mail-Engine läuft."
   },
   "welcome": {
     "invalidEmail": "Gib eine gültige E-Mail-Adresse ein",

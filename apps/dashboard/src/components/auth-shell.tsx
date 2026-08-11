@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "@/components/theme-provider";
-import { useBrandName, useI18n } from "@/components/i18n-provider";
+import { useI18n } from "@/components/i18n-provider";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Moon, Sun, SunMoon } from "lucide-react";
@@ -30,7 +30,6 @@ export function AuthShell({
 }) {
   const { resolvedTheme, toggle } = useTheme();
   const { t } = useI18n();
-  const brand = useBrandName();
 
   return (
     <div
@@ -57,7 +56,7 @@ export function AuthShell({
           )}
           <Logo size={24} />
           <span className="text-[16px] font-semibold tracking-tight text-foreground">
-            {brand}
+            {t.brand}
           </span>
         </div>
         <div className="flex items-center gap-1">

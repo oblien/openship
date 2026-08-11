@@ -257,14 +257,6 @@ export interface DeployConfig {
   /** Port the application listens on */
   port: number;
   /**
-   * A WORKER: a long-running container that listens on no port and is reached by
-   * nothing (issue #538-B). When true the runtime publishes no host port, exposes
-   * no container port, and injects no `PORT` env — `port`/`hostPort` are ignored.
-   * A background consumer (queue/cron) with no HTTP surface; the value it produces
-   * is a side effect, so there is nothing to route or health-check on a port.
-   */
-  portless?: boolean;
-  /**
    * Pinned LOOPBACK host port to publish (docker: `127.0.0.1:<hostPort>:<port>`)
    * under the loopback-port route strategy. When unset, docker falls back to a
    * random loopback host port. Ignored by bare (the app owns 127.0.0.1:<port>).
@@ -285,19 +277,6 @@ export interface DeployConfig {
   /** Project slug — scopes named volumes to `openship-<slug>-<name>` so two
    *  projects that pick the same volume name never share one. */
   slug?: string;
-  /**
-   * Internal DNS alias for this single-app container. When set, the container
-   * joins its `openship-<slug>` bridge network with this name as a network
-   * alias + `Hostname`, so another project linked to it (via
-   * `attachLinkedNetworks`) resolves it by name — the same east-west
-   * reachability compose services already have. This does NOT publish a public
-   * port: loopback-only publishing is unchanged and the network is the project's
-   * own boundary (a consumer only lands on it through an explicit link).
-   */
-  networkAlias?: string;
-  /** Extra network aliases (e.g. a user-chosen custom hostname) added alongside
-   *  `networkAlias`. All resolve to this container on the project network. */
-  extraAliases?: string[];
   /**
    * Persistent mounts for this workload, in compose syntax
    * (`name:/container/path`, or a host bind mount). Already resolved from the
@@ -430,29 +409,8 @@ export interface ResourceUsage {
 export interface RouteProxyLocation {
   /** nginx location prefix, e.g. "/api/". */
   pathPrefix: string;
-  /** Proxy target, e.g. "http://10.0.0.5:3000". When `upstreamPath` is set this is
-   *  the ORIGIN only (no path) — the path comes from the template instead. */
+  /** Proxy target, e.g. "http://10.0.0.5:3000". */
   targetUrl: string;
-  /**
-   * Emitter-agnostic capture pattern (`/proxy/(.*)`) compiled from a wildcard
-   * rewrite source, set only when `upstreamPath` references a capture. Same
-   * contract as {@link RouteRedirect.pattern}: match on this, not `pathPrefix`.
-   */
-  pattern?: string;
-  /**
-   * Upstream path template referencing `pattern`'s captures as `$1..$9`
-   * (`/v2/$1`). Emitted as a `rewrite … break` ahead of `proxy_pass` rather than
-   * interpolated INTO `proxy_pass` — a variable there forces nginx into runtime DNS
-   * resolution, which needs a `resolver` the edge does not define.
-   */
-  upstreamPath?: string;
-  /**
-   * The target is a third-party origin from a `vercel.json` rewrite, not a service
-   * we run. Such a request needs the origin's own `Host` and TLS SNI; sending ours
-   * (the default for internal upstreams) makes a vhost-based or HTTPS origin reject
-   * it. Left unset for the composite/migration upstreams, which ARE ours.
-   */
-  external?: boolean;
 }
 
 /** A redirect rule compiled from vercel.json `redirects`. */
@@ -462,19 +420,7 @@ export interface RouteRedirect {
   /** true → `location = <path>`; false → prefix location. */
   exact: boolean;
   statusCode: number;
-  /** Where to send the visitor. References `pattern`'s captures as `$1..$9`. */
   destination: string;
-  /**
-   * Emitter-agnostic capture pattern (`/blog/(.*)`, `/u/([^/]+)`) compiled from a
-   * WILDCARD source, set only when `destination` refers back to a capture.
-   *
-   * An emitter that sees this MUST match on it instead of `path`: a prefix match
-   * captures nothing, so `$1` would expand to empty and the visitor would land on
-   * `/news/` instead of `/news/hello` (#510). Absent for every other redirect —
-   * including sidecars written before this field existed — which keeps the
-   * prefix/exact location and its longest-prefix ordering.
-   */
-  pattern?: string;
 }
 
 /** A response-header rule compiled from vercel.json `headers`. */
@@ -509,11 +455,10 @@ interface BaseRouteConfig {
    *
    * When set, the routing provider guarantees a :443 listener for the host from
    * the moment the route exists — serving a temporary self-signed cert until the
-   * real one is issued. Without a listener, an unmatched SNI falls through to the
-   * edge's :443 catch-all, which answers a domain we route with the "service not
-   * found" page under a certificate valid for no hostname — and deadlocks issuance,
-   * because the catch-all carries no ACME location on :443 (see #308, and #431 for
-   * why the symptom is now a wrong page rather than error 525).
+   * real one is issued. Without a listener, an unmatched SNI hits the edge's
+   * `ssl_reject_handshake` default, so the origin REFUSES the handshake for a
+   * domain we route (Cloudflare reports that as error 525, and it deadlocks
+   * issuance — see #308).
    *
    * Left unset for `externalIngress` hosts and managed `*.opsh.io` hosts, whose
    * TLS is someone else's: presenting a placeholder cert for those would be wrong,
@@ -547,28 +492,6 @@ interface BaseRouteConfig {
   redirectHost?: RouteHostRedirect;
   /** Response-header rules (vercel.json `headers`) → `add_header`. */
   headerRules?: RouteHeaderRule[];
-  /**
-   * vercel.json `cleanUrls`: serve `/about` from `about.html`, and redirect the
-   * `.html` form to the clean one.
-   *
-   * Honoured only for a route that serves from a `staticRoot`. For a proxied app the
-   * FRAMEWORK owns this (Next.js has its own setting), and a redirect emitted here
-   * would fight the upstream's own.
-   */
-  cleanUrls?: boolean;
-  /**
-   * vercel.json `trailingSlash`: true → enforce a trailing slash; false → redirect `/a/`
-   * to `/a`. Unset leaves both forms served.
-   *
-   * Static-root only, for the same reason as {@link cleanUrls}.
-   *
-   * Enforcement is a `try_files` FALLBACK, not a redirect rule, so it never fires for a
-   * path that resolves — which is what keeps it compatible with `cleanUrls` and with
-   * extension-less real files (`/LICENSE`). An emitter that implements it as an
-   * unconditional redirect must special-case both, or it will serve the SPA index with a
-   * 200 for either.
-   */
-  trailingSlash?: boolean;
   /** Curated reverse-proxy tunables (client_max_body_size, proxy/body timeouts,
    *  buffering, gzip) rendered at server scope. Effective merge of the
    *  server default < project < service settings; persists in the route sidecar
@@ -684,35 +607,9 @@ export interface SshConfig {
   sshJumpHost?: string;
   /** Extra raw `ssh` CLI arguments. Honored by the system-ssh path. */
   sshArgs?: string;
-  /**
-   * How long to wait for the SSH handshake. Left unset, ssh2's 20s default applies —
-   * right for a remote box over the internet, far too long for the container→host
-   * bridge, which is one hop and either answers immediately or is being filtered.
-   * 20s there reads as a hang in the deploy log rather than as an error.
-   */
-  readyTimeoutMs?: number;
-  /**
-   * This is the container→host channel (`createHostExecutor`), not a user's server.
-   * Only affects diagnostics: it selects the failure message that names the host
-   * firewall as the likely cause — see `describeSshConnectFailure`.
-   */
-  hostChannel?: boolean;
 }
 
 // ─── Command execution abstraction ──────────────────────────────────────────
-
-/**
- * Just the "run one command" half of `CommandExecutor`.
- *
- * Probes that only read (port scans, static-output checks, config dumps) declare this
- * instead, so a test fake for them is one method rather than a whole executor. It exists
- * as a named supertype because the shape had been re-declared verbatim per probe module,
- * and identical structural interfaces give no signal when one of them drifts.
- */
-export interface ExecOnly {
-  /** Run a command, resolve to stdout. Rejects on non-zero exit. */
-  exec(command: string, opts?: { timeout?: number }): Promise<string>;
-}
 
 /**
  * Abstraction for running commands and file operations on a target machine.
@@ -724,21 +621,17 @@ export interface ExecOnly {
  * Used by the system layer (checks, installers) and infra layer (Nginx
  * config writes) to support both local and remote server management.
  */
-export interface CommandExecutor extends ExecOnly {
+export interface CommandExecutor {
+  /** Run a command, resolve to stdout. Rejects on non-zero exit. */
+  exec(command: string, opts?: { timeout?: number }): Promise<string>;
+
   /**
    * Run a command with real-time log streaming.
    * Resolves when the command exits - the log callback fires for each line.
-   *
-   * `opts.signal` aborts a still-running command (kills the child). Needed by the
-   * live-log exec transport, which holds a `curl -sN` open against the edge and must be
-   * able to tear it down when the browser disconnects — otherwise the orphaned curl keeps
-   * draining the edge's shared log queue. Optional; executors that don't stream a killable
-   * child may ignore it.
    */
   streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
-    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }>;
 
   /** Write content to a file on the target machine. Creates dirs as needed. */

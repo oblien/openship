@@ -12,34 +12,16 @@ import { randomBytes, createHmac } from "node:crypto";
 import {
   getAppManagement,
   getAppEndpoints,
-  declaredServiceRoutes,
-  defaultAppRouteLabel,
-  fitsCapacity,
-  hasMinResources,
-  normalizeCustomHostname,
-  isValidCustomHostname,
   resolveServiceHostnameLabel,
   slugify,
   ConflictError,
-  UNKNOWN_CAPACITY,
   type AppConfigField,
-  type AppMinResources,
-  type AppTemplate,
-  type HostCapacity,
-  type ResourceFit,
-  type TemplateServiceSpec,
-  type TemplateServiceBuild,
 } from "@repo/core";
 import { getRuntimeCatalog, getTemplateForOrg, listOrgCustomApps } from "./catalog-source";
 import { repos } from "@repo/db";
-import { env } from "../../config";
 import type { RequestContext } from "../../lib/request-context";
-import { isLocalHostRow } from "../../lib/box-org";
-import { parseServicePort } from "../../lib/deployable-service";
-import { requireCloud } from "../../lib/cloud/require-cloud";
-import { getTrustedHostCapacity } from "../../lib/host-capacity";
 import { createProject } from "../projects/project-crud.service";
-import { createService, updateService, setServiceEnvVars } from "../services/service.service";
+import { createService, setServiceEnvVars } from "../services/service.service";
 
 /**
  * Strong random value for generated secrets (Convex INSTANCE_SECRET, DB
@@ -74,15 +56,10 @@ function signHs256Jwt(secret: string, role: string): string {
  * Catalog for the Create-App UI. Only operator-supplied config fields are
  * returned as form inputs — `generate:"secret"` fields are filled server-side and
  * never surfaced.
- *
- * `unlisted` apps are dropped here and only here: they stay installable by id and
- * their wizard still resolves (`catalogEntry` → `getTemplateForOrg`), they just
- * don't get a card. That's how webmail rides along under Openship Mail instead of
- * sitting beside it as a second, near-identical tile.
  */
 export async function getAppCatalog(ctx: RequestContext) {
   const custom = await listOrgCustomApps(ctx.organizationId);
-  return [...getRuntimeCatalog(), ...custom].filter((t) => !t.unlisted).map((t) => ({
+  return [...getRuntimeCatalog(), ...custom].map((t) => ({
     id: t.id,
     name: t.name,
     description: t.description,
@@ -95,11 +72,6 @@ export async function getAppCatalog(ctx: RequestContext) {
     management: getAppManagement(t),
     // Verified trust mark (official open-source image + reviewed pipeline).
     verified: !!t.verified,
-    // Hosting model for the catalog badge + wizard notice (self-hosted default).
-    hosting: t.hosting ?? "self-hosted",
-    // What the app needs from the machine — the wizard shows it against the
-    // chosen destination's real capacity, and deploy preflight enforces it.
-    minResources: t.minResources,
     // A per-org user-uploaded app — always unverified; dashboard shows the warning.
     custom: !!t.custom,
     // Not installable this version → dashboard dims it + blocks the click.
@@ -125,272 +97,10 @@ export async function getAppCatalog(ctx: RequestContext) {
   }));
 }
 
-/** One app's declared minimum vs. what a chosen destination actually has. */
-export interface AppHostFitView {
-  /** What the app says it needs. Null when it declares nothing (most apps). */
-  minResources: AppMinResources | null;
-  /** What the machine reported. `source: "unknown"` = we couldn't ask, which is
-   *  never a refusal — see `fitsCapacity`. */
-  capacity: HostCapacity;
-  fit: ResourceFit;
-}
-
-/**
- * Match an app's declared `minResources` against a destination BEFORE anything is
- * created, so the install wizard can say "PostHog wants 8 GB; this server has 4"
- * next to the picker instead of letting the operator find out from a failed
- * deploy.
- *
- * ADVISORY ONLY. The gate is deploy preflight's `host-capacity` check, reading the
- * same declaration through the same `fitsCapacity` verdict on the same probed
- * numbers — so the notice and the refusal cannot disagree. Same split as the
- * free-domain cloud requirement: the wizard pre-checks, the API enforces.
- */
-export async function getAppHostFit(
-  ctx: RequestContext,
-  templateId: string,
-  /** The destination as the wizard has it: cloud, or a server row (none = this box,
-   *  which is what an unbound project derives). "This machine" is NOT taken from
-   *  here — see below. */
-  target: { deployTarget?: string; serverId?: string },
-): Promise<AppHostFitView> {
-  const template = await getTemplateForOrg(ctx.organizationId, templateId);
-  const minResources = template?.minResources ?? null;
-  const unchecked: AppHostFitView = {
-    minResources,
-    capacity: { ...UNKNOWN_CAPACITY },
-    fit: { ok: true },
-  };
-
-  // Nothing declared → nothing to match. Cloud is sized from the tier table, not
-  // from host hardware, so there is no machine to compare against either.
-  if (!hasMinResources(minResources) || target.deployTarget === "cloud") return unchecked;
-
-  // A serverId off a query string is read ORG-SCOPED, and an id this org doesn't
-  // own reports "unknown" rather than probing another tenant's box.
-  //
-  // Whether the destination is THIS machine is then DERIVED from that row, never
-  // read off the query: `isLocalTarget` is what makes a `source: "local"` probe —
-  // the API host's own `os.*` — trusted, so a caller claiming it for a remote
-  // server would have matched the app against the orchestrator's RAM and reported
-  // a shortfall about the wrong machine. `isLocalHostRow` is the same test the
-  // deploy path uses, so the notice and the refusal describe one box.
-  let isLocalTarget = !target.serverId && !env.CLOUD_MODE;
-  if (target.serverId) {
-    const server = await repos.server
-      .getInOrganization(target.serverId, ctx.organizationId)
-      .catch(() => null);
-    if (!server) return unchecked;
-    isLocalTarget = await isLocalHostRow(server);
-  }
-
-  const capacity = await getTrustedHostCapacity(target.serverId, ctx.organizationId, {
-    isLocalTarget,
-  });
-  return { minResources, capacity, fit: fitsCapacity(minResources, capacity) };
-}
-
-/**
- * This org's not-yet-deployed draft of an app, if it has one.
- *
- * The install wizard needs it: the catalog tiles link to `/apps/new/<id>` with no
- * `?projectId=`, so without this the wizard rendered template defaults while
- * Install landed on the existing draft — the operator's earlier choices silently
- * replaced by whatever the pickers happened to show.
- */
-export async function findOpenAppDraft(
-  ctx: RequestContext,
-  templateId: string,
-): Promise<{ projectId: string; slug: string; name: string } | null> {
-  const draft = await repos.project.findDraftByAppTemplate(ctx.organizationId, templateId);
-  return draft ? { projectId: draft.id, slug: draft.slug, name: draft.name } : null;
-}
-
-/** One endpoint's routing choice, exactly as the install wizard asked it. */
-export interface InstallAppRoute {
-  /** Template service name. */
-  service: string;
-  /** Container port this choice routes. */
-  port: number;
-  /** port = no public route (published host port only). */
-  mode: "port" | "free" | "custom";
-  /** free mode: subdomain slug. Blank = the template's default label. */
-  domain?: string;
-  /** custom mode: the hostname the operator owns (required). */
-  customDomain?: string;
-}
-
 export interface InstallAppInput {
   templateId: string;
   name?: string;
   config?: Record<string, string>;
-  /** Per-endpoint routing the operator CHOSE. A service with no entry gets no
-   *  public route — see planInstallRouting. */
-  routes?: InstallAppRoute[];
-}
-
-interface PlannedEndpoint {
-  port: number;
-  domainType: "free" | "custom";
-  domain?: string;
-  customDomain?: string;
-}
-
-/** Container ports a template service actually serves on — the only ports a
- *  route may target (anything else proxies to a port nothing listens on).
- *  `declaredServiceRoutes` owns the routes+exposedPort union (and its dedup);
- *  we just fold in the compose-style `ports` specs on top. */
-function routablePorts(svc: TemplateServiceSpec): Set<number> {
-  const out = new Set<number>();
-  for (const route of declaredServiceRoutes(svc)) out.add(route.port);
-  for (const spec of svc.ports ?? []) {
-    const port = parseServicePort(spec);
-    if (port != null) out.add(port);
-  }
-  return out;
-}
-
-/**
- * Reject a routing choice that can't produce a working route, BEFORE anything is
- * written: an unknown service/port, a duplicate, or a custom domain that is
- * missing or not a hostname. `free` needs no hostname — the caller explicitly
- * asked for the template's default label when it sends no slug — but a slug that
- * normalizes to nothing is a typo, not a choice.
- *
- * The SHAPE gate matters as much as the presence gate, and it has to run here:
- * `isValidCustomHostname` used to be reached only inside `createService`, i.e.
- * AFTER `createProject`, so `myhost` / `example.com:8443` / `api.example.com/app`
- * left behind a project row with zero services — a dead draft the operator could
- * only escape by renaming or deleting it.
- */
-function assertInstallRoutes(
-  template: Pick<AppTemplate, "services">,
-  routes: readonly InstallAppRoute[] | undefined,
-): void {
-  const byName = new Map((template.services ?? []).map((s) => [s.name, s]));
-  const seen = new Set<string>();
-  for (const route of routes ?? []) {
-    const svc = byName.get(route.service);
-    if (!svc) throw new Error(`This app has no service named "${route.service}".`);
-    if (!routablePorts(svc).has(route.port)) {
-      throw new Error(`Service "${route.service}" doesn't serve port ${route.port}.`);
-    }
-    const key = `${route.service}:${route.port}`;
-    if (seen.has(key)) throw new Error(`Duplicate routing choice for ${key}.`);
-    seen.add(key);
-    if (route.mode === "custom") {
-      const host = normalizeCustomHostname(route.customDomain ?? "");
-      if (!host) {
-        throw new Error(`Enter the domain for "${route.service}", or choose port-only access.`);
-      }
-      if (!isValidCustomHostname(host)) {
-        throw new Error(
-          `"${host}" isn't a valid domain name. Use a hostname like app.example.com — no scheme, port or path.`,
-        );
-      }
-    }
-    if (route.mode === "free" && route.domain?.trim() && !/[a-z0-9]/i.test(route.domain)) {
-      throw new Error(`"${route.domain}" isn't a valid subdomain for "${route.service}".`);
-    }
-  }
-}
-
-/**
- * The routing to persist per service, built ONLY from what the operator chose.
- *
- * No free-domain default anywhere: a port with no choice — or an explicit "port"
- * choice — is stored unrouted, so no dead hostname is persisted and the deploy's
- * free-domain gate isn't tripped by a route nobody asked for.
- *
- * That includes a template SECONDARY route (a declared `slugSuffix` port, e.g.
- * Convex's 3211 HTTP-actions port). It used to inherit the primary's free
- * hostname family, which minted a live *.opsh.io route, cloud registration, vhost
- * and cert for a port the wizard never displayed. The wizard now offers one
- * picker per DECLARED route (see `declaredServiceRoutes`), so every hostname here
- * exists because a human saw it and chose it. An unchosen `{{publicUrl:svc:port}}`
- * token resolves against the published host port instead — never against a
- * hostname invented on the operator's behalf.
- */
-export function planInstallRouting(
-  template: Pick<AppTemplate, "services">,
-  projectLabel: string,
-  routes: readonly InstallAppRoute[] | undefined,
-): Map<string, { exposed: boolean; publicEndpoints: PlannedEndpoint[] }> {
-  const chosenByService = new Map<string, InstallAppRoute[]>();
-  for (const route of routes ?? []) {
-    const list = chosenByService.get(route.service) ?? [];
-    list.push(route);
-    chosenByService.set(route.service, list);
-  }
-
-  const plan = new Map<string, { exposed: boolean; publicEndpoints: PlannedEndpoint[] }>();
-  for (const svc of template.services ?? []) {
-    const chosen = chosenByService.get(svc.name) ?? [];
-    const choiceByPort = new Map(chosen.map((c) => [c.port, c]));
-    const declaredRoutes = declaredServiceRoutes(svc);
-    const suffixByPort = new Map(declaredRoutes.map((r) => [r.port, r.slugSuffix]));
-    // Declared order first so the template's primary route stays the primary
-    // (entry[0] mirrors the scalar routing columns), then any other chosen port.
-    const declared = declaredRoutes.map((r) => r.port);
-    const ports = [...declared, ...chosen.map((c) => c.port).filter((p) => !declared.includes(p))];
-
-    const publicEndpoints: PlannedEndpoint[] = [];
-    for (const port of ports) {
-      const choice = choiceByPort.get(port);
-      if (choice?.mode === "custom") {
-        publicEndpoints.push({
-          port,
-          domainType: "custom",
-          customDomain: normalizeCustomHostname(choice.customDomain ?? ""),
-        });
-      } else if (choice?.mode === "free") {
-        const typed = choice.domain?.trim();
-        const slug = typed
-          ? resolveServiceHostnameLabel(projectLabel, svc.name, typed, "compose")
-          : defaultAppRouteLabel(projectLabel, svc.name, suffixByPort.get(port));
-        publicEndpoints.push({ port, domainType: "free", domain: slug });
-      }
-    }
-
-    plan.set(svc.name, { exposed: publicEndpoints.length > 0, publicEndpoints });
-  }
-  return plan;
-}
-
-/**
- * One plan entry as an `updateService` patch.
- *
- * Exists because the array is not optional. A patch carrying only `domainType` loses to
- * the stored `publicEndpoints`, which is how a corrected custom domain came back as the
- * old free route — so every writer has to send the FULL array, and a rule that every
- * writer has to remember belongs in one place instead. Both the install path and the
- * webmail re-apply path spelled this out separately.
- */
-export function serviceRoutingPatch(routing: {
-  exposed: boolean;
-  publicEndpoints: PlannedEndpoint[];
-}): {
-  exposed: boolean;
-  publicEndpoints: PlannedEndpoint[];
-  domainType?: "free" | "custom";
-  domain?: null;
-  customDomain?: null;
-} {
-  const primary = routing.publicEndpoints[0];
-  return {
-    exposed: routing.exposed,
-    publicEndpoints: routing.publicEndpoints,
-    ...(primary
-      ? // The scalar column mirrors entry[0] — the template's primary route.
-        { domainType: primary.domainType }
-      : // An empty plan is a DECISION, not an absence — the webmail proxy variant's
-        // deliberate no-hostname. Omitting the scalars made it unsayable: for an
-        // existing row `mergeServiceRoutingPatch` resolves an absent `domainType`
-        // from `stored`, so `"custom"` survived, and `customDomain` then resolved
-        // from `stored` too. The array cleared while the row kept the hostname it
-        // was redeployed to drop — alive in its derived domain row.
-        { domainType: "free" as const, domain: null, customDomain: null }),
-  };
 }
 
 export type InstallAppResult =
@@ -424,65 +134,45 @@ export async function installApp(
     return { kind: "flow", flowHref: template.flowHref ?? "/" };
   }
 
-  assertInstallRoutes(template, input.routes);
-
-  // Gate the operator's CHOSEN routing before the first row is written: a free
-  // *.opsh.io hostname only resolves behind the Cloud edge, so a disconnected
-  // instance must refuse up front instead of persisting a dead route and failing
-  // a later correction. Same capability the wizard pre-checks, so UI and API
-  // can't disagree.
-  if ((input.routes ?? []).some((route) => route.mode === "free")) {
-    await requireCloud("managed-project-domain", { organizationId: ctx.organizationId });
-  }
-
   const baseName = input.name?.trim() || template.name;
 
-  // Re-opening a same-named, not-yet-deployed draft ADOPTS it (so the wizard's
+  // Re-opening a same-named, not-yet-deployed draft returns it (so the wizard's
   // Install/Advanced re-click doesn't duplicate). Matched on the exact slug so a
   // DIFFERENT name still creates a new instance — multiple apps of one type are
-  // supported.
-  //
-  // Adopting is not "return early": this request carries a routing DECISION, and
-  // returning the draft untouched accepted, validated and cloud-gated `routes`
-  // and then dropped them. A failed first deploy leaves the draft a draft, so the
-  // only way back is through here — the operator's second, corrected choice
-  // (say a custom domain) has to land on the draft's existing service rows.
+  // supported. Return BEFORE seeding so nothing is duplicated.
   const existingDraft = await repos.project.findDraftByAppTemplate(
     ctx.organizationId,
     template.id,
     slugify(baseName),
   );
+  if (existingDraft) {
+    return { kind: "template", projectId: existingDraft.id, slug: existingDraft.slug };
+  }
 
   // Reuse the standard create path (owns slug/group/route state + the
   // isApp/appTemplateId marker). Auto-suffix the name until its slug is free so
   // a second install of the same app ("Convex" → "Convex 2") doesn't collide;
   // createProject owns the real uniqueness check, so we just retry its throw.
-  let project: { id: string; slug: string; name: string };
-  if (existingDraft) {
-    project = existingDraft;
-  } else {
-    let created: Awaited<ReturnType<typeof createProject>> | undefined;
-    for (let n = 1; ; n++) {
-      const name = n === 1 ? baseName : `${baseName} ${n}`;
-      try {
-        created = await createProject(
-          {
-            name,
-            framework: template.framework ?? "docker-compose",
-            projectType: "services",
-            hasBuild: false,
-            isApp: true,
-            appTemplateId: template.id,
-          },
-          ctx.organizationId,
-        );
-        break;
-      } catch (err) {
-        if (err instanceof ConflictError && n < 50) continue;
-        throw err;
-      }
+  let project;
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? baseName : `${baseName} ${n}`;
+    try {
+      project = await createProject(
+        {
+          name,
+          framework: template.framework ?? "docker-compose",
+          projectType: "services",
+          hasBuild: false,
+          isApp: true,
+          appTemplateId: template.id,
+        },
+        ctx.organizationId,
+      );
+      break;
+    } catch (err) {
+      if (err instanceof ConflictError && n < 50) continue;
+      throw err;
     }
-    project = created!;
   }
 
   // Resolve config values. Secrets sharing a `generateGroup` get ONE generated
@@ -534,20 +224,6 @@ export async function installApp(
     filesByService.set(f.service, list);
   }
 
-  // Resolve a service's inline build context, if any — `{{config:KEY}}` is
-  // inlined in the Dockerfile and every context file's content (the same
-  // generated-key surface as env/files). Carried onto `advanced.build`; the
-  // deploy pipeline materializes it and builds on the host.
-  const resolveBuild = (b: TemplateServiceBuild | undefined) =>
-    b
-      ? {
-          dockerfile: inlineConfig(b.dockerfile),
-          ...(b.files?.length
-            ? { files: b.files.map((f) => ({ path: f.path, content: inlineConfig(f.content) })) }
-            : {}),
-        }
-      : undefined;
-
   // `secretEnv` declares which of a service's env keys are secrets — stored
   // encrypted, never written as plaintext compose env. Wired here (the field was
   // previously inert): a listed key sourced from `environment` is re-routed into
@@ -557,33 +233,28 @@ export async function installApp(
   );
   const varsByService = new Map<string, { key: string; value: string; isSecret: boolean }[]>();
 
-  // The operator's routing, resolved once for the whole stack.
-  const routingPlan = planInstallRouting(template, project.slug ?? project.name, input.routes);
-
-  // Rows the adopted draft already has. A fresh project has none, so the loop
-  // below reduces to a plain seed.
-  const existingRows = existingDraft ? await repos.service.listByProject(project.id) : [];
-  const rowByName = new Map(existingRows.map((s) => [s.name, s]));
-  // Only services this call CREATED get config/secret env written. Re-writing a
-  // generated secret onto an adopted row would rotate it (Convex's
-  // INSTANCE_SECRET invalidates the admin key), so an existing row keeps its own.
-  const createdServices = new Set<string>();
-
-  // Seed the compose service rows — or, on an adopted draft, re-apply the chosen
-  // routing to the rows that already exist and seed only what's missing (a first
-  // install that died part-way left the project with fewer rows than the template).
+  // Seed the compose service rows.
   for (const svc of template.services ?? []) {
-    const routing = routingPlan.get(svc.name) ?? { exposed: false, publicEndpoints: [] };
-    const existingRow = rowByName.get(svc.name);
-
-    if (existingRow) {
-      // No `routes` in the request = no decision expressed; leave the draft's
-      // stored routing alone rather than silently unrouting it.
-      if ((input.routes ?? []).length > 0) {
-        await updateService(ctx, project.id, existingRow.id, serviceRoutingPatch(routing));
-      }
-      continue;
-    }
+    // Multi-port apps (e.g. Convex: 3210 API + 3211 HTTP actions) declare one
+    // route per port. Give each its own free subdomain — the primary uses the
+    // default `<app>-<service>` label, secondaries append their slugSuffix — so
+    // {{publicUrl:svc:port}} resolves to distinct hostnames.
+    const publicEndpoints =
+      svc.routes && svc.routes.length > 0
+        ? svc.routes.map((route) => {
+            const label = resolveServiceHostnameLabel(
+              project.slug ?? project.name,
+              svc.name,
+              undefined,
+              "compose",
+            );
+            return {
+              port: route.port,
+              domainType: "free" as const,
+              domain: route.slugSuffix ? `${label}-${route.slugSuffix}` : label,
+            };
+          })
+        : undefined;
 
     // Split env: keys listed in this service's `secretEnv` go to the encrypted
     // vars path below; the rest stay as plaintext compose env.
@@ -614,22 +285,17 @@ export async function installApp(
         ...(filesByService.get(svc.name)?.length
           ? { files: filesByService.get(svc.name) }
           : {}),
-        ...(svc.build ? { build: resolveBuild(svc.build) } : {}),
       },
-      // Routing is exactly what the operator chose — never the template's
-      // `exposed` flag turned into a hostname.
-      exposed: routing.exposed,
+      exposed: svc.exposed ?? false,
       exposedPort: svc.exposedPort != null ? String(svc.exposedPort) : undefined,
-      domainType: routing.publicEndpoints[0]?.domainType,
-      publicEndpoints: routing.publicEndpoints,
+      domainType: svc.exposed ? "free" : undefined,
+      publicEndpoints,
     });
-    createdServices.add(svc.name);
   }
 
   // Write config/secret env per service. A value is encrypted when the field is
   // `secret` OR its key is listed in the service's `secretEnv`.
   for (const field of template.configFields ?? []) {
-    if (!createdServices.has(field.service)) continue;
     const value = resolved.get(field.key) ?? "";
     if (!value) continue;
     const list = varsByService.get(field.service) ?? [];

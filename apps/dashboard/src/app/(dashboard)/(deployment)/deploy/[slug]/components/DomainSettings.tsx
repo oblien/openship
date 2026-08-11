@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback } from "react";
-import { isValidCustomHostname } from "@repo/core";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -55,22 +54,6 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
       .filter((endpoint): endpoint is NonNullable<ReturnType<typeof buildPublicEndpointPayload>> => endpoint !== null);
 
     if (payload.length !== nextEndpoints.length || payload.length === 0) {
-      return;
-    }
-
-    // This card autosaves on every KEYSTROKE (saveMode="change"), so a custom
-    // domain would be submitted once per character — and the API rejects a
-    // half-typed hostname, which would put a red toast on screen for "a", "ap",
-    // "app.", … before the real save succeeded. Wait until the hostname is a
-    // plausible one; the keystroke that completes it saves normally. An invalid
-    // FINAL value is still reported — by the deploy request, which sends the
-    // endpoints itself and surfaces the API's precise message.
-    if (
-      payload.some(
-        (endpoint) =>
-          endpoint.domainType === "custom" && !isValidCustomHostname(endpoint.customDomain ?? ""),
-      )
-    ) {
       return;
     }
 

@@ -116,7 +116,7 @@ export interface RestorePlanInput {
 }
 
 /** A real, dial-able artifact reference (not a compose marker, not blank). */
-export function usableRef(ref: string | null | undefined): string | null {
+function usableRef(ref: string | null | undefined): string | null {
   const trimmed = ref?.trim();
   if (!trimmed || trimmed === COMPOSE_SENTINEL) return null;
   return trimmed;

@@ -37,7 +37,6 @@ import {
 import type { MailSetupStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/components/i18n-provider";
-import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 import { OverviewTab } from "./overview-tab";
 import { DomainsTab } from "./domains-tab";
 import { MailboxesTab } from "./mailboxes-tab";
@@ -50,7 +49,6 @@ import { SendingTab } from "./sending-tab";
 import { AdvancedTab } from "./advanced-tab";
 import { WelcomeModal } from "./welcome-modal";
 import { ReputationBanner } from "./reputation-banner";
-import { MailEngineBanner } from "./engine-banner";
 
 const WELCOME_SEEN_PREFIX = "openship:mail:welcome-seen:";
 
@@ -79,23 +77,16 @@ interface TabDef {
   icon: LucideIcon;
 }
 
-/**
- * Sending sits at the head of the delivery run (Sending → DNS → Health → Test),
- * matching the rail's Delivery group in `lib/sidebar-nav.ts` — the two are one
- * ordering, and it exists in both places only because platform view renders this
- * bar while mail view renders the rail. Sending is the decision (direct vs relay);
- * DNS/Health/Test check what it decided, so it can't come after them.
- */
 const TABS: TabDef[] = [
   { key: "overview", icon: LayoutDashboard },
   { key: "domains", icon: Globe },
   { key: "mailboxes", icon: UserRound },
   { key: "aliases", icon: Forward },
-  { key: "sending", icon: Waypoints },
   { key: "dns", icon: FileText },
   { key: "health", icon: HeartPulse },
   { key: "test", icon: Send },
   { key: "backup", icon: DatabaseBackup },
+  { key: "sending", icon: Waypoints },
   { key: "advanced", icon: Settings },
 ];
 
@@ -104,11 +95,6 @@ const VALID_TABS: TabKey[] = TABS.map((t) => t.key);
 export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: MailAdminPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // In Openship Mail the sidebar IS this tab bar — same ten keys, same order
-  // (`MAIL_TABS` in lib/sidebar-nav.ts) — so showing both is one row of
-  // navigation twice. See the hook for why it depends on the rail's state and
-  // not just on the view.
-  const railHasTabs = useMailRailOwnsTabs(serverId);
   const primaryDomain = status.domain ?? "";
   const [showWelcome, setShowWelcome] = useState(false);
 
@@ -152,22 +138,15 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
 
   return (
     <div className="space-y-6">
-      {/* Engine state first: when it isn't serving, every tab below fails, so the
-          one condition and the one fix belong above the tab bar rather than
-          rediscovered as an error inside whichever tab the operator opened. */}
-      <MailEngineBanner serverId={serverId} engine={status.engine} onRepaired={onRefresh} />
-
       {primaryDomain && (
         <ReputationBanner serverId={serverId} domain={primaryDomain} />
       )}
 
-      {!railHasTabs && (
-        <TabBar
-          tabs={TABS}
-          active={tab}
-          onChange={(k) => setQuery({ tab: k })}
-        />
-      )}
+      <TabBar
+        tabs={TABS}
+        active={tab}
+        onChange={(k) => setQuery({ tab: k })}
+      />
 
       <div>
         {tab === "overview" && (

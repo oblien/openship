@@ -3,7 +3,6 @@ import type { CommandExecutor } from "../types";
 import type { BuildLogger } from "./build-pipeline";
 import type { PromptUserFn } from "./deploy-pipeline";
 import { probePortListeningOnce } from "../system/port-listen";
-import { tryExec } from "../system/probe-exec";
 
 export interface PortOccupant {
   /** Owner PID, or `null` when the port is listening but its owner couldn't be
@@ -18,6 +17,14 @@ export interface PortOccupant {
 }
 
 const OPENSHIP_UNIT_PREFIX = "openship-";
+
+async function tryExec(executor: CommandExecutor, command: string): Promise<string | null> {
+  try {
+    return await executor.exec(command);
+  } catch {
+    return null;
+  }
+}
 
 async function resolveSystemdUnit(
   executor: CommandExecutor,

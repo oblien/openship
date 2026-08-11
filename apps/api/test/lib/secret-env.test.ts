@@ -21,15 +21,6 @@ describe("maskEnv", () => {
       PORT: ENV_MASK,
     });
   });
-  test("leaves an EMPTY value empty — dots there would fake a set value (#472)", () => {
-    // A `${VAR:?…}` with nothing to resolve from parses to "", and the wizard
-    // reads that empty string as "this needs a value". Masking it showed a
-    // filled-looking field for a variable that was unset.
-    expect(maskEnv({ POSTGRES_PASSWORD: "", API_TOKEN: "xyz" })).toEqual({
-      POSTGRES_PASSWORD: "",
-      API_TOKEN: ENV_MASK,
-    });
-  });
   test("null/undefined/empty → {}", () => {
     expect(maskEnv(null)).toEqual({});
     expect(maskEnv(undefined)).toEqual({});
@@ -117,28 +108,6 @@ describe("maskEnvironmentMeta", () => {
     expect(maskEnvironmentMeta(meta)).toEqual({
       DB_PASSWORD: { source: "env-file", variable: "DB_PASSWORD", resolvedValue: ENV_MASK, defaultValue: ENV_MASK },
       NODE_ENV: { source: "default", resolvedValue: ENV_MASK },
-    });
-  });
-
-  test("keeps `required` and the empty resolvedValue of a mandatory variable (#472)", () => {
-    // Both are what the wizard renders "Needs value" from; masking either hid the
-    // one row the user has to fill in.
-    expect(
-      maskEnvironmentMeta({
-        POSTGRES_PASSWORD: {
-          source: "missing",
-          variable: "POSTGRES_PASSWORD",
-          required: true,
-          resolvedValue: "",
-        },
-      }),
-    ).toEqual({
-      POSTGRES_PASSWORD: {
-        source: "missing",
-        variable: "POSTGRES_PASSWORD",
-        required: true,
-        resolvedValue: "",
-      },
     });
   });
 });

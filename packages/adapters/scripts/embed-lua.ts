@@ -8,8 +8,8 @@
  * 500'd every customer site (every managed vhost's `access_by_lua_file` points
  * at a file that wasn't there). Embedding the scripts as base64 string
  * constants makes them ATOMIC: they travel inside the JS across tsc / esbuild /
- * bun --compile / Docker with no path to lose — the same way MANAGEMENT_BLOCK and
- * the default catch-all are inline in openresty-lua.ts. Base64 (not raw
+ * bun --compile / Docker with no path to lose — the same way MANAGEMENT_BLOCK /
+ * DEFAULT_BLOCK are inline constants in openresty-lua.ts. Base64 (not raw
  * template literals) because several scripts contain backticks and ${...} that
  * would break a raw literal.
  *

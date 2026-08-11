@@ -18,7 +18,7 @@
  */
 
 import { env, runtimeTarget, localDashboardUrl } from "../config/env";
-import { repos } from "@repo/db";
+import { repos, db, schema, eq } from "@repo/db";
 
 /**
  * Dashboard same-origin proxy mount. Fixed contract with the dashboard route at
@@ -65,7 +65,12 @@ async function locateSelfAppProjectId(): Promise<string | null> {
     const p = await repos.project.findBySlugInOrg(org, SELF_APP_SLUG);
     if (p && p.appTemplateId === SELF_APP_SLUG) return p.id;
   }
-  const admin = await repos.user.findFoundingAdmin();
+  const [admin] = await db
+    .select({ id: schema.user.id })
+    .from(schema.user)
+    .where(eq(schema.user.autoProvisioned, false))
+    .orderBy(schema.user.createdAt)
+    .limit(1);
   if (admin) {
     const p = await repos.project.findBySlugInOrg(`org_${admin.id}`, SELF_APP_SLUG);
     if (p && p.appTemplateId === SELF_APP_SLUG) return p.id;

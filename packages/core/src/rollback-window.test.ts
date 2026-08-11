@@ -49,18 +49,12 @@ describe("computeAutoRollbackWindow", () => {
   });
 
   it("never claims more than the hard cap, however big the disk", () => {
-    // Deliberately sized so the CAP is the only thing producing this answer.
-    // 4 TB free · 2 GB per release: the 25% fraction alone would budget 1 TB
-    // (512 releases → clamped to MAX = 20), so a 1 GB snapshot here would pass
-    // with or without the cap. At 2 GB the cap budgets 20 GiB → 10 releases,
-    // which is BELOW the product maximum — delete the cap and this fails.
+    // 4 TB free would otherwise budget 1 TB; the cap keeps it to 20 GB / 1 GB.
     const window = computeAutoRollbackWindow({
       diskFreeBytes: 4096 * GB,
-      snapshotSizeBytes: 2 * GB,
+      snapshotSizeBytes: GB,
     });
-    expect(ROLLBACK_DISK_BUDGET_CAP_BYTES).toBe(20 * GB);
-    expect(window).toBe(10);
-    expect(window).toBeLessThan(MAX_ROLLBACK_WINDOW);
+    expect(window).toBe(Math.min(ROLLBACK_DISK_BUDGET_CAP_BYTES / GB, MAX_ROLLBACK_WINDOW));
   });
 
   it("clamps to the product maximum", () => {

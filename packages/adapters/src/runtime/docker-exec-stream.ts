@@ -1,6 +1,6 @@
 /**
- * Raw bidirectional stream for `docker exec` and `docker attach` — a hijack that
- * doesn't go through the HTTP client.
+ * Raw bidirectional stream for `docker exec` — a hijack that doesn't go through
+ * the HTTP client.
  *
  * WHY THIS EXISTS
  * An interactive shell needs stdin, and dockerode gets that by asking docker-modem
@@ -13,9 +13,8 @@
  * The api ships as a Bun image (and a Bun-compiled desktop binary), so the
  * service terminal could never open there — the WS connected and then sat silent,
  * while the SERVER terminal (ssh2, no HTTP in the path) worked fine. The edge
- * executor dodged the same trap by avoiding hijack entirely, but three callers
- * can't: the service shell, and backup RESTORE (`pipeIntoCommand` +
- * `receiveStream`) which feed the archive to the target's stdin.
+ * executor dodged the same trap by avoiding hijack entirely, but a shell can't:
+ * it needs stdin.
  *
  * So we speak the upgrade ourselves on a plain socket: write the HTTP request,
  * read the `101` response head, hand back the socket. Same protocol dockerode
@@ -114,15 +113,21 @@ function bridgeSocket(socket: Duplex, leftover: Buffer): Duplex {
 }
 
 /**
- * Perform the `Connection: Upgrade` handshake against one daemon endpoint and
- * hand back the raw duplex. Shared by exec-start and container-attach: both are
- * the same protocol, and both hang (or 101-error) through docker-modem's hijack.
+ * Start an exec and return the duplex carrying its TTY bytes.
  *
- * The returned stream is not flowing and any output that shared a packet with the
- * `101` head is already buffered in it, so the caller attaches its handlers and
- * then calls `resume()` (or pipes). See {@link bridgeSocket}.
+ * `execId` comes from a normal `container.exec(...)` call — creating the exec is
+ * an ordinary POST that works fine on every runtime; only the *start* needs this
+ * treatment.
+ *
+ * The returned stream is not flowing and any shell output that shared a packet
+ * with the `101` head is already buffered in it, so the caller attaches its
+ * handlers and then calls `resume()` (or pipes). See {@link bridgeSocket}.
  */
-function upgradeRequest(conn: DaemonConnection, path: string, body: string): Promise<Duplex> {
+export function startExecStream(
+  conn: DaemonConnection,
+  execId: string,
+  opts: { tty: boolean; stdin: boolean },
+): Promise<Duplex> {
   return new Promise<Duplex>((resolve, reject) => {
     const socket = connect(conn);
     let settled = false;
@@ -157,8 +162,8 @@ function upgradeRequest(conn: DaemonConnection, path: string, body: string): Pro
       // Docker answers `101 UPGRADED` to the upgrade request. Anything else (400,
       // 404 for a vanished exec, 409) is a real error and its body is the reason.
       if (!/ 101 /.test(statusLine)) {
-        const reason = text.slice(end + HEADER_END.length).trim();
-        fail(new Error(`docker ${path} failed: ${statusLine}${reason ? ` — ${reason}` : ""}`));
+        const body = text.slice(end + HEADER_END.length).trim();
+        fail(new Error(`docker exec start failed: ${statusLine}${body ? ` — ${body}` : ""}`));
         return;
       }
 
@@ -175,16 +180,17 @@ function upgradeRequest(conn: DaemonConnection, path: string, body: string): Pro
     };
 
     const onEarlyClose = () =>
-      fail(new Error(`docker ${path}: connection closed before upgrade`));
+      fail(new Error("docker exec start: connection closed before upgrade"));
 
     socket.on("data", onData);
     socket.on("error", fail);
     socket.on("close", onEarlyClose);
 
+    const body = JSON.stringify({ Detach: false, Tty: opts.tty });
     // Unversioned path: the daemon accepts it and we don't have to track which
     // API version the modem negotiated.
     socket.write(
-      `POST ${path} HTTP/1.1\r\n` +
+      `POST /exec/${execId}/start HTTP/1.1\r\n` +
         `Host: ${conn.socketPath ? "localhost" : (conn.host ?? "localhost")}\r\n` +
         `Content-Type: application/json\r\n` +
         `Content-Length: ${Buffer.byteLength(body)}\r\n` +
@@ -193,48 +199,6 @@ function upgradeRequest(conn: DaemonConnection, path: string, body: string): Pro
         body,
     );
   });
-}
-
-/**
- * Start an exec and return the duplex carrying its bytes.
- *
- * `execId` comes from a normal `container.exec(...)` call — creating the exec is
- * an ordinary POST that works fine on every runtime; only the *start* needs this
- * treatment.
- */
-export function startExecStream(
-  conn: DaemonConnection,
-  execId: string,
-  opts: { tty: boolean; stdin: boolean },
-): Promise<Duplex> {
-  return upgradeRequest(
-    conn,
-    `/exec/${execId}/start`,
-    JSON.stringify({ Detach: false, Tty: opts.tty }),
-  );
-}
-
-/**
- * Attach to a container and return the duplex carrying its bytes — the
- * `/containers/{id}/attach` sibling of {@link startExecStream}.
- *
- * Needed for the restore helper, which feeds a tar stream to the container's
- * stdin: dockerode's only stdin-capable attach is `{hijack: true}`, and under Bun
- * that resolves through modem's `response` path with `(HTTP code 101) unexpected`
- * instead of the socket, so no restore could ever write a byte.
- */
-export function startAttachStream(
-  conn: DaemonConnection,
-  containerId: string,
-  opts: { stdin: boolean; stdout: boolean; stderr: boolean },
-): Promise<Duplex> {
-  const q = new URLSearchParams({
-    stream: "1",
-    stdin: opts.stdin ? "1" : "0",
-    stdout: opts.stdout ? "1" : "0",
-    stderr: opts.stderr ? "1" : "0",
-  });
-  return upgradeRequest(conn, `/containers/${containerId}/attach?${q.toString()}`, "");
 }
 
 /**

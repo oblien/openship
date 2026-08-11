@@ -3,7 +3,7 @@
  * runner at boot; job_run holds execution history.
  */
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { job } from "../schema/job";
@@ -20,15 +20,6 @@ export function createJobRepo(db: Database) {
 
     async listAll(): Promise<Job[]> {
       return db.select().from(job).orderBy(asc(job.kind), asc(job.label));
-    },
-
-    /**
-     * Batch id → display label, for naming jobs in list responses (the audit
-     * feed). Audit rows carry the job id, not its key.
-     */
-    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
-      if (ids.length === 0) return [];
-      return db.select({ id: job.id, name: job.label }).from(job).where(inArray(job.id, ids));
     },
 
     /**

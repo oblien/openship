@@ -17,23 +17,17 @@ import { safeErrorMessage } from "@repo/core";
 import {
   ensureEdge,
   probeEdge,
-  ourEdgeContainerRunning,
   recoverInterruptedTakeover,
   COMPONENT_INSTALLERS,
   type PromptUserFn,
   type CommandExecutor,
 } from "@repo/adapters";
 import { getRequestContext } from "../../lib/request-context";
-import { withDeploymentPlatform } from "../../lib/deployment-runtime";
-import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
-import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import { permission } from "../../lib/permission";
 import { param } from "../../lib/controller-helpers";
 import { streamSSE } from "../../lib/sse";
 import { sshManager } from "../../lib/ssh-manager";
-import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
-import { deliverManagedImage } from "../../lib/deliver-managed-image";
-import { resolveAcmeProviderOptions } from "../../lib/acme-config";
+import { withPinnedEdgeImage } from "../../lib/edge-image";
 import { applyProjectRouting } from "./routing-apply.service";
 import {
   createEdgeConsentSession,
@@ -84,10 +78,8 @@ export async function resolveProjectServer(
     return { error: "Cloud projects manage routing at the edge automatically", status: 400 };
   }
   if (!project.activeDeploymentId) return { error: "Deploy the project before setting up its edge", status: 400 };
-  // Prefer the durable binding; fall back to the active deployment's snapshot for
-  // legacy rows not yet backfilled.
   const dep = await repos.deployment.findById(project.activeDeploymentId);
-  const serverId = project.serverId ?? (dep?.meta as { serverId?: string } | null)?.serverId;
+  const serverId = (dep?.meta as { serverId?: string } | null)?.serverId;
   if (!serverId) return { error: "Project is not deployed to a server", status: 400 };
   return { project, serverId };
 }
@@ -137,23 +129,9 @@ export async function edgeStatus(c: Context) {
   }
 
   try {
-    // Readiness = "is OUR edge container running", the SAME fact the server
-    // Infrastructure tab (detectEdgeContainer.running) and System Health
-    // (resolveOurEdgeContainer) key on. probeEdge stays for the takeover preview
-    // (classification/occupants/canProceedClean), but its `classification==="ours"`
-    // also credits a bare-host OpenResty leftover as ours even when the container
-    // is stopped — which is why the pill said "ready" while the server tab said
-    // "down". The edge is container-only now, so the container is the truth.
-    const { status, containerRunning } = await withEdgeExecutor(
-      serverId,
-      ctx.organizationId,
-      async (executor) => ({
-        status: await probeEdge(executor),
-        containerRunning: await ourEdgeContainerRunning(executor),
-      }),
-    );
+    const status = await withEdgeExecutor(serverId, ctx.organizationId, (executor) => probeEdge(executor));
     return c.json({
-      ready: containerRunning,
+      ready: status.classification === "ours",
       reachable: true,
       classification: status.classification,
       canProceedClean: status.canProceedClean,
@@ -220,16 +198,6 @@ export async function ensureEdgeStream(c: Context) {
         // console stays alive without a duplicate round-trip.
         // Self-heal a takeover that crashed mid-flight on a prior attempt.
         await recoverInterruptedTakeover(executor, onLog).catch(() => {});
-        // Stage-B APPLY, ahead of the installer: build the edge from our source on
-        // the control plane and ship it to this box, so the create path below adopts
-        // the dev image instead of pulling `ghcr.io/oblien/openship-edge:<version>`
-        // (the reported bug). No-op in prod — no checkout → deliver returns at once.
-        await deliverManagedImage({
-          kind: "edge",
-          image: pinnedEdgeImage(),
-          targetExecutor: executor,
-          onLog,
-        });
         const installer = COMPONENT_INSTALLERS["edge"];
         // Same call shape as the deploy pipeline + server-setup: the installer
         // raises the edge-conflict consent via promptUser; on "migrate",
@@ -238,7 +206,7 @@ export async function ensureEdgeStream(c: Context) {
         const edge = await ensureEdge(
           executor,
           (p) => installer(executor, onLog, withPinnedEdgeImage({ promptUser: p })),
-          { promptUser, onLog, nginx: resolveAcmeProviderOptions() },
+          { promptUser, onLog },
         );
         if (edge.migrated && !edge.ok) {
           throw new Error("Edge takeover failed — rolled back to the previous proxy.");
@@ -246,29 +214,6 @@ export async function ensureEdgeStream(c: Context) {
       });
 
       appendEdgeLog(session.id, "Edge ready — applying routes…");
-      // Prepare the box to answer Openship Cloud's target check while we're already
-      // here. Doing it at edge-setup (not when a free domain is added) is what makes
-      // a later free domain work without a redeploy — and it can't be deferred to the
-      // baked image's catch-all, which never reaches an edge on an older image.
-      //
-      // Routing is resolved from the DEPLOYMENT, not `platform()`: the edge we just
-      // prepared may live on a remote server, and the local orchestrator's provider
-      // would write the vhost to the wrong box.
-      await (async () => {
-        const dep = await repos.deployment.findById(resolved.project.activeDeploymentId!);
-        if (!dep) return;
-        await withDeploymentPlatform(dep, async ({ routing }) => {
-          await ensureEdgeChallengeReady(ctx.organizationId, routing, {
-            serverId,
-            onLog: (m) => appendEdgeLog(session.id, m.trim(), "warn"),
-          });
-          // The edge was just (re)installed, so this is the moment its vhosts can be
-          // behind the shape this build emits. No-op on a converged box.
-          await repairEdgeVhosts(routing, {
-            onLog: (m, level) => appendEdgeLog(session.id, m.trim(), level ?? "info"),
-          });
-        });
-      })().catch(() => {});
       await applyProjectRouting(id).catch((e) =>
         appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn"),
       );

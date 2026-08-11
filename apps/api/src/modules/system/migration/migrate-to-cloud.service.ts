@@ -111,13 +111,9 @@ export async function migrateInstanceToCloud(
       //       SaaS's own auth tables; ingestSubgraph rejects it. An
       //       organization-scope dump carries exactly the rows the SaaS
       //       wants to import.
-      //       stripInstanceRefs: true — servers/mail_servers are instance-scope and
-      //       never travel, but their children (project.serverId,
-      //       backup_destination.serverId, backup_*.mailServerId) do; those FKs are
-      //       not DEFERRABLE and the parents can never exist on the SaaS.
       const dump = await dumpSubgraph(
         { kind: "organization", organizationId: ctx.input.organizationId },
-        { stripEncrypted: true, stripInstanceRefs: true },
+        { stripEncrypted: true },
       );
 
       // ── 2. POST to SaaS — cloudClient handles auth (org owner's cloud

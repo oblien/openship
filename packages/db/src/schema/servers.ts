@@ -41,13 +41,6 @@ export const servers = pgTable("servers", {
   sshAuthMethod: text("ssh_auth_method"), // "password" | "key"
   sshPassword: text("ssh_password"),
   sshKeyPath: text("ssh_key_path"),
-  /**
-   * Pasted/uploaded private-key material stored encrypted at rest (enc1:), for
-   * when the key does NOT live on the API host — the common case on a remote /
-   * VPS instance. Takes precedence over sshKeyPath in buildSshConfig. Write-only:
-   * never serialized back to the client (see serializeServer).
-   */
-  sshPrivateKey: text("ssh_private_key"),
   sshKeyPassphrase: text("ssh_key_passphrase"),
   sshJumpHost: text("ssh_jump_host"),
   sshArgs: text("ssh_args"),

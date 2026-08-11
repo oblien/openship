@@ -7,7 +7,6 @@ import { cloudRuntimeTarget, env } from "../../config/env";
 import { rateLimiterFor } from "../../middleware/rate-limiter";
 import { APP_VERSION } from "../../lib/app-version";
 import { getAuthMode } from "../../lib/auth-mode";
-import { resolveProductMode } from "../../lib/product-mode";
 
 /** Running server version (apps/api/package.json, via lib/app-version — the same
  *  value sent to the cloud on every call). Lets the dashboard tell a self-hosted
@@ -76,12 +75,6 @@ healthRoutes.get("/env", rateLimiterFor("default-anon"), async (c) => {
   // flow the dashboard draws, so it has to agree with the API's real behaviour.
   const authMode = await getAuthMode();
 
-  // productMode decides which SHELL the dashboard draws (full platform vs the
-  // Openship Mail rail). Resolved here rather than from the raw env var below so
-  // the operator's instance_settings toggle and the CLOUD_MODE rule live in one
-  // place — see lib/product-mode.ts for why this file must not re-derive it.
-  const productMode = await resolveProductMode();
-
   // teamMode tells the dashboard whether this instance has been
   // migrated to a multi-user deployment. When non-default, the
   // dashboard renders a launcher pointing at migrationTargetUrl
@@ -109,7 +102,6 @@ healthRoutes.get("/env", rateLimiterFor("default-anon"), async (c) => {
     isServerHost: !env.CLOUD_MODE && env.DEPLOY_MODE !== "desktop",
     version: APP_VERSION,
     authMode,
-    productMode,
     teamMode,
     migrationTargetUrl,
     migrationInProgress,

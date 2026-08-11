@@ -6,8 +6,6 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
-// Type-only: erased at compile time, so this never becomes a runtime require.
-import type { RendererConfigKey } from "../main/security";
 let onboardingUtils: {
   isPrivateIp?: typeof import("@repo/onboarding").isPrivateIp;
   validateServerAddress?: typeof import("@repo/onboarding").validateServerAddress;
@@ -24,15 +22,12 @@ contextBridge.exposeInMainWorld("desktop", {
   /** Whether the app is running inside Electron */
   isDesktop: true,
 
-  /**
-   * Persistent config store — update preferences only (see RENDERER_CONFIG_KEYS
-   * in main/security.ts, which enforces the key allowlist). No `getAll`: the same
-   * store holds SSH credentials and tunnel tokens.
-   */
+  /** Persistent config store */
   config: {
-    get: (key: RendererConfigKey) => ipcRenderer.invoke("config:get", key),
-    set: (key: RendererConfigKey, value: unknown) =>
+    get: (key: string) => ipcRenderer.invoke("config:get", key),
+    set: (key: string, value: unknown) =>
       ipcRenderer.invoke("config:set", key, value),
+    getAll: () => ipcRenderer.invoke("config:getAll"),
   },
 
   /** App metadata */
@@ -42,6 +37,9 @@ contextBridge.exposeInMainWorld("desktop", {
     cloudUrls: () => ipcRenderer.invoke("app:cloud-urls"),
     localUrls: () => ipcRenderer.invoke("app:local-urls"),
   },
+
+  /** Navigation */
+  navigate: (url: string) => ipcRenderer.invoke("navigate", url),
 
   /** Onboarding helpers */
   onboarding: {
@@ -75,16 +73,17 @@ contextBridge.exposeInMainWorld("desktop", {
     browseFile: () => ipcRenderer.invoke("onboarding:browse-file"),
   },
 
-  /**
-   * System utilities. SSH credentials are deliberately absent — there is no read
-   * or write channel for them (see the note in main/index.ts); the dashboard goes
-   * through the API under a real session.
-   */
+  /** System utilities */
   system: {
     /** Native folder picker - returns absolute path or null */
     browseFolder: () => ipcRenderer.invoke("system:browse-folder"),
-    /** Native file picker for an SSH key - returns absolute path or null */
-    browseFile: () => ipcRenderer.invoke("system:browse-file"),
+
+    /** Get local system settings (SSH creds, etc.) */
+    getSettings: () => ipcRenderer.invoke("system:get-settings"),
+
+    /** Update local system settings (partial merge) */
+    updateSettings: (settings: Record<string, unknown>) =>
+      ipcRenderer.invoke("system:update-settings", settings),
   },
 
   /** Cloud connection from settings (reconnect without onboarding side-effects) */

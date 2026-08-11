@@ -25,11 +25,6 @@ import { OS_DIR } from "./paths";
 export { OS_DIR };
 export const DEFAULT_REPO = "https://github.com/oblien/openship.git";
 
-/** The clone `--from-source` builds from, and the dist it builds into. Exported
- *  so `up --dry-run` names the same dirs this module creates. */
-export const SOURCE_CHECKOUT_DIR = join(OS_DIR, "src");
-export const SOURCE_DIST_DIR = join(OS_DIR, "from-source-dist");
-
 export interface FromSourceRun {
   /** release-dist/api — the API runs here via `bun run src/index.ts`. */
   apiDir: string;
@@ -118,7 +113,7 @@ export async function prepareFromSource(opts: {
     }
     ref = (opts.ref || "main").trim();
     const repoUrl = opts.repo || DEFAULT_REPO;
-    sourceDir = SOURCE_CHECKOUT_DIR;
+    sourceDir = join(OS_DIR, "src");
     mkdirSync(OS_DIR, { recursive: true });
     if (!existsSync(join(sourceDir, ".git"))) {
       console.log(`  Cloning ${repoUrl} → ${sourceDir}`);
@@ -144,7 +139,7 @@ export async function prepareFromSource(opts: {
   // Build the self-contained dist with the SAME script the migration wizard
   // ships (dashboard standalone + api src + workspace packages + lockfile).
   // Output to a stable dir OUTSIDE the checkout so a --source tree isn't dirtied.
-  const distDir = SOURCE_DIST_DIR;
+  const distDir = join(OS_DIR, "from-source-dist");
   console.log("  Building release dist (compiles the dashboard — needs RAM/CPU)…");
   await run(
     "bun",

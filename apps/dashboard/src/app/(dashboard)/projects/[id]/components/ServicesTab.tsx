@@ -7,8 +7,7 @@ import { serviceKind, serviceCanStartWithoutBuild, servicesApi, sortServicesByPu
 import { ServiceIcon } from "@/components/services/ServiceIcon";
 import { getApiErrorMessage, isAbortError } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
-import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
-import { serviceDisplayUrl } from "@/utils/route-display";
+import { resolveServiceHostnameLabel, internalServiceAddress } from "@repo/core";
 import { useRouter } from "next/navigation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
@@ -103,14 +102,19 @@ export const ServicesTab = () => {
 
   const selectedService = services.find((s) => s.id === selectedId);
 
-  // Null for a service with no route — it is reachable on its port, and linking
-  // to a derived `<project>-<service>` host sent people to a name nobody created.
-  const resolveServiceUrl = (service: Service) =>
-    serviceDisplayUrl(service, {
-      projectLabel: projectSlugBase,
-      baseDomain,
-      kind: serviceKind(service),
-    });
+  const resolveServiceUrl = (service: Service) => {
+    if (!service.exposed) return null;
+    if (service.domainType === "custom" && service.customDomain) {
+      return `https://${service.customDomain}`;
+    }
+    const subdomain = resolveServiceHostnameLabel(
+      projectSlugBase,
+      service.name,
+      service.domain,
+      serviceKind(service),
+    );
+    return `https://${subdomain}.${baseDomain}`;
+  };
 
   const openService = (serviceId: string) => {
     if (!hasProjectId) return;
@@ -412,7 +416,6 @@ export const ServicesTab = () => {
           projectType={(projectData as { projectType?: string })?.projectType}
           activeDeploymentId={projectData?.activeDeploymentId}
           deployTarget={projectData?.deployTarget}
-          serverId={(projectData as { serverId?: string | null })?.serverId}
           siblingServices={servicesData.services}
         />
       </div>
@@ -607,17 +610,15 @@ export const ServicesTab = () => {
                   ) : svc.exposed && urlHost ? (
                     // Exposed compose service — its public URL.
                     urlHost
+                  ) : ct?.ip ? (
+                    // Internal service that's running — its real internal IP on
+                    // the openship network (what the user actually wants to see).
+                    <span className="font-mono">{ct.ip}</span>
                   ) : (
-                    // Internal service — the STABLE address siblings use to reach
-                    // it (alias:port), NOT the container's ephemeral bridge IP.
-                    // The IP changes every restart and is never what you'd put in
-                    // another service's env; the alias is. Custom alias wins when
-                    // set (effectiveServiceAlias), matching what DNS resolves.
+                    // Not running yet — fall back to the stable address SIBLINGS
+                    // use to reach it (service-name:port).
                     <span className="font-mono">
-                      {internalServiceAddress(
-                        effectiveServiceAlias(svc.name, (svc.advanced as ComposeAdvanced | null)?.alias),
-                        svc.ports as string[],
-                      )}
+                      {internalServiceAddress(svc.name, svc.ports as string[])}
                     </span>
                   )}
                 </p>
@@ -656,54 +657,53 @@ export const ServicesTab = () => {
 
 /* ── Status Badge ───────────────────────────────────────────────────── */
 
-// Hollow status ring + colored label — the same calmer treatment as the service
-// detail panel and the Servers view, rather than a filled pill per row. `ring`
-// is a BORDER on an empty circle, not a solid pip.
 function StatusBadge({ status, t }: { status: string; t: Dictionary }) {
-  const map: Record<string, { ring: string; text: string; label: string }> = {
+  const map: Record<string, { dot: string; badge: string; label: string }> = {
     running: {
-      ring: "border-success-solid",
-      text: "text-success",
+      dot: "bg-success-solid",
+      badge: "bg-success-bg text-success",
       label: t.projects.serviceStatus.running,
     },
     stopped: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
+      dot: "bg-muted-foreground/30",
+      badge: "bg-muted/60 text-muted-foreground/70",
       label: t.projects.serviceStatus.stopped,
     },
     disabled: {
-      ring: "border-muted-foreground/30",
-      text: "text-muted-foreground/60",
+      dot: "bg-muted-foreground/20",
+      badge: "bg-muted/40 text-muted-foreground/50",
       label: t.projects.serviceStatus.disabled,
     },
     failed: {
-      ring: "border-danger-solid",
-      text: "text-danger",
+      dot: "bg-danger-solid",
+      badge: "bg-danger-bg text-danger",
       label: t.projects.serviceStatus.failed,
     },
     starting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
+      dot: "bg-warning-solid",
+      badge: "bg-warning-bg text-warning",
       label: t.projects.serviceStatus.starting,
     },
     // A bouncing container is NOT running — it used to render green, which hid
     // whole stacks in a crash loop.
     restarting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
+      dot: "bg-warning-solid",
+      badge: "bg-warning-bg text-warning",
       label: t.projects.serviceStatus.restarting,
     },
     // The host couldn't be reached — say so instead of echoing a stale status.
     unknown: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
+      dot: "bg-muted-foreground/40",
+      badge: "bg-muted/60 text-muted-foreground",
       label: t.projects.serviceStatus.unknown,
     },
   };
   const s = map[status] ?? map.stopped;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.text}`}>
-      <span className={`size-2.5 rounded-full border-2 ${s.ring}`} />
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.badge}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
       {s.label}
     </span>
   );

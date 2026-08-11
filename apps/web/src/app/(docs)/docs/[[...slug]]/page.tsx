@@ -56,27 +56,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const title = `${data.title} – Openship Docs`;
   const description = data.description;
 
-  // Per-page social card. Served by /docs-og (a route handler, since an image
-  // segment can't nest under this optional catch-all) and pre-rendered at build.
-  const ogImage = {
-    url: `${SITE_URL}/docs-og${slug?.length ? `/${slug.join("/")}` : ""}`,
-    width: 1200,
-    height: 630,
-    alt: title,
-  };
-
   return {
     title,
     description,
-    openGraph: {
-      title,
-      description,
-      url: page.url,
-      siteName: "Openship",
-      type: "article",
-      images: [ogImage],
-    },
-    twitter: { card: "summary_large_image", title, description, images: [ogImage] },
+    openGraph: { title, description, url: page.url, siteName: "Openship", type: "article" },
+    twitter: { card: "summary_large_image", title, description },
     // Advertise the raw-markdown variant (llms.txt convention) alongside canonical.
     alternates: {
       canonical: page.url,

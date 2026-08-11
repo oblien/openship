@@ -86,7 +86,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
             key={plan.id}
             className={`relative flex flex-col rounded-2xl border bg-card p-6 transition-colors ${
               isPopular
-                ? "border-primary/50 shadow-[0_0_0_1px_var(--primary)]"
+                ? "border-primary/50 shadow-[0_0_0_1px_hsl(var(--primary)/0.25)]"
                 : "border-border/50 hover:border-border"
             }`}
           >

@@ -8,11 +8,6 @@
  * "Ports" tab ONLY when `deployMode === "desktop"` (the parent gates it); the
  * backend independently gates the routes with `assertDesktop`, so this is UI
  * convenience, not the security boundary.
- *
- * The tunnel list + polling live in `useServerTunnels` (owned by the page, so
- * the tab count badge stays live even when this card isn't mounted); this card
- * is handed `tunnels`/`loading`/`refresh` and owns only the add-form and the
- * mutation actions.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,22 +18,15 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { Switch } from "@/components/ui/Switch";
 
-interface PortForwardingCardProps {
-  serverId: string;
-  tunnels: TunnelInfo[];
-  loading: boolean;
-  refresh: (opts?: { silent?: boolean }) => Promise<void>;
-}
+const POLL_MS = 4000;
 
-export function PortForwardingCard({
-  serverId,
-  tunnels,
-  loading,
-  refresh,
-}: PortForwardingCardProps) {
+export function PortForwardingCard({ serverId }: { serverId: string }) {
   const { showToast } = useToast();
-  // Aliased to `tr` because `t` is already used in this file for TunnelInfo rows.
+  // Aliased to `tr` because `t` is already used in this file for TunnelInfo
+  // rows and the poll-interval handle.
   const { t: tr } = useI18n();
+  const [tunnels, setTunnels] = useState<TunnelInfo[]>([]);
+  const [loading, setLoading] = useState(true);
   /** Per-tunnel in-flight action, keyed by tunnel id. */
   const [busy, setBusy] = useState<Record<string, boolean>>({});
 
@@ -48,7 +36,7 @@ export function PortForwardingCard({
   const [autoStart, setAutoStart] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  // Avoid setState after unmount during an in-flight action.
+  // Avoid setState after unmount during polling.
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -56,6 +44,28 @@ export function PortForwardingCard({
       mounted.current = false;
     };
   }, []);
+
+  const refresh = useCallback(
+    async (opts: { silent?: boolean } = {}) => {
+      if (!serverId) return;
+      if (!opts.silent) setLoading(true);
+      try {
+        const rows = await systemApi.listTunnels(serverId);
+        if (mounted.current) setTunnels(rows);
+      } catch {
+        // Silent on poll; the card just keeps its last good state.
+      } finally {
+        if (mounted.current && !opts.silent) setLoading(false);
+      }
+    },
+    [serverId],
+  );
+
+  useEffect(() => {
+    void refresh();
+    const t = setInterval(() => void refresh({ silent: true }), POLL_MS);
+    return () => clearInterval(t);
+  }, [refresh]);
 
   const withBusy = useCallback(async (id: string, fn: () => Promise<void>) => {
     setBusy((b) => ({ ...b, [id]: true }));

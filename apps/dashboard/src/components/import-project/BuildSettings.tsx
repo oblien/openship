@@ -5,8 +5,7 @@ import { Terminal, FolderOutput, Package, Play, Hash, Settings2, ChevronDown, Ch
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { getPublicEndpointHosts, getRecommendedSingleAppBuildImage, workloadOf, type PublicEndpoint } from "@/context/deployment/types";
-import type { WorkloadType } from "@repo/core";
+import { getPublicEndpointHosts, getRecommendedSingleAppBuildImage, type PublicEndpoint } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface InputField {
@@ -62,29 +61,12 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
   const hasBuild = buildData?.hasBuild !== false;
   const hasServer = !!buildData?.hasServer;
-  // The runtime workload (#538): a worker runs a process like a server but binds
-  // no port and gets no route, so it needs the Start command yet none of the
-  // port/endpoint UI. Selecting it syncs the legacy hasServer boolean (web only).
-  const workload = workloadOf(buildData ?? {});
-  const setWorkload = (w: WorkloadType) =>
-    updateOptions?.({ workloadType: w, hasServer: w === "web" });
-  const workloadOptions: { value: WorkloadType; label: string }[] = [
-    { value: "web", label: bs.modeServer },
-    { value: "worker", label: bs.modeWorker },
-    { value: "static", label: bs.modeStatic },
-  ];
-  const workloadHint =
-    workload === "web"
-      ? (buildData?.productionPort
-          ? interpolate(bs.serverOnPort, { port: String(buildData.productionPort) })
-          : bs.serverPortNotSet)
-      : workload === "worker"
-        ? bs.workerModeDesc
-        : bs.staticFromEdge;
-  // Only a host the config actually names. The old fallback labelled the port
-  // field "Port for <projectName>.<baseDomain>" for a config with no chosen
-  // route at all — a hostname nobody created.
-  const primaryEndpointHost = getPublicEndpointHosts(config?.publicEndpoints, baseDomain)[0] ?? "";
+  const endpointFallbackHost = config?.projectName || config?.repo || 'project';
+  const primaryEndpointHost = getPublicEndpointHosts(
+    config?.publicEndpoints,
+    baseDomain,
+    endpointFallbackHost,
+  )[0] ?? "";
   const additionalServerEndpoints: PublicEndpoint[] = hasServer
     ? (config?.publicEndpoints ?? []).slice(1)
     : [];
@@ -338,16 +320,8 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   };
 
   const visibleBuildFields = hasBuild ? buildFields : [];
-  // web → start command + port; worker → start command only (no port); static → none.
-  const visibleStartFields =
-    workload === "web"
-      ? startFields
-      : workload === "worker"
-        ? startFields.filter((f) => f.key !== "productionPort")
-        : [];
+  const visibleStartFields = hasServer ? startFields : [];
 
-  /** Label for one endpoint's port/path field: its host when the config names
-   *  one, else a positional "domain N" — never a composed guess. */
   const resolveEndpointHost = (endpoint: PublicEndpoint, index: number) => {
     if (endpoint.domainType === 'custom' && endpoint.customDomain) {
       return endpoint.customDomain;
@@ -357,8 +331,8 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       return `${endpoint.domain}.${baseDomain}`;
     }
 
-    if (index === 0 && primaryEndpointHost) {
-      return primaryEndpointHost;
+    if (index === 0) {
+      return primaryEndpointHost || `${endpointFallbackHost}.${baseDomain}`;
     }
 
     return `domain ${index + 1}`;
@@ -525,30 +499,21 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                 )}
               </div>
 
-              {/* ── Start column (Server / Worker / Static, #538) ── */}
+              {/* ── Start column ──────────────────────────────── */}
               <div className="space-y-3">
-                <div className="p-2.5 bg-muted/30 rounded-lg border border-border/50 space-y-2.5">
+                <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
                   <div className="flex items-center gap-2">
                     <Play className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-sm font-medium text-foreground">{bs.start}</p>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{bs.start}</p>
+                      <p className="text-sm text-muted-foreground leading-tight">
+                        {hasServer
+                          ? (buildData?.productionPort ? interpolate(bs.serverOnPort, { port: String(buildData.productionPort) }) : bs.serverPortNotSet)
+                          : bs.staticFromEdge}
+                      </p>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-1 p-0.5 bg-muted/40 rounded-lg">
-                    {workloadOptions.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setWorkload(opt.value)}
-                        className={`px-2 py-1.5 text-xs font-medium rounded-md transition-all ${
-                          workload === opt.value
-                            ? "bg-card text-foreground shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-tight">{workloadHint}</p>
+                  <Toggle checked={hasServer} onChange={(v: boolean) => updateOptions?.({ hasServer: v })} />
                 </div>
                 {visibleStartFields.map(renderInput)}
                 {renderEndpointTargetInputs()}

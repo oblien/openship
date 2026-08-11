@@ -7,7 +7,7 @@
  */
 
 import { SYSTEM } from "@repo/core";
-import { canonicalEdgeTarget, isCloudEdgeHost, isNonPublicHost } from "../../lib/edge-target";
+import { isCloudEdgeHost } from "../../lib/edge-target";
 import { getNamespaceClient } from "../../lib/openship-cloud";
 
 /** Canonicalize a slug the same way for sync and delete so both look up the
@@ -47,10 +47,10 @@ export async function syncCloudEdgeProxy(
     };
   }
 
-  // The SAME canonicalizer the box uses to name what it verifies. Oblien rejects a
-  // create/update whose target has no verification row, and it matches on the
-  // normalized string — so these two must not be able to spell it differently.
-  const target = canonicalEdgeTarget(input.target);
+  const target =
+    input.target.startsWith("http://") || input.target.startsWith("https://")
+      ? input.target
+      : `http://${input.target}`;
 
   const { client, namespace } = await getNamespaceClient(organizationId);
 
@@ -87,118 +87,6 @@ export async function syncCloudEdgeProxy(
   }
 
   return { ok: true, hostname };
-}
-
-// ─── Target verification ─────────────────────────────────────────────────────
-
-/**
- * Why both verification endpoints re-apply the sync's target guards:
- *
- * A verification is per-TARGET and grants routing to that target for 90 days, so it
- * is the more privileged of the two calls, not the lesser one. Letting a caller
- * verify `<something>.opsh.io` would prove control of the shared edge itself, and
- * letting one verify a private address would ask the upstream to probe inside its own
- * network. `syncCloudEdgeProxy` already refuses both; skipping the check here because
- * "the sync will catch it later" would put the weaker check on the stronger call.
- */
-function assertVerifiableTarget(
-  target: string,
-): { ok: false; status: 400; error: string } | null {
-  if (!target.trim()) return { ok: false, status: 400, error: "target is required" };
-  if (isCloudEdgeHost(target)) {
-    return {
-      ok: false,
-      status: 400,
-      error:
-        `"${target}" is an Openship Cloud edge address. Verifying it would prove control ` +
-        `of the edge rather than of a server. Send the server's own public IP or hostname.`,
-    };
-  }
-  if (isNonPublicHost(target)) {
-    return {
-      ok: false,
-      status: 400,
-      error:
-        `"${target}" is not publicly reachable, so Openship Cloud cannot fetch a challenge ` +
-        `from it. Verification needs an address reachable from the internet on port 80.`,
-    };
-  }
-  return null;
-}
-
-/**
- * Request a challenge proving the caller controls `target`.
- *
- * Returns the token and the path to serve it at. Note the upstream RESETS the token
- * on every request, so the caller must keep answering the previous one until it
- * stops being probed — see the retired-token rule in the persistence layer.
- */
-export async function requestCloudEdgeVerification(
-  organizationId: string,
-  input: { target: string },
-): Promise<
-  | { ok: true; verification: { id: number; target: string; path: string; token: string; instructions?: string } }
-  | { ok: false; status: 400; error: string }
-> {
-  const refusal = assertVerifiableTarget(input.target);
-  if (refusal) return refusal;
-
-  const target = canonicalEdgeTarget(input.target);
-  const { client } = await getNamespaceClient(organizationId);
-  const { verification } = await client.edgeProxy.requestVerification(target);
-  return {
-    ok: true,
-    verification: {
-      id: verification.id,
-      target: verification.target,
-      path: verification.path,
-      token: verification.token,
-      ...(verification.instructions ? { instructions: verification.instructions } : {}),
-    },
-  };
-}
-
-/**
- * Run the probe for a previously-requested verification.
- *
- * Scoped by the namespace token like every other edgeProxy call, so a caller can only
- * check its own records. `error` is forwarded verbatim — it is the only field that
- * names why a probe failed, and rewording it would discard the diagnosis.
- */
-export async function checkCloudEdgeVerification(
-  organizationId: string,
-  input: { verificationId: number },
-): Promise<
-  | {
-      ok: true;
-      verification: {
-        id: number;
-        target: string;
-        status: string;
-        validatedIp?: string | null;
-        expiresAt?: string | null;
-        error?: string;
-      };
-    }
-  | { ok: false; status: 400; error: string }
-> {
-  if (!Number.isInteger(input.verificationId) || input.verificationId <= 0) {
-    return { ok: false, status: 400, error: "verificationId must be a positive integer" };
-  }
-
-  const { client } = await getNamespaceClient(organizationId);
-  const { verification } = await client.edgeProxy.checkVerification(input.verificationId);
-  return {
-    ok: true,
-    verification: {
-      id: verification.id,
-      target: verification.target,
-      status: verification.status,
-      validatedIp: verification.validated_ip ?? null,
-      expiresAt: verification.expires_at ?? null,
-      ...(verification.error ? { error: verification.error } : {}),
-    },
-  };
 }
 
 /**

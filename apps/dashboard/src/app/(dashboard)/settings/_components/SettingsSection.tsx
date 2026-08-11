@@ -8,7 +8,6 @@ export function SettingsSection({
   title,
   description,
   children,
-  action,
   iconBg = "bg-primary/10",
   iconColor = "text-primary",
   collapsible = false,
@@ -18,13 +17,6 @@ export function SettingsSection({
   title: string;
   description: string;
   children: React.ReactNode;
-  /**
-   * Right-aligned control in the header — for the section's one primary action,
-   * where a button parked at the bottom of a growing list drifts away from the
-   * thing it acts on. Rendered as a sibling of the collapsible trigger, never
-   * inside it: a button within a button is invalid and swallows the click.
-   */
-  action?: React.ReactNode;
   iconBg?: string;
   iconColor?: string;
   /** Render the section collapsed behind an expand toggle (header stays visible). */
@@ -54,23 +46,20 @@ export function SettingsSection({
 
   return (
     <div className="bg-card rounded-2xl border border-border/50">
-      {/* The rule belongs to the header ROW, so the trigger can stay flex-1 and the
-          action sit beside it without either owning the section's divider. */}
-      <div className={`flex items-center ${expanded ? "border-b border-border/50" : ""}`}>
-        {collapsible ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            className="flex min-w-0 flex-1 items-center gap-3 px-5 py-4 text-start"
-          >
-            {header}
-          </button>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-3 px-5 py-4">{header}</div>
-        )}
-        {action && <div className="shrink-0 ps-3 pe-5">{action}</div>}
-      </div>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={`w-full flex items-center gap-3 px-5 py-4 text-start ${
+            expanded ? "border-b border-border/50" : ""
+          }`}
+        >
+          {header}
+        </button>
+      ) : (
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">{header}</div>
+      )}
       {expanded && <div className="p-5">{children}</div>}
     </div>
   );

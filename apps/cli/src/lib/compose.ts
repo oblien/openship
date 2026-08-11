@@ -13,17 +13,9 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import {
   LocalExecutor,
@@ -31,17 +23,10 @@ import {
   EDGE_HOST_STATE_DIR,
   invalidateEdgeContainer,
   systemCatalog,
-  resolveLocalEnvironmentSync,
+  type EnvironmentProfile,
 } from "@repo/adapters";
 import { sanitizeEdgeVhosts } from "@repo/adapters/proxy";
-import {
-  DEFAULT_IMAGE_REGISTRY,
-  explainHostChannelCause,
-  HOST_CHANNEL_BLOCKED,
-  HOST_CHANNEL_RECHECK,
-  HOST_CHANNEL_UNAFFECTED,
-  wrapText,
-} from "@repo/core";
+import { DEFAULT_IMAGE_REGISTRY } from "@repo/core";
 
 import { OS_DIR } from "./paths";
 import {
@@ -51,7 +36,6 @@ import {
   type ResolvedPorts,
 } from "./ports";
 import { readSourceInstall } from "./source-install";
-import { pasteable, thisHost } from "./this-host";
 
 /** Host side of the edge's routing mounts — one source of truth with the api. */
 const EDGE_SITES_HOST_DIR = `${EDGE_HOST_STATE_DIR}/sites-enabled`;
@@ -80,9 +64,6 @@ const COMPOSE_FILE = join(COMPOSE_DIR, "docker-compose.yml");
 /** From-source override: BUILDs api/dashboard/edge instead of pulling them. */
 const BUILD_FILE = join(COMPOSE_DIR, "docker-compose.build.yml");
 const ENV_FILE = join(COMPOSE_DIR, ".env");
-/** The `.env` this run replaced. See writeEnvFile — recovery for #488. */
-const ENV_BACKUP_FILE = join(COMPOSE_DIR, ".env.bak");
-const ENV_TMP_FILE = join(COMPOSE_DIR, ".env.tmp");
 
 /** Images the stack builds from source in a dev install; the rest (postgres,
  *  redis) are upstream and always pulled. */
@@ -165,21 +146,15 @@ export function dockerGap(state: DockerState = dockerState()): DockerGap | null 
     };
   }
   if (!state.daemon) {
-    // How THIS box starts a daemon, and whether it needs sudo to — both from the one
-    // resolver. Hardcoded, this line offered `systemctl start docker` to an Alpine host
-    // that has no systemctl and to a mac whose answer is "open Docker Desktop": the
-    // advice for an unreachable daemon was unrunnable exactly where it was needed.
-    const start = pasteable(thisHost().dockerStart());
+    const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
     return {
       summary: "Docker is installed but its daemon isn't reachable",
       // Reinstalling changes nothing: a group change only applies to NEW logins,
       // and a stopped daemon needs starting, not installing.
       installable: false,
-      hint: thisHost().profile.isRoot
-        ? start
-          ? `Start it with: ${start}`
-          : "Start the Docker daemon — this host has no service manager Openship recognizes."
-        : `Add your user to the docker group: sudo usermod -aG docker ${userInfo().username} — then log out and back in (or run: newgrp docker). If the daemon is stopped: ${start ?? "start it the way this host starts services"}`,
+      hint: asRoot
+        ? "Start it with: systemctl start docker"
+        : `Add your user to the docker group: sudo usermod -aG docker ${userInfo().username} — then log out and back in (or run: newgrp docker). If the daemon is stopped: sudo systemctl start docker`,
     };
   }
   return null;
@@ -188,6 +163,15 @@ export function dockerGap(state: DockerState = dockerState()): DockerGap | null 
 /** docker + `docker compose` present AND the daemon reachable. */
 export function hasDockerCompose(): boolean {
   return dockerGap() === null;
+}
+
+/**
+ * Compose is the default install method when it can actually work: docker +
+ * compose present AND Linux (the `edge` container needs host networking, which
+ * Docker Desktop on mac/win doesn't provide — those fall back to bare).
+ */
+export function composeIsViableDefault(): boolean {
+  return process.platform === "linux" && hasDockerCompose();
 }
 
 /** `cmd` is on PATH (probes `cmd --version`). */
@@ -200,85 +184,27 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Ensure Docker + Compose are usable, auto-installing Docker if missing. Reuses
+ * the SAME install command the deploy pipeline uses to provision target servers
+ * (`systemCatalog.installs.docker` → get.docker.com), so there's one definition
+ * of "how we install Docker". Returns true once `docker compose` works.
+ *
+ * Only attempts on Linux — Docker Desktop on macOS/Windows can't be installed
+ * unattended (and its edge container lacks host networking), so those return
+ * false and the caller falls back to the bare service. The installer's own
+ * output is inherited (that's the real progress the operator sees).
+ */
 export interface EnsureDockerOpts {
   /** Where narration goes. Defaults to stderr; the wizard passes clack's log so
    *  the lines match the rest of its output. */
   onNotice?: (line: string) => void;
 }
 
-/** What a Docker install would look like here — see `dockerInstallPreview`. */
-export interface DockerInstallPreview {
-  state: DockerState;
-  /** Why Docker isn't usable; null when it already is. */
-  gap: DockerGap | null;
-  /** True when a real run would execute `installCommand` on this box. */
-  wouldInstall: boolean;
-  /** The exact installer command for THIS distro, when there is one to run. */
-  installCommand?: string;
-  /** Best-effort daemon start that follows the install. */
-  startCommand?: string;
-  /** Why this box has no installer at all — an unsupported distro or arch. */
-  unsupportedReason?: string;
-  /**
-   * Why the daemon can't be started here, though it can be installed.
-   *
-   * Distinct from a missing `startCommand`: a component with no service has neither, and
-   * conflating the two is how Alpine installed Docker and then never started it.
-   */
-  startBlockedReason?: string;
-}
-
-/**
- * What `ensureDocker` WOULD do on this box, without doing any of it.
- *
- * `--dry-run` is why this exists: calling `ensureDocker` merely to find out
- * whether Docker was needed installed ~150 MB of packages and enabled a system
- * daemon on the machine the operator was only previewing (#436). `ensureDocker`
- * is implemented on top of this, so the preview and the run can't disagree about
- * whether an install happens or which command performs it.
- */
-export function dockerInstallPreview(state: DockerState = dockerState()): DockerInstallPreview {
-  const gap = dockerGap(state);
-  if (!gap) return { state, gap: null, wouldInstall: false };
-  // Docker Desktop can't be installed unattended, and an unreachable daemon is
-  // not an installation problem (see dockerGap) — neither runs the installer.
-  if (process.platform !== "linux" || !gap.installable) return { state, gap, wouldInstall: false };
-  // The real profile of this box, not a fabricated `{os:"linux",serviceManager:"systemd"}`
-  // cast: that literal is why `up` previewed (and ran) `curl get.docker.com | sh` on
-  // Amazon Linux and Alpine, where that script refuses by `ID`, and why it previewed a
-  // `systemctl` start on a box running OpenRC.
-  const plan = systemCatalog.installs.docker(resolveLocalEnvironmentSync());
-  if (!plan.supported) return { state, gap, wouldInstall: false, unsupportedReason: plan.reason };
-  const start = plan.value.service;
-  return {
-    state,
-    gap,
-    wouldInstall: true,
-    installCommand: plan.value.installCommand,
-    ...(start?.supported ? { startCommand: start.value } : {}),
-    ...(start && !start.supported ? { startBlockedReason: start.reason } : {}),
-  };
-}
-
-/**
- * Ensure Docker + Compose are usable, auto-installing Docker if missing. Reuses
- * the SAME install command the deploy pipeline uses to provision target servers
- * (`systemCatalog.installs.docker`, which derives it from this host's package
- * manager), so there's one definition of "how we install Docker". Returns true
- * once `docker compose` works.
- *
- * Only attempts on Linux — Docker Desktop on macOS/Windows can't be installed
- * unattended (and its edge container lacks host networking), so those return
- * false and the caller falls back to the bare service. The installer's own
- * output is inherited (that's the real progress the operator sees).
- *
- * MUTATES the box. Anything that only needs to know WHETHER it would install
- * (`--dry-run`) must call `dockerInstallPreview` instead.
- */
 export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean> {
   const notice = opts.onNotice ?? ((line: string) => process.stderr.write(`  ${line}\n`));
-  const { state, gap, wouldInstall, installCommand, startCommand, unsupportedReason, startBlockedReason } =
-    dockerInstallPreview();
+  const state = dockerState();
+  const gap = dockerGap(state);
   if (!gap) return true;
   if (process.platform !== "linux") return false;
   // An unreachable daemon is not an installation problem — say what to do and
@@ -288,14 +214,12 @@ export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean
     if (gap.hint) notice(gap.hint);
     return false;
   }
-  if (!wouldInstall || !installCommand) {
-    // A REFUSED plan is not an absent one. `dockerInstallPreview` already names the
-    // distro or arch it won't install on, and `wizard.ts` prints it on the preview
-    // path — dropping it here meant the mutating path fell back to the bare service
-    // in silence, which is the failure this whole layer exists to stop.
-    if (unsupportedReason) notice(unsupportedReason);
-    return false;
-  }
+
+  const plan = systemCatalog.installs.docker({
+    os: "linux",
+    serviceManager: "systemd",
+  } as unknown as EnvironmentProfile);
+  if (!plan.supported || !plan.installCommand) return false;
 
   const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
   const sudo = !asRoot && hasCmd("sudo") ? "sudo " : "";
@@ -331,13 +255,9 @@ export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean
       child.on("close", (code) => done(code ?? 1));
     });
 
-  if ((await sh(installCommand)) !== 0) return false;
+  if ((await sh(plan.installCommand)) !== 0) return false;
   // Best-effort daemon start (get.docker.com already enables it on systemd).
-  if (startCommand) await sh(startCommand);
-  // No start command because the start step REFUSED — a box with no init we recognise.
-  // The re-probe below reports only that Docker still isn't usable; without this the
-  // one message that says WHY (and that the install itself worked) had no consumer at all.
-  else if (startBlockedReason) notice(startBlockedReason);
+  if (plan.startCommand) await sh(plan.startCommand);
 
   const after = dockerGap();
   if (!after) {
@@ -354,11 +274,6 @@ export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean
 export interface ComposeUpOpts {
   /** Don't give the api a channel to the HOST OS (no key, no mount, refuse ops). */
   noHostControl?: boolean;
-  /** Address the api container dials for host ops, overriding
-   *  `host.docker.internal` (see HOST_CHANNEL_DEFAULT_HOST). */
-  hostSshHost?: string;
-  /** Port the host's sshd listens on, if it isn't 22. */
-  hostSshPort?: string;
   apiPort?: string;
   dashboardPort?: string;
   publicUrl?: string;
@@ -366,9 +281,6 @@ export interface ComposeUpOpts {
   extraTrustedOrigins?: string;
   trustProxy?: boolean;
   registry?: string;
-  /** Image tag to pin (`--image-version`). Falls back to `OPENSHIP_VERSION` in the
-   *  environment, then this CLI's version — the #486 escape hatch for a tag whose
-   *  images the registry doesn't have yet. See resolveImageVersion. */
   version?: string;
   /** Force the pull path even on a from-source install (escape hatch). */
   build?: boolean;
@@ -379,25 +291,6 @@ export interface ComposeUpOpts {
    * seconds (and a registry round-trip that can hang).
    */
   alreadyFetched?: boolean;
-  /**
-   * The change signal from a materialize this run ALREADY did — `composePrefetch`'s,
-   * whose result the caller must pass through. See ComposePrefetchResult.envChanged for
-   * why `composeUp` cannot work it out for itself once the prefetch has written `.env`.
-   */
-  envChanged?: boolean;
-  /**
-   * Proceed even though this run would regenerate secrets an existing data volume was
-   * created with (see secretRotationRisk). The DB keeps its old password until
-   * reconcileDbPassword realigns it, and every stored environment variable becomes
-   * undecryptable — so this is a deliberate reset, never a retry.
-   */
-  resetSecrets?: boolean;
-  /**
-   * Install as Openship Mail: the dashboard's default shell is the mail control
-   * plane rather than the full platform (`OPENSHIP_PRODUCT`). Absent on a re-run
-   * keeps whatever the install chose — see resolveEnvConfig.
-   */
-  mail?: boolean;
 }
 
 /** Pinned compose stack. Vars come from the generated .env (env_file + interpolation). */
@@ -439,10 +332,7 @@ services:
   api:
     image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:\${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
-    # Loopback by default — the host-net edge reaches it over loopback, so nothing
-    # sits on a public interface. OPENSHIP_BIND_ADDR opts into a public/LAN interface
-    # (set by \`openship up\` when a public URL is configured for off-box access).
-    ports: ["\${OPENSHIP_BIND_ADDR:-127.0.0.1}:\${API_PORT:-4000}:\${API_PORT:-4000}"]
+    ports: ["\${OPENSHIP_BIND_ADDR:-0.0.0.0}:\${API_PORT:-4000}:\${API_PORT:-4000}"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Routing state shared with the edge, as HOST BIND MOUNTS (generated from
@@ -453,16 +343,9 @@ services:
 ${edgeVolumeYaml("      ")}
       # Host-op SSH key (createHostExecutor → host.docker.internal). /dev/null
       # when the host channel isn't provisioned → OPENSHIP_HOST_SSH_HOST stays
-      # unset, and host operations REFUSE (they'd otherwise run against this
-      # container's filesystem, #509) while ordinary deploys keep working over
-      # the socket below.
+      # unset and the API falls back to LocalExecutor.
       - \${OPENSHIP_HOST_KEY_PATH:-/dev/null}:/run/secrets/openship_host_key:ro
-    # \`host-gateway\` is resolved by the daemon and is right on a stock rootful
-    # install. It is NOT universally right: under rootless Docker it lands in
-    # RootlessKit's namespace rather than the host's, so the host's sshd isn't
-    # there (#482). OPENSHIP_HOST_GATEWAY re-points the alias (e.g. at the box's
-    # LAN address) without patching this file, which \`openship up\` rewrites.
-    extra_hosts: ["host.docker.internal:\${OPENSHIP_HOST_GATEWAY:-host-gateway}"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     env_file: [.env]
     environment:
       NODE_ENV: production
@@ -484,8 +367,7 @@ ${edgeVolumeYaml("      ")}
   dashboard:
     image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:\${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
-    # Loopback by default (see api note); OPENSHIP_BIND_ADDR opts into a public interface.
-    ports: ["\${OPENSHIP_BIND_ADDR:-127.0.0.1}:\${DASHBOARD_PORT:-3001}:\${DASHBOARD_PORT:-3001}"]
+    ports: ["\${OPENSHIP_BIND_ADDR:-0.0.0.0}:\${DASHBOARD_PORT:-3001}:\${DASHBOARD_PORT:-3001}"]
     env_file: [.env]
     environment:
       NODE_ENV: production
@@ -519,192 +401,34 @@ function keepSecret(existing: Record<string, string>, key: string): string {
   return existing[key] || randomBytes(32).toString("hex");
 }
 
-/**
- * Secrets the CLI generates ONCE. None of them can be re-derived, and for each one a
- * fresh value is actively wrong on an install that already has data:
- *  · POSTGRES_PASSWORD is only ever applied by initdb, so a new value cannot match a
- *    volume that already exists — the api then fails 28P01 (see reconcileDbPassword).
- *  · BETTER_AUTH_SECRET is the AES key for every stored environment variable, so a new
- *    one makes every `env_var` row in the database permanently undecryptable.
- *  · INTERNAL_TOKEN is how this CLI authenticates to the running api.
- */
-const GENERATED_SECRET_KEYS = ["POSTGRES_PASSWORD", "BETTER_AUTH_SECRET", "INTERNAL_TOKEN"] as const;
-
-/**
- * The postgres data volume of an install that already exists on this box, if any.
- *
- * Probed across every project name we could own — the pinned one plus both historical
- * defaults (see composeProjectName) — because this lookup exists for the case where
- * `.env`, the thing that would tell us the name, is exactly what we can't read.
- */
-function survivingDbVolume(prev: Record<string, string>): string | null {
-  const candidates = new Set([prev.COMPOSE_PROJECT_NAME, "openship", "compose"]);
-  for (const project of candidates) {
-    if (project && dbVolumeExists(project)) return `${project}_postgres_data`;
-  }
-  return null;
-}
-
-/**
- * #488: whether this run would MINT a secret that an existing install already has a
- * different value for.
- *
- * `keepSecret` reuses whatever `.env` yields and generates the rest, which is right on a
- * first install and silently destructive on a re-run whose `.env` stopped yielding —
- * unreadable (root-owned 0600 and this run isn't root; `sudo` pointing HOME at a
- * different `~/.openship`), truncated by an interrupted write, or restored from a backup
- * without it. `up` then regenerated the secrets AND overwrote the file, so the only copy
- * of the real values was gone before anything looked wrong. What the operator saw, later,
- * was the api crash-looping on `password authentication failed for user "openship"` —
- * because the data volume still holds the ORIGINAL password.
- *
- * A surviving data volume is the evidence, since it outlives every way `.env` can go bad.
- * Callers stop on a non-null result: at that point nothing has been written, which is the
- * whole reason the old `.env` is still recoverable. `--reset-secrets` is the deliberate
- * way past, for an operator who really does want a reset.
- */
-function secretRotationRisk(
-  prev: Record<string, string>,
-): { volume: string; keys: string[] } | null {
-  const keys = GENERATED_SECRET_KEYS.filter((k) => !prev[k]);
-  if (keys.length === 0) return null;
-  const volume = survivingDbVolume(prev);
-  return volume ? { volume, keys: [...keys] } : null;
-}
-
-/**
- * The same check against the `.env` on disk, for callers that must stop BEFORE anything
- * writes it. Every entry point that reaches `materialize` gates on this — `up` and the
- * wizard ahead of their prefetch (which materializes too), and composeUp itself for
- * `openship update`. Cheap enough to run more than once: one `docker volume inspect`.
- */
-export function composeSecretRotationRisk(
-  opts: ComposeUpOpts = {},
-): { volume: string; keys: string[] } | null {
-  if (opts.resetSecrets) return null;
-  return secretRotationRisk(readEnvFile());
-}
-
-/**
- * What to tell the operator when `up` refuses to rotate secrets.
- *
- * Shared with the dry run so the preview and the real run cannot describe this state
- * differently — the whole complaint in #488 was a preview that said one thing and a run
- * that did another. Names the file, the volume, and the way out, because the operator
- * hitting this has an install that still works and one file to put back.
- *
- * The way out is one of THREE, and telling an operator the wrong one costs them the
- * secrets this gate exists to protect (see secretRecoveryAdvice): our install with a
- * backup, our install without one, and a stack we never created and are about to adopt.
- */
-export function renderSecretRotationRefusal(
-  rotation: { volume: string; keys: string[] },
-  /** The dry run describes the same refusal in the future tense — it isn't refusing now. */
-  opts: { dryRun?: boolean } = {},
-): string {
-  return (
-    `\n  ${opts.dryRun ? "A real run would REFUSE here" : "Refusing to continue"}:` +
-    ` this would regenerate secrets your existing install already has.\n\n` +
-    `    missing from ${ENV_FILE}:  ${rotation.keys.join(", ")}\n` +
-    `    but this install's data is still here:  ${rotation.volume}\n\n` +
-    `  A new POSTGRES_PASSWORD cannot match that volume — Postgres only applies the password\n` +
-    `  when it first creates the data directory — and a new BETTER_AUTH_SECRET cannot decrypt\n` +
-    `  the environment variables already stored in the database. Nothing has been written yet.\n\n` +
-    secretRecoveryAdvice(rotation)
-  );
-}
-
-/**
- * Where the original secrets actually ARE, for the three installs that reach the refusal.
- *
- * The first version of this branched only on whether `.env.bak` existed, so on the shape
- * that reaches it most often it said "restore `.env` from a backup, or copy the keys above
- * out of one" — about a file that had never existed. That install is one we ADOPTED:
- * `docker/docker-compose.yml` pins `name: openship`, the same project name this CLI pins
- * (composeProjectName), so `openship up` on a box already running the raw compose stack
- * takes over its containers and its `openship_postgres_data`. The operator got there by
- * following #509's own advice to re-run `openship up`, and there is nothing of ours on
- * disk to put back — the values are in the container we're about to replace.
- *
- * `--reset-secrets` is named in every branch and framed in every branch as what it is: it
- * makes every stored environment variable permanently unreadable, so it is the last
- * resort, never the quick way past a refusal.
- */
-function secretRecoveryAdvice(rotation: { volume: string; keys: string[] }): string {
-  const adopted = adoptedStack(projectOfDbVolume(rotation.volume));
-  if (adopted) {
-    return (
-      `  This stack was not created by \`openship up\`: it is already running under the compose\n` +
-      `  project name we pin, so this run would ADOPT it.\n\n` +
-      `    project:      ${adopted.project}\n` +
-      `    started from: ${adopted.configFiles || "an unlabelled `docker run`"}\n` +
-      `    not from:     ${COMPOSE_FILE}\n\n` +
-      `  So there is no \`.env\` of ours to restore and no backup of one — the real values are in\n` +
-      `  the api container's own environment. Copy them out of it, then re-run:\n\n` +
-      `    echo 'COMPOSE_PROJECT_NAME=${adopted.project}' >> ${ENV_FILE}\n` +
-      `    docker inspect ${adopted.apiContainer} --format '{{range .Config.Env}}{{println .}}{{end}}' \\\n` +
-      `      | grep -E '^(${rotation.keys.join("|")})=' >> ${ENV_FILE}\n\n` +
-      `  COMPOSE_PROJECT_NAME matters as much as the secrets do: it is the volume prefix, so\n` +
-      `  without it this stack comes up on empty volumes beside the data above.\n\n` +
-      `  Only if that container is gone and the values exist nowhere else — this DESTROYS them,\n` +
-      `  leaving every environment variable stored in the database permanently unreadable:\n` +
-      `    openship up --reset-secrets\n`
-    );
-  }
-  return (
-    `  Put the original values back and re-run:\n` +
-    (existsSync(ENV_BACKUP_FILE)
-      ? `    cp ${ENV_BACKUP_FILE} ${ENV_FILE}     # the .env a previous \`openship up\` replaced\n`
-      : `    restore ${ENV_FILE} from a backup, or copy the keys above out of one\n`) +
-    `  If the file is there but this user can't read it, re-run as the user that owns it\n` +
-    `  (or as root) rather than letting the secrets be regenerated.\n\n` +
-    `  To reset instead — the database password gets realigned, but every stored environment\n` +
-    `  variable becomes permanently unreadable:\n` +
-    `    openship up --reset-secrets\n`
-  );
-}
-
-/** The compose project that owns `<project>_postgres_data` — the stack whose data the
- *  refusal is protecting, which is the one to look for evidence about. */
-function projectOfDbVolume(volume: string): string {
-  return volume.replace(/_postgres_data$/, "");
-}
-
 /** Parse the existing .env so re-running `up` preserves generated secrets. */
 function readEnvFile(): Record<string, string> {
   const out: Record<string, string> = {};
-  let text: string;
   try {
-    text = readFileSync(ENV_FILE, "utf8");
-  } catch (err) {
-    // "Not there" is a first install. Anything ELSE — a root-owned 0600 file this user
-    // can't open being the one that happens in practice — is an install whose secrets
-    // exist and are simply out of reach, and treating that as a first install is what
-    // #488 is. Say so; secretRotationRisk is what actually stops the run.
-    if ((err as { code?: string }).code !== "ENOENT") {
-      console.log(
-        `  ! Could not read ${ENV_FILE}: ${(err as Error).message}\n` +
-          `    Its contents are being treated as absent. If this install already exists,` +
-          ` fix the permissions and re-run rather than letting secrets be regenerated.`,
-      );
+    for (const line of readFileSync(ENV_FILE, "utf8").split("\n")) {
+      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+      if (m) out[m[1]] = m[2];
     }
-    return out;
-  }
-  for (const line of text.split("\n")) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m) out[m[1]] = m[2];
+  } catch {
+    /* first run */
   }
   return out;
 }
 
 /**
- * Where the api container reaches the host by default: the docker-provided alias,
- * mapped to `host-gateway` in the compose template. Overridable per-install (see
- * `resolveEnvConfig`) because it is a good default, not a universal fact.
+ * Provision the container→host SSH channel so the api container can run HOST-OS
+ * ops (free a foreign proxy off :80/:443, host config) via createHostExecutor —
+ * exactly what a bare install does locally. Best-effort + idempotent: generates
+ * an ed25519 key under the compose dir, authorizes it for the invoking host user,
+ * and returns (user, keyPath) for the .env + volume mount. Returns null on any
+ * failure or non-Linux → OPENSHIP_HOST_SSH_* stays unset and createHostExecutor
+ * cleanly falls back to LocalExecutor (no host channel; never breaks `up`).
+ *
+ * Not a new privilege: the api container already holds host-root-equivalent
+ * access through the mounted docker socket — this key just gives it a shell for
+ * the host ops the socket can't do. Prereq: the host runs sshd reachable from
+ * containers on host.docker.internal:22.
  */
-const HOST_CHANNEL_DEFAULT_HOST = "host.docker.internal";
-const HOST_CHANNEL_DEFAULT_PORT = 22;
-
 /** Marks the authorized_keys line as ours, so re-runs can revoke the previous one. */
 const HOST_KEY_COMMENT = "openship-host-executor";
 
@@ -754,549 +478,57 @@ function hostKeyAuthLine(pub: string): string {
  * governs who can log into the box, so it's verified directly rather than inferred.
  */
 export function rewriteHostAuthorizedKeys(existing: string, pub: string): string {
-  return [...keptForeignKeys(existing), hostKeyAuthLine(pub)].join("\n") + "\n";
+  const kept = existing
+    .split("\n")
+    .filter((line) => line.trim() && !line.includes(HOST_KEY_COMMENT));
+  return [...kept, hostKeyAuthLine(pub)].join("\n") + "\n";
 }
 
-/** Every line that isn't ours, which is every line we must never touch. */
-function keptForeignKeys(existing: string): string[] {
-  return existing.split("\n").filter((line) => line.trim() && !line.includes(HOST_KEY_COMMENT));
-}
-
-/**
- * PURE. The same file with our line GONE and nothing put back — the `--no-host-control`
- * half of {@link rewriteHostAuthorizedKeys}.
- *
- * Exported for tests for the same reason as its sibling: it edits the file that decides
- * who can log into the box, and the failure mode (dropping a line the operator added)
- * doesn't announce itself.
- */
-export function stripHostAuthorizedKeys(existing: string): string {
-  const kept = keptForeignKeys(existing);
-  return kept.length ? kept.join("\n") + "\n" : "";
-}
-
-/**
- * What a provisioned host channel looks like: the account it logs in as, where its
- * private key lives, which `authorized_keys` file gets the public key, and — for a
- * non-root invoker — whether that write goes through sudo.
- */
-export type HostChannelTarget = {
-  user: string;
-  keyPath: string;
-  authKeysPath: string;
-  viaSudo: boolean;
-  /** No way to reach root (non-root invoker, no passwordless sudo): the channel logs
-   *  in as the invoker and CANNOT do root host ops — the caller must warn. */
-  rootUnavailable: boolean;
-};
-
-const ROOT_AUTHORIZED_KEYS = "/root/.ssh/authorized_keys";
-
-/**
- * PURE. Decide which account the container→host SSH channel logs in as, given the
- * invoking user and whether passwordless sudo is available.
- *
- * The platform runs every host op AS ROOT — `/root/.openship` state, iRedMail install,
- * the edge binding :80/:443 — and the auto-created server record defaults `ssh_user=root`.
- * So the channel must be root, or the two disagree and host ops fail on root-owned paths
- * (issue #489: `mkdir: cannot create directory '/root': Permission denied`).
- *
- *   - invoked AS root            → already root, write /root directly.
- *   - non-root + passwordless sudo → authorize root's authorized_keys via sudo, log in as root.
- *   - non-root, no sudo          → fall back to the invoking user (a channel that can't do
- *                                  root host ops) and flag it so the caller warns loudly.
- *
- * Exported for tests: this decision is the whole fix, so it's verified directly.
- */
-export function chooseHostChannelUser(input: {
-  invokerUid: number;
-  invokerName: string;
-  invokerHome: string;
-  hasPasswordlessSudo: boolean;
-}): Omit<HostChannelTarget, "keyPath"> {
-  if (input.invokerUid === 0) {
-    return { user: "root", authKeysPath: ROOT_AUTHORIZED_KEYS, viaSudo: false, rootUnavailable: false };
-  }
-  if (input.hasPasswordlessSudo) {
-    return { user: "root", authKeysPath: ROOT_AUTHORIZED_KEYS, viaSudo: true, rootUnavailable: false };
-  }
-  return {
-    user: input.invokerName,
-    authKeysPath: join(input.invokerHome, ".ssh", "authorized_keys"),
-    viaSudo: false,
-    rootUnavailable: true,
-  };
-}
-
-/**
- * Read-only probe: does `sudo` run WITHOUT prompting for a password? `sudo -n` never
- * prompts — it exits non-zero instead — so this changes nothing on the host.
- */
-function hasPasswordlessSudo(): boolean {
+function provisionHostSshChannel(): { user: string; keyPath: string } | null {
+  if (process.platform !== "linux") return null; // host.docker.internal SSH is the Linux compose path
   try {
-    return spawnSync("sudo", ["-n", "true"], { stdio: "ignore" }).status === 0;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The container→host SSH channel a run WOULD use — resolved identically for the dry-run
- * preview and the real provisioner, so a preview can't describe a channel the install
- * wouldn't provision (or miss one it would). Null when there won't be one
- * (`--no-host-control`, or a non-Linux box: host.docker.internal SSH is the Linux path).
- */
-function plannedHostChannel(hostControl: boolean): HostChannelTarget | null {
-  if (!hostControl || process.platform !== "linux") return null;
-  // `userInfo()` rather than $USER: os.homedir() and $USER can disagree under sudo
-  // (HOME=/root with USER preserved, or vice versa), which would write the key into
-  // one account's authorized_keys while telling the container to log in as another.
-  // userInfo() is the same passwd entry homedir() resolves from, so the two can't drift.
-  let invoker: { uid: number; username: string; home: string };
-  try {
-    const info = userInfo();
-    invoker = { uid: info.uid, username: info.username, home: info.homedir };
-  } catch {
-    invoker = { uid: -1, username: process.env.USER || process.env.LOGNAME || "root", home: homedir() };
-  }
-  const decision = chooseHostChannelUser({
-    invokerUid: invoker.uid,
-    invokerName: invoker.username,
-    invokerHome: invoker.home,
-    // Only probe sudo when it could change the outcome — a root invoker never needs it.
-    hasPasswordlessSudo: invoker.uid !== 0 && hasPasswordlessSudo(),
-  });
-  return { ...decision, keyPath: join(COMPOSE_DIR, "host-ssh", "id_ed25519") };
-}
-
-/**
- * Read-modify-write our restricted key line into `authKeysPath` with Node fs — the file
- * is writable by this process (either /root because we ARE root, or the invoker's own).
- */
-function authorizeKeyAt(authKeysPath: string, pub: string): void {
-  mkdirSync(dirname(authKeysPath), { recursive: true, mode: 0o700 });
-  const existing = existsSync(authKeysPath) ? readFileSync(authKeysPath, "utf8") : "";
-  const next = rewriteHostAuthorizedKeys(existing, pub);
-  if (next !== existing) writeFileSync(authKeysPath, next, { mode: 0o600 });
-  // mode: on writeFileSync only applies at CREATE, so a file that already existed keeps
-  // its old permissions — set them explicitly.
-  chmodSync(authKeysPath, 0o600);
-}
-
-/**
- * The same read-modify-write, but on /root/.ssh/authorized_keys through `sudo -n`, for a
- * non-root invoker with passwordless sudo. Returns false if any step fails so the caller
- * can fall back rather than leave a half-authorized root channel.
- */
-function authorizeRootKeyViaSudo(pub: string): boolean {
-  const mk = spawnSync("sudo", ["-n", "sh", "-c", "mkdir -p /root/.ssh && chmod 700 /root/.ssh"], {
-    stdio: "ignore",
-  });
-  if (mk.status !== 0) return false;
-  const read = spawnSync(
-    "sudo",
-    ["-n", "sh", "-c", `cat ${ROOT_AUTHORIZED_KEYS} 2>/dev/null || true`],
-    { encoding: "utf8" },
-  );
-  if (read.status !== 0) return false;
-  const next = rewriteHostAuthorizedKeys(read.stdout ?? "", pub);
-  // `tee` (not a shell `>`) so the redirect happens under root, not this shell.
-  const write = spawnSync("sudo", ["-n", "tee", ROOT_AUTHORIZED_KEYS], {
-    input: next,
-    stdio: ["pipe", "ignore", "ignore"],
-  });
-  if (write.status !== 0) return false;
-  return spawnSync("sudo", ["-n", "chmod", "600", ROOT_AUTHORIZED_KEYS], { stdio: "ignore" }).status === 0;
-}
-
-/**
- * Best-effort: strip our line from an `authorized_keys` this process can write.
- *
- * True means the file is clean afterwards — including "there was nothing of ours in
- * it", so a caller can't tell a no-op from a success and doesn't need to.
- */
-function revokeKeyAt(authKeysPath: string): boolean {
-  try {
-    if (!existsSync(authKeysPath)) return true;
-    const existing = readFileSync(authKeysPath, "utf8");
-    if (!existing.includes(HOST_KEY_COMMENT)) return true;
-    writeFileSync(authKeysPath, stripHostAuthorizedKeys(existing), { mode: 0o600 });
-    chmodSync(authKeysPath, 0o600);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The same, on /root/.ssh/authorized_keys through `sudo -n` — the mirror of
- *  {@link authorizeRootKeyViaSudo}, for a non-root invoker with passwordless sudo. */
-function revokeRootKeyViaSudo(): boolean {
-  const read = spawnSync(
-    "sudo",
-    ["-n", "sh", "-c", `cat ${ROOT_AUTHORIZED_KEYS} 2>/dev/null || true`],
-    { encoding: "utf8" },
-  );
-  if (read.status !== 0) return false;
-  const existing = read.stdout ?? "";
-  if (!existing.includes(HOST_KEY_COMMENT)) return true;
-  // `tee` (not a shell `>`) so the redirect happens under root, not this shell.
-  const write = spawnSync("sudo", ["-n", "tee", ROOT_AUTHORIZED_KEYS], {
-    input: stripHostAuthorizedKeys(existing),
-    stdio: ["pipe", "ignore", "ignore"],
-  });
-  return write.status === 0;
-}
-
-/**
- * `--no-host-control` on a box that already HAD a channel: take the credential back.
- *
- * Refusing to use a key is not the same as not having one. The flag used to leave both
- * halves in place — the private key under `~/.openship/compose/host-ssh` and the line in
- * `authorized_keys` — so "turns the channel off" was true of this install's behaviour and
- * false of the box's attack surface, which is the half an operator sets the flag for.
- *
- * The private key goes first and unconditionally: it is our own file, and without it the
- * authorized line grants nothing. Then the line, wherever it was written (root's file, or
- * the invoker's on a pre-#489 install) — and if that needs a root we don't have, the exact
- * command to finish it, rather than a silent partial revoke.
- *
- * Quiet when there was never a channel here: `--no-host-control` on a fresh install, and
- * every re-run after the first retirement, print nothing.
- */
-function retireHostSshChannel(prev: Record<string, string>): void {
-  const keyDir = join(COMPOSE_DIR, "host-ssh");
-  if (!existsSync(keyDir) && !prev.OPENSHIP_HOST_SSH_HOST) return;
-
-  const invokerKeys = join(homedir(), ".ssh", "authorized_keys");
-  // Which file holds the line is what the channel logged in AS — root unless it fell
-  // back to the invoker (#489). A pre-#489 install wrote the invoker's file either way,
-  // so that one is always swept too.
-  const asRoot = (prev.OPENSHIP_HOST_SSH_USER?.trim() || "root") === "root";
-  const weAreRoot = typeof process.getuid === "function" && process.getuid() === 0;
-  const revoked = asRoot
-    ? weAreRoot
-      ? revokeKeyAt(ROOT_AUTHORIZED_KEYS)
-      : hasPasswordlessSudo() && revokeRootKeyViaSudo()
-    : revokeKeyAt(invokerKeys);
-  const alsoInvoker = asRoot ? revokeKeyAt(invokerKeys) : true;
-
-  try {
-    rmSync(keyDir, { recursive: true, force: true });
-  } catch {
-    /* the key is unusable the moment the channel is off; a leftover file is not a grant */
-  }
-
-  const stuck = asRoot ? ROOT_AUTHORIZED_KEYS : invokerKeys;
-  // Names the `.env` half too: dropping OPENSHIP_HOST_SSH_* is the ONE case where those
-  // keys legitimately disappear (a provisioning failure now carries them forward instead
-  // — see carriedHostChannel), so the withdrawal has to be the thing that says so.
-  console.log(
-    revoked && alsoInvoker
-      ? "  Host control off: dropped OPENSHIP_HOST_SSH_* from .env, deleted the host key and\n" +
-          "  revoked its authorized_keys line."
-      : `  Host control off: dropped OPENSHIP_HOST_SSH_* from .env and deleted the host key (it\n` +
-          `  can no longer be used). Removing its line needs root — run:\n` +
-          `  sudo sed -i '/${HOST_KEY_COMMENT}/d' ${stuck}`,
-  );
-}
-
-/**
- * Why a run that WANTED a host channel hasn't got a working one.
- *
- * Only ever set when `plannedHostChannel` returned a target — i.e. host control is on
- * and this platform has a channel to provision. The two quiet cases (`--no-host-control`,
- * a non-Linux box) are not failures and carry no code, which is what keeps the call
- * site's warning off a box that correctly has no channel.
- */
-type HostChannelIssueCode =
-  /** `ssh-keygen` couldn't run or failed — there is no keypair to authorize. */
-  | "keygen"
-  /** The keypair exists but its public half read back empty. */
-  | "empty-key"
-  /** Reading or authorizing it threw: a `mkdir`/`authorized_keys` this user can't touch. */
-  | "error"
-  /** Provisioned fine, but nothing on this host is listening for SSH (see probeHostSshd). */
-  | "no-sshd";
-
-export interface HostChannelIssue {
-  code: HostChannelIssueCode;
-  /** The errno/message/port behind it, verbatim, for the operator. */
-  detail?: string;
-}
-
-interface HostChannelProvision {
-  /** The channel to write into `.env`, or null when this run produced none. */
-  channel: { user: string; keyPath: string } | null;
-  /** Set only when a channel was wanted and isn't (or can't yet) work. */
-  issue?: HostChannelIssue;
-}
-
-/**
- * Provision the container→host SSH channel so the api container can run HOST-OS
- * ops (free a foreign proxy off :80/:443, host config) via createHostExecutor —
- * exactly what a bare install does locally. Idempotent: generates an ed25519 key under
- * the compose dir, authorizes it for the host account the ops run as (root when
- * reachable — see chooseHostChannelUser), and reports (user, keyPath) for the .env +
- * volume mount.
- *
- * Failing is NOT a graceful degrade, and this header used to say it was —
- * "createHostExecutor cleanly falls back to LocalExecutor" is the sentence #509 came out
- * of. LocalExecutor IS the host on a BARE install; here the api runs in a container,
- * where it is the CONTAINER's filesystem, so createHostExecutor throws rather than
- * operate on the wrong machine and every host operation on this box fails from the
- * moment the install reports success.
- *
- * So it stays best-effort — a keygen failure must not abort an otherwise-good install —
- * but it now returns WHY rather than a bare null. That reason exists nowhere else: every
- * later surface (the install preflight, the API banner, `openship doctor`, the deploy
- * log) sees only an unset OPENSHIP_HOST_SSH_HOST, which is why a failed keygen used to
- * look exactly like an operator who had opted out.
- *
- * Not a new privilege: the api container already holds host-root-equivalent access
- * through the mounted docker socket — this key just gives it a shell for the host ops the
- * socket can't do. sshd is the one prerequisite provisioning cannot create for itself; it
- * is reported, never installed.
- */
-function provisionHostSshChannel(cfg: {
-  hostControl: boolean;
-  hostSshPort: string;
-}): HostChannelProvision {
-  const target = plannedHostChannel(cfg.hostControl);
-  if (!target) return { channel: null };
-  const { user, keyPath, authKeysPath, viaSudo, rootUnavailable } = target;
-  const provisioned = (channel: { user: string; keyPath: string }): HostChannelProvision => {
-    // The key is authorized and `.env` is about to point the api at the host, but a key
-    // is not a server: `ssh-keygen` is the openssh CLIENT and `authorized_keys` is just a
-    // file, so every step above succeeds on a box with no sshd at all.
-    const port = toPort(cfg.hostSshPort) ?? HOST_CHANNEL_DEFAULT_PORT;
-    return probeHostSshd(port) === "absent"
-      ? { channel, issue: { code: "no-sshd", detail: `port ${port}` } }
-      : { channel };
-  };
-  try {
-    mkdirSync(join(COMPOSE_DIR, "host-ssh"), { recursive: true, mode: 0o700 });
+    const sshDir = join(COMPOSE_DIR, "host-ssh");
+    mkdirSync(sshDir, { recursive: true, mode: 0o700 });
+    const keyPath = join(sshDir, "id_ed25519");
     if (!existsSync(keyPath)) {
       const g = spawnSync(
         "ssh-keygen",
         ["-t", "ed25519", "-N", "", "-q", "-f", keyPath, "-C", HOST_KEY_COMMENT],
-        // stderr is captured rather than discarded: it is the only account of why the
-        // channel is missing, and the caller prints it.
-        { encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] },
+        { stdio: "ignore" },
       );
-      if (g.status !== 0) return { channel: null, issue: { code: "keygen", detail: keygenWhy(g) } };
+      if (g.status !== 0) return null;
     }
     const pub = readFileSync(`${keyPath}.pub`, "utf8").trim();
-    if (!pub) return { channel: null, issue: { code: "empty-key" } };
+    if (!pub) return null;
 
-    if (rootUnavailable) {
-      // Issue #489's failure mode: a non-root invoker with no passwordless sudo. We can't
-      // give the container a root channel, so host ops on root-owned paths (mail state under
-      // /root/.openship, the edge, the recovery manifest) WILL fail. Provision the invoker
-      // channel anyway (non-root host ops still work) but say so loudly.
-      console.warn(
-        "  ⚠ Host control needs root, but this user isn't root and passwordless sudo isn't\n" +
-          "    available. Mail and edge host operations will fail. Re-run `openship up` as root\n" +
-          "    (or enable passwordless sudo) to fix. Continuing with a limited host channel.",
-      );
-      authorizeKeyAt(authKeysPath, pub);
-      return provisioned({ user, keyPath });
-    }
-
-    if (viaSudo) {
-      if (!authorizeRootKeyViaSudo(pub)) {
-        // `sudo -n true` passed but a step still failed — don't leave a half-authorized root
-        // channel. Fall back to the invoker's own file and dial in as them, with a warning.
-        console.warn(
-          "  ⚠ Could not authorize the host key for root via sudo — falling back to the\n" +
-            "    current user. Root host operations (mail/edge) may fail.",
-        );
-        const invoker = userInfo().username;
-        authorizeKeyAt(join(homedir(), ".ssh", "authorized_keys"), pub);
-        return provisioned({ user: invoker, keyPath });
+    // Authorize the key for the host user the container SSHes in as. `userInfo()`
+    // rather than $USER: os.homedir() and $USER can disagree under sudo (HOME=/root
+    // with USER preserved, or vice versa), which would write the key into one
+    // account's authorized_keys while telling the container to log in as another —
+    // host ops then fail with a bare "auth failed". userInfo() is the same passwd
+    // entry homedir() resolves from, so the two can't drift.
+    const user = (() => {
+      try {
+        return userInfo().username;
+      } catch {
+        return process.env.USER || process.env.LOGNAME || "root";
       }
-      // The channel now logs in as root, so any line the old CLI left under the invoking
-      // user is dead — revoke it.
-      revokeKeyAt(join(homedir(), ".ssh", "authorized_keys"));
-      return provisioned({ user, keyPath });
-    }
+    })();
 
-    // Root invoker writing /root directly (authKeysPath === /root/.ssh/authorized_keys).
-    authorizeKeyAt(authKeysPath, pub);
-    return provisioned({ user, keyPath });
-  } catch (err) {
-    return { channel: null, issue: { code: "error", detail: (err as Error)?.message } };
+    const userSshDir = join(homedir(), ".ssh");
+    mkdirSync(userSshDir, { recursive: true, mode: 0o700 });
+    const authKeys = join(userSshDir, "authorized_keys");
+    const existing = existsSync(authKeys) ? readFileSync(authKeys, "utf8") : "";
+    const next = rewriteHostAuthorizedKeys(existing, pub);
+    if (next !== existing) writeFileSync(authKeys, next, { mode: 0o600 });
+    // mode: on writeFileSync only applies at CREATE, so an authorized_keys that
+    // already existed keeps its old permissions — set them explicitly.
+    chmodSync(authKeys, 0o600);
+
+    return { user, keyPath };
+  } catch {
+    return null;
   }
-}
-
-/** Why `ssh-keygen` didn't produce a key — a missing binary is the common one, and it
- *  reads as an exit code with no output unless it's named. */
-function keygenWhy(r: { status: number | null; stderr?: string; error?: Error }): string {
-  if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-    return "ssh-keygen is not installed — the openssh-client package provides it";
-  }
-  const stderr = (r.stderr ?? "").trim().split("\n").pop();
-  return stderr || r.error?.message || `ssh-keygen exited ${r.status ?? "abnormally"}`;
-}
-
-/**
- * Is anything on this host listening for SSH?
- *
- * The channel's whole premise is that the api container can log into the host, and
- * nothing in provisioning tests that premise: it writes a key and a file. A box with no
- * SSH server — a minimal container-host image, an sshd that was never enabled — therefore
- * reported a fully provisioned channel and then failed every host operation, which is the
- * #509 shape one layer along from an unset env var.
- *
- * `absent` is claimed ONLY from a listener list we actually read; a listing we couldn't
- * get is `unknown` and says nothing, because a false "no sshd here" sends an operator to
- * fix a host that was fine. A socket-activated sshd still holds the listening socket
- * (systemd's `ssh.socket`), so it shows up here like any other.
- */
-type SshdPresence = "listening" | "absent" | "unknown";
-
-function probeHostSshd(port: number): SshdPresence {
-  for (const [cmd, args] of [
-    ["ss", ["-H", "-ltn"]],
-    ["netstat", ["-ltn"]],
-  ] as const) {
-    const r = spawnSync(cmd, [...args], { encoding: "utf8" });
-    if (r.status !== 0 || !r.stdout) continue;
-    return listensOnPort(r.stdout, port) ? "listening" : "absent";
-  }
-  return "unknown";
-}
-
-/**
- * PURE. Does an `ss -ltn` / `netstat -ltn` listing hold a LISTEN socket on `port`?
- *
- * Matched on a whole address column ending in `:<port>` so `:22` can never match `:2222`,
- * and only on rows that say LISTEN so the foreign-address column (`0.0.0.0:*`) and any
- * header can't be read as a listener. Exported for tests: a false negative here tells an
- * operator their working host has no SSH server.
- */
-export function listensOnPort(listing: string, port: number): boolean {
-  return listing
-    .split("\n")
-    .filter((line) => /\bLISTEN\b/.test(line))
-    .some((line) =>
-      line
-        .trim()
-        .split(/\s+/)
-        .some((token) => token.endsWith(`:${port}`)),
-    );
-}
-
-/**
- * The host channel this install ALREADY had, when provisioning failed this run.
- *
- * #509's quieter half: all five OPENSHIP_HOST_* keys are omittable-managed
- * (OMITTABLE_MANAGED_KEYS), so a run that produces no channel deletes them from `.env` —
- * and because `.env` then differs, compose force-recreates the api WITHOUT them. A
- * transient keygen failure therefore took host control off a box where it had worked for
- * months, in the same run that printed success. Carrying the previous values forward makes
- * a failure a no-op instead of a revocation; taking the channel away stays the job of
- * `--no-host-control`, which says so (retireHostSshChannel).
- *
- * Gated on the private key still being there, because the key IS the channel: an env
- * pointing OPENSHIP_HOST_KEY_PATH at a path with no file makes the daemon create a
- * DIRECTORY as the bind source, and the api then mounts a directory where it expects a
- * key. A channel whose key is gone is not one to carry.
- */
-function carriedHostChannel(prev: Record<string, string>): { user: string; keyPath: string } | null {
-  const keyPath = prev.OPENSHIP_HOST_KEY_PATH?.trim();
-  if (!prev.OPENSHIP_HOST_SSH_HOST?.trim() || !keyPath || !existsSync(keyPath)) return null;
-  return { user: prev.OPENSHIP_HOST_SSH_USER?.trim() || "root", keyPath };
-}
-
-const HOST_ISSUE_INDENT = "    ";
-
-/** One note under the warning's headline, wrapped to a terminal. Explicit newlines survive
- *  (wrapText honours them), so a pasteable command inside core's prose stays whole. */
-function hostIssueNote(text: string): string {
-  return wrapText(text, 80)
-    .map((l) => `${HOST_ISSUE_INDENT}${l}\n`)
-    .join("");
-}
-
-/**
- * PURE. What `up` prints when this run left no working host channel (#509).
- *
- * The CAUSE is only ever visible here — see provisionHostSshChannel — so this is the one
- * surface that can name it. Everything AROUND the cause comes from @repo/core (what still
- * works, what doesn't, how to re-check) so the install log, the API's boot banner, the
- * dashboard banner and `openship doctor` read as one account of the same box rather than
- * four independent ones.
- *
- * Never fatal, and worded so: a degraded install is not a failed one.
- */
-export function renderHostChannelIssue(
-  issue: HostChannelIssue,
-  ctx: {
-    /** `host:port` the api container dials — the same target every other surface names. */
-    target: string;
-    /** The previous run's channel was carried forward, not revoked (carriedHostChannel). */
-    kept: boolean;
-  },
-): string {
-  const detail = issue.detail ? ` (${issue.detail})` : "";
-  const headline =
-    issue.code === "no-sshd"
-      ? `  ⚠ Host control is provisioned, but nothing on this host is listening for SSH` +
-        `${detail}.`
-      : `  ⚠ Host control could NOT be provisioned on this box.`;
-
-  let cause: string;
-  switch (issue.code) {
-    case "keygen":
-      cause = `The channel's key could not be generated${detail}.`;
-      break;
-    case "empty-key":
-      cause = "The channel's key was generated but its public half read back empty.";
-      break;
-    case "no-sshd":
-      // The remedy is core's, for a refusal — which is what the api container is about to
-      // hit: it now has a key and an address, and nothing at the other end. Quoting the
-      // refusal rather than writing a second sshd remedy keeps this and the probe that
-      // reports the same host from drifting apart.
-      cause =
-        `The api container now has a key and an address, and will be refused the first ` +
-        `time it dials ${ctx.target}:\n` +
-        explainHostChannelCause("refused", {
-          target: ctx.target,
-          // Measured here rather than left to core's default, which is Debian's `ssh` —
-          // a unit name that does not exist on the RHEL family, so the remedy printed on
-          // an Amazon Linux box was a command that silently does nothing.
-          sshdEnableHint: thisHost().sshdEnableHint(),
-        }).body;
-      break;
-    case "error":
-      cause = `Setting up the channel's key failed${detail}.`;
-      break;
-  }
-
-  const continuity =
-    issue.code === "no-sshd"
-      ? ""
-      : ctx.kept
-        ? hostIssueNote(
-            "Kept the host channel this install already had in `.env` rather than dropping it: " +
-              "its key is still authorized, so the api container keeps the access it had " +
-              "instead of losing it to this failure.",
-          )
-        : hostIssueNote(
-            "OPENSHIP_HOST_SSH_HOST is therefore unset, and host operations refuse rather " +
-              "than run against the api container's own filesystem.",
-          );
-
-  return (
-    `${headline}\n` +
-    hostIssueNote(cause) +
-    continuity +
-    hostIssueNote(HOST_CHANNEL_UNAFFECTED) +
-    `${HOST_ISSUE_INDENT}Unavailable until the channel works:\n` +
-    HOST_CHANNEL_BLOCKED.map((l) => `${HOST_ISSUE_INDENT}  · ${l}\n`).join("") +
-    hostIssueNote(HOST_CHANNEL_RECHECK)
-  );
 }
 
 /**
@@ -1319,176 +551,23 @@ function composeProjectName(prev: Record<string, string>): string {
   return Object.keys(prev).length > 0 ? "compose" : "openship";
 }
 
-const PGDATA_ROOT = "/var/lib/postgresql/data";
-
-/**
- * Where an existing data volume actually keeps its cluster, read from the volume
- * itself rather than guessed at.
- *
- * `PG_VERSION` sits at the top of a Postgres cluster directory, so whether it's at
- * `/from` or `/from/pgdata` tells us which layout an existing install used — the
- * only sound basis for OPENSHIP_PGDATA on a volume this run didn't create (#487). A
- * throwaway read-only container is the only way to read a named volume's contents
- * (same idiom as migrateEdgeState above). `lost+found` is filtered from the
- * emptiness check: Docker provisions a fresh ext4 volume with exactly that one
- * entry, and without the filter a genuinely-fresh install would read as `foreign`
- * and be wrongly blocked by the gate below.
- *
- *   root    — cluster at the mount root (a pre-#350 install)
- *   sub     — cluster in the pgdata/ subdir (every install since #350)
- *   empty   — no cluster, safe to initdb (fresh volume)
- *   foreign — non-empty but no cluster we recognize — refuse rather than guess
- *   unknown — docker/daemon unavailable — never guess
- */
-type PgProbe = "root" | "sub" | "empty" | "foreign" | "unknown";
-function probePgDataDir(volume: string): PgProbe {
-  const r = spawnSync(
-    "docker",
-    [
-      "run", "--rm",
-      "-v", `${volume}:/from:ro`,
-      "alpine:3", "sh", "-c",
-      "if [ -f /from/PG_VERSION ]; then echo root; " +
-        "elif [ -f /from/pgdata/PG_VERSION ]; then echo sub; " +
-        "elif [ -z \"$(ls -A /from 2>/dev/null | grep -v '^lost+found$')\" ]; then echo empty; " +
-        "else echo foreign; fi",
-    ],
-    { encoding: "utf8" },
-  );
-  if (r.status !== 0) return "unknown";
-  const out = `${r.stdout ?? ""}`.trim();
-  return out === "root" || out === "sub" || out === "empty" || out === "foreign" ? out : "unknown";
-}
-
 /**
  * Where Postgres keeps its data directory INSIDE the `postgres_data` volume.
  *
  * A fresh install uses a subdirectory (`…/data/pgdata`) rather than the bare
  * mount root: initdb against a mount root fails on quirky host filesystems with
  * "Operation not permitted" (WAL preallocation / lost+found — see #350). But a
- * pre-existing install may have its DB at the mount ROOT, and moving PGDATA would
- * make Postgres init a fresh empty DB and orphan the old one. So the decision is
- * made ONCE and then pinned in `.env` (same sticky rule as COMPOSE_PROJECT_NAME):
- * re-runs reuse it.
- *
- * On the ONE run where a volume exists but the key isn't pinned yet — an upgrade
- * from a version that never persisted it, or a restored/unreadable `.env` — we
- * must READ the volume, not guess from its mere existence. The old heuristic
- * ("volume exists → root") wrote the root while the cluster was really in the
- * subdir, so Postgres ran initdb over a non-empty dir and the whole stack died
- * (#487). Take the root ONLY when PG_VERSION is actually there; anything else
- * resolves to the subdir (the compose default and how every install since #350
- * was created), and the `foreign` case is stopped by the gate before it matters.
+ * pre-existing install already has its DB at the mount ROOT, and moving PGDATA
+ * would make Postgres init a fresh empty DB and orphan the old one. So the
+ * decision is made ONCE and then pinned in `.env` (same sticky rule as
+ * COMPOSE_PROJECT_NAME): re-runs reuse it; a volume that predates this pin keeps
+ * the root. The check uses the resolved project name so it inspects the right
+ * `<project>_postgres_data` volume.
  */
+const PGDATA_ROOT = "/var/lib/postgresql/data";
 function resolvePgData(prev: Record<string, string>): string {
-  const SUB = `${PGDATA_ROOT}/pgdata`;
   if (prev.OPENSHIP_PGDATA) return prev.OPENSHIP_PGDATA; // decided already — never move it
-  const volume = survivingDbVolume(prev);
-  if (!volume) return SUB; // fresh install → compose default
-  return probePgDataDir(volume) === "root" ? PGDATA_ROOT : SUB;
-}
-
-/**
- * #487: a data volume this run didn't create holds data we don't recognize — no
- * cluster at the root or the pgdata/ subdir, but not empty either. Writing a
- * guessed OPENSHIP_PGDATA here is how #487 destroyed installs, so callers stop and
- * make the operator pin the path themselves. Non-null ONLY for the `foreign` probe
- * result; `root`/`sub`/`empty`/`unknown` are all handled safely by resolvePgData.
- */
-function pgDataDetectionRisk(prev: Record<string, string>): { volume: string } | null {
-  if (prev.OPENSHIP_PGDATA) return null; // already pinned — resolvePgData won't probe
-  const volume = survivingDbVolume(prev);
-  if (!volume) return null;
-  return probePgDataDir(volume) === "foreign" ? { volume } : null;
-}
-
-/**
- * The same check against the `.env` on disk, for callers that must stop BEFORE
- * anything writes it — mirrors composeSecretRotationRisk. The probe runs only on
- * the rare transition run (volume present, key unpinned); once OPENSHIP_PGDATA is
- * written every future run short-circuits in resolvePgData/pgDataDetectionRisk, so
- * paying for one extra `docker run` on that single run needs no memoization.
- */
-export function composePgDataRisk(_opts: ComposeUpOpts = {}): { volume: string } | null {
-  // No opt waives this — unlike --reset-secrets for the rotation gate, "reset the secrets"
-  // is not consent to guess where the cluster lives. The escape hatch is pinning the path.
-  return pgDataDetectionRisk(readEnvFile());
-}
-
-/**
- * What to tell the operator when `up` refuses to write a guessed OPENSHIP_PGDATA.
- * Shared with the dry run (same reason as renderSecretRotationRefusal) so the
- * preview and the real run describe this state identically. Names the volume, both
- * candidate paths, and the one-line escape hatch — pinning the key by hand.
- */
-export function renderPgDataRefusal(
-  risk: { volume: string },
-  opts: { dryRun?: boolean } = {},
-): string {
-  const SUB = `${PGDATA_ROOT}/pgdata`;
-  return (
-    `\n  ${opts.dryRun ? "A real run would REFUSE here" : "Refusing to continue"}:` +
-    ` this install's data volume holds data, but not a Postgres cluster we recognize.\n\n` +
-    `    volume:  ${risk.volume}\n` +
-    `    checked: ${PGDATA_ROOT}/PG_VERSION and ${SUB}/PG_VERSION — neither present\n\n` +
-    `  Guessing where the cluster lives is how a wrong path makes Postgres run initdb over\n` +
-    `  your existing data and orphan it, so nothing has been written. If you know the layout,\n` +
-    `  pin it and re-run:\n\n` +
-    `    echo 'OPENSHIP_PGDATA=${SUB}' >> ${ENV_FILE}     # or ${PGDATA_ROOT} if the cluster is at the root\n`
-  );
-}
-
-/**
- * One `docker ps -a` row per container: its name, its compose project, the compose
- * FILES it was created from, and its compose service.
- *
- * One format for every label reader in this file — orphaned stacks, the stray-edge
- * reclaim, and the adopted-stack evidence the secret-rotation refusal needs. They ask
- * the same question of the same rows, and three copies of this format string is how one
- * of them ends up reading a column the others moved.
- */
-const PS_SWEEP_FORMAT =
-  '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.config_files"}}\t{{.Label "com.docker.compose.service"}}';
-
-interface PsRow {
-  name: string;
-  project: string;
-  /** Comma-separated (base + build override) — compare per entry, never whole. */
-  configFiles: string;
-  service: string;
-}
-
-/** PURE. The sweep's rows. Tolerates the older 3-column form (no service label). */
-function parsePsSweep(stdout: string): PsRow[] {
-  return stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [name, project, configFiles, service] = line.split("\t");
-      return {
-        name: name ?? "",
-        project: project ?? "",
-        configFiles: configFiles ?? "",
-        service: service ?? "",
-      };
-    });
-}
-
-/** The sweep as docker printed it, or null when docker can't be asked. */
-function psSweepRaw(): string | null {
-  const r = spawnSync("docker", ["ps", "-a", "--format", PS_SWEEP_FORMAT], { encoding: "utf8" });
-  return r.status === 0 && r.stdout ? r.stdout : null;
-}
-
-/** Every container on the box, or [] when docker can't be asked. */
-function psSweep(): PsRow[] {
-  return parsePsSweep(psSweepRaw() ?? "");
-}
-
-/** Was this container created from the compose file we generate? */
-function fromOurComposeFile(row: { configFiles: string }): boolean {
-  return row.configFiles.split(",").some((f) => f.trim() === COMPOSE_FILE);
+  return dbVolumeExists(composeProjectName(prev)) ? PGDATA_ROOT : `${PGDATA_ROOT}/pgdata`;
 }
 
 /**
@@ -1509,47 +588,34 @@ function fromOurComposeFile(row: { configFiles: string }): boolean {
  * the database and issued certificates.
  */
 function orphanedStackContainers(project: string): Array<{ name: string; project: string }> {
-  return psSweep()
-    .filter((c) => c.name && c.project && c.project !== project && fromOurComposeFile(c))
+  const r = spawnSync(
+    "docker",
+    [
+      "ps",
+      "-a",
+      "--format",
+      '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.config_files"}}',
+    ],
+    { encoding: "utf8" },
+  );
+  if (r.status !== 0 || !r.stdout) return [];
+  return r.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name, proj, configFiles] = line.split("\t");
+      return { name: name ?? "", project: proj ?? "", configFiles: configFiles ?? "" };
+    })
+    .filter(
+      (c) =>
+        c.name &&
+        c.project &&
+        c.project !== project &&
+        // config_files is a comma-separated list (base + build override).
+        c.configFiles.split(",").some((f) => f.trim() === COMPOSE_FILE),
+    )
     .map(({ name, project: proj }) => ({ name, project: proj }));
-}
-
-/**
- * PURE. Evidence that the stack under `project` is one we did NOT create — so a run
- * that reuses its volumes is ADOPTING it.
- *
- * `docker/docker-compose.yml` pins `name: openship`, the same project name this CLI
- * pins, so the two stacks collide by design: same container names, same
- * `openship_postgres_data`. Compose's own labels are the evidence — rows under our
- * project name whose `config_files` names some OTHER compose file (or names nothing at
- * all, a label-less `docker run`). One row created from OUR file means the stack is
- * ours (compose relabels what it adopts), so nothing is reported.
- *
- * The api container is named from its `service` label rather than guessed, because the
- * refusal tells the operator to read the secrets out of its environment; compose's own
- * default naming is the fallback for rows that carry no service label.
- *
- * Exported for tests: the whole point is to distinguish two states that look identical
- * on disk, and getting it backwards sends an operator to `--reset-secrets`.
- */
-export function adoptedStackOrigin(
-  psStdout: string,
-  project: string,
-): { project: string; configFiles: string; apiContainer: string } | null {
-  const rows = parsePsSweep(psStdout).filter((c) => c.name && c.project === project);
-  if (rows.length === 0 || rows.some(fromOurComposeFile)) return null;
-  return {
-    project,
-    configFiles: rows.map((c) => c.configFiles).find(Boolean) ?? "",
-    apiContainer: rows.find((c) => c.service === "api")?.name || `${project}-api-1`,
-  };
-}
-
-function adoptedStack(
-  project: string,
-): { project: string; configFiles: string; apiContainer: string } | null {
-  const sweep = psSweepRaw();
-  return sweep ? adoptedStackOrigin(sweep, project) : null;
 }
 
 /**
@@ -1647,48 +713,6 @@ function removeOrphanedStack(project: string): void {
       `they would hold the ports this stack needs. Volumes are kept.`,
   );
   spawnSync("docker", ["rm", "-f", ...orphans.map((o) => o.name)], { stdio: "ignore" });
-}
-
-/**
- * Clear a stray `openship-edge` that THIS compose project doesn't own, so `up`
- * can create its own.
- *
- * The edge is the one service pinned to a fixed `container_name` (everything else
- * reaches it by name — `OPENSHIP_EDGE_CONTAINER`, the `docker ps --filter
- * name=openship-edge` detection, `docker exec`), and a fixed name is a collision
- * hazard: compose only ever recreates a container it LABELS as its own, so a
- * container called `openship-edge` left by any other owner makes `up` abort with
- * "the container name is already in use". `removeOrphanedStack` can't reach it —
- * that matches our exact `config_files` label, so a foreign-project edge, a
- * from-source `docker/docker-compose.yml` edge, or a label-less `docker run` edge
- * (an edge takeover that never went through compose) all slip past. This closes
- * that gap for the one name that can hit it.
- *
- * Unconditionally safe: the edge is stateless — every byte of vhost + cert config
- * lives in the host bind mounts, not the container — so a removed edge recreated by
- * `up` moments later serves exactly the same sites. Left alone when compose already
- * owns it (same project + our compose file), where `up` recreates it cleanly.
- */
-/**
- * From a `docker ps -a` sweep (see PS_SWEEP_FORMAT), whether a stray `openship-edge`
- * must be force-removed before `up`: it exists AND is not owned by THIS compose
- * project (same project name AND our compose file among the config files). No such
- * row → false. Pure, so the decision is unit-tested directly.
- */
-export function edgeNameNeedsReclaim(psStdout: string, project: string): boolean {
-  const row = parsePsSweep(psStdout).find((c) => c.name === "openship-edge");
-  if (!row) return false; // no such container — nothing in the way
-  return !(row.project === project && fromOurComposeFile(row));
-}
-
-function reconcileEdgeContainerName(project: string): void {
-  const sweep = psSweepRaw();
-  if (!sweep) return;
-  if (!edgeNameNeedsReclaim(sweep, project)) return;
-  console.log(
-    "  Replacing an unmanaged `openship-edge` container so compose can own it (config is on the host, so no routes are lost).",
-  );
-  spawnSync("docker", ["rm", "-f", "openship-edge"], { stdio: "ignore" });
 }
 
 /**
@@ -1798,36 +822,6 @@ function keepConfig(
   return carried || undefined;
 }
 
-const ACME_ENV_KEYS = [
-  "OPENSHIP_ACME_EMAIL",
-  "OPENSHIP_ACME_DIRECTORY_URL",
-  "OPENSHIP_ACME_EAB_KID",
-  "OPENSHIP_ACME_EAB_HMAC_KEY",
-  "OPENSHIP_ACME_KEY_TYPE",
-  "OPENSHIP_ACME_CA_BUNDLE",
-  "OPENSHIP_ACME_TOS_AGREED",
-] as const;
-
-/**
- * The `host.docker.internal` mapping, when the operator set one — shell over
- * `.env`, same as the ACME keys, and omitted entirely otherwise so the compose
- * template's `host-gateway` fallback stays in charge of the default.
- */
-function hostGatewayEnv(prev: Record<string, string>): string[] {
-  const value = process.env.OPENSHIP_HOST_GATEWAY?.trim() || prev.OPENSHIP_HOST_GATEWAY?.trim();
-  return value ? [`OPENSHIP_HOST_GATEWAY=${value}`] : [];
-}
-
-/** Preserve operator-owned ACME settings, with the current shell overriding .env. */
-function renderAcmeEnv(prev: Record<string, string>): string[] {
-  return ACME_ENV_KEYS.flatMap((key) => {
-    const value = process.env[key]?.trim() || prev[key]?.trim();
-    if (!value) return [];
-    if (/[\r\n]/.test(value)) throw new Error(`${key} must be a single-line value`);
-    return [`${key}=${value}`];
-  });
-}
-
 /** The effective config for this run: flags over previous `.env` over defaults. */
 export function resolveEnvConfig(
   prev: Record<string, string>,
@@ -1842,25 +836,12 @@ export function resolveEnvConfig(
   extraTrustedOrigins?: string;
   registry: string;
   hostControl: boolean;
-  /** Which shell the dashboard defaults to (Openship Mail vs the full platform). */
-  productMode: "platform" | "mail";
-  /** Where the api container reaches this machine's sshd for host ops. */
-  hostSshHost: string;
-  hostSshPort: string;
 } {
   const publicUrl = keepConfig(prev, "OPENSHIP_PUBLIC_URL", opts.publicUrl);
-  // Bind interface. An explicit setting always wins and is carried across re-runs
-  // (an operator who pinned one interface made a security decision; regenerating
-  // `.env` without it must not silently republish the api + dashboard everywhere).
-  // With nothing pinned we default by EXPOSURE, not to 0.0.0.0 blindly:
-  //   • public URL configured → the box is meant to be reachable off-host, so
-  //     publish on all interfaces (matches prior behavior; never breaks a remote
-  //     install whose `.env` predates this key or that is reached by IP:port).
-  //   • no public URL (a local / same-host install) → leave it unset so the
-  //     compose loopback default (${OPENSHIP_BIND_ADDR:-127.0.0.1}) applies and the
-  //     ports never touch a public interface. The host-net edge still fronts any
-  //     domains over loopback, so a domain-fronted box can also pin 127.0.0.1.
-  const bindAddr = keepConfig(prev, "OPENSHIP_BIND_ADDR") ?? (publicUrl ? "0.0.0.0" : undefined);
+  // Carried, not defaulted: an operator who pinned the stack to one interface has
+  // made a security decision, and regenerating `.env` without it silently
+  // republishes the api + dashboard on every interface of the box.
+  const bindAddr = keepConfig(prev, "OPENSHIP_BIND_ADDR");
   return {
     apiPort: keepConfig(prev, "API_PORT", opts.apiPort) ?? String(DEFAULT_API_PORT),
     dashPort: keepConfig(prev, "DASHBOARD_PORT", opts.dashboardPort) ?? String(DEFAULT_DASHBOARD_PORT),
@@ -1883,21 +864,6 @@ export function resolveEnvConfig(
     // install chose rather than silently re-granting host control.
     hostControl:
       opts.noHostControl === undefined ? prev.OPENSHIP_HOST_CONTROL !== "false" : !opts.noHostControl,
-    // Sticky too: `--mail` is only the install-time default, so a plain re-run
-    // (or `openship update`) must not hand a mail box back the platform shell.
-    // Turning it OFF is the dashboard's job — Settings → Instance stores the mode
-    // in the database, which wins over this env var either way.
-    productMode: opts.mail || keepConfig(prev, "OPENSHIP_PRODUCT") === "mail" ? "mail" : "platform",
-    // Sticky like every other operator choice here. These were literals in
-    // `renderEnv`, so a box where `host.docker.internal:22` is simply not the
-    // right address — rootless Docker, sshd on another port — had nowhere to say
-    // so, and every `openship up` overwrote a hand-edited `.env` back to the
-    // value that didn't work (#490/#482).
-    hostSshHost:
-      keepConfig(prev, "OPENSHIP_HOST_SSH_HOST", opts.hostSshHost) ?? HOST_CHANNEL_DEFAULT_HOST,
-    hostSshPort:
-      keepConfig(prev, "OPENSHIP_HOST_SSH_PORT", opts.hostSshPort) ??
-      String(HOST_CHANNEL_DEFAULT_PORT),
   };
 }
 
@@ -1915,55 +881,7 @@ export function composeEnvPorts(): { api?: number; dashboard?: number } {
 
 /** The interface the stack publishes the api + dashboard on (compose default). */
 export function composeBindAddr(): string {
-  // Match the compose template fallback (${OPENSHIP_BIND_ADDR:-127.0.0.1}): when
-  // `.env` pins no interface the ports bind loopback, so port-conflict probing
-  // must check loopback too, not the whole box.
-  return readEnvFile().OPENSHIP_BIND_ADDR?.trim() || "127.0.0.1";
-}
-
-/**
- * The container→host SSH endpoint the live install is CONFIGURED with, or null.
- *
- * Read back out of `.env` rather than taken from `plannedHostChannel`, because the
- * preflight's job is to verify what was actually written: a keygen that succeeded
- * and a channel that works are different claims, and #490 is the gap between them.
- */
-export function composeHostChannel(): { host: string; port: number; user: string } | null {
-  const env = readEnvFile();
-  const host = env.OPENSHIP_HOST_SSH_HOST?.trim();
-  if (!host) return null;
-  return {
-    host,
-    port: toPort(env.OPENSHIP_HOST_SSH_PORT) ?? 22,
-    user: env.OPENSHIP_HOST_SSH_USER?.trim() || "root",
-  };
-}
-
-/**
- * Does this box WANT a container→host channel it hasn't got?
- *
- * `composeHostChannel()` returning null covers three different boxes, and only one of
- * them is a fault:
- *
- *   - no compose install at all — bare, so LocalExecutor IS the host;
- *   - a compose install hardened with `--no-host-control` — an operator's choice;
- *   - a compose install whose provisioning FAILED — #509, where every host operation
- *     dies against the api container's own filesystem and nothing said so.
- *
- * `provisionHostSshChannel` is best-effort, so the third case looked identical to the
- * first two: a null channel, and every reader concluding "nothing to check here". It now
- * warns at install time (renderHostChannelIssue), but that line is gone the moment the
- * terminal scrolls — a later reader still needs to work it out from disk. This is the
- * difference, read off two facts there: the compose file (the same "is there an install
- * here" test composeDown/composeUninstall use) and OPENSHIP_HOST_CONTROL, which renderEnv
- * writes on every run, true or false.
- *
- * Not `readInstallMethod()`: nothing ever writes `bare`, so that marker stays `compose`
- * on a box converted the other way and would answer no better here.
- */
-export function composeHostChannelExpected(): boolean {
-  if (!existsSync(COMPOSE_FILE)) return false;
-  return readEnvFile().OPENSHIP_HOST_CONTROL !== "false";
+  return readEnvFile().OPENSHIP_BIND_ADDR?.trim() || "0.0.0.0";
 }
 
 /**
@@ -2014,106 +932,25 @@ export function composeHeldPorts(): number[] {
  * reclaimable makes a busy box behave like the desktop app: pick another port and
  * carry on, while a plain re-run keeps the ports the install already uses.
  */
-export async function resolveComposePorts(
-  prefs: {
-    api?: string;
-    dashboard?: string;
-  },
-  opts: { persist?: boolean } = {},
-): Promise<ResolvedPorts> {
-  return resolvePorts(
-    {
-      api: toPort(prefs.api),
-      dashboard: toPort(prefs.dashboard),
-      previous: composeEnvPorts(),
-      bindAddr: composeBindAddr(),
-      reclaimable: composeHeldPorts(),
-    },
-    opts,
-  );
+export async function resolveComposePorts(prefs: {
+  api?: string;
+  dashboard?: string;
+}): Promise<ResolvedPorts> {
+  return resolvePorts({
+    api: toPort(prefs.api),
+    dashboard: toPort(prefs.dashboard),
+    previous: composeEnvPorts(),
+    bindAddr: composeBindAddr(),
+    reclaimable: composeHeldPorts(),
+  });
 }
 
-/**
- * Managed keys renderEnv can emit but legitimately OMITS from some runs: the host channel
- * and the derived TRUST_PROXY. They are produced by the CLI, never authored by an operator,
- * so a run that omits one must DROP it — not carry it forward as operator config the way the
- * passthrough below does for unknown keys. Every OTHER managed key is either always emitted,
- * or round-tripped verbatim from `.env` (keepConfig) whenever it is present, so it can't
- * reach the passthrough.
- *
- * "Omits the host channel" is a NARROWER set than it looks, and that narrowing is #509's
- * second half: `--no-host-control` withdraws the channel deliberately (and says so), and a
- * platform that can't have one never had it. A provisioning FAILURE does not omit these keys
- * at all any more — materialize carries the previous values forward, because dropping them
- * here revokes a working channel and recreates the api without it.
- */
-const OMITTABLE_MANAGED_KEYS: ReadonlySet<string> = new Set([
-  "OPENSHIP_HOST_SSH_HOST",
-  "OPENSHIP_HOST_SSH_USER",
-  "OPENSHIP_HOST_SSH_PORT",
-  "OPENSHIP_HOST_SSH_KEY",
-  "OPENSHIP_HOST_KEY_PATH",
-  "OPENSHIP_HOST_GATEWAY",
-  "TRUST_PROXY",
-]);
-
-const envKeyOf = (line: string): string | undefined => line.match(/^([A-Z0-9_]+)=/)?.[1];
-
-/**
- * #485: `openship up` regenerated `.env` from a fixed key list, so any variable an
- * operator had added by hand — OPENSHIP_AUTH_MODE, and anything bespoke — was dropped on
- * the next run or upgrade, silently and with no diff. Every documented "add this to your
- * `.env`" workaround therefore lasted exactly until the next `up`.
- *
- * PURE. Given the keys the writer emits THIS run (`managed`) and the previous `.env`,
- * return the `KEY=value` lines for everything the CLI does NOT own — verbatim, in the
- * file's own order — so regenerating the file preserves operator config instead of
- * erasing it. A key the writer emitted, or a managed key it may legitimately omit
- * (OMITTABLE_MANAGED_KEYS), belongs to the CLI and is never carried here.
- *
- * Exported for tests: this decides what survives a regenerate, so it's verified directly.
- */
-export function operatorEnvPassthrough(
-  managed: ReadonlySet<string>,
-  prev: Record<string, string>,
-): string[] {
-  return Object.entries(prev)
-    .filter(([key]) => !managed.has(key) && !OMITTABLE_MANAGED_KEYS.has(key))
-    .map(([key, value]) => `${key}=${value}`);
-}
-
-const PRESERVED_ENV_HEADER =
-  "# Preserved from your existing .env — set by you, not by `openship up` (#485).";
-
-/**
- * The image tag the stack pins THIS run. An explicit `--image-version` wins; then
- * `OPENSHIP_VERSION` from the environment — the operator's escape hatch when the CLI
- * reached npm ahead of its images reaching the registry (#486), which no flag or env
- * var used to be able to redirect; then the CLI's own version; then `latest`.
- *
- * Deliberately NOT carried from the previous `.env`: `openship update` repins by
- * bumping exactly this key, and a plain re-run tracking the CLI's version is the
- * intent. The escape hatch is a one-shot override, not a sticky pin.
- */
-export function resolveImageVersion(opts: ComposeUpOpts): string {
-  return (
-    opts.version?.trim() ||
-    process.env.OPENSHIP_VERSION?.trim() ||
-    (typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "latest")
-  );
-}
-
-/**
- * The `.env` lines the CLI OWNS, regenerated verbatim every run. The keys emitted here
- * ARE the managed set (see operatorEnvPassthrough) — so adding a key to this list also,
- * by construction, stops it being mistaken for operator config on the next run.
- */
-function managedEnvLines(
+function renderEnv(
   opts: ComposeUpOpts,
   host: { user: string; keyPath: string } | null,
   cfg: ReturnType<typeof resolveEnvConfig>,
-  prev: Record<string, string>,
-): string[] {
+): string {
+  const prev = readEnvFile();
   const lines: string[] = [
     "# Managed by `openship up`. Secrets are generated once and preserved.",
     // Do NOT edit on a live install — it is the volume prefix (see composeProjectName).
@@ -2124,13 +961,8 @@ function managedEnvLines(
     // Read by createHostExecutor (throws when false) and by the servers list
     // (hides the local row). Written explicitly so the policy is visible in .env.
     `OPENSHIP_HOST_CONTROL=${cfg.hostControl ? "true" : "false"}`,
-    // Which shell the dashboard defaults to. Emitted on EVERY run, including the
-    // "platform" default: that keeps the key permanently in the managed set, so
-    // the #485 passthrough can never mistake it for operator config (which would
-    // pin it and make the Settings → Instance toggle look broken after an `up`).
-    `OPENSHIP_PRODUCT=${cfg.productMode}`,
     `OPENSHIP_IMAGE_REGISTRY=${cfg.registry}`,
-    `OPENSHIP_VERSION=${resolveImageVersion(opts)}`,
+    `OPENSHIP_VERSION=${opts.version || (typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "latest")}`,
     `POSTGRES_PASSWORD=${keepSecret(prev, "POSTGRES_PASSWORD")}`,
     // Pinned once (see resolvePgData): fresh install → subdir, existing volume → root.
     `OPENSHIP_PGDATA=${resolvePgData(prev)}`,
@@ -2143,9 +975,6 @@ function managedEnvLines(
     // silently defaults to 3001 when unset. Ports are dynamic now, so leaving it
     // out publishes a domain routed to a port nothing is listening on.
     `OPENSHIP_DASHBOARD_PORT=${cfg.dashPort}`,
-    // Alternate CA/EAB values are operator configuration (including one secret),
-    // so a routine `openship up`/upgrade must not silently discard them.
-    ...renderAcmeEnv(prev),
   ];
   if (cfg.bindAddr) lines.push(`OPENSHIP_BIND_ADDR=${cfg.bindAddr}`);
   // The origin allowlist. Losing either of these is the ORIGIN_REJECTED failure
@@ -2160,47 +989,14 @@ function managedEnvLines(
     // Activates createHostExecutor → SSH to the host; OPENSHIP_HOST_KEY_PATH is
     // the compose-side source for the /run/secrets/openship_host_key mount.
     lines.push(
-      `OPENSHIP_HOST_SSH_HOST=${cfg.hostSshHost}`,
+      "OPENSHIP_HOST_SSH_HOST=host.docker.internal",
       `OPENSHIP_HOST_SSH_USER=${host.user}`,
-      `OPENSHIP_HOST_SSH_PORT=${cfg.hostSshPort}`,
+      "OPENSHIP_HOST_SSH_PORT=22",
       "OPENSHIP_HOST_SSH_KEY=/run/secrets/openship_host_key",
       `OPENSHIP_HOST_KEY_PATH=${host.keyPath}`,
-      // What `host.docker.internal` resolves to inside the container. Carried from
-      // the shell or the previous `.env` (never defaulted — an unset value lets the
-      // compose template's `host-gateway` fallback apply).
-      ...hostGatewayEnv(prev),
     );
   }
-  return lines;
-}
-
-/**
- * The `.env` body: the managed keys, then any operator-set keys carried across the
- * regenerate (#485). Returns the carried key names too, so a real run can say what it
- * kept rather than leaving the (previously destructive) rewrite silent.
- */
-function renderEnvAndCarried(
-  opts: ComposeUpOpts,
-  host: { user: string; keyPath: string } | null,
-  cfg: ReturnType<typeof resolveEnvConfig>,
-  prev: Record<string, string>,
-): { text: string; carried: string[] } {
-  const lines = managedEnvLines(opts, host, cfg, prev);
-  const managed = new Set(lines.map(envKeyOf).filter((k): k is string => !!k));
-  const preserved = operatorEnvPassthrough(managed, prev);
-  const body = preserved.length ? [...lines, "", PRESERVED_ENV_HEADER, ...preserved] : lines;
-  return {
-    text: body.join("\n") + "\n",
-    carried: preserved.map((line) => line.slice(0, line.indexOf("="))),
-  };
-}
-
-function renderEnv(
-  opts: ComposeUpOpts,
-  host: { user: string; keyPath: string } | null,
-  cfg: ReturnType<typeof resolveEnvConfig>,
-): string {
-  return renderEnvAndCarried(opts, host, cfg, readEnvFile()).text;
+  return lines.join("\n") + "\n";
 }
 
 /**
@@ -2250,168 +1046,25 @@ function materialize(opts: ComposeUpOpts): {
   mkdirSync(COMPOSE_DIR, { recursive: true, mode: 0o700 });
   const prev = readEnvFile();
   const cfg = resolveEnvConfig(prev, opts);
-  // --no-host-control: never generate/authorize a host key in the first place, and on a
-  // box that already had one, take it back rather than only stopping short of using it —
-  // otherwise the flag reads as "off" while the credential is still on disk and still
-  // authorized. Resolved through cfg so a plain re-run keeps the install's choice.
-  const provision = provisionHostSshChannel(cfg);
-  let host = provision.channel;
-  // #509: a provisioning FAILURE must not silently REVOKE a channel that already worked.
-  // An `issue` here is the discriminated case that matters — host control ON, a platform
-  // that can have a channel, and nothing to show for it — so it is both what carries the
-  // old values forward and what gets said out loud.
-  let kept = false;
-  if (!host && provision.issue) {
-    const previousChannel = carriedHostChannel(prev);
-    if (previousChannel) {
-      host = previousChannel;
-      kept = true;
-    }
-  }
-  if (!cfg.hostControl) retireHostSshChannel(prev);
-  // Printed on the run's FIRST materialize only. One `up` materializes twice (see
-  // ComposePrefetchResult) and `alreadyFetched` is exactly "the prefetch already did one",
-  // so keying on it says this once rather than printing a dozen lines twice over.
-  if (provision.issue && !opts.alreadyFetched) {
-    console.warn(
-      renderHostChannelIssue(provision.issue, {
-        target: `${cfg.hostSshHost}:${cfg.hostSshPort}`,
-        kept,
-      }),
-    );
-  }
+  // --no-host-control: never generate/authorize a host key in the first place.
+  // Not just "don't use it" — there is nothing on disk to steal. Resolved through
+  // cfg so a plain re-run keeps the install's original choice.
+  const host = cfg.hostControl ? provisionHostSshChannel() : null;
   let before = "";
   try {
     before = readFileSync(ENV_FILE, "utf8");
   } catch {
     /* first install — no previous env, so everything is "changed" */
   }
-  const { text: rendered, carried } = renderEnvAndCarried(opts, host, cfg, prev);
+  const rendered = renderEnv(opts, host, cfg);
   writeFileSync(COMPOSE_FILE, COMPOSE_YAML);
-  writeEnvFile(rendered, before);
-  // #485: the old rewrite silently DROPPED operator-set keys. Now they survive — say so,
-  // so a run that kept them doesn't look like it might have discarded them.
-  if (carried.length) {
-    console.log(`  Kept ${carried.length} operator-set .env variable(s): ${carried.join(", ")}`);
-  }
+  writeFileSync(ENV_FILE, rendered, { mode: 0o600 });
 
   const buildDir = opts.build === false ? null : sourceBuildDir();
   if (buildDir) writeFileSync(BUILD_FILE, renderBuildOverride(buildDir));
   // `before === ""` is a first install: the containers don't exist yet and will be
   // created with this env, so there is nothing to force.
   return { buildDir, cfg, envChanged: before !== "" && rendered !== before };
-}
-
-/**
- * Replace `.env`, keeping the bytes it had.
- *
- * Two hazards, both #488. A plain `writeFileSync` truncates first, so an interrupt
- * mid-write (Ctrl-C, OOM, full disk) leaves a file that still PARSES — just without the
- * later keys, POSTGRES_PASSWORD and BETTER_AUTH_SECRET among them — and the next run
- * reads that as "no secrets yet". Writing a temp file and renaming it makes `.env` only
- * ever the old bytes or the new ones. And because the file is the only copy of this
- * install's generated secrets, the previous version is kept beside it: by the time a bad
- * rotation shows itself (an api that can't authenticate, environment variables that
- * won't decrypt) the original is otherwise already gone.
- *
- * A render identical to what's on disk writes nothing at all. One run materializes twice
- * (see ComposePrefetchResult), and without this the second pass replaced that recovery
- * copy with a copy of the FIRST pass's own write — leaving `.env.bak` a duplicate of
- * `.env` and the pre-run secrets gone, which is precisely the loss it exists to prevent.
- */
-function writeEnvFile(rendered: string, before: string): void {
-  if (rendered === before) return;
-  if (before) writeFileSync(ENV_BACKUP_FILE, before, { mode: 0o600 });
-  writeFileSync(ENV_TMP_FILE, rendered, { mode: 0o600 });
-  renameSync(ENV_TMP_FILE, ENV_FILE);
-}
-
-/** `.env` keys whose VALUE must never be printed. Suffix-matched so a key added
- *  to renderEnv later is masked by default rather than leaked by omission. */
-const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|HMAC_KEY)$/;
-
-/**
- * `materialize` WITHOUT the writes — everything a `--dry-run` needs to describe
- * the stack this run would install.
- *
- * The `.env` is rendered by `renderEnv` itself (masked), not re-listed here: a
- * hand-kept copy of the interesting keys is exactly how a preview starts lying —
- * a key added to the writer would silently go missing from the plan.
- */
-export interface ComposePlan {
-  composeFile: string;
-  envFile: string;
-  /** Marker `stop`/`update`/`status` route on, written once the stack is up. */
-  installMethodFile: string;
-  /** Build override, written only for a from-source install. */
-  buildFile?: string;
-  /** The compose file that would be written, verbatim. */
-  yaml: string;
-  /** The `.env` that would be written, with secret values masked. */
-  settings: Array<{ key: string; value: string }>;
-  /** Secret keys this run would GENERATE (absent from the current `.env`). */
-  newSecrets: string[];
-  /**
-   * Set when this run would regenerate a secret that a surviving data volume was created
-   * with — a real run REFUSES in that state (see secretRotationRisk), so the preview has
-   * to name it rather than describe writes that won't happen.
-   */
-  secretRotation: { volume: string; keys: string[] } | null;
-  /**
-   * Set when a surviving data volume holds data we can't place (#487) — a real run
-   * REFUSES rather than write a guessed OPENSHIP_PGDATA, so the preview names it too.
-   */
-  pgDataRisk: { volume: string } | null;
-  /** True when a `.env` is already there — this would be a re-run, not a fresh install. */
-  existing: boolean;
-  /** Host directories the edge's bind mounts need (created on a real run). */
-  mountDirs: string[];
-  /** From-source checkout the images would be BUILT from (null = pull published). */
-  buildDir: string | null;
-  /** The container→host SSH channel this run would provision, if any. */
-  hostChannel: HostChannelTarget | null;
-}
-
-export function composePlan(opts: ComposeUpOpts): ComposePlan {
-  const prev = readEnvFile();
-  const cfg = resolveEnvConfig(prev, opts);
-  const buildDir = opts.build === false ? null : sourceBuildDir();
-  const hostChannel = plannedHostChannel(cfg.hostControl);
-  const settings: Array<{ key: string; value: string }> = [];
-  const newSecrets: string[] = [];
-  for (const line of renderEnv(opts, hostChannel, cfg).split("\n")) {
-    const at = line.indexOf("=");
-    if (at < 1 || line.startsWith("#")) continue;
-    const key = line.slice(0, at);
-    const value = line.slice(at + 1);
-    if (!SECRET_ENV_KEY.test(key)) {
-      settings.push({ key, value });
-      continue;
-    }
-    // Say WHICH secrets are preserved, never the value — and derive it from the bytes
-    // this run would actually WRITE, not from a second guess at what keepSecret does
-    // with them. #488 was reported as a dry run claiming preservation for a password it
-    // then replaced; a label that can only say "<preserved>" when the rendered value IS
-    // the one already on disk cannot make that claim wrongly.
-    const preserved = !!prev[key] && prev[key] === value;
-    if (!preserved) newSecrets.push(key);
-    settings.push({ key, value: preserved ? "<preserved>" : "<generated on this run>" });
-  }
-  return {
-    composeFile: COMPOSE_FILE,
-    envFile: ENV_FILE,
-    installMethodFile: INSTALL_METHOD_FILE,
-    ...(buildDir ? { buildFile: BUILD_FILE } : {}),
-    yaml: COMPOSE_YAML,
-    settings,
-    newSecrets,
-    secretRotation: opts.resetSecrets ? null : secretRotationRisk(prev),
-    pgDataRisk: pgDataDetectionRisk(prev),
-    existing: Object.keys(prev).length > 0,
-    mountDirs: EDGE_CONTAINER_MOUNTS.map((m) => m.host),
-    buildDir,
-    hostChannel,
-  };
 }
 
 /** Does this project's postgres data volume already exist (i.e. predate this run)? */
@@ -2434,71 +1087,6 @@ function compose(args: string[], opts?: { quiet?: boolean; withBuildOverride?: b
 }
 
 /**
- * Registry existence for the three images we PULL, probed BEFORE the pull so a tag
- * that isn't published yet fails with the images NAMED and a way forward, instead of
- * docker's opaque `manifest unknown` (#486). `docker manifest inspect` is a read-only
- * lookup against the registry — no layers pulled, no auth for public GHCR.
- *
- * Returns the refs the registry positively does NOT have. Returns null when the probe
- * can't be trusted — `manifest inspect` unavailable (experimental CLI disabled), or a
- * transient auth / network / TLS error — because a false "missing" must never block an
- * install: the pull stays the real gate, this only makes a known-missing tag legible.
- */
-export function missingPinnedImages(registry: string, version: string): string[] | null {
-  const missing: string[] = [];
-  for (const { service } of BUILT_SERVICES) {
-    const ref = `${registry}/openship-${service}:${version}`;
-    const r = spawnSync("docker", ["manifest", "inspect", ref], { encoding: "utf8" });
-    if (r.status === 0) continue;
-    const stderr = `${r.stderr ?? ""}`.toLowerCase();
-    // A definitive "the registry has no such manifest". Anything else (command not
-    // found, unauthorized, timed out) is inconclusive → abandon the probe, never guess.
-    if (/manifest unknown|no such manifest|manifest for .+ not found/.test(stderr)) {
-      missing.push(ref);
-      continue;
-    }
-    return null;
-  }
-  return missing;
-}
-
-/**
- * Abort — legibly — when the pinned tag isn't in the registry yet (#486), so a caller
- * can stop BEFORE touching the box. A no-op for a from-source install (it builds
- * api/dashboard/edge and pulls none of ours) and when the probe is inconclusive.
- * Returns true to proceed; false once it has printed why not.
- */
-export function pinnedImagesReady(opts: ComposeUpOpts): boolean {
-  if (sourceBuildDir()) return true;
-  const prev = readEnvFile();
-  const version = resolveImageVersion(opts);
-  const missing = missingPinnedImages(resolveEnvConfig(prev, opts).registry, version);
-  if (!missing || missing.length === 0) return true;
-
-  const prevVersion = prev.OPENSHIP_VERSION?.trim();
-  const out = [
-    "",
-    `  The pinned image tag \`${version}\` isn't in the registry yet:`,
-    ...missing.map((ref) => `    ${ref}`),
-    "",
-    "  The CLI reached npm before its container images finished publishing — a",
-    "  release-ordering race (#486). Nothing on this box was changed.",
-    "",
-    "  Any one of these gets you moving:",
-    "    • Wait a few minutes and re-run — the images usually land right after a release.",
-    "    • Pin a tag that exists:",
-    "        openship up --compose --image-version <tag>",
-    "        OPENSHIP_VERSION=<tag> openship up --compose",
-  ];
-  if (prevVersion && prevVersion !== version) {
-    out.push(`    • Your current install runs \`${prevVersion}\`, a tag known good on this box.`);
-  }
-  out.push("");
-  console.error(out.join("\n"));
-  return false;
-}
-
-/**
  * Fetch everything the stack needs WITHOUT starting it — so the operator's proxy
  * can keep serving while we do.
  *
@@ -2511,81 +1099,17 @@ export function pinnedImagesReady(opts: ComposeUpOpts): boolean {
  * Idempotent, and `composeUp` repeats these steps: after this they're cache hits, so
  * the actual downtime is the `up -d` swap (seconds), not the download.
  */
-export interface ComposePrefetchResult {
-  /** Images are on the box (or built). Nothing on :80/:443 has been touched either way. */
-  ok: boolean;
-  /**
-   * The `.env` this run rendered differs from the one the RUNNING containers were
-   * created with — so they need recreating, not a plain `up -d`.
-   *
-   * Owned here rather than by `composeUp` because one run materializes TWICE: this
-   * prefetch has to write `.env` before `docker compose pull` can interpolate the
-   * registry and tag out of it, and then `composeUp` renders again. By then the file on
-   * disk IS this write, so `composeUp`'s own comparison always read "unchanged" and the
-   * env-consuming services were never recreated — `.env` showed the fix while the
-   * containers kept the environment they were created with. That is what made #509's
-   * remedy hollow: `openship up` provisioned the host channel into `.env` and left the
-   * api container running without OPENSHIP_HOST_SSH_HOST, so the very next deploy failed
-   * with the same error the operator had just run `up` to fix.
-   */
-  envChanged: boolean;
-}
-export function composePrefetch(opts: ComposeUpOpts): ComposePrefetchResult {
-  // materialize replaces `.env`, so the #488 gate has to be here too — the callers check
-  // first and exit with a proper explanation, and this is the backstop for a new one that
-  // forgets. See composeSecretRotationRisk.
-  const rotation = composeSecretRotationRisk(opts);
-  if (rotation) {
-    console.error(renderSecretRotationRefusal(rotation));
-    return { ok: false, envChanged: false };
-  }
-  const { buildDir, envChanged } = materialize(opts);
+export function composePrefetch(opts: ComposeUpOpts): boolean {
+  const { buildDir } = materialize(opts);
   if (buildDir) {
     // From-source: the BUILD is the slow part, so it belongs on this side of the
     // cutover too. Only the upstream images can be pulled for it.
-    return {
-      ok:
-        compose(["pull", "postgres", "redis"], { withBuildOverride: true }) === 0 &&
-        compose(["build"], { withBuildOverride: true }) === 0,
-      envChanged,
-    };
+    return (
+      compose(["pull", "postgres", "redis"], { withBuildOverride: true }) === 0 &&
+      compose(["build"], { withBuildOverride: true }) === 0
+    );
   }
-  return { ok: compose(["pull"]) === 0, envChanged };
-}
-
-/**
- * Pre-create the edge's host bind-mount source directories so the Docker daemon
- * doesn't have to. Returns the dirs it COULDN'T create (empty = all good).
- *
- * A ROOTFUL daemon creates a missing mount source itself (as root), so a failure
- * here is harmless there — we stay quiet and let Docker do it (preserving the
- * rootful non-root-invoker case that works today). A ROOTLESS daemon runs as the
- * invoking user and CANNOT mkdir under root-owned /var/lib, /opt or /etc — it
- * dies with an opaque "error while creating mount source path … permission
- * denied" (#372). Callers pair a non-empty result with isRootlessDocker() to
- * surface a one-time fix instead of that.
- */
-function ensureEdgeMountDirs(): string[] {
-  const failed: string[] = [];
-  for (const { host } of EDGE_CONTAINER_MOUNTS) {
-    try {
-      mkdirSync(host, { recursive: true });
-    } catch (err) {
-      // recursive mkdir is idempotent, so a throw means we truly can't (EACCES
-      // under a root-owned parent — the rootless case), not "already there".
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") failed.push(host);
-    }
-  }
-  return failed;
-}
-
-/** True when the Docker daemon runs rootless (a missing bind-mount source is
- *  created by the invoking user, not root). Probed only on the failure path. */
-function isRootlessDocker(): boolean {
-  const r = spawnSync("docker", ["info", "-f", "{{println .SecurityOptions}}"], {
-    encoding: "utf8",
-  });
-  return r.status === 0 && /rootless/i.test(r.stdout ?? "");
+  return compose(["pull"]) === 0;
 }
 
 /**
@@ -2595,37 +1119,8 @@ function isRootlessDocker(): boolean {
  */
 export async function composeUp(
   opts: ComposeUpOpts,
-): Promise<{ ok: boolean; apiPort: string; dashPort: string; refused?: boolean }> {
-  // #486 gate for callers that DON'T prefetch (openship update → composeUpdate). The
-  // prefetch path already checked and set alreadyFetched, so it's skipped there. Runs
-  // before materialize: a tag the registry lacks must fail without writing files.
-  if (!opts.alreadyFetched && !pinnedImagesReady(opts)) {
-    const pre = resolveEnvConfig(readEnvFile(), opts);
-    return { ok: false, apiPort: pre.apiPort, dashPort: pre.dashPort };
-  }
-  // #488: this install's `.env` no longer yields secrets a surviving data volume was
-  // created with. Stop BEFORE materialize — it replaces `.env`, and once it has, the real
-  // values are gone and the failure that follows (an api that can't authenticate) points
-  // at nothing. Everything below assumes `.env` is either trustworthy or a first install.
-  const rotation = composeSecretRotationRisk(opts);
-  if (rotation) {
-    const pre = resolveEnvConfig(readEnvFile(), opts);
-    console.error(renderSecretRotationRefusal(rotation));
-    // `refused` separates "this can't work" from "this didn't work": callers must not
-    // offer a retry, because nothing about re-running changes the answer.
-    return { ok: false, refused: true, apiPort: pre.apiPort, dashPort: pre.dashPort };
-  }
-  // #487: an existing data volume holds data we can't place. resolvePgData would fall back
-  // to the subdir, but if the cluster is elsewhere that still orphans it — so refuse and let
-  // the operator pin OPENSHIP_PGDATA rather than write a guess. Same "stop before materialize"
-  // reasoning as the rotation gate: once `.env` is rewritten the safe recovery is harder.
-  const pgData = composePgDataRisk(opts);
-  if (pgData) {
-    const pre = resolveEnvConfig(readEnvFile(), opts);
-    console.error(renderPgDataRefusal(pgData));
-    return { ok: false, refused: true, apiPort: pre.apiPort, dashPort: pre.dashPort };
-  }
-  const { buildDir, cfg, envChanged: rendered } = materialize(opts);
+): Promise<{ ok: boolean; apiPort: string; dashPort: string }> {
+  const { buildDir, cfg, envChanged } = materialize(opts);
   // The EFFECTIVE ports, not the flags: a re-run with no flags keeps the ports the
   // install was configured with, so the summary must report those.
   const apiPort = cfg.apiPort;
@@ -2633,11 +1128,6 @@ export async function composeUp(
   // `env_file:` contents are read when a container is CREATED, so a changed .env
   // reaches the api/dashboard/edge only if they're recreated. Without this, an
   // env fix "succeeds" and changes nothing.
-  //
-  // A caller that already materialized this run (composePrefetch) owns the answer: our
-  // own `rendered` compared `.env` against the prefetch's write and so always said
-  // "unchanged". See ComposePrefetchResult.envChanged.
-  const envChanged = opts.envChanged ?? rendered;
   // The edge container mounts EDGE_SITES_HOST_DIR. A conf left there by an older or
   // failed attempt (a carried catch-all claiming `default_server`) crash-loops it with
   // `[emerg] a duplicate default server` — every time, forever, because the file is on
@@ -2658,33 +1148,10 @@ export async function composeUp(
   const env = readEnvFile();
   const project = env.COMPOSE_PROJECT_NAME || "openship";
   removeOrphanedStack(project);
-  // The edge's pinned container_name collides with any openship-edge this project
-  // doesn't own — a takeover's `docker run` edge, a from-source stack — which aborts
-  // `up` with a name conflict that removeOrphanedStack can't clear. Take the name.
-  reconcileEdgeContainerName(project);
   // Before anything mounts the new host paths: carry over an older install's
   // volume-held certs + vhosts, or the stack comes back up serving nothing.
   migrateLegacyEdgeVolumes(project);
   warnOrphanedVolumes(project);
-
-  // #372: create the edge's bind-mount source dirs ourselves. A rootful daemon
-  // would create any that are missing, but a rootless daemon runs as this user
-  // and can't mkdir under root-owned /var/lib|/opt|/etc — it fails the whole
-  // stack with an opaque "error while creating mount source path". If our own
-  // create can't cover them AND the daemon is rootless, surface the one-time fix
-  // rather than letting compose die cryptically.
-  const unmakeableMounts = ensureEdgeMountDirs();
-  if (unmakeableMounts.length && isRootlessDocker()) {
-    const dirs = unmakeableMounts.join(" ");
-    console.error(
-      `\n  Rootless Docker can't create the edge's host directories under root-owned paths:\n` +
-        `    ${unmakeableMounts.join("\n    ")}\n\n` +
-        `  Create them once (owned by your user), then re-run \`openship up --compose\`:\n` +
-        `    sudo mkdir -p ${dirs}\n` +
-        `    sudo chown -R "$(id -un)" ${dirs}\n`,
-    );
-    return { ok: false, apiPort, dashPort };
-  }
 
   // A surviving data volume can hold a password this `.env` doesn't know, and the
   // api then crash-loops on 28P01 behind a compose error that blames the wrong
@@ -2805,12 +1272,9 @@ export function composeUninstall(opts: { removeImages?: boolean } = {}): {
  * Covers both install shapes: a from-source install rebuilds from its checkout
  * (no published image for the branch it tracks), a normal one pulls.
  */
-export async function composeUpdate(
-  version?: string,
-): Promise<{ applied: boolean; refused: boolean }> {
-  if (!existsSync(COMPOSE_FILE)) return { applied: false, refused: false };
-  const r = await composeUp(version ? { version } : {});
-  return { applied: r.ok, refused: !!r.refused };
+export async function composeUpdate(version?: string): Promise<boolean> {
+  if (!existsSync(COMPOSE_FILE)) return false;
+  return (await composeUp(version ? { version } : {})).ok;
 }
 
 export function composePs(): number {
@@ -2833,9 +1297,6 @@ export function composeRunning(): boolean {
  *  "Start" for a compose install. Files already exist, so this is a plain
  *  `up -d`, NOT the full composeUp (materialize + pull/build). */
 export function composeStart(): boolean {
-  // Same name-conflict guard as composeUp: a foreign openship-edge would abort this
-  // bare `up` too. Cheap when the edge is already ours (a no-op).
-  reconcileEdgeContainerName(readEnvFile().COMPOSE_PROJECT_NAME || "openship");
   return compose(["up", "-d"], { quiet: true }) === 0;
 }
 
@@ -2854,9 +1315,4 @@ export function composeInternalToken(): string | null {
   return readEnvFile().INTERNAL_TOKEN ?? null;
 }
 
-export const composePaths = {
-  dir: COMPOSE_DIR,
-  file: COMPOSE_FILE,
-  env: ENV_FILE,
-  envBackup: ENV_BACKUP_FILE,
-};
+export const composePaths = { dir: COMPOSE_DIR, file: COMPOSE_FILE, env: ENV_FILE };

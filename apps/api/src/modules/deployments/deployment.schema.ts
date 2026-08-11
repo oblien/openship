@@ -3,7 +3,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
-import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "../projects/project.schema";
+import { CloudResourceTierEnum } from "../projects/project.schema";
 
 // ─── Route params ────────────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ const BuildServiceInput = Type.Object({
   // Source-built (monorepo) sub-app fields — optional, mirror MonorepoSubAppFields.
   kind: Type.Optional(Type.Union([Type.Literal("compose"), Type.Literal("monorepo")])),
   enabled: Type.Optional(Type.Boolean()),
-  rootDirectory: Type.Optional(Type.String({ pattern: NO_TRAVERSAL_PATTERN })),
+  rootDirectory: Type.Optional(Type.String()),
   installCommand: Type.Optional(Type.String()),
   buildCommand: Type.Optional(Type.String()),
   startCommand: Type.Optional(Type.String()),
@@ -171,12 +171,6 @@ export const PrepareDeployBody = Type.Object({
       maxLength: 300,
       description:
         "Where the compose file lives when it is not at the auto-detected root — the file itself (\"deploy/stack.yml\", which also covers non-standard filenames) or the directory holding it (\"deploy/docker-compose\"). Detects the project as a compose/services deploy; errors when no compose file is there.",
-    }),
-  ),
-  env: Type.Optional(
-    Type.Record(Type.String(), Type.String(), {
-      description:
-        "Env already configured for this deploy. Compose interpolation resolves against these on top of the repo .env, so a file declaring ${VAR:?...} scans once the user has supplied VAR.",
     }),
   ),
 });

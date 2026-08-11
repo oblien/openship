@@ -87,7 +87,7 @@ changes.
 <Tab value="Self-hosted server (CLI)">
 
 A self-hosted server (installed with the CLI) updates from the terminal. The `openship update` command
-updates the CLI — which bundles the API server — to the latest release.
+reinstalls the CLI — which bundles the API server — at the latest release.
 
 <Steps>
 
@@ -99,11 +99,8 @@ updates the CLI — which bundles the API server — to the latest release.
 openship update
 ```
 
-Openship checks GitHub, and if there's a newer version it updates itself in place. If you used the
-**install script** (the default), it re-downloads the checksum-verified release bundle and swaps it in —
-refreshing the Node runtime first if a release ever needs a newer one. If you installed the **npm package**
-instead, it reinstalls with your package manager (**bun** if you have it, otherwise **npm**). If you're
-already current, it just says so and stops.
+Openship checks GitHub, and if there's a newer version it reinstalls itself with your package manager
+(it uses **bun** if you have it, otherwise **npm**). If you're already current, it just says so and stops.
 
 </Step>
 
@@ -135,8 +132,7 @@ It tells you your current version and whether a newer one is available — then 
 nothing.
 </Callout>
 
-Installed the npm package? Force a specific package manager if you need to (ignored for install-script
-installs, which always update from the verified release bundle):
+Force a specific package manager if you need to:
 
 ```bash
 openship update --via npm    # or: --via bun
@@ -165,17 +161,8 @@ keeps failing, reinstall by hand with the same install method you used originall
 </Callout>
 
 <Callout title="The CLI update failed partway" type="error">
-`openship update` either re-downloads the verified release bundle (install-script installs) or reinstalls
-the global package with bun or npm. If that step errors, it prints the exact command to run by hand — copy
-it and run it yourself. Then restart with `openship up`.
-</Callout>
-
-<Callout title="The update stopped, naming POSTGRES_PASSWORD or BETTER_AUTH_SECRET" type="error">
-A Compose install keeps its generated secrets only in `~/.openship/compose/.env`. If an update can't read that
-file while the database volume is still present, it stops **without changing anything** rather than generating
-values that couldn't work — most often because it ran as a different user (`sudo` reads `/root/.openship`). Re-run
-as the user that owns the install, or restore the file (the previous one is kept at `.env.bak`). Full steps:
-[Troubleshooting → openship up refuses to regenerate secrets](/docs/troubleshooting#symptom-openship-up-refuses-to-regenerate-secrets).
+`openship update` reinstalls the global package with bun or npm. If that step errors, it prints the exact
+reinstall command to run by hand — copy it and run it yourself. Then restart with `openship up`.
 </Callout>
 
 <Callout title="I updated but still see the old version" type="warn">

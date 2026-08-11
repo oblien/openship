@@ -1,7 +1,4 @@
 import { repos, type Domain, type Project } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
-import { resolveServedStaticPath } from "@repo/adapters";
-import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import {
   isLoopbackHost,
   isReservedLoopbackPort,
@@ -11,19 +8,12 @@ import {
   syncStoredPublicEndpoints,
   type StoredPublicEndpoint,
 } from "../../lib/public-endpoints";
-import { assertValidCustomDomain, assertValidCustomDomains } from "../../lib/custom-domain-guard";
-import { resolveLiveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
+import { resolveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import { deregisterManagedEdgeRoutes, syncManagedEdgeRoutes } from "../../lib/managed-edge-proxy";
 import { syncProjectPublicRoutes } from "../../lib/project-route-store";
 import { resolveRouteRedirect } from "../../lib/domain-redirect";
-import {
-  disposePlatform,
-  resolveDeploymentPlatform,
-  resolveDeploymentStaticRoot,
-  type DeploymentMeta,
-} from "../../lib/deployment-runtime";
+import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { pushProjectRules } from "../route-rules/route-rule.service";
-import { pushProjectAnalyticsConfig } from "../analytics/analytics-config.service";
 import {
   reconcileProjectRoutes,
   type RouteRegister,
@@ -173,21 +163,6 @@ export function deriveNextProjectRouteState(
   const currentState = deriveProjectRouteState(project, {
     projectDomains: input.projectDomains,
   });
-
-  // The one funnel every SUBMITTED project route passes through (project create /
-  // ensure / update, POST /deployments/build/access), so the custom-hostname shape
-  // gate belongs here rather than in each caller — a new write path can't reopen
-  // #342 by forgetting to call it. Only the INCOMING values are checked, and only
-  // where they introduce a hostname the project doesn't already have: stored rows
-  // arrive through `projectDomains` and are echoed back by every save, so a project
-  // holding a bad hostname keeps reading, deploying and editing.
-  assertValidCustomDomain(input.customDomain);
-  assertValidCustomDomains([{ publicEndpoints: input.nextPublicEndpoints }], {
-    known: [
-      ...currentState.projectDomains.map((domain) => domain.hostname),
-      ...currentState.publicEndpoints.map((endpoint) => endpoint.hostname),
-    ],
-  });
   const routing = syncStoredPublicEndpoints({
     current: currentState.publicEndpoints,
     next: input.nextPublicEndpoints,
@@ -215,13 +190,11 @@ export async function persistProjectRouteState(
   projectId: string,
   publicEndpoints: StoredPublicEndpoint[],
   projectDomains?: Domain[],
-  opts?: { preserveVerifiedCustom?: boolean },
 ): Promise<void> {
   await syncProjectPublicRoutes({
     projectId,
     endpoints: publicEndpoints,
     currentDomains: projectDomains,
-    preserveVerifiedCustom: opts?.preserveVerifiedCustom,
   });
 }
 
@@ -232,12 +205,6 @@ export async function syncProjectRouteState(
     nextPublicEndpoints?: NextPublicEndpointsInput;
     slug?: string | null;
     customDomain?: string | null;
-    /**
-     * Deploy-only: never destroy a verified custom domain during this sync (see
-     * syncProjectPublicRoutes). Left unset by the Domains editor so explicit
-     * removals still apply.
-     */
-    preserveVerifiedCustom?: boolean;
   },
 ): Promise<ProjectRouteState> {
   const projectDomains = input.projectDomains ?? await listProjectRouteRows(project.id);
@@ -246,9 +213,7 @@ export async function syncProjectRouteState(
     projectDomains,
   });
 
-  await persistProjectRouteState(project.id, nextState.publicEndpoints, projectDomains, {
-    preserveVerifiedCustom: input.preserveVerifiedCustom,
-  });
+  await persistProjectRouteState(project.id, nextState.publicEndpoints, projectDomains);
   const refreshedDomains = await listProjectRouteRows(project.id);
   return deriveProjectRouteState(project, { projectDomains: refreshedDomains });
 }
@@ -279,25 +244,6 @@ export interface ReapplyProjectLiveRoutesOptions {
    * let any project forge its way past the reserved-port guard.
    */
   isSelfApp?: boolean;
-
-  /**
-   * The caller runs its own managed-edge (`*.opsh.io`) sync, so skip the one below.
-   *
-   * Two callers already do — `updateProject` follows with `syncProjectManagedEdge`
-   * (which covers ALL of the project's managed hostnames, not just the new ones) and
-   * the self-register wizard fronts this with `ensureManagedEdgeProxy`. Without this,
-   * a newly-added free domain is synced TWICE per edit, and the two calls overlap
-   * because the sync below is fire-and-forget: whichever loses the race issues a
-   * second challenge, which RESETS the token upstream and makes the other's check
-   * fail against a token that no longer exists. The route ends up fine and the
-   * project shows "Action Required" anyway.
-   *
-   * Default false, deliberately: the callers that own their own sync are the
-   * exception (`self-deploy`, the migration orchestrator and the per-service paths
-   * all rely on the sync below being the only one), so opting OUT keeps a new caller
-   * correct by default.
-   */
-  managedEdgeSyncedByCaller?: boolean;
 }
 
 /**
@@ -326,16 +272,6 @@ export async function reapplyProjectLiveRoutes(
     | "organizationId"
     | "webhookDomain"
     | "routeStrategy"
-    // Needed to re-emit a STATIC route live (see resolveDeploymentStaticRoot): a
-    // path-targeted domain serves files, so it needs a doc root, not an upstream.
-    // `workloadType` rides along so the static-root resolver can tell a worker
-    // (hasServer=false, but a real container) apart from a static site (#538-B).
-    | "hasServer"
-    | "workloadType"
-    | "outputDirectory"
-    // Carries `proxy` (upload limit, timeouts) through to reconcileProjectRoutes,
-    // so raising a limit applies on save instead of waiting for a redeploy.
-    | "routingConfig"
   >,
   previousHostnames: string[],
   opts: ReapplyProjectLiveRoutesOptions = {},
@@ -400,194 +336,118 @@ export async function reapplyProjectLiveRoutes(
     );
     return;
   }
-  // Held for the `finally` below: a remote-server platform binds a
-  // Docker-over-SSH loopback bridge that only `dispose` closes, and this runs on
-  // every live route edit. Releasing it leaves `routing` fully usable — dispose
-  // touches the docker transport, while routing drives the box through the pooled
-  // SSH executor.
-  const resolved = await resolveDeploymentPlatform((deployment.meta ?? {}) as DeploymentMeta, {
-    organizationId: deployment.organizationId,
-  });
-  const { routing, runtime } = resolved.platform;
-  const { effectiveTarget, serverId } = resolved;
-  try {
-    // Register the managed (*.opsh.io) hostnames that are NEW in this edit on
-    // Openship Cloud's edge — the "add" half. Oblien's edge has NO route EDIT
-    // (only sync + deregister), so a slug change is drop-old (deregistered above)
-    // + add-new (here). PER-ROUTE by design: only hostnames absent from
-    // `previousHostnames` are synced — symmetric with the dropped-slug deregister
-    // above — so editing ONE route never re-hits Oblien (or re-resolves the target
-    // host) for the project's OTHER, unchanged routes. A target-host change on an
-    // UNCHANGED hostname (e.g. a server move) is re-synced by the deploy path, not
-    // here. Best-effort/fire-and-forget: the app is live locally; a failure only
-    // delays the free URL (same contract as the deploy path's sync).
-    const previouslyPresent = new Set(previousHostnames.map((h) => h.toLowerCase()));
-    const syncAddedManagedEdge = () => {
-      if (opts.managedEdgeSyncedByCaller) return;
-      // NOT filtered by target kind. The edge route is `<slug>.opsh.io` → this
-      // server's :80; what the vhost then does with the request — proxy to a
-      // container or serve files — is decided locally and is none of Cloud's
-      // business. Excluding path targets here meant a free domain on a STATIC
-      // project registered nothing on the edge, so the URL resolved to the
-      // wildcard with no origin: the free domain worked for proxied projects and
-      // silently did nothing for static ones.
-      const addedTargets = current
-        .filter((d) => !previouslyPresent.has(d.hostname.toLowerCase()))
-        .map((d) => ({ hostname: d.hostname, subdomain: managedHostnameToSlug(d.hostname) }))
-        .filter((t): t is { hostname: string; subdomain: string } => !!t.subdomain);
-      if (addedTargets.length === 0) return;
-      void syncManagedEdgeRoutes(addedTargets, {
-        organizationId: project.organizationId,
-        serverId: serverId ?? undefined,
+  const { routing, runtime, effectiveTarget, serverId } =
+    await resolveDeploymentRuntime(deployment);
+
+  // Register the managed (*.opsh.io) hostnames that are NEW in this edit on
+  // Openship Cloud's edge — the "add" half. Oblien's edge has NO route EDIT
+  // (only sync + deregister), so a slug change is drop-old (deregistered above)
+  // + add-new (here). PER-ROUTE by design: only hostnames absent from
+  // `previousHostnames` are synced — symmetric with the dropped-slug deregister
+  // above — so editing ONE route never re-hits Oblien (or re-resolves the target
+  // host) for the project's OTHER, unchanged routes. A target-host change on an
+  // UNCHANGED hostname (e.g. a server move) is re-synced by the deploy path, not
+  // here. Best-effort/fire-and-forget: the app is live locally; a failure only
+  // delays the free URL (same contract as the deploy path's sync).
+  const previouslyPresent = new Set(previousHostnames.map((h) => h.toLowerCase()));
+  const syncAddedManagedEdge = () => {
+    const addedTargets = current
+      .filter((d) => !d.targetPath && !previouslyPresent.has(d.hostname.toLowerCase()))
+      .map((d) => ({ hostname: d.hostname, subdomain: managedHostnameToSlug(d.hostname) }))
+      .filter((t): t is { hostname: string; subdomain: string } => !!t.subdomain);
+    if (addedTargets.length === 0) return;
+    void syncManagedEdgeRoutes(addedTargets, {
+      organizationId: project.organizationId,
+      serverId: serverId ?? undefined,
+    })
+      .then(({ failures }) => {
+        if (failures.length > 0) {
+          console.warn(
+            `[project-route] ${project.slug}: managed edge sync failed for ${failures.join(", ")}`,
+          );
+        }
       })
-        .then(({ failures }) => {
-          if (failures.length > 0) {
-            console.warn(
-              `[project-route] ${project.slug}: managed edge sync failed for ${failures.join(", ")}`,
-            );
-          }
-        })
-        .catch(() => {});
-    };
+      .catch(() => {});
+  };
 
-    const containerId = deployment.containerId;
-    if (!containerId) {
-      // Compose/multi-service deployments track containers per-service, so the
-      // parent deployment row has no containerId — nothing to point a single-app
-      // route at (per-service routes are handled in updateService). Still tear
-      // down any dropped hostnames on the correct host.
-      console.warn(
-        `[project-route] ${project.slug}: deployment ${deployment.id} has no containerId (target=${effectiveTarget}) — skipping single-app route registration`,
-      );
-      await reconcileProjectRoutes(project, { routing, removes });
-      await pushProjectRules(project.id, serverId ?? null, previousHostnames).catch(() => {});
-      // Shared-dict state is RAM: the analytics collection switches have to be re-pushed
-      // whenever routing is applied, or an nginx restart silently reverts them to off.
-      await pushProjectAnalyticsConfig(project.id, serverId ?? null, previousHostnames).catch(() => {});
-      syncAddedManagedEdge();
-      return;
-    }
-
-    const resolveTargetUrl = async (port: number): Promise<string | null> => {
-      const strategy = resolveRouteStrategy(project.routeStrategy);
-      // loopback-port: dial the container's published loopback host port (read
-      // live). Bare / no-host-port fall back to container IP (or 127.0.0.1 bare).
-      const url = await resolveLiveUpstreamUrl({ strategy, runtime, containerId, containerPort: port });
-      if (!url) {
-        console.warn(
-          `[project-route] ${project.slug}: could not resolve upstream for ${containerId} (target=${effectiveTarget}, server=${serverId ?? "local"})`,
-        );
-        return null;
-      }
-      // Never proxy a public route at a reserved control-plane/mgmt port on the
-      // host loopback — that would expose the admin API (env.PORT) or the
-      // unauthenticated OpenResty mgmt port (9145). Only guards loopback: a
-      // container's own bridge IP:<port> is the app's, not ours. The self-app is
-      // exempt (see ReapplyProjectLiveRoutesOptions.isSelfApp).
-      const m = url.match(/^https?:\/\/([^:/]+):(\d+)$/);
-      if (m && shouldRefuseLoopbackRoute(m[1], Number(m[2]), opts)) {
-        console.warn(
-          `[project-route] ${project.slug}: refusing reserved loopback upstream port ${m[2]} for a public route`,
-        );
-        return null;
-      }
-      return url;
-    };
-
-    // Where a path-targeted (static) domain serves its files from — the SAME
-    // resolver the post-deploy output probe uses, so the vhost and the check that
-    // audits it can never disagree about the directory.
-    const staticRootBase = resolveDeploymentStaticRoot(deployment, project);
-
-    // A redirect only goes live when its target is one of the hostnames this
-    // project currently routes — see resolveRouteRedirect.
-    const liveHostnames = current.map((domain) => domain.hostname);
-    const registers: RouteRegister[] = [];
-    /**
-     * The project's vercel.json rules, for EVERY project shape.
-     *
-     * `applyProjectRouting` also compiles them, but only for the 1-static + 1-server
-     * monorepo `planCompositeRoute` recognises — so a lone static site or a single app
-     * had its redirects, headers and URL shape silently dropped, which is most projects.
-     * This is the per-domain surface, so it is where the general case belongs.
-     *
-     * Deliberately NO `backendTargetUrl`. Which upstream a path rewrite (`/api/(.*)` →
-     * `/api/index.js`, a function on Vercel) belongs to is a TOPOLOGY question this
-     * per-domain loop cannot answer: passing the domain's own upstream would, on a
-     * composite monorepo, point `/api/` at the FRONTEND. `applyProjectRouting` runs
-     * afterwards and would overwrite it — but it is best-effort, so a failure there
-     * would leave that wrong upstream live. Rewrites needing a backend are therefore
-     * left to the path that knows the topology; a full-URL rewrite needs no backend and
-     * still compiles here, and a single app already receives `/api/…` via `location /`.
-     */
-    const routingFields = compileProjectRoutingFields(project.routingConfig);
-
-    for (const domain of current) {
-      const redirectHost = resolveRouteRedirect(domain, liveHostnames);
-      const common = {
-        hostname: domain.hostname,
-        isCustomDomain: domain.domainType === "custom",
-        ...(redirectHost ? { redirectHost } : {}),
-      };
-
-      // A domain targets a PORT (proxy to the app) or a PATH (serve files) —
-      // exactly one, same rule the deploy path enforces. `continue`-ing on
-      // targetPath is what left static projects unrouted here: adding a domain to
-      // one wrote no vhost at all, so the hostname fell through to
-      // default_server, while the deploy path (which does emit a static root)
-      // made the same domain work — so it only ever "broke" on edit.
-      if (domain.targetPath) {
-        if (!staticRootBase) {
-          console.warn(
-            `[project-route] ${project.slug}: no static root for ${domain.hostname} (path ${domain.targetPath}) — skipping`,
-          );
-          continue;
-        }
-        try {
-          // Same call the deploy path's route registration and the output probe
-          // make — one rule for "which directory does this path serve".
-          registers.push({
-            ...common,
-            ...routingFields,
-            staticRoot: resolveServedStaticPath(staticRootBase, domain.targetPath),
-          });
-        } catch (err) {
-          // A `../` in the operator's route path. Refuse this ONE route; the rest of
-          // the re-apply (and the project's other domains) must still go through.
-          console.warn(
-            `[project-route] ${project.slug}: refusing ${domain.hostname} — ${safeErrorMessage(err)}`,
-          );
-        }
-        continue;
-      }
-
-      const port = domain.targetPort ?? project.port;
-      if (!port) {
-        console.warn(`[project-route] ${project.slug}: no port for ${domain.hostname} — skipping`);
-        continue;
-      }
-      const targetUrl = await resolveTargetUrl(port);
-      if (!targetUrl) continue;
-      registers.push({ ...common, ...routingFields, targetUrl });
-    }
-
-    // The webhook-proxy location is re-attached automatically for the project's
-    // webhookDomain inside reconcileProjectRoutes.
-    await reconcileProjectRoutes(project, { routing, registers, removes });
-
-    // Re-sync per-route edge rules (rate-limit / ban / allow-deny) for the current
-    // hostnames. Best-effort — the DB is the source of truth; a failure defers to
-    // the next reconcile. previousHostnames clears rules for any dropped hostname.
+  const containerId = deployment.containerId;
+  if (!containerId) {
+    // Compose/multi-service deployments track containers per-service, so the
+    // parent deployment row has no containerId — nothing to point a single-app
+    // route at (per-service routes are handled in updateService). Still tear
+    // down any dropped hostnames on the correct host.
+    console.warn(
+      `[project-route] ${project.slug}: deployment ${deployment.id} has no containerId (target=${effectiveTarget}) — skipping single-app route registration`,
+    );
+    await reconcileProjectRoutes(project, { routing, removes });
     await pushProjectRules(project.id, serverId ?? null, previousHostnames).catch(() => {});
-    // Shared-dict state is RAM: the analytics collection switches have to be re-pushed
-    // whenever routing is applied, or an nginx restart silently reverts them to off.
-    await pushProjectAnalyticsConfig(project.id, serverId ?? null, previousHostnames).catch(() => {});
-
-    // Register the newly-added managed slug(s) on the cloud edge (the "add" half
-    // of the edit; dropped slugs were deregistered above). Per-route — unchanged
-    // hostnames are not re-synced.
     syncAddedManagedEdge();
-  } finally {
-    disposePlatform(resolved);
+    return;
   }
+
+  const resolveTargetUrl = async (port: number): Promise<string | null> => {
+    const strategy = resolveRouteStrategy(project.routeStrategy);
+    // loopback-port: dial the container's published loopback host port (read
+    // live). Bare / no-host-port fall back to container IP (or 127.0.0.1 bare).
+    let hostPort: number | undefined;
+    if (strategy === "loopback-port" && runtime.name !== "bare") {
+      hostPort = (await runtime.getContainerInfo?.(containerId).catch(() => null))?.hostPort ?? undefined;
+    }
+    const url = await resolveUpstreamUrl({ strategy, runtime, containerId, containerPort: port, hostPort });
+    if (!url) {
+      console.warn(
+        `[project-route] ${project.slug}: could not resolve upstream for ${containerId} (target=${effectiveTarget}, server=${serverId ?? "local"})`,
+      );
+      return null;
+    }
+    // Never proxy a public route at a reserved control-plane/mgmt port on the
+    // host loopback — that would expose the admin API (env.PORT) or the
+    // unauthenticated OpenResty mgmt port (9145). Only guards loopback: a
+    // container's own bridge IP:<port> is the app's, not ours. The self-app is
+    // exempt (see ReapplyProjectLiveRoutesOptions.isSelfApp).
+    const m = url.match(/^https?:\/\/([^:/]+):(\d+)$/);
+    if (m && shouldRefuseLoopbackRoute(m[1], Number(m[2]), opts)) {
+      console.warn(
+        `[project-route] ${project.slug}: refusing reserved loopback upstream port ${m[2]} for a public route`,
+      );
+      return null;
+    }
+    return url;
+  };
+
+  // A redirect only goes live when its target is one of the hostnames this
+  // project currently routes — see resolveRouteRedirect.
+  const liveHostnames = current.map((domain) => domain.hostname);
+  const registers: RouteRegister[] = [];
+  for (const domain of current) {
+    if (domain.targetPath) continue;
+    const port = domain.targetPort ?? project.port;
+    if (!port) {
+      console.warn(`[project-route] ${project.slug}: no port for ${domain.hostname} — skipping`);
+      continue;
+    }
+    const targetUrl = await resolveTargetUrl(port);
+    if (!targetUrl) continue;
+    const redirectHost = resolveRouteRedirect(domain, liveHostnames);
+    registers.push({
+      hostname: domain.hostname,
+      targetUrl,
+      isCustomDomain: domain.domainType === "custom",
+      ...(redirectHost ? { redirectHost } : {}),
+    });
+  }
+
+  // The webhook-proxy location is re-attached automatically for the project's
+  // webhookDomain inside reconcileProjectRoutes.
+  await reconcileProjectRoutes(project, { routing, registers, removes });
+
+  // Re-sync per-route edge rules (rate-limit / ban / allow-deny) for the current
+  // hostnames. Best-effort — the DB is the source of truth; a failure defers to
+  // the next reconcile. previousHostnames clears rules for any dropped hostname.
+  await pushProjectRules(project.id, serverId ?? null, previousHostnames).catch(() => {});
+
+  // Register the newly-added managed slug(s) on the cloud edge (the "add" half
+  // of the edit; dropped slugs were deregistered above). Per-route — unchanged
+  // hostnames are not re-synced.
+  syncAddedManagedEdge();
 }

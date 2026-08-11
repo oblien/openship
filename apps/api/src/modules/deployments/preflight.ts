@@ -18,31 +18,26 @@ import {
   usesManagedRouting as usesManagedRoutingFor,
 } from "../../lib/deployment-runtime";
 import {
+  resolveServiceHostnameLabel,
   normalizeCustomHostname,
+  endpointsNeedCloud,
+  servicesNeedCloud,
   cloudRequiredCode,
   CLOUD_UNREACHABLE_CODE,
   stackExpectsBuildCommand,
-  describeResourceFit,
-  fitsCapacity,
-  hasMinResources,
 } from "@repo/core";
 import { cloudClient } from "../../lib/cloud/client";
 import { isCloudConnectedForOrg } from "../../lib/cloud/session";
 import { runCloudPreflight, type CloudPreflightData } from "../../lib/cloud-preflight";
 import { isStaticService, type DeployableService } from "../../lib/deployable-service";
 import { isFullyPinned, snapshotNeedsGitSource } from "./pinned-artifacts";
-import { snapshotToClass } from "./deployment-class";
+import { serviceKind } from "./compose/project-services";
 import { relayConfigEligible, resolveClonePlan } from "./clone-plan";
 import { hasLocalGitIdentity } from "../github/github.local-auth";
 import { isPublicRepo } from "../github/github.http";
 import { getRoutingBaseDomain } from "../../lib/routing-domains";
 import { resolveServerHost } from "../../lib/server-target";
-import {
-  normalizeTargetPath,
-  storedPublicEndpointsNeedCloud,
-  isCloudManagedHostname,
-  resolveServiceRouteHostname,
-} from "../../lib/public-endpoints";
+import { normalizeTargetPath } from "../../lib/public-endpoints";
 import {
   getInstallationId,
   getInstallationIdByOrg,
@@ -55,8 +50,6 @@ import { canResolveServerGitCredential } from "../github/server-github.service";
 import { parseRepoUrl } from "../github/github.service";
 import { resolveRecords, lookupAddresses } from "../../lib/dns-resolver";
 import { type RequestContext } from "../../lib/request-context";
-import { getTrustedHostCapacity } from "../../lib/host-capacity";
-import { getTemplateForOrg } from "../apps/catalog-source";
 import { repos } from "@repo/db";
 
 /**
@@ -112,10 +105,6 @@ export const PREFLIGHT_ERROR_CODES = {
    *  uses at deploy time. Failing here surfaces the missing-credential
    *  modal up-front instead of letting the build pipeline fail later. */
   GITHUB_REMOTE_TOKEN_REQUIRED: "GITHUB_REMOTE_TOKEN_REQUIRED",
-  /** The target machine is measurably smaller than the app's declared
-   *  `minResources` (catalog). Only ever raised for a FIRST deploy — see
-   *  `checkHostCapacity`. */
-  HOST_RESOURCES_INSUFFICIENT: "HOST_RESOURCES_INSUFFICIENT",
 } as const;
 
 export interface PreflightResult {
@@ -157,13 +146,6 @@ export interface PreflightOptions {
    *  target (`server`). For non-App auth modes, only `local` keeps the
    *  user's broad-scope token from leaving the API process. */
   buildStrategy?: "local" | "server";
-  /** Catalog app this project is an instance of (`project.appTemplateId`), so the
-   *  app's declared host minimum can be matched against the target machine. Null
-   *  for an ordinary project — nothing is declared, nothing is checked. */
-  appTemplateId?: string | null;
-  /** True when the project has never had a live deployment. A shortfall FAILS a
-   *  first deploy and only warns afterwards — see `checkHostCapacity`. */
-  firstDeploy?: boolean;
 }
 
 /** Resolve owner/repo for the public-ness probe: prefer the already-parsed
@@ -498,10 +480,7 @@ async function checkPublicEndpoints(
 ): Promise<PreflightCheck[]> {
   const plat = platform();
   const effectiveTarget = resolveEffectiveTarget(plat.target, snapshot);
-  // The workload decides which endpoint SHAPE is valid: a web app routes by port,
-  // a static site by path, a worker by nothing at all (#538-B).
-  const workload = snapshotToClass(snapshot).workload;
-  const isCloudStatic = effectiveTarget === "cloud" && workload === "static";
+  const isCloudStatic = effectiveTarget === "cloud" && !snapshot.hasServer;
   // Whether we can reach the SaaS to verify slugs / custom domains.
   const canBridgeCloud = Boolean(cloud?.runtime.ok && ctx?.userId);
   const baseDomain = getRoutingBaseDomain();
@@ -566,10 +545,8 @@ async function checkPublicEndpoints(
       }
     }
 
-    // Target kind must match the workload. A worker is routed by nothing, so any
-    // endpoint on it is dropped downstream — don't fail it here with a
-    // static/server message that doesn't fit its shape.
-    if (workload === "static" && hasPortTarget) {
+    // Target kind must match the deployment kind.
+    if (hasPortTarget && !snapshot.hasServer) {
       checks.push(
         fail(
           idOf("shape"),
@@ -577,7 +554,7 @@ async function checkPublicEndpoints(
           "Static deployments cannot expose port-targeted routes. Use a static target path instead.",
         ),
       );
-    } else if (workload === "web" && hasPathTarget) {
+    } else if (hasPathTarget && snapshot.hasServer) {
       checks.push(
         fail(
           idOf("shape"),
@@ -680,47 +657,70 @@ async function checkComposeServiceDomains(
 ): Promise<PreflightCheck[]> {
   const checks: PreflightCheck[] = [];
   const seen = new Set<string>();
+  const baseDomain = getRoutingBaseDomain();
 
   for (const service of composeServices) {
-    // ONE resolver drives the hostname the cloud gate (composeServicesNeedCloud)
-    // classifies and the shape/uniqueness we validate here — never a hand-copied
-    // second derivation. A custom hostname routes as a custom domain (DNS-checked),
-    // never Cloud-gated as a free subdomain (#427 follow-up). Cloud CONNECTIVITY for
-    // a free *.opsh.io subdomain is owned SOLELY by checkCloudRuntime (via the
-    // `managed-compose-domains` requirement); this check does NOT re-litigate it —
-    // doing so duplicated and contradicted the runtime row, telling a CONNECTED org
-    // to "connect your account" while the runtime row said "connected, retry".
-    const route = resolveServiceRouteHostname(service, projectSlug);
-    if (!route) continue; // not exposed → no public hostname to validate
+    if (!service.exposed) continue;
 
-    if (seen.has(route.hostname)) {
+    if (service.domainType === "custom" && service.customDomain?.trim()) {
+      const domain = normalizeCustomHostname(service.customDomain);
+      if (seen.has(domain)) {
+        checks.push({
+          id: `service-domain-${service.name}`,
+          label: `Service domain (${service.name})`,
+          status: "fail",
+          message: `Duplicate custom domain configured: ${domain}`,
+        });
+        continue;
+      }
+      seen.add(domain);
+
+      const result = await checkCustomDomain(domain, cloud, snapshot);
+      checks.push({
+        ...result,
+        id: `service-domain-${service.name}`,
+        label: `Service domain (${service.name})`,
+      });
+      continue;
+    }
+
+    const subdomain = resolveServiceHostnameLabel(
+      projectSlug || "project",
+      service.name,
+      service.domain,
+      serviceKind(service),
+    );
+    const fqdn = `${subdomain}.${baseDomain}`;
+
+    // Free subdomains require cloud - fail early if not connected
+    if (!cloud) {
+      checks.push({
+        id: `service-domain-${service.name}`,
+        label: `Service subdomain (${service.name})`,
+        status: "fail",
+        code: PREFLIGHT_ERROR_CODES.CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS,
+        message: `Free subdomain "${fqdn}" requires Openship Cloud. Connect your account or switch to a custom domain.`,
+      });
+      continue;
+    }
+
+    if (seen.has(fqdn)) {
       checks.push({
         id: `service-domain-${service.name}`,
         label: `Service domain (${service.name})`,
         status: "fail",
-        message: route.isCustom
-          ? `Duplicate custom domain configured: ${route.hostname}`
-          : `Duplicate service subdomain configured: ${route.label}`,
+        message: `Duplicate service subdomain configured: ${subdomain}`,
       });
       continue;
     }
-    seen.add(route.hostname);
+    seen.add(fqdn);
 
-    if (route.isCustom) {
-      const result = await checkCustomDomain(route.hostname, cloud, snapshot);
-      checks.push({
-        ...result,
-        id: `service-domain-${service.name}`,
-        label: `Service domain (${service.name})`,
-      });
-    } else {
-      const result = checkSlugFormat(route.label!);
-      checks.push({
-        ...result,
-        id: `service-domain-${service.name}`,
-        label: `Service subdomain (${service.name})`,
-      });
-    }
+    const result = checkSlugFormat(subdomain);
+    checks.push({
+      ...result,
+      id: `service-domain-${service.name}`,
+      label: `Service subdomain (${service.name})`,
+    });
   }
 
   return checks;
@@ -749,25 +749,6 @@ async function requestCloudPreflight(
   return cloudClient({ organizationId: snapshot.organizationId }).preflight(input);
 }
 
-// #427 follow-up — preflight decides "needs Cloud" by HOSTNAME truth, exactly like
-// the create/update write gates: only a subdomain of the real Cloud domain
-// (*.opsh.io) routes through the Cloud edge. The gate and the per-service check
-// (checkComposeServiceDomains) resolve each service's hostname through the ONE
-// resolver (resolveServiceRouteHostname) so they can't drift — hand-copying that
-// derivation, with the gate reading raw empty `service.domain` while the check
-// SYNTHESIZED the default `<project>-<service>` subdomain, is what 403'd a CONNECTED
-// org's compose deploy (CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS).
-function composeServicesNeedCloud(
-  services: DeployableService[] | null | undefined,
-  projectSlug: string | undefined,
-): boolean {
-  for (const service of services ?? []) {
-    const route = resolveServiceRouteHostname(service, projectSlug);
-    if (route && isCloudManagedHostname(route.hostname)) return true;
-  }
-  return false;
-}
-
 async function resolveCloudPreflight(
   snapshot: DeploymentConfigSnapshot,
   opts?: PreflightOptions,
@@ -787,7 +768,7 @@ async function resolveCloudPreflight(
   // too (cloud IS doing the deploy). Single authority shared with the pipeline.
   const usesManagedRouting = usesManagedRoutingFor(plat.target, effectiveTarget);
   const hasManagedPublicEndpoints =
-    storedPublicEndpointsNeedCloud(opts?.publicEndpoints);
+    endpointsNeedCloud(opts?.publicEndpoints);
   // The project-level free-domain slug is a routable web hostname only for a
   // single-app project. In services mode there is no project domain — each
   // service routes via its own endpoint (needsManagedComposeDomains), so an
@@ -798,7 +779,7 @@ async function resolveCloudPreflight(
     (!opts?.multiService && !!opts?.slug && !opts?.customDomain && usesManagedRouting) ||
     (usesManagedRouting && hasManagedPublicEndpoints);
   const needsManagedComposeDomains =
-    composeServicesNeedCloud(opts?.composeServices, opts?.slug);
+    servicesNeedCloud(opts?.composeServices);
   const needsCloudPreflight =
     effectiveTarget === "cloud" || needsManagedProjectDomain || needsManagedComposeDomains;
   const requestInput = opts?.publicEndpoints?.length
@@ -975,29 +956,14 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
   // Mirrors the multi-service branch's dockerfile/build check. #231
   if (snapshot.framework !== "docker" && !snapshot.buildImage) missing.push("build image");
 
-  // A single-project Dockerfile owns install, build, and process startup. Those
-  // buildpack commands are deliberately empty after repository/folder detection
-  // and are not consumed by the Docker pipeline. The workload-specific checks
-  // below still enforce a port for web apps.
-  const dockerOwnsBuild = snapshot.framework === "docker";
-  if (!dockerOwnsBuild && snapshot.hasBuild && !snapshot.installCommand) {
+  if (snapshot.hasBuild && !snapshot.installCommand) {
     missing.push("install command");
   }
 
-  const cls = snapshotToClass(snapshot);
-  if (cls.workload === "web") {
-    // A web app is reached on a port and must declare how it starts and listens.
-    // Dockerfile apps inherit their process command from the image.
-    if (!dockerOwnsBuild && !snapshot.startCommand) missing.push("start command");
+  if (snapshot.hasServer) {
+    if (!snapshot.startCommand) missing.push("start command");
     if (!snapshot.port) missing.push("port");
-  } else if (cls.workload === "worker") {
-    // A worker is a portless long-running container (#538-B): it needs a command
-    // to run but no port and no route. A dockerfile/prebuilt worker takes its
-    // command from the image CMD, so only a buildpack worker must supply one.
-    if (cls.build === "buildpack" && !snapshot.startCommand) missing.push("start command");
   }
-  // A static workload needs neither a start command nor a port — its output is
-  // served as files, so nothing is required here.
 
   if (missing.length > 0) {
     return {
@@ -1012,11 +978,7 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
 }
 
 function checkStack(snapshot: DeploymentConfigSnapshot): PreflightCheck {
-  // Only a STATIC workload ignores a start command (files are served by the edge).
-  // A worker also has `hasServer=false` but its start command is exactly what runs,
-  // so keying this on the workload — not the legacy boolean — stops it from telling
-  // a worker its command will be ignored (#538-B).
-  if (snapshotToClass(snapshot).workload === "static" && snapshot.startCommand) {
+  if (!snapshot.hasServer && snapshot.startCommand) {
     return {
       id: "stack",
       label: "Stack configuration",
@@ -1342,57 +1304,6 @@ async function checkCloudRuntime(
   };
 }
 
-/**
- * Match a catalog app's declared `minResources` against the machine it is about
- * to be installed on. Generic: any app that declares a minimum gets this, and an
- * app that declares none (almost all of them) is never checked.
- *
- * Two rules keep it from being a footgun of its own:
- *
- *   • It FAILS a first deploy and only WARNS afterwards. Refusing a redeploy
- *     would brick an app already running on a box that turned out to be
- *     undersized — the operator's way out of that is a deploy, not a refusal.
- *   • An unknown capacity never fails (`fitsCapacity`). A box we couldn't probe
- *     means we didn't look, not that the hardware is too small.
- *
- * Returns null when there is nothing to check, so no cosmetic row appears on the
- * checklist of an ordinary project.
- */
-async function checkHostCapacity(
-  organizationId: string,
-  appTemplateId: string,
-  serverId: string | undefined,
-  isLocalTarget: boolean,
-  firstDeploy: boolean,
-): Promise<PreflightCheck | null> {
-  const template = await getTemplateForOrg(organizationId, appTemplateId).catch(() => undefined);
-  const min = template?.minResources;
-  if (!template || !hasMinResources(min)) return null;
-
-  const capacity = await getTrustedHostCapacity(serverId, organizationId, { isLocalTarget });
-  const fit = fitsCapacity(min, capacity);
-  const check: PreflightCheck = { id: "host-capacity", label: "Host capacity", status: "pass" };
-  if (fit.ok) return check;
-
-  const shortfall = describeResourceFit(fit);
-  if (firstDeploy) {
-    return {
-      ...check,
-      status: "fail",
-      code: PREFLIGHT_ERROR_CODES.HOST_RESOURCES_INSUFFICIENT,
-      message: `${template.name} needs ${shortfall}. Install it on a bigger machine, or pick a different destination.`,
-    };
-  }
-  // Written for the day warns are surfaced: today `runDeploymentPreflight` acts
-  // only on `!ok`, so every preflight warn's message is dropped. The status is
-  // what matters here — it keeps this off the failure path.
-  return {
-    ...check,
-    status: "warn",
-    message: `${template.name} needs ${shortfall}. It will deploy, but expect it to be slow or OOM-killed on this machine.`,
-  };
-}
-
 export async function runPreflightChecks(
   snapshot: DeploymentConfigSnapshot,
   opts?: PreflightOptions,
@@ -1411,9 +1322,9 @@ export async function runPreflightChecks(
     !opts?.multiService &&
     !hasEndpointRouting && !!opts?.slug && !opts?.customDomain && usesManagedRouting;
   const hasManagedPublicEndpoints =
-    storedPublicEndpointsNeedCloud(opts?.publicEndpoints);
+    endpointsNeedCloud(opts?.publicEndpoints);
   const hasManagedComposeDomains =
-    composeServicesNeedCloud(opts?.composeServices, opts?.slug);
+    servicesNeedCloud(opts?.composeServices);
   const cloudRequirement =
     effectiveTarget === "cloud"
       ? "cloud-runtime"
@@ -1434,20 +1345,6 @@ export async function runPreflightChecks(
       ? { id: "stack", label: "Service stack", status: "pass" }
       : checkStack(snapshot),
   ];
-
-  // Does this machine meet what the app says it needs? Cloud is sized from the
-  // tier table, not from host hardware, so there is nothing to match there (and
-  // nothing to probe — a multi-tenant control plane must not dial a tenant's box).
-  if (opts?.appTemplateId && snapshot.organizationId && effectiveTarget !== "cloud") {
-    const hostCapacity = await checkHostCapacity(
-      snapshot.organizationId,
-      opts.appTemplateId,
-      snapshot.serverId,
-      effectiveTarget === "local",
-      opts.firstDeploy ?? false,
-    );
-    if (hostCapacity) checks.push(hostCapacity);
-  }
 
   if (!hasEndpointRouting && opts?.slug && !opts?.customDomain) {
     checks.push(checkSlugFormat(opts.slug));
@@ -1506,11 +1403,10 @@ export async function runPreflightChecks(
   const clonesOnRemote =
     !repoIsPublic &&
     runtimeMode === "bare" &&
-    // Only a WEB workload can build on a bare remote worker: static apps build
-    // in a Docker sandbox and workers build in Docker (both clone on the
-    // orchestrator), so neither ever needs a remote clone credential even when
-    // runtimeMode is "bare" (#538-B).
-    snapshotToClass(snapshot).workload === "web" &&
+    // Static apps now BUILD in a Docker sandbox (see build-pipeline's static
+    // flip) which clones on the orchestrator — never a remote bare clone — so
+    // they never need a remote clone credential even if runtimeMode is "bare".
+    snapshot.hasServer &&
     effectiveTarget === "server" &&
     effectiveBuildStrategy !== "local";
 

@@ -214,47 +214,6 @@ describe("caddy adapt: load balancing and collisions", () => {
   });
 });
 
-describe("caddy admin API (layout-independent)", () => {
-  test("reads the running config from localhost:2019 when no Caddyfile is at a fixed path", async () => {
-    // The fragility fix: a box configured any way other than a Caddyfile at
-    // /etc/caddy/Caddyfile — imported snippets, an API-pushed config, a non-default
-    // path — has nothing for `caddy adapt --config <fixed>` to read, so it scanned
-    // as zero sites. The admin endpoint reports the live server regardless.
-    const running = httpsServer([
-      {
-        match: [{ host: ["live.example.com"] }],
-        handle: [{ handler: "reverse_proxy", upstreams: [{ dial: "app:8080" }] }],
-      },
-    ]);
-    const exec = {
-      exec: async (cmd: string) => {
-        if (cmd.includes("localhost:2019/config/")) return JSON.stringify(running);
-        return ""; // no Caddyfile at any fixed path, `caddy adapt` yields nothing
-      },
-    } as unknown as CommandExecutor;
-    const res = await scanCaddy(exec);
-    expect(res.sites[0]?.serverNames).toEqual(["live.example.com"]);
-    expect(urlOf(res.sites[0])).toBe("http://app:8080");
-  });
-
-  test("falls back to `caddy adapt` when the admin API is unreachable", async () => {
-    // Admin API off (curl/wget return nothing) → the existing fixed-path adapt read
-    // must still work, unchanged.
-    const res = await scanCaddy(
-      exec({
-        adapt: httpsServer([
-          {
-            match: [{ host: ["file.example.com"] }],
-            handle: [{ handler: "reverse_proxy", upstreams: [{ dial: "web:3000" }] }],
-          },
-        ]),
-      }),
-    );
-    expect(res.sites[0]?.serverNames).toEqual(["file.example.com"]);
-    expect(urlOf(res.sites[0])).toBe("http://web:3000");
-  });
-});
-
 describe("caddy Caddyfile text fallback", () => {
   const textOnly = (caddyfile: string) => scanCaddy(exec({ caddyfile }));
 

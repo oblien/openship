@@ -353,15 +353,11 @@ export async function prepare(c: Context) {
     branch?: string;
     path?: string;
     composePath?: string;
-    env?: Record<string, string>;
   }>();
 
   // Determine source - callers may send { owner, repo } without an explicit source
   const source = body.source ?? (body.owner && body.repo ? "github" : undefined);
   const composePath = body.composePath?.trim() || undefined;
-  // Interpolation-only: never persisted here, and the response masks every
-  // service env below, so supplying a value cannot echo it back unmasked.
-  const composeEnv = body.env && Object.keys(body.env).length > 0 ? body.env : undefined;
 
   try {
     let input: prepareService.Source;
@@ -377,7 +373,6 @@ export async function prepare(c: Context) {
         branch: body.branch,
         ctx,
         composePath,
-        env: composeEnv,
       };
     } else if (source === "local") {
       if (env.CLOUD_MODE) {
@@ -386,7 +381,7 @@ export async function prepare(c: Context) {
       if (!body.path) {
         return c.json({ error: "path is required" }, 400);
       }
-      input = { source: "local", path: body.path, composePath, env: composeEnv };
+      input = { source: "local", path: body.path, composePath };
     } else {
       return c.json({ error: "source must be 'github' or 'local'" }, 400);
     }

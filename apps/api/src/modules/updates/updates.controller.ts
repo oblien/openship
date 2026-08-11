@@ -1,8 +1,8 @@
 /**
  * Updates HTTP handlers — the one "check for updates" surface, org-scoped.
- * `GET /updates` is read-through (it polls whatever the cache can't answer), so
- * it never under-reports on a cold cache; `POST /updates/scan` forces a full
- * re-poll. The scheduled `updates:scan` job keeps rows warm ahead of both.
+ * Reads the cached scan (`GET /updates`) and triggers an on-demand rescan
+ * (`POST /updates/scan`). The scheduled `updates:scan` job refreshes the cache
+ * in the background; this endpoint lets the dashboard force a fresh sweep.
  */
 
 import type { Context } from "hono";
@@ -14,11 +14,11 @@ import {
   scanOrganizationUpdates,
 } from "./updates.service";
 
-/** GET /api/updates?behind=1 — update status for every project in the caller's org. */
+/** GET /api/updates?behind=1 — cached update statuses for the caller's org. */
 export async function listUpdates(c: Context) {
   const ctx = getRequestContext(c);
   const behindOnly = ["1", "true"].includes((c.req.query("behind") ?? "").toLowerCase());
-  const data = await listOrganizationUpdates(ctx, { behindOnly });
+  const data = await listOrganizationUpdates(ctx.organizationId, { behindOnly });
   return c.json({ data });
 }
 

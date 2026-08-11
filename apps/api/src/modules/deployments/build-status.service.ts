@@ -2,7 +2,6 @@ import { repos } from "@repo/db";
 import type { LogEntry } from "@repo/adapters";
 import * as sessionManager from "./session-manager";
 import { loadDeployment, type DeploymentConfigSnapshot } from "./build.service";
-import { snapshotToClass } from "./deployment-class";
 import { STEP_INDEX, STEP_PROGRESS } from "./build-steps";
 import { isMultiServiceProject } from "./compose";
 import { serviceKind } from "../../lib/deployable-service";
@@ -63,19 +62,8 @@ export async function getBuildSessionStatus(deploymentId: string) {
 
   // Resolve the target server's display name (when this deployed to a server),
   // so the detail UI can show "Server · <name>" rather than a raw id.
-  //
-  // ORG-SCOPED, and it must be: `snapshot.serverId` is CLIENT-SUPPLIED (it arrives in
-  // the deploy body, and resolveSnapshotTarget gives that override top priority with no
-  // org check), and the deployment row is persisted with it BEFORE the target is
-  // validated — so a deploy that fails on "not in this organization" still leaves a row
-  // whose meta names a foreign server. An unscoped read here hands that server's name or
-  // sshHost back to anyone who can post a deploy: the cross-tenant name oracle the
-  // docblock on resolveOrgServer (lib/deployment-runtime.ts) exists to prevent. A
-  // foreign id must read as absent, exactly like a deleted one.
   const targetServer = snapshot?.serverId
-    ? await repos.server
-        .getInOrganization(snapshot.serverId, dep.organizationId)
-        .catch(() => null)
+    ? await repos.server.get(snapshot.serverId).catch(() => null)
     : null;
 
   // Derive step progress from persisted log entries when no active session
@@ -214,11 +202,6 @@ export async function getBuildSessionStatus(deploymentId: string) {
       startCommand: snapshot?.startCommand,
       rootDirectory: snapshot?.rootDirectory,
       hasServer: snapshot?.hasServer ?? !!snapshot?.startCommand?.trim(),
-      // The resolved runtime workload (web/worker/static) so "Edit Configuration"
-      // rehydrates a worker as a worker, not as a static site (both carry
-      // hasServer=false). Derived from the frozen triple, or the snapshot's own
-      // legacy fields for a pre-#538 deployment (#538-B).
-      workloadType: snapshotToClass(snapshot ?? {}).workload,
       serviceDeploymentMode: snapshot?.serviceDeploymentMode,
     },
     progress,

@@ -24,27 +24,17 @@
  */
 
 import type { CommandExecutor } from "../types";
-import { envOps, HOST_STATE_DIR } from "./environment-ops";
-import { resolveEnvironment } from "./environment";
 import { sq } from "./local-shell";
 import { LocalExecutor } from "./local-executor";
-import { isRemoteConnectionError, isRetryableRemoteConnectionError } from "./errors";
+import { isRetryableRemoteConnectionError } from "./errors";
 
 /** Bump when the wrapper script changes — forces a redeploy on the next ensure. */
 export const OPSH_RUN_VERSION = 1;
 
-/**
- * Fallback base dir owning bin/ + ops/, used only when the target's own home cannot be
- * resolved — the wrapper script embeds the same value for the same reason.
- *
- * NOT the normal answer: `runReliable` asks the host, via `envOps().scratchDir()`. It has
- * to, because `ensureRemoteJournal` deploys the wrapper over SFTP and SFTP cannot be
- * elevated, so a root-anchored base is unwritable on any host we log into as a non-root
- * user — the deploy built and uploaded fine and then died on the activation commit,
- * naming a path the operator never chose. For a root login `scratchDir()` resolves to
- * `/root/.openship` anyway, so nothing moves on a host that already worked.
- */
-export const DEFAULT_JOURNAL_BASE = HOST_STATE_DIR;
+/** Default remote base dir owning bin/ + ops/. Mirrors apps/api's OPENSHIP_DIR
+ *  (openship-server-store.ts) so adapter-layer callers don't cross the layer
+ *  boundary to journal. Keep the two in sync. */
+export const DEFAULT_JOURNAL_BASE = "/root/.openship";
 
 /**
  * Same non-interactive env both executors prepend to plain `exec()`, applied to
@@ -63,7 +53,7 @@ const OPSH_RUN_SCRIPT = `#!/bin/sh
 VERSION=${OPSH_RUN_VERSION}
 
 BASE="$OPSH_BASE"
-[ -z "$BASE" ] && BASE=${HOST_STATE_DIR}
+[ -z "$BASE" ] && BASE=/root/.openship
 OPS="$BASE/ops"
 
 if [ "$1" = "--version" ]; then echo "$VERSION"; exit 0; fi
@@ -165,26 +155,6 @@ export interface RunJournaledOptions {
   waitSecs?: number;
   /** Prefix prepended to the journaled command (default REMOTE_ENV_PREFIX). */
   envPrefix?: string;
-}
-
-/**
- * Where this host's journal lives — the login user's own `.openship`.
- *
- * Degrades to the constant instead of throwing: the journal is opId-keyed scratch on a
- * 1440-minute GC, so a host we could not measure is better served by attempting the old
- * path (which is right for every root login) than by failing a deploy over a base dir.
- *
- * A transport fault is NOT that case and is rethrown: `resolveEnvironment` only throws for
- * one, deliberately, and swallowing it here pins the base dir off a box we never reached
- * and hides the drop from `runReliable`'s retry — which is the caller that owns it.
- */
-async function resolveJournalBase(exec: CommandExecutor): Promise<string> {
-  try {
-    return envOps(await resolveEnvironment(exec)).scratchDir();
-  } catch (err) {
-    if (isRemoteConnectionError(err)) throw err;
-    return DEFAULT_JOURNAL_BASE;
-  }
 }
 
 /**
@@ -355,9 +325,7 @@ export async function runReliable(
   command: string,
   opts: RunReliableOptions,
 ): Promise<ReliableRunResult> {
-  // Resolved once from the first executor we acquire, then reused: every retry of this
-  // opId must look in the SAME ops dir or the exactly-once harvest reads an empty one.
-  let baseDir = opts.baseDir ?? null;
+  const baseDir = opts.baseDir ?? DEFAULT_JOURNAL_BASE;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_RELIABLE_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
   const minMs = opts.reconnectMinMs ?? DEFAULT_RECONNECT_MIN_MS;
@@ -382,9 +350,6 @@ export async function runReliable(
     }
 
     try {
-      // Inside the try so a channel that drops mid-probe is retried like any other
-      // transport fault rather than escaping as a hard failure.
-      baseDir ??= await resolveJournalBase(executor);
       if (!opts.ensured || !opts.ensured.has(executor)) {
         await ensureRemoteJournal(executor, baseDir);
         opts.ensured?.add(executor);
@@ -435,7 +400,7 @@ export async function runReliable(
  * semantics on a raw executor, throwing on a non-zero exit (drop-in for
  * `executor.exec`) and returning trimmed stdout. For a LocalExecutor it just
  * runs directly — local execution has no transport to drop, and the journal
- * base may not be writable by the account the API runs under.
+ * base (/root/.openship) may not be writable on the API host.
  */
 export async function execReliable(
   executor: CommandExecutor,

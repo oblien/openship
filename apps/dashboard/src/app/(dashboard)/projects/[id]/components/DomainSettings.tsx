@@ -11,7 +11,6 @@ import {
   Info,
   Link2,
   Loader2,
-  MonitorSmartphone,
   Pencil,
   Plus,
   RefreshCw,
@@ -23,7 +22,6 @@ import {
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { RoutingConfigCard } from "./RoutingConfigCard";
 import { RouteRules } from "./RouteRules";
-import { RoutingUnsyncedCallout } from "./RoutingUnsyncedCallout";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { getApiErrorMessage, projectsApi, deployApi, domainsApi, serviceKind, servicesApi, type Service, type ServiceInput } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -31,12 +29,11 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
-import { serviceDisplayHost } from "@/utils/route-display";
+import { resolveServiceHostnameLabel } from "@repo/core";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { useEdgeModal, useVerifyModal } from "@/hooks/useSystemPrepareModal";
-import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import {
   createPublicEndpoint,
@@ -260,7 +257,6 @@ export const DomainSettings = () => {
     refreshServices,
     pendingDomainAction,
     setPendingDomainAction,
-    access,
   } = useProjectSettings();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -433,16 +429,9 @@ export const DomainSettings = () => {
     projectData.port ||
     "",
   );
-  // "Single app" (project-level routing) keys on the SERVER's service count, not
-  // the async services list: during the services fetch that list is briefly empty,
-  // which would transiently classify a compose project as single-app and flash the
-  // wrong (project-level / localhost) cards. serviceCount ships on the project
-  // payload, so this is correct from first render.
-  const projectHasServices =
-    Number(projectData.serviceCount ?? 0) > 0 || services.length > 0;
   const hasProjectLevelRouting =
     (Array.isArray(projectData.publicEndpoints) && projectData.publicEndpoints.length > 0) ||
-    !projectHasServices;
+    services.length === 0;
   const draftPublicEndpoints = useMemo(
     () =>
       createProjectEndpointDrafts(
@@ -527,6 +516,8 @@ export const DomainSettings = () => {
   const primaryProjectDomain = domainSummaries[0] ?? null;
 
   const primaryDomainName = primaryProjectDomain?.hostname || "";
+  const localPort = projectData.port || projectData.options?.productionPort || 3000;
+  const localUrl = `localhost:${localPort}`;
   const hasDomain = !!primaryDomainName;
 
   // An edge (OpenResty owning the server's 80/443) is needed by ANY deployed
@@ -597,36 +588,9 @@ export const DomainSettings = () => {
     );
   };
 
-  // Cold-start access point reads the server-computed canonical URL (context
-  // `access`): localhost only when the project is genuinely local, a real host
-  // if a verified domain exists (even one project-level publicEndpoints dropped
-  // for a transiently-unset port), and null when a server/cloud project has no
-  // domain yet — so this surface never invents a misleading localhost.
-  const currentUrl = hasDomain ? primaryDomainName : (access.host ?? "");
-  const currentHref = hasDomain ? `https://${primaryDomainName}` : (access.url ?? "#");
+  const currentUrl = hasDomain ? primaryDomainName : localUrl;
+  const currentHref = hasDomain ? `https://${primaryDomainName}` : `http://${localUrl}`;
   const isManagedHostDomain = hasDomain && primaryDomainName.endsWith(`.${baseDomain}`);
-
-  // No-route reachability: when this dashboard is a desktop app managing a remote
-  // server, a project with no domain (`access.kind === "none"`) is still openable
-  // by forwarding its runtime port over the SSH tunnel — the same mechanism the
-  // connection card uses for app addresses. Never shown for cloud, a web
-  // dashboard, or a genuinely local project (that one has a real localhost URL).
-  const { canForward: canForwardLocal, forward: forwardLocal } = useLocalhostForward({
-    serverId: projectData.serverId,
-    deployTarget: projectData.deployTarget,
-  });
-  const [openingLocal, setOpeningLocal] = useState(false);
-  const runtimeForwardPort = Number(projectRuntimePort) || Number(projectData.port) || 0;
-  const canOpenLocal = access.kind === "none" && canForwardLocal && runtimeForwardPort > 0;
-  const openOnLocalhost = async () => {
-    if (!runtimeForwardPort || openingLocal) return;
-    setOpeningLocal(true);
-    try {
-      await forwardLocal(runtimeForwardPort, "open");
-    } finally {
-      setOpeningLocal(false);
-    }
-  };
   useEffect(() => {
     setPublicEndpoints(draftPublicEndpoints);
   }, [draftPublicEndpoints]);
@@ -634,14 +598,11 @@ export const DomainSettings = () => {
   const domainMeta = useMemo(() => {
     const m = t.projectSettings.domains.meta;
     if (!hasDomain) {
-      // A server/cloud project with no domain yet is NOT a localhost endpoint —
-      // say "no domain" instead of advertising an unreachable localhost.
-      const noDomainYet = access.kind === "none";
       return {
         title: m.accessTitle,
-        subtitle: noDomainYet ? t.projectSettings.domains.add.description : m.accessSubtitle,
+        subtitle: m.accessSubtitle,
         typeLabel: m.local,
-        statusLabel: noDomainYet ? t.projects.sidebar.noDomain : m.availableOnMachine,
+        statusLabel: m.availableOnMachine,
         statusTone: "neutral" as const,
       };
     }
@@ -669,7 +630,7 @@ export const DomainSettings = () => {
       statusLabel: primaryProjectDomain?.status.label || t.projectSettings.domains.status.pending,
       statusTone: primaryProjectDomain?.status.tone || ("warning" as const),
     };
-  }, [hasDomain, isManagedHostDomain, domainSummaries.length, primaryProjectDomain, access.kind, t]);
+  }, [hasDomain, isManagedHostDomain, domainSummaries.length, primaryProjectDomain, t]);
 
   // The previous live SSL fetch (deployApi.sslStatus) only ran for the
   // primary domain — useless for multi-domain projects, redundant for
@@ -1361,19 +1322,15 @@ export const DomainSettings = () => {
 
   const projectLabel = projectData.slug || projectData.name || "project";
 
-  // Null when the service has no persisted route: the derived
-  // `<project>-<service>` host this used to compose was never created, so the
-  // route card linked to a dead name.
-  const resolveServiceHostname = (service: Service) =>
-    serviceDisplayHost(service, {
-      projectLabel,
-      baseDomain,
-      kind: serviceKind(service),
-    });
+  const resolveServiceHostname = (service: Service) => {
+    if (service.domainType === "custom" && service.customDomain) {
+      return service.customDomain;
+    }
+    return `${resolveServiceHostnameLabel(projectLabel, service.name, service.domain, serviceKind(service))}.${baseDomain}`;
+  };
 
   const getServiceRouteSummary = (service: Service) => {
-    const host = service.exposed ? resolveServiceHostname(service) : null;
-    const liveUrl = host ? `https://${host}` : null;
+    const liveUrl = service.exposed ? `https://${resolveServiceHostname(service)}` : null;
 
     if (!service.enabled) {
       return {
@@ -1507,12 +1464,8 @@ export const DomainSettings = () => {
     const domainByHostname = domainRowsByHostname;
     return services
       .filter((s) => s.enabled && s.exposed)
-      // A service with no persisted route has no hostname to title a route card
-      // with — it is reachable on its port. Inventing one is what put dead
-      // `<project>-<service>` hosts on this page; use "Add route" to give it one.
-      .map((service) => ({ service, hostname: resolveServiceHostname(service) }))
-      .filter((entry): entry is { service: Service; hostname: string } => !!entry.hostname)
-      .map(({ service, hostname }) => {
+      .map((service) => {
+        const hostname = resolveServiceHostname(service);
         const domain = domainByHostname.get(hostname.toLowerCase()) ?? null;
         return {
           service,
@@ -1552,10 +1505,7 @@ export const DomainSettings = () => {
    */
   const orphanDomainCards: DomainSummaryItem[] = (() => {
     const claimed = new Set(
-      services
-        .filter((s) => s.enabled && s.exposed)
-        .map((s) => resolveServiceHostname(s)?.toLowerCase())
-        .filter((hostname): hostname is string => !!hostname),
+      services.filter((s) => s.enabled && s.exposed).map((s) => resolveServiceHostname(s).toLowerCase()),
     );
     return [...domainRowsByHostname.entries()]
       .filter(([hostname]) => !claimed.has(hostname))
@@ -1686,17 +1636,11 @@ export const DomainSettings = () => {
     opts: { onEdit?: () => void; onSetPrimary?: () => void },
   ): React.ReactNode => {
     const canVerify = item.needsVerify && !!item.domainId;
-    // An SSL action (renew / recheck) lives in the ⋯ menu, but the menu closes the
-    // instant it's clicked — so its spinner-label never gets a chance to show and
-    // the operator sees nothing happen for the several seconds certbot takes. Mirror
-    // the inline Verify pattern: surface the in-flight state on the CARD itself.
-    const isRenewing = renewingHostname === item.hostname;
-    const isRechecking = recheckingDomainId === item.domainId;
     const menuActions = buildDomainMenuActions({
       domain: item,
       isManagedRow: item.hostname.toLowerCase().endsWith(`.${baseDomain}`),
-      isRenewing,
-      isRechecking,
+      isRenewing: renewingHostname === item.hostname,
+      isRechecking: recheckingDomainId === item.domainId,
       onEditRoute: opts.onEdit,
       onSetPrimary: opts.onSetPrimary,
       isSettingPrimary: settingPrimaryId === item.id,
@@ -1706,8 +1650,6 @@ export const DomainSettings = () => {
         key={item.id}
         domain={item}
         menuActions={menuActions}
-        sslActionBusy={isRenewing || isRechecking}
-        sslActionLabel={isRenewing ? t.projectSettings.domains.menu.renewing : t.projectSettings.domains.menu.rechecking}
         onVerify={canVerify ? () => startVerify(item.domainId!, item.hostname) : undefined}
         verifying={!!verifyingDomainId && verifyingDomainId === item.domainId}
         verifyHint={verifyHintFor(item.domainId)}
@@ -1785,18 +1727,7 @@ export const DomainSettings = () => {
   };
   const singleDomainActions = (
     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-      {currentHref !== "#" ? (
-        <ActionButton href={currentHref} label={t.projectSettings.domains.actions.visit} icon={ExternalLink} />
-      ) : null}
-      {canOpenLocal ? (
-        <ActionButton
-          label={t.projects.connections.openLocalhost}
-          icon={openingLocal ? Loader2 : MonitorSmartphone}
-          spinning={openingLocal}
-          disabled={openingLocal}
-          onClick={openOnLocalhost}
-        />
-      ) : null}
+      <ActionButton href={currentHref} label={t.projectSettings.domains.actions.visit} icon={ExternalLink} />
       {hasProjectLevelRouting ? (
         <ActionButton label={t.projectSettings.domains.actions.editDomains} icon={Pencil} onClick={handleStartEditingDomains} />
       ) : null}
@@ -1829,8 +1760,6 @@ export const DomainSettings = () => {
 
   return (
     <div className="space-y-5">
-      {/* Routes are live-but-unsynced — first, above the domains it's about. */}
-      <RoutingUnsyncedCallout />
       {domainsData.isLoading ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {[0, 1].map((i) => (
@@ -2038,17 +1967,10 @@ export const DomainSettings = () => {
         </div>
       ) : null}
 
-      {!isEditingDomains && !hasDomain && hasProjectLevelRouting && !domainsData.isLoading ? (
-        // Cold-start state (no project-level domain attached yet). What we show
-        // is driven entirely by the server-computed `access`:
-        //   • kind "local" → the localhost endpoint (genuine local run).
-        //   • kind "none"  → a server/cloud project with no domain: show "no
-        //     domain" rather than a misleading localhost URL.
-        //   • kind "custom"/"free" (a verified domain publicEndpoints dropped) →
-        //     the real host, not localhost.
-        // Gated on hasProjectLevelRouting: a multi-service project routes
-        // per-service, so its public domains live on service-scoped rows and
-        // render in the per-service section below instead.
+      {!isEditingDomains && !hasDomain && !domainsData.isLoading ? (
+        // No domain attached yet — show the local URL as the access point
+        // alongside the Add domain CTA. This is the cold-start state; once
+        // any domain (free or custom) is attached, we render the list below.
         <SectionCard
           title={domainMeta.title}
           description={domainMeta.subtitle}
@@ -2056,21 +1978,12 @@ export const DomainSettings = () => {
           iconTone="primary"
           actions={singleDomainActions}
         >
-          {access.kind === "none" ? (
-            <InfoRow
-              label={t.projectSettings.domains.cold.status}
-              value={<StatusPill tone={domainMeta.statusTone}>{domainMeta.statusLabel}</StatusPill>}
-            />
-          ) : (
-            <>
-              <ValueBlock label={t.projectSettings.domains.cold.localUrl} value={currentUrl} />
-              <InfoRow label={t.projectSettings.domains.cold.type} value={domainMeta.typeLabel} />
-              <InfoRow
-                label={t.projectSettings.domains.cold.status}
-                value={<StatusPill tone={domainMeta.statusTone}>{domainMeta.statusLabel}</StatusPill>}
-              />
-            </>
-          )}
+          <ValueBlock label={t.projectSettings.domains.cold.localUrl} value={currentUrl} />
+          <InfoRow label={t.projectSettings.domains.cold.type} value={domainMeta.typeLabel} />
+          <InfoRow
+            label={t.projectSettings.domains.cold.status}
+            value={<StatusPill tone={domainMeta.statusTone}>{domainMeta.statusLabel}</StatusPill>}
+          />
         </SectionCard>
       ) : null}
 
@@ -2673,8 +2586,6 @@ function DiagnosablePill({
 function DomainOverviewCard({
   domain,
   menuActions = [],
-  sslActionBusy = false,
-  sslActionLabel,
   onVerify,
   verifying = false,
   verifyHint,
@@ -2688,11 +2599,6 @@ function DomainOverviewCard({
   /** Secondary actions (edit, renew, …) collapsed into a ⋯ menu. Visit is a
    *  plain icon; Verify is a direct inline button below, not a menu item. */
   menuActions?: MenuAction[];
-  /** An SSL action (renew / recheck) is running for this row. The action lives in
-   *  the ⋯ menu, which closes on click, so the feedback has to surface here. */
-  sslActionBusy?: boolean;
-  /** Label for the in-flight SSL action ("Renewing…" / "Rechecking…"). */
-  sslActionLabel?: string;
   onVerify?: () => void;
   verifying?: boolean;
   /** Message naming the DNS record that still isn't resolving after a fail. */
@@ -2806,16 +2712,6 @@ function DomainOverviewCard({
             />
           }
         />
-        {/* SSL action feedback. The renew/recheck triggers live in the ⋯ menu,
-            which unmounts the moment it's clicked — so without this the operator
-            gets no signal for the seconds the request takes. Sits next to the SSL
-            pill it's acting on; the completion toast still fires as before. */}
-        {sslActionBusy ? (
-          <div className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-[12px] text-foreground">
-            <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
-            <span>{sslActionLabel}</span>
-          </div>
-        ) : null}
         {/* The actual reason, in place. Inline rather than a separate dialog so it
             sits next to the pill that has the problem and stays open while the
             operator fixes DNS and re-checks. */}

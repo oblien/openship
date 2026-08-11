@@ -13,11 +13,6 @@ interface DeploymentSnapshotLike {
  * host.
  *
  * Falls back to env.SERVER_IP when no serverId is supplied.
- *
- * Returns `sshHost` RAW. For the local "This Server" row that field is
- * DISPLAY-only (`SERVER_IP || HOST_DOMAIN || "127.0.0.1"`), so every caller that
- * hands the result to something else — a container's env, DNS guidance, an edge
- * target — must reject loopback itself via {@link isLoopbackHost}.
  */
 async function resolveSnapshotServerHost(
   organizationId: string,
@@ -56,21 +51,8 @@ export async function resolveProjectServerHost(project?: Project): Promise<strin
   return resolveSnapshotServerHost(project.organizationId, snapshot);
 }
 
-/**
- * A bare IPv4/IPv6 address, as opposed to a name that needs resolving. Lives here
- * (the lower-level module) because `edge-target` imports from this file, so the
- * shared predicate can't live there without a cycle.
- *
- * Accepts a bracketed IPv6 literal because `new URL(...).hostname` returns one —
- * the caller below reads exactly that, and an unbracketed-only check answered
- * "not an IP" for every IPv6 public URL.
- */
-export function isIpLiteral(value: string): boolean {
-  let s = value.trim();
-  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(s)) return true;
-  const bracketed = s.match(/^\[([^\]]*)\]$/);
-  if (bracketed) s = bracketed[1]!;
-  return s.includes(":") && /^[0-9a-f:]+$/i.test(s);
+function isIpLiteral(s: string): boolean {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(s) || (s.includes(":") && /^[0-9a-f:]+$/i.test(s));
 }
 
 /**

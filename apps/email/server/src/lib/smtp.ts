@@ -37,11 +37,6 @@ export async function sendMail(
     host: auth.host,
     port: auth.port,
     secure: auth.port === 465,
-    // Non-465 submission is STARTTLS, and nodemailer's default is to UPGRADE
-    // opportunistically — so a host that doesn't advertise STARTTLS (or a
-    // downgrade in front of it) gets the mailbox password in cleartext. Every
-    // real submission host supports it; refusing to send is the right failure.
-    requireTLS: auth.port !== 465,
     auth: { user: auth.user, pass: auth.pass },
   });
 

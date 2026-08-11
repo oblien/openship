@@ -163,31 +163,12 @@
       "pruned": "ピン留めできません — アーティファクトはすでにプルーニング済みです"
     },
     "deleteDeployment": "デプロイを削除",
+    "confirmRollback": "このバージョンに戻しますか？\n\n復元されるのはアプリケーションコードのみです。データベースとボリュームのデータは変更されません。",
     "rollbackFailed": "ロールバックに失敗しました",
     "pinFailed": "デプロイのピン留めに失敗しました",
     "unpinFailed": "デプロイのピン留め解除に失敗しました",
     "rollbackModeInstant": "即時復元 — このバージョンの保持イメージを再利用し、再ビルドしません。",
     "rollbackModeRebuild": "再ビルド — このバージョンのイメージはホストに残っていないため、コミットを再ビルドします。",
     "rollbackModeMixed": "ほぼ即時 — {count} 個のサービスはイメージが無いため再ビルドされます。"
-  },
-  "rollbackConfirm": {
-    "title": "このバージョンに戻しますか？",
-    "dataUnchanged": "復元されるのはアプリケーションコードのみです。データベースとボリュームのデータは変更されません。",
-    "envHeading": "環境変数",
-    "envSummaryOverlay": "{count} 個の変数が変わります — このリリースの値が現在の値に上書き適用されます。",
-    "envSummaryReplace": "{count} 個の変数が変わります — このリリースで記録された環境がそのまま使われます。",
-    "envNoChanges": "変更される環境変数はありません。",
-    "envUnchanged": "既存のコンテナは再作成ではなく再起動されるため、環境は変わりません。",
-    "envNoValues": "値はここには表示されません。",
-    "envTruncated": "{total} 件中 {shown} 件を表示。",
-    "dirFrozenWins": "このリリースの値に戻ります",
-    "dirRemovedSince": "復活します — このリリース以降に削除",
-    "dirAddedSinceKept": "現在の値を維持 — このリリース以降に追加",
-    "dirAddedSinceDropped": "削除されます — このリリース以降に追加",
-    "scopeAmbiguous": "サービス単位の情報なしで記録されているため、1 つの値がすべてのサービスに適用されます",
-    "untouchedHeading": "このリリース以降に追加されたサービス",
-    "untouchedNote": "これらは稼働したままで、変更されません: {names}",
-    "confirm": "ロールバック",
-    "cancel": "キャンセル"
   }
 }

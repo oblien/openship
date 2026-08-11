@@ -18,14 +18,9 @@
  * since. Every consumer treats a missing image as "build it normally".
  */
 
-import { classNeedsGitSource } from "@repo/core";
-import { snapshotToClass, type SnapshotClassInput } from "./deployment-class";
-
 /** Structural view of the fields this module reads. `DeploymentConfigSnapshot`
- *  satisfies it — kept structural so there's no import cycle with build.service.
- *  The source-axis fields (repoUrl/framework/localPath/…) feed `snapshotToClass`
- *  so the git-clone gate keys off SOURCE, not the build flag — see #538-A. */
-export interface PinnedArtifactSnapshot extends SnapshotClassInput {
+ *  satisfies it — kept structural so there's no import cycle with build.service. */
+export interface PinnedArtifactSnapshot {
   /** service NAME → image ref (compose / monorepo fan-out). */
   handoverImages?: Record<string, string>;
   /** Single-app equivalent: the whole release is this one image. */
@@ -37,6 +32,7 @@ export interface PinnedArtifactSnapshot extends SnapshotClassInput {
    * static equivalent of reusing a retained image.
    */
   handoverStaticDir?: string;
+  hasBuild?: boolean;
   composeServices?: Array<{
     name: string;
     enabled?: boolean;
@@ -119,13 +115,7 @@ export function snapshotNeedsGitSource(
         !pinnedImageForService(snapshot, s.name),
     );
   }
-  // #538-A: the clone decision is purely the SOURCE axis. A Dockerfile app has
-  // hasBuild=false (no buildpack commands) yet its source is a git repo it must
-  // still clone as build context — the old `hasBuild !== false` gate dropped its
-  // token. `source === "git"` is true iff there's a repo to fetch (non-empty
-  // repoUrl, not an upload/release), so a localPath/upload/image deploy stays
-  // git-free and a public repo still resolves anonymously downstream.
-  return classNeedsGitSource(snapshotToClass(snapshot)) && !pinnedAppImage(snapshot);
+  return snapshot.hasBuild !== false && !pinnedAppImage(snapshot);
 }
 
 /**

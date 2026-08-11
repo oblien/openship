@@ -44,21 +44,6 @@ const CAPS: ReadonlySet<DestinationCapability> = new Set<DestinationCapability>(
   "streamingGet",
 ]);
 
-/**
- * Idle ceiling for one artifact upload — silence, not wall clock, for the same
- * reason capture and restore bound on idle: an honest multi-hour artifact must
- * not be strangled, and a wedged one must not be forever.
- *
- * Must never be TIGHTER than the producer's own idle allowance (execStream's
- * 10-minute default). `put`'s body is the dump stream itself, so from here a
- * source that has gone quiet — pg_dump waiting on a lock, a cold-cache table
- * scan, a user's custom command — is indistinguishable from a dead destination.
- * A shorter bound here would silently override that budget and fail healthy
- * backups of large databases.
- */
-const UPLOAD_STALL_TIMEOUT_MS = 10 * 60 * 1000;
-const UPLOAD_STALL_PROBE_MS = 30 * 1000;
-
 interface ConnectionConfig {
   host: string;
   port: number;
@@ -227,47 +212,15 @@ class SftpDestinationImpl implements BackupDestination {
 
       await new Promise<void>((resolve, reject) => {
         const ws = sftp.createWriteStream(tmp);
-        let lastProgressAt = Date.now();
-        let settled = false;
-
-        let watchdog: ReturnType<typeof setInterval> | undefined;
-
-        const finish = (err?: Error) => {
-          if (settled) return;
-          settled = true;
-          if (watchdog) clearInterval(watchdog);
-          if (err) {
-            ws.destroy();
-            body.destroy();
-            reject(err);
-          } else {
-            resolve();
-          }
-        };
-
-        // A wedged upload used to hang the run — and the worker slot behind it —
-        // with no error and no close, leaving a `.uploading-*` temp file frozen at
-        // a fixed size (#516). This bound is deliberately cause-agnostic: it says
-        // nothing about WHY the bytes stopped, only that they did.
-        watchdog = setInterval(() => {
-          if (settled || Date.now() - lastProgressAt <= UPLOAD_STALL_TIMEOUT_MS) return;
-          finish(
-            new Error(
-              `SFTP upload stalled: no write progress for ${UPLOAD_STALL_TIMEOUT_MS / 1000}s ` +
-                `(wrote ${bytesWritten} bytes so far). Retry; if it recurs, check both ends — ` +
-                `whether the source is still producing bytes, and the destination's SFTP subsystem.`,
-            ),
-          );
-        }, UPLOAD_STALL_PROBE_MS);
-        (watchdog as { unref?: () => void }).unref?.();
-
-        ws.on("error", (err: Error) => finish(err));
-        ws.on("close", () => finish());
+        ws.on("error", reject);
+        ws.on("close", () => resolve());
         body.on("data", (chunk: Buffer) => {
           bytesWritten += chunk.byteLength;
-          lastProgressAt = Date.now();
         });
-        body.on("error", (err) => finish(err));
+        body.on("error", (err) => {
+          ws.destroy();
+          reject(err);
+        });
         body.pipe(ws);
       });
 

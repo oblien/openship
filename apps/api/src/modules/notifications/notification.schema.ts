@@ -18,7 +18,6 @@ const ChannelKind = Type.Union(
     Type.Literal("slack"),
     Type.Literal("discord"),
     Type.Literal("msteams"),
-    Type.Literal("telegram"),
   ],
   { description: "Channel delivery kind." },
 );
@@ -30,11 +29,6 @@ const ChannelConfig = Type.Object(
     hmacSecret: Type.Optional(Type.String({ description: "webhook: optional HMAC signing secret." })),
     webhookUrl: Type.Optional(Type.String({ description: "slack/discord/msteams: incoming webhook URL." })),
     channelName: Type.Optional(Type.String({ description: "slack: optional channel name." })),
-    botToken: Type.Optional(Type.String({ description: "telegram: BotFather bot token." })),
-    chatId: Type.Optional(Type.String({ description: "telegram: chat/group/channel id." })),
-    messageThreadId: Type.Optional(
-      Type.String({ description: "telegram: optional forum topic id." }),
-    ),
   },
   { additionalProperties: true, description: "Kind-dependent delivery config." },
 );

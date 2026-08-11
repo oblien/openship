@@ -112,64 +112,12 @@ export type RuntimeCapability =
    */
   | "inContainerExec"
   /**
-   * The in-container executor is genuinely CONFINED to the deployment — a command
-   * run through it cannot see or touch the host.
-   *
-   * Deliberately separate from "inContainerExec", which only promises "runs in the
-   * deployment's context". For Bare that context IS the host (`inContainerExecutor`
-   * returns the host executor, since a bare deployment is a host process), which is
-   * fine for the advisory port probe that capability was added for — and a privilege
-   * escalation for anything that runs an arbitrary command, because a project-tier
-   * grant would reach the whole machine.
-   *
-   * Any consumer running caller-supplied commands must gate on THIS, not on
-   * "inContainerExec". Omitted ⇒ not confined, so a new runtime fails closed.
-   */
-  | "isolatedExec"
-  /**
    * Runtime can report a container's RESTART HISTORY and health, not just a
    * point-in-time status — the readings the post-deploy stabilization watch
    * needs to tell "up" from "bouncing" (`sampleStability`). Docker implements
    * it; Cloud/Bare expose no restart counter, so their deploys skip the watch.
    */
-  | "stabilityProbe"
-  /**
-   * Runtime can push container lifecycle TRANSITIONS as they happen
-   * (`watchContainerEvents` — Docker's `/events`). This only ever *accelerates*
-   * a state read: the stream is edge-triggered, so a dropped connection or a
-   * daemon restart loses transitions forever, and a container that never
-   * changes (stuck in `created`, down before we connected) emits nothing at
-   * all. Consumers therefore keep polling and use an event as "read state now"
-   * — see modules/monitoring/container-events.ts. Docker implements it;
-   * Cloud/Bare have no event feed.
-   */
-  | "containerEvents";
-
-// ─── Events ──────────────────────────────────────────────────────────────────
-
-/** One container lifecycle transition, normalized away from Docker's wire shape. */
-export interface ContainerLifecycleEvent {
-  containerId: string;
-  /**
-   * Docker's `Action`, normalized. Both healthcheck edges are carried —
-   * `health_status: unhealthy` → "unhealthy", `health_status: healthy` →
-   * "healthy" — because a healthcheck recovery emits no other event: the
-   * container never stopped, so there is no `start` to notice it by.
-   * `health_status: starting` is dropped at the source.
-   */
-  action:
-    | "die"
-    | "oom"
-    | "kill"
-    | "stop"
-    | "restart"
-    | "start"
-    | "unhealthy"
-    | "healthy"
-    | "destroy";
-  /** Event time in whole seconds, as the daemon reported it. */
-  atSeconds: number;
-}
+  | "stabilityProbe";
 
 // ─── Interface ───────────────────────────────────────────────────────────────
 
@@ -262,27 +210,6 @@ export interface RuntimeAdapter {
    */
   sampleStability?(containerId: string): Promise<ContainerStabilitySample>;
 
-  /**
-   * Subscribe to container lifecycle transitions on this host, host-wide and
-   * label-agnostic (the consumer maps ids → projects itself). Returns a cleanup
-   * function, same convention as `streamRuntimeLogs`.
-   *
-   * The stream carries TRANSITIONS, never state — so it is an accelerator for a
-   * poll, not a replacement (see the `containerEvents` capability doc). The
-   * runtime deliberately does NOT reconnect on its own: only the caller knows
-   * whether the subscription is still wanted, and it must treat every
-   * (re)connect as a reason to re-read state anyway. Only present when
-   * `supports("containerEvents")`.
-   */
-  watchContainerEvents?(handlers: {
-    onEvent: (event: ContainerLifecycleEvent) => void;
-    /**
-     * The stream ended. `null` = clean EOF, otherwise the transport error.
-     * Fires at most once per subscription, and not at all after cleanup.
-     */
-    onClose: (err: Error | null) => void;
-  }): Promise<() => void>;
-
   /** Get runtime logs */
   getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]>;
 
@@ -334,7 +261,7 @@ export interface RuntimeAdapter {
    * touch. Best-effort + idempotent. Optional (docker only). */
   joinServiceGroupContainers?(
     slug: string,
-    members: Array<{ containerId: string; aliases: string[] }>,
+    members: Array<{ containerId: string; alias: string }>,
   ): Promise<void>;
 
   // ── Rollback primitives ──────────────────────────────────────────────
@@ -505,11 +432,6 @@ export interface MultiServiceDeployConfig {
   /** Extended compose fields (healthcheck, …). Docker honors them; runtimes
    *  that can't (cloud) warn-and-drop. See ComposeAdvanced in @repo/core. */
   advanced?: ComposeAdvanced;
-  /** Additional east-west DNS aliases resolving to this container ALONGSIDE the
-   *  default `serviceName` — e.g. an operator-chosen `service.advanced.alias`.
-   *  Every entry is a live name on the project network; loopback publish
-   *  unchanged. Already normalized (DNS-safe) by the caller. */
-  extraAliases?: string[];
   resources?: { cpuCores?: number; memoryMb?: number };
   publicPort?: number;
   publicSlug?: string;
@@ -523,23 +445,6 @@ export interface MultiServiceDeployConfig {
   /** Service names this service depends on (compose `depends_on`). Used for
    *  readiness ordering on runtimes with no native healthcheck. */
   dependsOn?: string[];
-  /**
-   * Namespaces this container SHARES instead of getting its own, already resolved
-   * to values Docker takes verbatim (`container:<id>`, `none`).
-   *
-   * Resolution happens in the API, not here: a compose `service:<name>` has to
-   * become the sibling's LIVE container id, and the deploy loop is the layer that
-   * knows which siblings came up in this deployment (and refuses the dependent
-   * when one didn't). The runtime's job is to apply these and suppress what they
-   * make impossible — see `deployServiceWorkload`. Absent = its own namespaces,
-   * which is every service that doesn't ask otherwise.
-   */
-  namespaces?: {
-    /** `HostConfig.NetworkMode`. Set ⇒ no port publish, no network join, no alias. */
-    network?: string;
-    /** `HostConfig.PidMode`. Costs the container nothing else. */
-    pid?: string;
-  };
 }
 
 export interface MultiServiceDeployResult {

@@ -16,13 +16,11 @@ import { DockerRuntime, type RuntimeAdapter } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
 import { platform } from "../../lib/controller-helpers";
 import {
-  disposeRuntime,
   resolveDeploymentRuntime,
   resolveDeploymentPlatform,
   type DeploymentMeta,
 } from "../../lib/deployment-runtime";
 import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
-import { computeCleanupKeepSet } from "./cleanup-keep-set";
 import { buildServiceRouteDomain } from "../../lib/routing-domains";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { resolveLiveServiceState, type LiveMatchKind } from "../services/live-state";
@@ -560,9 +558,6 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
     } catch {
       continue;
     }
-    // Only the runtime's KIND is read here (nothing is executed against it), so
-    // release the transport immediately rather than at the end of the loop.
-    disposeRuntime(runtime);
     if (runtime instanceof DockerRuntime) {
       selfHosted = true;
       networkSlugs.add(project.slug);
@@ -650,37 +645,13 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
   };
 }
 
-export interface DeploymentCleanupOpts {
-  /**
-   * Skip artifacts a LIVE or RETAINED release still needs (D3).
-   *
-   * Required, not optional: a compose service that didn't change carries its
-   * `containerId` / `imageRef` verbatim onto the next release's row, so every
-   * per-deployment teardown is one decision away from destroying another
-   * release's running container. A caller has to say which it wants.
-   *
-   * ON for delete / reject / build-cancel — those remove ONE release and the
-   * project keeps running. OFF only for a whole-project teardown, which is
-   * meant to remove everything (and builds its manifest elsewhere anyway).
-   */
-  protectRetained: boolean;
-  /**
-   * A release that must survive even if it isn't flagged active yet. Reject
-   * passes the predecessor it just asked to restore — that restore only
-   * ENQUEUES a deploy, so the active pointer can still name the deployment
-   * being rejected when this runs.
-   */
-  alsoProtectDeploymentId?: string | null;
-}
-
 /**
  * Collect resources for a single deployment.
- * Used by deleteDeployment(), rejectDeployment() and cancelBuildSession().
+ * Used by deployment.service.ts deleteDeployment().
  */
 export async function collectDeploymentManifest(
   dep: Deployment,
-  project: Project | null,
-  opts: DeploymentCleanupOpts,
+  _project: Project | null,
 ): Promise<CleanupManifest> {
   const resources: CleanupResource[] = [];
   const serviceRows = await repos.service.listByDeployment(dep.id).catch(() => []);
@@ -697,31 +668,6 @@ export async function collectDeploymentManifest(
     ),
   ];
 
-  // A project-less deployment has no retained releases to protect, so the keep
-  // set is empty by definition rather than unavailable.
-  const keep =
-    opts.protectRetained && project
-      ? await computeCleanupKeepSet(project, {
-          excludeDeploymentId: dep.id,
-          alsoProtectDeploymentId: opts.alsoProtectDeploymentId,
-        }).catch((err) => {
-          // Fail CLOSED: an unresolvable keep set must not license destroying a
-          // live release. Cleanup is retried by the image GC sweep; a deleted
-          // container is not.
-          console.error(`[CLEANUP] ${dep.id}: keep set failed, protecting everything:`, err);
-          return null;
-        })
-      : { images: new Set<string>(), containers: new Set<string>() };
-  const skip = (kind: "container" | "image", ref: string): boolean => {
-    if (!keep) return true;
-    const held = kind === "container" ? keep.containers : keep.images;
-    if (!held.has(ref)) return false;
-    console.log(
-      `[CLEANUP] ${dep.id}: keeping ${kind} ${ref.slice(0, 24)} — a live or retained release still references it`,
-    );
-    return true;
-  };
-
   // Resolve the runtime once. Anything below this point that depends on the
   // runtime (containers, images) only fires when the runtime is reachable.
   let runtime: RuntimeAdapter | null = null;
@@ -732,7 +678,6 @@ export async function collectDeploymentManifest(
   }
 
   for (const containerId of containerIds) {
-    if (skip("container", containerId)) continue;
     resources.push({
       type: "container",
       ref: containerId,
@@ -749,7 +694,6 @@ export async function collectDeploymentManifest(
     const pushImage = (ref: string | null | undefined, label: string) => {
       if (!ref || seenImages.has(ref)) return;
       seenImages.add(ref);
-      if (skip("image", ref)) return;
       resources.push({ type: "image", ref, label, runtime });
     };
     pushImage(dep.imageRef, `image ${(dep.imageRef ?? "").slice(0, 24)}`);
@@ -801,10 +745,6 @@ export async function executeCleanup(
   const concurrency = opts?.concurrency ?? DEFAULT_CONCURRENCY;
   const { routing } = platform();
   const result: CleanupResult = { total: manifest.resources.length, succeeded: 0, failed: [] };
-  // The manifest's resources CARRY their runtime — collection resolves one per
-  // deployment and hands it over for destruction here, so this is the first point
-  // at which the transports are finished with. See `disposeManifestRuntimes`.
-  try {
 
   // Process in bounded batches
   for (let i = 0; i < manifest.resources.length; i += concurrency) {
@@ -830,25 +770,6 @@ export async function executeCleanup(
   }
 
   return result;
-  } finally {
-    disposeManifestRuntimes(manifest);
-  }
-}
-
-/**
- * Release the transports a cleanup manifest is holding.
- *
- * Collection resolves ONE runtime per deployment and attaches it to every
- * resource it produced, so the same handle repeats — dedupe before disposing.
- * Exported because `executeCleanup` is not the only end of a manifest's life: the
- * force-orphan teardown records the resources for the GC sweep and returns
- * WITHOUT executing, which would otherwise strand one Docker-over-SSH bridge per
- * deployment on every enforced delete.
- */
-export function disposeManifestRuntimes(manifest: CleanupManifest): void {
-  for (const runtime of new Set(manifest.resources.map((r) => r.runtime))) {
-    disposeRuntime(runtime ?? undefined);
-  }
 }
 
 /** Destroy a single resource with one retry on failure. */

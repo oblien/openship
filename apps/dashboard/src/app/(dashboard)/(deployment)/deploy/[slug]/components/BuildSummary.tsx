@@ -48,7 +48,7 @@ const BuildSummary: React.FC = () => {
       icon: fw
         ? (
             <span className="flex size-3.5 items-center justify-center overflow-hidden rounded-sm [&>img]:h-full [&>img]:w-full [&>img]:object-contain">
-              {fw.icon("var(--foreground)")}
+              {fw.icon("hsl(var(--foreground))")}
             </span>
           )
         : <Container className="size-3 text-muted-foreground" />,
@@ -71,18 +71,11 @@ const BuildSummary: React.FC = () => {
   // the summary never goes quiet about the app's reachability.
   const noPublicRoute = !isServices && !!config.noPublicRoute;
   const endpointHosts = !isServices && !noPublicRoute
-    ? getPublicEndpointHosts(config.publicEndpoints, baseDomain)
+    ? getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName)
     : [];
-  // A config that names no host gets "—", not a host composed from the project
-  // name (which is neither what the deploy creates nor a real hostname). The row
-  // still renders, so the summary never goes quiet about reachability — but "—"
-  // says "nothing chosen" instead of advertising a URL that won't resolve.
-  // Explicit "None" stays reserved for the operator's own no-route choice.
   const domainDisplay = noPublicRoute
     ? t.deploy.domainSettings.routeNoneLabel
-    : isServices
-      ? null
-      : (endpointHosts[0] ?? "—");
+    : (endpointHosts[0] ?? null);
   const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
   return (
     <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 via-primary/3 to-transparent border border-primary/10 space-y-3">

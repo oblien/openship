@@ -287,16 +287,14 @@ interface HandshakeCtx {
   resumeToken: string;
 }
 
-export interface ConnState {
+interface ConnState {
   ctx: HandshakeCtx;
   sessionId: string | null;
   shell: ShellSession | null;
   ws: WSLike | null;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
-  /** True when this WebSocket connection has detached; stops its data pump and incoming messages. */
+  /** Guards the cleanup path so it can't run twice. */
   closed: boolean;
-  /** True when this connection's session has been fully ended (shell killed, audit row closed). */
-  ended: boolean;
   /**
    * True when the client sent a `{type:"close"}` control frame, meaning
    * "I'm permanently closing this shell — do NOT park it". The onClose
@@ -320,7 +318,6 @@ function buildHandlers(ctx: HandshakeCtx) {
     ws: null,
     heartbeatTimer: null,
     closed: false,
-    ended: false,
     userTerminated: false,
   };
 
@@ -369,24 +366,12 @@ function buildHandlers(ctx: HandshakeCtx) {
         state.sessionId = existing.sessionId;
         attachWs(existing.sessionId, dataPump);
 
-        // Re-bind the timeout hook to this fresh WS/connection state so a
-        // later idle or hard-cap timeout closes the session from the live
-        // connection, not the stale parked one. Re-arm the idle timer so a
-        // resume does not inherit an expiry from the original WS.
-        existing.onTimeout = (_sid, reason) => {
-          sendControl(ws, { type: "error", code: reason as ErrorCode, message: reason });
-          safeWsClose(ws, 1011, reason);
-          void teardown(state, reason, null, /* alreadyUnregistered */ true, /* forceClose */ true);
-        };
-        touchSession(existing.sessionId);
-
         // Wire up shell-exit / heartbeat from the resumed channel.
         // (Note: existing.shell.onClose subscribers from the PREVIOUS
         // WS attachment are stale - they reference a dead `ws`. We
         // can't unsubscribe from ssh2's channel events, but those
-        // closures are guarded by `state.ended` / `state.closed` and
-        // `alreadyUnregistered`, so they cannot double-close the audit
-        // row. The new onClose subscriber below is the live one.)
+        // closures' `state.closed = true` guard makes their writes
+        // no-ops. The new onClose subscriber below is the live one.)
         existing.shell.onClose((code: number | null, signal?: string) => {
           sendControl(ws, { type: "exit", code, signal });
           safeWsClose(ws, 1000, "remote_exit");
@@ -589,29 +574,16 @@ function writeStdin(state: ConnState, buf: Buffer): void {
  *                       retain are preserved. The session manager's
  *                       idle + hard-cap timers continue running.
  *
- * `state.closed` tracks whether this WebSocket connection has detached.
- * `state.ended` tracks whether the audit row has been finalized for this
- * connection. A parked session is `closed` but not `ended`, so an idle/cap
- * timeout that fires later (which passes `alreadyUnregistered=true`) can
- * still close the DB row. Stale handlers from a previous WS (e.g. after a
- * resume) are rejected by the `state.closed && !alreadyUnregistered` guard.
+ * Idempotent in both modes via the `state.closed` flag.
  */
-export async function teardown(
+async function teardown(
   state: ConnState,
   reason: TerminalExitReason,
   exitCode: number | null,
   alreadyUnregistered = false,
   forceClose = true,
 ) {
-  // Full teardown already completed for this connection.
-  if (state.ended) return;
-
-  // The WS side of this connection is already gone and this is not the
-  // timeout/unregister path that intentionally runs after the WS detached.
-  // This deflects stale shell.onClose callbacks from a previous WS after a
-  // resume, while still allowing the idle/cap timeout to finalize the row.
-  if (state.closed && !alreadyUnregistered) return;
-
+  if (state.closed) return;
   state.closed = true;
 
   if (state.heartbeatTimer) {
@@ -624,10 +596,6 @@ export async function teardown(
     parkSession(state.sessionId);
     return;
   }
-
-  // Force-close: this session is ending. Mark it now so any re-entrant
-  // shell.onClose / onClose handler for this same connection no-ops.
-  state.ended = true;
 
   if (state.shell) {
     safeShellClose(state.shell);

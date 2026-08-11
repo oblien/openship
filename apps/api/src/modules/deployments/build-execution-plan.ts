@@ -12,12 +12,8 @@
  *      as the old inline `instanceof` checks were.
  */
 
-import type { WorkloadType } from "@repo/core";
-
 export type BuildMode = "static-sandbox" | "static-bare" | "normal";
-/** `worker` = a portless long-running container: built normally, but served with
- *  no doc-root and no route (issue #538-B). */
-export type DeployMode = "static-edge" | "static-file-serve" | "server" | "worker";
+export type DeployMode = "static-edge" | "static-file-serve" | "server";
 export type RuntimeModeValue = "bare" | "docker";
 
 export interface BuildRuntimeModes {
@@ -41,25 +37,23 @@ export interface DeployRouting {
  * The runtime-mode decision, made BEFORE platform resolution. Encodes the two
  * historical "flips" as data:
  *   - services → Docker (containers can't run bare) for build AND serve.
- *   - a worker → Docker for build AND serve: a portless supervised container has
- *     no bare/static form (issue #538-B).
  *   - a static app on a server / self-hosted host → BUILD in a Docker sandbox, but
  *     its lifecycle identity stays BARE (files served by the edge; a persisted
  *     "docker" would make rollback/purge 404-no-op on the release dir and leak it).
  * Cloud static and Docker-less desktop-local static are left to their own runtime.
  */
 export function resolveBuildRuntimeModes(input: {
-  workload: WorkloadType;
+  hasServer: boolean;
   serverId: string | null | undefined;
   baseTarget: "desktop" | "selfhosted" | "cloud";
   effectiveTarget: "local" | "server" | "cloud";
   willRunServices: boolean;
 }): BuildRuntimeModes {
-  if (input.willRunServices || input.workload === "worker") {
+  if (input.willRunServices) {
     return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
   }
   if (
-    input.workload === "static" &&
+    !input.hasServer &&
     input.effectiveTarget !== "cloud" &&
     (!!input.serverId || input.baseTarget === "selfhosted")
   ) {
@@ -76,17 +70,12 @@ export function resolveBuildRuntimeModes(input: {
  * (cloud) vs static-file-serve vs server.
  */
 export function resolveDeployRouting(input: {
-  workload: WorkloadType;
+  hasServer: boolean;
   runtimeName: string; // "bare" | "docker" | "cloud"
   outputDirectory: string;
 }): DeployRouting {
-  if (input.workload === "web") {
+  if (input.hasServer) {
     return { buildMode: "normal", deployMode: "server", staticServeOutputDir: "" };
-  }
-  // A worker builds its image normally but is served with no doc-root and no
-  // route — it just runs as a supervised container (issue #538-B).
-  if (input.workload === "worker") {
-    return { buildMode: "normal", deployMode: "worker", staticServeOutputDir: "" };
   }
   // Static, cloud target → Oblien Pages (executeStaticEdgeDeploy); build via CloudRuntime.
   if (input.runtimeName === "cloud") {

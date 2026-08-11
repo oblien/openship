@@ -3,7 +3,6 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { NginxProvider } from "../src/infra/nginx";
 import { makeTestCert } from "../src/system/proxy/test-certs";
 import type { CommandExecutor } from "../src/types";
-import type { RootChecked } from "../src/system/privilege";
 
 // installCert is the LAST gate before a cert reaches disk, and every path that
 // puts one there funnels through it: operator upload, migration carry, cert reuse.
@@ -49,7 +48,7 @@ function provider(files: Record<string, string> = {}) {
     rm: vi.fn(async (p: string) => {
       delete files[p];
     }),
-  } as unknown as RootChecked;
+  } as unknown as CommandExecutor;
 
   const nginx = new NginxProvider({
     paths: { sitesDir: "/etc/openresty/sites-enabled", binary: "openresty", confPath: "/x" } as never,

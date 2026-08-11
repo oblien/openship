@@ -1,5 +1,5 @@
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { commandToArgv, generateId, mergeAdvanced, normalizeCustomHostname, type ComposeAdvanced } from "@repo/core";
+import { commandToArgv, generateId, normalizeCustomHostname, type ComposeAdvanced } from "@repo/core";
 import type { Database } from "../client";
 import { service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
@@ -82,67 +82,6 @@ const canonicalSpec = (s: ComposeServiceSpec): string =>
 /** Compose-field equality (ignores routing + ordering-insensitive env). */
 export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) =>
   canonicalSpec(a) === canonicalSpec(b);
-
-/**
- * The compose-owned fields as an UPDATE payload, with `advanced` MERGED onto the
- * stored blob rather than replacing it.
- *
- * `toComposeSpec` coerces a missing `advanced` to `{}`, which is right for the
- * drift comparison it exists for — a stored `{}` and an absent one have to
- * canonicalize identically — and destructive as a write: compose YAML has no
- * syntax for a readiness gate, generated config files, resource caps or an
- * east-west alias, so `{}` from the parser silently erased whatever the operator
- * or an app template had set. Every deploy carrying compose services did this.
- *
- * Deliberately NOT used by reconcileFromCompose: there, applying `theirs`
- * wholesale is the point — a key the operator deleted from the compose file
- * SHOULD disappear, and the 3-way merge against `importedSpec` is what decides
- * whether that is safe.
- */
-function composeWritePatch(
-  parsed: ParsedComposeService,
-  stored?: { advanced?: ComposeAdvanced | null } | null,
-  /** `parsed` is a full re-read of the compose FILE, so an absent compose-owned
-   *  key means the author deleted it. See {@link COMPOSE_OWNED_ADVANCED_KEYS}. */
-  composeAuthoritative = false,
-): ComposeServiceSpec {
-  const advanced = mergeAdvanced(stored?.advanced ?? null, parsed.advanced);
-  return {
-    ...toComposeSpec(parsed),
-    advanced: composeAuthoritative ? clearComposeOwnedKeys(advanced, parsed.advanced) : advanced,
-  };
-}
-
-/**
- * `advanced` keys that compose YAML can express, and therefore OWNS.
- *
- * The merge above exists for keys compose has no syntax for — a readiness gate,
- * generated config files, an east-west alias — where an absent key means "the
- * parser had nothing to say", not "the operator removed it". Shared namespaces
- * are the opposite: nothing but the compose file sets them, so an absent key
- * means DELETED, and merging would keep pinning the container into a namespace
- * the file no longer asks for (or into a service that no longer exists, which
- * the deploy then refuses).
- *
- * Only honored when the caller says its input IS the file. Half of
- * syncFromCompose's callers pass a release's frozen snapshot rather than a fresh
- * parse — and that snapshot travels through a wire schema with no `advanced` at
- * all (BuildServiceInput), so treating its silence as a deletion would wipe the
- * namespace on the next deploy. Removal on the git path already propagates the
- * right way, through `reconcileFromCompose` applying `theirs` wholesale.
- */
-const COMPOSE_OWNED_ADVANCED_KEYS = ["networkMode", "pidMode"] as const;
-
-function clearComposeOwnedKeys(
-  merged: ComposeAdvanced,
-  parsed: ComposeAdvanced | undefined,
-): ComposeAdvanced {
-  const out = { ...merged };
-  for (const key of COMPOSE_OWNED_ADVANCED_KEYS) {
-    if (parsed?.[key] === undefined) delete out[key];
-  }
-  return out;
-}
 
 /** Per-field diff of two specs — powers the drift UI. */
 export function composeSpecDiff(base: ComposeServiceSpec, next: ComposeServiceSpec) {
@@ -237,12 +176,7 @@ export function normalizeRoutingFields(input: {
   customDomain?: string | null;
   domainType?: string | null;
   /** Multi-route array. When present + non-empty it WINS: entry[0] mirrors the
-   *  scalar columns below, and the full set is stored on `publicEndpoints`.
-   *
-   *  This function does NOT merge: a caller holding a stored row is responsible
-   *  for folding a scalar-only patch into the row's route set BEFORE calling
-   *  (apps/api `mergeServiceRoutingPatch`), because array-wins would otherwise
-   *  silently discard the scalars. */
+   *  scalar columns below, and the full set is stored on `publicEndpoints`. */
   publicEndpoints?: PublicEndpointInputLike[] | null;
 }): {
   exposed: boolean;
@@ -257,26 +191,13 @@ export function normalizeRoutingFields(input: {
     return t || null;
   };
 
-  const endpoints = normalizeServicePublicEndpoints(input.publicEndpoints);
-
-  // `exposed` is a GATE, not part of route identity. Unexposing PAUSES routing —
-  // every route reader is gated on it (resolveServicePublicEndpoints returns [],
-  // buildServiceRouteDomains returns [], the deploy's publicPort/publicSlug/
-  // customDomain resolvers all bail) — so a paused row's config is inert and does
-  // NOT need to be erased to stop serving. It used to be erased, which made an
-  // expose toggle silently delete a multi-route set (and orphan its verified
-  // domain rows), and made a drift reconcile that re-normalizes a paused row's own
-  // routing wipe it. An explicit `exposed: false` is still AUTHORITATIVE over a
-  // non-empty array: that array previously flipped the row back to exposed:true,
-  // so it could never be paused at all.
-  const exposed = input.exposed ?? endpoints.length > 0;
-
   // Multi-route wins. The primary (first) endpoint mirrors the scalar columns
   // so every single-route reader keeps working against the primary.
+  const endpoints = normalizeServicePublicEndpoints(input.publicEndpoints);
   if (endpoints.length > 0) {
     const primary = endpoints[0];
     return {
-      exposed,
+      exposed: true,
       exposedPort: String(primary.port),
       domain: primary.domainType === "free" ? primary.domain ?? null : null,
       customDomain: primary.domainType === "custom" ? primary.customDomain ?? null : null,
@@ -285,11 +206,16 @@ export function normalizeRoutingFields(input: {
     };
   }
 
+  const exposed = input.exposed ?? false;
+  if (!exposed) {
+    return { exposed: false, exposedPort: null, domain: null, customDomain: null, domainType: "free", publicEndpoints: [] };
+  }
+
   const domainType = input.domainType === "custom" ? "custom" : "free";
   // Single-route (scalar) path — publicEndpoints stays [] and the primary route
   // is synthesized from these columns at read time (resolveServicePublicEndpoints).
   return {
-    exposed,
+    exposed: true,
     exposedPort: trimOrNull(input.exposedPort),
     domain: domainType === "free" ? trimOrNull(input.domain) : null,
     customDomain: domainType === "custom" ? normalizeCustomHostname(input.customDomain ?? "") || null : null,
@@ -308,14 +234,6 @@ export function createServiceRepo(db: Database) {
       return db.query.service.findFirst({
         where: eq(service.id, id),
       });
-    },
-
-    /** Batch id → display name, for naming services in list responses. */
-    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
-      if (ids.length === 0) return [];
-      return db.select({ id: service.id, name: service.name })
-        .from(service)
-        .where(inArray(service.id, ids));
     },
 
     async findByName(projectId: string, name: string) {
@@ -495,33 +413,8 @@ export function createServiceRepo(db: Database) {
      * Also preserves the user's explicit `enabled` choice on updates -
      * compose's YAML doesn't carry an enabled flag, so re-syncing a row
      * the user disabled in the dashboard must keep it disabled.
-     *
-     * `removeMissing` (default true) controls whether compose rows absent from
-     * `parsed` are hard-deleted. Deploy-time callers pass FALSE, because the
-     * list they hand over is not authoritative about what should exist:
-     *
-     *   - On a ROLLBACK it is the TARGET release's frozen list, so a service
-     *     added after that release would be deleted - and `serviceDeployment
-     *     .serviceId` is ON DELETE CASCADE, so its entire deploy history across
-     *     every release goes with it while its container keeps running.
-     *   - On ANY compose deploy, `deployComposeServices` builds its de-listed
-     *     reaper input from the ACTIVE deployment's `service_deployment` rows,
-     *     and this sync runs first - so the cascade empties the reaper's input
-     *     and the removed service's container is orphaned instead of stopped.
-     *
-     * Removal keeps its home in the explicit compose-reconcile path
-     * (`reconcileFromCompose` below), which models a removal policy properly by
-     * 3-way merging against `importedSpec` before deleting anything.
      */
-    async syncFromCompose(
-      projectId: string,
-      parsed: ParsedComposeService[],
-      opts?: { removeMissing?: boolean; composeAuthoritative?: boolean },
-    ) {
-      const removeMissing = opts?.removeMissing ?? true;
-      // Default false: only a caller that just re-read the compose file may treat
-      // an absent compose-owned key as a deletion (see COMPOSE_OWNED_ADVANCED_KEYS).
-      const composeAuthoritative = opts?.composeAuthoritative ?? false;
+    async syncFromCompose(projectId: string, parsed: ParsedComposeService[]) {
       // Defensive filter - even though every caller should already strip
       // non-compose entries before reaching here, an explicit kind="monorepo"
       // would otherwise insert a ghost compose row with the same name as the
@@ -551,17 +444,14 @@ export function createServiceRepo(db: Database) {
         if (ex) {
           // Update existing - preserve the operator's `enabled` choice AND their
           // `sortOrder` (dashboard reordering); the compose YAML carries neither.
-          // One computed patch for both the write and the echoed row, or the
-          // returned Service would disagree with what was stored.
-          const patch = composeWritePatch(p, ex, composeAuthoritative);
           await this.update(ex.id, {
-            ...patch,
+            ...toComposeSpec(p),
             ...routing,
             // enabled + sortOrder left as-is (already on ex)
           });
           results.push({
             ...ex,
-            ...patch,
+            ...toComposeSpec(p),
             ...routing,
             updatedAt: new Date(),
           } as Service);
@@ -583,11 +473,9 @@ export function createServiceRepo(db: Database) {
       // Remove stale compose services (not in the incoming compose YAML).
       // Monorepo sub-apps live in a different kind and were filtered out
       // above; they survive untouched.
-      if (removeMissing) {
-        for (const ex of composeExisting) {
-          if (!incomingNames.has(ex.name)) {
-            await this.remove(ex.id);
-          }
+      for (const ex of composeExisting) {
+        if (!incomingNames.has(ex.name)) {
+          await this.remove(ex.id);
         }
       }
 
@@ -668,18 +556,12 @@ export function createServiceRepo(db: Database) {
 
         // Repo changed, user has NOT edited → auto-apply theirs, advance baseline.
         if (composeSpecsEqual(ours, base)) {
-          // Re-normalizing the row's OWN routing must round-trip it, exposed or
-          // PAUSED. Omitting `publicEndpoints` dropped every secondary route on a
-          // multi-route row (an app template's second port) on the next redeploy,
-          // and an unexposed row lost its whole route config — the docstring's
-          // "never touches routing" only held for single-route exposed rows.
           const routing = normalizeRoutingFields({
             exposed: ex.exposed,
             exposedPort: ex.exposedPort,
             domain: ex.domain,
             customDomain: ex.customDomain,
             domainType: ex.domainType,
-            publicEndpoints: ex.publicEndpoints,
           });
           await this.update(ex.id, {
             ...theirs,

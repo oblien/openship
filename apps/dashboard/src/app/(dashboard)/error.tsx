@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { RefreshCw, LayoutGrid } from "lucide-react";
 import { ErrorView } from "@/components/error-view";
-import { useBrandName, useI18n } from "@/components/i18n-provider";
+import { useI18n } from "@/components/i18n-provider";
 
 /**
  * Error boundary for the whole (dashboard) segment. Catches render errors in any
@@ -23,7 +23,6 @@ export default function DashboardError({
   reset: () => void;
 }) {
   const { t } = useI18n();
-  const brand = useBrandName();
   const c = t.chrome;
 
   useEffect(() => {
@@ -34,7 +33,7 @@ export default function DashboardError({
     <div className="flex min-h-[70vh] items-center justify-center px-6 py-10">
       <ErrorView
         variant="crash"
-        brand={brand}
+        brand={t.brand}
         title={c.error.title}
         description={c.error.description}
         code={error?.digest}

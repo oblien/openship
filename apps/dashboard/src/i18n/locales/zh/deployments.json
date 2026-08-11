@@ -163,31 +163,12 @@
       "pruned": "无法固定 — 产物已被清理"
     },
     "deleteDeployment": "删除部署",
+    "confirmRollback": "回滚到此版本？\n\n仅恢复应用代码。数据库与卷数据不会更改。",
     "rollbackFailed": "回滚失败",
     "pinFailed": "固定部署失败",
     "unpinFailed": "取消固定部署失败",
     "rollbackModeInstant": "即时恢复 — 复用该版本保留的镜像，无需重新构建。",
     "rollbackModeRebuild": "重新构建 — 该版本的镜像已不在主机上，将重新构建其提交。",
     "rollbackModeMixed": "基本即时 — {count} 个服务的镜像已丢失，将重新构建。"
-  },
-  "rollbackConfirm": {
-    "title": "回滚到此版本？",
-    "dataUnchanged": "仅恢复应用代码。数据库与卷数据不会更改。",
-    "envHeading": "环境变量",
-    "envSummaryOverlay": "{count} 个变量将改变 — 此版本的值会覆盖当前值。",
-    "envSummaryReplace": "{count} 个变量将改变 — 将完全使用此版本记录的环境。",
-    "envNoChanges": "没有环境变量会改变。",
-    "envUnchanged": "现有容器只是重启而非重建，其环境不会改变。",
-    "envNoValues": "这里从不显示变量值。",
-    "envTruncated": "显示 {total} 项中的 {shown} 项。",
-    "dirFrozenWins": "恢复为此版本的值",
-    "dirRemovedSince": "将恢复 — 此版本之后被删除",
-    "dirAddedSinceKept": "保持当前值 — 此版本之后新增",
-    "dirAddedSinceDropped": "将被移除 — 此版本之后新增",
-    "scopeAmbiguous": "记录时没有服务范围，因此同一个值会应用到所有服务",
-    "untouchedHeading": "此版本之后新增的服务",
-    "untouchedNote": "它们会继续运行，不会被改动：{names}",
-    "confirm": "回滚",
-    "cancel": "取消"
   }
 }

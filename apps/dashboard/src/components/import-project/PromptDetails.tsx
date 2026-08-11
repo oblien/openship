@@ -103,7 +103,7 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
             <p className="text-xs text-muted-foreground">
               {interpolate(dp.promptDetails.sites.lead, { count: String(sites.length) })}
             </p>
-            <div className="max-h-72 overflow-y-auto rounded-xl border border-border bg-muted/40 divide-y divide-border">
+            <div className="rounded-xl border border-border bg-muted/40 divide-y divide-border">
               {sites.map((site, i) => (
                 <div key={`${site.serverNames.join(",")}-${i}`} className="flex items-center gap-2 p-3 min-w-0">
                   <div className="min-w-0 flex-1">
@@ -138,7 +138,7 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
               <AlertTriangle className="size-3.5" />
               {dp.promptDetails.sites.warningsTitle}
             </div>
-            <ul className="max-h-40 space-y-1 overflow-y-auto">
+            <ul className="space-y-1">
               {warnings.map((w, i) => (
                 <li key={i} className="text-xs text-muted-foreground break-words">
                   {w}

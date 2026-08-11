@@ -32,7 +32,6 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
   const lastEventIdRef = useRef<number | undefined>(undefined);
   const isActiveRef = useRef<boolean>(false);
   const reconnectAttemptsRef = useRef<number>(0);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
    * Connect to a new build or attach to existing one
@@ -87,13 +86,11 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
             if (error.message?.includes('Token already in use')) {
               console.log('[BuildConnection] Token in use, switching to attach mode');
               showToast('Build already in progress, attaching...', 'success', 'Reconnecting');
-              if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-                reconnectTimerRef.current = setTimeout(() => reconnect(), 1000);
-              }
+              setTimeout(() => reconnect(), 1000);
             } else {
               options.onError?.(error);
               if (isActiveRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-                reconnectTimerRef.current = setTimeout(() => reconnect(), 2000);
+                setTimeout(() => reconnect(), 2000);
               }
             }
           },
@@ -154,7 +151,7 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
         console.log('[BuildConnection] Token in use, switching to attach mode');
         showToast('Build already in progress, attaching...', 'success', 'Reconnecting');
         if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-          reconnectTimerRef.current = setTimeout(() => reconnect(), 1000);
+          setTimeout(() => reconnect(), 1000);
         }
       } else {
         options.onError?.(err);
@@ -283,7 +280,7 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
       
       // Only retry if still active and haven't exceeded attempts
       if (isActiveRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-        reconnectTimerRef.current = setTimeout(() => reconnect(), 2000);
+        setTimeout(() => reconnect(), 2000);
       } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
         console.error('[BuildConnection] Max reconnection attempts reached');
         isActiveRef.current = false;
@@ -312,11 +309,6 @@ export const useBuildConnection = (options: UseBuildConnectionOptions) => {
   const disconnect = useCallback(() => {
     console.log('[BuildConnection] Disconnecting...');
     isActiveRef.current = false;
-    // Clear any pending reconnect timer so it can't fire after unmount
-    if (reconnectTimerRef.current !== null) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
     buildTokenRef.current = null;
     buildOptionsRef.current = null;
     lastEventIdRef.current = undefined;

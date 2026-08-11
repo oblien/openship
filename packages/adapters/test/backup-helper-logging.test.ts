@@ -26,19 +26,12 @@ describe("backup helper container", () => {
   });
 
   it("keeps the log config on the same HostConfig that binds the source", () => {
-    // Anchored to the statement that immediately follows the literal, so the
-    // slice stays inside streamPath — `const helper =` moved into the shared
-    // withHelper/handOffHelper wrappers and would now widen this to two methods.
     const hostConfig = executorSource.slice(
       executorSource.indexOf("const hostConfig"),
-      executorSource.indexOf("return this.handOffHelper("),
+      executorSource.indexOf("const helper ="),
     );
     expect(hostConfig).toContain(":/mnt:ro");
-    // AutoRemove must stay OFF: the daemon reaping the helper at exit races
-    // container.wait() (404 on the exit status) and tears down the attach socket
-    // while bytes are still buffered (truncated tar). demuxContainerStream owns
-    // the removal instead, once the archive is fully demuxed.
-    expect(hostConfig).toContain("AutoRemove: false");
+    expect(hostConfig).toContain("AutoRemove: true");
     expect(hostConfig).toMatch(/LogConfig/);
   });
 });

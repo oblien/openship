@@ -110,55 +110,6 @@ const POSITIVE_STACK_CASES: StackCase[] = [
     packageJson: { dependencies: { "@remix-run/react": "^2.0.0" } },
     expectedStack: "remix",
   },
-  // ── #400: TanStack Start is Vite-based; must detect as fullstack tanstack-start
-  //    (not bare vite SPA) so defaults use .output server start, not empty start.
-  {
-    name: "TanStack Start - vite.config.ts + @tanstack/react-start → tanstack-start, not vite (#400)",
-    files: files("package.json", "vite.config.ts", "src/", "app/"),
-    packageJson: {
-      dependencies: {
-        "@tanstack/react-start": "^1.0.0",
-        react: "^19.0.0",
-        vite: "^6.0.0",
-      },
-      // build script present → pm-prefixed build; no start script → registry default
-      scripts: { build: "vite build" },
-    },
-    expectedStack: "tanstack-start",
-    expectedCategory: "fullstack",
-    expectedProjectType: "app",
-    expectedStartCommand: "node .output/server/index.mjs",
-  },
-  {
-    name: "TanStack Start - app.config.ts + @tanstack/start dep (#400)",
-    files: files("package.json", "app.config.ts"),
-    packageJson: {
-      dependencies: { "@tanstack/start": "^1.0.0" },
-    },
-    expectedStack: "tanstack-start",
-    expectedCategory: "fullstack",
-    expectedStartCommand: "node .output/server/index.mjs",
-  },
-  {
-    name: "TanStack Start - rsbuild.config.ts + @tanstack/react-start dep (#400)",
-    files: files("package.json", "rsbuild.config.ts", "src/"),
-    packageJson: {
-      dependencies: { "@tanstack/react-start": "^1.0.0", "@rsbuild/core": "^1.0.0" },
-    },
-    expectedStack: "tanstack-start",
-    expectedCategory: "fullstack",
-    expectedStartCommand: "node .output/server/index.mjs",
-  },
-  {
-    name: "TanStack Start - pnpm lockfile uses pnpm build default (#400)",
-    files: files("package.json", "vite.config.ts", "pnpm-lock.yaml"),
-    packageJson: {
-      dependencies: { "@tanstack/react-start": "^1.0.0", vite: "^6.0.0" },
-      scripts: { build: "vite build" },
-    },
-    expectedStack: "tanstack-start",
-    expectedStartCommand: "node .output/server/index.mjs",
-  },
   {
     name: "Angular - angular.json + @angular/core",
     files: files("package.json", "angular.json"),
@@ -538,29 +489,6 @@ describe("detectStack - rule ordering & gate disambiguation", () => {
       dependencies: { vite: "^5.0.0", react: "^19.0.0" },
     });
     expect(result.stack).toBe("vite");
-  });
-
-  it("TanStack Start wins over Vite when @tanstack/react-start is present (#400)", () => {
-    const result = detectStack(files("package.json", "vite.config.ts", "pnpm-lock.yaml", "src/"), {
-      dependencies: { "@tanstack/react-start": "^1.0.0", vite: "^6.0.0", react: "^19.0.0" },
-      scripts: { build: "vite build" },
-    });
-    expect(result.stack).toBe("tanstack-start");
-    expect(result.category).toBe("fullstack");
-    expect(result.outputDirectory).toBe(".output");
-    expect(result.buildCommand).toBe("pnpm build");
-    expect(result.startCommand).toBe("node .output/server/index.mjs");
-    expect(result.port).toBe(3000);
-    expect(result.productionPaths).toEqual([".output"]);
-    expect(result.packageManager).toBe("pnpm");
-  });
-
-  it("plain Vite without TanStack deps still detects as vite (#400 guard)", () => {
-    const result = detectStack(files("package.json", "vite.config.ts", "index.html", "src/"), {
-      dependencies: { vite: "^6.0.0", react: "^19.0.0" },
-    });
-    expect(result.stack).toBe("vite");
-    expect(result.stack).not.toBe("tanstack-start");
   });
 
   it("CRA does NOT match a Vite app without react-scripts", () => {

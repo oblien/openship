@@ -12,13 +12,11 @@
 export {
 	api,
 	ApiError,
-	getApiErrorCode,
 	getApiErrorMessage,
 	isAbortError,
 	isNetworkError,
 	setNetworkErrorHandler,
 	getApiBaseUrl,
-	REQUEST_TIMEOUT_MESSAGE,
 } from "./client";
 export type { RequestOptions } from "./client";
 
@@ -38,7 +36,6 @@ export type {
 export { appsApi } from "./apps";
 export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps";
 export { deployApi } from "./deploy";
-export type { RestorePlanUI } from "./deploy";
 export { domainsApi } from "./domains";
 export {
   jobsApi,
@@ -53,7 +50,7 @@ export {
   type BackupScheduleView,
 } from "./jobs";
 export { tokensApi } from "./tokens";
-export type { AccessToken, CreatedAccessToken, McpClient, McpClientDetail } from "./tokens";
+export type { AccessToken, CreatedAccessToken, McpClient } from "./tokens";
 export { githubApi } from "./github";
 export type { RepoTreeEntry } from "./github";
 export { iconsApi } from "./icons";
@@ -62,27 +59,7 @@ export type { ImageCatalogEntry, ListImagesResponse } from "./images";
 export { aiApi } from "./ai";
 export { sandboxApi } from "./sandbox";
 export { systemApi } from "./system";
-export type {
-  EdgeOrphanScan,
-  UntrackedEdgeSite,
-  ContainerIssues,
-  ContainerIssue,
-  SshProbeInput,
-  SshProbeResult,
-} from "./system";
-export { issuesApi, runResolution } from "./issues";
-export type {
-  SystemIssue,
-  IssueCounts,
-  IssueFeed,
-  IssueKind,
-  IssueScope,
-  IssueSeverity,
-  IssueSource,
-  IssueResolution,
-  IssueInfraFix,
-  RescanResult,
-} from "./issues";
+export type { EdgeOrphanScan, UntrackedEdgeSite } from "./system";
 export { migrationApi } from "./migration";
 export { dockerMigrationApi } from "./server-migration";
 export type {
@@ -134,7 +111,7 @@ export { cloudApi } from "./cloud";
 export type { CloudStatus } from "./cloud";
 export { servicesApi, serviceKind } from "./services";
 export type { Service, ServiceContainer, ServiceEnvVar, ServiceInput } from "./services";
-export { mailApi, isMailEngineUnavailable } from "./mail";
+export { mailApi } from "./mail";
 export { mailAdminApi } from "./mail-admin";
 export type {
   AdminDomain,
@@ -163,7 +140,6 @@ export type {
   MailStepStatus,
   MailSetupStatus,
   MailCredentials,
-  MailEngineState,
   MailWebmailSummary,
   DnsRecord,
   DnsRecords,
@@ -175,11 +151,6 @@ export type {
   MailComponentStatus,
   MailComponentDef,
   MailHealthResponse,
-  MailDeliveryHealth,
-  MailDeliveryStatus,
-  MailDeferral,
-  MailDeferralKind,
-  MailOutboundMode,
   WebmailTargetOption,
 } from "./mail";
 
@@ -213,7 +184,6 @@ export {
 export { notificationsApi } from "./notifications";
 export type {
   NotificationCategory,
-  NotificationCategoryGroup,
   NotificationChannel,
   NotificationSubscription,
   NotificationDefault,
@@ -221,18 +191,6 @@ export type {
   ChannelKind,
   DeliveryStatus,
 } from "./notifications";
-
-/* --- Audit --------------------------------------------------------- */
-export { auditApi } from "./audit";
-export type {
-  AuditActor,
-  AuditEventRow,
-  AuditFacets,
-  AuditListResponse,
-  AuditQuery,
-  AuditSettings,
-  AuditSource,
-} from "./audit";
 
 /* --- Billing ------------------------------------------------------- */
 export { billingApi } from "./billing";

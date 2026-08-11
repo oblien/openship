@@ -14,20 +14,11 @@
  */
 
 import { repos, type OrphanedResource } from "@repo/db";
-import {
-  DockerRuntime,
-  isRuntimeNotFoundError,
-  type Platform,
-  type RuntimeAdapter,
-} from "@repo/adapters";
+import { DockerRuntime, isRuntimeNotFoundError, type RuntimeAdapter } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { isConnectionLoss } from "../../lib/remote-state";
-import {
-  disposePlatform,
-  resolveTargetPlatform,
-  resolveDeploymentPlatform,
-} from "../../lib/deployment-runtime";
+import { resolveTargetPlatform, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
 
 /** Destroy one orphaned resource via the right adapter op; not-found = done. */
 async function destroyOrphanResource(runtime: RuntimeAdapter, o: OrphanedResource): Promise<void> {
@@ -68,13 +59,11 @@ async function reclaimOrphan(
 ): Promise<boolean> {
   // Cloud resource: no TCP notion — resolve the cloud runtime for the org.
   if (o.runtimeMode === "cloud" || !o.serverId) {
-    let cloudPlatform: Platform | null = null;
     try {
       const { platform } = await resolveDeploymentPlatform(
         { deployTarget: "cloud", workspaceId: o.ref },
         { organizationId: o.organizationId },
       );
-      cloudPlatform = platform;
       if (platform.runtime.name !== "cloud") return false;
       await destroyOrphanResource(platform.runtime, o);
       return true;
@@ -82,29 +71,20 @@ async function reclaimOrphan(
       // Cloud API unreachable → defer; anything else is a real failure.
       if (isConnectionLoss(err)) return false;
       throw err;
-    } finally {
-      disposePlatform(cloudPlatform);
     }
   }
 
   // Server-backed: fast-fail if the host still isn't answering.
   if (!(await probe.isReachable(o.serverId))) return false;
 
-  // A docker-mode server platform binds a Docker-over-SSH bridge, and this runs
-  // per orphan on a SCHEDULE — releasing it is what keeps a recurring sweep from
-  // accumulating one loopback listener per reclaim, forever.
   const platform = await resolveTargetPlatform(
     "server",
     o.runtimeMode === "bare" ? "bare" : "docker",
     o.serverId,
     o.organizationId,
   );
-  try {
-    await destroyOrphanResource(platform.runtime, o);
-    return true;
-  } finally {
-    disposePlatform(platform);
-  }
+  await destroyOrphanResource(platform.runtime, o);
+  return true;
 }
 
 export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: number }> {

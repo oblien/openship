@@ -77,12 +77,9 @@ From the desktop app you connect a server (SSH) or Openship Cloud and deploy to 
 Install the CLI (it bundles the API + dashboard), then run **`openship`** — an interactive wizard creates the first admin, wires your domain, and installs Openship as a boot service. Run it again anytime to manage the instance.
 
 ```bash
-curl -fsSL https://get.openship.io | sh          # install  (or: npm i -g openship — needs Node 22+)
+curl -fsSL https://get.openship.io | sh          # install  (or: npm i -g openship)
 openship                                          # guided setup, then control panel
 ```
-
-The install script brings its own Node when your system one is older than 22; a package-manager
-install runs on the Node you already have.
 
 For CI / headless boxes, skip the wizard and drive `openship up` directly:
 
@@ -120,31 +117,6 @@ openship deploy
 Full server guide + complete CLI reference: **[openship.io/docs](https://openship.io/docs)**.
 
 <details>
-<summary>Shell completion (bash/zsh/fish)</summary>
-
-Two ways to enable Tab-completion for `openship`:
-
-| | Setup | Trade-off |
-|---|---|---|
-| **Static file** (recommended) | `openship completion <shell> > <path>` | Instant shell startup. Regenerate after upgrading to pick up newly added commands. |
-| **Live-sourced** | add `source <(openship completion <shell>)` to your shell config | Always reflects the currently installed version. Adds a small delay to every new shell session. |
-
-**Static file:**
-```bash
-openship completion bash > /etc/bash_completion.d/openship
-openship completion zsh  > ~/.zsh/completions/_openship
-openship completion fish > ~/.config/fish/completions/openship.fish
-```
-Open a new terminal — done.
-
-**Live-sourced** (zsh example):
-```bash
-echo 'source <(openship completion zsh)' >> ~/.zshrc
-```
-
-</details>
-
-<details>
 <summary>Self-host with raw Docker Compose (no CLI)</summary>
 
 The self-hosted stack lives in **`docker/docker-compose.yml`** and **pulls** published images from GitHub Container Registry (`ghcr.io/oblien/*`) — no build tooling, no monorepo compile. Run it from the repo root:
@@ -157,9 +129,7 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 
 The stack is **postgres + redis + api + dashboard + edge**. The `edge` is OpenResty on **:80/:443** as a container (`network_mode: host`) — routing + Let's Encrypt, no bare host install. **Linux only** (host networking); on mac/win use `openship up` (bare). The `api` container mounts the host Docker socket so the control plane can build + run your apps as host containers — it's host-privileged through the socket, so run it only on a trusted host.
 
-**Upgrade:** pin `OPENSHIP_VERSION` in `.env` for reproducible pulls, then `docker compose --env-file .env -f docker/docker-compose.yml pull && … up -d`. `openship update` only reconciles a stack the CLI installed, and `openship up` would *adopt* this one — don't reach for either here. **Build from source instead:** add `-f docker/docker-compose.build.yml … up -d --build`.
-
-**Host operations** (`:80`/`:443` takeover, the mail engine, host terminal/port scans) need the container→host SSH channel, which `openship up` provisions and this path does not — the five manual steps are in `.env.example` under *Host operations from the container*, and the failure it produces is [Troubleshooting → Host control channel](https://openship.io/docs/troubleshooting/host-channel). Everything else, including deploys, works without it.
+**Upgrade:** pin `OPENSHIP_VERSION` in `.env` for reproducible pulls, then `docker compose --env-file .env -f docker/docker-compose.yml pull && … up -d` (or just `openship update`). **Build from source instead:** add `-f docker/docker-compose.build.yml … up -d --build`.
 
 > The **root** `docker-compose.yml` is a different file: it's the SaaS / from-source **control plane** (builds from source, ships the marketing site, no edge/socket). It does **not** self-host your apps — use `docker/docker-compose.yml` above or `openship up`.
 
@@ -207,7 +177,7 @@ An **MCP** endpoint (for AI agents) and a **REST API** round it out for automati
 | **CDN** | Edge caching, HTTP/3, Brotli compression, instant purge |
 | **Mail server** | Built-in SMTP with DKIM/SPF/DMARC — no Mailgun or SES needed |
 | **Backups** | Scheduled, databases + volumes, one-click restore, export anytime |
-| **Real-time monitoring** | Live build logs, container metrics, visitor geography and per-code response mix — [~1.4 µs per request, zero DB writes per request](docs/monitoring.md) |
+| **Real-time monitoring** | Live build logs, container metrics, and resource usage streamed to your screen |
 | **Scaling** | Auto-scaling on cloud, multi-node ready on self-hosted |
 | **Portability** | Standard Docker containers — move between providers freely |
 | **Docker Compose** | Deploy existing compose files as-is |

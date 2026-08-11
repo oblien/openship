@@ -8,18 +8,6 @@
  */
 
 /**
- * POSIX single-quote a value so it survives shell interpolation as one literal word.
- *
- * The inverse of {@link shellSplitWords}, and the one function standing between a
- * data-derived string (a container label, a project slug, a unit name read off a scan)
- * and root on the target — so it lives next to the splitter rather than being re-typed in
- * each module that needs it. Nine byte-identical local copies existed before this one.
- */
-export function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-/**
  * POSIX-ish shell word splitter: honors single quotes, double quotes, and
  * backslash escapes; splits on unquoted whitespace. Does NOT expand variables,
  * globs, or operators — it only tokenizes, matching how docker-compose turns a

@@ -1,18 +1,14 @@
 import { repos } from "@repo/db";
-import { type BuildLogger } from "@repo/adapters";
+import { resolveStaticOutputPath, type BuildLogger } from "@repo/adapters";
 import {
-  disposePlatform,
-  resolveDeploymentPlatform,
-  resolveDeploymentStaticRoot,
+  resolveDeploymentRuntime,
   type DeploymentMeta,
   type OutputCheckResult,
-  type ResolvedDeploymentPlatform,
 } from "../../lib/deployment-runtime";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { resolveProjectRouteState } from "../domains/project-route.service";
 import { auditStaticOutput, staticOutputTargets } from "../deployments/output-audit.service";
-import { deploymentWorkload } from "../deployments/deployment-class";
 
 const silentLogger = { log() {} } as unknown as BuildLogger;
 
@@ -48,9 +44,7 @@ export async function checkProjectOutput(
 ): Promise<OutputCheckResult[]> {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-  // The static doc-root audit applies ONLY to a static site. A web app routes by
-  // port and a worker serves nothing — neither has a doc-root to probe (#538-B).
-  if (deploymentWorkload(project) !== "static") return [];
+  if (project.hasServer) return [];
   if (!project.activeDeploymentId) return [];
 
   const deployment = await repos.deployment.findById(project.activeDeploymentId);
@@ -71,18 +65,16 @@ async function runOutputProbe(
 ): Promise<OutputCheckResult[]> {
   const containerId = deployment.containerId;
   if (!containerId) return [];
-  let resolved: ResolvedDeploymentPlatform | null = null;
   try {
-    resolved = await resolveDeploymentPlatform((deployment.meta ?? {}) as DeploymentMeta, {
-      organizationId: deployment.organizationId,
-    });
-    const { runtime, routing } = resolved.platform;
-    // Where this deployment SERVES from, as recorded by the deploy — the SAME
-    // resolver that points the vhost, so this probe audits the exact directory the
-    // edge was given rather than a second guess at it. A null root means there's
-    // nothing static to audit.
-    const staticRoot = resolveDeploymentStaticRoot(deployment, project);
-    if (!staticRoot) return [];
+    const { runtime, routing } = await resolveDeploymentRuntime(deployment);
+    const meta = (deployment.meta ?? {}) as DeploymentMeta;
+    // Where this deployment SERVES from, as recorded by the deploy. Falling back to
+    // the project's outputDirectory covers deployments written before that field
+    // existed — correct for a bare build, and the only guess available for an older
+    // sandbox build (whose true root is ""). A wrong guess reads as `found:false`,
+    // which is advisory, so it can never break anything.
+    const staticServeOutputDir = meta.staticServeOutputDir ?? project.outputDirectory ?? "";
+    const staticRoot = resolveStaticOutputPath(containerId, staticServeOutputDir);
     const routeState = await resolveProjectRouteState(project);
     // `routing` (the edge) is asked first — it sees what actually serves the files.
     // The runtime is only the fallback, which is why this no longer gates on
@@ -97,7 +89,5 @@ async function runOutputProbe(
     );
   } catch {
     return [];
-  } finally {
-    disposePlatform(resolved);
   }
 }

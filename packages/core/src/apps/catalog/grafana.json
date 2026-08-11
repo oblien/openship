@@ -30,21 +30,5 @@
       ],
       "restart": "unless-stopped"
     }
-  ],
-  "connection": {
-    "title": "Sign in to Grafana",
-    "outputs": [
-      {
-        "id": "url",
-        "label": "URL",
-        "source": "publicUrl:grafana",
-        "kind": "url"
-      }
-    ],
-    "firstLogin": {
-      "username": "admin",
-      "password": "admin",
-      "note": "Change the admin password right after your first login."
-    }
-  }
+  ]
 }

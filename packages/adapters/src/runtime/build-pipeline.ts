@@ -141,46 +141,6 @@ export class BuildCancelledError extends Error {
   }
 }
 
-/**
- * Kill every process whose CWD is (under) a build's private directory — SIGTERM,
- * then SIGKILL the survivors.
- *
- * Aborting a build only gates our own API BETWEEN commands: the in-flight remote
- * command (git / npm / `docker build`) keeps running on the target until someone
- * signals it. Killing it also closes the streamExec channel, so the build unwinds
- * to a cancelled result instead of finishing work nobody wants.
- *
- * The ` (deleted)` patterns are load-bearing. A cancelled build's own `finally`
- * fires `rm -rf <contextDir>` the moment it unwinds, and Linux then reports the
- * process's cwd link as "<dir> (deleted)" — which the bare patterns miss, leaving
- * exactly the orphaned build this sweep exists to kill.
- *
- * `includeSuffixed` also matches `<dir>-*`: a compose deploy builds one image per
- * service under `<buildSessionId>-<serviceId>`, while cancel only knows the parent
- * session id.
- *
- * Best-effort: a no-op for local builds and non-Linux targets (nothing runs under
- * this dir there) and when the command has already exited.
- */
-export async function killProcessesUnderDir(
-  executor: { exec(command: string): Promise<string> },
-  dir: string,
-  opts?: { includeSuffixed?: boolean },
-): Promise<void> {
-  const quoted = sq(dir);
-  const roots = opts?.includeSuffixed ? [quoted, `${quoted}-*`] : [quoted];
-  const patterns = roots.flatMap((root) => [
-    root,
-    `${root}/*`,
-    `${root}" (deleted)"`,
-    `${root}/*" (deleted)"`,
-  ]);
-  const scan = (sig: string) =>
-    `for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null); ` +
-    `case "$c" in ${patterns.join("|")}) kill -${sig} "\${p##*/}" 2>/dev/null || true;; esac; done`;
-  await executor.exec(`${scan("TERM")}; sleep 2; ${scan("KILL")}`).catch(() => {});
-}
-
 export interface BuildPipelineResult {
   status: "deploying" | "failed" | "cancelled";
   /** Which step failed (undefined if success) */

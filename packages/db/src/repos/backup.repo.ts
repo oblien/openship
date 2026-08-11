@@ -8,10 +8,14 @@
  *   restore      — restore history (sibling of run)
  */
 
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { Database } from "../client";
-import { backupDestination, backupPolicy, backupRestore, backupRun } from "../schema";
-import { detailOf } from "./storable-detail";
+import {
+  backupDestination,
+  backupPolicy,
+  backupRestore,
+  backupRun,
+} from "../schema";
 
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
@@ -74,72 +78,6 @@ export const IN_FLIGHT_RESTORE_STATUSES: BackupRestoreStatus[] = [
 // waiting state. Boot sweep doesn't kill prepared restores, the user
 // gets to apply them after a restart.
 
-// ─── Transition durability ───────────────────────────────────────────────────
-
-/**
- * Persist an FSM transition so the STATUS can never be lost to its payload.
- *
- * A run/restore's status is the RECORD; the patch riding with it — hook log,
- * error text, artifact metadata — is raw remote bytes, i.e. observability.
- * Postgres refuses a NUL in a text column ("invalid byte sequence for encoding
- * UTF8: 0x00") and an unpaired surrogate in jsonb, and both used to travel in
- * ONE statement with the status: a user shell hook that printed a NUL turned a
- * SUCCEEDED backup into a FAILED one (the rejected UPDATE threw out of the
- * orchestrator's try, whose catch then transitioned the run to "failed" — with
- * the artifact already uploaded and the manifest already written).
- *
- * So: status first, in its own statement out of values we construct. Then the
- * payload, which sheds itself column-by-column — a poisoned hook log costs its
- * own column and nothing else, and a rejected string column keeps a marker
- * naming the DB error rather than going blank (a failed run with no reason
- * reads as "no reason given").
- */
-async function persistTransition(
-  label: string,
-  id: string,
-  status: string,
-  core: Record<string, unknown>,
-  patch: Record<string, unknown> | undefined,
-  write: (values: Record<string, unknown>) => Promise<unknown>,
-): Promise<void> {
-  await write(core);
-  if (!patch) return;
-  // `status` never rides the payload — the core write above owns it.
-  const rest: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(patch)) {
-    if (key !== "status") rest[key] = value;
-  }
-  const keys = Object.keys(rest);
-  if (keys.length === 0) return;
-
-  try {
-    await write(rest);
-    return;
-  } catch (err) {
-    console.error(
-      `[db] ${label} ${id}: payload rejected (${detailOf(err)}) — status "${status}" is persisted; salvaging per column`,
-    );
-  }
-
-  for (const key of keys) {
-    try {
-      await write({ [key]: rest[key] });
-      continue;
-    } catch (err) {
-      const detail = detailOf(err);
-      if (typeof rest[key] === "string") {
-        try {
-          await write({ [key]: `[unstorable: ${detail}]` });
-          continue;
-        } catch {
-          // fall through to the log below
-        }
-      }
-      console.error(`[db] ${label} ${id}: column ${key} rejected (${detail}) — left unset`);
-    }
-  }
-}
-
 // ─── Destination repo ────────────────────────────────────────────────────────
 
 export function createBackupDestinationRepo(db: Database) {
@@ -174,7 +112,10 @@ export function createBackupDestinationRepo(db: Database) {
 
     async findById(id: string): Promise<BackupDestination | undefined> {
       return db.query.backupDestination.findFirst({
-        where: and(eq(backupDestination.id, id), isNull(backupDestination.deletedAt)),
+        where: and(
+          eq(backupDestination.id, id),
+          isNull(backupDestination.deletedAt),
+        ),
       });
     },
 
@@ -198,7 +139,11 @@ export function createBackupDestinationRepo(db: Database) {
       return row;
     },
 
-    async setLastVerified(id: string, ok: boolean, error?: string): Promise<void> {
+    async setLastVerified(
+      id: string,
+      ok: boolean,
+      error?: string,
+    ): Promise<void> {
       await db
         .update(backupDestination)
         .set({
@@ -215,7 +160,12 @@ export function createBackupDestinationRepo(db: Database) {
       const referencingCount = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(backupPolicy)
-        .where(and(eq(backupPolicy.destinationId, id), isNull(backupPolicy.deletedAt)))
+        .where(
+          and(
+            eq(backupPolicy.destinationId, id),
+            isNull(backupPolicy.deletedAt),
+          ),
+        )
         .then((rows) => Number(rows[0]?.count ?? 0));
 
       if (referencingCount > 0) {
@@ -242,7 +192,10 @@ export function createBackupPolicyRepo(db: Database) {
   return {
     async listByProject(projectId: string): Promise<BackupPolicy[]> {
       return db.query.backupPolicy.findMany({
-        where: and(eq(backupPolicy.projectId, projectId), isNull(backupPolicy.deletedAt)),
+        where: and(
+          eq(backupPolicy.projectId, projectId),
+          isNull(backupPolicy.deletedAt),
+        ),
       });
     },
 
@@ -250,7 +203,10 @@ export function createBackupPolicyRepo(db: Database) {
      *  detail page's "used by" view (which projects/services back up here). */
     async listByDestination(destinationId: string): Promise<BackupPolicy[]> {
       return db.query.backupPolicy.findMany({
-        where: and(eq(backupPolicy.destinationId, destinationId), isNull(backupPolicy.deletedAt)),
+        where: and(
+          eq(backupPolicy.destinationId, destinationId),
+          isNull(backupPolicy.deletedAt),
+        ),
       });
     },
 
@@ -301,15 +257,23 @@ export function createBackupPolicyRepo(db: Database) {
     },
 
     /** The single active policy for a mail server (mail_server source). */
-    async findActiveByMailServer(mailServerId: string): Promise<BackupPolicy | undefined> {
+    async findActiveByMailServer(
+      mailServerId: string,
+    ): Promise<BackupPolicy | undefined> {
       return db.query.backupPolicy.findFirst({
-        where: and(eq(backupPolicy.mailServerId, mailServerId), isNull(backupPolicy.deletedAt)),
+        where: and(
+          eq(backupPolicy.mailServerId, mailServerId),
+          isNull(backupPolicy.deletedAt),
+        ),
       });
     },
 
     async findByWebhookToken(token: string): Promise<BackupPolicy | undefined> {
       return db.query.backupPolicy.findFirst({
-        where: and(eq(backupPolicy.webhookToken, token), isNull(backupPolicy.deletedAt)),
+        where: and(
+          eq(backupPolicy.webhookToken, token),
+          isNull(backupPolicy.deletedAt),
+        ),
       });
     },
 
@@ -341,7 +305,9 @@ export function createBackupPolicyRepo(db: Database) {
       });
     },
 
-    async *iterateEnabledScheduled(pageSize = 100): AsyncIterableIterator<BackupPolicy> {
+    async *iterateEnabledScheduled(
+      pageSize = 100,
+    ): AsyncIterableIterator<BackupPolicy> {
       let offset = 0;
       while (true) {
         const page = await db.query.backupPolicy.findMany({
@@ -349,42 +315,6 @@ export function createBackupPolicyRepo(db: Database) {
             isNull(backupPolicy.deletedAt),
             eq(backupPolicy.enabled, true),
             sql`${backupPolicy.cronExpression} IS NOT NULL`,
-          ),
-          orderBy: (t, { asc }) => [asc(t.id)],
-          limit: pageSize,
-          offset,
-        });
-        if (page.length === 0) return;
-        for (const row of page) yield row;
-        if (page.length < pageSize) return;
-        offset += pageSize;
-      }
-    },
-
-    /**
-     * Every enabled policy with retention configured, cron or not.
-     *
-     * The retention sweep used to walk `iterateEnabledScheduled`, on the theory
-     * that a policy without a cron is manual-only and its owner opted into
-     * fire-and-forget. That theory misses two triggers that produce runs
-     * automatically: `trigger_on_pre_deploy` and the inbound webhook. Those
-     * policies fill a destination on a schedule set by pushes rather than by
-     * cron, and their runs were never pruned even with `retain_count` set —
-     * which is exactly the case where the operator DID ask for a ceiling.
-     *
-     * Paginated because the sweep runs against every org on the instance.
-     */
-    async *iterateEnabledForRetention(pageSize = 100): AsyncIterableIterator<BackupPolicy> {
-      let offset = 0;
-      while (true) {
-        const page = await db.query.backupPolicy.findMany({
-          where: and(
-            isNull(backupPolicy.deletedAt),
-            eq(backupPolicy.enabled, true),
-            or(
-              sql`${backupPolicy.retainCount} IS NOT NULL`,
-              sql`${backupPolicy.retainDays} IS NOT NULL`,
-            ),
           ),
           orderBy: (t, { asc }) => [asc(t.id)],
           limit: pageSize,
@@ -469,7 +399,8 @@ export function createBackupRunRepo(db: Database) {
       ];
       if (opts?.projectId) conditions.push(eq(backupRun.projectId, opts.projectId));
       if (opts?.serviceId) conditions.push(eq(backupRun.serviceId, opts.serviceId));
-      if (opts?.mailServerId) conditions.push(eq(backupRun.mailServerId, opts.mailServerId));
+      if (opts?.mailServerId)
+        conditions.push(eq(backupRun.mailServerId, opts.mailServerId));
       return db.query.backupRun.findMany({
         where: and(...conditions),
         orderBy: (t, { desc }) => [desc(t.startedAt)],
@@ -498,14 +429,7 @@ export function createBackupRunRepo(db: Database) {
      *  time. Powers the Backups page's per-destination size monitoring. */
     async statsByDestination(
       organizationId: string,
-    ): Promise<
-      Array<{
-        destinationId: string | null;
-        storedBytes: number;
-        runCount: number;
-        lastRunAt: Date | null;
-      }>
-    > {
+    ): Promise<Array<{ destinationId: string | null; storedBytes: number; runCount: number; lastRunAt: Date | null }>> {
       const rows = await db
         .select({
           destinationId: backupRun.destinationId,
@@ -554,28 +478,28 @@ export function createBackupRunRepo(db: Database) {
     },
 
     /** FSM state transition. Always bumps lastEventAt; sets finishedAt
-     *  on terminal states. Status is written separately from the patch — see
-     *  persistTransition for why the two must not fail as a unit. */
+     *  on terminal states. */
     async transition(
       id: string,
       status: BackupRunStatus,
       patch?: Partial<Omit<NewBackupRun, "id" | "startedAt">>,
     ): Promise<void> {
-      const TERMINAL: BackupRunStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
+      const TERMINAL: BackupRunStatus[] = [
+        "succeeded",
+        "failed",
+        "cancelled",
+        "server_error",
+      ];
       const finishing = TERMINAL.includes(status);
-      const now = new Date();
-      await persistTransition(
-        "backup_run",
-        id,
-        status,
-        { status, lastEventAt: now, ...(finishing ? { finishedAt: now } : {}) },
-        patch as Record<string, unknown> | undefined,
-        (values) =>
-          db
-            .update(backupRun)
-            .set(values as Partial<NewBackupRun>)
-            .where(eq(backupRun.id, id)),
-      );
+      await db
+        .update(backupRun)
+        .set({
+          status,
+          lastEventAt: new Date(),
+          ...(finishing ? { finishedAt: new Date() } : {}),
+          ...(patch ?? {}),
+        })
+        .where(eq(backupRun.id, id));
     },
 
     /** Mark every in-flight run as server_error. Called at boot to
@@ -589,58 +513,10 @@ export function createBackupRunRepo(db: Database) {
           lastEventAt: new Date(),
           errorMessage: reason,
         })
-        .where(and(inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES), isNull(backupRun.finishedAt)))
-        .returning();
-      return result.length;
-    },
-
-    /**
-     * Fail in-flight runs whose `lastEventAt` heartbeat has gone stale. Unlike
-     * `sweepStaleRuns` (boot-only, marks everything in-flight), this is selective:
-     *   - queued rows nobody picked up within `queuedCutoff`
-     *   - preparing/snapshotting/verifying with no transition within `idleCutoff`
-     *     (brief hops between states — a stall there is genuinely stuck)
-     *   - any in-flight row past the absolute `ceilingCutoff`
-     *
-     * `uploading` is deliberately NOT idle-swept. A single-artifact dump
-     * (pg_dump/mysqldump/mongodump) streams the whole payload through one
-     * `destination.put`, and the orchestrator writes `bytesTransferred` / bumps
-     * `lastEventAt` only at artifact boundaries — never mid-stream. So for the
-     * entire upload the row sits `(uploading, bytesTransferred=NULL,
-     * lastEventAt=frozen)`, which is indistinguishable by DB state alone from a
-     * wedge. Idle-sweeping it here would kill honest multi-GB uploads that
-     * legitimately run past `idleCutoff` — the exact managed-postgres case #516
-     * is about. A genuinely wedged upload is reaped in-process by the executor's
-     * per-stream idle watchdog (which also frees the worker slot); this sweep
-     * only backstops `uploading` via the 6h `ceilingCutoff`.
-     */
-    async sweepRunsWithStaleHeartbeat(params: {
-      queuedCutoff: Date;
-      idleCutoff: Date;
-      ceilingCutoff: Date;
-      reason: string;
-    }): Promise<number> {
-      const { queuedCutoff, idleCutoff, ceilingCutoff, reason } = params;
-      const result = await db
-        .update(backupRun)
-        .set({
-          status: "server_error",
-          finishedAt: new Date(),
-          lastEventAt: new Date(),
-          errorMessage: reason,
-        })
         .where(
           and(
             inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES),
             isNull(backupRun.finishedAt),
-            or(
-              and(eq(backupRun.status, "queued"), lt(backupRun.lastEventAt, queuedCutoff)),
-              and(
-                inArray(backupRun.status, ["preparing", "snapshotting", "verifying"]),
-                lt(backupRun.lastEventAt, idleCutoff),
-              ),
-              lt(backupRun.lastEventAt, ceilingCutoff),
-            ),
           ),
         )
         .returning();
@@ -648,7 +524,10 @@ export function createBackupRunRepo(db: Database) {
     },
 
     /** Used by the retention prune job (Chunk 2). */
-    async listSucceededOlderThan(destinationId: string, cutoff: Date): Promise<BackupRun[]> {
+    async listSucceededOlderThan(
+      destinationId: string,
+      cutoff: Date,
+    ): Promise<BackupRun[]> {
       return db.query.backupRun.findMany({
         where: and(
           eq(backupRun.destinationId, destinationId),
@@ -659,39 +538,11 @@ export function createBackupRunRepo(db: Database) {
       });
     },
 
-    /**
-     * Runs holding a `custom_command` artifact with no `restoreCommand` — i.e.
-     * an artifact that cannot be put back (D5). Filtered in SQL so an instance
-     * with years of history doesn't page every row in to find a handful, and
-     * matched on the ARTIFACT rather than the policy so runs whose policy was
-     * since deleted still surface (those are unrecoverable, and the operator
-     * needs to hear about them before they need the restore).
-     */
-    async listCustomCommandMissingRestoreCommand(limit = 1000): Promise<BackupRun[]> {
-      return db.query.backupRun.findMany({
-        where: and(
-          isNull(backupRun.deletedAt),
-          sql`jsonb_typeof(${backupRun.artifacts}) = 'array'`,
-          sql`exists (
-            select 1 from jsonb_array_elements(${backupRun.artifacts}) as entry
-            where entry->>'payloadKind' = 'custom_command'
-              and coalesce(entry->'metadata'->>'restoreCommand', '') = ''
-          )`,
-        ),
-        orderBy: (t, { asc }) => [asc(t.startedAt)],
-        limit,
-      });
-    },
-
-    /** Rewrite the recorded artifact list. A run's artifacts are otherwise
-     *  write-once at capture time — the D5 `restoreCommand` backfill is the only
-     *  caller, and it touches nothing else on the row (status included). */
-    async setArtifacts(id: string, artifacts: unknown[]): Promise<void> {
-      await db.update(backupRun).set({ artifacts }).where(eq(backupRun.id, id));
-    },
-
     async softDelete(id: string): Promise<void> {
-      await db.update(backupRun).set({ deletedAt: new Date() }).where(eq(backupRun.id, id));
+      await db
+        .update(backupRun)
+        .set({ deletedAt: new Date() })
+        .where(eq(backupRun.id, id));
     },
 
     /** Toggle the "protect this backup" flag. When set, retention
@@ -745,7 +596,12 @@ export function createBackupRestoreRepo(db: Database) {
       return db.query.backupRestore.findFirst({
         where: and(
           eq(backupRestore.runId, runId),
-          inArray(backupRestore.status, ["queued", "preparing", "prepared", "applying"]),
+          inArray(backupRestore.status, [
+            "queued",
+            "preparing",
+            "prepared",
+            "applying",
+          ]),
         ),
       });
     },
@@ -755,50 +611,27 @@ export function createBackupRestoreRepo(db: Database) {
       return row;
     },
 
-    /**
-     * Record a cancel request without transitioning — the running phase honors
-     * it at its next checkpoint. Returns the updated row so the caller can read
-     * back the FIRST press time, which `coalesce` preserves: a second press is
-     * the force-terminal signal and must not reset its own window.
-     */
-    async requestCancel(id: string): Promise<BackupRestore | undefined> {
-      const [row] = await db
-        .update(backupRestore)
-        .set({
-          cancelRequested: true,
-          cancelRequestedAt: sql`coalesce(${backupRestore.cancelRequestedAt}, now())`,
-          lastEventAt: new Date(),
-        })
-        .where(eq(backupRestore.id, id))
-        .returning();
-      return row;
-    },
-
     async transition(
       id: string,
       status: BackupRestoreStatus,
       patch?: Partial<Omit<NewBackupRestore, "id" | "userId" | "startedAt">>,
     ): Promise<void> {
-      const TERMINAL: BackupRestoreStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
+      const TERMINAL: BackupRestoreStatus[] = [
+        "succeeded",
+        "failed",
+        "cancelled",
+        "server_error",
+      ];
       const finishing = TERMINAL.includes(status);
-      const now = new Date();
-      await persistTransition(
-        "backup_restore",
-        id,
-        status,
-        {
+      await db
+        .update(backupRestore)
+        .set({
           status,
-          lastEventAt: now,
-          ...(finishing ? { finishedAt: now } : {}),
-          ...(status === "cancelled" ? { cancelledAt: now } : {}),
-        },
-        patch as Record<string, unknown> | undefined,
-        (values) =>
-          db
-            .update(backupRestore)
-            .set(values as Partial<NewBackupRestore>)
-            .where(eq(backupRestore.id, id)),
-      );
+          lastEventAt: new Date(),
+          ...(finishing ? { finishedAt: new Date() } : {}),
+          ...(patch ?? {}),
+        })
+        .where(eq(backupRestore.id, id));
     },
 
     async sweepStaleRestores(reason: string): Promise<number> {

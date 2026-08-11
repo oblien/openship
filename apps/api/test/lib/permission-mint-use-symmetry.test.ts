@@ -124,15 +124,10 @@ describe("anything the mint accepts, the token can use", () => {
 
 describe("the asymmetry that caused this, pinned", () => {
   it('a non-grantable org-singleton is rejected at MINT too, so the gap cannot reopen quietly', async () => {
-    // These two are org-singletons that stay OFF the grantable surface for reasons
-    // that outlive this test: `permissions` would let a grantee widen its own
-    // access, and `terminal` has only WebSocket routes no tool can reach. If either
-    // is ever added, the satisfiability ratchet forces proof it works first.
-    //
-    // This used to name `settings`, which is now grantable — the whole point of the
-    // change was that its enforcement already worked and only the grant was missing.
-    expect(GRANTABLE_RESOURCE_TYPES).not.toContain("permissions");
-    expect(GRANTABLE_RESOURCE_TYPES).not.toContain("terminal");
+    // `settings` is an org-singleton that is NOT on the grantable surface. It must
+    // not be mintable — if someone adds it to GRANTABLE_RESOURCE_TYPES, the
+    // satisfiability ratchet forces them to prove it works first.
+    expect(GRANTABLE_RESOURCE_TYPES).not.toContain("settings");
   });
 
   it("a scoped token cannot use a grant it does not hold, even for a satisfiable type", async () => {

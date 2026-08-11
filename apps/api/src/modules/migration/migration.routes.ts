@@ -6,6 +6,7 @@
  */
 
 import { Hono } from "hono";
+import { localOnly } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
 import * as migration from "./migration.controller";
 
@@ -13,17 +14,14 @@ const r = secureRouter(new Hono(), {
   module: "migration",
   basePath: "/api/migration",
   ids: { server: "serverId" },
-  localOnly: true,
 });
 
+r.use("*", localOnly);
 
 // Read-only: inspect a server's Docker and return the adoptable stack.
 r.post("/scan", { tag: "server:write", collection: true }, migration.scanServer);
 // Streaming variant (SSE): step progress + result, no fixed timeout.
 r.get("/scan/stream", { tag: "server:write", collection: true }, migration.scanServerStream);
-// On-demand reveal of ONE discovered container's real env (scan masks it). Write-
-// gated: the masked scan is a read, revealing the real secret is a write (#336).
-r.post("/reveal-env", { tag: "server:write", collection: true }, migration.revealServiceEnv);
 // Create an Openship project from the selected discovered services (records only).
 r.post("/adopt", { tag: "server:write", collection: true }, migration.adoptServer);
 // Re-import an orphaned Openship project (DR / cross-instance), preserving its id.

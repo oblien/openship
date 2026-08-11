@@ -34,26 +34,6 @@ interface CaddyAdaptConfig {
   apps?: { http?: { servers?: Record<string, { listen?: string[]; routes?: CaddyRoute[] }> } };
 }
 
-/**
- * Query Caddy's admin API for the full RUNNING config as JSON.
- *
- * This is caddy's analogue of `openresty -T`: it reports the config the server is
- * ACTUALLY running, wherever it came from — a Caddyfile at a non-default path, an
- * `import`ed snippet tree, an env-driven config, or one pushed over the API with no
- * file on disk at all. The `caddy adapt` read below only knows two fixed Caddyfile
- * paths, so every one of those layouts scanned as empty (the same fixed-path
- * fragility the openresty scan had to abandon). The admin endpoint sees them all
- * because it reads the live server, and returns the same JSON shape `parseCaddyJson`
- * already handles. Default admin address is localhost:2019.
- */
-async function loadCaddyAdminConfig(executor: CommandExecutor): Promise<string | null> {
-  const endpoint = "http://localhost:2019/config/";
-  const out =
-    (await tryExec(executor, `curl -fsS ${endpoint} 2>/dev/null`)) ||
-    (await tryExec(executor, `wget -qO- ${endpoint} 2>/dev/null`));
-  return out && out.trim().startsWith("{") ? out : null;
-}
-
 /** Run `caddy adapt` for the first Caddyfile that yields JSON (starts with `{`). */
 async function loadCaddyJson(executor: CommandExecutor): Promise<string | null> {
   for (const p of CADDYFILE_PATHS) {
@@ -282,18 +262,13 @@ function parseAddresses(header: string): Array<{ host: string; ssl: boolean }> {
  * back to the Caddyfile text scan when adapt is unavailable or yields nothing.
  */
 export async function scanCaddy(executor: CommandExecutor): Promise<ProxyScanResult> {
-  // Live admin API first, then fixed-path `caddy adapt`. Both yield the same JSON
-  // shape; the admin endpoint additionally sees configs adapt's two fixed paths
-  // can't (non-default Caddyfile, imported snippets, an API-pushed config with no
-  // file) — the fixed-path fragility the openresty scan had to move off of.
-  for (const load of [loadCaddyAdminConfig, loadCaddyJson]) {
-    const json = await load(executor);
-    if (!json) continue;
+  const json = await loadCaddyJson(executor);
+  if (json) {
     const parsed = parseCaddyJson(json);
-    // Sites OR warnings means it gave a real answer. Requiring sites > 0 meant a
-    // config we deliberately REFUSED (all php_fastcgi, all unix sockets) looked
-    // like "found nothing", fell through to the text scan, and threw the refusal
-    // reasons away — the operator got "no readable Caddyfile" instead.
+    // Sites OR warnings means adapt gave a real answer. Requiring sites > 0 meant
+    // a config we deliberately REFUSED (all php_fastcgi, all unix sockets) looked
+    // like "adapt found nothing", fell through to the text scan, and threw the
+    // refusal reasons away — the operator got "no readable Caddyfile" instead.
     if (parsed && (parsed.sites.length > 0 || parsed.warnings.length > 0)) {
       return { proxy: "caddy", sites: parsed.sites, warnings: parsed.warnings };
     }

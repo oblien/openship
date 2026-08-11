@@ -43,6 +43,10 @@
  * 465) so DKIM signs and SPF aligns from the first message.
  */
 
+// DEPENDENCY: `ensureOpenshipTestMailbox` is provided by
+// ./test-mailbox.service, which is being introduced in a parallel agent
+// run. Until that file lands, this import will fail typecheck — that's
+// expected. After both agents land the project as a whole typechecks.
 import nodemailer, { type Transporter } from "nodemailer";
 import { decrypt } from "../../../lib/encryption";
 import { sshManager } from "../../../lib/ssh-manager";

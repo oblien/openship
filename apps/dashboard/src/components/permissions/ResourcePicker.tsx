@@ -32,23 +32,28 @@ import { LevelSwitch, type LevelOption } from "./LevelSwitch";
 import { ResourceAvatar } from "./ResourceAvatar";
 import { Modal } from "@/components/ui/Modal";
 import { SourceAccessModal } from "./SourceAccessModal";
-import {
-  GRANTABLE_RESOURCE_TYPES,
-  isOrgSingletonResourceType,
-  type SourceAccessScope,
-} from "@repo/core";
+import type { SourceAccessScope } from "@repo/core";
 
 // Re-export for existing importers (TeamTab et al.) — canonical defs live in @/lib/api.
 export type { Permission, PickerGrant, ResourceType } from "@/lib/api";
 
 const PERMISSIONS: Permission[] = ["read", "write", "admin"];
 
-const DEFAULT_TYPES: readonly ResourceType[] = GRANTABLE_RESOURCE_TYPES;
+const DEFAULT_TYPES: ResourceType[] = [
+  "project",
+  "server",
+  "mail_server",
+  "backup_destination",
+  "billing",
+  "audit",
+  "github_installation",
+  "github_repository",
+];
 
 /** A tab collapses the two GitHub resource types into one "github" tab. */
 type TabId = ResourceType | "github";
 
-function toTabs(types: readonly ResourceType[]): TabId[] {
+function toTabs(types: ResourceType[]): TabId[] {
   const out: TabId[] = [];
   let github = false;
   for (const t of types) {
@@ -180,10 +185,7 @@ export function ResourcePicker({
   }, [tabs, activeTab]);
 
   const isGithub = activeTab === "github";
-  // A platform feature has exactly one row ("*"), so there is nothing to search and
-  // no "All X" row to offer — the single row IS "all of it". Derived from the shared
-  // set so a newly grantable feature renders correctly without an edit here.
-  const isSingleton = !isGithub && isOrgSingletonResourceType(activeTab);
+  const isSingleton = activeTab === "billing" || activeTab === "audit";
   const wildcardSuppressed =
     !isGithub && !!suppressWildcardTypes?.includes(activeTab as ResourceType);
   const showWildcardRow = !isSingleton && !wildcardSuppressed;

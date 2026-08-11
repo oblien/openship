@@ -6,35 +6,16 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { repos, type Deployment } from "@repo/db";
+import { repos } from "@repo/db";
 import { NotFoundError, ForbiddenError } from "@repo/core";
 import type { LogEntry } from "@repo/adapters";
 import type { RequestContext } from "../../lib/request-context";
-import {
-  deploymentContainerIds,
-  withDeploymentRuntime,
-  type DeploymentMeta,
-} from "../../lib/deployment-runtime";
-import {
-  assertNotControlPlane,
-  assertNotControlPlaneById,
-  assertResourceInOrg,
-} from "../../lib/controller-helpers";
+import { resolveDeploymentRuntime, type DeploymentMeta } from "../../lib/deployment-runtime";
+import { assertResourceInOrg } from "../../lib/controller-helpers";
 import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { maskDeploymentEnv } from "../../lib/secret-env";
-import {
-  rollback,
-  setPin,
-  resolveRestorePlan,
-  planNeedsRepository,
-  diffFrozenEnv,
-  type EnvDiff,
-  type EnvRestoreStrategy,
-  type RestorePlan,
-} from "./rollback";
-import { checkNoActiveBuild } from "./build.service";
-import { decryptEnvMap } from "../../lib/encryption";
+import { rollback, setPin, resolveRestorePlan, planNeedsRepository } from "./rollback";
 
 /**
  * #336: present a deployment to a CLIENT — masks `meta.composeServices[].environment`.
@@ -69,6 +50,17 @@ export async function assertGitHubAccessForDeployment(
   });
 }
 
+async function listServiceContainerIds(deploymentId: string): Promise<string[]> {
+  const rows = await repos.service.listByDeployment(deploymentId);
+  return [...new Set(rows.map((row) => row.containerId).filter((id): id is string => !!id))];
+}
+
+async function listDeploymentContainerIds(dep: { id: string; containerId?: string | null }) {
+  const serviceContainerIds = await listServiceContainerIds(dep.id);
+  if (serviceContainerIds.length > 0) return serviceContainerIds;
+  return dep.containerId ? [dep.containerId] : [];
+}
+
 export async function listDeployments(
   organizationId: string,
   opts: {
@@ -92,13 +84,7 @@ export async function listDeployments(
     const activeId = project.activeDeploymentId;
     return {
       ...result,
-      rows: result.rows.map((d) => ({
-        ...d,
-        isActive: d.id === activeId,
-        // Project favicon → the dashboard uses it as the row's logo instead
-        // of the framework/Docker glyph.
-        favicon: project.favicon ?? null,
-      })),
+      rows: result.rows.map((d) => ({ ...d, isActive: d.id === activeId })),
     };
   }
 
@@ -111,18 +97,10 @@ export async function listDeployments(
   });
 
   const projectIds = [...new Set(result.rows.map((d) => d.projectId))];
-  const projectMap = new Map<
-    string,
-    { name: string; activeDeploymentId: string | null; favicon: string | null }
-  >();
+  const projectMap = new Map<string, { name: string; activeDeploymentId: string | null }>();
   for (const pid of projectIds) {
     const p = await repos.project.findById(pid);
-    if (p)
-      projectMap.set(pid, {
-        name: p.name,
-        activeDeploymentId: p.activeDeploymentId,
-        favicon: p.favicon ?? null,
-      });
+    if (p) projectMap.set(pid, { name: p.name, activeDeploymentId: p.activeDeploymentId });
   }
 
   const enriched = result.rows.map((d) => {
@@ -131,8 +109,6 @@ export async function listDeployments(
       ...d,
       projectName: proj?.name ?? "Unknown",
       isActive: proj?.activeDeploymentId === d.id,
-      // Project favicon → dashboard row logo (see listByProject above).
-      favicon: proj?.favicon ?? null,
     };
   });
 
@@ -154,31 +130,36 @@ export async function getDeployment(
   return dep;
 }
 
-// Mutating actions on the self-deployed control plane's deployment are refused by
-// the shared policy (`assertNotControlPlane*`, controller-helpers): its row is an
-// ADOPT deployment over a host process the CLI supervises, so rollback / restart /
-// delete / pin would either be meaningless or detach the live app. Build and
-// redeploy are blocked separately, in build.service's triggerDeployment.
+/**
+ * Refuse a mutating action on the self-deployed control plane's deployment. Its
+ * row is an ADOPT deployment over the already-running host process (supervised
+ * by the CLI, not this pipeline) — rollback/restart/delete/pin would be
+ * meaningless or would detach the live app (clearing activeDeploymentId).
+ * Build/redeploy is already blocked in build.service (triggerDeployment).
+ */
+async function assertNotControlPlaneDeployment(dep: { projectId: string }): Promise<void> {
+  const project = await repos.project.findById(dep.projectId);
+  if (project?.appTemplateId === "openship") {
+    throw new ForbiddenError(
+      "The Openship control plane manages its own runtime — this action isn't available here. Use the CLI.",
+    );
+  }
+}
 
 export async function deleteDeployment(
   deploymentId: string,
   organizationId: string,
 ) {
   const dep = await getDeployment(deploymentId, organizationId);
-
-  const project = await repos.project.findById(dep.projectId);
-  assertNotControlPlane(project);
+  await assertNotControlPlaneDeployment(dep);
 
   if (["queued", "building", "deploying"].includes(dep.status)) {
     throw new ForbiddenError("Cannot delete a deployment that is in progress. Cancel it first.");
   }
 
-  // protectRetained: a compose service that didn't change carries its container
-  // and image onto later releases, so this release's rows can name artifacts a
-  // retained (or the live) release still needs.
-  const manifest = await collectDeploymentManifest(dep, project ?? null, {
-    protectRetained: true,
-  });
+  const project = await repos.project.findById(dep.projectId);
+
+  const manifest = await collectDeploymentManifest(dep, project ?? null);
   if (manifest.resources.length > 0) {
     await executeCleanup(manifest);
   }
@@ -206,7 +187,7 @@ export async function rollbackDeployment(
 ) {
   // Existence + org-scope check (throws if deployment isn't in this org).
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
+  await assertNotControlPlaneDeployment(dep);
   await rollback(deploymentId);
   // Return the post-rollback deployment row (now with any updated container id).
   return (await repos.deployment.findById(dep.id)) ?? dep;
@@ -221,106 +202,16 @@ export async function rollbackDeployment(
  */
 export async function previewRestore(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
-  const { target, project, plan } = await resolveRestorePlan(deploymentId);
-  const consequences =
-    plan.mode === "ineligible"
-      ? { env: undefined, untouchedServices: [] as string[] }
-      : await describeRestoreConsequences(target, project, plan.mode);
+  await assertNotControlPlaneDeployment(dep);
+  const { plan } = await resolveRestorePlan(deploymentId);
   return {
     mode: plan.mode,
     /** True when the restore needs the repo (clone + token + GitHub access). */
     needsRepository: planNeedsRepository(plan),
     /** Services that will rebuild because their image is gone (empty = fully instant). */
     rebuildServices: plan.mode === "redeploy-pinned" ? plan.rebuildServices : [],
-    /** Which env keys the frozen snapshot would change. Keys only, never values. */
-    env: consequences.env,
-    /** Services that exist today but not in this release — left running, untouched. */
-    untouchedServices: consequences.untouchedServices,
     ...(plan.mode === "ineligible" ? { code: plan.code, reason: plan.message } : {}),
   };
-}
-
-/**
- * The two things a rollback does that aren't visible from the release itself:
- * it replays that release's env over today's, and it leaves services added since
- * running. Both are read-only derivations, resolved here so the confirm dialog
- * and any future caller (CLI, MCP) agree.
- *
- * Never throws: a preview that fails is a dialog that can't open, and neither
- * half is load-bearing for the rollback itself.
- */
-async function describeRestoreConsequences(
-  target: Deployment,
-  project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
-  mode: RestorePlan["mode"],
-): Promise<{ env?: EnvDiff; untouchedServices: string[] }> {
-  try {
-    const snapshot = (target.meta ?? {}) as {
-      composeServices?: Array<{ name?: string }>;
-      serviceDeploymentMode?: "services" | "single";
-      targetServiceIds?: string[];
-    };
-    const liveServiceRows = await repos.service.listByProject(project.id);
-
-    // Frozen list absent (rows predating the snapshot) → we can't say which
-    // services are new, and claiming "none" would be a promise we can't keep.
-    const frozenNames = snapshot.composeServices
-      ? new Set(snapshot.composeServices.map((s) => s.name).filter((n): n is string => !!n))
-      : null;
-    const untouchedServices = frozenNames
-      ? liveServiceRows.map((s) => s.name).filter((name) => !frozenNames.has(name))
-      : [];
-
-    // Which pipeline the replay lands in decides what happens to keys added
-    // since: compose layers the snapshot over them, single-app uses it verbatim.
-    // Mirrors `resolveServicePipelineMode`'s single-app gate.
-    const singleApp =
-      snapshot.serviceDeploymentMode === "single" && !(snapshot.targetServiceIds?.length ?? 0);
-    const strategy: EnvRestoreStrategy =
-      mode === "unit-swap"
-        ? "unchanged"
-        : singleApp || liveServiceRows.length === 0
-          ? "replace"
-          : "overlay";
-
-    const frozen = decryptEnvMap((target.envVars ?? {}) as Record<string, string>);
-    const liveRows = await repos.project.listEnvVars(project.id, target.environment);
-    const liveProject = decryptEnvMap(
-      Object.fromEntries(
-        liveRows.filter((r) => r.serviceId === null).map((r) => [r.key, r.value] as const),
-      ),
-    );
-    const rowsByService = new Map<string, Record<string, string>>();
-    for (const row of liveRows) {
-      if (!row.serviceId) continue;
-      const bucket = rowsByService.get(row.serviceId) ?? {};
-      bucket[row.key] = row.value;
-      rowsByService.set(row.serviceId, bucket);
-    }
-
-    const liveServices = liveServiceRows.map((svc) => ({
-      name: svc.name,
-      // Same precedence as the deploy merge: a service's own env rows win over
-      // inline compose `environment:`.
-      overrides: {
-        ...((svc.environment as Record<string, string> | null) ?? {}),
-        ...decryptEnvMap(rowsByService.get(svc.id) ?? {}),
-      },
-    }));
-
-    return {
-      env: diffFrozenEnv({ frozen, liveProject, liveServices, strategy }),
-      untouchedServices,
-    };
-  } catch (err) {
-    console.warn(
-      `[rollback] restore preview for ${target.id} could not describe its consequences: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
-    return { untouchedServices: [] };
-  }
 }
 
 export async function setDeploymentPin(
@@ -329,7 +220,7 @@ export async function setDeploymentPin(
   pinned: boolean,
 ) {
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
+  await assertNotControlPlaneDeployment(dep);
   await setPin(deploymentId, pinned);
   return (await repos.deployment.findById(dep.id)) ?? dep;
 }
@@ -353,13 +244,6 @@ export async function rejectDeployment(
   const meta = (dep.meta as { previousActiveDeploymentId?: string } | null) ?? null;
   const previousDeploymentId = meta?.previousActiveDeploymentId;
 
-  // Reject both restores a release AND destroys one, so it must not start while
-  // another deploy on this project is in flight — that deploy's containers are
-  // not yet on any deployment row, so no keep set can see them. The rollback
-  // below re-checks this, but only when there IS a predecessor; a reject with
-  // none would otherwise tear down runtime under a running build.
-  await checkNoActiveBuild(project.id);
-
   // Restore the deployment this one replaced (if any) as the active/finalized
   // one — same as before.
   if (previousDeploymentId && previousDeploymentId !== deploymentId) {
@@ -371,16 +255,7 @@ export async function rejectDeployment(
   // "reject" means "don't finalize this deploy", not "erase it". Keeping the
   // record + logs is the whole point — the failure has to stay inspectable in
   // the project's deployment history.
-  //
-  // The restore above only ENQUEUES a deploy, so `project.activeDeploymentId`
-  // may still name THIS deployment — hence `alsoProtectDeploymentId`, which is
-  // what stops the manifest from listing the predecessor's live container and
-  // the images the restore is about to reuse. Collected here rather than earlier
-  // so it reads the DB after the restore was requested.
-  const manifest = await collectDeploymentManifest(dep, project, {
-    protectRetained: true,
-    alsoProtectDeploymentId: previousDeploymentId,
-  });
+  const manifest = await collectDeploymentManifest(dep, project);
   if (manifest.resources.length > 0) {
     await executeCleanup(manifest);
   }
@@ -522,9 +397,9 @@ export async function getDeploymentLogs(
     return buildSessions.logs as LogEntry[];
   }
 
-  const containerId = dep.containerId;
-  if (containerId) {
-    return withDeploymentRuntime(dep, (runtime) => runtime.getRuntimeLogs(containerId, tail));
+  if (dep.containerId) {
+    const { runtime } = await resolveDeploymentRuntime(dep);
+    return runtime.getRuntimeLogs(dep.containerId, tail);
   }
 
   return [];
@@ -535,21 +410,20 @@ export async function restartDeployment(
   organizationId: string,
 ) {
   const dep = await getDeployment(deploymentId, organizationId);
-  await assertNotControlPlaneById(dep.projectId);
+  await assertNotControlPlaneDeployment(dep);
 
   if (dep.status !== "ready") {
     throw new ForbiddenError("Can only restart a running deployment");
   }
-  const containerIds = await deploymentContainerIds(dep);
+  const containerIds = await listDeploymentContainerIds(dep);
   if (containerIds.length === 0) {
     throw new ForbiddenError("Deployment has no container");
   }
 
-  await withDeploymentRuntime(dep, async (runtime) => {
-    for (const containerId of containerIds) {
-      await runtime.restart(containerId);
-    }
-  });
+  const { runtime } = await resolveDeploymentRuntime(dep);
+  for (const containerId of containerIds) {
+    await runtime.restart(containerId);
+  }
 
   return dep;
 }
@@ -562,23 +436,10 @@ export async function getContainerInfo(
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
   }
-  const containerId = dep.containerId;
-  return withDeploymentRuntime(dep, (runtime) => runtime.getContainerInfo(containerId));
+  const { runtime } = await resolveDeploymentRuntime(dep);
+  return runtime.getContainerInfo(dep.containerId);
 }
 
-/**
- * Usage for ONE deployment's own container.
- *
- * Deliberately single-container, and NOT the project-level collector in
- * modules/monitoring/project-usage.ts: that one answers "what is this project's
- * whole stack using right now", this one answers "what is this specific
- * deployment's container using" — a different question, reachable for a
- * non-active deployment.
- *
- * Read-only resolver, same reason as getContainerInfo above: a full platform runs
- * `detectOpenRestyPaths` and the edge-Lua self-heal inside the provision lock,
- * which is not something a status read should contend on.
- */
 export async function getContainerUsage(
   deploymentId: string,
   organizationId: string,
@@ -587,8 +448,8 @@ export async function getContainerUsage(
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
   }
-  const containerId = dep.containerId;
-  return withDeploymentRuntime(dep, (runtime) => runtime.getUsage(containerId));
+  const { runtime } = await resolveDeploymentRuntime(dep);
+  return runtime.getUsage(dep.containerId);
 }
 
 export async function getBuildLogs(

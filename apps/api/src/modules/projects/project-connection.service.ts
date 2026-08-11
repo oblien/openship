@@ -242,22 +242,16 @@ export async function createConnection(
         "Internal mode isn't available for a cloud-hosted app yet — use Public.",
       );
     }
-    // A synthesized output (plain app / raw compose, no template) already carries
-    // the east-west address as its value — the synthesizer built it from the same
-    // alias+port the container answers to on the shared network. Inject verbatim;
-    // toInternalUrl would need a template and return null.
-    if (!output.internal) {
-      // Template source: rewrite host → the source app's internal service alias.
-      // The output's declared/derived `service` is authoritative for which
-      // alias+port to target; if it can't resolve, internal isn't viable here.
-      const internal = toInternalUrl(value, template, output.service);
-      if (!internal) {
-        throw new ValidationError(
-          "Internal mode isn't available for this connection — use Public, or pick a database app's URL.",
-        );
-      }
-      value = internal;
+    // Rewrite host → the source app's internal service alias. The output's
+    // declared/derived `service` is authoritative for which alias+port to
+    // target; if it can't resolve, internal isn't viable here.
+    const internal = toInternalUrl(value, template, output.service);
+    if (!internal) {
+      throw new ValidationError(
+        "Internal mode isn't available for this connection — use Public, or pick a database app's URL.",
+      );
     }
+    value = internal;
   }
 
   // Don't silently clobber a manually-set env var: if `envKey` already exists on

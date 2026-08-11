@@ -9,7 +9,6 @@
  */
 
 import { repos } from "@repo/db";
-import { DEFAULT_RETAIN_COUNT } from "@repo/core";
 import crypto from "node:crypto";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
@@ -53,9 +52,8 @@ export async function createPolicy(
     cronExpression?: string;
     triggerOnPreDeploy?: boolean;
     enableWebhook?: boolean;
-    /** Omitted = `DEFAULT_RETAIN_COUNT`. Explicit null = unlimited. */
-    retainCount?: number | null;
-    retainDays?: number | null;
+    retainCount?: number;
+    retainDays?: number;
     payloadKind?: string;
     payloadConfig?: Record<string, unknown>;
     preHook?: string;
@@ -77,15 +75,6 @@ export async function createPolicy(
     }
   }
 
-  // Retention defaults ON. Storing two NULLs made `prunePolicy` short-circuit on
-  // "no retention configured", so a policy created over the API accumulated runs
-  // forever while the same policy created in the dashboard (whose form defaults
-  // to 7) pruned. Unlimited is still expressible — it just has to be asked for
-  // with an explicit null. Only defaulted when NEITHER field was given: a caller
-  // who set `retainDays` alone chose their retention deliberately, and adding a
-  // count would silently tighten it.
-  const retentionUnspecified = data.retainCount === undefined && data.retainDays === undefined;
-
   const id = `bkp_${crypto.randomUUID()}`;
   const row = await repos.backupPolicy.create({
     id,
@@ -96,7 +85,7 @@ export async function createPolicy(
     cronExpression: data.cronExpression ?? null,
     triggerOnPreDeploy: data.triggerOnPreDeploy ?? false,
     webhookToken: data.enableWebhook ? generateWebhookToken() : null,
-    retainCount: data.retainCount ?? (retentionUnspecified ? DEFAULT_RETAIN_COUNT : null),
+    retainCount: data.retainCount ?? null,
     retainDays: data.retainDays ?? null,
     payloadKind: data.payloadKind ?? "auto",
     payloadConfig: data.payloadConfig ?? {},

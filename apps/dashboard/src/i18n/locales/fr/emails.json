@@ -3,7 +3,6 @@
     "title": "Serveur de messagerie",
     "subtitle": "Configurez un serveur de messagerie auto-hébergé en quelques clics",
     "backToServers": "Retour aux serveurs de messagerie",
-    "backToAdmin": "Retour à l'administration de la messagerie",
     "addServer": "Ajouter un serveur de messagerie",
     "removeModal": {
       "title": "Retirer ce serveur de messagerie ?",
@@ -82,10 +81,7 @@
     "willStream": "Les journaux s'afficheront ici une fois la configuration démarrée.",
     "jumpToLatest": "Aller au plus récent",
     "setupFailed": "Échec de la configuration",
-    "retryFromStep": "Réessayer à partir de l'étape {resumeStep}",
-    "resumePausedTitle": "Configuration en pause",
-    "stepLabel": "Étape {step}",
-    "continueFromStep": "Reprendre à l'étape {step}"
+    "retryFromStep": "Réessayer à partir de l'étape {resumeStep}"
   },
   "serverList": {
     "title": "Serveurs de messagerie",
@@ -94,8 +90,7 @@
     "removeAria": "Retirer {name} de la liste de messagerie",
     "installing": "Installation en cours",
     "running": "En cours d'exécution",
-    "incomplete": "Incomplet",
-    "stoppedAt": "Arrêté · étape {step}"
+    "incomplete": "Incomplet"
   },
   "setup": {
     "title": "Configuration du serveur de messagerie",
@@ -105,7 +100,7 @@
     "willBeAtBefore": "Votre serveur de messagerie sera à l'adresse ",
     "adminPasswordLabel": "Mot de passe administrateur",
     "passwordPlaceholder": "Mot de passe fort - ou cliquez sur Générer",
-    "passwordHint": "Au moins 12 caractères. Utilisé pour se connecter à la boîte mail après la configuration — vous pourrez le modifier plus tard depuis le panneau d'administration ci-dessous.",
+    "passwordHint": "Utilisé pour se connecter à la boîte mail après la configuration. Vous pourrez le modifier plus tard depuis le panneau d'administration ci-dessous.",
     "startSetup": "Démarrer la configuration",
     "adoptCta": "Vous avez déjà un serveur de messagerie ? Adoptez-le",
     "whatInstalled": "Ce qui est installé",
@@ -122,7 +117,6 @@
     "prerequisites": "Prérequis",
     "prereq1": "Un domaine avec accès au DNS",
     "prereq2": "Le port 25 non bloqué par votre fournisseur",
-    "prereq2Relay": "Port 25 ouvert pour le courrier entrant (le sortant passe par votre relais)",
     "prereq3": "Serveur Ubuntu/Debian vierge (recommandé)",
     "hide": "Masquer",
     "reveal": "Afficher",

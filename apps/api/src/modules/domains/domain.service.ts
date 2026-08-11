@@ -33,11 +33,7 @@ import { generateToken } from "../../lib/domain-token";
 import { untrackedSiteFor } from "../../lib/edge-orphans.service";
 import { publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
 import { sshManager } from "../../lib/ssh-manager";
-import {
-  resolveServerIdForProject,
-  withCertStoreExecutor,
-  withServerHostExecutor,
-} from "../../lib/edge-host-executor";
+import type { DeploymentMeta } from "../../lib/deployment-runtime";
 import {
   assertRedirectSupported,
   assertRedirectTargets,
@@ -485,6 +481,36 @@ async function markDomainVerifiedActive(
   });
 }
 
+/** The server the project's active deployment runs on (for edge/cert reads). */
+async function resolveServerIdForProject(project: Project): Promise<string | null> {
+  if (!project.activeDeploymentId) return null;
+  const dep = await repos.deployment.findById(project.activeDeploymentId).catch(() => null);
+  return (dep?.meta as DeploymentMeta | undefined)?.serverId ?? null;
+}
+
+/**
+ * Run `fn` with an executor that reaches the BOX the project's edge lives on —
+ * the same host the bare/containerized OpenResty + certbot + /etc/letsencrypt sit
+ * on. For the auto-registered "this server" (server-host mode) that's
+ * `createHostExecutor()` (the LOCAL host — SSH-to-host when the API is itself
+ * containerized); for a real remote server it's the pooled SSH executor. Returns
+ * null when there's no server or the box is unreachable. This is what lets cert
+ * reuse read the HOST's /etc/letsencrypt even when the API runs in a container
+ * whose own /etc/letsencrypt is a different (empty) volume.
+ */
+async function withServerHostExecutor<T>(
+  ctx: RequestContext,
+  project: Project,
+  fn: (exec: CommandExecutor) => Promise<T>,
+): Promise<T | null> {
+  const serverId = await resolveServerIdForProject(project);
+  if (!serverId) return null;
+  // No local/remote branch: `acquire` already returns the pooled HOST channel for a
+  // local row. The old branch handed out a fresh `createHostExecutor()` per call and
+  // never closed it — one leaked sshd session per domain/SSL status read (#291).
+  return sshManager.withExecutor(serverId, fn).catch(() => null);
+}
+
 /**
  * Bare-metal edge, but the SSL executor lands INSIDE a container: every SSL op
  * (certbot, cert read, vhost write) then hits the container's own (empty)
@@ -538,13 +564,14 @@ function isPathSafeHostname(hostname: string): boolean {
  * box, or a foreign reverse proxy (nginx/caddy/apache/traefik, bare OR container)
  * we're taking over — adopt the cert that's already there instead of re-issuing via
  * ACME (which fails behind Cloudflare, or when the cert isn't at certbot's standard
- * path). Sources, in order, each read on the executor that can actually see it:
+ * path). Sources, in order, all read on the HOST executor so it works when the API
+ * is containerized:
  *   1. certbot's /etc/letsencrypt on the serving host, via the platform provider
  *      (verifyExistingCert).
- *   2. certbot's lineage dirs read as plain files. On the local box that store is a
- *      1:1 bind mount in the api container, so this reads it THERE and needs no host
- *      channel (`withCertStoreExecutor`). Includes the `-0001` re-issue lineages,
- *      which a bare `live/<host>` lookup misses entirely.
+ *   2. the host's certbot lineage dir read directly on the HOST executor — the
+ *      bare-edge case where the API container's own /etc/letsencrypt is a
+ *      different volume. Includes the `-0001` re-issue lineages, which a bare
+ *      `live/<host>` lookup misses entirely.
  *   3. whatever the edge proxy itself serves, via `edgeProxy().certFor()` — our
  *      OpenResty at a non-standard path, an nginx/apache declared path, caddy's
  *      own cert store, or traefik's acme.json.
@@ -612,13 +639,11 @@ export async function reuseServerCertForDomain(ctx: RequestContext, domainId: st
 
     const rejections: string[] = [];
 
-    // 2. Read certbot's store directly — covers a bare-metal edge whose certs live on
-    //    the host. On the local box that store is a 1:1 bind mount in the api
-    //    container, so this must NOT go over the host channel: a firewalled or
-    //    switched-off channel would make an adoptable cert unreadable and send the
-    //    domain to ACME instead (#490). See `withCertStoreExecutor`.
+    // 2. Read the host's certbot store directly on the HOST executor — covers a
+    //    bare-metal edge whose certs live on the host while the API container's own
+    //    /etc/letsencrypt is a separate, empty volume.
     if (isPathSafeHostname(domain.hostname)) {
-      const hostCert = await withCertStoreExecutor(project, async (exec) => {
+      const hostCert = await withServerHostExecutor(ctx, project, async (exec) => {
         for (const base of await certbotLineageDirs(exec, domain.hostname)) {
           const certPem = await readEdgeFile(exec, `${base}/fullchain.pem`);
           const keyPem = await readEdgeFile(exec, `${base}/privkey.pem`);
@@ -638,7 +663,7 @@ export async function reuseServerCertForDomain(ctx: RequestContext, domainId: st
     // 3. Whatever the edge proxy currently serves for this host — one reader for
     //    every proxy kind, so caddy's store and traefik's acme.json are reachable
     //    here and not just declared nginx/apache paths.
-    const fromProxy = await withServerHostExecutor(project, async (exec) => {
+    const fromProxy = await withServerHostExecutor(ctx, project, async (exec) => {
       const proxy = await edgeProxy(exec);
       if (!proxy) return null;
       const candidate = await proxy.certCandidateFor(domain.hostname);
@@ -871,20 +896,9 @@ export async function verifyDomain(
     // Background SSL provisioning. Don't await — the verify response stays fast
     // and the SSL status pill updates on the next list read. Failure is
     // non-fatal: HTTP route stays up, Renew + the ssl-scheduler recover it.
-    //
-    // Log before firing — this produces a visible "[DOMAIN] provisioning HTTPS"
-    // line in the deploy log so operators know the ~1 min window is expected,
-    // not a sign that SSL is broken (two users reported it as such: TODO.md).
-    console.log(`[DOMAIN] provisioning HTTPS for ${domain.hostname} — route is live on HTTP; certificate expected in ~1 min`);
     void manageDomainSsl(domain.hostname, {
       action: "provision",
       projectId: domain.projectId ?? undefined,
-    }).then((result) => {
-      if (result.verified) {
-        console.log(`[DOMAIN] HTTPS certificate issued for ${domain.hostname}${result.expiresAt ? ` (expires ${new Date(result.expiresAt).toISOString().slice(0, 10)})` : ""}`);
-      } else {
-        console.warn(`[DOMAIN] HTTPS provisioning completed but cert not verified for ${domain.hostname}`);
-      }
     }).catch((err) => {
       console.error(
         `[DOMAIN] Background SSL provisioning failed for ${domain.hostname}:`,

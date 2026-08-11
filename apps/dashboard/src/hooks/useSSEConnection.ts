@@ -310,7 +310,6 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
     onContainerExit: (...args) => callbacksRef.current.onContainerExit?.(...args),
     onPrompt: (...args) => callbacksRef.current.onPrompt?.(...args),
     onServiceStatus: (...args) => callbacksRef.current.onServiceStatus?.(...args),
-    onInstallPhase: (...args) => callbacksRef.current.onInstallPhase?.(...args),
     onSuccess: (...args) => {
       stopReconnects();
       callbacksRef.current.onSuccess?.(...args);

@@ -5,18 +5,11 @@
  * request that re-runs the full auth + permission stack (see mcp-dispatch.ts).
  */
 
-import { Hono, type Context } from "hono";
-import { repos, type Permission } from "@repo/db";
+import { Hono } from "hono";
+import { repos } from "@repo/db";
 import { secureRouter } from "../../lib/secure-router";
 import { parseBearerToken } from "../../lib/bearer";
-import {
-  MCP_RESOURCE_PATH,
-  allowedMcpResources,
-  canonicalizeResource,
-  protectedResourceMetadataUrl,
-  publicOriginFor,
-} from "../../lib/mcp-resource";
-import { readTokenAudience } from "../../lib/mcp-token";
+import { requestPublicOrigin } from "../../lib/public-url";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
 import { resolveBearerIdentity } from "../../middleware/auth";
 import { handleMcpMessage, jsonRpcError } from "./mcp-server";
@@ -46,20 +39,11 @@ async function resolveMcpPrincipal(token: string, headers: Headers): Promise<Mcp
   }
 
   let grantedRootTypes: ReadonlySet<string> = new Set();
-  let wildcardGrants: ReadonlyMap<string, readonly Permission[]> = new Map();
   let canCreateProjects = false;
   let sourceCapabilities: ReadonlySet<"content" | "write"> = new Set();
   if (role === "restricted" && id.hasBinding) {
     const grants = await repos.patGrant.listByToken(id.tokenId);
     grantedRootTypes = new Set(grants.map((g) => g.resourceType));
-    // Wildcard rows carry their permissions so the tool filter can answer the same
-    // verb question the wildcard arm of `checkPermission` answers. One row per type
-    // at most — `pat_grant_unique` is on (token, type, id).
-    wildcardGrants = new Map(
-      grants
-        .filter((g) => g.resourceId === "*")
-        .map((g) => [g.resourceType, g.permissions ?? []] as const),
-    );
     // Repo CONTENT is granted separately from the repo itself, so a token holding
     // github grants is still deploy-only until some grant names read/write paths.
     // Coarse on purpose (any grant, not per-repo): `tools/list` advertises what
@@ -82,80 +66,31 @@ async function resolveMcpPrincipal(token: string, headers: Headers): Promise<Mcp
     );
   }
 
-  return {
-    role,
-    readOnly: id.readOnly,
-    grantedRootTypes,
-    wildcardGrants,
-    canCreateProjects,
-    sourceCapabilities,
-  };
+  return { role, readOnly: id.readOnly, grantedRootTypes, canCreateProjects, sourceCapabilities };
 }
 
 const PUBLIC_REASON =
   "MCP JSON-RPC endpoint; authenticates via PAT bearer and re-checks auth on every dispatched tool call";
 
-/**
- * Resource-server 401. `WWW-Authenticate` points at the PATH-AWARE Protected
- * Resource Metadata for the canonical MCP URL (RFC 9728 §5.1) — the root
- * document describes the origin, not this endpoint, and a strict client that
- * follows the pointer must land on metadata whose `resource` matches the URL it
- * connected to. Built from the PUBLIC origin (forwarded host), not the loopback
- * one the API binds to.
- */
-function unauthorized(c: Context, message: string) {
-  return c.json(jsonRpcError(null, -32001, message), 401, {
-    "WWW-Authenticate": `Bearer resource_metadata="${protectedResourceMetadataUrl(
-      publicOriginFor(c.req.raw),
-      MCP_RESOURCE_PATH,
-    )}"`,
-    "Access-Control-Expose-Headers": "WWW-Authenticate",
-  });
-}
-
-/**
- * RFC 8707 audience check. A token minted for a DIFFERENT resource must not be
- * accepted here — that's the resource server's half of the contract, and it's
- * what stops a token phished by another MCP server from being replayed against
- * this one. A token with no audience (opaque, issued before audience binding
- * existed) is unconstrained and passes, so existing clients keep working.
- * Comparison is on canonicalized URLs, never raw strings.
- */
-function audienceAccepted(token: string, req: Request): boolean {
-  const aud = readTokenAudience(token);
-  if (!aud) return true;
-  const value = canonicalizeResource(aud);
-  if (!value) return false;
-  return allowedMcpResources(publicOriginFor(req)).some(
-    (allowed) => canonicalizeResource(allowed) === value,
-  );
-}
-
-// This server doesn't push server→client messages, so GET is never an SSE
-// stream. An UNAUTHENTICATED GET still answers 401 with the discovery pointer:
-// probing the endpoint with a bare GET is how several clients (Claude.ai among
-// them) find the authorization server. An authenticated GET is a 405.
-r.public("get", "/", { reason: PUBLIC_REASON, rateLimit: "mcp" }, async (c) => {
-  const token = parseBearerToken(c);
-  if (!token) return unauthorized(c, "Missing or invalid access token");
-  if (!audienceAccepted(token, c.req.raw)) {
-    return unauthorized(c, "Access token was issued for a different resource");
-  }
-  const principal = await resolveMcpPrincipal(token, c.req.raw.headers);
-  if (!principal) return unauthorized(c, "Missing or invalid access token");
-  return c.body(null, 405);
-});
+// This server doesn't push server→client messages, so GET (SSE stream) is 405.
+r.public("get", "/", { reason: PUBLIC_REASON }, (c) => c.body(null, 405));
 
 // Same tight per-IP budget as the auth endpoints — unauthenticated PAT probes
 // run a DB lookup, so cap them well below the default-anon rate.
 r.public("post", "/", { reason: PUBLIC_REASON, rateLimit: "mcp" }, async (c) => {
   const token = parseBearerToken(c);
-  if (!token) return unauthorized(c, "Missing or invalid access token");
 
-  // Reject a token issued for another resource before spending a DB lookup on it.
-  if (!audienceAccepted(token, c.req.raw)) {
-    return unauthorized(c, "Access token was issued for a different resource");
-  }
+  // Resource-server 401: a missing/invalid credential returns 401 with a
+  // `WWW-Authenticate` header pointing at the Protected Resource Metadata, so
+  // OAuth-2.1 MCP clients discover the authorization server and start the flow.
+  const unauthorized = () =>
+    c.json(jsonRpcError(null, -32001, "Missing or invalid access token"), 401, {
+      // Advertise the PUBLIC discovery URL (from the forwarded host) so a remote
+      // OAuth client can actually reach it — not the loopback origin the API binds.
+      "WWW-Authenticate": `Bearer resource_metadata="${requestPublicOrigin(c.req.raw)}/.well-known/oauth-protected-resource"`,
+    });
+
+  if (!token) return unauthorized();
 
   // Accept BOTH credentials: a PAT (API-key path) or an OAuth access token
   // (mcp() plugin). This resolves the caller's capability for tools/list
@@ -163,7 +98,7 @@ r.public("post", "/", { reason: PUBLIC_REASON, rateLimit: "mcp" }, async (c) => 
   // authorization — the real check runs on the dispatched sub-request through
   // authMiddleware (see tryPatAuth / tryOAuthMcpAuth); tools/call re-auths.
   const principal = await resolveMcpPrincipal(token, c.req.raw.headers);
-  if (!principal) return unauthorized(c, "Missing or invalid access token");
+  if (!principal) return unauthorized();
 
   let payload: unknown;
   try {

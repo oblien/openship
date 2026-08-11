@@ -101,10 +101,6 @@
     "serverOnPort": "服务器运行于端口 {port}",
     "serverPortNotSet": "未设置服务器端口",
     "staticFromEdge": "从边缘提供静态内容",
-    "modeServer": "服务器",
-    "modeWorker": "工作进程",
-    "modeStatic": "静态",
-    "workerModeDesc": "持续运行，无端口或公共 URL — 队列消费者、定时任务或机器人。",
     "buildSettingsTitle": "构建设置"
   },
   "projectSettings": {

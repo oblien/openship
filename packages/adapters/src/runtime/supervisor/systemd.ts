@@ -13,9 +13,8 @@
  * Unit location: /etc/systemd/system/ (standard for admin-created units)
  */
 
-import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage } from "../../types";
+import type { CommandExecutor, LogEntry, LogCallback } from "../../types";
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
-import { sampleBareUsage, ZERO_USAGE } from "./usage";
 import { sq, parseLogLevel } from "../build-pipeline";
 import { probeListeningPort } from "../port-conflict";
 import { execReliable } from "../../system/remote-journal";
@@ -233,34 +232,6 @@ WantedBy=multi-user.target
       return result.trim() === "active";
     } catch {
       return false;
-    }
-  }
-
-  /**
-   * Usage for the unit. Prefers the unit's cgroup, which accounts for the whole
-   * process tree — a `npm start` that forks the real server would otherwise report
-   * only the wrapper's near-zero usage.
-   *
-   * `MainPID` is fetched as the fallback identity (and as the liveness check) for a
-   * host without a readable cgroup; the probe picks the tier itself. `--value` is
-   * used so a stopped unit yields "0" rather than a `MainPID=0` line to parse.
-   */
-  async getUsage(deploymentId: string): Promise<ResourceUsage> {
-    const unitName = this.unitName(deploymentId);
-    try {
-      const out = await this.executor.exec(
-        `systemctl show ${sq(unitName)} -p MainPID --value 2>/dev/null || true`,
-      );
-      const pid = Number.parseInt(out.trim(), 10);
-      if (!Number.isFinite(pid) || pid <= 0) return { ...ZERO_USAGE };
-      return sampleBareUsage(this.executor, pid, [
-        // Where systemd places a unit started from /etc/systemd/system. The delegate
-        // path appears when the unit sets Delegate=yes; harmless to probe either way.
-        `/sys/fs/cgroup/system.slice/${unitName}`,
-        `/sys/fs/cgroup/system.slice/${unitName}/init.scope`,
-      ]);
-    } catch {
-      return { ...ZERO_USAGE };
     }
   }
 

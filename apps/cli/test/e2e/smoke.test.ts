@@ -8,7 +8,7 @@
  * --help / --version / bad-args paths, which resolve before any action runs.
  */
 import { execFile } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -21,7 +21,7 @@ function runCli(args: string[]): Promise<{ stdout: string; stderr: string; code:
   return new Promise((resolve) => {
     execFile(
       process.execPath,
-      ["--import", "tsx", "--import", pathToFileURL(inject).href, entry, ...args],
+      ["--import", "tsx", "--import", inject, entry, ...args],
       { cwd: cliRoot, env: { ...process.env } },
       (error, stdout, stderr) => {
         const code = error && typeof (error as { code?: number }).code === "number"

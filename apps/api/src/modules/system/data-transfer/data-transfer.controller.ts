@@ -1,16 +1,9 @@
 /**
- * HTTP surface for whole-instance data export / import (self-hosted only).
+ * HTTP surface for whole-instance data export / import (self-hosted only,
+ * owner-only — enforced by the route's requireRole("owner")).
  *
  *   POST /api/system/data-transfer/export  — { passphrase? } → DataTransferFile
  *   POST /api/system/data-transfer/import   — { file, passphrase?, mode } → ImportResult
- *
- * AUTHORIZATION: instance administrator, enforced both by
- * `requireInstanceAdmin()` on the routes and by `assertInstanceAdmin(ctx)` here.
- * Export returns EVERY org's data with all secrets decrypted, sealed under a
- * passphrase the caller supplies — so it is a whole-instance read and an
- * org-scoped role check cannot gate it. It previously used
- * requireRole("owner"), which any authenticated user satisfied as owner of
- * their own personal org (GHSA-rwq6-r63g-3c8h).
  */
 
 import type { Context } from "hono";
@@ -18,7 +11,6 @@ import { PkCollisionError } from "@repo/db";
 
 import { audit, auditContextFrom } from "../../../lib/audit";
 import { getRequestContext } from "../../../lib/request-context";
-import { assertInstanceAdmin } from "../../../middleware/instance-admin";
 import {
   MigrationAlreadyInProgressError,
   MigrationLockAcquireError,
@@ -44,8 +36,6 @@ function readPassphrase(v: unknown): string | undefined {
 
 export async function exportInstanceHandler(c: Context) {
   const ctx = getRequestContext(c);
-  await assertInstanceAdmin(ctx);
-
   const body = ((await c.req.json<ExportBody>().catch(() => ({}))) ?? {}) as ExportBody;
 
   let file: DataTransferFile;
@@ -69,7 +59,6 @@ export async function exportInstanceHandler(c: Context) {
 
 export async function importInstanceHandler(c: Context) {
   const ctx = getRequestContext(c);
-  await assertInstanceAdmin(ctx);
 
   let body: ImportBody;
   try {

@@ -14,9 +14,9 @@
  * in-container executor is only the fallback for providers that don't serve files.
  */
 
+import { posix as pathPosix } from "node:path";
 import {
   probeStaticOutput,
-  resolveServedStaticPath,
   type BuildLogger,
   type OutputProbeResult,
   type Platform,
@@ -26,14 +26,13 @@ import type { OutputCheckResult } from "../../lib/deployment-runtime";
 import { normalizeTargetPath } from "../../lib/public-endpoints";
 
 /**
- * Routed paths → the location each one actually serves from, for the deploy
- * pipeline and the on-demand check alike: the two must probe identical paths, or a
- * drift from the vhost `root` becomes a phantom warning (or a missed 404).
+ * Routed paths → the location each one actually serves from. ONE definition,
+ * shared by the deploy pipeline and the on-demand check, because the two must
+ * probe identical paths — a private copy in either would drift from the vhost
+ * `root` and turn into a phantom warning (or a missed 404).
  *
- * The per-path rule itself is `resolveServedStaticPath` — the same call the vhost
- * is built from, so this can't disagree with what the edge was given. It used to
- * be a local copy of that join, described in prose right here; the prose is how
- * you get three copies.
+ * Mirrors bare.ts deployStatic + route-registration:
+ *   servedPath = targetPath === "/" ? staticRoot : join(staticRoot, targetPath)
  *
  * With no routed endpoints there is still exactly one thing to check: the root.
  */
@@ -47,7 +46,10 @@ export function staticOutputTargets(
     const path = normalizeTargetPath(endpoint.targetPath) ?? "/";
     if (seen.has(path)) continue;
     seen.add(path);
-    targets.push({ path, servedPath: resolveServedStaticPath(staticRoot, path) });
+    targets.push({
+      path,
+      servedPath: path === "/" ? staticRoot : pathPosix.join(staticRoot, path.slice(1)),
+    });
   }
   if (targets.length === 0) targets.push({ path: "/", servedPath: staticRoot });
   return targets;

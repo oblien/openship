@@ -10,17 +10,14 @@ import {
   ALL_PACKAGE_MANAGERS,
   ALL_RESOURCE_TIERS,
   CLOUD_RESOURCE_TIER_IDS,
-  PROXY_DIRECTIVES,
-  proxyKindRegex,
   type ResourceTier,
 } from "@repo/core";
 
 // ─── Shared enums (derived from registry) ────────────────────────────────────
 
-export const FrameworkEnum = Type.String({
-  maxLength: 100,
-  description: "Framework stack ID or display label (e.g. 'static', 'nextjs', 'Static Site').",
-});
+export const FrameworkEnum = Type.Union(
+  STACK_IDS.map((id) => Type.Literal(id)) as [TLiteral<string>, ...TLiteral<string>[]],
+);
 
 export const PackageManagerEnum = Type.Union(
   ALL_PACKAGE_MANAGERS.map((pm) => Type.Literal(pm)) as [TLiteral<string>, ...TLiteral<string>[]],
@@ -53,21 +50,6 @@ export const CloudResourceTierEnum = (opts?: { description?: string }) =>
   );
 
 /**
- * Reject any path whose segments include `..`, on either separator.
- *
- * `rootDirectory` is joined onto the build-context dir, interpolated into a
- * generated Dockerfile `WORKDIR`, and used as the root of the archive uploaded
- * to a cloud workspace, so a traversing value reads outside the repo
- * (GHSA-443m-7g52-94w8). The adapters normalizers are the real defense — not
- * every route that accepts this field is tbValidator-wired — so this is a
- * boundary check, not the fix.
- *
- * Deliberately only forbids traversal instead of whitelisting characters:
- * directory names with spaces are legal and were already accepted.
- */
-export const NO_TRAVERSAL_PATTERN = "^(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).*$";
-
-/**
  * Validator block for "this row is a source-built monorepo sub-app."
  *
  * Same field set lives in three places - the DB `service` row (nullable
@@ -83,16 +65,11 @@ export const NO_TRAVERSAL_PATTERN = "^(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).*$"
  * payload is explicitly a new monorepo sub-app.
  */
 export const MonorepoSubAppFieldsSchema = {
-  rootDirectory: Type.Optional(
-    Type.String({ minLength: 1, maxLength: 200, pattern: NO_TRAVERSAL_PATTERN }),
-  ),
+  rootDirectory: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
   installCommand: Type.Optional(Type.String({ maxLength: 1000 })),
   buildCommand: Type.Optional(Type.String({ maxLength: 1000 })),
   startCommand: Type.Optional(Type.String({ maxLength: 1000 })),
-  // `*` not `+`: an empty string is the pipeline's own "serve from root / unset"
-  // value (build-config default, `!outputDirectory` checks), so `""` must be a
-  // VALID input — a `+` here 400'd every caller sending the blank default (#427).
-  outputDirectory: Type.Optional(Type.String({ maxLength: 200, pattern: "^[A-Za-z0-9._~/-]*$" })),
+  outputDirectory: Type.Optional(Type.String({ maxLength: 200, pattern: "^[A-Za-z0-9._~/-]+$" })),
   framework: Type.Optional(FrameworkEnum),
   packageManager: Type.Optional(PackageManagerEnum),
   buildImage: Type.Optional(Type.String({ maxLength: 200 })),
@@ -147,7 +124,7 @@ const MonorepoAppSchema = Type.Object({
   // requires it so preflight rejects empty paths instead of silently
   // falling back to repo root.
   ...MonorepoSubAppFieldsSchema,
-  rootDirectory: Type.String({ minLength: 1, maxLength: 200, pattern: NO_TRAVERSAL_PATTERN }),
+  rootDirectory: Type.String({ minLength: 1, maxLength: 200 }),
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
   enabled: Type.Optional(Type.Boolean({ default: true })),
   exposed: Type.Optional(Type.Boolean({ default: true })),
@@ -238,38 +215,6 @@ const ReadinessSchema = Type.Object({
   stabilizationSeconds: Type.Optional(Type.Number({ minimum: 1, maximum: 600 })),
   onFailure: Type.Optional(Type.Union([Type.Literal("warn"), Type.Literal("fail")])),
 });
-/**
- * Curated reverse-proxy tunables. CURATED, never arbitrary nginx passthrough:
- * these strings are interpolated straight into generated config.
- *
- * GENERATED from `PROXY_DIRECTIVES` in @repo/core, not hand-listed — the same table
- * drives `sanitizeProxySettings`, which re-checks every value right before
- * rendering. Two hand-written copies would drift and the API would start accepting
- * values the renderer silently drops (or reject ones it renders fine). Adding a
- * directive means one row in that table; nothing here changes.
- */
-const ProxySettingsSchema = Type.Object(
-  Object.fromEntries(
-    PROXY_DIRECTIVES.map((spec) => {
-      if (spec.kind === "bool") return [spec.key, Type.Optional(Type.Boolean())];
-      if (spec.kind === "int") {
-        return [
-          spec.key,
-          Type.Optional(
-            Type.Integer({
-              ...(spec.min !== undefined ? { minimum: spec.min } : {}),
-              ...(spec.max !== undefined ? { maximum: spec.max } : {}),
-            }),
-          ),
-        ];
-      }
-      // `size` | `time` | `buffers` — the kind's regex IS the schema pattern.
-      const re = proxyKindRegex(spec.kind);
-      return [spec.key, Type.Optional(Type.String({ pattern: re!.source, maxLength: 64 }))];
-    }),
-  ),
-);
-
 const RoutingConfigSchema = Type.Object({
   rewrites: Type.Optional(Type.Array(RoutingRuleSchema, { maxItems: 200 })),
   redirects: Type.Optional(
@@ -298,9 +243,6 @@ const RoutingConfigSchema = Type.Object({
   ),
   cleanUrls: Type.Optional(Type.Boolean()),
   trailingSlash: Type.Optional(Type.Boolean()),
-  // No explicit null: `routingConfig` is replaced wholesale on save, so omitting
-  // `proxy` already clears it (and null-ing the whole blob clears everything).
-  proxy: Type.Optional(ProxySettingsSchema),
 });
 
 /**
@@ -345,10 +287,7 @@ export const CreateProjectBody = Type.Object({
   packageManager: Type.Optional(PackageManagerEnum),
   installCommand: Type.Optional(Type.String({ maxLength: 500 })),
   buildCommand: Type.Optional(Type.String({ maxLength: 500 })),
-  // `*` not `+`: an empty string is the pipeline's own "serve from root / unset"
-  // value (build-config default, `!outputDirectory` checks), so `""` must be a
-  // VALID input — a `+` here 400'd every caller sending the blank default (#427).
-  outputDirectory: Type.Optional(Type.String({ maxLength: 200, pattern: "^[A-Za-z0-9._~/-]*$" })),
+  outputDirectory: Type.Optional(Type.String({ maxLength: 200, pattern: "^[A-Za-z0-9._~/-]+$" })),
   productionPaths: Type.Optional(Type.String({ maxLength: 2000 })),
   /**
    * Persistent mounts, compose syntax or a bare app-relative path. Omit to keep
@@ -356,7 +295,7 @@ export const CreateProjectBody = Type.Object({
    * from `null`/absent, where the stack's defaults apply).
    */
   volumes: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 })),
-  rootDirectory: Type.Optional(Type.String({ maxLength: 200, pattern: NO_TRAVERSAL_PATTERN })),
+  rootDirectory: Type.Optional(Type.String({ maxLength: 200 })),
   /**
    * Where the compose file lives when it is NOT at the auto-detected root —
    * the file itself (`deploy/stack.yml`) or the directory holding it
@@ -373,26 +312,6 @@ export const CreateProjectBody = Type.Object({
   publicEndpoints: Type.Optional(Type.Array(PublicEndpointSchema, { maxItems: 20 })),
   hasServer: Type.Optional(Type.Boolean({ default: true })),
   hasBuild: Type.Optional(Type.Boolean({ default: true })),
-  /**
-   * Deployment-class overrides (issue #538). Each is an EXPLICIT override of the
-   * value otherwise derived from `framework`/source/`hasServer`; omit to derive.
-   * `workloadType` is the only way to ask for a portless `worker` (no port, no
-   * route) — the legacy `hasServer` boolean can't express it.
-   */
-  sourceKind: Type.Optional(
-    Type.Union([Type.Literal("git"), Type.Literal("image"), Type.Literal("upload")]),
-  ),
-  buildKind: Type.Optional(
-    Type.Union([
-      Type.Literal("dockerfile"),
-      Type.Literal("buildpack"),
-      Type.Literal("static"),
-      Type.Literal("prebuilt"),
-    ]),
-  ),
-  workloadType: Type.Optional(
-    Type.Union([Type.Literal("web"), Type.Literal("worker"), Type.Literal("static")]),
-  ),
   rollbackWindow: Type.Optional(Type.Number({ minimum: 0, maximum: 20 })),
   /**
    * Cloud archive strategy. Today only "inplace" is implemented
@@ -468,13 +387,6 @@ export const CreateProjectBody = Type.Object({
    */
   isApp: Type.Optional(Type.Boolean()),
   appTemplateId: Type.Optional(Type.String({ maxLength: 100 })),
-  /**
-   * Custom east-west DNS alias for a single-app project, resolving ALONGSIDE the
-   * default `<slug>` on the project network. Free-form here (normalized +
-   * collision-checked server-side); `null`/`""` clears it back to the default.
-   * The compose equivalent is per-service `advanced.alias`.
-   */
-  internalAlias: Type.Optional(Type.Union([Type.String({ maxLength: 100 }), Type.Null()])),
 });
 
 export const UpdateProjectBody = Type.Partial(CreateProjectBody);
@@ -623,7 +535,7 @@ export const SetOptionsBody = Type.Object(
     volumes: Type.Optional(
       Type.Union([Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 }), Type.Null()]),
     ),
-    rootDirectory: Type.Optional(Type.String({ pattern: NO_TRAVERSAL_PATTERN })),
+    rootDirectory: Type.Optional(Type.String()),
     /** Compose file location; `null` clears it and restores root detection. */
     composePath: Type.Optional(Type.Union([Type.String({ maxLength: 300 }), Type.Null()])),
     startCommand: Type.Optional(Type.String()),
@@ -634,13 +546,6 @@ export const SetOptionsBody = Type.Object(
     productionMode: Type.Optional(Type.String({ description: "host | static | standalone." })),
     hasServer: Type.Optional(Type.Boolean()),
     hasBuild: Type.Optional(Type.Boolean()),
-    /** Deployment-class overrides (issue #538); omit to derive. `workloadType`
-     *  is the only way to select a portless `worker`. */
-    sourceKind: Type.Optional(Type.String({ description: "git | image | upload." })),
-    buildKind: Type.Optional(
-      Type.String({ description: "dockerfile | buildpack | static | prebuilt." }),
-    ),
-    workloadType: Type.Optional(Type.String({ description: "web | worker | static." })),
     runtimeMode: Type.Optional(Type.String({ description: "bare | docker." })),
   },
   { additionalProperties: true },

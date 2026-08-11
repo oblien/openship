@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, memo, useRef, useMemo } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Switch } from '@/components/ui/Switch';
 
 interface ModalButton {
   label: string;
@@ -229,12 +228,23 @@ const ModalRenderer: React.FC<ModalRendererProps> = memo(({ instance = { config:
               <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
                 {switchConfig.label}
               </span>
-              <Switch
-                size="lg"
-                checked={Boolean(switchStates[switchConfig.id])}
-                ariaLabel={switchConfig.label}
-                onChange={(next) => handleSwitchChange(switchConfig.id, next)}
-              />
+              <button
+                type="button"
+                role="switch"
+                aria-checked={switchStates[switchConfig.id]}
+                onClick={() => handleSwitchChange(switchConfig.id, !switchStates[switchConfig.id])}
+                className={`
+                  relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                  ${switchStates[switchConfig.id] ? 'bg-primary' : 'bg-muted-foreground/30'}
+                `}
+              >
+                <span
+                  className={`
+                    inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                    ${switchStates[switchConfig.id] ? 'translate-x-6' : 'translate-x-1'}
+                  `}
+                />
+              </button>
             </label>
           ))}
         </div>

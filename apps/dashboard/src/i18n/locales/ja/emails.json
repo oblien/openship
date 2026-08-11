@@ -3,7 +3,6 @@
     "title": "メールサーバー",
     "subtitle": "数クリックでセルフホスト型メールサーバーをセットアップ",
     "backToServers": "メールサーバー一覧に戻る",
-    "backToAdmin": "メール管理に戻る",
     "addServer": "メールサーバーを追加",
     "removeModal": {
       "title": "このメールサーバーを削除しますか？",
@@ -82,10 +81,7 @@
     "willStream": "セットアップが開始されると、ここにログがストリーミングされます。",
     "jumpToLatest": "最新へ移動",
     "setupFailed": "セットアップに失敗しました",
-    "retryFromStep": "ステップ {resumeStep} から再試行",
-    "resumePausedTitle": "セットアップを一時停止しました",
-    "stepLabel": "ステップ {step}",
-    "continueFromStep": "ステップ {step} から続行"
+    "retryFromStep": "ステップ {resumeStep} から再試行"
   },
   "serverList": {
     "title": "メールサーバー",
@@ -94,8 +90,7 @@
     "removeAria": "{name} をメール一覧から削除",
     "installing": "インストール中",
     "running": "稼働中",
-    "incomplete": "未完了",
-    "stoppedAt": "停止 · ステップ {step}"
+    "incomplete": "未完了"
   },
   "setup": {
     "title": "メールサーバーのセットアップ",
@@ -105,7 +100,7 @@
     "willBeAtBefore": "メールサーバーは次の場所に配置されます: ",
     "adminPasswordLabel": "管理者パスワード",
     "passwordPlaceholder": "強力なパスワード - または「生成」をクリック",
-    "passwordHint": "12文字以上。セットアップ後にメールボックスへログインするために使用します。後で下の管理パネルから変更できます。",
+    "passwordHint": "セットアップ後にメールボックスへログインするために使用します。後で下の管理パネルから変更できます。",
     "startSetup": "セットアップを開始",
     "adoptCta": "すでにメールサーバーをお持ちですか？アダプトする",
     "whatInstalled": "インストールされる内容",
@@ -122,7 +117,6 @@
     "prerequisites": "前提条件",
     "prereq1": "DNS にアクセスできるドメイン",
     "prereq2": "プロバイダーによってポート 25 がブロックされていないこと",
-    "prereq2Relay": "受信メール用にポート 25 を開放（送信はリレー経由）",
     "prereq3": "クリーンな Ubuntu/Debian サーバー（推奨）",
     "hide": "非表示",
     "reveal": "表示",

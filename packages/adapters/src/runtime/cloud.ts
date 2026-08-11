@@ -61,11 +61,7 @@ import {
 } from "./build-pipeline";
 import { CloudComposeSupport, type CloudBuiltArtifact } from "./cloud/compose";
 import { createDockerBuildContext } from "./docker-build-context";
-import {
-  normalizeDockerRelativePath,
-  resolveDockerfileCandidates,
-  resolveWithinDirectory,
-} from "./docker-paths";
+import { normalizeDockerRelativePath, resolveDockerfileCandidates } from "./docker-paths";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
 import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
@@ -394,29 +390,6 @@ export async function provisionCloudWorkspace(
   }
 }
 
-/**
- * A cloud deployment asked for work on the machine the API process runs on.
- *
- * Named (rather than a bare Error) so the refusal is greppable and assertable, and
- * detected by `name` as well as `instanceof` — the same shape as
- * HostChannelUnavailableError, for the same reason: this class can be loaded twice
- * across bundles.
- */
-export class HostBuildForbiddenError extends Error {
-  readonly code = "HOST_BUILD_FORBIDDEN" as const;
-  constructor(message: string) {
-    super(message);
-    this.name = "HostBuildForbiddenError";
-  }
-}
-
-export function isHostBuildForbiddenError(err: unknown): err is HostBuildForbiddenError {
-  return (
-    err instanceof HostBuildForbiddenError ||
-    (err instanceof Error && err.name === "HostBuildForbiddenError")
-  );
-}
-
 export class CloudRuntime implements MultiServiceRuntimeAdapter {
   readonly name = "cloud";
   readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
@@ -438,9 +411,6 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     "unitRestore",
     "serviceShell",
     "inContainerExec",
-    // Runs in the REMOTE workspace over the Oblien API, so it never touches the
-    // control-plane host.
-    "isolatedExec",
   ]);
 
   /**
@@ -451,12 +421,6 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
    */
   readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced> = new Set<keyof ComposeAdvanced>([
     "healthcheck",
-    // Namespace sharing has no Oblien equivalent — a workspace is not a container
-    // whose netns/pidns a peer can join. Declared here so the deploy warns once
-    // per service and continues, rather than the workload coming up on its own
-    // network with nothing having said so (#533).
-    "networkMode",
-    "pidMode",
   ]);
 
   private readonly client: Oblien;
@@ -474,24 +438,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
   }>();
   private readonly compose: CloudComposeSupport;
 
-  /**
-   * May this runtime do work on the machine the API process runs on?
-   *
-   * DEFAULT DENY, unlike every other optional knob on PlatformConfig. The permissive
-   * default is what the two host arms below relied on, and the cost of forgetting to
-   * set it is a tenant's build commands running on a multi-tenant control plane —
-   * while the cost of a missed opt-IN is a self-hosted local-orchestrated cloud deploy
-   * failing loudly with the message below. Loud beats silent here.
-   */
-  private readonly allowHostBuild: boolean;
-
-  constructor(
-    client: Oblien,
-    opts?: { adminProxy?: CloudAdminProxy; allowHostBuild?: boolean },
-  ) {
+  constructor(client: Oblien, opts?: { adminProxy?: CloudAdminProxy }) {
     this.client = client;
     this.adminProxy = opts?.adminProxy;
-    this.allowHostBuild = opts?.allowHostBuild ?? false;
     this.compose = new CloudComposeSupport({
       client,
       builtArtifacts: this.builtArtifacts,
@@ -500,20 +449,6 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       execAndStream: (runtime, command, onLog, timeoutSeconds) =>
         this.execAndStream(runtime, command, onLog, timeoutSeconds),
     });
-  }
-
-  /**
-   * Refuse work on the API's own machine unless this runtime was explicitly built to
-   * allow it. `what` completes the sentence "… is not allowed to <what>".
-   */
-  private assertHostWorkAllowed(what: string): void {
-    if (this.allowHostBuild) return;
-    throw new HostBuildForbiddenError(
-      `This deployment asked to ${what}, which is not permitted on this instance. ` +
-        `Cloud builds run inside your Oblien workspace. If this project was moved here ` +
-        `from a self-hosted install, redeploy it so its build settings are re-resolved ` +
-        `for the cloud (its stored settings still say "build locally").`,
-    );
   }
 
   supports(cap: RuntimeCapability): boolean {
@@ -619,19 +554,6 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       // "local" = build on the API host, then upload output to cloud workspace.
       // "server" (default) = build inside the cloud workspace.
       const buildLocally = config.buildStrategy === "local";
-
-      // Refused HERE, at the sink, and not only where the strategy is chosen.
-      // `resolveStrategy` already answers "server" under CLOUD_MODE, but a REUSED
-      // snapshot never asks it — redeploy and rollback read a frozen `meta`, so a
-      // deployment stamped "local" before a promote-to-cloud arrives here still
-      // saying "local". This throw is what makes the strategy untrusted input
-      // rather than a decision someone upstream is assumed to have made.
-      if (buildLocally) {
-        this.assertHostWorkAllowed(
-          "run this project's install and build commands on the machine this API runs on",
-        );
-      }
-
 
       // 1. Provision workspace + acquire runtime token (logs to terminal).
       //    Folder-upload flow: adopt the workspace the browser already uploaded
@@ -802,15 +724,6 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
             await this.ensureWorkspaceGit(rt, plog, "build workspace");
             return;
           }
-          // The THIRD host arm, and the least obvious: this sits in the
-          // buildStrategy:"server" path — the one the guard above deliberately lets
-          // through — and is gated only on `localPath`. transferLocalDirectory tars
-          // the directory on THIS machine (transfer.ts → execFile("tar"/"git")), so a
-          // cloud deploy that merely carries a localPath reads the host filesystem
-          // without ever claiming to build here.
-          this.assertHostWorkAllowed(
-            "package a source directory from the machine this API runs on",
-          );
           await transferLocalDirectory(
             cfg.localPath,
             {
@@ -947,27 +860,18 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       return this.resolveRemoteDockerfileBuildSource(config, logger);
     }
 
-    // The OTHER host arm, and the one that is easy to miss: this path is gated on
-    // `localPath`, never on `buildStrategy`, so refusing a "local" strategy above
-    // does nothing for it. Everything below reads and packs the host filesystem —
-    // createDockerBuildContext mkdtemps, spawns `git` and `tar`, and readFile's the
-    // Dockerfile — before a single byte goes to Oblien.
-    this.assertHostWorkAllowed("read and package a source tree from the machine this API runs on");
-
     logger.log("Preparing local Dockerfile source...\n");
     const context = await createDockerBuildContext(config, {
       requireRepositoryDockerfile: true,
       onLog: logger.callback,
     });
-    // Both paths are resolved with containment asserted rather than plain
-    // join(): one is read and uploaded as the Dockerfile body, the other is the
-    // root of the tarball we ship to the cloud workspace, so a `..` here reads
-    // and exfiltrates arbitrary host files (GHSA-443m-7g52-94w8). The
-    // normalizers reject `..` upstream; this is the backstop at the sink.
-    const dockerfilePath = resolveWithinDirectory(context.contextDir, context.dockerfileName);
+    const dockerfilePath = join(context.contextDir, ...context.dockerfileName.split("/"));
     const dockerfile = await readFile(dockerfilePath, "utf-8");
 
-    const contextRoot = resolveWithinDirectory(context.contextDir, context.rootDirectory);
+    const contextRoot = join(
+      context.contextDir,
+      ...normalizeDockerRelativePath(context.rootDirectory).split("/").filter(Boolean),
+    );
 
     return {
       kind: "local",

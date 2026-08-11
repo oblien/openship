@@ -20,14 +20,7 @@ import { compareSemver } from "@repo/core";
 import type { CommandExecutor } from "../../types";
 import type { EnvironmentProfile } from "../environment";
 import { sq } from "../../runtime/git-clone";
-import {
-  effectiveTier,
-  isTargetableFamily,
-  validateModuleCatalog,
-  validateModuleVersion,
-  type ModuleStep,
-  type VerifiedCatalog,
-} from "./types";
+import { effectiveTier, type ModuleVersion, type ModuleStep, type VerifiedCatalog } from "./types";
 import {
   readManifestOrSeed,
   writeManifest,
@@ -171,20 +164,6 @@ export async function reconcileServerModule(
   const fromVersion = manifest.migrationVersion;
 
   try {
-    // Before the pending set is computed from `latest` and the version ids: a signature
-    // authenticates the author, not the values, and an unorderable version string reads
-    // as 0.0.0 rather than as an error — so a typo there selects nothing and looks
-    // converged instead of failing.
-    const catalogError = validateModuleCatalog(catalog);
-    if (catalogError) {
-      return {
-        ...result({}, manifest),
-        fromVersion,
-        ok: false,
-        error: `invalid catalog: ${catalogError}`,
-      };
-    }
-
     // Anti-rollback: refuse a catalog whose serial is below what we've applied.
     if (manifest.catalogSerial != null && catalog.serial < manifest.catalogSerial) {
       return {
@@ -205,19 +184,6 @@ export async function reconcileServerModule(
       .sort((a, b) => compareSemver(a.version, b.version));
 
     for (const version of pending) {
-      // Shape gate, before anything in THIS version runs (so a typo in step 3 can't
-      // leave steps 1-2 applied): a step naming a family that doesn't exist used to
-      // match nothing, skip, and still let the marker advance.
-      const shapeError = validateModuleVersion(version);
-      if (shapeError) {
-        return {
-          ...result({}, manifest),
-          fromVersion,
-          ok: false,
-          error: `invalid catalog: ${shapeError}`,
-        };
-      }
-
       // minFrom gap check against the running (already-advanced) version.
       if (version.minFrom && compareSemver(manifest.migrationVersion, version.minFrom) < 0) {
         return {
@@ -234,28 +200,10 @@ export async function reconcileServerModule(
           skipped.push(step.id);
           continue;
         }
-        // Family filter, three outcomes and never two of them collapsed: the host's
-        // family is in the filter → run; it's a family we know and isn't listed → skip;
-        // we can't name this host's family at all → fail. Skipping the third case is how
-        // a box ended up "converged" with none of its provisioning steps run.
-        if (step.distroFamily) {
-          const hostFamily = opts.profile.distroFamily;
-          if (!isTargetableFamily(hostFamily)) {
-            return {
-              ...result({}, manifest),
-              fromVersion,
-              ok: false,
-              error:
-                `step ${step.id} is gated to ${step.distroFamily.join("/")}, but this host's ` +
-                `distro family is not one Openship recognizes ` +
-                `(${JSON.stringify(String(hostFamily))}, os-release ID ` +
-                `${JSON.stringify(opts.profile.distroId ?? "")}) — refusing to guess`,
-            };
-          }
-          if (!step.distroFamily.includes(hostFamily)) {
-            skipped.push(step.id);
-            continue;
-          }
+        // Distro filter: not applicable on this box → skip without recording.
+        if (step.distro && !step.distro.includes(opts.profile.distro ?? "")) {
+          skipped.push(step.id);
+          continue;
         }
         // Tier gate: a consent step halts auto convergence (can't complete the
         // version), and every later version is blocked too.

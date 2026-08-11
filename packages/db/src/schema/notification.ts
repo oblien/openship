@@ -28,7 +28,6 @@
  *   slack     POST to Slack incoming-webhook URL the user pasted
  *   discord   POST to Discord webhook URL with a markdown-aware embed
  *   msteams   POST Adaptive Card to a Teams Workflows / legacy connector webhook URL
- *   telegram  POST sendMessage through a BotFather bot to a chat/group/topic
  */
 
 import {
@@ -56,7 +55,7 @@ export const notificationChannel = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
 
-    /** "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams" | "telegram".
+    /** "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams".
      *  Stored as text so we can add new channel kinds without a schema
      *  migration. The dispatcher's channel registry decides which kinds
      *  are dispatchable. */
@@ -74,7 +73,6 @@ export const notificationChannel = pgTable(
      *   slack   → { webhookUrl: string (encrypted), channelName?: string }
      *   discord → { webhookUrl: string (encrypted) }
      *   msteams → { webhookUrl: string (encrypted) }
-     *   telegram → { botToken: string (encrypted), chatId: string, messageThreadId?: string }
      */
     config: jsonb("config").notNull().default({}),
 

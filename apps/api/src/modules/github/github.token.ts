@@ -70,7 +70,7 @@ import {
 } from "./github.auth";
 // gh-CLI (github.local-auth) is imported DYNAMICALLY at its two self-hosted
 // "local"-purpose call sites below, so the gh module never loads in CLOUD_MODE.
-import { canUseGitHubRepo, type GitHubAccessOp } from "./github-access";
+import { canUseGitHubRepo } from "./github-access";
 import type { RequestContext } from "../../lib/request-context";
 
 // ─── Public types ───────────────────────────────────────────────────────────
@@ -101,13 +101,6 @@ export interface TokenContext {
    *  gate. When set, the gate authorizes this exact repo; when absent it
    *  falls back to owner-level authorization (any grant under the owner). */
   repo?: string;
-  /** What this token will DO. Gates the mint at the correct level: a
-   *  "read" grant must NOT authorize a mutating ("write") mint. Defaults to
-   *  "read" (clones/listing/file reads) so existing read callers are
-   *  unchanged; mutating callers (`githubFetch` on a non-GET method) pass
-   *  "write". Threaded into `canUseGitHubRepo` — see the funnel gate in
-   *  `chainCtx`. A read grant + owner-wide reach must never satisfy a write. */
-  op?: GitHubAccessOp;
   /** Override the installation id (rare; usually inferred from owner). */
   installationId?: number;
   /** Project id — for per-project clone token lookup. */
@@ -149,16 +142,11 @@ interface ChainCtx {
   purpose: GitHubPurpose;
   tokenCtx: TokenContext;
   /**
-   * The 0-bypass permission verdict for this (target, op), resolved ONCE up front
-   * and shared by every consumer: the App branch's mint AND its probe (so preflight
-   * can never report "App available" for a repo the real mint will refuse), and
-   * `borrowableForOp` for the credentials that aren't the caller's own.
-   *
-   * It was named `installationAllowed` while the App branch was its only reader.
-   * `false` whenever no owner was named — there is no target to authorize — so it
-   * must never be changed to default `true`; three gates now read it.
+   * The 0-bypass permission verdict for the App branch, resolved ONCE up front.
+   * Both the mint and the probe consume the same value, so preflight can never
+   * report "App available" for a repo the real mint will refuse.
    */
-  targetAuthorized: boolean;
+  installationAllowed: boolean;
 }
 
 interface CredentialSpec {
@@ -179,44 +167,11 @@ interface CredentialSpec {
   probe(c: ChainCtx): Promise<boolean>;
 }
 
-/**
- * May the caller BORROW a credential that isn't their own for this operation?
- *
- * Three of the chain's credentials belong to someone other than the caller: the
- * instance operator's `gh-cli` token and the project's pasted clone token (and the
- * org's App installation, which reads `targetAuthorized` directly). Reading with
- * them is the point of the feature — that is how a member clones a repo the
- * operator connected. MUTATING with them is escalation: the whole permission gate
- * this module funnels through decides who may write to a repo, and a borrowed
- * credential that skips the gate silently answers "anyone".
- *
- * So: a write must clear the same gate the App branch clears. Reads are untouched,
- * which is why this does not regress clones or local listing. Without it the
- * GHSA-hp2g-hw7g-f3vm fix would hold only for the App branch, and a self-hosted
- * instance whose operator opted into gh-CLI auth would still let any member DELETE
- * any repo the operator's account can administer — the gate having been bypassed
- * one line earlier by a different credential.
- *
- * `gh-cli` is the live case. `project` currently has no reachable write path
- * (`githubFetch` never sets `projectId`, and clone-auth's writes-free clone is the
- * only caller that does), so its guard is there to keep the rule true of the table
- * rather than of today's callers.
- */
-function borrowableForOp(c: ChainCtx): boolean {
-  if ((c.tokenCtx.op ?? "read") !== "write") return true;
-  // A write naming no owner was never authorized by anything — `chainCtx` cannot
-  // run the gate without one. Stated rather than inferred from `targetAuthorized`
-  // happening to be false, so the guard survives a change to that default.
-  if (!c.tokenCtx.owner) return false;
-  return c.targetAuthorized;
-}
-
 export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
   "gh-cli": {
     kind: "gh-cli",
     shippable: false,
     resolve: async (c) => {
-      if (!borrowableForOp(c)) return null;
       // HIGH #7 — the whole "may this caller use the operator's broad token here"
       // policy lives in mayUseOperatorCliToken; this step is just "take it if so".
       if (!(await mayUseOperatorCliToken(c.userId, c.organizationId, c.purpose))) return null;
@@ -228,31 +183,15 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
     probe: async (c) => Boolean(await SPECS["gh-cli"].resolve(c).catch(() => null)),
   },
 
-  /* NOTE for anyone adding a credential kind below: if it is NOT the caller's own
-   * (an operator/instance/project credential), guard `resolve` with
-   * `borrowableForOp(c)` — see that function for why. */
-
   "app-installation": {
     kind: "app-installation",
     shippable: true, // short-lived + repo-scoped: safe to hand to a build worker
     resolve: async (c) => {
-      if (!c.tokenCtx.owner || !c.targetAuthorized) return null;
-      // Narrow the token to the repo we just authorized. The gate above is
-      // per-repo, but an un-narrowed installation token reaches EVERY repo the
-      // installation covers — so a caller granted one repo would walk away with a
-      // credential far broader than their grant, and this kind is `shippable`, so
-      // it travels to build workers. Matching the credential to the grant is the
-      // other half of GHSA-hp2g-hw7g-f3vm's "owner-wide" defect: authorization and
-      // capability now have the same width.
-      return tryInstallationToken(
-        c.ctx,
-        c.tokenCtx.owner,
-        c.tokenCtx.installationId,
-        c.tokenCtx.repo,
-      );
+      if (!c.tokenCtx.owner || !c.installationAllowed) return null;
+      return tryInstallationToken(c.ctx, c.tokenCtx.owner, c.tokenCtx.installationId);
     },
     probe: async (c) => {
-      if (!c.tokenCtx.owner || !c.targetAuthorized) return false;
+      if (!c.tokenCtx.owner || !c.installationAllowed) return false;
       // Existence of the installation ROW only — skips the ~200-500ms JWT +
       // token exchange that resolve() pays.
       let installId: number | null = null;
@@ -272,14 +211,9 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
     kind: "project",
     shippable: true, // the user opted in by pasting it
     resolve: async (c) =>
-      borrowableForOp(c) && c.tokenCtx.projectId
-        ? readProjectToken(c.tokenCtx.projectId)
-        : null,
+      c.tokenCtx.projectId ? readProjectToken(c.tokenCtx.projectId) : null,
     probe: async (c) => {
-      // Mirrors resolve()'s borrow gate — a probe that says "available" for a write
-      // the mint will refuse is exactly the preflight/resolution drift this table
-      // exists to make impossible.
-      if (!borrowableForOp(c) || !c.tokenCtx.projectId) return false;
+      if (!c.tokenCtx.projectId) return false;
       const project = await repos.project.findById(c.tokenCtx.projectId).catch(() => null);
       return Boolean(project?.cloneTokenEncrypted);
     },
@@ -391,8 +325,7 @@ async function chainCtx(
   //    chain falls through to the caller's OWN PAT/OAuth (or null → "connect your
   //    GitHub"). This is THE funnel: every mint passes here, so there is no door
   //    around it.
-  const op: GitHubAccessOp = tokenCtx.op ?? "read";
-  const targetAuthorized = tokenCtx.owner
+  const installationAllowed = tokenCtx.owner
     ? await canUseGitHubRepo(
         ctx,
         {
@@ -400,19 +333,7 @@ async function chainCtx(
           repo: tokenCtx.repo,
           installationId: tokenCtx.installationId,
         },
-        // The OPERATION drives the level: a mutating mint must clear a "write"
-        // grant, never a "read" one. Hardcoding "read" here (regardless of the
-        // HTTP method the caller was performing) was one half of GHSA-hp2g-hw7g-
-        // f3vm — a read-only grant minted the org App token for DELETE/POST.
-        op,
-        // A mutating mint that names NO repo is an account-level mutation, and the
-        // mint is FINAL — nothing downstream narrows it. So it needs authority over
-        // the account, not mere reach: one granted repo under `acme` must not mint a
-        // token that mutates `acme` at large. This closes the owner-wide half of
-        // GHSA-hp2g-hw7g-f3vm for the whole class, including any future mutating
-        // caller that forgets to pass `repo` — dropping it can no longer WIDEN the
-        // check, only fail closed.
-        { ownerLevel: op === "write" ? "authority" : "reach" },
+        "read",
       )
     : false;
   return {
@@ -421,7 +342,7 @@ async function chainCtx(
     organizationId: ctx.organizationId || undefined,
     purpose,
     tokenCtx,
-    targetAuthorized,
+    installationAllowed,
   };
 }
 
@@ -553,12 +474,9 @@ async function tryInstallationToken(
   ctx: RequestContext,
   owner: string,
   installationId?: number,
-  repo?: string,
 ): Promise<string | null> {
   try {
-    return await getInstallationToken(ctx, owner, installationId, {
-      repositories: repo ? [repo] : undefined,
-    });
+    return await getInstallationToken(ctx, owner, installationId);
   } catch (err) {
     console.warn(
       `[github.token] App installation token mint failed for owner=${owner}` +

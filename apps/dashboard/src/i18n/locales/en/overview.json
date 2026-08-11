@@ -140,5 +140,13 @@
     "title": "Token Usage",
     "lastNDays": "last {period} days",
     "tokensTooltip": "{count} tokens"
+  },
+  "updates": {
+    "title": "Updates available",
+    "updateAction": "Update",
+    "updating": "Updating…",
+    "newVersion": "New version",
+    "started": "Updating {name}…",
+    "failed": "Couldn't start the update. Please try again."
   }
 }

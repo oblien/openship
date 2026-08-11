@@ -1,14 +1,9 @@
 /**
  * Audit log retention prune.
  *
- * Daily job that deletes audit events older than each organization's retention
- * window. Precedence: `audit_settings.retention_days` (what the Audit tab
- * writes) → `organization.metadata.auditRetentionDays` (the pre-0088 location,
- * still honoured so an org that set it there doesn't silently jump back to 90)
- * → 90 days.
- *
- * Pruning runs regardless of the recording switch: turning recording off stops
- * new rows, it does not freeze the ones already written.
+ * Daily job that deletes audit events older than each organization's
+ * retention window. Default retention is 90 days; org owners can override
+ * via organization.metadata.auditRetentionDays.
  *
  * Wired into the job-runner alongside backup retention prune.
  */
@@ -22,15 +17,15 @@ interface OrgMetadata {
   auditRetentionDays?: number;
 }
 
-function parseRetentionDays(metadataJson: string | null): number | null {
-  if (!metadataJson) return null;
+function parseRetentionDays(metadataJson: string | null): number {
+  if (!metadataJson) return DEFAULT_RETENTION_DAYS;
   try {
     const parsed = JSON.parse(metadataJson) as OrgMetadata;
     const days = parsed?.auditRetentionDays;
-    if (typeof days !== "number" || days < 1) return null;
+    if (typeof days !== "number" || days < 1) return DEFAULT_RETENTION_DAYS;
     return Math.min(days, MAX_RETENTION_DAYS);
   } catch {
-    return null;
+    return DEFAULT_RETENTION_DAYS;
   }
 }
 
@@ -48,10 +43,8 @@ export async function pruneAuditEvents(): Promise<{ orgsProcessed: number; total
 
   let totalPruned = 0;
   for (const org of orgs) {
-    const stored = await repos.auditSettings.find(org.id).catch(() => undefined);
-    const days =
-      stored?.retentionDays ?? parseRetentionDays(org.metadata) ?? DEFAULT_RETENTION_DAYS;
-    const cutoff = new Date(Date.now() - Math.min(days, MAX_RETENTION_DAYS) * 24 * 60 * 60 * 1000);
+    const days = parseRetentionDays(org.metadata);
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     try {
       await repos.auditEvent.pruneOlderThan(org.id, cutoff);
       totalPruned += 1; // we don't track precise count from the repo

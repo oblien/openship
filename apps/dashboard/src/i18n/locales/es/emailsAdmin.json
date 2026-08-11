@@ -44,22 +44,6 @@
     "addDomain": "Añadir un dominio",
     "reviewDns": "Revisar registros DNS"
   },
-  "webmail": {
-    "title": "Webmail",
-    "subtitle": "El cliente de correo en el que inician sesión tus usuarios.",
-    "opening": "Abriendo el proyecto de webmail…",
-    "noServerTitle": "Aún no hay servidor de correo",
-    "noServerBody": "El webmail solo es un cliente: necesita un servidor de correo al que conectarse. Configura uno primero y vuelve aquí para instalarlo.",
-    "installTitle": "El webmail no está instalado",
-    "installBody": "Despliega el cliente de webmail para poder leer los buzones en el navegador. Se instala como un proyecto normal de openship, así que lo gestionas en Proyectos igual que cualquier otro despliegue.",
-    "adoptTitle": "El webmail no se gestiona aquí",
-    "chooseTitle": "¿Qué servidor de correo?",
-    "chooseBody": "Cada servidor de correo tiene su propio webmail. Elige el dominio que quieres abrir.",
-    "incompleteTitle": "El servidor de correo aún no está listo",
-    "incompleteBody": "{server} todavía se está configurando. El webmail inicia sesión en él, así que termina primero el servidor de correo y luego instala el webmail desde aquí.",
-    "incompleteAction": "Terminar la configuración de correo",
-    "runningNote": "Ya hay un webmail funcionando en {hostname}, pero aquí nada lo gestiona. Al instalarlo se adopta como proyecto en vez de levantar un segundo."
-  },
   "domains": {
     "heading": "Dominios",
     "description": "Cada fila se corresponde con una fila de vmail.domain en el VPS de correo. Los dominios adicionales aceptan correo una vez que su registro MX apunta aquí.",
@@ -225,45 +209,6 @@
     "dnsScanDesc": "Comprobación en vivo en DNS público de cada registro que este servidor espera.",
     "rescan": "Volver a escanear",
     "dnsEmpty": "Aún no hay registros DNS registrados. Finaliza el asistente de instalación para poblar el escaneo.",
-    "delivery": {
-      "title": "Envío saliente",
-      "desc": "Dónde entrega el correo este servidor y si algo se ha quedado atascado a la salida.",
-      "sendPath": "Ruta de envío",
-      "direct": "Directo a los destinatarios",
-      "directHint": "Los mensajes van directamente desde este servidor al servidor de correo de cada destinatario.",
-      "relay": "Retransmitiendo a través de {host}",
-      "relayAll": "Todos los remitentes de este servidor envían a través del relay.",
-      "relaySelected": "Solo los remitentes seleccionados usan el relay: {domains}",
-      "queue": "Cola",
-      "queueEmpty": "Vacía: no hay nada esperando para salir.",
-      "queueOne": "{count} mensaje está esperando para salir.",
-      "queueOther": "{count} mensajes están esperando para salir.",
-      "sampled": "La cola es más grande que la ventana que hemos leído, por lo que los motivos de abajo son los más recientes.",
-      "reasons": "Por qué se está aplazando el correo",
-      "affectedOne": "{count} mensaje",
-      "affectedOther": "{count} mensajes",
-      "kind": {
-        "auth": "Autenticación rechazada",
-        "tls": "Fallo de cifrado",
-        "network": "No se pudo conectar",
-        "rejected": "Rechazado por el destinatario",
-        "other": "Aplazado"
-      },
-      "hint": {
-        "authRelay": "Tu relay ha rechazado estas credenciales. Vuelve a introducir el usuario y la contraseña SMTP en la pestaña Sending.",
-        "auth": "El siguiente salto rechazó la autenticación.",
-        "tls": "No se pudo negociar TLS con el siguiente salto.",
-        "network": "Este servidor no pudo alcanzar el siguiente salto. Comprueba que los puertos de salida 25 y 587 estén abiertos.",
-        "rejected": "El destinatario rechazó el mensaje por ahora. Postfix seguirá reintentando.",
-        "other": "Postfix lo reintentará según su propia programación."
-      },
-      "status": {
-        "ok": "Enviando",
-        "warn": "Retrasado",
-        "fail": "Sin envío",
-        "unknown": "Desconocido"
-      }
-    },
     "logs": "Registros",
     "openLogs": "Abrir registros",
     "up": "Activo {time}",
@@ -317,10 +262,7 @@
       "partDown": "{names} caído",
       "partNotInstalled": "{names} no instalado",
       "partDnsOne": "falta {count} registro DNS",
-      "partDnsOther": "faltan {count} registros DNS",
-      "partDelivery": "el correo saliente no se está entregando",
-      "almostSubQueueOne": "{count} mensaje está esperando para salir; consulta Envío saliente más abajo.",
-      "almostSubQueueOther": "{count} mensajes están esperando para salir; consulta Envío saliente más abajo."
+      "partDnsOther": "faltan {count} registros DNS"
     },
     "time": {
       "secondsAgo": "hace {n}s",
@@ -335,9 +277,7 @@
     "schedules": {
       "manual": "Solo manual",
       "daily": "Diaria",
-      "weekly": "Semanal",
-      "monthly": "Mensual",
-      "custom": "Personalizado (cron)"
+      "weekly": "Semanal"
     },
     "whatTitle": "Qué respaldar",
     "whatDesc": "Las cuentas y la autenticación siempre se incluyen; los datos de los mensajes y las claves son opcionales.",
@@ -353,31 +293,6 @@
     "noDest": "Aún no hay destinos de copia de seguridad. Añade uno (p. ej. un servidor existente) en la página de Copias de seguridad.",
     "destinationLabel": "Destino",
     "autoLabel": "Copias de seguridad automáticas",
-    "timeLabel": "Hora",
-    "timeHint": "Hora del servidor",
-    "weekdayLabel": "Día de la semana",
-    "dayOfMonthLabel": "Día del mes",
-    "cronLabel": "Expresión cron",
-    "cronHint": "Cinco campos, evaluados en la zona horaria del servidor.",
-    "scheduleJobHint": "Las copias automáticas se ejecutan como una tarea programada.",
-    "manageDest": "Gestionar",
-    "retentionTitle": "Retención",
-    "retentionDesc": "Cuánto historial se conserva en el destino. Las copias más antiguas se eliminan en la limpieza diaria, con sus archivos.",
-    "keepCountLabel": "Conservar las últimas",
-    "keepCountUnit": "copias",
-    "keepDaysLabel": "Eliminar después de",
-    "keepDaysUnit": "días",
-    "retentionNoLimit": "Sin límite",
-    "retentionUnlimitedWarning": "Nunca se elimina nada: este destino seguirá creciendo.",
-    "weekdays": {
-      "sun": "Domingo",
-      "mon": "Lunes",
-      "tue": "Martes",
-      "wed": "Miércoles",
-      "thu": "Jueves",
-      "fri": "Viernes",
-      "sat": "Sábado"
-    },
     "saveSettings": "Guardar configuración",
     "backupNow": "Hacer copia ahora",
     "recentTitle": "Copias de seguridad recientes",
@@ -386,7 +301,6 @@
     "migrate": "Migrar",
     "toastTitle": "Copia de seguridad",
     "pickDest": "Elige primero un destino de copia de seguridad.",
-    "scheduleIncomplete": "Elige una hora para esta programación o vuelve a ponerla en manual.",
     "saved": "Configuración de copia de seguridad guardada.",
     "saveFailed": "No se pudo guardar la configuración de copia de seguridad",
     "started": "Copia de seguridad iniciada. Aparecerá abajo a medida que se ejecute.",
@@ -462,16 +376,6 @@
     "body": "Los dominios de envío recién creados aún no tienen reputación, por lo que los proveedores pueden clasificar el primer correo como spam durante las primeras 24-48 horas. Esto es normal. Marca los mensajes como \"no es spam\" desde tu bandeja de pruebas y la entregabilidad mejora rápidamente. ",
     "dismissLink": "Lo sé, ocultar esto",
     "dismiss": "Descartar"
-  },
-  "engine": {
-    "downTitle": "El motor de correo de este servidor no está en marcha",
-    "downBody": "Mientras esté detenido no se entrega ni se acepta correo, y todas las pestañas de aquí lo necesitan. Volver a iniciarlo es seguro: no se reinstala nada ni se cambia la configuración.",
-    "legacyNote": "Este servidor usa el motor heredado instalado directamente en el host (Postfix/Dovecot con systemd), por lo que no hay ningún contenedor que revisar.",
-    "start": "Iniciar el motor",
-    "missingTitle": "No hay motor de correo en este servidor",
-    "missingBody": "Openship no encuentra ningún motor de correo aquí: ni el contenedor del motor ni las unidades de Postfix/Dovecot. Vuelve a ejecutar la configuración de correo para reinstalarlo.",
-    "rerunSetup": "Repetir la configuración de correo",
-    "cardBlocked": "No disponible hasta que el motor de correo esté en marcha."
   },
   "welcome": {
     "invalidEmail": "Introduce una dirección de correo válida",

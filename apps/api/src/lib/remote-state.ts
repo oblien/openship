@@ -33,13 +33,6 @@ export function isConnectionLoss(err: unknown): boolean {
     /timed out|timeout|etimedout|econnreset|econnrefused|ehostunreach|enetunreach/.test(msg) ||
     msg.includes("channel open failure") ||
     msg.includes("open failed") ||
-    // Deliberately here and NOT in the adapters' retryable set, because the two lists
-    // answer different questions. "Did we reach the host?" — no, so a 503 naming the
-    // target beats a 500 blaming the request. "Should we run the whole callback again?" —
-    // no: an HTTP client says this for any far end that vanished mid-request, including a
-    // permission-denied Docker socket, and those callbacks install mail and ensure the
-    // edge, so replaying one turns a non-retryable cause into a repeated mutation.
-    msg.includes("socket hang up") ||
     msg.includes("connection lost") ||
     msg.includes("not connected") ||
     msg.includes("connection closed before ready")
@@ -49,22 +42,4 @@ export function isConnectionLoss(err: unknown): boolean {
 /** True when an error means the remote resource is already gone (404). */
 export function isAbsent(err: unknown): boolean {
   return isRuntimeNotFoundError(err);
-}
-
-/**
- * True when the runtime REFUSED a state change because the resource is already in
- * that state — Docker answers 304 to stopping a stopped container or starting a
- * running one.
- *
- * Belongs with the other two classifiers because it is the fourth answer a state
- * change can give, and it is an idempotent SUCCESS: a pause that stops four of a
- * project's five containers and finds the fifth already down has done its job.
- * Callers that swallowed every error to get this behaviour also swallowed
- * "unreachable", which is how a failed pause reported success.
- */
-export function isAlreadyInState(err: unknown): boolean {
-  if (err && typeof err === "object" && (err as { statusCode?: number }).statusCode === 304) {
-    return true;
-  }
-  return /already (stopped|started|running|paused|in progress)/i.test(safeErrorMessage(err));
 }

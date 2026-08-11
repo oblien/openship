@@ -19,11 +19,10 @@
  * real socket table is only visible through the executor for that server.
  */
 
-import type { ExecOnly } from "../types";
-import { tryExec } from "./probe-exec";
-
 /** Minimal command surface the scan needs. A full `CommandExecutor` satisfies it. */
-export type PortScanExecutor = ExecOnly;
+export interface PortScanExecutor {
+  exec(command: string, opts?: { timeout?: number }): Promise<string>;
+}
 
 export type PortProto = "tcp" | "udp";
 export type PortFamily = "ipv4" | "ipv6";
@@ -365,12 +364,13 @@ function finalize(listeners: HostListener[], source: "ss" | "procfs"): PortScanR
   };
 }
 
-/**
- * 10s rather than the executor's 30s default: a security scan runs on the Security tab's
- * critical path, and both tiers are single kernel reads — one that has not answered in ten
- * seconds is not going to.
- */
-const SCAN_TIMEOUT = { timeout: 10_000 } as const;
+async function tryExec(executor: PortScanExecutor, command: string): Promise<string | null> {
+  try {
+    return await executor.exec(command, { timeout: 10_000 });
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Enumerate every listening socket on the target and classify each exposed vs
@@ -378,13 +378,13 @@ const SCAN_TIMEOUT = { timeout: 10_000 } as const;
  * hosts. Never throws — an unusable executor yields `{ scanned:false }`.
  */
 export async function scanPorts(executor: PortScanExecutor): Promise<PortScanResult> {
-  const ssOut = await tryExec(executor, SS_CMD, SCAN_TIMEOUT);
+  const ssOut = await tryExec(executor, SS_CMD);
   if (ssOut) {
     const listeners = parseSsListeners(ssOut);
     if (listeners.length) return finalize(listeners, "ss");
   }
 
-  const procOut = await tryExec(executor, PROC_CMD, SCAN_TIMEOUT);
+  const procOut = await tryExec(executor, PROC_CMD);
   if (procOut && procOut.includes("##")) {
     return finalize(parseProcNetListeners(procOut), "procfs");
   }

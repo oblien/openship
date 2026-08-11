@@ -18,17 +18,6 @@ export type RestoreRunEvent =
       status: BackupRestore["status"];
       bytesRestored?: number | null;
     }
-  /** Non-fatal: the restore continues. An artifact that could only be
-   *  size-checked, or a policy that deferred verification to apply time. */
-  | { type: "warning"; message: string }
-  /** The apply crossed (or is confirmed not to have crossed) the point of no
-   *  return. Drives what the cancel button is allowed to promise. */
-  | {
-      type: "destructive";
-      destructive: boolean;
-      cancelRequested?: boolean;
-      source?: string | null;
-    }
   | {
       type: "complete";
       status: "succeeded" | "failed" | "cancelled" | "server_error";
@@ -38,16 +27,12 @@ export type RestoreRunEvent =
 export interface UseRestoreRunStreamResult {
   restore: BackupRestore | null;
   connected: boolean;
-  /** Advisories accumulated over the run — shown alongside progress, not
-   *  instead of it, since none of them stop the restore. */
-  warnings: string[];
   error: Error | null;
 }
 
 export function useRestoreRunStream(restoreId: string | null): UseRestoreRunStreamResult {
   const [restore, setRestore] = useState<BackupRestore | null>(null);
   const [connected, setConnected] = useState(false);
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -114,24 +99,6 @@ export function useRestoreRunStream(restoreId: string | null): UseRestoreRunStre
                       }
                     : prev,
                 );
-              } else if (ev.type === "warning") {
-                setWarnings((prev) =>
-                  prev.includes(ev.message) ? prev : [...prev, ev.message],
-                );
-              } else if (ev.type === "destructive") {
-                setRestore((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        meta: {
-                          ...(prev.meta ?? {}),
-                          destructive: ev.destructive,
-                          ...(ev.source ? { destructiveSource: ev.source } : {}),
-                        },
-                        cancelRequested: ev.cancelRequested ?? prev.cancelRequested,
-                      }
-                    : prev,
-                );
               } else if (ev.type === "complete") {
                 setRestore((prev) =>
                   prev
@@ -163,5 +130,5 @@ export function useRestoreRunStream(restoreId: string | null): UseRestoreRunStre
     };
   }, [restoreId]);
 
-  return { restore, connected, warnings, error };
+  return { restore, connected, error };
 }

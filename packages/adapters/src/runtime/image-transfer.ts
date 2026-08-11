@@ -49,12 +49,6 @@ export async function transferImage(
       cb(null, chunk);
     },
   });
-  // `counter`'s real consumer + error handling attach inside dst.loadImage below,
-  // but only AFTER an SSH connect handshake. Floor 'error' on counter first so a
-  // source failure during that window (which triggers counter.destroy(err) via the
-  // bridge below) isn't an unhandled 'error' event that crashes the process. The
-  // destroy still tears the stream down, so `docker load` aborts non-zero as intended.
-  counter.on("error", () => {});
   // pipe() does not forward source errors — bridge them so `docker load` aborts
   // instead of hanging on a stream that will never complete.
   stdout.on("error", (err) => counter.destroy(err));

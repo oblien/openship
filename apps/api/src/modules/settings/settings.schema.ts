@@ -24,9 +24,7 @@ export const UpdateRouteStrategyBody = Type.Object({
 /** PATCH /deploy-defaults — all optional; pass null to clear. */
 export const UpdateDeployDefaultsBody = Type.Object({
   defaultDeployTarget: Type.Optional(
-    // No "local": it's derived, never chosen — see DefaultDeployTarget in
-    // settings.service.ts. On a server-host this box is already in the server list.
-    Type.Union([Type.Literal("server"), Type.Literal("cloud"), Type.Null()], {
+    Type.Union([Type.Literal("local"), Type.Literal("server"), Type.Literal("cloud"), Type.Null()], {
       description: "Default deploy target, or null to clear.",
     }),
   ),

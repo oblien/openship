@@ -1,10 +1,4 @@
-import {
-  RESOURCE_TYPE_LABELS as CORE_RESOURCE_TYPE_LABELS,
-  RESOURCE_TYPE_LABELS_SINGULAR,
-  type GrantableResourceType,
-  type Permission,
-  type SourceAccessScope,
-} from "@repo/core";
+import type { SourceAccessScope } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 
@@ -14,16 +8,20 @@ import { endpoints } from "./endpoints";
  * token scoping. Keeps one definition instead of copies drifting across files.
  */
 
-// Both come from @repo/core, which is the one definition the API, the DB layer
-// and this app all share.
-//
-// `ResourceType` here is core's `GrantableResourceType`, not its wider
-// `ResourceType`. That is not a narrowing — in the dashboard this name has always
-// meant "a type the picker may offer", which is why it listed 8 of the 22 values
-// the column can hold. The alias keeps every consumer's import unchanged while
-// making the intent explicit at the boundary.
-export type ResourceType = GrantableResourceType;
-export type { Permission };
+// "create" is a collection-only capability used by the "projects it creates"
+// token scope: a {project,"*",[create]} grant. Not offered in the generic
+// resource picker — set only by that preset.
+export type Permission = "read" | "write" | "admin" | "create";
+
+export type ResourceType =
+  | "project"
+  | "server"
+  | "mail_server"
+  | "backup_destination"
+  | "billing"
+  | "audit"
+  | "github_installation"
+  | "github_repository";
 
 export interface PickerGrant {
   resourceType: ResourceType;
@@ -55,11 +53,22 @@ export interface CatalogEntry {
   meta?: Record<string, unknown>;
 }
 
-export const RESOURCE_TYPE_LABELS = CORE_RESOURCE_TYPE_LABELS;
+export const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
+  project: "Projects",
+  server: "Servers",
+  mail_server: "Mail servers",
+  backup_destination: "Backup destinations",
+  billing: "Billing",
+  audit: "Audit log",
+  github_installation: "GitHub orgs",
+  github_repository: "GitHub repos",
+};
 
 /** Short, singular label for a grant chip / summary line. */
 export function resourceTypeLabel(type: string): string {
-  return RESOURCE_TYPE_LABELS_SINGULAR[type as ResourceType] ?? type;
+  if (type === "github_installation") return "GitHub org";
+  if (type === "github_repository") return "GitHub repo";
+  return RESOURCE_TYPE_LABELS[type as ResourceType] ?? type;
 }
 
 export const permissionsApi = {

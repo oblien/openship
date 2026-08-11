@@ -13,35 +13,24 @@ import { webhookSource } from "./webhook-source";
 // ─── Domains ─────────────────────────────────────────────────────────────────
 
 /**
- * Custom domains linked to a project, a webhook source, OR a mail server
- * (polymorphic owner). Each domain goes through a verification flow (DNS TXT
- * record check) before becoming active and getting SSL provisioned.
+ * Custom domains linked to a project OR a webhook source (polymorphic owner).
+ * Each domain goes through a verification flow (DNS TXT record check)
+ * before becoming active and getting SSL provisioned.
  */
 export const domain = pgTable("domain", {
   id: text("id").primaryKey(), // "dom_..."
   /**
-   * Owner discriminator: "project" (the default — routes to a deployed app),
-   * "webhook" (routes to the inbound webhook receiver for `webhookSourceId`), or
-   * "mail" (the `mail.<domain>` host of a mail server — `mailServerId`).
+   * Owner discriminator: "project" (the default — routes to a deployed app) or
+   * "webhook" (routes to the inbound webhook receiver for `webhookSourceId`).
    * Existing rows backfill to "project" via the column default.
    */
   ownerType: text("owner_type").notNull().default("project"),
-  /** Owning project — NULL for a webhook- or mail-owned domain. */
+  /** Owning project — NULL for a webhook-owned domain (ownerType='webhook'). */
   projectId: text("project_id")
     .references(() => project.id, { onDelete: "cascade" }),
   /** Owning webhook source — set when ownerType='webhook'; routes to the receiver. */
   webhookSourceId: text("webhook_source_id")
     .references(() => webhookSource.id, { onDelete: "cascade" }),
-  //
-  // NOTE: a mail-owned row (ownerType='mail') carries NO owner FK. Its server is
-  // derived from the hostname instead — `mail.<domain>` → `mail_servers.domain` →
-  // `server_id` — because `mail.<base>` is already the system-wide convention (the
-  // wizard builds it, and step 13 symlinks certs by it). That keeps this table free
-  // of a fourth owner column, and the mail_servers row is already the canonical
-  // "this server is a mail server for this domain" record, so the two cannot drift.
-  // Why a mail host is in this table at all: it's what the renewal sweep reads
-  // (`findExpiringSsl` → `renewExpiringCerts`), and without a row the mail
-  // certificate was invisible to the renewer and expired ~90 days after install.
   /** Service ID for service-scoped domain routing (null = project-level / main service) */
   serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
 

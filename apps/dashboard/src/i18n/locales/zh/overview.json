@@ -98,5 +98,13 @@
     "title": "Token 用量",
     "lastNDays": "最近 {period} 天",
     "tokensTooltip": "{count} 个 token"
+  },
+  "updates": {
+    "title": "Updates available",
+    "updateAction": "Update",
+    "updating": "Updating…",
+    "newVersion": "New version",
+    "started": "Updating {name}…",
+    "failed": "Couldn't start the update. Please try again."
   }
 }

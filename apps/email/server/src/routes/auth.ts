@@ -90,14 +90,7 @@ const LIST_COOKIE_NAME = `${env.SESSION_COOKIE_NAME}s`;
  * a couple of no-op deletes; users who did get their loop unstuck.
  */
 function evictShadowCookies(c: any) {
-  // Which host's wide scopes to clear. COOKIE_DOMAIN is legacy config that
-  // openship no longer sets (the catalog app is one image on any hostname), so
-  // fall back to the host the browser is already talking to — which is exactly
-  // the host whose shadow cookie would shadow ours. Attacker-controlled Host
-  // only ever produces extra `Max-Age=0` deletes for a domain the browser isn't
-  // in scope for, i.e. no-ops: nothing here can SET a cookie.
-  const requestHost = (c.req.header('host') ?? '').split(':')[0].toLowerCase();
-  const configured = env.COOKIE_DOMAIN !== 'localhost' ? env.COOKIE_DOMAIN : requestHost;
+  const configured = env.COOKIE_DOMAIN;
   const scopes: Array<{ domain?: string }> = [];
   if (configured && configured !== 'localhost') {
     scopes.push({ domain: configured });

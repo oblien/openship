@@ -60,15 +60,9 @@ export function compileRoutingToOblien(
   // them Vercel-style: redirects → rewrites(proxies) → catch-all. Headers are
   // non-terminal and appended last.
 
-  // A compiled `pattern` means the destination refers back to the source's wildcard,
-  // which only a capturing match can fill — Oblien's `wildcard` type takes the same
-  // `(.*)` pattern and substitutes `$1..$9` into `to`, so the prefix form would send
-  // visitors to a literal `/news/` exactly as an nginx prefix location does (#510).
   for (const r of compiled.redirects) {
     routes.push({
-      match: r.pattern
-        ? { path: r.pattern, type: "wildcard" }
-        : { path: r.path, type: r.exact ? "exact" : "prefix" },
+      match: { path: r.path, type: r.exact ? "exact" : "prefix" },
       action: { kind: "redirect", status: toOblienRedirectStatus(r.statusCode), to: r.destination },
     });
   }
@@ -80,15 +74,6 @@ export function compileRoutingToOblien(
       loc.targetUrl === BACKEND_SENTINEL && ctx.backend
         ? { kind: "proxy", workspace: ctx.backend.workspace, port: ctx.backend.port }
         : { kind: "proxy", origin: loc.targetUrl };
-    // A capture-bearing rewrite carries its upstream path as a `$1..$9` template —
-    // exactly what `RouteProxyAction.path` takes, against a `wildcard` match.
-    if (loc.pattern && loc.upstreamPath) {
-      routes.push({
-        match: { path: loc.pattern, type: "wildcard" },
-        action: { ...action, path: loc.upstreamPath },
-      });
-      continue;
-    }
     routes.push({ match: { path: loc.pathPrefix, type: "prefix" }, action });
   }
 
@@ -111,11 +96,10 @@ export function compileRoutingToOblien(
   const input: RoutesInput = { routes };
   if (ctx.staticPage) input.static = { page: ctx.staticPage };
   if (compiled.cleanUrls) input.cleanUrls = true;
-  // vercel `trailingSlash` is a tri-state; Oblien wants a policy. true → enforce,
-  // explicit false → strip, omitted → leave default. Read from `compiled`, not the raw
-  // config, so the loop-prone cleanUrls+enforce combination it drops is dropped here too.
-  if (compiled.trailingSlash === true) input.trailingSlash = "enforce";
-  else if (compiled.trailingSlash === false) input.trailingSlash = "strip";
+  // vercel `trailingSlash` is a boolean; Oblien wants a policy. true → enforce,
+  // explicit false → strip, omitted → leave default.
+  if (routing.trailingSlash === true) input.trailingSlash = "enforce";
+  else if (routing.trailingSlash === false) input.trailingSlash = "strip";
 
   return input;
 }

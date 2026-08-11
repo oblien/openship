@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BlurIp } from "@/components/BlurIp";
@@ -23,15 +23,10 @@ import {
   MapPin,
 } from "lucide-react";
 import { systemApi } from "@/lib/api";
-import type { ContainerApplyIntent } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { useToast } from "@/components/toast";
-import { useInfraFleet, type InfraSegment } from "@/hooks/useInfraFleet";
-import { InfraFleetCard } from "@/components/infra/InfraFleetCard";
-import { InfraFilters } from "@/components/infra/InfraFilters";
 import { ComingSoonPanel } from "./_components/coming-soon-panel";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
@@ -60,12 +55,6 @@ interface ServerEntry {
 /** Per-state colors: an ambient presence dot on the avatar + a word on the right. */
 /** `dot` is a RING, not a filled pip — same treatment as the scanned-component
  *  circles (components-tab), which reads calmer than a solid dot at 6px. */
-/** A server's component bucket, or null while the fleet view hasn't loaded. */
-type InfraBucket = Exclude<InfraSegment, "all">;
-/** Sort weight per bucket — attention first, then updates, then healthy, then unknown. */
-const BUCKET_RANK: Record<InfraBucket, number> = { attention: 0, updates: 1, healthy: 2 };
-const bucketRank = (b: InfraBucket | null) => (b ? BUCKET_RANK[b] : 3);
-
 const STATUS: Record<Reachability, { dot: string; text: string }> = {
   online: { dot: "border-success-solid", text: "text-success" },
   offline: { dot: "border-danger-solid", text: "text-danger" },
@@ -75,23 +64,14 @@ const STATUS: Record<Reachability, { dot: string; text: string }> = {
 export default function ServersPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const { selfHosted, deployMode } = usePlatform();
-  const { toast } = useToast();
+  const { deployMode } = usePlatform();
   const isDesktop = deployMode === "desktop";
-  /** Managed edge/mail containers exist only where we operate the boxes. */
-  const infraEnabled = selfHosted || isDesktop;
 
   const [activeTab, setActiveTab] = useState<ServersTab>("servers");
   const [servers, setServers] = useState<ServerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   /** Live reachability per server (see probeReachability). */
   const [reach, setReach] = useState<Record<string, Reachability>>({});
-  /**
-   * Why a row is offline, when the API knows. "Offline" on THIS box usually means
-   * the container→host SSH channel is firewalled, not that the machine is down
-   * (#490) — so the word alone sends people looking in the wrong place.
-   */
-  const [reachHint, setReachHint] = useState<Record<string, string>>({});
   /** Active (running) port-forward count per server — desktop-only. */
   const [forwardCounts, setForwardCounts] = useState<Record<string, number>>({});
 
@@ -133,9 +113,7 @@ export default function ServersPage() {
       void systemApi
         .probeReachability(s.id)
         .then((r) => {
-          if (cancelled) return;
-          setReach((prev) => ({ ...prev, [s.id]: r.reachable ? "online" : "offline" }));
-          if (!r.reachable && r.hint) setReachHint((prev) => ({ ...prev, [s.id]: r.hint! }));
+          if (!cancelled) setReach((prev) => ({ ...prev, [s.id]: r.reachable ? "online" : "offline" }));
         })
         .catch(() => {
           if (!cancelled) setReach((prev) => ({ ...prev, [s.id]: "offline" }));
@@ -179,65 +157,6 @@ export default function ServersPage() {
   const totalProjects = servers.reduce((sum, s) => sum + s.projectCount, 0);
   const regionCount = new Set(servers.map((s) => s.country).filter(Boolean)).size;
   const onlinePct = servers.length ? Math.round((counts.online / servers.length) * 100) : 0;
-
-  // ── Managed containers (edge / mail) across the fleet ──────────────────────
-  const infra = useInfraFleet(infraEnabled);
-  const ic = t.servers.list.infra;
-  const [segment, setSegment] = useState<InfraSegment>("all");
-  const [search, setSearch] = useState("");
-
-  const runBulk = useCallback(
-    async (intent: ContainerApplyIntent) => {
-      try {
-        const res = await infra.applyAll(intent);
-        if (!res) return; // infra disabled (cloud) — the buttons aren't rendered there
-        const n = res.started.length;
-        const skipped = res.skipped.length;
-        if (n === 0 && skipped === 0) {
-          toast("info", ic.nothingToDo);
-          return;
-        }
-        const head = interpolate(intent === "update" ? ic.started : ic.startedRestart, {
-          n: String(n),
-        });
-        const tail = skipped > 0 ? interpolate(ic.skipped, { n: String(skipped) }) : "";
-        toast(n > 0 ? "success" : "info", tail ? `${head} · ${tail}` : head);
-      } catch {
-        toast("error", ic.applyFailed);
-      }
-    },
-    [infra, toast, ic],
-  );
-
-  /**
-   * Which bucket a server falls in — attention wins over updates. `null` until the
-   * fleet view loads: an unread server matches no segment rather than being called
-   * healthy, so the segment counts and the filtered list can never disagree.
-   */
-  const bucketOf = useCallback(
-    (id: string): InfraBucket | null => {
-      const s = infra.summaries.get(id);
-      if (!s) return null;
-      if (s.down.length + s.missing.length > 0 || s.edgeAbsent) return "attention";
-      return s.updates > 0 ? "updates" : "healthy";
-    },
-    [infra.summaries],
-  );
-
-  // Attention first, then updates — the row you have to act on is never below the
-  // fold. Order inside a bucket is preserved (Array.prototype.sort is stable).
-  const visibleServers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const rows = servers.filter((s) => {
-      if (q && !s.name.toLowerCase().includes(q) && !s.host.toLowerCase().includes(q)) return false;
-      return segment === "all" || bucketOf(s.id) === segment;
-    });
-    if (!infraEnabled) return rows;
-    return [...rows].sort((a, b) => bucketRank(bucketOf(a.id)) - bucketRank(bucketOf(b.id)));
-  }, [servers, search, segment, bucketOf, infraEnabled]);
-
-  /** The filter strip only earns its space once the list is long enough to hunt in. */
-  const showFilters = infraEnabled && servers.length > 6;
 
   const tabs: TabDef<ServersTab>[] = [
     { key: "servers", label: t.servers.tabsNav.servers, icon: Server },
@@ -300,20 +219,8 @@ export default function ServersPage() {
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
             {/* ── LEFT COLUMN ── */}
             <div className="min-w-0">
-              {showFilters && (
-                <InfraFilters
-                  segment={segment}
-                  onSegmentChange={setSegment}
-                  search={search}
-                  onSearchChange={setSearch}
-                  counts={infra.counts}
-                />
-              )}
               <div className="overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/50">
-                {visibleServers.length === 0 && (
-                  <p className="px-5 py-8 text-center text-sm text-muted-foreground">{ic.noMatches}</p>
-                )}
-                {visibleServers.map((server) => {
+                {servers.map((server) => {
                   const state = reach[server.id] ?? "checking";
                   const sm = STATUS[state];
                   const authLabel =
@@ -324,18 +231,6 @@ export default function ServersPage() {
                         : null;
                   const AuthIcon = server.auth === "password" ? Lock : KeyRound;
                   const fwd = forwardCounts[server.id] ?? 0;
-                  // Component chip: one per row at most, and only when there IS
-                  // something to say (same rule as the project count below —
-                  // a healthy box gets no chip). Down/absent outranks an update.
-                  const comp = infra.summaries.get(server.id);
-                  const downParts = comp
-                    ? [
-                        ...[...comp.down, ...comp.missing].map((k) =>
-                          k === "edge" ? ic.chipEdgeDown : ic.chipMailDown,
-                        ),
-                        ...(comp.edgeAbsent ? [ic.chipEdgeMissing] : []),
-                      ]
-                    : [];
                   return (
                     <Link
                       key={server.id}
@@ -391,17 +286,6 @@ export default function ServersPage() {
                             )}
                           </span>
                         )}
-                        {downParts.length > 0 ? (
-                          <span className="inline-flex shrink-0 items-center rounded-md bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger">
-                            {downParts.join(" · ")}
-                          </span>
-                        ) : comp && comp.updates > 0 ? (
-                          <span className="inline-flex shrink-0 items-center rounded-md bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
-                            {interpolate(comp.updates === 1 ? ic.chipUpdateOne : ic.chipUpdates, {
-                              n: String(comp.updates),
-                            })}
-                          </span>
-                        ) : null}
                         {authLabel && (
                           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
                             <AuthIcon className="size-3.5" />
@@ -419,7 +303,7 @@ export default function ServersPage() {
                       {/* Status state + arrow */}
                       <div className="flex shrink-0 items-center gap-4">
                         <span
-                          title={reachHint[server.id] ?? t.servers.list[state]}
+                          title={t.servers.list[state]}
                           className={`inline-flex items-center gap-1.5 text-xs font-medium ${sm.text}`}
                         >
                           <span className={`size-2.5 rounded-full border-2 ${sm.dot}`} />
@@ -489,19 +373,6 @@ export default function ServersPage() {
                 </div>
               </div>
             </div>
-
-            {/* Managed containers across the fleet. Self-hosted/desktop only, and
-                only once at least one component is tracked — a box we've never
-                scanned has nothing to report. */}
-            {infraEnabled && !infra.empty && (
-              <InfraFleetCard
-                counts={infra.counts}
-                scanning={infra.scanning}
-                applying={infra.applying}
-                onScan={() => void infra.scan()}
-                onApply={(intent) => void runBulk(intent)}
-              />
-            )}
           </div>
         </div>
       ))}
@@ -563,7 +434,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
           {t.servers.list.addFirstServer}
         </button>
         <a
-          href="https://openship.io/docs/guides/custom-servers"
+          href="https://openship.io/docs/self-hosting"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"

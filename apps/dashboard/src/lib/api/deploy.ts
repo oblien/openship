@@ -1,6 +1,6 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { StackId, ComposeAdvanced, RoutingConfig, OpenshipResourceTier, OpenshipReadiness, WorkloadType } from "@repo/core";
+import type { StackId, ComposeAdvanced, RoutingConfig, OpenshipResourceTier, OpenshipReadiness } from "@repo/core";
 import type { CloudResourceTier, CloudResourceCustom, PublicEndpoint, PortCheckUI, OutputCheckUI } from "@/context/deployment/types";
 
 /** How a rollback to a given deployment would run — see the API's restore plan. */
@@ -13,30 +13,6 @@ export interface RestorePlanUI {
   needsRepository: boolean;
   /** Services that must rebuild because their image aged out. */
   rebuildServices: string[];
-  /**
-   * Which env keys the release's frozen snapshot would change, and how it lands.
-   * KEYS ONLY — the API never sends values here. Absent when the plan is
-   * ineligible or the preview couldn't be derived.
-   */
-  env?: {
-    /** `overlay` = frozen shadows matching keys; `replace` = frozen used
-     *  verbatim (keys added since are dropped); `unchanged` = the container is
-     *  restarted, not recreated. */
-    strategy: "overlay" | "replace" | "unchanged";
-    changes: Array<{
-      key: string;
-      direction: "frozen-wins" | "removed-since" | "added-since";
-      /** Defined per-service today but captured unscoped — one value would
-       *  land on every service. */
-      scopeAmbiguous?: boolean;
-      serviceName?: string;
-    }>;
-    /** Count BEFORE the cap — show this, not `changes.length`. */
-    totalChanges: number;
-    truncated: boolean;
-  };
-  /** Services that exist today but not in this release. They keep running. */
-  untouchedServices: string[];
   code?: string;
   reason?: string;
 }
@@ -50,16 +26,8 @@ export type PrepareProjectSource =
       force?: string | boolean;
       /** Pin the compose file location (file or directory) instead of detecting the root. */
       composePath?: string;
-      /** Env already configured for this deploy, for compose interpolation. */
-      env?: Record<string, string>;
     }
-  | {
-      source: "local";
-      path: string;
-      composePath?: string;
-      /** Env already configured for this deploy, for compose interpolation. */
-      env?: Record<string, string>;
-    };
+  | { source: "local"; path: string; composePath?: string };
 
 export interface PrepareComposeService {
   name: string;
@@ -77,9 +45,6 @@ export interface PrepareComposeService {
       defaultValue?: string;
       resolvedValue: string;
       expression?: string;
-      /** The compose file marks this one mandatory (`${VAR:?…}`) and it has no
-       *  value yet — always alongside `source: "missing"`. */
-      required?: boolean;
     }
   >;
   volumes: string[];
@@ -170,10 +135,6 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
   //    ships the file. Seed wizard defaults; absent → detection is unchanged. ──
   /** Declared serve mode ("static" ⇒ no server). Seeds `options.hasServer`. */
   productionMode?: "host" | "static" | "standalone";
-  /** Declared runtime workload ("web"|"worker"|"static", #538). Wins over
-   *  `productionMode` — seeds `options.workloadType` directly so a repo whose
-   *  openship.json declares `workload: worker` lands on the worker selection. */
-  workloadType?: WorkloadType;
   /** Declared runtime isolation. Seeds `runtimeMode` for a brand-new deploy. */
   runtimeMode?: "bare" | "docker";
   /** Declared project domains, normalized to the create shape. Seed endpoints. */

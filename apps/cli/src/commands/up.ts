@@ -9,24 +9,25 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
-import { installAndStart } from "../lib/service";
+import { installAndStart, preview } from "../lib/service";
 import {
   composeUp,
   composePrefetch,
+  composeIsViableDefault,
   ensureDocker,
   composeInternalToken,
-  composePgDataRisk,
-  composeSecretRotationRisk,
   composeTrustedOriginUrls,
   hasDockerCompose,
-  pinnedImagesReady,
-  renderPgDataRefusal,
-  renderSecretRotationRefusal,
   resolveComposePorts,
   sourceBuildDir,
 } from "../lib/compose";
-import { planMethod, planUp, renderUpPlan } from "../lib/up-plan";
-import { portMoveNotice, readInstanceUrl, resolvePorts } from "../lib/ports";
+import {
+  DEFAULT_API_PORT,
+  DEFAULT_DASHBOARD_PORT,
+  portMoveNotice,
+  readInstanceUrl,
+  resolvePorts,
+} from "../lib/ports";
 import { prepareFromSource, type FromSourceRun } from "../lib/from-source";
 import {
   markStoppedProxyImported,
@@ -36,17 +37,14 @@ import {
   type EdgeAction,
 } from "../lib/edge-preflight";
 import { importMigratedSites } from "../lib/edge-import";
-import { verifyHostChannel } from "../lib/host-channel-preflight";
-import { edgeIsBroken, edgeCrashReason, EDGE_CONTAINER_NAME } from "@repo/adapters/proxy";
+import { edgeIsBroken, edgeCrashReason } from "@repo/adapters/proxy";
 import { LocalExecutor } from "@repo/adapters";
 import {
   resolveInstallInputs,
   headlessProvision,
   HeadlessInputError,
 } from "../lib/instance-provision";
-import { ensureInternalToken } from "../lib/loopback-api";
-import { AUTH_SECRET_FILE, DATA_DIR, LOG_DIR, OS_DIR } from "../lib/paths";
-import { startUnitHint } from "../lib/this-host";
+import { OS_DIR, ensureInternalToken } from "../lib/loopback-api";
 import type { ImportedSite } from "@repo/adapters/proxy";
 
 const EDGE_ACTIONS: EdgeAction[] = ["migrate", "takeover", "cancel"];
@@ -57,9 +55,6 @@ interface UpOpts {
   dashboardPort?: string;
   ui?: boolean;
   uiVersion?: string;
-  /** Compose image tag to pull, overriding this CLI's version — the way out of the
-   *  #486 release-ordering race (also honoured via the OPENSHIP_VERSION env var). */
-  imageVersion?: string;
   foreground?: boolean;
   dryRun?: boolean;
   publicUrl?: string;
@@ -83,23 +78,10 @@ interface UpOpts {
   compose?: boolean;
   /** Force the bare process service (the pre-compose install). */
   bare?: boolean;
-  /** Install as Openship Mail: the dashboard's default shell is the mail control
-   *  plane instead of the full platform (OPENSHIP_PRODUCT=mail). */
-  mail?: boolean;
   /** Non-interactive answer for the compose edge preflight when a foreign proxy holds :80/:443. */
   edge?: string;
   /** Withhold the api's channel to the HOST OS (hardening; see --no-host-control). */
   hostControl?: boolean;
-  /** Non-interactive consent to add the host firewall rule the container→host SSH
-   *  channel needs. Never implied by --yes: it mutates the host's firewall. */
-  openHostFirewall?: boolean;
-  /** Waive the #488 refusal and mint new secrets over a surviving data volume. Never
-   *  implied by --yes: it makes stored environment variables unreadable. */
-  resetSecrets?: boolean;
-  /** Override the address/port the api container dials for host ops (default
-   *  host.docker.internal:22) — rootless Docker, or a non-standard sshd. */
-  hostSshHost?: string;
-  hostSshPort?: string;
   /** Headless install: after the service is up, create the admin + register the
    *  domain from flags instead of prompting. Requires --admin-email + password. */
   nonInteractive?: boolean;
@@ -168,14 +150,14 @@ declare const __CLI_VERSION__: string;
 const DIST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = join(DIST_DIR, "server");
 
-// ensureInternalToken lives in lib/loopback-api (shared with the wizard + headless
-// installer — single copy, imported above). Re-exported so existing importers of
-// `ensureInternalToken` from "./up" (reset-admin, repair) keep working.
+// OS_DIR + ensureInternalToken live in lib/loopback-api (shared with the wizard +
+// headless installer — single copy, imported above). Re-exported so existing
+// importers of `ensureInternalToken` from "./up" (reset-admin, repair) keep working.
 export { ensureInternalToken };
 
 /** Persist a stable auth secret so sessions survive restarts. */
 function ensureAuthSecret(): string {
-  const path = AUTH_SECRET_FILE;
+  const path = join(OS_DIR, "auth-secret");
   if (existsSync(path)) return readFileSync(path, "utf8").trim();
   mkdirSync(OS_DIR, { recursive: true, mode: 0o700 });
   const secret = randomBytes(32).toString("hex");
@@ -196,15 +178,8 @@ export const upCommand = new Command("up")
   .option("--dashboard-port <port>", "Dashboard port (default: 3001, or the next free port if it's taken)")
   .option("--no-ui", "Run the API only — don't download/serve the dashboard")
   .option("--ui-version <tag>", "Dashboard release tag to run (default: this CLI's version)")
-  .option(
-    "--image-version <tag>",
-    "Compose mode: image tag to pull for api/dashboard/edge (default: this CLI's version, or the OPENSHIP_VERSION env var). Use a known-good tag if a release's images aren't in the registry yet.",
-  )
   .option("-f, --foreground", "Run attached in this terminal instead of as a background service")
-  .option(
-    "--dry-run",
-    "Preview only: print what `up` would install (method, ports, files, commands, the service definition / compose file) and exit WITHOUT changing this machine",
-  )
+  .option("--dry-run", "Print the service definition that would be installed, then exit")
   .option(
     "--public-url <url>",
     "Serve remotely at this public URL (VPS): binds the dashboard to all interfaces, proxies the API same-origin, and requires login",
@@ -229,30 +204,10 @@ export const upCommand = new Command("up")
   .option("--compose", "Install via Docker Compose using the published images (postgres + redis + api + dashboard + edge on :80/:443). Default when Docker is available on Linux.")
   .option("--bare", "Install as the bare process service (embedded DB, no Docker) instead of Compose")
   .option(
-    "--mail",
-    "Install as Openship Mail: the dashboard opens on the mail control plane (mail servers, domains, mailboxes) instead of the full platform. Same install, same binary — a default shell, not a restriction. Anyone can switch back under Settings → General, and an admin can change the box-wide default under Settings → Instance.",
-  )
-  .option(
     "--no-host-control",
     "Harden: don't give the control plane a channel to this machine's OS. No host SSH key is generated or mounted, host operations refuse, and this box stops being offered as a deploy target. Recommended when this box only manages REMOTE servers — it loses :80/:443 takeover, the host terminal and host port scans. The Docker socket is still mounted (deployments need it), so this is defense in depth, not isolation.",
   )
-  .option(
-    "--host-ssh-host <addr>",
-    "Compose mode: address the api container dials for host operations (default host.docker.internal, mapped to the docker host-gateway). Set this to the box's own LAN/bridge address when host-gateway doesn't reach the host — notably under rootless Docker. Preserved across re-runs.",
-  )
-  .option(
-    "--host-ssh-port <port>",
-    "Compose mode: port the host's sshd listens on for host operations (default 22). Preserved across re-runs.",
-  )
-  .option(
-    "--open-host-firewall",
-    "Compose mode: if the api container can't reach this machine's SSH port, add the host firewall rule that allows it (scoped to the container subnet, ufw/firewalld only). Without this the blocked channel is reported and left alone. Not implied by --yes.",
-  )
   .option("--edge <action>", "Compose mode: how to handle an existing proxy on :80/:443 — 'migrate' (import its sites into Openship's edge), 'takeover' (stop it; its sites stop serving), or 'cancel'. Default: prompt when interactive, else cancel.")
-  .option(
-    "--reset-secrets",
-    "Compose mode: generate new secrets even though this install's data volume still exists. `up` normally refuses, because the database keeps the password it was created with and every stored environment variable was encrypted with the old BETTER_AUTH_SECRET — the password gets realigned, those variables do not. Use only when the original .env is genuinely gone.",
-  )
   .option("--non-interactive", "Headless install: after the service starts, create the admin + register the domain from the flags below (no prompts). Alias: --yes.")
   .option("--yes", "Alias for --non-interactive.")
   .option("--admin-name <name>", "Admin display name (headless install)")
@@ -262,48 +217,44 @@ export const upCommand = new Command("up")
   .option("--hostname <host>", "Domain/hostname for --domain-kind byo|custom (or derived from --public-url)")
   .option("--slug <slug>", "Free .opsh.io subdomain for --domain-kind free (box must already be Cloud-connected)")
   .action(async (opts: UpOpts & { yes?: boolean }) => {
-    // FIRST, before any branch that can touch the box. Every mode below has side
-    // effects on the way to deciding what it would do — the install-method choice
-    // alone runs `ensureDocker()`, which on a fresh Linux box installs Docker and
-    // enables its daemon (#436). A preview that has to install something to tell
-    // you what it would install is not a preview.
-    if (opts.dryRun) {
-      console.log(renderUpPlan(await planUp({ ...opts, publicUrl: effectivePublicUrl(opts.publicUrl) })));
-      return;
-    }
     // From-source + foreground are bare-only (attached / dev preview).
     if (opts.fromSource || opts.source) return runFromSource(opts);
     if (opts.foreground) return runForeground(opts);
     const headless = !!(opts.nonInteractive || opts.yes);
     // Install method: Compose is the default when it can actually work (Docker on
-    // Linux — the edge container needs host networking); else bare. `planMethod`
-    // owns the decision so `--dry-run` predicts the same one.
+    // Linux — the edge container needs host networking); else bare.
     //
     // Docker is INSTALLED if missing, the same way the interactive wizard does it
-    // (ensureDocker → systemCatalog.installs.docker, per package manager). Without
+    // (ensureDocker → systemCatalog.installs.docker → get.docker.com). Without
     // this, `openship up` on a fresh Linux box silently degraded to the bare
     // install — a different topology than the docs promise — and `--compose` died
     // on a raw "docker: not found" instead of just installing it.
-    //
-    // Only ASK about Docker when the answer can change the method: --bare never
-    // needs it, and on macOS/Windows the compose default is off regardless.
-    const needsDocker = !opts.bare && (Boolean(opts.compose) || process.platform === "linux");
-    const dockerUsable = needsDocker ? await ensureDocker() : false;
-    const { method } = planMethod(opts, dockerUsable);
-    if (method === "compose" && !dockerUsable) {
-      // Explicitly asked for compose (the only way to get here): install Docker or
-      // fail loudly. Falling back to bare would quietly ignore the flag.
-      console.error(
-        chalk.red("\n  --compose needs Docker + docker compose, and they couldn't be installed automatically.") +
-          chalk.dim(
-            "\n  Install Docker (https://docs.docker.com/engine/install/) and re-run, or use --bare.\n",
-          ),
-      );
-      process.exit(1);
+    let method: "bare" | "compose";
+    if (opts.bare) {
+      method = "bare";
+    } else if (opts.compose) {
+      // Explicitly asked for compose: install Docker or fail loudly. Falling back
+      // to bare here would quietly ignore the flag.
+      if (!(await ensureDocker())) {
+        console.error(
+          chalk.red("\n  --compose needs Docker + docker compose, and they couldn't be installed automatically.") +
+            chalk.dim(
+              "\n  Install Docker (https://docs.docker.com/engine/install/) and re-run, or use --bare.\n",
+            ),
+        );
+        process.exit(1);
+      }
+      method = "compose";
+    } else if (process.platform === "linux") {
+      method = (await ensureDocker()) ? "compose" : "bare";
+    } else {
+      // macOS/Windows: Docker Desktop can't be installed unattended and its edge
+      // container has no host networking.
+      method = composeIsViableDefault() ? "compose" : "bare";
     }
     if (method === "compose") {
       const started = await runCompose(opts);
-      if (headless) {
+      if (headless && !opts.dryRun) {
         // The compose api container boots with the token from compose/.env (NOT
         // the bare ~/.openship token file) — authenticate the setup calls with it.
         const token = composeInternalToken();
@@ -324,7 +275,7 @@ export const upCommand = new Command("up")
       return;
     }
     const started = await startService(opts);
-    if (headless) await runHeadlessProvision(opts, started, { method: "bare" });
+    if (headless && !opts.dryRun) await runHeadlessProvision(opts, started, { method: "bare" });
   });
 
 /**
@@ -333,7 +284,7 @@ export const upCommand = new Command("up")
  * can be provisioned end-to-end without a TTY (the args-driven counterpart to the
  * interactive wizard). Secrets come from flags/env and are never logged.
  */
-export async function runHeadlessProvision(
+async function runHeadlessProvision(
   opts: UpOpts,
   started: { port: string; dashPort: string },
   extra?: { token?: string; method?: "bare" | "compose" },
@@ -424,29 +375,6 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
     console.log("\n" + portNotice.map((l) => chalk.yellow(`  ${l}`)).join("\n"));
   }
 
-  // #486: refuse a pinned image tag the registry doesn't have yet — here, before the
-  // spinner and before a single file is written, with the missing images named and a
-  // way forward, not docker's opaque `manifest unknown` mid-pull.
-  if (!pinnedImagesReady({ version: opts.imageVersion })) process.exit(1);
-
-  // #488: same idea for an install whose `.env` no longer yields the secrets its data
-  // volume was created with. The prefetch below already replaces `.env`, so this has to
-  // come first — once it's replaced, the real values are gone and the failure that follows
-  // (an api that can't authenticate to its own database) names nothing useful.
-  const rotation = composeSecretRotationRisk({ resetSecrets: opts.resetSecrets });
-  if (rotation) {
-    console.error(chalk.yellow(renderSecretRotationRefusal(rotation)));
-    process.exit(1);
-  }
-
-  // #487: same idea for a data volume whose cluster we can't locate — the prefetch below
-  // writes `.env`, so a guessed OPENSHIP_PGDATA has to be refused before that, not after.
-  const pgData = composePgDataRisk({ resetSecrets: opts.resetSecrets });
-  if (pgData) {
-    console.error(chalk.yellow(renderPgDataRefusal(pgData)));
-    process.exit(1);
-  }
-
   // Fetch the images BEFORE the preflight can stop anyone's proxy. A takeover that
   // pulls afterwards keeps the box dark for the whole download, and a pull that
   // fails takes their sites down for a problem we could have hit while they were
@@ -458,19 +386,10 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
     apiPort,
     dashboardPort,
     publicUrl,
-    version: opts.imageVersion,
     trustProxy: opts.trustProxy,
     noHostControl: opts.hostControl === false ? true : undefined,
-    // The prefetch writes the same `.env` `composeUp` will, so every knob has to be
-    // given to BOTH. A knob passed only to `composeUp` would change `.env` after the
-    // recreate decision was already taken here (see ComposePrefetchResult.envChanged),
-    // so the containers would keep an environment the file no longer shows.
-    hostSshHost: opts.hostSshHost,
-    hostSshPort: opts.hostSshPort,
-    resetSecrets: opts.resetSecrets,
-    mail: opts.mail,
   });
-  if (!fetched.ok) {
+  if (!fetched) {
     prefetch.fail("Couldn't fetch the stack's images — nothing was changed on this box.");
     console.error(
       chalk.dim("\n  Your current proxy is untouched and still serving. Fix the pull/build error above and re-run.\n"),
@@ -490,15 +409,9 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
     process.exit(1);
   }
   if (!edgePlan.proceed) {
-    // `blockedBy` = the handover itself failed (ports never came free), which is a
-    // different thing from the operator choosing to keep their proxy — and telling
-    // them "left it running, re-run when ready" would send them in a loop.
     console.log(
-      edgePlan.blockedBy
-        ? chalk.red(`\n  Can't take over the edge: ${edgePlan.blockedBy}.\n`) +
-            chalk.dim("  Find what else is bound to those ports (`ss -ltnp | grep -E ':80|:443'`), then re-run.\n")
-        : chalk.yellow("\n  Left the existing proxy on :80/:443 running — not starting the stack.\n") +
-            chalk.dim("  Re-run and choose migrate / take-over (or pass --edge=migrate|takeover) when ready.\n"),
+      chalk.yellow("\n  Left the existing proxy on :80/:443 running — not starting the stack.\n") +
+        chalk.dim("  Re-run and choose migrate / take-over (or pass --edge=migrate|takeover) when ready.\n"),
     );
     process.exit(1);
   }
@@ -512,27 +425,14 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   const res = await composeUp({
     // Prefetched above, before the preflight stopped anything.
     alreadyFetched: true,
-    // ...which also means the prefetch's materialize is the only one that could still
-    // see what the running containers were created with. Passing its verdict is what
-    // makes a changed `.env` reach them (see ComposePrefetchResult.envChanged).
-    envChanged: fetched.envChanged,
     apiPort,
     dashboardPort,
     publicUrl,
-    version: opts.imageVersion,
     trustProxy: opts.trustProxy,
     // commander maps `--no-host-control` to hostControl === false. `undefined` when
     // the flag is absent, so a plain re-run keeps the install's original choice
     // instead of silently re-granting host control (see resolveEnvConfig).
     noHostControl: opts.hostControl === false ? true : undefined,
-    // Absent on a plain re-run, so `keepConfig` carries whatever the install was
-    // configured with rather than resetting it to host.docker.internal:22.
-    hostSshHost: opts.hostSshHost,
-    hostSshPort: opts.hostSshPort,
-    resetSecrets: opts.resetSecrets,
-    // Absent on a re-run keeps the install's mode (resolveEnvConfig), so this
-    // never flips a mail box back to the platform shell.
-    mail: opts.mail,
   });
   if (!res.ok) {
     spinner.fail("docker compose failed to start the stack");
@@ -567,9 +467,6 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
       chalk.red(`\n  Openship's edge container is not running${reason ? ` — ${reason}` : "."}`),
     );
     const restored = await rollbackHostEdge();
-    // The same "put your proxy back" hint `edge-import` and `uninstall` print, from the
-    // same place: an Alpine or OpenRC box was being handed a systemctl command here.
-    const back = startUnitHint("nginx");
     console.error(
       restored
         ? chalk.yellow(
@@ -579,9 +476,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
         : chalk.red(
             `  AND your previous proxy could NOT be restarted automatically — the box is\n` +
               `  serving nothing right now. Start it by hand:\n` +
-              (back
-                ? `    docker stop ${EDGE_CONTAINER_NAME} && ${back}\n`
-                : `    stop ${EDGE_CONTAINER_NAME} and start your proxy the way this host starts services\n`),
+              `    docker stop openship-edge && sudo systemctl enable --now nginx\n`,
           ),
     );
     process.exit(1);
@@ -598,12 +493,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // has already printed the failure and the restore command.
   let importedOk = true;
   if (edgePlan.action === "migrate" && edgePlan.sites?.length) {
-    const outcome = await importMigratedSites(
-      res.apiPort,
-      edgePlan.sites,
-      edgePlan.certPems,
-      edgePlan.staticRootOverrides,
-    );
+    const outcome = await importMigratedSites(res.apiPort, edgePlan.sites, edgePlan.certPems);
     importedOk = outcome.registered.length > 0;
     // Don't re-offer a stopped proxy's sites on the next run once they're in.
     if (importedOk) markStoppedProxyImported();
@@ -611,14 +501,6 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // Edge is serving — close the takeover journal so the next run's recovery
   // doesn't mistake it for an interrupted one and restart the old proxy.
   if (edgePlan.action && importedOk) await completeHostEdge();
-
-  // The container→host SSH channel was provisioned without ever being dialed, so
-  // this is the first and only moment anything checks that it works. On a
-  // default-deny host it doesn't, and every host operation then fails identically
-  // to a bad key (#490). Diagnose it here, where the operator is still watching,
-  // and offer the rule. Deliberately after the edge work: the takeover uses the
-  // HOST executor, not this channel, so a blocked channel must not gate it.
-  await verifyHostChannel({ openFirewall: opts.openHostFirewall }).catch(() => {});
 
   const dashboardUrl = publicUrl ?? `http://localhost:${res.dashPort}`;
   console.log(
@@ -666,9 +548,29 @@ export async function startService(
 ): Promise<{ port: string; dashPort: string; publicUrl?: string }> {
   const publicUrl = effectivePublicUrl(opts.publicUrl);
 
-  // NOTE: no `--dry-run` branch here. The preview is built + printed by the `up`
-  // action before it reaches any install path (lib/up-plan.ts), because deciding
-  // WHICH path to preview used to install Docker on the way (#436).
+  // Dry-run only previews the unit file — don't probe or persist ports.
+  if (opts.dryRun) {
+    const p = preview({
+      port: opts.port,
+      dataDir: opts.dataDir,
+      dashboardPort: opts.dashboardPort,
+      ui: opts.ui,
+      uiVersion: opts.uiVersion,
+      publicUrl,
+      trustProxy: opts.trustProxy || opts.managedEdge,
+      host: opts.host,
+      managedEdge: opts.managedEdge,
+      acmeEmail: opts.acmeEmail,
+    });
+    console.log(
+      chalk.dim(`\n  service manager: ${p.kind}\n  path: ${p.path}\n\n`) + p.content + "\n",
+    );
+    return {
+      port: String(opts.port || DEFAULT_API_PORT),
+      dashPort: String(opts.dashboardPort || DEFAULT_DASHBOARD_PORT),
+      publicUrl,
+    };
+  }
 
   // No permanent port: switch off any occupied default / flag / remembered port
   // BEFORE writing the service unit, so the chosen ports are baked into its args.
@@ -690,7 +592,6 @@ export async function startService(
     host: opts.host,
     managedEdge: opts.managedEdge,
     acmeEmail: opts.acmeEmail,
-    mail: opts.mail,
   };
   try {
     const res = installAndStart(flags);
@@ -761,15 +662,16 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     const dashPort = String(resolved.dashboard);
     const publicUrl = effectivePublicUrl(opts.publicUrl);
     const managedEdge = Boolean(opts.managedEdge && publicUrl);
-    const dataDir: string = opts.dataDir || DATA_DIR;
+    const dataDir: string = opts.dataDir || join(OS_DIR, "data");
     mkdirSync(dataDir, { recursive: true });
 
     // Instance log: tee the API + dashboard child output to one file so the
     // control-plane self-app can serve it back through the normal deployment
     // logs API (see deployment.service getDeploymentLogs adopt branch). Fresh
     // per run ("w") to bound size; the current run's logs answer "is it healthy".
-    mkdirSync(LOG_DIR, { recursive: true });
-    const instanceLogPath = join(LOG_DIR, "instance.log");
+    const logDir = join(OS_DIR, "logs");
+    mkdirSync(logDir, { recursive: true });
+    const instanceLogPath = join(logDir, "instance.log");
     const instanceLog = createWriteStream(instanceLogPath, { flags: "w" });
 
     const env: NodeJS.ProcessEnv = {
@@ -815,10 +717,6 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     // bootstrap endpoint; both processes share this token file.
     env.OPENSHIP_REQUIRE_AUTH = "true";
     env.INTERNAL_TOKEN = ensureInternalToken();
-    // Openship Mail. Only the DEFAULT shell: the instance setting (Settings →
-    // Instance) is stored in the database and wins over this, so an operator who
-    // has switched the box back isn't overridden on the next boot.
-    if (opts.mail) env.OPENSHIP_PRODUCT = "mail";
     // DEPLOY_MODE is "desktop" here (in-process job runner), and the server no
     // longer INFERS the auth mode from it — it exits at boot unless the launcher
     // DECLARES OPENSHIP_AUTH_MODE (see apps/api/src/config/env.ts). Declare

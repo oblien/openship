@@ -26,7 +26,7 @@
  * a "public" signal into them.
  */
 
-import { repos, type Project, type Deployment } from "@repo/db";
+import { repos, db, schema, eq, type Project, type Deployment } from "@repo/db";
 import { BareRuntime } from "@repo/adapters";
 import { safeErrorMessage, UNLIMITED_RESOURCES } from "@repo/core";
 import { env } from "../../config/env";
@@ -181,8 +181,6 @@ export interface SelfEdgeStepProgress {
   onStep?: (
     step: "edge" | "route" | "ssl",
     status: "installing" | "installed" | "failed",
-    /** The cause, when `status` is "failed" — see `SelfEdgeInfraResult.detail`. */
-    detail?: string,
   ) => void;
   backoffs?: number[];
 }
@@ -197,7 +195,7 @@ export interface SelfEdgeStepProgress {
  */
 async function foreignProxyBlocksEdge(
   log?: (message: string, level?: "info" | "warn" | "error") => void,
-): Promise<{ blocked: boolean; owner?: string; detail?: string }> {
+): Promise<{ blocked: boolean; owner?: string }> {
   try {
     const { foreignProxyOnEdge } = await import("@repo/adapters");
     const { sshManager } = await import("../ssh-manager");
@@ -208,44 +206,15 @@ async function foreignProxyBlocksEdge(
       foreignProxyOnEdge(exec),
     );
     if (!blocked) return { blocked: false };
-    // Returned as well as logged so the caller's structured failure carries the SAME
-    // sentence the live log shows — not a second wording of it.
-    const detail =
+    log?.(
       `Not issuing TLS: ${owner} still owns ports 80/443, so Openship isn't the reverse proxy yet — ` +
-      `an ACME challenge would hit it, not us. Re-run setup (or Domains → migrate) to take over.`;
-    log?.(detail, "error");
-    return { blocked: true, owner, detail };
+        `an ACME challenge would hit it, not us. Re-run setup (or Domains → migrate) to take over.`,
+      "error",
+    );
+    return { blocked: true, owner };
   } catch {
     return { blocked: false };
   }
-}
-
-export interface SelfAppEdgeResult {
-  verified: boolean;
-  expiresAt?: string;
-  reason?: string;
-  /**
-   * The CAUSE behind `reason`, forwarded from whichever layer diagnosed it (see
-   * `SelfEdgeInfraResult.detail`). `reason` is a code callers branch on, so it can't
-   * carry the diagnosis; dropping `detail` here left the wizard's structured failure
-   * with only the code and put the cause exclusively in the live log — which a
-   * reattaching client, a headless CLI run, or anything reading the finished session
-   * never sees.
-   */
-  detail?: string;
-}
-
-/** One failure shape for every exit: the code, plus the cause on BOTH surfaces —
- *  the returned payload and the step event the wizard renders — so the two can't
- *  disagree about how much of the diagnosis they carry. */
-function edgeStepFailed(
-  progress: SelfEdgeStepProgress,
-  step: "edge" | "route" | "ssl",
-  reason: string | undefined,
-  detail?: string,
-): SelfAppEdgeResult {
-  progress.onStep?.(step, "failed", detail);
-  return { verified: false, reason, ...(detail ? { detail } : {}) };
 }
 
 /**
@@ -261,26 +230,24 @@ export async function provisionSelfAppEdge(
   hostname: string,
   dashPort: number,
   progress: SelfEdgeStepProgress = {},
-  // `managedEdgeSyncedByCaller` is not a `SelfEdgeOptions` field on purpose — that
-  // type describes the INFRA install (takeover/migrate) and is forwarded verbatim to
-  // `ensureSelfEdgeInfra`, which has no business knowing about Cloud's edge.
-  options?: SelfEdgeOptions & { managedEdgeSyncedByCaller?: boolean },
-): Promise<SelfAppEdgeResult> {
+  options?: SelfEdgeOptions,
+): Promise<{ verified: boolean; expiresAt?: string; reason?: string }> {
   const log = progress.onLog;
 
   // 1. Toolchain install + optional 80/443 takeover/migrate (no route/cert).
   progress.onStep?.("edge", "installing");
   const infra = await ensureSelfEdgeInfra({ onLog: log }, options);
   if (!infra.ok) {
-    return edgeStepFailed(progress, "edge", infra.reason, infra.detail);
+    progress.onStep?.("edge", "failed");
+    return { verified: false, reason: infra.reason };
   }
   progress.onStep?.("edge", "installed");
 
   // Hard gate: never touch routing/cert unless OUR OpenResty owns 80/443 (takeover
   // skipped / partial / respawned would otherwise 404 the ACME challenge opaquely).
-  const foreign = await foreignProxyBlocksEdge(log);
-  if (foreign.blocked) {
-    return edgeStepFailed(progress, "route", "edge_not_owned", foreign.detail);
+  if ((await foreignProxyBlocksEdge(log)).blocked) {
+    progress.onStep?.("route", "failed");
+    return { verified: false, reason: "edge_not_owned" };
   }
 
   // 2. Route hostname → 127.0.0.1:dashPort via the pipeline (owns the vhost +
@@ -288,20 +255,15 @@ export async function provisionSelfAppEdge(
   progress.onStep?.("route", "installing");
   const project = await repos.project.findById(projectId);
   if (!project) {
-    return edgeStepFailed(progress, "route", "no_project");
+    progress.onStep?.("route", "failed");
+    return { verified: false, reason: "no_project" };
   }
   try {
-    await reapplyProjectLiveRoutes(project, [], {
-      isSelfApp: true,
-      // The free-domain wizard has already registered the slug on Cloud's edge via
-      // `ensureManagedEdgeProxy` before calling us; re-syncing it here would issue a
-      // second target challenge and reset the first one's token mid-check.
-      managedEdgeSyncedByCaller: options?.managedEdgeSyncedByCaller,
-    });
+    await reapplyProjectLiveRoutes(project, [], { isSelfApp: true });
   } catch (err) {
-    const detail = safeErrorMessage(err);
-    log?.(detail, "error");
-    return edgeStepFailed(progress, "route", "route_failed", detail);
+    log?.(safeErrorMessage(err), "error");
+    progress.onStep?.("route", "failed");
+    return { verified: false, reason: "route_failed" };
   }
   progress.onStep?.("route", "installed");
   log?.(`routing ${hostname} → http://127.0.0.1:${dashPort}`);
@@ -350,13 +312,14 @@ export async function provisionSelfAppEdge(
     }
     if (attempt < backoffs.length) await sleep(backoffs[attempt]);
   }
+  progress.onStep?.("ssl", "failed");
   log?.(
     lastError
       ? `Couldn't issue TLS for ${hostname}: ${lastError} — it serves over HTTP and retries on next boot.`
       : `could not issue TLS for ${hostname} yet — will retry on next boot (site still serves over HTTP).`,
     "warn",
   );
-  return edgeStepFailed(progress, "ssl", "cert_pending", lastError);
+  return { verified: false, reason: "cert_pending" };
 }
 
 /** Locate the self-app project across the cloud-linked / founding-admin org.
@@ -367,7 +330,12 @@ async function findSelfAppProject(): Promise<Project | null> {
     const p = await repos.project.findBySlugInOrg(org, APP_SLUG);
     if (p && p.appTemplateId === APP_TEMPLATE_ID) return p;
   }
-  const admin = await repos.user.findFoundingAdmin();
+  const [admin] = await db
+    .select({ id: schema.user.id })
+    .from(schema.user)
+    .where(eq(schema.user.autoProvisioned, false))
+    .orderBy(schema.user.createdAt)
+    .limit(1);
   if (admin) {
     const p = await repos.project.findBySlugInOrg(`org_${admin.id}`, APP_SLUG);
     if (p && p.appTemplateId === APP_TEMPLATE_ID) return p;

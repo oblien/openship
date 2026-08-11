@@ -15,6 +15,7 @@ const LUA_DIR = join(HERE, "lua");
 // mirrors LUA_SCRIPTS in openresty-lua.ts.
 const REQUIRED = [
   "site_logger.lua",
+  "pipe_log.lua",
   "pipe_stream.lua",
   "mgmt_api.lua",
   "geo_country.lua",

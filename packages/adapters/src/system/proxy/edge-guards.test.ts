@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 import { edgeFailureReason, edgeIsBroken, sanitizeEdgeVhosts } from "./detect";
 import { LocalExecutor } from "../local-executor";
-import { edgeDefaultCatchAllConf } from "../../infra/openresty-lua";
 import type { CommandExecutor } from "../../types";
 
 /**
@@ -68,33 +67,6 @@ describe("sanitizeEdgeVhosts (real shell, real files)", () => {
 
     expect(said.join("\n")).toMatch(/Dropped catch-all vhost .*_default\.conf/);
     expect(said.join("\n")).toMatch(/Removed default_server from .*onvo\.conf/);
-  });
-
-  it("drops the REAL _default.conf a bare edge writes, both server blocks and all", async () => {
-    // The synthetic fixture above is a 4-line stand-in; this feeds the actual bytes
-    // `ensureOpenRestyConfig` puts on a bare box, because that file is what a
-    // bare→container conversion carries into the mounted sites-enabled. It now holds
-    // TWO server blocks — :80 and a `443 ssl default_server` presenting the edge's
-    // placeholder cert (#431) — so if it ever survived this pass, nginx would see a
-    // second 443 default beside the image's own and refuse to start: `[emerg] a
-    // duplicate default server` is a permanent crash loop, not a degraded page.
-    //
-    // It gets dropped only because both blocks are `server_name _;`. That coupling is
-    // invisible from openresty-lua.ts, which is the point of asserting it here.
-    const dir = await mkdtemp(join(tmpdir(), "openship-vhosts-real-"));
-    const real = edgeDefaultCatchAllConf({
-      certPath: "/usr/local/openresty/nginx/conf/openship-default-cert/fullchain.pem",
-      keyPath: "/usr/local/openresty/nginx/conf/openship-default-cert/privkey.pem",
-    });
-    expect(real).toContain("listen 443 ssl default_server;"); // guard the guard
-    await writeFile(join(dir, "_default.conf"), real);
-    await writeFile(join(dir, "api-reflx.conf"), PLAIN_VHOST);
-
-    const said: string[] = [];
-    await sanitizeEdgeVhosts(new LocalExecutor(), dir, (l) => said.push(l.message));
-
-    expect(await readdir(dir)).toEqual(["api-reflx.conf"]);
-    expect(said.join("\n")).toMatch(/Dropped catch-all vhost .*_default\.conf/);
   });
 
   it("is a no-op on an empty or missing dir", async () => {

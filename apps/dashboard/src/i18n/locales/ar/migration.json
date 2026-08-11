@@ -136,9 +136,6 @@
     "bind": "مسار مضيف",
     "nVolumes": "{n} وحدة تخزين",
     "nEnv": "{n} متغيّر",
-    "envFromImage": "{n} متغيّر يأتي من الصورة",
-    "envFromImageHint": "لم تُستورد كإعدادات — الصورة توفّرها عند التشغيل. استوردها لتثبيت القيم قبل إعادة البناء من المصدر.",
-    "envFromImageImport": "استورد على أي حال",
     "alreadyManaged": "تم تخطي {count} حاوية يديرها Openship بالفعل.",
     "proxyExcluded": "وكيل عكسي ({ports}) — لم يُستورد؛ حافة Openship تحل محله.",
     "edgePortReserved": "المنافذ {ports} محجوزة لحافة Openship؛ لا تُنشر."

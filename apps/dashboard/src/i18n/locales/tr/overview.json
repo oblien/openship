@@ -140,5 +140,13 @@
     "title": "Jeton Kullanımı",
     "lastNDays": "son {period} gün",
     "tokensTooltip": "{count} jeton"
+  },
+  "updates": {
+    "title": "Güncellemeler mevcut",
+    "updateAction": "Güncelle",
+    "updating": "Güncelleniyor…",
+    "newVersion": "Yeni sürüm",
+    "started": "{name} güncelleniyor…",
+    "failed": "Güncelleme başlatılamadı. Lütfen tekrar deneyin."
   }
 }

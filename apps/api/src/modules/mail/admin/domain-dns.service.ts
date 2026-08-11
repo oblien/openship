@@ -24,7 +24,7 @@ import { sshManager } from "../../../lib/ssh-manager";
 import { readState, mutateState } from "../mail-state";
 import type { DnsRecordSet, AdditionalDomainDns } from "../mail-state";
 import { buildSpfValue } from "../mail.service";
-import { withSpfInclude } from "./outbound-relay.service";
+import { withSesInclude } from "./outbound-relay.service";
 
 // ─── Record set construction ─────────────────────────────────────────────────
 
@@ -51,12 +51,12 @@ export function buildDomainDnsRecords(
   dkimValue?: string,
   ipv4?: string | null,
   ipv6?: string | null,
-  opts?: { spfInclude?: string },
+  opts?: { sesInclude?: boolean },
 ): DnsRecordSet {
   const mailHost = `mail.${installDomain}`;
-  // `spfInclude` is the outbound relay's provider token when one is active for
-  // this domain — a no-op when absent, so direct-send domains are unaffected.
-  const spfValue = withSpfInclude(buildSpfValue(ipv4, ipv6), opts?.spfInclude);
+  const spfValue = opts?.sesInclude
+    ? withSesInclude(buildSpfValue(ipv4, ipv6))
+    : buildSpfValue(ipv4, ipv6);
   return {
     mx: {
       type: "MX",

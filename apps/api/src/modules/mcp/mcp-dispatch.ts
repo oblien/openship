@@ -1,5 +1,4 @@
 import { app } from "../../app";
-import { internalSourceHeader } from "../../lib/call-source";
 import type { McpToolDef } from "./mcp-tools";
 
 /**
@@ -46,13 +45,7 @@ export async function dispatchTool(
     }
   }
 
-  // The nonce-signed source marker is the only thing that tells the audit log an
-  // action came from an AI assistant rather than a script — everything else about
-  // this sub-request looks like an ordinary token call, by design.
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${bearerToken}`,
-    ...internalSourceHeader("mcp"),
-  };
+  const headers: Record<string, string> = { authorization: `Bearer ${bearerToken}` };
   const orgId = args.organizationId;
   if (typeof orgId === "string" && orgId) headers["x-organization-id"] = orgId;
 

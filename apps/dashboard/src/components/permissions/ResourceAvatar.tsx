@@ -13,42 +13,17 @@
  */
 
 import { useState } from "react";
-import {
-  Activity,
-  ArrowUpCircle,
-  Bell,
-  Boxes,
-  Cloud,
-  CreditCard,
-  Database,
-  Github,
-  HardDrive,
-  Mail,
-  ScrollText,
-  Settings,
-  Timer,
-} from "lucide-react";
+import { Boxes, Database, Github, HardDrive, Mail } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ResourceType } from "@/lib/api";
 
-// Every grantable type needs an entry or it renders as a generic box, which makes
-// a 14-tab picker unreadable. Keyed by the full ResourceType so adding a grantable
-// type without an icon is visible here rather than in the UI.
-const FALLBACK_ICON: Record<ResourceType, LucideIcon> = {
+const FALLBACK_ICON: Partial<Record<ResourceType, LucideIcon>> = {
   project: Boxes,
   github_installation: Github,
   github_repository: Github,
   server: HardDrive,
   mail_server: Mail,
   backup_destination: Database,
-  job: Timer,
-  notifications: Bell,
-  analytics: Activity,
-  settings: Settings,
-  updates: ArrowUpCircle,
-  cloud: Cloud,
-  audit: ScrollText,
-  billing: CreditCard,
 };
 
 /** GitHub avatar for an account login, or the owner of an "owner/repo" id. */

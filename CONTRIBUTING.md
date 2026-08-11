@@ -160,29 +160,6 @@ If you're adding something that should only exist in the cloud version:
 2. Make any required env vars (like Stripe keys) optional in `apps/api/src/config/env.ts`
 3. Self-hosters should never see 500s from missing cloud config
 
-## Adding an App to the Catalog
-
-The one-click **Apps** catalog is data, not code — adding one is a small pull request that adds a
-single JSON file. No TypeScript required.
-
-1. Write `packages/core/src/apps/catalog/<id>.json` (start it with
-   `"$schema": "https://openship.io/app.schema.json"` for editor autocomplete)
-2. Regenerate the merged artifact and validate:
-
-```bash
-cd packages/core
-bun scripts/gen-catalog.ts                  # rewrites src/apps/catalog.json (a drift test fails CI without it)
-bunx vitest run src/apps/catalog.test.ts    # shape + referential validation for every app
-```
-
-3. Keep `"available": false` until it deploys cleanly end to end
-
-Apps must be open-source, use an official image **pinned** to a version, and auto-generate any
-credentials. Full walkthrough and field reference:
-
-- **[Add an app](https://openship.io/docs/guides/add-an-app)** — builds a real two-service app step by step
-- **[App catalog JSON](https://openship.io/docs/reference/app-catalog)** — every field
-
 ## Database
 
 ```bash

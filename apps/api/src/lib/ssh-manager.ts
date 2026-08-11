@@ -25,6 +25,7 @@
  *   - Timers use unref() so they don't prevent graceful shutdown.
  */
 
+import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -32,21 +33,17 @@ import { repos } from "@repo/db";
 import {
   createExecutor,
   createHostExecutor,
-  hostChannelHealth,
-  HostChannelUnavailableError,
-  invalidateEnvironment,
   isRetryableRemoteConnectionError,
   probeTcp,
   runReliable,
   type CommandExecutor,
-  type HostChannelCode,
-  type HostChannelHealth,
   type SshConfig,
 } from "@repo/adapters";
 import { formatDuration, systemDebug } from "@/lib/system-debug";
 import { decryptSecretField } from "@/lib/credential-encryption";
-import { operatorSshKeyRoots, resolveSafeSshKeyPath } from "@/lib/ssh-key-path";
+import { resolveSafeSshKeyPath } from "@/lib/ssh-key-path";
 import { isLocalHostRow } from "@/lib/box-org";
+import { OPENSHIP_DIR } from "@/lib/openship-server-store";
 import { safeErrorMessage } from "@repo/core";
 
 const execFileAsync = promisify(execFile);
@@ -107,9 +104,6 @@ export interface SshSettingsInput {
   sshAuthMethod?: string | null;
   sshPassword?: string | null;
   sshKeyPath?: string | null;
-  /** Pasted/uploaded key material. Stored `enc1:`-encrypted on a DB row; sent
-   *  raw by the ephemeral test-connection path. Takes precedence over sshKeyPath. */
-  sshPrivateKey?: string | null;
   sshKeyPassphrase?: string | null;
   sshJumpHost?: string | null;
   sshArgs?: string | null;
@@ -140,35 +134,23 @@ export async function buildSshConfig(
     // Stored encrypted on insert; decrypted only here at the moment we
     // hand it to the ssh2 client.
     config.password = decryptSecretField(settings.sshPassword);
-  } else if (
-    settings.sshAuthMethod === "key" &&
-    (settings.sshPrivateKey || settings.sshKeyPath)
-  ) {
-    if (settings.sshPrivateKey) {
-      // Pasted/uploaded material — the key lives in the DB, not on this host's
-      // filesystem, so there is no path to allowlist. decryptSecretField returns
-      // the stored `enc1:` value as plaintext, and passes a raw (unprefixed) key
-      // through verbatim — which is exactly what the ephemeral test-connection
-      // path sends before anything is persisted.
-      config.privateKey = decryptSecretField(settings.sshPrivateKey);
-    } else {
-      // Path on the API host. Centralised allowlist + traversal check — see
-      // lib/ssh-key-path.ts. operatorSshKeyRoots() is the operator's home, used
-      // as the default convenient root so `~/.ssh/openship` works without config.
-      let keyPath: string;
-      try {
-        keyPath = resolveSafeSshKeyPath(settings.sshKeyPath!, {
-          extraRoots: operatorSshKeyRoots(),
-        });
-      } catch {
-        return null;
-      }
+  } else if (settings.sshAuthMethod === "key" && settings.sshKeyPath) {
+    // Centralised allowlist + traversal check — see lib/ssh-key-path.ts.
+    // homedir() is the operator's home, used as the default convenient
+    // root so `~/.ssh/openship` works without explicit env config.
+    let keyPath: string;
+    try {
+      keyPath = resolveSafeSshKeyPath(settings.sshKeyPath, {
+        extraRoots: [homedir()],
+      });
+    } catch {
+      return null;
+    }
 
-      try {
-        config.privateKey = readFileSync(keyPath, "utf-8");
-      } catch {
-        return null;
-      }
+    try {
+      config.privateKey = readFileSync(keyPath, "utf-8");
+    } catch {
+      return null;
     }
     if (settings.sshKeyPassphrase) {
       config.privateKeyPassphrase = decryptSecretField(settings.sshKeyPassphrase);
@@ -214,93 +196,6 @@ const DEFAULTS = {
 // 5s command timeouts). One success resets it.
 const FAIL_THRESHOLD = 2;
 const COOLDOWN_MS = 30_000;
-
-export type ReachabilityCode =
-  | "ok"
-  /** Breaker open — reported unreachable without attempting anything. */
-  | "cooldown"
-  /** The TCP probe to the server's SSH port didn't complete. */
-  | "unreachable"
-  /** A remote row with no host to dial. */
-  | "no_address"
-  /**
-   * THIS box, containerized, and the container→host SSH channel is dead —
-   * almost always a host firewall dropping bridge→host traffic (#490). Deploys
-   * still work (Docker socket); host-OS operations don't.
-   */
-  | "host_channel_blocked"
-  /** THIS box with `--no-host-control`: reachable, host-OS operations off. */
-  | "host_control_disabled"
-  /** No such row, or the manager is shut down. */
-  | "unknown";
-
-export interface ReachabilityDiagnosis {
-  reachable: boolean;
-  code: ReachabilityCode;
-  /**
-   * `user@host:port` — the address ops DIAL, not the row's display sshHost.
-   *
-   * EVIDENCE, not intent: a consumer is entitled to read a present `target` as "we
-   * contacted this and it didn't answer". So it stays absent for a channel that was
-   * never provisioned — filling it with the endpoint such a channel WOULD use is how
-   * the dashboard came to report nothing answering on an address nothing had dialed
-   * (#509). A would-be endpoint belongs in a differently-named field.
-   */
-  target?: string;
-  host?: string;
-  port?: number;
-  /**
-   * Which host-channel state produced `host_channel_blocked`.
-   *
-   * Refines the code rather than splitting it: to the server list and the breaker
-   * this is one state ("can't drive its host"), but the REMEDY differs — a channel
-   * that was dialed and dropped wants a firewall rule, one that was never
-   * provisioned wants `openship up` and no rule at all. Absent on a remote row,
-   * which has no channel.
-   */
-  channel?: HostChannelCode;
-  /** Operator-facing remedy, when we have one. */
-  hint?: string;
-  /**
-   * A ready-to-paste firewall rule, when a packet filter is the likely cause. Only
-   * ever set for a dial that was DROPPED — see `firewallShaped` in @repo/core.
-   */
-  rule?: string;
-}
-
-/**
- * Did this failure come from the TRANSPORT rather than the command?
- *
- * A dropped/refused connection or a wait that never completed says the box (or the
- * channel to it) is sick; a non-zero exit or a missing file reached it fine. One
- * predicate because both readers — the circuit breaker and the host-channel gate —
- * have to agree on the answer, and the copy that drifts is the one that mislabels a
- * healthy box as unreachable. Exported for the HTTP layer, which has the same
- * question to answer before it offers a connection diagnosis (see server-check).
- */
-export function isTransportFailure(err: unknown): boolean {
-  if (isRetryableRemoteConnectionError(err)) return true;
-  return /timed out|timeout|ETIMEDOUT/i.test(safeErrorMessage(err));
-}
-
-/**
- * The endpoint + remedy fields of a host-channel health, omitting the empty ones.
- *
- * `code` is carried across as `channel` — the one field a consumer can't reconstruct,
- * because `host_channel_blocked` collapses every non-ok code into one verdict and the
- * remedy doesn't (#509). Nothing is synthesized here: a health with no endpoint
- * produces a diagnosis with no endpoint.
- */
-function hostChannelFields(h: HostChannelHealth): Partial<ReachabilityDiagnosis> {
-  return {
-    channel: h.code,
-    ...(h.target ? { target: h.target } : {}),
-    ...(h.host ? { host: h.host } : {}),
-    ...(h.port ? { port: h.port } : {}),
-    ...(h.hint ? { hint: h.hint } : {}),
-    ...(h.rule ? { rule: h.rule } : {}),
-  };
-}
 
 // ─── Reliable-run (journaled, exactly-once) tuning ─────────────────────────────
 
@@ -370,17 +265,6 @@ interface ServerConnection {
    * executor — the owner and the other borrowers are still using it.
    */
   shared?: boolean;
-  /**
-   * Something has actually flowed over this executor (see {@link
-   * SshConnectionManager.recordSuccess}).
-   *
-   * Cached ≠ connected: `connect()` and `createHostExecutor()` only CONSTRUCT an
-   * executor — ssh2 dials lazily on the first exec. So a cache entry alone proves
-   * nothing, and `probeReachable` treating it as proof was reporting a host whose
-   * SSH port was firewalled as Online (#490): the local row's borrow marker is
-   * seeded by `acquireLocalHost` without a single packet sent.
-   */
-  proven?: boolean;
 }
 
 /**
@@ -413,16 +297,6 @@ export class SshConnectionManager {
   private journalReady = new WeakSet<CommandExecutor>();
   /** Circuit-breaker state per server (consecutive fails + cooldown deadline). */
   private health = new Map<string, { fails: number; unhealthyUntil: number }>();
-  /**
-   * The last host-channel probe result (instance-wide — there is one host). Kept
-   * only to explain a breaker cooldown, never as the reachability answer itself.
-   */
-  private lastHostHealth: HostChannelHealth | null = null;
-  /**
-   * A host-channel failure we have actually observed. Never an answer on its own —
-   * {@link assertHostChannelUsable} re-probes before refusing anything.
-   */
-  private hostChannelSuspect = false;
   private destroyed = false;
   private readonly opts: Required<SshManagerOptions>;
 
@@ -544,24 +418,14 @@ export class SshConnectionManager {
     }
     this.servers.set(serverId, conn);
     this.touchIdleTimer(serverId);
+    this.recordSuccess(serverId);
   }
 
   /**
    * The pooled HOST channel — one connection to the machine Openship runs on,
    * reused by every caller and reclaimed by the same idle timer as a server.
-   *
-   * Public, and that is the point: this is the ONLY way to obtain this box's
-   * executor. Prefer {@link withHostExecutor} — it also reports the outcome back to
-   * the channel gate. Take the handle directly only when it must OUTLIVE the call
-   * (a deploy holds its executor across steps, so it cannot be scoped), which is the
-   * one case `withHostExecutor` cannot serve.
-   *
-   * It used to be private, so a caller holding no server row had nothing to ask and
-   * called `createHostExecutor()` itself — landing outside the cache, outside the
-   * concurrent-acquire dedup and outside {@link assertHostChannelUsable}. That is the
-   * unpooled idiom from #291, and it was reachable on the one door that has no row.
    */
-  async acquireHostChannel(): Promise<CommandExecutor> {
+  private async acquireHostChannel(): Promise<CommandExecutor> {
     const cached = this.servers.get(HOST_CHANNEL_KEY);
     if (cached) {
       this.touchIdleTimer(HOST_CHANNEL_KEY);
@@ -575,15 +439,7 @@ export class SshConnectionManager {
     // createHostExecutor throws (deliberately) when the API is containerized with
     // no host channel provisioned. Let that propagate: callers must NOT silently
     // treat "cannot reach the host at all" as success.
-    //
-    // The gate runs INSIDE the deduped promise, not before it: it awaits, and an
-    // await between the pending-check and the pending-set is a window for two
-    // callers to each build their own SshExecutor — the leak that reached 8,000+
-    // orphaned sshd sessions (#291).
-    const promise = (async () => {
-      await this.assertHostChannelUsable();
-      return createHostExecutor();
-    })();
+    const promise = (async () => createHostExecutor())();
     this.connecting.set(HOST_CHANNEL_KEY, promise);
     try {
       const exec = await promise;
@@ -593,70 +449,6 @@ export class SshConnectionManager {
     } finally {
       this.connecting.delete(HOST_CHANNEL_KEY);
     }
-  }
-
-  /**
-   * Refuse a host channel we have already watched fail, once a fresh probe agrees.
-   *
-   * `createHostExecutor()` only CONSTRUCTS — ssh2 dials on first use — so a channel
-   * the host firewall drops hands back a perfectly good-looking executor, and every
-   * operation that takes it pays its own SSH handshake timeout before failing with a
-   * bare timeout that names neither the channel nor the fix. Replacing that with one
-   * refusal carrying the remedy is #490's "mark host control as unavailable rather
-   * than letting operations fail one at a time".
-   *
-   * Gated on an OBSERVED failure and re-probed every time, so it is not a cache with
-   * a TTL (an earlier version was, and it kept answering "unavailable" for a channel
-   * that had come back): a working channel is used on the very next call, and a dead
-   * one costs a 2.5s TCP probe instead of a handshake timeout.
-   */
-  private async assertHostChannelUsable(): Promise<void> {
-    if (!this.hostChannelSuspect) return;
-    const health = await hostChannelHealth();
-    this.lastHostHealth = health;
-    if (health.ok) {
-      this.hostChannelSuspect = false;
-      return;
-    }
-    // Every other code is decided by env or a local file read — createHostExecutor
-    // raises those itself, fast, with their own remedy. Only `unreachable` is the
-    // state that costs a timeout to discover, so only it is worth pre-empting.
-    if (health.code !== "unreachable") return;
-    // hint and rule are separate fields (prose is wrapped, a command must not be), so
-    // the one place that flattens them into a message does it here — otherwise the
-    // firewall rule reaches the dashboard banner and never the deploy log, which is
-    // exactly where an operator is standing when a host op dies.
-    const hint =
-      health.hint ?? `Openship can't reach the host channel at ${health.target ?? "this machine"}.`;
-    throw new HostChannelUnavailableError(
-      "unreachable",
-      health.rule ? `${hint}\n${health.rule}` : hint,
-    );
-  }
-
-  /**
-   * Record what a host operation just revealed about the channel.
-   *
-   * Dropping the pooled channel on failure is the load-bearing half: the cache
-   * fast-path in `acquireHostChannel` returns before the gate can run, so a channel
-   * left cached is re-dialed by every later op — precisely the failure-at-a-time
-   * behaviour the gate exists to end. A dead SSH executor is worth nothing anyway.
-   * (`dropServer` still declines to yank a channel a live terminal or stream is
-   * holding; that one keeps its executor until release, which is the right trade.)
-   */
-  private noteHostChannel(ok: boolean): void {
-    if (ok) {
-      this.hostChannelSuspect = false;
-      return;
-    }
-    this.hostChannelSuspect = true;
-    this.dropServer(HOST_CHANNEL_KEY);
-  }
-
-  /** This key IS the host channel: the channel itself, or a local row borrowing it.
-   *  Their outcomes are the same outcome, so they feed the same gate. */
-  private isHostChannelKey(serverId: string): boolean {
-    return serverId === HOST_CHANNEL_KEY || this.localHostRows.has(serverId);
   }
 
   /**
@@ -670,6 +462,7 @@ export class SshConnectionManager {
     this.localHostRows.add(serverId);
     const exec = await this.acquireHostChannel();
     this.cacheSharedMarker(serverId, exec);
+    this.recordSuccess(serverId);
     debugSsh(`acquire:local-host server=${serverId} (${formatDuration(startedAt)})`);
     return exec;
   }
@@ -702,15 +495,7 @@ export class SshConnectionManager {
   async withHostExecutor<T>(fn: (executor: CommandExecutor) => Promise<T>): Promise<T> {
     const exec = await this.acquireHostChannel();
     try {
-      const result = await fn(exec);
-      this.noteHostChannel(true);
-      return result;
-    } catch (err) {
-      // Only a TRANSPORT failure says anything about the channel. A command that
-      // exits non-zero, or a file that isn't there, reached the host perfectly well
-      // and must not mark it suspect.
-      if (isTransportFailure(err)) this.noteHostChannel(false);
-      throw err;
+      return await fn(exec);
     } finally {
       // Extend the idle window from LAST USE, not from acquisition, or a long op
       // can have the connection dropped from under its own tail.
@@ -734,26 +519,18 @@ export class SshConnectionManager {
         const msg = safeErrorMessage(err);
         debugSsh(`withExecutor:retry-after-connection-error server=${serverId} ${msg}`);
         this.dropServer(serverId);
-        try {
-          const freshExecutor = await this.acquire(serverId);
-          const result = await fn(freshExecutor);
-          this.recordSuccess(serverId);
-          debugSsh(`withExecutor:retry-done server=${serverId} (${formatDuration(startedAt)})`);
-          return result;
-        } catch (retryErr) {
-          // A transport failure that survives a FRESH connection is evidence, not a
-          // blip — it has to reach the breaker and the host-channel gate. Rethrowing
-          // from inside the outer catch skipped both, so a local row whose host
-          // channel was firewalled failed this way indefinitely, paying two handshake
-          // timeouts per op and teaching us nothing (#490).
-          if (isTransportFailure(retryErr)) this.recordFailure(serverId);
-          throw retryErr;
-        }
+        const freshExecutor = await this.acquire(serverId);
+        const result = await fn(freshExecutor);
+        this.recordSuccess(serverId);
+        debugSsh(`withExecutor:retry-done server=${serverId} (${formatDuration(startedAt)})`);
+        return result;
       }
       const msg = safeErrorMessage(err);
       // Connection errors and command timeouts count toward the breaker — a
       // sick/unreachable box shouldn't be re-hit every poll tick.
-      if (isTransportFailure(err)) this.recordFailure(serverId);
+      if (isRetryableRemoteConnectionError(err) || /timed out|timeout|ETIMEDOUT/i.test(msg)) {
+        this.recordFailure(serverId);
+      }
       debugSsh(`withExecutor:failed server=${serverId} (${formatDuration(startedAt)}) ${msg}`);
       throw err;
     }
@@ -835,8 +612,7 @@ export class SshConnectionManager {
    * now" — delete/reconcile use it to fast-fail an unreachable host in ~2.5s
    * instead of paying the 15-20s SSH connect timeout per resource.
    *
-   *   - PROVEN cached connection → reachable (don't disturb it). A merely-cached
-   *                                one isn't evidence — see ServerConnection.proven.
+   *   - live cached connection  → reachable (don't disturb it).
    *   - breaker in cooldown      → unreachable, WITHOUT any connection attempt
    *                                (the "no avoidable connection" fast path).
    *   - otherwise                → a bounded TCP probe to the SSH port; the
@@ -845,35 +621,15 @@ export class SshConnectionManager {
    *                                cleanup execs bypass `withExecutor`.
    *
    * Reuses `repos.server.get` — the same config source `connect()` uses — so
-   * there is no second notion of server connectivity. The yes/no answer here and
-   * the reason in {@link diagnoseReachability} come from the same single pass.
+   * there is no second notion of server connectivity.
    */
   async probeReachable(serverId: string, timeoutMs = 2500): Promise<boolean> {
-    return (await this.diagnoseReachability(serverId, timeoutMs)).reachable;
-  }
-
-  /**
-   * The same check, with the REASON attached.
-   *
-   * Exists because "unreachable" alone sent operators after the wrong thing: the
-   * only address the UI had was the row's display `sshHost`, so a local row whose
-   * container→host SSH channel was firewalled off rendered "Can't reach 127.0.0.1"
-   * and told them to run `nc -zv 127.0.0.1 22` — a port that is *supposed* to be
-   * closed, on the wrong machine entirely (#490). `target` here is the address ops
-   * actually dial, and `hint`/`rule` carry the real remedy.
-   */
-  async diagnoseReachability(serverId: string, timeoutMs = 2500): Promise<ReachabilityDiagnosis> {
-    if (this.destroyed) return { reachable: false, code: "unknown" };
-    if (this.servers.get(serverId)?.proven) return { reachable: true, code: "ok" };
-
-    // Read the cooldown BEFORE the row so a remote box in cooldown still pays no
-    // probe; the row read that follows is a local DB hit, and it's what decides
-    // whether a dial was ever the right question — a local row is answered by the
-    // host-channel health, whose cooldown path still has to carry the REASON.
-    const inCooldown = this.cooldownRemaining(serverId) > 0;
+    if (this.destroyed) return false;
+    if (this.servers.has(serverId)) return true;
+    if (this.cooldownRemaining(serverId) > 0) return false;
 
     const server = await repos.server.get(serverId).catch(() => undefined);
-    if (!server) return { reachable: false, code: "unknown" };
+    if (!server) return false;
 
     // An isLocal row is THIS box (the auto-registered "This Server"). Its ssh*
     // fields are display-only — self-server.ts writes `127.0.0.1`/SERVER_IP purely
@@ -889,47 +645,27 @@ export class SshConnectionManager {
     // So answer with the channel ops actually use: the host SSH bridge when we're
     // containerized (host.docker.internal), else the same machine we're running on.
     if (await isLocalHostRow(server)) {
-      // The breaker still short-circuits — a blocked channel costs a full probe
-      // timeout per call — but a cooldown must not erase the REASON, because the UI
-      // asks precisely when a host operation has just failed, i.e. exactly when the
-      // breaker is open. A remembered failure is what opened it, so it still explains.
-      if (inCooldown) {
-        const last = this.lastHostHealth;
-        return last && !last.ok && last.code !== "disabled"
-          ? { reachable: false, code: "host_channel_blocked", ...hostChannelFields(last) }
-          : { reachable: false, code: "cooldown" };
+      const hostSsh = process.env.OPENSHIP_HOST_SSH_HOST?.trim();
+      if (!hostSsh) {
+        this.recordSuccess(serverId);
+        return true;
       }
-
-      const health = await hostChannelHealth(timeoutMs);
-      this.lastHostHealth = health;
-      // `disabled` is an operator choice (`--no-host-control`), not a fault: host-OS
-      // operations are off, but the row still deploys through the mounted Docker
-      // socket, so it must not read as Offline. Every other non-ok code IS a fault.
-      const hostOk = health.ok || health.code === "disabled";
+      const hostOk = await probeTcp(
+        hostSsh,
+        Number(process.env.OPENSHIP_HOST_SSH_PORT || 22),
+        timeoutMs,
+      );
       if (hostOk) this.recordSuccess(serverId);
       else this.recordFailure(serverId);
-      return {
-        reachable: hostOk,
-        code: health.ok
-          ? "ok"
-          : health.code === "disabled"
-            ? "host_control_disabled"
-            : "host_channel_blocked",
-        ...hostChannelFields(health),
-      };
+      return hostOk;
     }
 
-    if (!server.sshHost) return { reachable: false, code: "no_address" };
+    if (!server.sshHost) return false;
 
-    const host = server.sshHost;
-    const port = server.sshPort ?? 22;
-    const endpoint = { target: `${server.sshUser ?? "root"}@${host}:${port}`, host, port };
-    if (inCooldown) return { reachable: false, code: "cooldown", ...endpoint };
-
-    const ok = await probeTcp(host, port, timeoutMs);
+    const ok = await probeTcp(server.sshHost, server.sshPort ?? 22, timeoutMs);
     if (ok) this.recordSuccess(serverId);
     else this.recordFailure(serverId);
-    return { reachable: ok, code: ok ? "ok" : "unreachable", ...endpoint };
+    return ok;
   }
 
   /**
@@ -943,44 +679,16 @@ export class SshConnectionManager {
     // apply even to a retained connection — force the drop.
     if (serverId) {
       debugSsh(`invalidate server=${serverId}`);
-      this.forgetProfile(serverId);
       this.dropServer(serverId, true);
-      // Config changed / explicit reset → give the breaker a fresh start, and the
-      // host-channel gate too: an operator who just fixed their firewall and hit
-      // retry has told us more than a remembered failure can.
+      // Config changed / explicit reset → give the breaker a fresh start.
       this.health.delete(serverId);
-      this.lastHostHealth = null;
-      this.hostChannelSuspect = false;
     } else {
       debugSsh("invalidate:all");
       for (const id of [...this.servers.keys()]) {
-        this.forgetProfile(id);
         this.dropServer(id, true);
       }
       this.health.clear();
-      this.lastHostHealth = null;
-      this.hostChannelSuspect = false;
     }
-  }
-
-  /**
-   * Drop the measured host profile along with the connection.
-   *
-   * The profile is cached per executor OBJECT, so dropping the connection already
-   * loses it — eventually, whenever the object is collected. This makes it immediate,
-   * and only on the explicit path, which is the one that carries the information: the
-   * operator changed this server's settings or deleted the row. Same reasoning as
-   * `health.delete` two lines up — a remembered answer about a box they just told us
-   * they changed is worth less than a fresh look.
-   *
-   * Must run BEFORE `dropServer`, which is what removes the entry we read the executor
-   * from. A borrowed entry (a local row pointing at the shared host channel) forgets the
-   * channel's profile too, and that is right rather than merely tolerable: it is the same
-   * machine, so a change to the row is a change to the box.
-   */
-  private forgetProfile(serverId: string): void {
-    const conn = this.servers.get(serverId);
-    if (conn) invalidateEnvironment(conn.executor);
   }
 
   /**
@@ -1126,9 +834,8 @@ export class SshConnectionManager {
    * layers its pool + circuit breaker around it via the acquire/hooks.
    */
   private executeJournaledOp(serverId: string, op: QueuedOp): Promise<RunResult> {
-    // No `baseDir`: it used to pin every server in the fleet to `/root/.openship`, which
-    // is unwritable over SFTP on a non-root login. `runReliable` asks each host instead.
     return runReliable(() => this.acquire(serverId), op.opId, op.command, {
+      baseDir: OPENSHIP_DIR,
       timeoutMs: op.opts.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS,
       waitSecs: op.opts.waitSecs,
       envPrefix: op.opts.envPrefix,
@@ -1152,27 +859,14 @@ export class SshConnectionManager {
     return Math.max(0, h.unhealthyUntil - Date.now());
   }
 
-  /**
-   * One success clears the breaker entirely.
-   *
-   * Also the single place a cached connection earns `proven`: every caller here has
-   * observed the box actually respond (a completed op, or a TCP probe). Callers that
-   * merely built an executor deliberately do NOT call this.
-   */
+  /** One success clears the breaker entirely. */
   private recordSuccess(serverId: string): void {
     if (this.health.has(serverId)) this.health.delete(serverId);
-    const conn = this.servers.get(serverId);
-    if (conn) conn.proven = true;
-    if (this.isHostChannelKey(serverId)) this.noteHostChannel(true);
   }
 
   /** Count a connect/command failure; trip the breaker at the threshold and
    *  drop any cached (now-suspect) connection so the cooldown actually bites. */
   private recordFailure(serverId: string): void {
-    // A local row IS the host channel, so its failures are the channel's. Recorded
-    // here rather than at each call site: this is where `probeReachable`'s fresh
-    // health and a local-row `withExecutor` already converge.
-    if (this.isHostChannelKey(serverId)) this.noteHostChannel(false);
     const h = this.health.get(serverId) ?? { fails: 0, unhealthyUntil: 0 };
     h.fails += 1;
     if (h.fails >= FAIL_THRESHOLD) {

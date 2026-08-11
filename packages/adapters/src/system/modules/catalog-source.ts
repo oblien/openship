@@ -15,7 +15,6 @@
 import type { ModuleCatalog, VerifiedCatalog } from "./types";
 import {
   CATALOG_PUBKEYS,
-  catalogShapeError,
   insecureCatalogAllowed,
   referencedAssets,
   verifyAssets,
@@ -38,9 +37,9 @@ export interface CatalogLoadResult {
 /**
  * Pure verify-and-assemble: given raw manifest bytes + detached signature + the
  * asset byte map, verify the signature (unless the dev insecure hatch is on),
- * parse, check shape, then verify every referenced asset's sha256. Only a
- * fully-verified catalog is returned. This is the single trust chokepoint both
- * sources funnel through — unit-testable with a throwaway keypair.
+ * parse, then verify every referenced asset's sha256. Only a fully-verified
+ * catalog is returned. This is the single trust chokepoint both sources funnel
+ * through — unit-testable with a throwaway keypair.
  */
 export function verifyAndBuild(
   module: string,
@@ -61,13 +60,6 @@ export function verifyAndBuild(
   } catch (err) {
     return { error: `manifest parse failed: ${(err as Error).message}` };
   }
-  // Shape before any field is read or version walked: the catalog is a versioned public
-  // API, so a malformed manifest is an expected input and a signature authenticates the
-  // author, not the values. Also where a `schema` from a newer engine is refused —
-  // otherwise it assembles into a VerifiedCatalog and only reconcile notices, a whole
-  // trust boundary later.
-  const shapeError = catalogShapeError(catalog);
-  if (shapeError) return { error: `invalid catalog: ${shapeError}` };
   if (catalog.module !== module) {
     return { error: `manifest module mismatch: expected ${module}, got ${catalog.module}` };
   }
@@ -131,10 +123,6 @@ export async function fetchRemoteCatalog(module: string): Promise<CatalogLoadRes
   } catch (err) {
     return { error: `remote manifest parse failed: ${(err as Error).message}` };
   }
-  // Not a trust decision (verifyAndBuild still owns that) — a manifest whose shape we
-  // can't walk has no enumerable asset list, so there is nothing to fetch.
-  const shapeError = catalogShapeError(parsed);
-  if (shapeError) return { error: `remote manifest invalid: ${shapeError}` };
   const assets = new Map<string, Buffer>();
   for (const key of referencedAssets(parsed)) {
     const b = await fetchBytes(`${dir}/${key}`);

@@ -67,7 +67,6 @@ export async function triggerBackupViaWebhook(opts: {
           actorUserId: policy.createdBy ?? null,
           ipAddress: opts.clientIp ?? null,
           userAgent: opts.userAgent ?? null,
-          source: "webhook",
         },
         {
           eventType: "backup.webhook.disabled",
@@ -98,7 +97,6 @@ export async function triggerBackupViaWebhook(opts: {
         actorUserId: policy.createdBy ?? null,
         ipAddress: opts.clientIp ?? null,
         userAgent: opts.userAgent ?? null,
-        source: "webhook",
       },
       {
         eventType: "backup.webhook.fired",

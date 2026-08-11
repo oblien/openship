@@ -43,42 +43,6 @@ export function createProjectRepo(db: Database) {
       });
     },
 
-    /**
-     * Batch id → display name. Lets a list response (the audit feed) show
-     * "api-gateway" instead of "prj_8fk2abc" with one query per page.
-     * Includes soft-deleted rows on purpose: history about a deleted project
-     * should still name it.
-     */
-    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
-      if (ids.length === 0) return [];
-      return db.select({ id: project.id, name: project.name })
-        .from(project)
-        .where(inArray(project.id, ids));
-    },
-
-    /**
-     * Ids of projects in an org whose name or slug matches a search term.
-     *
-     * The inverse of `listNamesByIds`, for the audit feed's free-text search:
-     * rows store `prj_8fk2abc`, so searching "api-gateway" can only work by
-     * resolving the name to ids first. Soft-deleted included — the row being
-     * searched for is often the deletion itself.
-     */
-    async searchIdsByName(organizationId: string, term: string, limit = 200): Promise<string[]> {
-      const pattern = `%${term}%`;
-      const rows = await db
-        .select({ id: project.id })
-        .from(project)
-        .where(
-          and(
-            eq(project.organizationId, organizationId),
-            sql`(${project.name} ILIKE ${pattern} OR ${project.slug} ILIKE ${pattern})`,
-          ),
-        )
-        .limit(limit);
-      return rows.map((r) => r.id);
-    },
-
     /** Slug uniqueness scoped to one org. */
     async findBySlugInOrg(organizationId: string, slug: string) {
       return db.query.project.findFirst({
@@ -424,17 +388,13 @@ export function createProjectRepo(db: Database) {
 
     /**
      * Count projects currently deployed to each server, keyed by server id.
-     * A project counts for a server when it has an ACTIVE deployment and resolves
-     * to that server — preferring the DURABLE `project.server_id` binding and
-     * falling back to the active deployment's `meta.serverId` for legacy rows not
-     * yet backfilled. Powers the "N projects" chip + Projects stat on the Servers
-     * list (and the container-issues classifier's absent-edge alarm).
+     * A project counts for a server when its ACTIVE deployment's meta.serverId
+     * matches. Powers the "N projects" chip + Projects stat on the Servers list.
      */
     async countActiveByServer(organizationId: string): Promise<Record<string, number>> {
-      const boundServer = sql<string>`coalesce(${project.serverId}, ${deployment.meta} ->> 'serverId')`;
       const rows = await db
         .select({
-          serverId: boundServer,
+          serverId: sql<string>`${deployment.meta} ->> 'serverId'`,
           count: sql<number>`count(*)::int`,
         })
         .from(project)
@@ -443,10 +403,10 @@ export function createProjectRepo(db: Database) {
           and(
             eq(project.organizationId, organizationId),
             isNull(project.deletedAt),
-            sql`coalesce(${project.serverId}, ${deployment.meta} ->> 'serverId') is not null`,
+            sql`${deployment.meta} ->> 'serverId' is not null`,
           ),
         )
-        .groupBy(boundServer);
+        .groupBy(sql`${deployment.meta} ->> 'serverId'`);
       const out: Record<string, number> = {};
       for (const r of rows) {
         if (r.serverId) out[r.serverId] = Number(r.count);
@@ -454,23 +414,11 @@ export function createProjectRepo(db: Database) {
       return out;
     },
 
-    /**
-     * Set the active deployment for a project.
-     *
-     * Advancing the pointer to a real release also clears `disabledAt`: a release
-     * that just went live is, by definition, not a project someone turned off, and
-     * a stale marker would tell the health watch to ignore a running workload
-     * forever. Clearing to null (a deleted deployment) leaves the marker alone —
-     * that isn't a release going live.
-     */
+    /** Set the active deployment for a project */
     async setActiveDeployment(projectId: string, deploymentId: string | null) {
       await db
         .update(project)
-        .set({
-          activeDeploymentId: deploymentId,
-          ...(deploymentId ? { disabledAt: null } : {}),
-          updatedAt: new Date(),
-        })
+        .set({ activeDeploymentId: deploymentId, updatedAt: new Date() })
         .where(eq(project.id, projectId));
     },
 

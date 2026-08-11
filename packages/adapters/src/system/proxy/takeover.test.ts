@@ -16,24 +16,17 @@ const h = vi.hoisted(() => ({
   registerRoute: vi.fn(),
   provisionCert: vi.fn(),
   installCert: vi.fn(),
-  freeEdgeTargets: vi.fn(async (_executor: CommandExecutor, ..._rest: unknown[]) => ({
-    freed: true,
-    stillBound: [] as number[],
-  })),
+  freeEdgeTargets: vi.fn(async () => {}),
   resolveOurEdgeContainer: vi.fn(async () => null as string | null),
   containerEdgeProvider: vi.fn(),
 }));
 
 vi.mock("../installer", () => ({ installContainerEdge: h.installContainerEdge }));
 vi.mock("../checks", () => ({ checkEdge: h.checkEdge }));
-// Partial mock: only `detectOpenRestyPaths` is faked, since it's the one that
-// shells out. The path/mount CONSTANTS pass through from the real module —
-// hand-writing them here meant that adding an export (`EDGE_CONTAINER_MOUNTS`,
-// dereferenced at module load two hops down the `./takeover` import chain)
-// collapsed this whole suite to zero collected tests.
-vi.mock("../../infra/openresty-lua", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../infra/openresty-lua")>()),
+vi.mock("../../infra/openresty-lua", () => ({
   detectOpenRestyPaths: h.detectPaths,
+  EDGE_HOST_PATHS: { sitesDir: "/var/lib/openship/edge/sites-enabled" },
+  OPENRESTY_DEFAULT_PATHS: { sitesDir: "/usr/local/openresty/nginx/conf/sites-enabled" },
 }));
 vi.mock("../../infra/nginx", () => ({
   NginxProvider: class {
@@ -53,16 +46,6 @@ vi.mock("./detect", () => ({
 }));
 
 import { runEdgeTakeover } from "./takeover";
-import { OS_RELEASE, probeOutput, type ProbeSpec } from "../environment.fixtures";
-
-const NON_ROOT_SUDO: ProbeSpec = {
-  osRelease: OS_RELEASE.ubuntu2404,
-  uid: "1000",
-  user: "deploy",
-  home: "/home/deploy",
-  sudo: "y",
-};
-const NON_ROOT_NO_SUDO: ProbeSpec = { ...NON_ROOT_SUDO, sudo: "n" };
 
 const STATUS: EdgeStatus = {
   classification: "known",
@@ -75,14 +58,11 @@ const SITES: ImportedSite[] = [
   { serverNames: ["app.example.com"], ssl: false, target: { kind: "proxy", url: "http://127.0.0.1:3000" } },
 ];
 
-function makeExecutor(opts: { portServedAfterRollback?: boolean; host?: ProbeSpec } = {}) {
+function makeExecutor(opts: { portServedAfterRollback?: boolean } = {}) {
   const cmds: string[] = [];
   const executor = {
     exec: vi.fn(async (cmd: string) => {
       cmds.push(cmd);
-      // The privilege gate measures the host before the stop is issued; default is a
-      // plain root box, so an unelevated command string is what the assertions see.
-      if (cmd.includes("opsh_begin")) return probeOutput(opts.host ?? {});
       if (cmd.includes("is-enabled")) return "enabled"; // journal: foreign proxy was enabled
       // The rollback VERIFIES :80 is served again before claiming success.
       if (cmd.includes("/proc/net/tcp") || cmd.includes("ss -ltn")) {
@@ -104,7 +84,7 @@ const noop = () => {};
 
 beforeEach(() => {
   vi.clearAllMocks();
-  h.freeEdgeTargets.mockImplementation(async () => ({ freed: true, stillBound: [] }));
+  h.freeEdgeTargets.mockImplementation(async () => {});
   h.detectPaths.mockResolvedValue({});
   h.registerRoute.mockResolvedValue(undefined);
   h.provisionCert.mockResolvedValue({ verified: true });
@@ -153,25 +133,6 @@ describe("runEdgeTakeover", () => {
     expect(res.rolledBack).toBe(false);
   });
 
-  // "I stopped its owner" is not ":80 is bindable" — something else may hold the
-  // socket (a second nginx, a stray container, a lingering worker). Installing anyway
-  // starts an edge that loses the race and crash-loops on
-  // `bind() … (98: Address already in use)` while `docker run` exits 0, so this would
-  // report a successful migration of a box serving nothing.
-  it("refuses to install — and restores the proxy — when the ports never come free", async () => {
-    h.freeEdgeTargets.mockImplementation(async () => ({ freed: false, stillBound: [80, 443] }));
-    const { executor, cmds } = makeExecutor();
-
-    const res = await runEdgeTakeover(executor, { status: STATUS, sites: SITES }, noop);
-
-    expect(res.ok).toBe(false);
-    expect(res.rolledBack).toBe(true);
-    expect(res.warnings.some((w) => w.includes("80 and 443"))).toBe(true);
-    expect(h.installContainerEdge).not.toHaveBeenCalled();
-    expect(h.registerRoute).not.toHaveBeenCalled();
-    expect(rolledBackNginx(cmds)).toBe(true);
-  });
-
   it("rolls back when a post-install step throws (e.g. path detection)", async () => {
     h.installContainerEdge.mockResolvedValue({ success: true });
     h.detectPaths.mockRejectedValue(new Error("no openresty prefix"));
@@ -210,42 +171,6 @@ describe("runEdgeTakeover", () => {
     );
     // The bare path must NOT be consulted when a container edge is present.
     expect(h.detectPaths).not.toHaveBeenCalled();
-  });
-
-  // Freeing the ports is a WRITE: `systemctl disable --now` / `docker update
-  // --restart=no` are refused outright on a `deploy@host` login, and freeEdgeTargets
-  // swallows every one of them (`|| true`). Unelevated, the takeover stopped nothing.
-  it("elevates the stop that frees 80/443", async () => {
-    h.installContainerEdge.mockResolvedValue({ success: true });
-    const { executor, cmds } = makeExecutor({ host: NON_ROOT_SUDO });
-
-    await runEdgeTakeover(executor, { status: STATUS, sites: SITES }, noop);
-
-    const stopExecutor = h.freeEdgeTargets.mock.calls[0]![0];
-    await stopExecutor.exec("systemctl disable --now 'nginx.service'");
-    const issued = cmds.at(-1)!;
-    expect(issued.startsWith("sudo -n sh -c ")).toBe(true);
-    expect(issued).toContain("nginx.service");
-  });
-
-  // Routing/takeover work degrades rather than throwing — but a swallowed privilege
-  // refusal read as "some other process holds :80", which is advice to retry the same
-  // unprivileged takeover forever.
-  it("blames the privilege refusal, not a mystery port holder, when the login can't elevate", async () => {
-    h.freeEdgeTargets.mockImplementation(async () => ({ freed: false, stillBound: [80] }));
-    const { executor } = makeExecutor({ host: NON_ROOT_NO_SUDO });
-
-    const res = await runEdgeTakeover(executor, { status: STATUS, sites: SITES }, noop);
-
-    expect(res.ok).toBe(false);
-    expect(h.installContainerEdge).not.toHaveBeenCalled();
-    // The cause, naming the step it degraded.
-    expect(
-      res.warnings.some((w) => w.includes("Stopping the proxy") && w.includes("passwordless sudo")),
-    ).toBe(true);
-    // …and the retry advice that follows from it, instead of the generic one.
-    expect(res.warnings.some((w) => /retrying as this user/i.test(w))).toBe(true);
-    expect(res.warnings.some((w) => w.includes("Find what else is holding the port"))).toBe(false);
   });
 
   it("a single route failure is tolerated (warns) — NOT a full rollback", async () => {

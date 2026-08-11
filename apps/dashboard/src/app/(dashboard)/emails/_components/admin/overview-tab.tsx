@@ -49,15 +49,12 @@ import {
   Smartphone,
 } from "lucide-react";
 import {
-  getApiErrorMessage,
-  isMailEngineUnavailable,
   mailAdminApi,
   type MailServerStats,
   type MailSetupStatus,
   type MailWebmailSummary,
 } from "@/lib/api";
 import { getMarketingOrigin } from "@/lib/api/urls";
-import { webmailCta } from "../../_lib/webmail-cta";
 import { Skeleton } from "./_shared/skeleton";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -92,27 +89,15 @@ export function OverviewTab({ status, serverId }: OverviewTabProps) {
 
 // ─── Mail server + webmail (combined hero card) ──────────────────────────────
 
-/** The card's single CTA slot, in whichever of its three shapes applies. */
-const CTA_CLASS =
-  "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0";
-
 /**
  * Single editorial card at the top of the overview. Combines mail-server
  * identity (the hostname) with the webmail CTA.
  *
- * Webmail state is read from `status.webmail` - the openship API derives it
- * from the webmail project this mail server is linked to. If the record is
- * absent (or `installed=false`), the operator sees a Deploy webmail CTA that
- * opens /deploy/mail (host + domain picker, then the standard build screen).
- * Once deployed, the same slot becomes an Open webmail link.
- *
- * `routingUnknown` is the third state, and it is NOT the deploy one: webmail is
- * installed, its address just could not be read. Offering a deploy there reads as
- * "nothing is installed", so the slot links to the project instead.
- *
- * `legacy` is the one state the CTA slot can't express: that webmail works, so
- * the slot correctly says Open - but it predates the webmail app and can only be
- * replaced, which is offered as a line under the hostname.
+ * Webmail state is read from `status.webmail` - the openship API persists
+ * the deploy record in the mail-state file on the VPS. If the record is
+ * absent (or `installed=false`), the operator sees a Deploy webmail CTA
+ * that opens a modal - domain + host picker + live SSE progress. Once
+ * deployed, the same slot becomes an Open webmail link.
  */
 function MailServerCard({
   mailHost,
@@ -137,7 +122,7 @@ function MailServerCard({
     }
   };
 
-  const cta = webmailCta(webmail);
+  const isInstalled = Boolean(webmail?.installed && webmail.url);
 
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
@@ -179,11 +164,11 @@ function MailServerCard({
               </span>
             )}
           </button>
-          {cta.kind === "open" && webmail && (
+          {isInstalled && webmail && (
             <p className="text-xs text-muted-foreground mt-1.5 break-all">
               {t.emailsAdmin.overview.webmailAt}{" "}
               <a
-                href={cta.url}
+                href={webmail.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-foreground font-medium hover:underline"
@@ -192,36 +177,22 @@ function MailServerCard({
               </a>
             </p>
           )}
-          {/* A pre-catalog webmail serves fine, so `installed` is true and the
-              slot on the right stays Open-webmail. Without this line the only
-              path onto the webmail app would be one the operator can't see. */}
-          {webmail?.legacy && (
-            <p className="text-xs text-muted-foreground mt-1.5">
-              {t.emailsAdmin.overview.legacyWebmail}{" "}
-              <Link
-                href={`/deploy/mail?serverId=${encodeURIComponent(serverId)}`}
-                className="text-warning font-medium hover:underline"
-              >
-                {t.emailsAdmin.overview.upgradeWebmail}
-              </Link>
-            </p>
-          )}
         </div>
 
-        {cta.kind === "open" ? (
-          <a href={cta.url} target="_blank" rel="noopener noreferrer" className={CTA_CLASS}>
+        {isInstalled && webmail ? (
+          <a
+            href={webmail.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+          >
             {t.emailsAdmin.overview.openWebmail}
             <ArrowUpRight className="size-3.5" strokeWidth={2.25} />
           </a>
-        ) : cta.kind === "project" ? (
-          <Link href={`/projects/${cta.projectId}`} className={CTA_CLASS}>
-            {t.projects.connections.usedByOpen}
-            <ArrowUpRight className="size-3.5" strokeWidth={2.25} />
-          </Link>
         ) : (
           <Link
             href={`/deploy/mail?serverId=${encodeURIComponent(serverId)}`}
-            className={CTA_CLASS}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
           >
             <Upload className="size-3.5" strokeWidth={2.25} />
             {t.emailsAdmin.overview.deployWebmail}
@@ -315,8 +286,6 @@ function MailStatsCard({ serverId }: { serverId: string }) {
   const { t } = useI18n();
   const [stats, setStats] = useState<MailServerStats | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** The failure was "the engine isn't serving" — stated, not alarmed about. */
-  const [blocked, setBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -331,12 +300,7 @@ function MailStatsCard({ serverId }: { serverId: string }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        // The engine being down is a PANEL-level condition that already carries
-        // its fix (MailEngineBanner, above the tab bar). Repeating it as a red
-        // line in every card that failed for that one reason buries the remedy —
-        // so this card states it quietly and points nowhere.
-        setBlocked(isMailEngineUnavailable(err));
-        setError(getApiErrorMessage(err, t.emailsAdmin.overview.statsFailed));
+        setError(err instanceof Error ? err.message : t.emailsAdmin.overview.statsFailed);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -355,8 +319,6 @@ function MailStatsCard({ serverId }: { serverId: string }) {
 
       {loading ? (
         <StatsSkeleton />
-      ) : blocked ? (
-        <p className="text-xs text-muted-foreground">{t.emailsAdmin.engine.cardBlocked}</p>
       ) : error ? (
         <p className="text-xs text-danger">{error}</p>
       ) : stats ? (

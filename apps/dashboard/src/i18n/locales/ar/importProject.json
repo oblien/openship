@@ -101,10 +101,6 @@
     "serverOnPort": "الخادم على المنفذ {port}",
     "serverPortNotSet": "لم يتم تعيين منفذ الخادم",
     "staticFromEdge": "ثابت من الحافة",
-    "modeServer": "خادم",
-    "modeWorker": "عامل",
-    "modeStatic": "ثابت",
-    "workerModeDesc": "يعمل باستمرار بدون منفذ أو رابط عام — مستهلك طابور أو مهمة مجدولة أو روبوت.",
     "staticPathHint": "يُقدَّم كملفات ثابتة من الحافة — لا تعمل أي عملية.",
     "buildSettingsTitle": "إعدادات البناء"
   },

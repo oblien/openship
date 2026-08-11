@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isServicesFramework, normalizeFramework } from "../src/stacks";
+import { isServicesFramework } from "../src/stacks";
 
 describe("isServicesFramework", () => {
   it("is TRUE only for a compose/services-stack project (service-first)", () => {
@@ -23,23 +23,3 @@ describe("isServicesFramework", () => {
     expect(isServicesFramework("totally-made-up")).toBe(false);
   });
 });
-
-describe("normalizeFramework", () => {
-  it("normalizes display names like 'Static Site' and 'Next.js' to stack IDs", () => {
-    expect(normalizeFramework("Static Site")).toBe("static");
-    expect(normalizeFramework("Next.js")).toBe("nextjs");
-    expect(normalizeFramework("Nuxt")).toBe("nuxt");
-  });
-
-  it("passes through valid stack IDs unchanged", () => {
-    expect(normalizeFramework("static")).toBe("static");
-    expect(normalizeFramework("nextjs")).toBe("nextjs");
-  });
-
-  it("handles unknown or empty frameworks gracefully", () => {
-    expect(normalizeFramework("")).toBe("unknown");
-    expect(normalizeFramework(null)).toBe("unknown");
-    expect(normalizeFramework(undefined)).toBe("unknown");
-  });
-});
-

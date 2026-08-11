@@ -8,18 +8,9 @@ const mocks = vi.hoisted(() => ({
   sshWithExecutor: vi.fn(),
   upsertMailServer: vi.fn(),
   streamSSE: vi.fn(),
-  preflight: vi.fn(),
 }));
 
-/**
- * Partial mock, not a replacement: the controller reaches `lib/auth` transitively
- * (webmail installs through the app installer, which resolves git credentials), and
- * that module reads `schema` and `getDriver()` at module scope. Spreading the real
- * module keeps the graph loadable without this list having to track every export
- * some future import happens to need - only the two we assert on are replaced.
- */
-vi.mock("@repo/db", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock("@repo/db", () => ({
   repos: {
     mailServer: {
       upsert: mocks.upsertMailServer,
@@ -48,12 +39,6 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
   sshManager: { withExecutor: mocks.sshWithExecutor },
 }));
 
-// This file is about the lease, not the channel. The preflight is covered on its
-// own in src/modules/mail/mail-setup-preflight.test.ts.
-vi.mock("../../../src/modules/mail/mail-setup-preflight", () => ({
-  preflightMailSetup: mocks.preflight,
-}));
-
 import { startSetup } from "../../../src/modules/mail/mail.controller";
 
 function setupContext() {
@@ -75,7 +60,6 @@ describe("startSetup concurrency", () => {
     mocks.sshWithExecutor.mockRejectedValue(new Error("ssh unavailable"));
     mocks.upsertMailServer.mockResolvedValue({});
     mocks.streamSSE.mockReturnValue({ stream: true });
-    mocks.preflight.mockResolvedValue(null);
   });
 
   test("releases failed reservations and allows only one concurrent setup", async () => {
@@ -117,29 +101,5 @@ describe("startSetup concurrency", () => {
     const setupCallback = mocks.streamSSE.mock.calls[0]?.[1];
     await setupCallback({ writeSSE: vi.fn(async () => undefined) });
     expect(mocks.releaseLock).toHaveBeenCalledTimes(1);
-  });
-
-  /**
-   * #492: the response body IS the SSE stream, so a failure the operator has to
-   * act on can only be reported as a status code from here. It also has to come
-   * before the lease — no point holding a cross-replica reservation for an
-   * install that cannot run a single command.
-   */
-  test("refuses to start with the host's reason, taking no lease and no stream", async () => {
-    mocks.preflight.mockResolvedValue({
-      code: "permission_denied",
-      error: "Can't start mail setup: Permission denied (publickey,password).",
-    });
-
-    await expect(startSetup(setupContext())).resolves.toEqual({
-      body: {
-        error: "Can't start mail setup: Permission denied (publickey,password).",
-        code: "permission_denied",
-      },
-      status: 502,
-    });
-
-    expect(mocks.acquireLock).not.toHaveBeenCalled();
-    expect(mocks.streamSSE).not.toHaveBeenCalled();
   });
 });

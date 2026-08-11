@@ -4,21 +4,6 @@ on:
   pull_request: {}
   push:
     branches: [main]
-    # A tag is what actually ships; the e2e-docker job runs on tags (see its
-    # `if` gate) so a release is proven restorable before it goes out.
-    tags: ["v*"]
-  workflow_dispatch: {}
-
-# One in-flight run per ref. PR pushes cancel their predecessor — nobody reads
-# the result of a superseded commit — while main and tags run to completion so
-# their history stays complete.
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-# Deliberately NO `paths:` filter. These jobs are required status checks, and a
-# path-filtered required check never reports on a PR it excluded — the PR is then
-# unmergeable forever with no visible reason.
 
 jobs:
   typecheck:
@@ -85,65 +70,5 @@ jobs:
       # Runs `turbo run test` → vitest across every package that defines a test
       # script (@repo/core, @repo/adapters, @repo/db [PGlite — no external DB],
       # apps/api, apps/dashboard). Packages resolve to src, so no build needed.
-      # apps/api excludes test/e2e/** here — those need a daemon and run in the
-      # e2e-docker job below.
       - name: Run tests
         run: bun run test
-
-  # Rollback and restore against a REAL Docker daemon. This is the only job that
-  # proves those paths work at all; every other test in the repo mocks the runtime.
-  #
-  # MANUAL by design: runs only on a manual `workflow_dispatch` and on release
-  # tag pushes (v*) — never on main pushes or PRs, which stay fast (typecheck +
-  # tests). The tag run is the release-restorability gate.
-  #
-  # `RUN_DOCKER_E2E=1` is what makes it honest: without it the suite skips when no
-  # daemon answers, which is exactly how these cases sat green-and-unrun for months.
-  # With it, an unreachable daemon fails in `beforeAll` instead of reporting skipped.
-  #
-  # `fast` is every daemon-level and full-cycle case (~5 min); `heavy` is
-  # rollback-build-restore alone (~225s cold, and fileParallelism is off, so it
-  # holds the whole suite up). Both run here — see E2E_SCOPE in
-  # apps/api/vitest.e2e.config.ts.
-  e2e-docker:
-    name: E2E (real Docker, ${{ matrix.scope }})
-    # Manual + release tags only. Never on main pushes or PRs.
-    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        scope: [fast, heavy]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Cache bun install
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # Fail here rather than inside vitest, so "the runner lost Docker" is
-      # distinguishable at a glance from "a rollback assertion broke".
-      - name: Check the Docker daemon
-        run: |
-          docker info
-          docker version
-
-      - name: Run real-daemon E2E
-        env:
-          RUN_DOCKER_E2E: "1"
-          E2E_SCOPE: ${{ matrix.scope }}
-        run: bun run --cwd apps/api test:e2e

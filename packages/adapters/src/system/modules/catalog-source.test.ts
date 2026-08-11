@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createHash, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { verifyAndBuild, fetchRemoteCatalog } from "./catalog-source";
+import { verifyAndBuild } from "./catalog-source";
 import type { ModuleCatalog } from "./types";
 
 const H = (s: string) => createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
@@ -71,76 +71,5 @@ describe("verifyAndBuild", () => {
     const res = verifyAndBuild("openresty", bytes, Buffer.alloc(0), new Map(), "ref", []);
     expect(res.error).toBeUndefined();
     expect(res.catalog?.catalog.module).toBe("openresty");
-  });
-});
-
-/** Sign `body` and run it through verifyAndBuild with a trusted throwaway key. */
-function build(body: unknown, assets = new Map([["a/s1.sh", Buffer.from(SCRIPT)]])) {
-  const { pub, privateKey } = key();
-  const bytes = Buffer.from(JSON.stringify(body));
-  return verifyAndBuild("openresty", bytes, cryptoSign(null, bytes, privateKey), assets, "ref", [pub]);
-}
-
-describe("verifyAndBuild shape refusals", () => {
-  // A signature authenticates the author, not the values: pre-guard each of these
-  // threw a raw TypeError from inside the referencedAssets/expectedAssetHashes walk.
-  it("refuses a non-array versions, naming the field and value", () => {
-    const res = build({ ...manifest(), versions: null });
-    expect(res.catalog).toBeUndefined();
-    expect(res.error).toBe("invalid catalog: catalog versions must be an array (got null)");
-  });
-
-  it("refuses a step that is not an object", () => {
-    const res = build({
-      ...manifest(),
-      versions: [{ version: "1.0.0", apply: "auto", steps: ["rm -rf /"] }],
-    });
-    expect(res.error).toBe('invalid catalog: version "1.0.0": step is not an object (got "rm -rf /")');
-  });
-
-  it("refuses a newer schema BEFORE assembling a verified catalog", () => {
-    const res = build({ ...manifest(), schema: 2 });
-    expect(res.catalog).toBeUndefined();
-    expect(res.error).toBe("invalid catalog: catalog schema must be 1 (got 2)");
-  });
-
-  it("refuses a malformed manifest even under the insecure hatch", () => {
-    process.env.OPENSHIP_MODULE_CATALOG_INSECURE = "1";
-    const bytes = Buffer.from(JSON.stringify({ ...manifest(), versions: null }));
-    const res = verifyAndBuild("openresty", bytes, Buffer.alloc(0), new Map(), "ref", []);
-    expect(res.error).toMatch(/invalid catalog: catalog versions must be an array/);
-  });
-
-  it("refuses a non-object manifest without dereferencing it", () => {
-    const res = build(null);
-    expect(res.error).toBe("invalid catalog: catalog is not an object (got null)");
-  });
-});
-
-describe("fetchRemoteCatalog shape refusals", () => {
-  // Assigned, not vi.stubGlobal: this file also runs under `bun test`, whose vitest
-  // shim has no stubGlobal.
-  const realFetch = globalThis.fetch;
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
-
-  it("refuses a malformed remote manifest instead of walking it for assets", async () => {
-    const body = JSON.stringify({ ...manifest(), versions: [{ version: "1.0.0", apply: "auto", steps: 7 }] });
-    const fetched: string[] = [];
-    globalThis.fetch = (async (url: string) => {
-      fetched.push(url);
-      if (url.endsWith("catalog.json")) {
-        return { ok: true, status: 200, arrayBuffer: async () => Buffer.from(body) } as unknown as Response;
-      }
-      return { ok: false, status: 404 } as unknown as Response;
-    }) as unknown as typeof fetch;
-    const res = await fetchRemoteCatalog("openresty");
-    expect(res.catalog).toBeUndefined();
-    expect(res.error).toBe(
-      'remote manifest invalid: version "1.0.0": steps must be an array (got 7)',
-    );
-    // Nothing beyond the manifest + its signature was fetched.
-    expect(fetched.every((u) => u.endsWith("catalog.json") || u.endsWith("catalog.json.sig"))).toBe(true);
   });
 });

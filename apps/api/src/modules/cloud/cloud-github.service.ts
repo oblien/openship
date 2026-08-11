@@ -325,7 +325,6 @@ export async function attributeGithubInstall(input: {
         eventType: "github.install",
         resourceType: "github",
         resourceId: String(installationId),
-        source: "dashboard",
         ipAddress: clientIp,
         userAgent: userAgent,
         before: null,
@@ -402,6 +401,7 @@ export async function mintOrgInstallationToken(
   | { kind: "ok"; token: string; expiresAt: string }
   | { kind: "not-found"; owner: string }
 > {
+  void repos_;
   const { ownerUserId } = await resolveCloudOwnerById(organizationId);
 
   // Resolve installationId from the ORG OWNER's row — the org's GitHub
@@ -421,13 +421,6 @@ export async function mintOrgInstallationToken(
       }),
       owner,
       installation.installationId,
-      // Honor the caller's repo narrowing. Dropping it here silently widened every
-      // narrowed mint that proxies through the cloud (`cloud-app` mode, which is the
-      // canonical self-hosted path once an org is cloud-connected): the caller asked
-      // for a token scoped to one repo and got an installation-wide one back — the
-      // "authorized for repo A, credential reaches repo B" shape of
-      // GHSA-hp2g-hw7g-f3vm, one layer down in the proxy.
-      { repositories: repos_ },
     )
     .catch(() => null);
   if (!token) {

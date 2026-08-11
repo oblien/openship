@@ -1,55 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collapseByHost, extractBlocks, stripComments } from "./parse-utils";
-
-/**
- * The regression these exist for: `stripComments` was `/#.*$/gm`, and the edge's
- * not-found page (#431) put a CSS `#fff` inside a `return 404 '…'` token. The line
- * was cut mid-page, ~40 closing braces went with it, and because the edge scan cats
- * every vhost into ONE string with `_default.conf` first, `extractBlocks` swallowed
- * every server block after it. The box scanned as zero sites — no domains offered by
- * the migrate wizard, no certificates carried at cutover — and nothing failed.
- */
-describe("stripComments", () => {
-  it("strips a whole-line and a trailing comment", () => {
-    expect(stripComments("# header\nlisten 80; # trailing\n")).toBe("\nlisten 80; \n");
-  });
-
-  it("keeps a # that lives inside a quoted token", () => {
-    const line = `return 404 'body{background:#fff}footer{color:#0a0a0a}';`;
-    expect(stripComments(line)).toBe(line);
-  });
-
-  it("still strips the comment that FOLLOWS a quoted token", () => {
-    expect(stripComments(`add_header X-A "a#b"; # note`)).toBe(`add_header X-A "a#b"; `);
-  });
-
-  it("keeps the braces of a quoted body balanced, so blocks still parse", () => {
-    const conf = [
-      "server {",
-      "  location / {",
-      `    return 404 'a{b}c#d{e}f';`,
-      "  }",
-      "}",
-    ].join("\n");
-    const stripped = stripComments(conf);
-    expect(extractBlocks(stripped, "server")).toHaveLength(1);
-    expect(extractBlocks(stripped, "location")).toHaveLength(1);
-  });
-
-  it("resets quote state at each newline, so one stray quote costs one line", () => {
-    // A config that opens a quote and never closes it must not turn the rest of the
-    // file into "string" — that would delete every comment-bearing line after it.
-    const out = stripComments(`add_header X "unclosed\nlisten 80; # gone\n`);
-    expect(out).toContain("listen 80; ");
-    expect(out).not.toContain("# gone");
-  });
-
-  it("does not treat an apostrophe in a comment as opening a string", () => {
-    expect(stripComments("listen 80; # don't cut the next line\nserver_name a.com;")).toBe(
-      "listen 80; \nserver_name a.com;",
-    );
-  });
-});
+import { collapseByHost } from "./parse-utils";
 
 /**
  * `collapseByHost` is the shared same-hostname dedup every importer (nginx,

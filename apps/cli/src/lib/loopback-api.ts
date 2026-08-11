@@ -14,7 +14,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
-import { INTERNAL_TOKEN_FILE, OS_DIR } from "./paths";
+import { OS_DIR } from "./paths";
 
 /** The CLI's state dir (internal-token, auth-secret, data, logs); ~/.openship
  *  by default, or OPENSHIP_HOME for a from-source install. Re-exported for the
@@ -28,7 +28,7 @@ export { OS_DIR };
  * token, so it can't create the admin.
  */
 export function ensureInternalToken(): string {
-  const path = INTERNAL_TOKEN_FILE;
+  const path = join(OS_DIR, "internal-token");
   if (existsSync(path)) return readFileSync(path, "utf8").trim();
   mkdirSync(OS_DIR, { recursive: true, mode: 0o700 });
   const token = randomBytes(32).toString("hex");

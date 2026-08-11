@@ -7,7 +7,6 @@
  * row shapes. The /emails admin tabs consume these directly.
  */
 
-import type { RelayProviderId } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { DnsRecords, DnsRecord } from "./mail";
@@ -192,21 +191,16 @@ export interface DnsScanResult {
 
 // ─── Outbound relay ──────────────────────────────────────────────────────────
 
-/** Per-domain provider identity records (providers verify each domain separately). */
+/** Per-additional-domain SES identity records (each SES domain verifies separately). */
 export type RelayIdentityMap = Record<string, { mailFromDomain?: string; sesDkim?: { name: string; value: string }[] }>;
 
 /** Masked relay status from the server (password is never returned). */
 export interface OutboundRelayStatus {
   enabled: boolean;
-  /** Provider id from `@repo/core` RELAY_PROVIDERS (`custom` for anything else). */
-  provider: RelayProviderId;
-  /** "all" senders via a global relayhost, or only `domains`/`addresses`. */
+  provider: "ses" | "custom";
+  /** "all" domains via a global relayhost, or only `domains` (per-sender routing). */
   scope?: "all" | "selected";
   domains?: string[];
-  /** Single senders (`contact@example.com`) relayed without their whole domain. */
-  addresses?: string[];
-  /** SPF include override — set when the provider's token isn't in the registry. */
-  spfInclude?: string;
   region?: string;
   host: string;
   port: number;
@@ -220,11 +214,9 @@ export interface OutboundRelayStatus {
 
 /** Enable/update payload. `password` blank on update keeps the stored one. */
 export interface ConfigureRelayPayload {
-  provider: RelayProviderId;
+  provider: "ses" | "custom";
   scope?: "all" | "selected";
   domains?: string[];
-  addresses?: string[];
-  spfInclude?: string;
   region?: string;
   host?: string;
   port: number;

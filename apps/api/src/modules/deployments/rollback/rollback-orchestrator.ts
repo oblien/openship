@@ -247,22 +247,19 @@ async function resolveEffectiveServiceImages(
  */
 async function hostPathExists(target: Deployment, path: string): Promise<boolean> {
   const serverId = (target.meta as { serverId?: string } | null)?.serverId;
-  const { createExecutor, sharedMountExecutor } = await import("@repo/adapters");
   const { resolveServerExecutor } = await import("../../../lib/deployment-runtime");
   try {
-    const { executor, isLocal } = await resolveServerExecutor(serverId, target.organizationId);
-    // The static tree is a mount this process shares 1:1 with its host, so on the local
-    // box read it directly — the same rule the promote half already uses, and asking the
-    // host channel instead let a firewall answer "reclaimed" about a release sitting
-    // right there (#490).
-    const exec = await sharedMountExecutor({ localHost: isLocal, executor });
-    return exec ? await exec.exists(path) : false;
-  } catch {
+    const { executor } = await resolveServerExecutor(serverId, target.organizationId);
+    return await executor.exists(path);
+  } catch (err) {
     if (serverId) return false; // a real server we couldn't reach → assume gone, rebuild
-    // No server recorded: a desktop/local release, same shared tree.
-    return await createExecutor()
-      .exists(path)
-      .catch(() => false);
+    try {
+      const { createHostExecutor } = await import("@repo/adapters");
+      return await createHostExecutor().exists(path);
+    } catch {
+      void err;
+      return false;
+    }
   }
 }
 

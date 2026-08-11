@@ -15,15 +15,6 @@ interface SyncProjectPublicRoutesInput {
   projectId: string;
   endpoints?: StoredPublicEndpoint[] | null;
   currentDomains?: Domain[] | null;
-  /**
-   * When true, a VERIFIED custom domain is never destroyed by this sync: a row
-   * the desired set omits is kept (not deleted), and a desired route that carries
-   * no port/path never nulls the row's live target. Only the DEPLOY pipeline sets
-   * this — a deploy that resolved to the wrong target (e.g. "local") must not
-   * erase a user's proven custom domain (the Access-URL-regressed-to-localhost
-   * bug). The Domains editor leaves it false so explicit removals/edits still win.
-   */
-  preserveVerifiedCustom?: boolean;
 }
 
 interface DesiredProjectRoute {
@@ -126,12 +117,6 @@ export async function syncProjectPublicRoutes(
 
   for (const domain of existingDomains) {
     if (!desiredByHostname.has(domain.hostname.toLowerCase())) {
-      // Keep a verified custom domain the deploy didn't mention — see
-      // preserveVerifiedCustom. A row absent from the desired set is otherwise an
-      // explicit removal, which the editor path (flag off) still performs.
-      if (input.preserveVerifiedCustom && domain.domainType === "custom" && domain.verified) {
-        continue;
-      }
       await repos.domain.remove(domain.id);
       existingByHostname.delete(domain.hostname.toLowerCase());
     }
@@ -229,25 +214,9 @@ export async function syncProjectPublicRoutes(
     }
 
     const patch: Record<string, unknown> = {};
-    // Never let a deploy that resolved WITHOUT this domain's target (port/path
-    // undefined) erase a verified custom domain's live upstream — that nulling is
-    // exactly what regressed the Access URL to localhost. An explicit new value is
-    // still applied; only a "no target" desired route is treated as "leave as-is".
-    const protectTarget =
-      input.preserveVerifiedCustom && existing.verified && (existing.domainType ?? route.domainType) === "custom";
     if ((existing.serviceId ?? null) !== null) patch.serviceId = null;
-    if (
-      (existing.targetPort ?? null) !== (route.targetPort ?? null) &&
-      !(protectTarget && route.targetPort === undefined)
-    ) {
-      patch.targetPort = route.targetPort ?? null;
-    }
-    if (
-      (existing.targetPath ?? null) !== (route.targetPath ?? null) &&
-      !(protectTarget && route.targetPath === undefined)
-    ) {
-      patch.targetPath = route.targetPath ?? null;
-    }
+    if ((existing.targetPort ?? null) !== (route.targetPort ?? null)) patch.targetPort = route.targetPort ?? null;
+    if ((existing.targetPath ?? null) !== (route.targetPath ?? null)) patch.targetPath = route.targetPath ?? null;
     if ((existing.domainType ?? null) !== route.domainType) patch.domainType = route.domainType;
     if (existing.isPrimary !== route.isPrimary) patch.isPrimary = route.isPrimary;
     // The submitted endpoint list is authoritative for the redirect, so an OMITTED

@@ -61,8 +61,8 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
         };
       default:
         return {
-          color: "var(--foreground)",
-          hoverBg: "var(--muted)",
+          color: "hsl(var(--foreground))",
+          hoverBg: "hsl(var(--muted))",
         };
     }
   };
@@ -86,7 +86,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
         }`}
         type="button"
         style={{
-          backgroundColor: isOpen && !triggerClassName ? "var(--muted)" : undefined,
+          backgroundColor: isOpen && !triggerClassName ? "hsl(var(--muted))" : undefined,
         }}
       >
         {trigger || <MoreHorizontal className="w-4 h-4 text-muted-foreground" />}
@@ -123,7 +123,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
                       }`}
                     type="button"
                     style={{
-                      color: action.disabled ? "var(--muted-foreground)" : styles.color,
+                      color: action.disabled ? "hsl(var(--muted-foreground))" : styles.color,
                     }}
                   >
                     {action.icon && (

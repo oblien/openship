@@ -15,11 +15,11 @@ import {
   GitBranch,
   Settings,
   Activity,
+  CheckCircle2,
 } from "lucide-react";
 import { projectsApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import UpdatesBlock from "@/components/overview/UpdatesBlock";
-import SystemStatusRow from "@/components/overview/SystemStatusRow";
 import HomeWelcome from "@/components/overview/HomeWelcome";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { getProjectStatus, PROJECT_STATUS_META, projectStatusLabel } from "@/utils/project-status";
@@ -50,7 +50,6 @@ function timeAgo(dateStr: string, labels: Dictionary["dashboard"]["home"]["time"
 }
 
 import { useDashboardHome } from "@/hooks/useDashboardHome";
-import { useAttentionFeed } from "@/hooks/useAttentionFeed";
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                         */
@@ -66,8 +65,6 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
   const router = useRouter();
   
   const { projects, numbers, loading } = useDashboardHome(initialData);
-  /** Read once here, not inside the card: the count decides the column's layout below. */
-  const attention = useAttentionFeed();
 
   // Split catalog apps out of the projects list — they get their own box.
   const userProjects = projects.filter((p) => !p.isApp);
@@ -83,6 +80,9 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
         : t.dashboard.home.goodEvening;
   const displayName = user?.name?.split(" ")[0] || "";
 
+  const successRate = numbers.total_deployments 
+    ? Math.round(((numbers.total_success_deployments || 0) / numbers.total_deployments) * 100)
+    : 0;
 
   return (
     <PageContainer>
@@ -217,187 +217,161 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
           {/* ── RIGHT COLUMN (Sticky) ──────────────────────────────── */}
           <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
             
-            {/* The column yields to attention one card at a time, least urgent first:
-                one alert panel takes the Activity overview's space, a second takes the
-                Apps card's. Nothing is lost — lifetime deploy counts live under
-                Deployments and the catalog has its own sidebar entry — and it keeps the
-                fold from becoming an alert panel chased by two pieces of furniture.
-
-                `attention.cards` counts what will actually RENDER, hides included, so
-                dismissing a panel hands the space straight back. */}
-            {attention.cards === 0 && (
-              <div className="bg-card rounded-2xl border border-border/50 p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Activity className="size-4 text-muted-foreground" />
-                  <h3 className="font-semibold text-foreground text-sm">{t.dashboard.home.activityTitle}</h3>
-                </div>
+            {/* Activity Overview */}
+            <div className="bg-card rounded-2xl border border-border/50 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Activity className="size-4 text-muted-foreground" />
+                <h3 className="font-semibold text-foreground text-sm">{t.dashboard.home.activityTitle}</h3>
+              </div>
               
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <FolderKanban className="size-4 text-primary" />
-                      </div>
-                      <span className="text-sm text-muted-foreground">{t.dashboard.home.statsProjects}</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <FolderKanban className="size-4 text-primary" />
                     </div>
-                    <span className="text-lg font-semibold text-foreground">
-                      {loading ? "–" : numbers.total_active_projects ?? 0}
-                    </span>
+                    <span className="text-sm text-muted-foreground">{t.dashboard.home.statsProjects}</span>
                   </div>
+                  <span className="text-lg font-semibold text-foreground">
+                    {loading ? "–" : numbers.total_active_projects ?? 0}
+                  </span>
+                </div>
                 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                        <Rocket className="size-4 text-orange-500" />
-                      </div>
-                      <span className="text-sm text-muted-foreground">{t.dashboard.home.statsDeployments}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                      <Rocket className="size-4 text-orange-500" />
                     </div>
-                    <span className="text-lg font-semibold text-foreground">
-                      {loading ? "–" : numbers.total_deployments ?? 0}
-                    </span>
+                    <span className="text-sm text-muted-foreground">{t.dashboard.home.statsDeployments}</span>
                   </div>
+                  <span className="text-lg font-semibold text-foreground">
+                    {loading ? "–" : numbers.total_deployments ?? 0}
+                  </span>
+                </div>
                 
-                  <div className="h-px bg-border/60 my-2" />
-
-                  <SystemStatusRow broken={attention.broken} loaded={attention.loaded} />
+                <div className="h-px bg-border/60 my-2" />
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="size-4 text-success" />
+                    <span className="text-sm text-muted-foreground">{t.dashboard.home.successRate}</span>
+                  </div>
+                  <span className={`text-sm font-medium ${successRate >= 80 ? 'text-success' : successRate >= 50 ? 'text-warning' : 'text-danger'}`}>
+                    {loading ? "–" : `${successRate}%`}
+                  </span>
                 </div>
               </div>
-            )}
+            </div>
 
-            <UpdatesBlock feed={attention} projectCount={projects.length} loading={loading} />
+            <UpdatesBlock projectCount={projects.length} loading={loading} />
 
             {/* Apps — compact, colorful. Install is the fancy + in the header; the
-                empty state is a small colorful vector, no big button. Second to go when
-                the column fills up (see the ladder above): whether it's the catalog
-                pitch or three app rows, it outranks nothing that's broken. */}
-            {attention.cards < 2 && (
-              <div className="bg-card rounded-2xl border border-border/50 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Boxes className="size-4 text-primary" />
-                    <h3 className="font-semibold text-foreground text-sm">{t.dashboard.pages.apps.title}</h3>
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <Link
-                      href="/apps/new"
-                      aria-label={t.dashboard.pages.apps.createButton}
-                      className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                    >
-                      <Plus className="size-4" />
-                    </Link>
-                    <Link
-                      href="/apps"
-                      aria-label={t.dashboard.home.viewAll}
-                      className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                    >
-                      <ArrowRight className="size-4" />
-                    </Link>
-                  </div>
+                empty state is a small colorful vector, no big button. */}
+            <div className="bg-card rounded-2xl border border-border/50 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Boxes className="size-4 text-primary" />
+                  <h3 className="font-semibold text-foreground text-sm">{t.dashboard.pages.apps.title}</h3>
                 </div>
+                <div className="flex items-center gap-0.5">
+                  <Link
+                    href="/apps/new"
+                    aria-label={t.dashboard.pages.apps.createButton}
+                    className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  >
+                    <Plus className="size-4" />
+                  </Link>
+                  <Link
+                    href="/apps"
+                    aria-label={t.dashboard.home.viewAll}
+                    className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  >
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </div>
+              </div>
 
-                {loading ? (
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {[...Array(2)].map((_, i) => (
-                      <div key={i} className="h-[72px] rounded-xl bg-muted/40 animate-pulse" />
+              {loading ? (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[...Array(2)].map((_, i) => (
+                    <div key={i} className="h-[72px] rounded-xl bg-muted/40 animate-pulse" />
+                  ))}
+                </div>
+              ) : appProjects.length === 0 ? (
+                <div className="flex flex-col items-center pt-0 pb-2 text-center">
+                  {/* Abstract "chain of app cards" — monochrome/on-theme, single
+                      primary accent. Grows UPWARD (negative top margin into the
+                      header gap) rather than pushing the copy + 6-logo stack down.
+                      Real (colorful) logos live in the bottom stack. */}
+                  <svg className="-mt-1 mb-2 h-14" viewBox="0 0 130 64" fill="none">
+                    <circle cx="65" cy="32" r="22" fill="hsl(var(--primary))" fillOpacity="0.06" />
+                    <path d="M42 32h8" stroke="var(--th-on-12)" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
+                    <path d="M80 32h8" stroke="var(--th-on-12)" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
+                    <rect x="16" y="20" width="26" height="26" rx="8" fill="var(--th-sf-04)" stroke="var(--th-bd-default)" strokeWidth="1" />
+                    <rect x="24" y="28" width="10" height="10" rx="3" fill="var(--th-on-16)" />
+                    <rect x="50" y="13" width="30" height="38" rx="9" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
+                    <rect x="57" y="20" width="9" height="9" rx="3" fill="hsl(var(--primary))" />
+                    <rect x="57" y="33" width="16" height="3.5" rx="1.75" fill="var(--th-on-12)" />
+                    <rect x="57" y="40" width="11" height="3.5" rx="1.75" fill="var(--th-on-08)" />
+                    <rect x="88" y="20" width="26" height="26" rx="8" fill="var(--th-sf-04)" stroke="var(--th-bd-default)" strokeWidth="1" />
+                    <path d="M101 29v8M97 33h8" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" />
+                    <circle cx="9" cy="13" r="3" fill="var(--th-on-10)" />
+                    <circle cx="121" cy="51" r="4" fill="var(--th-on-08)" />
+                  </svg>
+                  <p className="text-sm font-medium text-foreground">{t.dashboard.home.appsEmptyTitle}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground/70">{t.dashboard.home.appsEmptyDesc}</p>
+                  {/* Overlapping logo stack — the full catalog at a glance, on-theme. */}
+                  <div className="mt-3.5 flex items-center justify-center">
+                    {["supabase", "convex", "n8n", "ghost", "vaultwarden", "metabase"].map((id, i) => (
+                      <div
+                        key={id}
+                        className={`flex size-7 items-center justify-center rounded-full border border-border/60 bg-card ${
+                          i > 0 ? "-ml-2" : ""
+                        }`}
+                      >
+                        <AppLogo appId={id} className="size-3.5" />
+                      </div>
                     ))}
                   </div>
-                ) : appProjects.length === 0 ? (
-                  <div className="flex flex-col items-center pt-0 pb-2 text-center">
-                    {/* App shelf: a rail of neutral app tiles that runs off both edges
-                        (more in the catalog) and ends in a dashed install slot — the
-                        single primary accent, so the eye lands on the action. Wide and
-                        short so it reads at sidebar width without pushing the copy +
-                        6-logo stack down. Real (colorful) logos live in the bottom stack. */}
-                    <svg className="-mt-1 mb-2 h-16" viewBox="0 0 248 68" fill="none">
-                      {/* Rail — edge tile → tile → app card → install slot → edge tile */}
-                      <path d="M30 34h12" stroke="var(--th-on-08)" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
-                      <path d="M84 34h12" stroke="var(--th-on-12)" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
-                      <path d="M152 34h12" stroke="var(--th-on-12)" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
-                      <path d="M206 34h12" stroke="var(--th-on-08)" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
-
-                      {/* Catalog continues past both edges */}
-                      <rect x="8" y="24" width="20" height="20" rx="6" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-                      <rect x="220" y="24" width="20" height="20" rx="6" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-
-                      {/* Installed tile */}
-                      <rect x="44" y="15" width="38" height="38" rx="11" fill="var(--th-sf-04)" stroke="var(--th-bd-default)" strokeWidth="1" />
-                      <rect x="56" y="27" width="14" height="14" rx="4.5" fill="var(--th-on-12)" />
-
-                      {/* Hero app card */}
-                      <rect x="98" y="8" width="52" height="52" rx="14" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
-                      <rect x="116" y="17" width="16" height="16" rx="5" fill="var(--th-on-20)" />
-                      <rect x="110" y="39" width="28" height="4.5" rx="2.25" fill="var(--th-on-12)" />
-                      <rect x="115" y="48" width="18" height="3.5" rx="1.75" fill="var(--th-on-08)" />
-
-                      {/* Install slot — the one accent */}
-                      <rect x="161" y="10" width="48" height="48" rx="16" fill="var(--primary)" fillOpacity="0.05" />
-                      <rect x="166" y="15" width="38" height="38" rx="11" fill="var(--th-card-bg)" stroke="var(--th-on-20)" strokeWidth="1.75" strokeDasharray="4 3.5" />
-                      <path d="M185 27v14M178 34h14" stroke="var(--primary)" strokeWidth="2.25" strokeLinecap="round" />
-
-                      {/* Decorative dots + sparkles */}
-                      <circle cx="4" cy="12" r="2.5" fill="var(--th-on-10)" />
-                      <circle cx="244" cy="56" r="3" fill="var(--th-on-08)" />
-                      <path d="M241 16l2-4 2 4-4-2 4 0-4 2z" fill="var(--th-on-12)" />
-                      <path d="M3 58l2-4 2 4-4-2 4 0-4 2z" fill="var(--th-on-10)" />
-                    </svg>
-                    <p className="text-sm font-medium text-foreground">{t.dashboard.home.appsEmptyTitle}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground/70">{t.dashboard.home.appsEmptyDesc}</p>
-                    {/* Overlapping logo stack — the full catalog at a glance, on-theme.
-                        Curated for color: every mark here renders in its brand color
-                        (no dark/monochrome glyph that vanishes or reads as a black blob
-                        on the dark card). */}
-                    <div className="mt-3.5 flex items-center justify-center">
-                      {["supabase", "convex", "neon", "n8n", "metabase", "minio"].map((id, i) => (
-                        <div
-                          key={id}
-                          className={`flex size-7 items-center justify-center rounded-full border border-border/60 bg-card ${
-                            i > 0 ? "-ml-2" : ""
-                          }`}
-                        >
-                          <AppLogo appId={id} className="size-4" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="overflow-hidden rounded-xl border border-border/50 bg-muted/10">
-                    {appProjects.slice(0, 3).map((p, i) => {
-                      const status = getProjectStatus(p);
-                      const statusMeta = PROJECT_STATUS_META[status];
-                      return (
-                        <Link
-                          key={p.id}
-                          href={`/projects/${p.id}`}
-                          className={`group flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 ${
-                            i > 0 ? "border-t border-border/50" : ""
-                          }`}
-                        >
-                          <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-background">
-                            <AppLogo appId={p.appTemplateId ?? undefined} className="size-5" />
-                          </div>
-                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground transition-colors group-hover:text-primary">
-                            {p.name}
-                          </span>
-                          <span
-                            className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
-                          >
-                            {projectStatusLabel(status, t)}
-                          </span>
-                        </Link>
-                      );
-                    })}
-                    {appProjects.length > 3 && (
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-border/50 bg-muted/10">
+                  {appProjects.slice(0, 3).map((p, i) => {
+                    const status = getProjectStatus(p);
+                    const statusMeta = PROJECT_STATUS_META[status];
+                    return (
                       <Link
-                        href="/apps"
-                        className="block border-t border-border/50 px-3 py-2.5 text-center text-xs text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors"
+                        key={p.id}
+                        href={`/projects/${p.id}`}
+                        className={`group flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 ${
+                          i > 0 ? "border-t border-border/50" : ""
+                        }`}
                       >
-                        {interpolate(t.dashboard.home.viewAllApps, { count: String(appProjects.length) })}
+                        <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-background">
+                          <AppLogo appId={p.appTemplateId ?? undefined} className="size-5" />
+                        </div>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground transition-colors group-hover:text-primary">
+                          {p.name}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
+                        >
+                          {projectStatusLabel(status, t)}
+                        </span>
                       </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                    );
+                  })}
+                  {appProjects.length > 3 && (
+                    <Link
+                      href="/apps"
+                      className="block border-t border-border/50 px-3 py-2.5 text-center text-xs text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors"
+                    >
+                      {interpolate(t.dashboard.home.viewAllApps, { count: String(appProjects.length) })}
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
     </PageContainer>

@@ -26,25 +26,18 @@ import {
   type AuthMode as AuthModeType,
 } from "../../lib/auth-mode";
 import { assertNotCloud } from "../../lib/controller-helpers";
-import {
-  PRODUCT_MODES,
-  clearProductModeCache,
-  isProductMode,
-  resolveProductMode,
-} from "../../lib/product-mode";
 import { encrypt } from "../../lib/encryption";
 import {
   sendInstanceTestEmail,
   invalidateInstanceTransportCache,
   canSendMail,
 } from "../../lib/mail";
-import { assertInstanceAdmin } from "../../middleware/instance-admin";
 import { zeroAuthAllowed } from "../../middleware/zero-auth-guard";
 import { getInstanceReachability } from "../../lib/public-url";
 import { sshManager } from "../../lib/ssh-manager";
 import { encryptSecretField } from "@/lib/credential-encryption";
 import { ensureLocalUser, invalidateLocalUserCache } from "../../lib/local-user";
-import { ensureLocalServer } from "../../lib/startup/self-server";
+import { ensureLocalServerRegistered } from "../../lib/startup/self-server";
 import { provisionUser } from "../../lib/provision-user";
 import { COOKIE_PREFIX } from "../../lib/auth";
 import { mintSession } from "../../lib/cloud-auth-proxy";
@@ -250,19 +243,6 @@ export async function getSetup(c: Context) {
     teamMode: settings?.teamMode ?? "single_user",
     migrationTargetUrl: settings?.migrationTargetUrl ?? null,
     migratedAt: settings?.migratedAt?.toISOString() ?? null,
-    // Instance-wide auto-update of remote edge/mail containers when this control
-    // plane's APP_VERSION moves forward. Server-side (works on desktop too),
-    // distinct from the desktop-only Electron app auto-update.
-    autoUpdateInfra: settings?.autoUpdateInfra ?? false,
-    autoScanInfra: settings?.autoScanInfra ?? true,
-    // Two values, because the settings toggle has to distinguish "the operator
-    // chose this" from "this is what the env happens to default to": productMode
-    // is the raw stored override (null = unset) and productModeEffective is what
-    // the dashboard actually renders. Collapsing them would make an unset row
-    // look like an explicit choice and silently overwrite the env default on the
-    // next unrelated save.
-    productMode: settings?.productMode ?? null,
-    productModeEffective: await resolveProductMode(),
     teamReachability,
   });
 }
@@ -270,10 +250,6 @@ export async function getSetup(c: Context) {
 /** PATCH /system/settings - partial update instance-level settings (non-SSH) */
 export async function updateSettings(c: Context) {
   const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
-
-  // Defense in depth behind requireInstanceAdmin() on the route, so a future
-  // mount can't re-open GHSA-43hf-p5j8-8vhx by forgetting the middleware.
-  await assertInstanceAdmin(getRequestContext(c));
 
   const body = (await c.req.json()) as Record<string, unknown>;
 
@@ -312,19 +288,6 @@ export async function updateSettings(c: Context) {
     }
     patch.invitationMailSource = raw;
   }
-  if (body.autoUpdateInfra !== undefined) patch.autoUpdateInfra = Boolean(body.autoUpdateInfra);
-  if (body.autoScanInfra !== undefined) patch.autoScanInfra = Boolean(body.autoScanInfra);
-  // Openship Mail. `null` clears the override so OPENSHIP_PRODUCT governs again —
-  // that's a meaningful state, not an absent field, so it's accepted explicitly.
-  if (body.productMode !== undefined) {
-    if (body.productMode !== null && !isProductMode(body.productMode)) {
-      return c.json(
-        { error: `productMode must be one of: ${PRODUCT_MODES.join(", ")}, or null` },
-        400,
-      );
-    }
-    patch.productMode = body.productMode;
-  }
 
   if (Object.keys(patch).length === 0) {
     return c.json({ error: "No fields to update" }, 400);
@@ -333,7 +296,6 @@ export async function updateSettings(c: Context) {
   await repos.instanceSettings.upsert(patch);
 
   clearAuthModeCache();
-  clearProductModeCache();
 
   if (authModeChange) {
     const ctx = getRequestContext(c);
@@ -532,7 +494,11 @@ export async function onboardingStatus(c: Context) {
 export async function bootstrapAdmin(c: Context) {
   const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
 
-  const existing = await repos.user.findFoundingAdmin();
+  const [existing] = await db
+    .select({ id: schema.user.id })
+    .from(schema.user)
+    .where(eq(schema.user.autoProvisioned, false))
+    .limit(1);
   if (existing) {
     return c.json({ error: "An admin account already exists" }, 409);
   }
@@ -604,7 +570,7 @@ export async function bootstrapAdmin(c: Context) {
   // "No servers yet" until the API happened to restart, even though Openship itself
   // was listed under Apps. Best-effort: a failure here must not fail the bootstrap,
   // since the boot hook will still catch it on the next restart.
-  await ensureLocalServer().catch((err) =>
+  await ensureLocalServerRegistered().catch((err) =>
     console.warn("[setup] local server registration deferred to next boot:", safeErrorMessage(err)),
   );
 
@@ -642,7 +608,12 @@ export async function resetAdminPassword(c: Context) {
 
   // Deterministic target: the founding owner (earliest real account), so on a
   // multi-user box the reset never lands on an arbitrary member row.
-  const admin = await repos.user.findFoundingAdmin();
+  const [admin] = await db
+    .select({ id: schema.user.id, email: schema.user.email, name: schema.user.name })
+    .from(schema.user)
+    .where(eq(schema.user.autoProvisioned, false))
+    .orderBy(schema.user.createdAt)
+    .limit(1);
   if (!admin) {
     return c.json({ error: "No admin account exists yet — run `openship` to create one." }, 409);
   }
@@ -689,15 +660,6 @@ export async function resetAdminPassword(c: Context) {
   await repos.session.revokeAllForUser(admin.id);
   invalidateLocalUserCache();
   clearAuthModeCache();
-
-  // Same invariant as bootstrap-admin: an admin exists, so this box can own its
-  // "This Server" row. The free-domain install lands HERE and not there —
-  // cloud-connect runs first and mirrors the cloud user into a real admin, so
-  // bootstrap-admin 409s and the CLI falls back to this endpoint. Hanging
-  // registration off bootstrap alone is what left those boxes with no server.
-  await ensureLocalServer().catch((err) =>
-    console.warn("[setup] local server registration deferred to next boot:", safeErrorMessage(err)),
-  );
 
   // The admin's personal org (org_<id>) is created by provisionUser, so record
   // against it — the literal "instance" has no organization row and the audit

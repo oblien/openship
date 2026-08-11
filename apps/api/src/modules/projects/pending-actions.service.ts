@@ -31,7 +31,6 @@
 
 import { repos } from "@repo/db";
 import type { Deployment } from "@repo/db";
-import { compileVercelRouting } from "@repo/adapters";
 import * as sessionManager from "../deployments/session-manager";
 // Leaf import, not the ./compose barrel — this needs one pure predicate over
 // `project.framework`, not the whole compose pipeline in the graph.
@@ -54,9 +53,7 @@ export type PendingActionKind =
   /** A certificate that errored or expired. */
   | "ssl_error"
   /** Advisory: the app doesn't appear to be listening where routing points. */
-  | "port_advisory"
-  /** Advisory: vercel.json rules the proxy could not reproduce, so they aren't live. */
-  | "routing_rules_dropped";
+  | "port_advisory";
 
 export interface PendingActionResolution {
   /** Human label — also the natural thing for an agent to echo before acting. */
@@ -384,92 +381,7 @@ function buildPortAdvisories(dep: Deployment, isCompose: boolean): PendingAction
     }));
 }
 
-/**
- * Advisory: `vercel.json` rules the proxy cannot reproduce.
- *
- * RECOMPUTED from the stored config rather than persisted at deploy time.
- * `compileVercelRouting` is pure, so re-running it here costs nothing, needs no
- * column, can never go stale against an edited config, and reports before the first
- * deploy. Until now `compiled.skipped` was read by NOTHING anywhere in the codebase —
- * a redirect we couldn't translate simply never existed, with no warning.
- *
- * The sentinel backend suppresses "no backend to proxy to" for a rewrite to a path: on
- * a single-service project that request already reaches the app via `location /`, and
- * on a composite one the deploy path supplies the real backend. Reporting it would be
- * noise in both. What survives is the topology-independent set — an unsupported source,
- * an unsafe destination, an unresolvable wildcard, a dropped header — all of which mean
- * the user wrote a rule that genuinely is not live.
- */
-function buildRoutingRulesDropped(project: ProjectRow): PendingAction | null {
-  if (!project.routingConfig) return null;
-  const { skipped } = compileVercelRouting(project.routingConfig, {
-    backendTargetUrl: "http://openship-backend.invalid",
-  });
-  if (skipped.length === 0) return null;
-  return {
-    id: `routing_rules_dropped:${project.id}:${skipped.length}`,
-    kind: "routing_rules_dropped",
-    severity: "advisory",
-    title: `${skipped.length} routing rule${skipped.length === 1 ? "" : "s"} could not be applied`,
-    message:
-      `These ${skipped.length === 1 ? "rule" : "rules"} from the project's routing config ` +
-      `${skipped.length === 1 ? "is" : "are"} NOT live — the proxy could not reproduce ` +
-      `${skipped.length === 1 ? "it" : "them"} faithfully, so ${skipped.length === 1 ? "it was" : "they were"} ` +
-      `dropped rather than served wrongly: ${skipped.join("; ")}. Fix the rule in vercel.json ` +
-      `(or the Routing tab) and redeploy.`,
-    details: { skipped },
-    // No server-side fix: the config itself has to change.
-    resolveWith: [],
-  };
-}
-
 // ─── Entry points ───────────────────────────────────────────────────────────
-
-type ProjectRow = NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>;
-
-/**
- * The pure core: rows in, items out, no I/O.
- *
- * Split out from the loader so an org-wide caller can BULK-load the same three
- * things once for every project and reuse this — otherwise a global feed costs
- * 3 queries per project. Every entry point below funnels through here, which is
- * what makes it structurally impossible for the project tab, a deployment view
- * and the global tracker to describe one condition differently.
- */
-export function collectPendingActions(input: {
-  project: ProjectRow;
-  latest: Deployment | null;
-  active: Deployment | null;
-  domains: DomainRow[];
-}): PendingAction[] {
-  const { project, latest, active, domains } = input;
-  const actions: PendingAction[] = [];
-
-  // Deploy-side, from the LATEST attempt.
-  if (latest) {
-    const prompt = buildPrompt(latest);
-    if (prompt) actions.push(prompt);
-    if (latest.status === "action_required") {
-      const blocked = buildDeployBlocked(latest);
-      if (blocked) actions.push(blocked);
-    }
-  }
-
-  // Release-side, from the LIVE deployment.
-  if (active) {
-    const decision = buildPartialDecision(active);
-    if (decision) actions.push(decision);
-    const routing = buildRoutingUnsynced(project.id, active);
-    if (routing) actions.push(routing);
-    actions.push(...buildPortAdvisories(active, isMultiServiceProject(project)));
-  }
-
-  actions.push(...buildDomainActions(domains));
-  // Config-side, independent of any deployment — a rule can be wrong before the first.
-  const dropped = buildRoutingRulesDropped(project);
-  if (dropped) actions.push(dropped);
-  return actions.sort(bySeverity);
-}
 
 /**
  * Everything waiting on a human for one project.
@@ -494,51 +406,29 @@ export async function getProjectPendingActions(
     repos.domain.listByProject(projectId).catch(() => []),
   ]);
 
-  return collectPendingActions({ project, latest: latest ?? null, active: active ?? null, domains });
-}
+  const actions: PendingAction[] = [];
 
-/**
- * The same items for EVERY project in an organization — what the global issue
- * tracker reads.
- *
- * Bulk-loads with repo methods that already exist, so the cost is a fixed handful
- * of queries no matter how many projects the org has, not 3×N. The per-project
- * verdict is `collectPendingActions`, unchanged — a condition that shows up on a
- * project's own tab shows up here, worded identically, or it's a bug.
- *
- * Items are returned keyed by project so the caller can attach a target without
- * re-deriving which project an item's paths belong to.
- */
-export async function getOrgPendingActions(
-  organizationId: string,
-): Promise<Map<string, PendingAction[]>> {
-  const { rows: projects } = await repos.project.listByOrganization(organizationId, {
-    perPage: 1000,
-  });
-  const out = new Map<string, PendingAction[]>();
-  if (projects.length === 0) return out;
-
-  const ids = projects.map((p) => p.id);
-  const activeIds = projects.map((p) => p.activeDeploymentId).filter((id): id is string => !!id);
-
-  const [latestByProject, activeById, domainsByProject] = await Promise.all([
-    repos.deployment.findLatestByProjects(ids).catch(() => new Map<string, Deployment>()),
-    repos.deployment.findManyById(activeIds).catch(() => new Map<string, Deployment>()),
-    repos.domain.listByProjects(ids).catch(() => new Map<string, DomainRow[]>()),
-  ]);
-
-  for (const project of projects) {
-    const items = collectPendingActions({
-      project,
-      latest: latestByProject.get(project.id) ?? null,
-      active: project.activeDeploymentId
-        ? (activeById.get(project.activeDeploymentId) ?? null)
-        : null,
-      domains: domainsByProject.get(project.id) ?? [],
-    });
-    if (items.length > 0) out.set(project.id, items);
+  // Deploy-side, from the LATEST attempt.
+  if (latest) {
+    const prompt = buildPrompt(latest);
+    if (prompt) actions.push(prompt);
+    if (latest.status === "action_required") {
+      const blocked = buildDeployBlocked(latest);
+      if (blocked) actions.push(blocked);
+    }
   }
-  return out;
+
+  // Release-side, from the LIVE deployment.
+  if (active) {
+    const decision = buildPartialDecision(active);
+    if (decision) actions.push(decision);
+    const routing = buildRoutingUnsynced(projectId, active);
+    if (routing) actions.push(routing);
+    actions.push(...buildPortAdvisories(active, isMultiServiceProject(project)));
+  }
+
+  actions.push(...buildDomainActions(domains));
+  return actions.sort(bySeverity);
 }
 
 /**

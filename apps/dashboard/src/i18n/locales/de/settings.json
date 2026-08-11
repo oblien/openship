@@ -53,7 +53,6 @@
       "notifications": "Benachrichtigungen",
       "audit": "Audit-Protokoll",
       "cloud": "Cloud",
-      "infrastructure": "Infrastruktur",
       "instance": "Instanz"
     }
   },
@@ -113,6 +112,10 @@
     "noServers": "Noch keine Server konfiguriert – füge einen über den Deploy-Picker hinzu.",
     "clearDefault": "Standard zurücksetzen (jedes Mal fragen)",
     "targets": {
+      "local": {
+        "label": "Dieser Rechner",
+        "desc": "Lokales Docker / Laufzeitumgebung"
+      },
       "server": {
         "label": "Mein Server",
         "desc": "Ein konfigurierter SSH-Server"
@@ -124,7 +127,8 @@
     },
     "labelFor": {
       "yourServer": "dein Server",
-      "cloud": "Openship Cloud"
+      "cloud": "Openship Cloud",
+      "local": "Dieser Rechner"
     },
     "toast": {
       "pickServer": "Wähle zuerst einen Server aus",
@@ -450,7 +454,6 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
-      "telegram": "Telegram",
       "in_app": "In-App"
     },
     "form": {
@@ -460,9 +463,6 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
-      "telegramTokenPlaceholder": "Bot-Token von @BotFather",
-      "telegramChatPlaceholder": "Chat-ID (z. B. -1001234567890)",
-      "telegramHint": "Erstelle mit @BotFather einen Bot und schreibe ihm dann eine Nachricht (oder füge ihn deiner Gruppe hinzu), damit er antworten darf.",
       "adding": "Wird hinzugefügt…",
       "addChannel": "Kanal hinzufügen",
       "labelRequired": "Bezeichnung ist erforderlich"
@@ -471,7 +471,6 @@
       "title": "Worüber benachrichtigt werden",
       "description": "Wähle aus, welche Ereignisse an welchen Kanal gehen. Jede Zelle ist ein Abonnement.",
       "empty": "Füge zuerst einen Kanal hinzu, um Ereignisse zu abonnieren.",
-      "allTab": "Alle",
       "eventHeader": "Ereignis",
       "cellAria": "{category} über {channel}",
       "notifyMe": "Benachrichtigen"
@@ -485,11 +484,11 @@
   },
   "audit": {
     "heading": "Audit-Protokoll",
-    "subtitle": "Alles, was in dieser Organisation passiert ist, wer es getan hat und wann.",
-    "searchPlaceholder": "Apps, Server, Domains, Personen suchen…",
-    "noMatch": "Nichts entspricht diesen Filtern.",
-    "noEvents": "Bisher wurde nichts aufgezeichnet.",
-    "clearFilters": "Filter zurücksetzen",
+    "subtitle": "Jede Änderung in dieser Organisation, wer sie vorgenommen hat und wann.",
+    "searchPlaceholder": "Ereignisse, Akteure, Ressourcen suchen...",
+    "allEvents": "Alle Ereignisse",
+    "noMatch": "Keine Ereignisse entsprechen deiner Suche.",
+    "noEvents": "Noch keine Ereignisse.",
     "showing": "{from}-{to} von {total} werden angezeigt",
     "actor": "Akteur",
     "name": "Name",
@@ -505,50 +504,7 @@
     "after": "Nachher",
     "removed": "Entfernt",
     "system": "System",
-    "actorPrefix": "Akteur {id}",
-    "recording": {
-      "title": "Aktivität aufzeichnen",
-      "description": "Jede Änderung in dieser Organisation wird protokolliert. Standardmäßig aktiviert.",
-      "paused": "Die Aufzeichnung ist aus. Es wird nichts Neues hinzugefügt — die Einträge unten wurden erfasst, bevor sie abgeschaltet wurde.",
-      "retention": "Einträge aufbewahren für",
-      "retentionOption": "{days} Tage",
-      "retentionHint": "Ältere Einträge werden automatisch gelöscht.",
-      "adminOnly": "Nur Inhaber und Admins können das ändern.",
-      "saveFailed": "Die Aktivitätseinstellungen konnten nicht gespeichert werden."
-    },
-    "filters": {
-      "anyone": "Alle",
-      "period": "Zeitraum",
-      "allTime": "Gesamter Zeitraum",
-      "today": "Heute",
-      "last7": "Letzte 7 Tage",
-      "last30": "Letzte 30 Tage",
-      "last90": "Letzte 90 Tage"
-    },
-    "tabs": {
-      "all": "Alle"
-    },
-    "sources": {
-      "all": "Alles",
-      "dashboard": "Dashboard",
-      "mcp": "KI-Assistent",
-      "cli": "CLI",
-      "api": "API",
-      "webhook": "Webhook",
-      "system": "System",
-      "unknown": "Unbekannt"
-    },
-    "day": {
-      "today": "Heute",
-      "yesterday": "Gestern"
-    },
-    "details": {
-      "who": "Wer",
-      "when": "Wann",
-      "cameFrom": "Herkunft",
-      "technical": "Technische Details",
-      "eventType": "Ereignistyp"
-    }
+    "actorPrefix": "Akteur {id}"
   },
   "updates": {
     "title": "Updates",
@@ -573,20 +529,6 @@
     "security3": "). Es",
     "securityPulls": "zieht",
     "security4": "diese Daten nur — kein Drittanbieterdienst und kein von Openship betriebener Server kann Updates oder Signale an deine Installation senden. Hinweise sind an jedes Release gebunden, sodass unveröffentlichte Änderungen dich nie erreichen. Kritische Sicherheitshinweise werden immer einmal angezeigt; alles andere richtet sich nach dem obigen Schalter."
-  },
-  "infrastructure": {
-    "title": "Plattformkomponenten",
-    "description": "Wie die Edge- und Mail-Container auf deinen Servern aktuell gehalten werden",
-    "autoUpdateLabel": "Server-Infrastruktur automatisch aktualisieren",
-    "autoUpdateDesc": "Wenn diese Control Plane aktualisiert wird, werden die Edge- und Mail-Container auf deinen verbundenen Servern automatisch mit aktualisiert. Standardmäßig aus — andernfalls werden Updates markiert und lassen sich pro Server mit einem Klick anwenden.",
-    "autoScanLabel": "Server-Infrastruktur automatisch prüfen",
-    "autoScanDesc": "Prüft deine Server im Hintergrund erneut, wenn du die Server-Seite oder die Startseite öffnest, sodass ein gestoppter oder fehlender Edge ohne manuellen Scan auffällt. Standardmäßig aktiv – nur Erkennung, es wird nichts verändert.",
-    "attentionOne": "1 Komponente benötigt Aufmerksamkeit",
-    "attentionMany": "{n} Komponenten benötigen Aufmerksamkeit",
-    "updatesOne": "1 Update verfügbar",
-    "updatesMany": "{n} Updates verfügbar",
-    "allHealthy": "Alle Plattform-Komponenten sind aktuell",
-    "manageLink": "In Server verwalten"
   },
   "dataTransfer": {
     "export": {

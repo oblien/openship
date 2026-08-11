@@ -11,8 +11,8 @@ run Openship itself.
 
 <Callout title="Install it first">
 This page assumes the `openship` command is already on your PATH. If not, see
-[Installation](/docs/getting-started/installation) — the short version is `npm i -g openship`
-(needs Node 22+) or `curl -fsSL https://get.openship.io | sh` (brings its own Node).
+[Installation](/docs/getting-started/installation) — the short version is `npm i -g openship` (or
+`curl -fsSL https://get.openship.io | sh`).
 </Callout>
 
 Every command supports `--help`, so when in doubt:
@@ -133,8 +133,8 @@ the token validated against the API before it's saved.
 
 ## All commands
 
-Grouped the same way the reference pages are. Each heading links to the page that covers those commands in
-full; run `openship <command> --help` for the flag list of any one.
+Twenty-four commands, grouped the same way the reference pages are. Each heading links to the page that
+covers those commands in full; run `openship <command> --help` for the flag list of any one.
 
 ### Running & updating — [reference](/docs/cli/run)
 
@@ -181,14 +181,6 @@ Who you are, which instance you're talking to, and an escape hatch to any route.
 | `openship service` (alias `services`) | Manage the services in a compose stack (a multi-service project). |
 | `openship domain` | Manage custom domains, DNS verification, and SSL certificates. |
 
-### Edge & monitoring — [reference](/docs/cli/edge)
-
-The public reverse proxy on `:80/:443` and the traffic it records.
-
-| Command | Purpose |
-|---|---|
-| `openship edge` | Install and manage the OpenResty edge; take over an existing proxy; read traffic, analytics, and request logs. |
-
 ### Self-host infrastructure — [reference](/docs/cli/self-host)
 
 | Command | Purpose |
@@ -204,7 +196,6 @@ The public reverse proxy on `:80/:443` and the traffic it records.
   <Card title="Running & updating" href="/docs/cli/run" description="up, stop, update, install — operate Openship itself." />
   <Card title="Deploying" href="/docs/cli/deploy" description="deploy, deployment, logs — the full deploy loop." />
   <Card title="Projects, services & domains" href="/docs/cli/projects" description="init, project, service, and domain commands." />
-  <Card title="Edge & monitoring" href="/docs/cli/edge" description="The :80/:443 proxy, proxy take-over, rules, and traffic analytics." />
   <Card title="Access & the raw API" href="/docs/cli/access" description="login, context, token, api — auth and any route." />
   <Card title="Self-host infrastructure" href="/docs/cli/self-host" description="server, system, mail, and backup for instances you run." />
 </Cards>

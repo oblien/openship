@@ -137,15 +137,15 @@ export default function ProjectsPage() {
           <EmptyState />
         ) : (
           <>
-            {/* One grid for toolbar + list + sidebar: the right column spans
-                both rows so it starts at the search row's top edge instead of
-                below it, while search/toggle stay bounded to the list column. */}
-            <div className="grid grid-cols-1 gap-x-6 gap-y-4 lg:grid-cols-[1fr_340px]">
+            {/* Toolbar — constrained to the SAME grid columns as the content
+                below, so the search + view toggle end at the left (list) column's
+                edge instead of spanning full-page over the right filter column. */}
+            <div className="mb-4 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
               {/* Search on the LEFT, view toggle on the right. Rendered at every
                   project count: hiding it below a threshold left the toggle
                   floating with nothing to anchor it, and the toolbar read as
                   broken rather than intentionally empty. */}
-              <div className="flex min-w-0 items-center gap-3 lg:col-start-1 lg:row-start-1">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="relative min-w-0 flex-1">
                   <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                   <input
@@ -160,9 +160,11 @@ export default function ProjectsPage() {
                   <ViewToggle value={view} onChange={setView} />
                 </div>
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
               {/* Left: project list / empty state for the active search + filter */}
-              <div className="min-w-0 lg:col-start-1 lg:row-start-2">
+              <div className="min-w-0">
                 {filteredProjects.length > 0 ? (
                   view === "grid" ? (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
@@ -203,7 +205,7 @@ export default function ProjectsPage() {
 
               {/* Right: filter by deploy target + a server CTA so the column
                   is never empty (e.g. when nothing is deployed to a server). */}
-              <div className="space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:sticky lg:top-6 lg:self-start">
+              <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
                 {showFilterCard && (
                   <ProjectFilters options={filterOptions} active={filter} onChange={setFilter} />
                 )}

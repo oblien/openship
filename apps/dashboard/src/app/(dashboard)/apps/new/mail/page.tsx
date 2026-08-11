@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Loader2, Server, Plug } from "lucide-react";
 import { deployApi, mailApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppDestinationPicker, type AppDestination } from "@/components/deploy/AppDestinationPicker";
 import { MAIL_PROVIDERS, mailProvider, type MailProviderId } from "@/lib/mail-providers";
-import { mailTabHref } from "@/lib/sidebar-nav";
 import {
   CleanDeployProgressCard,
   labelForStatus,
@@ -17,19 +16,15 @@ import { AppLogo } from "@/components/AppLogo";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import { useToast } from "@/context/ToastContext";
-import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useI18n } from "@/components/i18n-provider";
 
 /**
- * Mail provider wizard — the app-catalog entry point for Openship Mail, and the
- * ONLY one: the webmail app is `unlisted` in the catalog precisely so this chooser
- * is where both branches start. A provider chooser that WRAPS the existing
- * machinery, no duplication:
+ * Mail provider wizard — the app-catalog entry point for Openship Mail. A clean
+ * provider chooser that WRAPS the existing machinery, no duplication:
  *
- *   • Self-host        → the mail-engine provisioning flow at /emails (SMTP/IMAP +
- *                        mailboxes + webmail on one server).
- *   • Connect existing → install just the webmail app pointed at an external
+ *   • Self-host        → the existing iRedMail provisioning flow at /emails.
+ *   • Connect existing → deploy just the Zero webmail UI pointed at an external
  *                        IMAP/SMTP backend (Amazon SES for send, Gmail/Fastmail,
  *                        or any custom host) via POST /mail/webmail/deploy-external.
  *
@@ -44,7 +39,6 @@ export default function MailWizardPage() {
   const w = t.projectSettings.appInstall;
   const m = w.mail;
   const { showToast } = useToast();
-  const { connected: cloudConnected, requireCloud } = useCloud();
   const { baseDomain } = usePlatform();
 
   const [phase, setPhase] = useState<Phase>("choose");
@@ -64,55 +58,14 @@ export default function MailWizardPage() {
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  /**
-   * This instance's own mail server, when one is installed.
-   *
-   * Every send-only relay in the catalog (SES, SendGrid, Mailgun, Postmark,
-   * Resend, Oracle) has `imapHost: ""` — correctly, they hold no mailboxes. But
-   * the IMAP host is REQUIRED, so picking one used to leave a blank required
-   * field and the operator had to already know to type `mail.<domain>`. If we run
-   * a mail server, that IS the answer: `mail.<domain>:993`, the same coordinates
-   * the mail-server-backed webmail deploy pins server-side
-   * (`webmail-install.service.ts` → `WEBMAIL_SETTING_KEYS.imapHost`).
-   */
-  const [mailServers, setMailServers] = useState<
-    { id: string; domain: string | null; completed: boolean; active: boolean }[]
-  >([]);
-  const ourMailServer = useMemo(
-    () => mailServers.find((s) => s.completed && s.domain) ?? null,
-    [mailServers],
-  );
-  const ourMailHost = ourMailServer?.domain ? `mail.${ourMailServer.domain}` : null;
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await mailApi.listMailServers();
-        setMailServers(res?.servers ?? []);
-      } catch {
-        // Wizard still works without it — the operator types the IMAP host.
-      }
-    })();
-  }, []);
-
   const applyPreset = (id: MailProviderId) => {
     setPreset(id);
     const p = mailProvider(id);
-    setImapHost(p.sendOnly ? ourMailHost ?? "" : p.imapHost);
+    setImapHost(p.imapHost);
     setImapPort(p.imapPort);
     setSmtpHost(p.smtpHost);
     setSmtpPort(p.smtpPort);
   };
-
-  const presetSpec = mailProvider(preset);
-  const usingOurImap = !!ourMailHost && presetSpec.sendOnly && imapHost === ourMailHost;
-
-  // The server list can land after a preset was picked. Fill the host the moment
-  // we know it rather than leaving the blank field the operator already saw.
-  useEffect(() => {
-    if (!ourMailHost || !mailProvider(preset).sendOnly) return;
-    setImapHost((cur) => (cur.trim() === "" ? ourMailHost : cur));
-  }, [ourMailHost, preset]);
 
   // ── Clean progress poll (status only, never raw logs) ──────────────────────
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -162,11 +115,6 @@ export default function MailWizardPage() {
     if (!imapHost.trim() || !smtpHost.trim()) {
       showToast(m.hostsRequired, "error");
       return;
-    }
-    // Deploying the webmail TO Openship Cloud needs a cloud connection — same
-    // gate as the deploy wizard / app install, so the pick isn't a dead end.
-    if (destination?.deployTarget === "cloud" && !cloudConnected) {
-      if (!(await requireCloud("cloud-deploy-target"))) return;
     }
     setBusy(true);
     try {
@@ -226,14 +174,12 @@ export default function MailWizardPage() {
           <ArrowLeft className="size-4" /> {w.back}
         </button>
 
-        {/* Header. `shrink-0` on the tile for the same reason as the generic app
-            wizard: it's a flex child next to wrapping text, so without it the 48px
-            tile squeezes narrower than it is tall and the mark reads as stretched. */}
+        {/* Header */}
         <div className="flex items-center gap-4">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-muted/60">
-            <AppLogo appId="mail" className="size-7" />
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-muted/60">
+            <AppLogo appId="mail" className="size-7 object-contain" />
           </div>
-          <div className="min-w-0">
+          <div>
             <h1 className="text-xl font-semibold text-foreground">{m.title}</h1>
             <p className="text-sm text-muted-foreground">{m.subtitle}</p>
           </div>
@@ -291,36 +237,15 @@ export default function MailWizardPage() {
                     );
                   })}
                 </div>
-                {/* Every send-only relay needs this, not just SES. Warning only
-                    while there's nowhere to read mail from; once IMAP resolves to
-                    our own server the split is legitimate, not a problem. */}
-                {presetSpec.sendOnly && !ourMailHost && (
+                {preset === "ses" && (
                   <div className="mt-3 rounded-lg bg-warning-bg px-3 py-2 text-xs text-warning">
-                    <p>{interpolate(m.sendOnlyNote, { provider: presetSpec.label })}</p>
+                    <p>{m.sesNote}</p>
                     <button
                       type="button"
                       onClick={() => router.push("/emails")}
                       className="mt-1.5 font-medium underline underline-offset-2 hover:opacity-80"
                     >
-                      {interpolate(m.sendOnlyNoInbox, { provider: presetSpec.label })}
-                    </button>
-                  </div>
-                )}
-                {/* Mailboxes here + send elsewhere is the outbound-relay feature,
-                    which does it without a second webmail: one Postfix hop, SPF
-                    include published per relayed domain, and scoping down to a
-                    single address. Steer there rather than silently competing. */}
-                {presetSpec.sendOnly && ourMailHost && (
-                  <div className="mt-3 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                    <p>{interpolate(m.relayNote, { provider: presetSpec.label })}</p>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        router.push(mailTabHref(ourMailServer?.id ?? null, "sending"))
-                      }
-                      className="mt-1.5 font-medium text-foreground underline underline-offset-2 hover:opacity-80"
-                    >
-                      {m.relayCta}
+                      {m.sesSelfHostCta}
                     </button>
                   </div>
                 )}
@@ -336,33 +261,23 @@ export default function MailWizardPage() {
                     className={INPUT}
                   />
                 </Field>
-                <div>
-                  <div className="grid grid-cols-[1fr_auto] gap-3">
-                    <Field label={m.imapHost}>
-                      <input
-                        value={imapHost}
-                        onChange={(e) => setImapHost(e.target.value)}
-                        placeholder="imap.example.com"
-                        className={INPUT}
-                      />
-                    </Field>
-                    <Field label={m.imapPort}>
-                      <input
-                        type="number"
-                        value={imapPort}
-                        onChange={(e) => setImapPort(Number(e.target.value))}
-                        className={`${INPUT} w-24`}
-                      />
-                    </Field>
-                  </div>
-                  {usingOurImap && (
-                    <p className="mt-1.5 text-xs text-muted-foreground">
-                      {interpolate(m.imapOnOurServer, {
-                        host: ourMailHost ?? "",
-                        provider: presetSpec.label,
-                      })}
-                    </p>
-                  )}
+                <div className="grid grid-cols-[1fr_auto] gap-3">
+                  <Field label={m.imapHost}>
+                    <input
+                      value={imapHost}
+                      onChange={(e) => setImapHost(e.target.value)}
+                      placeholder="imap.example.com"
+                      className={INPUT}
+                    />
+                  </Field>
+                  <Field label={m.imapPort}>
+                    <input
+                      type="number"
+                      value={imapPort}
+                      onChange={(e) => setImapPort(Number(e.target.value))}
+                      className={`${INPUT} w-24`}
+                    />
+                  </Field>
                 </div>
                 <div className="grid grid-cols-[1fr_auto] gap-3">
                   <Field label={m.smtpHost}>
@@ -413,7 +328,7 @@ export default function MailWizardPage() {
 }
 
 const INPUT =
-  "w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25";
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring";
 
 function Field({
   label,

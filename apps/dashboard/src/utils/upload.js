@@ -9,4 +9,4 @@ export const text = `
                                                              
 `
 
-// ASCII art banner — available for callers to opt-in; not auto-printed on import.
+console.log(text);

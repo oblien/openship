@@ -46,18 +46,4 @@ describe("renderAssetName", () => {
   it("replaces every occurrence of a placeholder", () => {
     expect(renderAssetName("{version}/{version}", { version: "9.9.9" })).toBe("9.9.9/9.9.9");
   });
-
-  it("refuses a template with an unknown placeholder, naming it", () => {
-    // Silently kept, `{platform}` reaches the download URL and the operator gets
-    // "release dist not found at <cache dir>" — a message about the wrong thing.
-    expect(() => renderAssetName("app-{platform}-{arch}.tgz", { version: "1.0.0" })).toThrow(
-      /\{platform\}/,
-    );
-  });
-
-  it("a fully-substituted name with literal braces nowhere left is fine", () => {
-    expect(renderAssetName("openship-{tag}-linux-amd64.tar.gz", { version: "0.6.1" })).toBe(
-      "openship-v0.6.1-linux-amd64.tar.gz",
-    );
-  });
 });

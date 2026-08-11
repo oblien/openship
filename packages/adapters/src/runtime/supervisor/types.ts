@@ -12,7 +12,7 @@
  * while the supervisor handles process lifecycle portably.
  */
 
-import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage } from "../../types";
+import type { CommandExecutor, LogEntry, LogCallback } from "../../types";
 
 // ─── Deploy options ──────────────────────────────────────────────────────────
 
@@ -54,18 +54,6 @@ export interface ProcessSupervisor {
 
   /** Check if the process is currently running */
   isRunning(deploymentId: string): Promise<boolean>;
-
-  /**
-   * Current CPU / memory / disk-IO for the process.
-   *
-   * Both supervisors implement it via the shared `sampleBareUsage` probe (cgroup →
-   * /proc → ps), since the measurement depends on the OS rather than on how the
-   * process was started. Returns zeros for a process that isn't running.
-   *
-   * `networkRxBytes`/`networkTxBytes` are always 0: per-process network accounting
-   * needs eBPF or a dedicated netns, which a bare deploy has neither of.
-   */
-  getUsage(deploymentId: string): Promise<ResourceUsage>;
 
   /** Get recent log lines */
   getLogs(deploymentId: string, tail?: number): Promise<LogEntry[]>;

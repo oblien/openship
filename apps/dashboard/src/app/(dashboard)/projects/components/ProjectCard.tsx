@@ -16,26 +16,31 @@ import {
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
-import {
-  getProjectStatus,
-  projectDisplayDomain,
-  projectStatusHint,
-  PROJECT_STATUS_META,
-  projectStatusLabel,
-} from "@/utils/project-status";
+import { getProjectStatus, PROJECT_STATUS_META, projectStatusLabel } from "@/utils/project-status";
+import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { projectsApi, getApiErrorMessage } from "@/lib/api";
-import { timeAgo } from "@/lib/time";
 import type { Dictionary } from "@/i18n";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
-/* Exported for ProjectGridCard: the tile view shows the same hosting label as this
-   row, so both read it from here instead of deriving their own (which is how the
-   two views would drift). Relative time moved to `@/lib/time` once the Health tab
-   and the issue feed needed it too. */
+/* Exported for ProjectGridCard: the tile view shows the same relative time and
+   hosting label as this row, so both read them from here instead of deriving
+   their own (which is how the two views would drift). */
+
+export function timeAgo(dateStr: string, t: Dictionary): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return t.projects.time.justNow;
+  if (mins < 60) return interpolate(t.projects.time.minutesAgo, { count: String(mins) });
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return interpolate(t.projects.time.hoursAgo, { count: String(hrs) });
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return interpolate(t.projects.time.daysAgo, { count: String(days) });
+  return interpolate(t.projects.time.monthsAgo, { count: String(Math.floor(days / 30)) });
+}
 
 export function getHostingLabel(
   deployTarget: string | null | undefined,
@@ -58,10 +63,7 @@ export function getHostingLabel(
 /* ── Component ────────────────────────────────────────────────────── */
 
 interface Props {
-  /** `primaryDomain` — the project's PRIMARY persisted route — is enriched onto
-   *  every row by the projects list and `/info`, but isn't declared on `Project`
-   *  (constants/mock) yet, so it's spelled out here rather than cast away. */
-  project: Project & { primaryDomain?: string | null };
+  project: Project;
   /** On the Apps page: show the catalog app's brand logo instead of the
    *  framework/service fallback icon. */
   preferAppLogo?: boolean;
@@ -75,19 +77,20 @@ interface Props {
 
 const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable, onChanged }) => {
   const { t } = useI18n();
+  const { baseDomain } = usePlatform();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
   const status = getProjectStatus(project);
   const statusMeta = PROJECT_STATUS_META[status];
-  const statusHint = projectStatusHint(project, t);
   const fw = getFrameworkConfig(project.framework);
   const [faviconError, setFaviconError] = useState(false);
 
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
   const repoSlug = hasRepo ? `${project.gitOwner}/${project.gitRepo}` : null;
-  const domain = projectDisplayDomain(project);
+  const domain =
+    (project as any).primaryDomain || (project.slug ? `${project.slug}.${baseDomain}` : null);
   const hasMultipleServices =
     project.hasMultipleServices === true || Number(project.serviceCount ?? 0) > 1;
 
@@ -147,7 +150,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
             onError={() => setFaviconError(true)}
           />
         ) : (
-          fw.icon("var(--foreground)")
+          fw.icon("hsl(var(--foreground))")
         )}
       </div>
 
@@ -215,11 +218,6 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
             <Server className="size-3.5" />
             {t.projects.card.services}
           </span>
-        ) : project.workloadType === "worker" ? (
-          <span className="hidden lg:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
-            <Server className="size-3.5" />
-            {t.projects.card.worker}
-          </span>
         ) : project.hasServer === false ? (
           <span className="hidden lg:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             <Globe className="size-3.5" />
@@ -243,10 +241,6 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
         {/* Status pill (badge only — no dot) */}
         <span
           className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${statusMeta.badge}`}
-          // Amber "Action Required" without a named move is a dead end — some
-          // attention states (rolled back after a failed deploy) have no
-          // clearable pending-action, so the pill has to say what to do.
-          {...(statusHint ? { title: statusHint } : {})}
         >
           {projectStatusLabel(status, t)}
         </span>

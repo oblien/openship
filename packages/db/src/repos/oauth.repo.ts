@@ -7,51 +7,13 @@ import { personalAccessTokenGrant } from "../schema/personal-access-token-grant"
  * Read + revocation access to the Better Auth OAuth tables.
  *
  * The plugin OWNS creation of these rows (see schema/oauth.ts) — we never
- * insert. The only writes here are DELETEs for a user-initiated "disconnect
- * this MCP client" (there's no Better Auth API to revoke a user's issued
- * tokens/consent for a client, so we drop the rows directly), plus the
- * audience-rebind UPDATE described on `rebindAccessToken`. Reads back the
- * client's display name for the "connected clients" list.
+ * insert or update. The only writes here are DELETEs for a user-initiated
+ * "disconnect this MCP client": there's no Better Auth API to revoke a user's
+ * issued tokens/consent for a client, so we drop the rows directly. Reads back
+ * the client's display name for the "connected clients" list.
  */
 export function createOAuthRepo(db: Database) {
   return {
-    /** The issued-token row for an access token string, or null. */
-    async findAccessToken(accessToken: string): Promise<{
-      id: string;
-      userId: string | null;
-      clientId: string;
-      scopes: string;
-      accessTokenExpiresAt: Date;
-    } | null> {
-      const [row] = await db
-        .select({
-          id: oauthAccessToken.id,
-          userId: oauthAccessToken.userId,
-          clientId: oauthAccessToken.clientId,
-          scopes: oauthAccessToken.scopes,
-          accessTokenExpiresAt: oauthAccessToken.accessTokenExpiresAt,
-        })
-        .from(oauthAccessToken)
-        .where(eq(oauthAccessToken.accessToken, accessToken))
-        .limit(1);
-      return row ?? null;
-    },
-
-    /**
-     * Swap an issued access token's stored string. Used ONLY by the MCP token
-     * endpoint to replace the plugin's opaque value with the audience-bound JWT
-     * handed to the client (see lib/mcp-token.ts) — introspection stays an
-     * exact-string lookup either way. Returns false when the row is gone.
-     */
-    async rebindAccessToken(currentToken: string, nextToken: string): Promise<boolean> {
-      const updated = await db
-        .update(oauthAccessToken)
-        .set({ accessToken: nextToken, updatedAt: new Date() })
-        .where(eq(oauthAccessToken.accessToken, currentToken))
-        .returning();
-      return updated.length > 0;
-    },
-
     /** Display metadata (clientId → name) for a set of client_ids. */
     async listApplicationsByClientIds(
       clientIds: string[],

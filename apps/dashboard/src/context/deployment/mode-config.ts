@@ -1,6 +1,5 @@
 import type { FrameworkId } from "@/components/import-project/types";
 import { normalizeSubdomain } from "@/utils/subdomain";
-import { serviceExposedPort } from "@/utils/compose-ports";
 import {
   createPublicEndpoint,
   resolveBuildImageForDeploymentMode,
@@ -82,6 +81,9 @@ function buildSingleModeSnapshotFromPrimary(args: {
 
 const PRIMARY_SINGLE_APP_SERVICE_NAMES = new Set(["web", "app", "frontend"]);
 
+const getExposedPort = (svc: ComposeServiceInfo) =>
+  svc.ports[0]?.split(":").pop()?.split("/")[0];
+
 function clonePublicEndpoints(endpoints: PublicEndpoint[]): PublicEndpoint[] {
   return endpoints.map((endpoint) => createPublicEndpoint(endpoint));
 }
@@ -156,7 +158,7 @@ function listSingleAppComposeEndpointCandidates(config: DeploymentConfig) {
     .map((service, index) => {
       if (!service.exposed) return null;
 
-      const port = service.exposedPort || serviceExposedPort(service) || "";
+      const port = service.exposedPort || getExposedPort(service) || "";
       if (!port) return null;
 
       return {

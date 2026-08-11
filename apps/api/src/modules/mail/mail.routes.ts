@@ -5,6 +5,7 @@
  */
 
 import { Hono } from "hono";
+import { localOnly } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
 import * as mail from "./mail.controller";
 import * as admin from "./admin/admin.controller";
@@ -14,9 +15,9 @@ const r = secureRouter(new Hono(), {
   module: "mail",
   basePath: "/api/mail",
   ids: { mail_server: "serverId" },
-  localOnly: true,
 });
 
+r.use("*", localOnly);
 
 /* ── Setup wizard ─────────────────────────────────────────────────── */
 r.get("/steps", { tag: "mail_server:read" }, mail.getSteps);

@@ -30,7 +30,7 @@ import { upgradeWebSocket } from "../../lib/ws";
 import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
-import { disposeRuntime, resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
@@ -186,7 +186,6 @@ async function resolveServiceForOrg(
   }
 
   if (!runtime.supports("serviceShell") || !runtime.openServiceShell) {
-    disposeRuntime(runtime);
     return {
       ok: false,
       code: "not_supported",
@@ -205,7 +204,6 @@ async function resolveServiceForOrg(
     tracked: await containerIdForService(dep, service),
   });
   if (!containerId) {
-    disposeRuntime(runtime);
     return {
       ok: false,
       code: "not_deployed",
@@ -213,9 +211,6 @@ async function resolveServiceForOrg(
     };
   }
 
-  // On the ok path the CALLER owns `runtime`: the WS handshake hands it to the
-  // session (which disposes it when the session ends), and `issueTicket` — which
-  // only wants the validation — releases it straight away.
   return { ok: true, containerId, runtime };
 }
 
@@ -237,10 +232,6 @@ export async function issueTicket(c: Context) {
   // Org-scoped + permission-gated — out-of-org / non-admin services 404
   // indistinguishably from missing.
   const result = await resolveServiceForOrg(serviceId, ctx.organizationId, ctx.userId);
-  // This endpoint deliberately uses none of the runtime it just resolved (the WS
-  // open path re-resolves and owns it), so release the transport immediately —
-  // otherwise merely OPENING the terminal drawer leaked a bridge per ticket.
-  if (result.ok) disposeRuntime(result.runtime);
   if (!result.ok && (result.code === "server_not_found" || result.code === "not_deployed")) {
     return c.json({ error: result.message }, 404);
   }
@@ -371,16 +362,13 @@ interface HandshakeCtx {
   resumeToken: string;
 }
 
-export interface ConnState {
+interface ConnState {
   ctx: HandshakeCtx;
   sessionId: string | null;
   shell: ShellSession | null;
   ws: WSLike | null;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
-  /** True when this WebSocket connection has detached; stops its data pump and incoming messages. */
   closed: boolean;
-  /** True when this connection's session has been fully ended (shell killed, audit row closed). */
-  ended: boolean;
   userTerminated: boolean;
 }
 
@@ -398,7 +386,6 @@ function buildHandlers(ctx: HandshakeCtx) {
     ws: null,
     heartbeatTimer: null,
     closed: false,
-    ended: false,
     userTerminated: false,
   };
 
@@ -412,12 +399,6 @@ function buildHandlers(ctx: HandshakeCtx) {
 
       // RESUME path
       if (ctx.resumeToken) {
-        // A resume reattaches to the PARKED session's existing shell, so the
-        // runtime this handshake just resolved is never used — release it here
-        // rather than at teardown, which would otherwise dispose this unused
-        // handle and leave the one actually carrying the shell (owned by the
-        // session) stranded.
-        disposeRuntime(ctx.runtime);
         const existing = getServiceSessionByResumeToken(
           ctx.resumeToken,
           ctx.userId,
@@ -435,17 +416,6 @@ function buildHandlers(ctx: HandshakeCtx) {
         state.shell = existing.shell;
         state.sessionId = existing.sessionId;
         attachServiceWs(existing.sessionId, dataPump);
-
-        // Re-bind the timeout hook to this fresh WS/connection state so a
-        // later idle or hard-cap timeout closes the session from the live
-        // connection, not the stale parked one. Re-arm the idle timer so a
-        // resume does not inherit an expiry from the original WS.
-        existing.onTimeout = (_sid, reason) => {
-          sendControl(ws, { type: "error", code: reason as ErrorCode, message: reason });
-          safeWsClose(ws, 1011, reason);
-          void teardown(state, reason, null, /* alreadyUnregistered */ true, /* forceClose */ true);
-        };
-        touchServiceSession(existing.sessionId);
 
         existing.shell.onClose((code: number | null, signal?: string) => {
           sendControl(ws, { type: "exit", code, signal });
@@ -487,10 +457,6 @@ function buildHandlers(ctx: HandshakeCtx) {
           message: safeErrorMessage(err),
         });
         safeWsClose(ws, 1011, code);
-        // The shell never opened, so no session takes ownership of the runtime
-        // below — release it here or a terminal that fails to attach leaks its
-        // transport (the likeliest case being an unreachable host).
-        disposeRuntime(ctx.runtime);
         return;
       }
 
@@ -515,9 +481,6 @@ function buildHandlers(ctx: HandshakeCtx) {
         userId: ctx.userId,
         serviceId: ctx.serviceId,
         shell,
-        // Handed over: the session outlives this connection (park/resume), so it
-        // is the only thing that knows when this transport is finished with.
-        runtime: ctx.runtime,
         onTimeout: (_sid, reason) => {
           sendControl(ws, {
             type: "error",
@@ -613,22 +576,14 @@ function buildHandlers(ctx: HandshakeCtx) {
   };
 }
 
-export async function teardown(
+async function teardown(
   state: ConnState,
   reason: TerminalExitReason,
   exitCode: number | null,
   alreadyUnregistered = false,
   forceClose = true,
 ) {
-  // Full teardown already completed for this connection.
-  if (state.ended) return;
-
-  // The WS side of this connection is already gone and this is not the
-  // timeout/unregister path that intentionally runs after the WS detached.
-  // This deflects stale shell.onClose callbacks from a previous WS after a
-  // resume, while still allowing the idle/cap timeout to finalize the row.
-  if (state.closed && !alreadyUnregistered) return;
-
+  if (state.closed) return;
   state.closed = true;
 
   if (state.heartbeatTimer) {
@@ -640,10 +595,6 @@ export async function teardown(
     parkServiceSession(state.sessionId);
     return;
   }
-
-  // Force-close: this session is ending. Mark it now so any re-entrant
-  // shell.onClose / onClose handler for this same connection no-ops.
-  state.ended = true;
 
   if (state.shell) {
     safeShellClose(state.shell);

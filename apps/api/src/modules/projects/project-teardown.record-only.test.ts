@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  *                            AND no route removal (routes live in the same
  *                            manifest, so a skipped cleanup keeps the vhost
  *                            serving)
- *   • no webmail teardown  → the mail server's proxy vhost for it stays up
+ *   • no webmail teardown  → no on-disk branding/mail-state wipe
  *   • no manifest rewrite  → the server's .openship manifest still lists the
  *                            project, so a later Docker scan can re-import it
  *   • no orphan records    → nothing for the GC sweep to reclaim later
@@ -60,7 +60,7 @@ const h = vi.hoisted(() => ({
   removeProjectFromServerManifests: vi.fn(async () => {}),
   cancelBuildSession: vi.fn(async () => ({ success: true })),
   deleteGitHubWebhook: vi.fn(async () => {}),
-  cleanupWebmailInstall: vi.fn(async (): Promise<string | null> => null),
+  cleanupWebmailInstall: vi.fn(async () => {}),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -100,8 +100,9 @@ vi.mock("../deployments/build.service", () => ({
   cancelBuildSession: h.cancelBuildSession,
 }));
 vi.mock("../github/github.service", () => ({ deleteWebhook: h.deleteGitHubWebhook }));
-vi.mock("../mail/webmail/webmail-install.service", () => ({
+vi.mock("../mail/webmail/webmail-project.service", () => ({
   cleanupWebmailInstall: h.cleanupWebmailInstall,
+  mailServerIdFromWebmailSlug: () => "mail-1",
 }));
 vi.mock("../../config", () => ({ env: { CLOUD_MODE: false } }));
 
@@ -133,40 +134,6 @@ beforeEach(() => {
   h.activeDeployments = [];
   h.listByProjectCalls = 0;
   h.consumers = [];
-});
-
-describe("teardownProject — the GitHub webhook step vs. repo write access", () => {
-  const linkedToRepo = { webhookId: 99, gitOwner: "acme", gitRepo: "production-api" };
-
-  it("a denial from the GitHub access gate is a SKIP, not a failed teardown", async () => {
-    // Deleting the PROJECT is `project:admin`, which a member holds; deleting the
-    // repo's webhook needs WRITE on the repo, which they may not. Borrowing a wider
-    // credential to do it anyway is GHSA-hp2g-hw7g-f3vm, so not touching their repo
-    // is the correct outcome — and must not turn a clean delete into a 207.
-    h.project = projectFixture(linkedToRepo);
-    h.deleteGitHubWebhook.mockRejectedValueOnce(
-      Object.assign(new Error("You don't have access to acme/production-api."), {
-        statusCode: 403,
-        code: "GITHUB_ACCESS_DENIED",
-      }),
-    );
-
-    const res = await teardownProject(ctx, "p1", { force: true, recordOnly: false });
-
-    const step = stepOf(res.steps, "github_webhook");
-    expect(step?.status).toBe("skipped");
-    expect(step?.details).toMatch(/no write access/i);
-    expect(res.rowDeleted).toBe(true);
-  });
-
-  it("an unrelated GitHub error is still a real failure", async () => {
-    h.project = projectFixture(linkedToRepo);
-    h.deleteGitHubWebhook.mockRejectedValueOnce(new Error("GitHub API error (500): boom"));
-
-    const res = await teardownProject(ctx, "p1", { force: true, recordOnly: false });
-
-    expect(stepOf(res.steps, "github_webhook")?.status).toBe("failed");
-  });
 });
 
 describe("teardownProject — deleting a linked app unlinks it from the projects using it", () => {
@@ -269,12 +236,8 @@ describe("teardownProject — record-only delete touches nothing on the server",
     expect(h.deleteHard).toHaveBeenCalledWith("p1");
   });
 
-  it("leaves a webmail project's install standing even though the row drops", async () => {
-    h.project = projectFixture({
-      appTemplateId: "webmail",
-      framework: "docker-compose",
-      slug: "webmail-example-com",
-    });
+  it("keeps a webmail project's on-disk install even though the row drops", async () => {
+    h.project = projectFixture({ framework: "webmail", slug: "webmail-mail-1" });
 
     await teardownProject(ctx, "p1", { force: false, recordOnly: true });
 

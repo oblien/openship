@@ -30,7 +30,6 @@ import {
 } from "./_shared/form-modal-content";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 import type { DnsRecords } from "@/lib/api";
 import { DnsHoldBanner } from "../dns-hold-banner";
 import {
@@ -59,10 +58,6 @@ export function DomainsTab({
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const { t } = useI18n();
-  // In Openship Mail the page header already reads "Domains" + this description
-  // (the rail names the section), so printing them again here is the same heading
-  // twice down the page. See ../../_lib/mail-section.
-  const hoisted = useMailRailOwnsTabs(serverId);
   const [rows, setRows] = useState<AdminDomain[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -323,19 +318,15 @@ export function DomainsTab({
 
   return (
     <div className="space-y-5">
-      <div
-        className={`flex items-center gap-3 flex-wrap ${hoisted ? "justify-end" : "justify-between"}`}
-      >
-        {!hoisted && (
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-foreground">
-              {t.emailsAdmin.domains.heading}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-              {t.emailsAdmin.domains.description}
-            </p>
-          </div>
-        )}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-foreground">
+            {t.emailsAdmin.domains.heading}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
+            {t.emailsAdmin.domains.description}
+          </p>
+        </div>
         <button
           onClick={openCreate}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 shrink-0"

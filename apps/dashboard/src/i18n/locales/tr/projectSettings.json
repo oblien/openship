@@ -12,7 +12,6 @@
     "kindImage": "Konteyner imajı",
     "current": "Mevcut sürüm",
     "latest": "En son sürüm",
-    "repository": "Depo",
     "notChecked": "Henüz kontrol edilmedi",
     "upToDate": "Güncel",
     "updateAvailable": "Güncelleme mevcut",
@@ -64,30 +63,10 @@
     "installFailed": "Kurulum başarısız oldu",
     "viewDetails": "Teknik detayları görüntüle",
     "back": "Geri",
-    "phaseImages": "İmajlar hazırlanıyor",
-    "phaseServices": "Hizmetler başlatılıyor",
-    "phaseAppSetup": "Kurulum tamamlanıyor",
-    "phaseReady": "Yayında",
-    "phaseQueued": "Sırada…",
-    "stepperTitle": "Kurulum adımları",
-    "firstLoginTitle": "İlk giriş",
-    "firstLoginUser": "Kullanıcı adı",
-    "firstLoginPassword": "Parola",
     "destinationTitle": "Nereye kurulacak",
     "destinationHint": "Bu uygulamanın çalışacağı sunucuyu veya bulutu seçin.",
-    "descMore": "Daha fazla",
-    "descLess": "Daha az",
-    "statusInstalling": "Yükleniyor",
-    "statusLive": "Yayında",
-    "statusCancelled": "İptal edildi",
-    "statusFailed": "Başarısız",
-    "stopInstall": "Yüklemeyi durdur",
-    "stopping": "Durduruluyor…",
-    "installCancelled": "Yükleme iptal edildi",
-    "startOver": "Baştan başla",
-    "breadcrumbApps": "Uygulamalar",
-    "appEyebrow": "Uygulama",
-    "stopFailed": "Yükleme durdurulamadı",
+    "destLocal": "Bu bilgisayar",
+    "destLocalDesc": "Burada, bu Openship sunucusunda çalıştırın.",
     "mail": {
       "title": "E-posta kur",
       "subtitle": "Kendi alan adınızda webmail dağıtın veya mevcut bir posta kutusunu bağlayın.",
@@ -102,11 +81,8 @@
         "gmail": "Gmail",
         "fastmail": "Fastmail"
       },
-      "sendOnlyNote": "{provider} yalnızca e-posta gönderir — üzerinde posta kutusu tutmaz. IMAP'i e-postalarınızın gerçekten saklandığı yere yönlendirmeniz gerekir.",
-      "sendOnlyNoInbox": "Henüz posta kutunuz yok mu? Burada bir posta sunucusu kurun, sonra gönderimi {provider} üzerinden iletin →",
-      "imapOnOurServer": "Posta kutuları {host} adresinden okunuyor — bu örneğin kendi posta sunucusu. Yalnızca gönderim {provider} üzerinden gidiyor.",
-      "relayNote": "Bu örnek zaten bir posta sunucusu çalıştırıyor. Posta kutuları onun üzerindeyse, gönderimi onun Teslim → Gönderim sekmesinden iletin: IMAP yerelde kalır, yalnızca gönderim {provider} üzerinden gider — alan adı veya adres bazında — ve kendi webmail'i çalışmaya devam eder.",
-      "relayCta": "Bunun yerine aktarmayı yapılandır →",
+      "sesNote": "Amazon SES yalnızca e-posta gönderir — IMAP'i e-postalarınızın saklandığı ve okunduğu yere yönlendirin.",
+      "sesSelfHostCta": "Posta kutunuz yok mu? Şimdi kendiniz barındırın ve giden e-postaları SES üzerinden iletin →",
       "hostname": "Webmail adresi",
       "hostnameHint": "Kullanıcıların e-postalarını okumak için açtığı herkese açık URL, örn. mail.example.com.",
       "imapHost": "IMAP sunucusu",
@@ -128,28 +104,6 @@
       "status": "Durum",
       "project": "Proje",
       "hostedOn": "Barındığı Yer"
-    },
-    "projectMenu": {
-      "rename": "Projeyi yeniden adlandır",
-      "copyId": "Proje kimliğini kopyala",
-      "idCopied": "Proje kimliği kopyalandı",
-      "copyFailed": "Panoya kopyalanamadı",
-      "pause": "Projeyi duraklat",
-      "resume": "Projeyi sürdür",
-      "delete": "Projeyi sil"
-    },
-    "rename": {
-      "title": "Projeyi yeniden adlandır",
-      "description": "Yalnızca görünen adı değiştirir. Hiçbir şey yeniden dağıtılmaz.",
-      "label": "Proje adı",
-      "placeholder": "Projem",
-      "identityNote": "Proje “{slug}” kimliğini korur — URL'si, kapsayıcı adları ve birimleri değişmez. URL'yi değiştirmek için “Alan Adları ve Rotalar” bölümünden alan adını düzenleyin.",
-      "save": "Kaydet",
-      "cancel": "İptal",
-      "toast": {
-        "renamed": "{name} olarak yeniden adlandırıldı",
-        "failed": "Proje yeniden adlandırılamadı"
-      }
     },
     "statusActive": "Aktif",
     "statusDisabled": "Pasif",
@@ -218,19 +172,6 @@
       "toast": {
         "saved": "Yönlendirme {mode} olarak ayarlandı",
         "failed": "Yönlendirme güncellenemedi"
-      }
-    },
-    "internalAlias": {
-      "title": "Dahili ana bilgisayar adı",
-      "description": "Diğer servislerin bu uygulamaya özel olarak ulaşmak için kullandığı özel ad",
-      "intro": "Bu uygulama için özel proje ağında ek bir DNS adı belirleyin. Varsayılanın (proje kısaltması) yanında çözümlenir; bağlı diğer servisler ikisini de kullanabilir. Genel erişim değişmez; bu asla bir bağlantı noktasını açığa çıkarmaz.",
-      "label": "Ana bilgisayar adı takma adı",
-      "hint": "Yalnızca harf, rakam ve tire. Proje kısaltmasını kullanmak için boş bırakın.",
-      "save": "Kaydet",
-      "toast": {
-        "saved": "Dahili ana bilgisayar adı güncellendi",
-        "failed": "Dahili ana bilgisayar adı güncellenemedi",
-        "invalid": "En az bir harf veya rakam girin"
       }
     }
   },
@@ -344,8 +285,7 @@
       "staticNoServer": "Statik (sunucu yok)",
       "modeSandboxed": "Korumalı Alan (konteyner)",
       "modeDirect": "Doğrudan (ana makine süreci)",
-      "modeDefault": "Varsayılan (dağıtımda çözümlenir)",
-      "modeStatic": "Yok — statik dosya olarak sunulur"
+      "modeDefault": "Varsayılan (dağıtımda çözümlenir)"
     },
     "storage": {
       "title": "Kalıcı depolama",

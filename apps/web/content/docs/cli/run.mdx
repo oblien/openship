@@ -107,7 +107,6 @@ openship up --dry-run
 | `--hostname <host>` | Hostname for `byo`/`custom` (or derived from `--public-url`). | — |
 | `--slug <slug>` | Free `.opsh.io` subdomain for `--domain-kind free` (box must already be Cloud-connected). | — |
 | `--edge <action>` | `migrate` · `takeover` · `cancel` — pre-answer the `:80/:443` takeover (custom domain / Compose). | prompt, else cancel |
-| `--reset-secrets` | Compose only: generate fresh secrets even though an existing database volume is present. Realigns the database password, but **every stored environment variable becomes permanently unreadable**. Only for an install whose `.env` is genuinely gone. | refuse instead |
 
 <Callout title="The dashboard is downloaded on first run">
 Unless you pass `--no-ui`, the dashboard bundle is lazy-downloaded from GitHub releases the first time you run
@@ -120,17 +119,6 @@ retry `openship up`, pass `--no-ui`, or use `openship install` for the desktop a
 bound to loopback (only the dashboard's same-origin proxy reaches it — nothing but the dashboard is exposed).
 Put an HTTPS reverse proxy (Caddy, nginx, Cloudflare) in front of the dashboard port and add `--trust-proxy`.
 The guided `openship` setup walks you through all of this.
-</Callout>
-
-<Callout title="Re-running `up` over a Compose install keeps its secrets — or stops" type="warn">
-A Compose install's generated secrets (`POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `INTERNAL_TOKEN`) live only in
-`~/.openship/compose/.env`, and re-running `openship up` reuses whatever it reads there. If that file can't be
-read (deleted, restored from a partial backup, or you're running as a **different user** — `sudo` reads
-`/root/.openship`, not your own) while the database volume is still present, `up` **refuses and changes nothing**:
-a new `POSTGRES_PASSWORD` can never match a volume Postgres already initialised, and a new `BETTER_AUTH_SECRET`
-can't decrypt the environment variables in the database. Put the original `.env` back — each run keeps the file it
-replaced at `~/.openship/compose/.env.bak` — or re-run as the user that owns it. `--reset-secrets` overrides the
-refusal and accepts the loss. `openship up --dry-run` names every secret it would generate rather than preserve.
 </Callout>
 
 <Callout title="Login rejected after binding remotely?" type="warn">

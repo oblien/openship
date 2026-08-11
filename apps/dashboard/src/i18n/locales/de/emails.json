@@ -3,7 +3,6 @@
     "title": "E-Mail-Server",
     "subtitle": "Richte mit wenigen Klicks einen selbst gehosteten Mailserver ein",
     "backToServers": "Zurück zu den Mailservern",
-    "backToAdmin": "Zurück zur Mail-Verwaltung",
     "addServer": "Mailserver hinzufügen",
     "removeModal": {
       "title": "Diesen Mailserver entfernen?",
@@ -82,10 +81,7 @@
     "willStream": "Die Protokolle werden hier gestreamt, sobald die Einrichtung startet.",
     "jumpToLatest": "Zum Neuesten springen",
     "setupFailed": "Einrichtung fehlgeschlagen",
-    "retryFromStep": "Ab Schritt {resumeStep} erneut versuchen",
-    "resumePausedTitle": "Einrichtung pausiert",
-    "stepLabel": "Schritt {step}",
-    "continueFromStep": "Ab Schritt {step} fortsetzen"
+    "retryFromStep": "Ab Schritt {resumeStep} erneut versuchen"
   },
   "serverList": {
     "title": "Mailserver",
@@ -94,8 +90,7 @@
     "removeAria": "{name} aus der Mail-Liste entfernen",
     "installing": "Wird installiert",
     "running": "Läuft",
-    "incomplete": "Unvollständig",
-    "stoppedAt": "Gestoppt · Schritt {step}"
+    "incomplete": "Unvollständig"
   },
   "setup": {
     "title": "Mailserver-Einrichtung",
@@ -105,7 +100,7 @@
     "willBeAtBefore": "Dein Mailserver wird erreichbar sein unter ",
     "adminPasswordLabel": "Admin-Passwort",
     "passwordPlaceholder": "Starkes Passwort – oder auf Generieren klicken",
-    "passwordHint": "Mindestens 12 Zeichen. Wird nach der Einrichtung für die Anmeldung am Postfach verwendet — du kannst es später im Admin-Panel unten ändern.",
+    "passwordHint": "Wird nach der Einrichtung für die Anmeldung am Postfach verwendet. Du kannst es später im Admin-Panel unten ändern.",
     "startSetup": "Einrichtung starten",
     "adoptCta": "Du hast bereits einen Mailserver? Übernimm ihn",
     "whatInstalled": "Was installiert wird",
@@ -122,7 +117,6 @@
     "prerequisites": "Voraussetzungen",
     "prereq1": "Eine Domain mit DNS-Zugriff",
     "prereq2": "Port 25 wird von deinem Anbieter nicht blockiert",
-    "prereq2Relay": "Port 25 offen für eingehende Mail (ausgehende läuft über deinen Relay)",
     "prereq3": "Sauberer Ubuntu/Debian-Server (empfohlen)",
     "hide": "Verbergen",
     "reveal": "Anzeigen",

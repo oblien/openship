@@ -15,12 +15,7 @@ import { permission } from "../../lib/permission";
 import { isServerInOrg, param } from "../../lib/controller-helpers";
 import { streamRunSSE } from "../../lib/run-sse";
 import { streamSSE } from "../../lib/sse";
-import {
-  discoverServerStack,
-  revealContainerEnv,
-  type DiscoveredStack,
-  type DiscoveredService,
-} from "./docker-inspect.service";
+import { discoverServerStack, type DiscoveredStack, type DiscoveredService } from "./docker-inspect.service";
 import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "./migrate.service";
 import { maskEnv, maskServicesEnv } from "../../lib/secret-env";
 import { buildMigrationPreview } from "./migration-preflight";
@@ -178,38 +173,6 @@ export async function scanServerStream(c: Context) {
       });
     }
   });
-}
-
-/**
- * POST /migration/reveal-env  { serverId, containerId }
- *
- * #336: on-demand reveal of ONE discovered container's real env for the wizard's
- * env viewer. The scan masks env (`maskDiscoveredStack`); this returns it UNMASKED
- * for a single container the user chose to reveal. Write-gated (`server:write`, the
- * route tag) — same read/write split as the service-env reveal — so the masked
- * scan stays a `:read` and only a `:write` holder can pull the real secrets.
- */
-export async function revealServiceEnv(c: Context) {
-  const { serverId, containerId } = await c.req.json<{ serverId?: string; containerId?: string }>();
-  if (!serverId) return c.json({ error: "serverId is required" }, 400);
-  if (!containerId) return c.json({ error: "containerId is required" }, 400);
-
-  const ctx = getRequestContext(c);
-  await permission.assert(ctx, {
-    resourceType: "server",
-    resourceId: serverId,
-    action: "write",
-  });
-  if (!(await isServerInOrg(ctx, serverId))) {
-    return c.json({ error: "Server not found" }, 404);
-  }
-
-  try {
-    const environment = await revealContainerEnv(serverId, ctx.organizationId, containerId);
-    return c.json({ success: true, environment });
-  } catch (err) {
-    return c.json({ error: `Reveal failed: ${safeErrorMessage(err)}` }, 502);
-  }
 }
 
 /**

@@ -192,7 +192,7 @@ export async function updateBuildMode(c: Context) {
  * PATCH /deploy-defaults - set/clear the user's default deploy target.
  *
  * Body shape:
- *   { defaultDeployTarget: "server" | "cloud" | null,
+ *   { defaultDeployTarget: "local" | "server" | "cloud" | null,
  *     defaultServerId?: string | null }
  *
  * Pass nulls to clear. When target="server", defaultServerId is required;
@@ -210,7 +210,7 @@ export async function updateDeployDefaults(c: Context) {
 
   if (target === "__invalid__") {
     return c.json(
-      { error: "defaultDeployTarget must be 'server', 'cloud', or null" },
+      { error: "defaultDeployTarget must be 'local', 'server', 'cloud', or null" },
       400,
     );
   }

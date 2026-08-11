@@ -60,7 +60,6 @@
         "id": "ui",
         "label": "Qdrant Web UI",
         "source": "publicUrl:qdrant",
-        "kind": "url",
         "help": "The dashboard is at this URL under /dashboard. Paste the API key when it asks."
       },
       {

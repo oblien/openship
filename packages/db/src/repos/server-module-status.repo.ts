@@ -36,22 +36,6 @@ export function createServerModuleStatusRepo(db: Database) {
         });
     },
 
-    /**
-     * Drop a (server, module) row. Used when a scan finds the module is no longer
-     * what serves traffic on that box — leaving the row would keep reporting a
-     * version for an install nothing reads.
-     */
-    async remove(serverId: string, moduleName: string): Promise<void> {
-      await db
-        .delete(serverModuleStatus)
-        .where(
-          and(
-            eq(serverModuleStatus.serverId, serverId),
-            eq(serverModuleStatus.moduleName, moduleName),
-          ),
-        );
-    },
-
     /** All module statuses for a server (stable module order). */
     async listByServer(serverId: string): Promise<ServerModuleStatus[]> {
       const rows = await db.query.serverModuleStatus.findMany({

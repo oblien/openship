@@ -21,13 +21,10 @@ import {
   resolveOrgCloudUserId,
 } from "./transport";
 import { clearCloudSession } from "./session";
-import { cloudRequestError } from "./request-error";
 import type {
   CloudAccount,
   CloudClient,
   CloudClientScope,
-  CloudEdgeVerificationChallenge,
-  CloudEdgeVerificationResult,
   CloudGithubInstallation,
   CloudGithubInstallationToken,
   CloudGithubUserStatus,
@@ -232,10 +229,10 @@ export function cloudClient(scope: CloudClientScope): CloudClient {
           body: JSON.stringify(input),
         });
         if (!res) return null;
-        // Typed, because the verify-and-retry flow has to tell `target_unverified`
-        // (re-provable) from a slug conflict or a private-target refusal (not), and
-        // those arrive as the same 4xx shape.
-        if (!res.ok) throw await cloudRequestError(res, "Edge proxy sync");
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`Edge proxy sync failed (${res.status}): ${text}`);
+        }
         const body = await readCloudJson<{ ok: true; hostname: string }>(res);
         return body ?? null;
       },
@@ -245,28 +242,11 @@ export function cloudClient(scope: CloudClientScope): CloudClient {
           body: JSON.stringify({ slug }),
         });
         if (!res) return null; // not connected — best-effort no-op
-        if (!res.ok) throw await cloudRequestError(res, "Edge proxy deregister");
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`Edge proxy deregister failed (${res.status}): ${text}`);
+        }
         return readCloudJson<{ ok: true; removed: boolean }>(res) ?? null;
-      },
-      async requestVerification(target) {
-        const res = await fetchScoped("/api/cloud/edge-proxy/verify", {
-          method: "POST",
-          body: JSON.stringify({ target }),
-        });
-        if (!res) return null;
-        if (!res.ok) throw await cloudRequestError(res, "Edge target verification request");
-        const body = await readCloudJson<{ ok: true; verification: CloudEdgeVerificationChallenge }>(res);
-        return body?.verification ?? null;
-      },
-      async checkVerification(verificationId) {
-        const res = await fetchScoped("/api/cloud/edge-proxy/verify-check", {
-          method: "POST",
-          body: JSON.stringify({ verificationId }),
-        });
-        if (!res) return null;
-        if (!res.ok) throw await cloudRequestError(res, "Edge target verification check");
-        const body = await readCloudJson<{ ok: true; verification: CloudEdgeVerificationResult }>(res);
-        return body?.verification ?? null;
       },
     },
 

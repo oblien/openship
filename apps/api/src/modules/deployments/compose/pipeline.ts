@@ -28,11 +28,9 @@ import { BuildLogger } from "@repo/adapters";
 import type { BuildConfigSnapshotLike } from "../build-config";
 import {
   cleanupBuildArtifact,
-  onCancelled,
   onFailure,
   onReconciling,
   onSuccess,
-  routeIssuesWarning,
   setDeploymentStatus,
   type LifecycleContext,
 } from "../deployment-lifecycle";
@@ -42,7 +40,6 @@ import { webhookProxyTarget } from "../../../config";
 import { buildComposeImages } from "./build.service";
 import { deployComposeServices } from "./deploy.service";
 import { safeErrorMessage } from "@repo/core";
-import * as sessionManager from "../session-manager";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -57,9 +54,6 @@ export interface ComposePipelineOpts {
   /** Target host executor (SSH/local) — writes app template config files onto
    *  the Docker host for read-only bind-mounts. Null on cloud. */
   executor: CommandExecutor | null;
-  /** The target IS this machine (`platform.localHost`) — host-path writes go
-   *  through the host channel, not `executor`. */
-  localHost?: boolean;
   usesManagedRouting: boolean;
   logger: BuildLogger;
   ctx: LifecycleContext;
@@ -96,7 +90,6 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     ssl,
     system,
     executor,
-    localHost,
     usesManagedRouting,
     logger,
     ctx,
@@ -142,20 +135,6 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     refreshServiceIds,
   });
 
-  // Cancelled during the image phase: stop here. setDeploymentStatus below has no
-  // terminal-state guard, so without this the cancelled row would be flipped back
-  // to "deploying" and the services the user cancelled would start anyway.
-  if (composeBuild.cancelled) {
-    for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
-      await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
-        const detail = safeErrorMessage(err);
-        logger.log(`Warning: failed to clean up built service image ${serviceId}: ${detail}\n`, "warn");
-      });
-    }
-    await onCancelled(ctx, composeBuild.durationMs);
-    return;
-  }
-
   if (composeBuild.buildFailures.size > 0) {
     logger.log(
       `Build phase completed with ${composeBuild.buildFailures.size} failed service image${composeBuild.buildFailures.size === 1 ? "" : "s"}. Deploying available services...\n`,
@@ -167,7 +146,6 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   await setDeploymentStatus(dep.id, "deploying", {
     extra: { buildDurationMs: composeBuild.durationMs },
   });
-  sessionManager.broadcastInstallPhase(dep.id, { id: "services", status: "active" });
 
   const composeResult = await deployComposeServices(project, dep, runtime, logger, {
     builtImages: composeBuild.imageRefs,
@@ -178,7 +156,6 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     ssl,
     system,
     executor,
-    localHost,
     usesManagedRouting,
     serverId: snapshot.serverId,
     targetServiceIds,
@@ -235,10 +212,10 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // single-app pipeline uses (`edgeUnsynced` + `deployWarning` → routingUnsynced
   // → project attention + Domains-tab dot), cleared by Retry routing / next deploy.
   const routingWarning = composeResult.routeWarnings?.length
-    ? routeIssuesWarning(composeResult.routeWarnings)
+    ? `Some domains aren't routed yet — the app is deployed and running; fix DNS/routing and ` +
+      `Retry from the Domains tab: ${composeResult.routeWarnings.join("; ")}`
     : undefined;
   const successWarning = routingWarning ?? composeResult.warning;
-  sessionManager.broadcastInstallPhase(dep.id, { id: "ready", status: "done" });
   await onSuccess(ctx, {
     containerId: primary?.containerId ?? "compose",
     url: composeResult.publicUrl,

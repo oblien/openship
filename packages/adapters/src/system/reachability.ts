@@ -2,69 +2,20 @@ import { connect } from "node:net";
 import { request } from "node:http";
 
 /**
- * Why a TCP dial failed, as far as a socket can tell.
+ * Cheap TCP liveness probe. Opens a raw socket to `host:port` and resolves
+ * `true` if the connection is accepted within `timeoutMs`, `false` otherwise
+ * (connection refused, host unreachable, timeout, DNS failure). Never throws;
+ * always tears the socket down.
  *
- * The distinction IS the diagnosis. A dropped SYN produces nothing to receive, so
- * the dial can only time out — the signature of a default-deny packet filter. An RST
- * means the packet arrived somewhere and was rejected. A name that never resolved
- * never left the box at all. Collapsing these into one boolean is how a blocked
- * container→host channel came to be prescribed a firewall rule whatever the actual
- * fault was (#490), including for rootless Docker, where the host gateway simply
- * doesn't exist (#482).
+ * This is deliberately independent of the SSH executor (system-ssh agent vs
+ * in-process ssh2) — a TCP handshake to the SSH port is the fastest way to
+ * decide "is this host answering?" without paying the 15-20s SSH connect
+ * timeout that hangs the delete/reconcile paths when a server is down.
  */
-export type TcpProbeFailure =
-  /** Nothing came back before the deadline: dropped, or the host is gone. */
-  | "timeout"
-  /** RST — something answered and refused. Nothing listening, or a REJECT rule. */
-  | "refused"
-  /** The hostname didn't resolve on this side. */
-  | "unresolved"
-  /** The kernel had no route to the address. */
-  | "no_route"
-  /** Anything else; `code`/`message` carry what we were told. */
-  | "error";
-
-export type TcpProbeResult =
-  | { ok: true }
-  | { ok: false; reason: TcpProbeFailure; code?: string; message?: string };
-
-function classifyDialError(code: string | undefined): TcpProbeFailure {
-  switch (code) {
-    case "ECONNREFUSED":
-    case "ECONNRESET":
-      return "refused";
-    case "ENOTFOUND":
-    case "EAI_AGAIN":
-      return "unresolved";
-    case "EHOSTUNREACH":
-    case "ENETUNREACH":
-    case "ENETDOWN":
-      return "no_route";
-    // The kernel's own connect timeout, i.e. our `timeout` reported for us.
-    case "ETIMEDOUT":
-      return "timeout";
-    default:
-      return "error";
-  }
-}
-
-/**
- * TCP liveness probe that reports HOW it failed. See {@link TcpProbeFailure} for why
- * that matters. Never throws; always tears the socket down.
- *
- * Deliberately independent of the SSH executor (system-ssh agent vs in-process ssh2)
- * — a TCP handshake to the SSH port is the fastest way to decide "is this host
- * answering?" without paying the 15-20s SSH connect timeout that hangs the
- * delete/reconcile paths when a server is down.
- */
-export function probeTcpDetailed(
-  host: string,
-  port: number,
-  timeoutMs = 2500,
-): Promise<TcpProbeResult> {
-  return new Promise<TcpProbeResult>((resolve) => {
+export function probeTcp(host: string, port: number, timeoutMs = 2500): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
     let settled = false;
-    const done = (result: TcpProbeResult, socket?: ReturnType<typeof connect>) => {
+    const done = (result: boolean, socket?: ReturnType<typeof connect>) => {
       if (settled) return;
       settled = true;
       try {
@@ -77,32 +28,10 @@ export function probeTcpDetailed(
 
     const socket = connect({ host, port });
     socket.setTimeout(timeoutMs);
-    socket.once("connect", () => done({ ok: true }, socket));
-    socket.once("timeout", () =>
-      done({ ok: false, reason: "timeout", message: `no response within ${timeoutMs}ms` }, socket),
-    );
-    socket.once("error", (err: Error) => {
-      const errno = err as NodeJS.ErrnoException;
-      done(
-        {
-          ok: false,
-          reason: classifyDialError(errno.code),
-          ...(errno.code ? { code: errno.code } : {}),
-          ...(errno.message ? { message: errno.message } : {}),
-        },
-        socket,
-      );
-    });
+    socket.once("connect", () => done(true, socket));
+    socket.once("timeout", () => done(false, socket));
+    socket.once("error", () => done(false, socket));
   });
-}
-
-/**
- * Is `host:port` accepting connections within `timeoutMs`? `false` for every failure
- * mode; never throws. Callers that need to tell those modes apart — and so must not
- * flatten them — want {@link probeTcpDetailed}.
- */
-export async function probeTcp(host: string, port: number, timeoutMs = 2500): Promise<boolean> {
-  return (await probeTcpDetailed(host, port, timeoutMs)).ok;
 }
 
 /**

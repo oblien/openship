@@ -38,7 +38,6 @@ import {
   inputClassName,
 } from "./_shared/form-modal-content";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 
 interface MailboxesTabProps {
   serverId: string;
@@ -55,8 +54,6 @@ export function MailboxesTab({
 }: MailboxesTabProps) {
   const { showModal, hideModal } = useModal();
   const { t } = useI18n();
-  // Heading lives in the page header in mail view — see ../../_lib/mail-section.
-  const hoisted = useMailRailOwnsTabs(serverId);
   const [domains, setDomains] = useState<AdminDomain[]>([]);
   const [mailboxes, setMailboxes] = useState<AdminMailbox[]>([]);
   const [loadingDomains, setLoadingDomains] = useState(true);
@@ -240,17 +237,13 @@ export function MailboxesTab({
 
   return (
     <div className="space-y-5">
-      <div
-        className={`flex items-center gap-3 flex-wrap ${hoisted ? "justify-end" : "justify-between"}`}
-      >
-        {!hoisted && (
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-foreground">{t.emailsAdmin.mailboxes.heading}</h2>
-            <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-              {t.emailsAdmin.mailboxes.description}
-            </p>
-          </div>
-        )}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-foreground">{t.emailsAdmin.mailboxes.heading}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
+            {t.emailsAdmin.mailboxes.description}
+          </p>
+        </div>
         <button
           onClick={openCreate}
           disabled={!activeDomain}

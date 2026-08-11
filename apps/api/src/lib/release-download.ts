@@ -37,8 +37,9 @@
  *      operations 5min — keeps a hung CDN from wedging the API.
  *
  *   6. **Operator escape hatch.** Every throw mentions the env var
- *      (`OPENSHIP_RELEASE_DIST_PATH`) the operator can point at a local
- *      directory to bypass the download entirely.
+ *      (`OPENSHIP_RELEASE_DIST_PATH` or `MAIL_WEBMAIL_SOURCE_DIR`)
+ *      the operator can point at a local directory to bypass the
+ *      download entirely.
  *
  * Layout produced inside cacheDir:
  *
@@ -84,7 +85,7 @@ export interface FetchAndExtractReleaseInput {
   shaUrl?: string;
   /** OR a pinned inline sha256 hex (64 chars) for the external tarball. */
   sha256?: string;
-  /** Error-message escape-hatch hint (defaults to `OPENSHIP_RELEASE_DIST_PATH`). */
+  /** Error-message escape-hatch hint (defaults derived from the asset name). */
   envOverride?: string;
 }
 
@@ -96,11 +97,14 @@ export interface FetchAndExtractReleaseResult {
 }
 
 /**
- * The env-override an operator can point at a local dist to bypass the download.
- * Surfaced in every error message so a stuck download isn't a dead end; callers
- * with their own escape hatch pass `envOverride` instead.
+ * Map an asset filename to the env-override the operator can use to
+ * bypass the download. Surfaced in every error message so a stuck
+ * download isn't a dead end.
  */
-const DEFAULT_ENV_OVERRIDE = "OPENSHIP_RELEASE_DIST_PATH";
+function envOverrideFor(asset: string): string {
+  if (asset.startsWith("openship-email-")) return "MAIL_WEBMAIL_SOURCE_DIR";
+  return "OPENSHIP_RELEASE_DIST_PATH";
+}
 
 export class ReleaseDownloadError extends Error {
   readonly code = "RELEASE_DOWNLOAD_FAILED" as const;
@@ -124,7 +128,7 @@ export async function fetchAndExtractRelease(
 ): Promise<FetchAndExtractReleaseResult> {
   const { tag, cacheDir } = input;
   const external = Boolean(input.assetUrl);
-  const envOverride = input.envOverride ?? DEFAULT_ENV_OVERRIDE;
+  const envOverride = input.envOverride ?? (input.asset ? envOverrideFor(input.asset) : "OPENSHIP_RELEASE_DIST_PATH");
 
   const targetDir = resolve(cacheDir, tag);
 

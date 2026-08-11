@@ -105,46 +105,24 @@ export async function saveTunnel(c: Context) {
   if (remotePort === null) {
     return c.json({ error: "remotePort must be a port between 1 and 65535" }, 400);
   }
+  const localPort =
+    body.localPort === undefined || body.localPort === null
+      ? null
+      : parsePort(body.localPort, { allowZero: true });
+  if (body.localPort !== undefined && body.localPort !== null && localPort === null) {
+    return c.json({ error: "localPort must be 0 (auto) or a port between 1 and 65535" }, 400);
+  }
   const remoteHost =
     typeof body.remoteHost === "string" && body.remoteHost.trim()
       ? body.remoteHost.trim()
       : "127.0.0.1";
-
-  // Distinguish "omitted" from "explicitly cleared": the Ports card always
-  // sends localPort + autoStart, but the "Open on localhost" affordance sends
-  // only remotePort. Fields the caller omits are preserved (below) so a quick
-  // open can't wipe a forward's configured local port / auto-start.
-  const localProvided = body.localPort !== undefined;
-  const autoStartProvided = body.autoStart !== undefined;
-
-  let localPort: number | null = null;
-  if (localProvided) {
-    localPort =
-      body.localPort === null ? null : parsePort(body.localPort, { allowZero: true });
-    if (body.localPort !== null && localPort === null) {
-      return c.json({ error: "localPort must be 0 (auto) or a port between 1 and 65535" }, 400);
-    }
-  }
-  let autoStart = body.autoStart === true;
-
-  if (!localProvided || !autoStartProvided) {
-    const existing = await repos.serverTunnel.getByTarget(
-      guard.serverId,
-      remotePort,
-      remoteHost,
-    );
-    if (existing) {
-      if (!localProvided) localPort = existing.localPort;
-      if (!autoStartProvided) autoStart = existing.autoStart;
-    }
-  }
 
   const row = await repos.serverTunnel.upsert({
     serverId: guard.serverId,
     remotePort,
     remoteHost,
     localPort,
-    autoStart,
+    autoStart: body.autoStart === true,
   });
 
   return c.json(serializeTunnel(row), 201);

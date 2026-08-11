@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { Permission } from "@repo/db";
 import {
   filterToolsForPrincipal,
   type McpToolDef,
@@ -73,16 +72,8 @@ const billingGet = tool({
   name: "get_billing",
   method: "GET",
   // org-singleton with no path params → wildcard, but reachable by a scoped token
-  // holding {billing,"*"} since the wildcard arm authorizes that directly.
+  // holding {billing,"*"} since the restricted arm authorizes that directly.
   perm: { root: "billing", leaf: "billing", action: "read", wildcard: true, grantRoot: "billing" },
-});
-// The verb pair for `billingGet`: same type, same wildcard shape, write instead of
-// read. Exists so the filter's verb-awareness is testable — the old
-// singleton branch advertised both to any billing-granted token.
-const billingUpdate = tool({
-  name: "patch_billing",
-  method: "PATCH",
-  perm: { root: "billing", leaf: "billing", action: "write", wildcard: true, grantRoot: "billing" },
 });
 
 // Content-serving github tools. `source` marks them as needing a capability
@@ -106,35 +97,19 @@ const ghDetect = tool({
 
 const ALL = [
   ghGetRepo, ghBranches, ghListAll, projGet, projUpdate, projList, projCreate, billingGet,
-  billingUpdate, ghFile, ghFiles, ghDetect,
+  ghFile, ghFiles, ghDetect,
 ];
 const names = (tools: McpToolDef[]) => tools.map((t) => t.name).sort();
 
-/**
- * `wildcards` is the shorthand for "holds {type,'*',perms}". It also seeds
- * `grantedRootTypes`, because a real wildcard row IS a grant on that type and
- * `resolveMcpPrincipal` puts it in both — a fixture that set only one of them
- * would be a state the server can never produce.
- *
- * `grantedRootTypes` alone therefore means "holds PER-ID grants on these types",
- * which is the distinction the wildcard arm turns on.
- */
-function principal(
-  p: Partial<McpPrincipal> & { wildcards?: Record<string, Permission[]> },
-): McpPrincipal {
-  const wildcards = p.wildcards ?? {};
-  const granted = new Set([...(p.grantedRootTypes ?? []), ...Object.keys(wildcards)]);
+function principal(p: Partial<McpPrincipal>): McpPrincipal {
   return {
     role: p.role ?? "restricted",
     readOnly: p.readOnly ?? false,
-    grantedRootTypes: granted,
-    wildcardGrants: p.wildcardGrants ?? new Map(Object.entries(wildcards)),
+    grantedRootTypes: p.grantedRootTypes ?? new Set(),
     canCreateProjects: p.canCreateProjects ?? false,
     sourceCapabilities: p.sourceCapabilities ?? new Set(),
   };
 }
-
-const RWA: Permission[] = ["read", "write", "admin"];
 
 describe("filterToolsForPrincipal", () => {
   it("owner sees everything", () => {
@@ -177,45 +152,25 @@ describe("filterToolsForPrincipal", () => {
   });
 
   /**
-   * Wildcard ops are the mirror of the `github '*' not found` bug: once
-   * `checkPermission`'s wildcard arm authorizes {leaf,"*"} from a wildcard grant, a
+   * Org-singleton wildcards are the mirror of the `github '*' not found` bug: once
+   * the restricted arm of checkPermission authorizes {leaf,"*"} from a grant, a
    * blanket `wildcard → hidden` rule would hide tools the token CAN call. Listed
-   * iff a wildcard grant on that type permits the asserted verb — nothing more,
-   * nothing less, and the verb half is what the old singleton-only branch missed.
+   * iff the grant is held — nothing more, nothing less.
    */
   it("a billing-granted scoped token SEES the org-singleton billing tool", () => {
-    const out = filterToolsForPrincipal(ALL, principal({ wildcards: { billing: ["read"] } }));
+    const out = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set(["billing"]) }));
     expect(names(out)).toContain("get_billing");
-  });
-
-  it("a READ-only wildcard grant does not advertise the WRITE tool on the same type", () => {
-    // The tightening. `permitsAction(["read"], "write")` is false, so `patch_billing`
-    // would 404 — the old branch listed it because a billing grant merely existed.
-    const out = filterToolsForPrincipal(ALL, principal({ wildcards: { billing: ["read"] } }));
-    expect(names(out)).not.toContain("patch_billing");
-  });
-
-  it("a write-capable wildcard grant sees both verbs (cumulative)", () => {
-    const out = filterToolsForPrincipal(ALL, principal({ wildcards: { billing: ["read", "write"] } }));
-    expect(names(out)).toContain("get_billing");
-    expect(names(out)).toContain("patch_billing");
   });
 
   it("a scoped token without a billing grant never sees it", () => {
     for (const g of ["project", "github", "github_repository"]) {
-      const perId = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set([g]) }));
-      expect(names(perId), `per-id grant=${g}`).not.toContain("get_billing");
-      // A wildcard grant on ANOTHER type must not leak across the type boundary.
-      const wild = filterToolsForPrincipal(ALL, principal({ wildcards: { [g]: RWA } }));
-      expect(names(wild), `wildcard grant=${g}`).not.toContain("get_billing");
+      const out = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set([g]) }));
+      expect(names(out), `grant=${g}`).not.toContain("get_billing");
     }
   });
 
   it("an all-github grant sees the org-wide repo list; a repo-scoped one does not", () => {
-    // `github` is not currently in the grantable surface, so this documents the
-    // RULE (a wildcard grant on the asserted type satisfies it) rather than a state
-    // the mint can produce. It guards against special-casing github here.
-    const all = filterToolsForPrincipal(ALL, principal({ wildcards: { github: ["read"] } }));
+    const all = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set(["github"]) }));
     expect(names(all)).toContain("get_github_repos");
 
     const repoOnly = filterToolsForPrincipal(
@@ -225,17 +180,9 @@ describe("filterToolsForPrincipal", () => {
     expect(names(repoOnly)).not.toContain("get_github_repos");
   });
 
-  it("a LIST wildcard needs a WILDCARD grant — a per-id grant does not reach it", () => {
-    const perId = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set(["project"]) }));
-    expect(names(perId)).not.toContain("get_projects");
-  });
-
-  it("a LIST wildcard IS listed for a matching wildcard grant", () => {
-    // Previously hard-denied on the grounds that "no arm authorizes it". One now
-    // does, so hiding it would be the same drift, inverted. A `:list` tag asserts
-    // `read`, so a read-only wildcard is enough.
-    const out = filterToolsForPrincipal(ALL, principal({ wildcards: { project: ["read"] } }));
-    expect(names(out)).toContain("get_projects");
+  it("a LIST wildcard stays hidden even for a matching grant — no arm authorizes it", () => {
+    const out = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set(["project"]) }));
+    expect(names(out)).not.toContain("get_projects");
   });
 
   /**

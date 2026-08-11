@@ -58,10 +58,7 @@ export async function getRollbackCapacity(
     ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
     : null;
   const serverId = (activeDep?.meta as { serverId?: string } | null)?.serverId;
-  // An unreachable host must degrade the LABEL, not the endpoint: everything
-  // else here is persisted, so a failed probe still renders a truthful window
-  // with the disk figures blank.
-  const disk = activeDep ? await getHostDisk(serverId, organizationId).catch(() => null) : null;
+  const disk = activeDep ? await getHostDisk(serverId, organizationId) : null;
 
   return {
     window: detail.window,

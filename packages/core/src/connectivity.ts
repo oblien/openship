@@ -59,7 +59,6 @@ const MESSAGE_PATTERNS: Array<[RegExp, ConnectivityCode]> = [
   [/all configured authentication methods failed|permission denied|publickey|password rejected|authentication failed|auth fail/i, "auth_failed"],
   [/econnrefused|connection refused|ehostunreach|enetunreach|no route to host|host unreachable|enotfound|getaddrinfo|dns/i, "unreachable"],
   [/etimedout|timed out|timeout|keepalive timeout/i, "timeout"],
-  [/socket hang up|epipe|premature close/i, "protocol_error"],
   [/econnreset|connection reset|connection lost|connection closed|handshake failed|not connected|channel open failure|open failed|unexpected response/i, "protocol_error"],
   [/eacces|permission denied|not permitted|access denied|forbidden|read-only|not writable/i, "permission_denied"],
 ];

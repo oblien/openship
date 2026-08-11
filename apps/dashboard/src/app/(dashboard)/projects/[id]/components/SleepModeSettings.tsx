@@ -37,7 +37,7 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
     <div className="bg-card rounded-2xl border border-border/50 p-6">
       <div className="flex items-center gap-3 mb-5">
         <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
-          {generateIcon('preferences-95-1658432731.png', 24, 'var(--primary)')}
+          {generateIcon('preferences-95-1658432731.png', 24, 'hsl(var(--primary))')}
         </div>
         <div>
           <h3 className="text-lg font-semibold text-foreground">{t.projectSettings.sleep.title}</h3>
@@ -121,7 +121,7 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
       {/* Info Box */}
       <div className="mt-4 p-3 bg-warning-bg border border-warning-border rounded-xl">
         <div className="flex items-start gap-2">
-          {generateIcon('info%20circle-16-1662452248.png', 16, 'var(--primary)')}
+          {generateIcon('info%20circle-16-1662452248.png', 16, 'hsl(var(--primary))')}
           <div>
             <p className="text-xs font-semibold text-warning mb-0.5">{t.projectSettings.sleep.infoTitle}</p>
             <p className="text-sm text-warning/80 leading-relaxed">

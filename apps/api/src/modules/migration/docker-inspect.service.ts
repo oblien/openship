@@ -20,8 +20,6 @@ import {
   reconcileStack,
   reconcileOpenshipProjects,
   isBuildHelper,
-  imageRefKey,
-  toDiscoveredService,
   type DiscoveredStack,
 } from "./docker-reconcile";
 import { scanProxyRoutes } from "./proxy-route-scan";
@@ -215,21 +213,17 @@ export async function discoverServerStack(
         step("Scanning existing reverse proxy…");
         const proxyRoutesByPort = await scanProxyRoutes(serverId);
 
-        // Fetch each distinct image's baked-in env + CMD once (candidates AND
-        // openship containers), so discovery can tell which env the OPERATOR set
-        // from what the image merely bakes in (order matters — see
-        // splitEnvByProvenance) and can drop a command that only restates the
-        // image default. Keyed by CONTENT ID (imageRefKey), not the tag: a tag that
-        // moved since the container started resolves to a different image, whose
-        // defaults would drop real config or keep stale vars.
+        // Fetch each distinct image's baked-in env once (candidates AND openship
+        // containers), so discovery can subtract image defaults and import only the
+        // vars the operator actually set.
         const uniqueImages = [
-          ...new Set([...details, ...managedDetails].map(imageRefKey).filter(Boolean)),
+          ...new Set([...details, ...managedDetails].map((d) => d.image).filter(Boolean)),
         ];
         const imageInfoPairs = await mapLimit(uniqueImages, 4, async (ref) => {
           const [env, cmd] = await Promise.all([rt.inspectImageEnv(ref), rt.inspectImageCmd(ref)]);
-          return [ref, { env, cmd }] as const;
+          return [ref, { env: new Set(env), cmd }] as const;
         });
-        const imageEnv = new Map(imageInfoPairs.map(([ref, v]) => [ref, v.env]));
+        const imageDefaults = new Map(imageInfoPairs.map(([ref, v]) => [ref, v.env]));
         const imageCmds = new Map(imageInfoPairs.map(([ref, v]) => [ref, v.cmd]));
 
         // Recover Openship projects: read the on-server manifest (rich, faithful
@@ -305,7 +299,7 @@ export async function discoverServerStack(
             manifestById,
             knownHereIds,
             snapshotIds,
-            imageEnv,
+            imageDefaults,
             imageCmds,
           });
           alreadyManaged = managedApp.filter((c) =>
@@ -320,7 +314,7 @@ export async function discoverServerStack(
           networks,
           declared,
           alreadyManaged,
-          imageEnv,
+          imageDefaults,
           imageCmds,
           openshipProjects,
           proxyRoutesByPort,
@@ -328,62 +322,6 @@ export async function discoverServerStack(
       })(),
       DISCOVERY_TIMEOUT_MS,
       `timed out after ${DISCOVERY_TIMEOUT_MS / 1000}s scanning the server's containers, volumes and networks — the server may be under heavy load or a Docker API call over SSH stalled; retrying usually succeeds`,
-    );
-  } finally {
-    await rt.dispose();
-  }
-}
-
-/**
- * Reveal ONE container's operator env, UNMASKED, for the migration wizard's env
- * viewer (the per-row eye / "Show values"). Reproduces discovery's env computation
- * for a single container — inspect the container, its image env and its compose
- * declaration, then run the SAME `toDiscoveredService` merge — so the record is
- * byte-for-byte the keys the wizard shows masked (`maskDiscoveredStack`), only
- * with the real values. One round-trip, not a full re-scan. Read-only on the box.
- *
- * Write-gated at the route (`server:write`): the masked scan is a `:read`,
- * revealing the real secret is a `:write`, the same split as the service-env
- * reveal (#336).
- */
-export async function revealContainerEnv(
-  serverId: string,
-  organizationId: string,
-  containerId: string,
-): Promise<Record<string, string>> {
-  const rt = await createServerDockerRuntime(serverId, organizationId);
-  try {
-    await withTimeout(
-      rt.assertReachable(),
-      REACHABILITY_TIMEOUT_MS,
-      `timed out after ${REACHABILITY_TIMEOUT_MS / 1000}s connecting to the Docker daemon`,
-    ).catch((err) => {
-      throw new Error(`Docker daemon is not reachable on this server. ${safeErrorMessage(err)}`);
-    });
-
-    return await withTimeout(
-      (async () => {
-        const detail = await rt.inspectContainer(containerId);
-        if (!detail) throw new Error("Container not found on this server.");
-        // Same inputs as discovery: image env (provenance split) + the compose
-        // declaration (keeps declared keys that equal the image default). Skip the
-        // image lookup when there's no resolvable ref — discovery drops those too
-        // (`.filter(Boolean)`), and an empty ref means "import all env" either way.
-        const ref = imageRefKey(detail);
-        const groups = new Map<string, DockerContainerDetail[]>([
-          [detail.composeProject ?? "", [detail]],
-        ]);
-        const [declared, imageEnv] = await Promise.all([
-          readComposeDeclarations(serverId, groups),
-          ref ? rt.inspectImageEnv(ref) : Promise.resolve([]),
-        ]);
-        const declaredSvc = detail.composeService
-          ? declared.get(detail.composeService)
-          : undefined;
-        return toDiscoveredService(detail, declaredSvc, imageEnv).env;
-      })(),
-      DISCOVERY_TIMEOUT_MS,
-      `timed out after ${DISCOVERY_TIMEOUT_MS / 1000}s reading the container's environment`,
     );
   } finally {
     await rt.dispose();

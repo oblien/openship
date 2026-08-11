@@ -19,7 +19,7 @@ import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets
 // CloneStrategyNudge.tsx for the hook + modal-content exports.
 import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
-import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
+import { usesServiceDeployment } from "@/context/deployment/types";
 import { usePlatform, canUseCloudConnection } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
@@ -116,31 +116,16 @@ const DeployRepository: React.FC = () => {
     // Desktop-only: resolve available deploy targets (server / cloud)
     const targets = useDesktopTargets();
 
-    // A saved project pins the deploy target only if it actually HAS one, so the gate is
-    // the hydration RESULT, not the fact that a project is being loaded:
-    //   "pending" — config-edit or a repo-less project/services deploy, target not read
-    //               back yet. Seeders off, so the summary bar can't flash a default
-    //               before the real target lands.
-    //   "saved"   — initializeFromProject hydrated one. Seeders stay off; nothing may
-    //               overwrite it with the user's global default.
-    //   "none"    — hydration ran and the project is bound to nothing and has never
-    //               deployed (a repo-less catalog app whose first deploy is this one).
-    //               Seeders take over so the destination goes through the same validated
-    //               pick a fresh deploy gets. This branch is the bug: it used to be
-    //               "saved" by assumption, no hydration existed to make it true, and
-    //               DEFAULT_CONFIG's "cloud" rode all the way into the deploy payload.
+    // Existing/saved projects (config-edit, or a repo-less one-click / services
+    // project) already carry a deploy target — it hydrates from
+    // initializeFromProject. The silent seed stays OFF for them so it can never
+    // overwrite that saved target with the user's global default.
     const decodedForTarget = React.useMemo(() => (slug ? decodeSlug(slug) : null), [slug]);
-    const loadsSavedTarget = isConfigEdit || decodedForTarget?.kind === "project";
-    const [savedTargetState, setSavedTargetState] = useState<"pending" | "saved" | "none">(
-        loadsSavedTarget ? "pending" : "none",
-    );
-    // applyLastPick is re-run synchronously the instant hydration resolves — before that
-    // setState has re-rendered — so its gate reads the ref, not the state.
-    const savedTargetRef = useRef<"pending" | "saved" | "none">(loadsSavedTarget ? "pending" : "none");
+    const isExistingProject = isConfigEdit || decodedForTarget?.kind === "project";
 
     // Seed the deploy target SILENTLY so the config view's summary bar is correct
-    // without ever mounting the full target step.
-    useSeedDeployTarget(targets, canPickTarget && savedTargetState === "none");
+    // without ever mounting the full target step. New deploys only.
+    useSeedDeployTarget(targets, canPickTarget && !isExistingProject);
 
     // The wizard ALWAYS lands on the config step. The deploy target is seeded
     // silently — applyLastPick (below, useLayoutEffect) for the fast localStorage
@@ -167,10 +152,9 @@ const DeployRepository: React.FC = () => {
     const appliedLastPickRef = useRef(false);
 
     const applyLastPick = useCallback(() => {
-        // Don't override a SAVED project's hydrated target, and don't guess ahead of
-        // hydration either (same gate as useSeedDeployTarget) — the last-pick memory
-        // applies to deploys with no target of their own.
-        if (!canPickTarget || savedTargetRef.current !== "none" || appliedLastPickRef.current) return;
+        // Don't override a SAVED project's hydrated target (same gate as
+        // useSeedDeployTarget) — the last-pick memory is for NEW deploys only.
+        if (!canPickTarget || isExistingProject || appliedLastPickRef.current) return;
         const last = typeof window !== "undefined" ? lastPickStore.read() : null;
         if (!last) return;
         if (last.target === "server") {
@@ -186,12 +170,11 @@ const DeployRepository: React.FC = () => {
         } else if (last.target === "cloud") {
             appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
+        } else if (last.target === "local") {
+            appliedLastPickRef.current = true;
+            updateConfig({ deployTarget: "local", serverId: undefined });
         }
-        // No "local" branch: the memory only stores a pickable target, and a legacy
-        // stored one fails lastPickStore's validation — so it falls through to the
-        // seeded auto-pick, which lands on this box's own server row rather than on a
-        // target with no card and no address.
-    }, [canPickTarget, targets.servers, updateConfig]);
+    }, [canPickTarget, isExistingProject, targets.servers, updateConfig]);
 
     useLayoutEffect(() => {
         applyLastPick();
@@ -279,14 +262,6 @@ const DeployRepository: React.FC = () => {
             // the guard and re-apply so the summary bar (and the rest of the
             // page) reflects the user's actual saved preference.
             if (result.success) {
-                // Hydration is authoritative for a saved project's target — settle the
-                // gate BEFORE re-applying last-pick, or the browser-global memory
-                // overwrites the destination this project already had.
-                if (loadsSavedTarget) {
-                    const pinned = "savedTarget" in result && result.savedTarget ? "saved" : "none";
-                    savedTargetRef.current = pinned;
-                    setSavedTargetState(pinned);
-                }
                 appliedLastPickRef.current = false;
                 applyLastPick();
             }
@@ -330,7 +305,7 @@ const DeployRepository: React.FC = () => {
         };
 
         initialize();
-    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, uploadStack, uploadName, toast, t]);
+    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, force, projectId, branch, uploadStack, uploadName, toast, t]);
 
     if (loading) {
         return <SkeletonLoader source={decodedSource} />;
@@ -423,7 +398,7 @@ const DeployRepository: React.FC = () => {
                                     buildStrategy={config.buildStrategy}
                                     showBuildStrategy={isSingleAppFlow}
                                     cloudResourceTier={config.cloudResourceTier}
-                                    hasServer={workloadOf(config.options) !== "static"}
+                                    hasServer={config.options.hasServer}
                                     runtimeMode={config.runtimeMode}
                                     isServices={usesServiceDeployment(config)}
                                     rollbackWindow={config.rollbackWindow}

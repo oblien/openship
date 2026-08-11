@@ -12,7 +12,6 @@
  *   - analytics-scraper.ts  (periodic scrape via SSH)
  */
 
-import { safeErrorMessage } from "@repo/core";
 import { repos, type Project } from "@repo/db";
 import {
   OPENRESTY_MGMT_PORT,
@@ -94,9 +93,7 @@ async function resolveProjectTrackedDomains(project: Project): Promise<string[]>
  *
  * Server resolution order:
  *   1. Active deployment's `meta.serverId`
- *   2. This box's own canonical (`isLocal`) row, scoped to the project's organization
- *
- * There is no third step: a project whose org has neither is not observable from here.
+ *   2. First configured server (single-server setups)
  */
 export async function resolveProjectTracking(projectId: string): Promise<ProjectTracking | null> {
   const source = await resolveProjectTrafficSource(projectId);
@@ -130,23 +127,10 @@ async function buildTrafficSourcesForDomains(
     }));
   }
 
-  // Server: the deployment's own meta, else THIS box's canonical row — the same rule
-  // `postEdgeMgmt` uses below, so read and write resolve one machine.
-  //
-  // NOT `server.list()[0]`: that query is unscoped by organization AND by `isLocal`
-  // (server.repo.ts), so it returns the oldest row in the whole instance. On a box
-  // whose oldest row is a remote or foreign-org server — desktop, host-control-off,
-  // or an install that added remotes before its own row existed — a derived-local
-  // project (no `meta.serverId`, which is every one of them: deployment-runtime
-  // records the id only for the "server" target) had its traffic read from, and its
-  // tracked hostnames written to, a machine it never deployed to. `sshManager.acquire`
-  // looks the id up with no organizationId, and the caller holds only `{project, read}`.
-  //
-  // No local row means this box is not a deploy target, so there is no edge of ours to
-  // read and returning nothing is the correct answer, not a guess at another host.
+  // Server: deployment meta first, then first configured server.
   if (!serverId) {
-    const local = await repos.server.findLocal(project.organizationId).catch(() => undefined);
-    serverId = local?.id ?? null;
+    const servers = await repos.server.list();
+    serverId = servers[0]?.id ?? null;
   }
   if (!serverId) return [];
 
@@ -353,61 +337,6 @@ export async function postMgmt<T>(serverId: string, path: string): Promise<T | n
  * POST a JSON body to the OpenResty management API through the SSH tunnel.
  * Used to push per-route rules into the edge's `rules` shared dict (reload-free).
  */
-/**
- * POST to an edge's mgmt API — ONE way in, whichever box that edge is on.
- *
- * ── Why there is no loopback branch ─────────────────────────────────────────
- *
- * This used to fetch `http://127.0.0.1:9145` when `serverId` was null, on the theory that
- * "local" means the API can reach the edge on its own loopback. That is wrong on the
- * install shape we ship: the API and the edge are SEPARATE CONTAINERS, so 127.0.0.1 inside
- * the API container is the API container, and the request either connects to nothing or —
- * worse on a control plane that also runs an edge — configures the wrong box's edge. It
- * failed silently because the call was already `.catch()`-ed.
- *
- * The loopback that IS correct is the one inside the edge container, and `mgmtRequest`
- * already owns it: SSH port-forward when the executor has one, otherwise `docker exec`
- * into the edge and curl its own loopback. Both go through a serverId.
- *
- * So "local" is not a transport, it is a SERVER ROW — the auto-registered "This Server".
- * `sshManager.acquire` returns the pooled host channel for it (see edge-host-executor:
- * "SSH-to-host when the API is itself containerized"), which makes the local box just
- * another server and leaves exactly one code path to reach any edge.
- *
- * A null serverId with no local row means this box is not a deploy target — host control
- * off, or the SaaS control plane — so there is no edge of ours to configure and doing
- * nothing is the correct answer, not a loopback guess.
- *
- * Best-effort by contract: a push that cannot be delivered logs and resolves. The database
- * is the source of truth and every caller re-pushes on route apply, so a missed push costs
- * freshness until the next apply, never correctness. BOTH outcomes swallow — the server
- * branch used to let a tunnel failure propagate, so a dead box could abort a whole routing
- * reconcile over a metrics push.
- */
-export async function postEdgeMgmt(
-  serverId: string | null,
-  path: string,
-  json: unknown,
-  organizationId?: string,
-): Promise<void> {
-  let target = serverId;
-  if (!target) {
-    if (!organizationId) {
-      systemDebug("analytics", `${path}: no serverId and no org to resolve the local one`);
-      return;
-    }
-    const local = await repos.server.findLocal(organizationId).catch(() => undefined);
-    if (!local) {
-      systemDebug("analytics", `${path}: no local server row; nothing of ours to configure`);
-      return;
-    }
-    target = local.id;
-  }
-  await postMgmtJson(target, path, json).catch((err) =>
-    console.warn(`[edge-mgmt] ${path} failed for server ${target}: ${safeErrorMessage(err)}`),
-  );
-}
-
 export async function postMgmtJson<T>(
   serverId: string,
   path: string,
@@ -475,65 +404,28 @@ async function execMgmtStream(serverId: string, path: string) {
   const stream = new PassThrough();
   const url = `http://127.0.0.1:${OPENRESTY_MGMT_PORT}${path}`;
 
-  // Tears the transport down on browser disconnect: LocalExecutor kills the curl child,
-  // SshExecutor closes the ssh2 channel (which EPIPEs the remote curl within a heartbeat).
-  // The edge log source is now the shared ring read by a per-connection cursor, so a
-  // lingering orphan can no longer steal frames from the next subscriber — but it still
-  // holds an SSH session, so honouring the signal keeps refreshes from exhausting
-  // sshd `MaxSessions`. The bare→containerized switch removed the TCP socket whose close
-  // used to do this for free; the abort signal is the replacement handle.
-  const abort = new AbortController();
   let ended = false;
-  let torndown = false;
-  let forwarded = false;
-  const errParts: string[] = [];
   const finish = () => {
     if (ended) return;
     ended = true;
     stream.end();
   };
 
-  // `-f` fails fast on an HTTP error (no body, non-zero exit) and `-S` lets curl print
-  // WHY to stderr even under `-s` — together they turn a dead/misrouted edge from a
-  // silent empty stream into a diagnosable one. `-N` keeps SSE unbuffered.
+  // Fire-and-forget: resolves when curl exits (client abort or edge close), which
+  // is exactly when the SSE stream should end.
   void executor
-    .streamExec(
-      containerCommand(container, `curl -fsSN ${sq(url)}`),
-      (log) => {
-        if (ended) return;
-        // Only stdout is the SSE body. stderr (curl's own error under `-S`) is a
-        // DIAGNOSTIC — forwarding it as bytes would both corrupt framing (dropped by
-        // the client) and mask the real failure by making `forwarded` go true.
-        if (log.level !== "info") {
-          if (log.message) errParts.push(log.message);
-          return;
-        }
-        // Byte-exact, NO added newline: frame boundaries belong to the edge
-        // (pipe_stream.lua emits `event: request\ndata: …\n\n`); a chunk is an arbitrary
-        // slice, so any reinterpretation here truncates a frame and the client drops it.
-        const bytes = streamChunkBytes(log);
-        if (bytes.length) forwarded = true;
-        stream.write(bytes);
-      },
-      { signal: abort.signal },
-    )
-    .then((result) => {
-      // curl exited on its own. If it never forwarded a byte and this wasn't an
-      // intentional teardown, the browser would otherwise just watch the socket close
-      // with no reason — the exec transport has no HTTP status to hand back (it used to
-      // report 200 unconditionally, so a dead edge looked identical to an idle one).
-      // Speak the failure in a frame the client already understands (`event: error`),
-      // the same shape the tunnel-null path in the controller uses.
-      if (!torndown && !forwarded && !ended) {
-        const detail = errParts.join("").trim() || (result?.output || "").trim();
-        const reason =
-          `Couldn't reach the Openship edge's log service on this server` +
-          `${detail ? `: ${detail}` : ""}. Make sure the edge is running ` +
-          "(`docker ps` should show openship-edge) and redeploy the routing if it isn't.";
-        stream.write(`event: error\ndata: ${JSON.stringify({ error: reason })}\n\n`);
-      }
-      finish();
+    .streamExec(containerCommand(container, `curl -sN ${sq(url)}`), (log) => {
+      // Byte-exact, and NO added newline. This used to write `${log.message}\n`,
+      // which broke SSE framing: chunks split anywhere, so the extra newline landed
+      // inside a `data:` line as often as after one. A frame cut mid-JSON parses as
+      // truncated and the browser drops the event (the client swallows malformed
+      // data by design), which is why the live tail showed nothing until you
+      // reloaded and the history fetch filled it in. Frame boundaries belong to the
+      // edge (pipe_stream.lua already emits `event: request\ndata: …\n\n`); this
+      // transport must not reinterpret them.
+      if (!ended) stream.write(streamChunkBytes(log));
     })
+    .then(finish)
     .catch((err) => {
       systemDebug("analytics", `execMgmtStream ended: ${err instanceof Error ? err.message : String(err)}`);
       finish();
@@ -541,13 +433,11 @@ async function execMgmtStream(serverId: string, path: string) {
 
   return {
     stream,
-    // No HTTP response envelope to read — curl consumed it. A real failure now arrives as
-    // the `error` frame above rather than a status code, so this stays 200.
+    // The exec transport has no HTTP response envelope to read — curl consumed it.
+    // Reaching here means the stream is open, so report the equivalent of 200.
     statusCode: 200,
     headers: {} as Record<string, string>,
     destroy: () => {
-      torndown = true;
-      abort.abort();
       finish();
       stream.destroy();
     },

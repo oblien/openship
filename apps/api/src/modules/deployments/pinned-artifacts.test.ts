@@ -40,40 +40,15 @@ describe("pinned artifact lookup", () => {
 });
 
 describe("snapshotNeedsGitSource — the clone / token / GitHub-access gate", () => {
-  const repo = "https://github.com/acme/app.git";
-
-  it("single app: a git repo needs source normally, not when its image is pinned", () => {
-    expect(snapshotNeedsGitSource({ repoUrl: repo, hasBuild: true })).toBe(true);
-    expect(
-      snapshotNeedsGitSource({ repoUrl: repo, hasBuild: true, handoverAppImage: "openship/app:1" }),
-    ).toBe(false);
-  });
-
-  it("#538-A: a Dockerfile app (hasBuild=false) STILL clones its git repo for build context", () => {
-    // The bug: `hasBuild !== false` dropped the clone token for a docker stack,
-    // whose detector-assigned hasBuild is false yet still needs the repo. The
-    // clone decision is the SOURCE axis, independent of whether a build runs.
-    expect(snapshotNeedsGitSource({ repoUrl: repo, framework: "docker", hasBuild: false })).toBe(
-      true,
-    );
-    // Explicit source/build overrides reach the same answer.
-    expect(snapshotNeedsGitSource({ source: "git", build: "dockerfile", hasBuild: false })).toBe(
-      true,
+  it("single app: needs source normally, not when its image is pinned", () => {
+    expect(snapshotNeedsGitSource({ hasBuild: true })).toBe(true);
+    expect(snapshotNeedsGitSource({ hasBuild: true, handoverAppImage: "openship/app:1" })).toBe(
+      false,
     );
   });
 
-  it("no git source (upload / local dir / release / image) needs no clone", () => {
-    // A bare hasBuild flag with no repo signal is NOT a git source.
-    expect(snapshotNeedsGitSource({ hasBuild: true })).toBe(false);
+  it("single app with the build disabled needs no source either way", () => {
     expect(snapshotNeedsGitSource({ hasBuild: false })).toBe(false);
-    // A staged local directory is not cloned.
-    expect(snapshotNeedsGitSource({ localPath: "/srv/app", hasBuild: true })).toBe(false);
-    // A folder upload is not cloned.
-    expect(snapshotNeedsGitSource({ uploadWorkspaceId: "up_1", hasBuild: true })).toBe(false);
-    // A release/dist tarball deploys verbatim.
-    expect(snapshotNeedsGitSource({ releaseVersion: "1.2.3", hasBuild: true })).toBe(false);
-    // An explicit image source is never cloned.
-    expect(snapshotNeedsGitSource({ source: "image", repoUrl: repo })).toBe(false);
   });
 
   it("compose: a registry-image-only stack clones nothing", () => {

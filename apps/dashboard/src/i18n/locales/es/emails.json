@@ -3,7 +3,6 @@
     "title": "Servidor de correo",
     "subtitle": "Configura un servidor de correo autoalojado con unos pocos clics",
     "backToServers": "Volver a los servidores de correo",
-    "backToAdmin": "Volver a la administración de correo",
     "addServer": "Añadir servidor de correo",
     "removeModal": {
       "title": "¿Eliminar este servidor de correo?",
@@ -82,10 +81,7 @@
     "willStream": "Los registros se transmitirán aquí una vez que comience la configuración.",
     "jumpToLatest": "Ir a lo más reciente",
     "setupFailed": "Error en la configuración",
-    "retryFromStep": "Reintentar desde el paso {resumeStep}",
-    "resumePausedTitle": "Configuración en pausa",
-    "stepLabel": "Paso {step}",
-    "continueFromStep": "Continuar desde el paso {step}"
+    "retryFromStep": "Reintentar desde el paso {resumeStep}"
   },
   "serverList": {
     "title": "Servidores de correo",
@@ -94,8 +90,7 @@
     "removeAria": "Eliminar {name} de la lista de correo",
     "installing": "Instalando",
     "running": "En ejecución",
-    "incomplete": "Incompleto",
-    "stoppedAt": "Detenido · paso {step}"
+    "incomplete": "Incompleto"
   },
   "setup": {
     "title": "Configuración del servidor de correo",
@@ -105,7 +100,7 @@
     "willBeAtBefore": "Tu servidor de correo estará en ",
     "adminPasswordLabel": "Contraseña de administrador",
     "passwordPlaceholder": "Contraseña segura, o haz clic en Generar",
-    "passwordHint": "Al menos 12 caracteres. Se usa para iniciar sesión en el buzón después de la configuración — puedes cambiarla más tarde desde el panel de administración de abajo.",
+    "passwordHint": "Se usa para iniciar sesión en el buzón después de la configuración. Puedes cambiarla más tarde desde el panel de administración de abajo.",
     "startSetup": "Iniciar configuración",
     "adoptCta": "¿Ya tienes un servidor de correo? Adóptalo",
     "whatInstalled": "Qué se instala",
@@ -122,7 +117,6 @@
     "prerequisites": "Requisitos previos",
     "prereq1": "Un dominio con acceso al DNS",
     "prereq2": "Puerto 25 no bloqueado por tu proveedor",
-    "prereq2Relay": "Puerto 25 abierto para el correo entrante (el saliente usa tu relay)",
     "prereq3": "Servidor Ubuntu/Debian limpio (recomendado)",
     "hide": "Ocultar",
     "reveal": "Mostrar",

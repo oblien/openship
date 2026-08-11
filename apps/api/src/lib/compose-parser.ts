@@ -6,14 +6,8 @@
  */
 
 import { parse as parseYaml } from "yaml";
-import {
-  commandToArgv,
-  composeMountIssues,
-  composeMountToSpec,
-  composePortToSpec,
-  parseComposeNamespace,
-} from "@repo/core";
-import type { ComposeAdvanced, ComposeHealthcheck, ComposeNamespaceField } from "@repo/core";
+import { commandToArgv } from "@repo/core";
+import type { ComposeAdvanced, ComposeHealthcheck } from "@repo/core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -59,51 +53,6 @@ export interface ComposeParseResult {
   services: ComposeService[];
   volumes: string[];
   networks: string[];
-  /**
-   * Variables the file marks mandatory (`${VAR:?msg}` / `${VAR?msg}`) that no
-   * `.env` or caller value satisfied. Reported, never thrown — see
-   * {@link parseComposeFile}.
-   */
-  missingRequired: ComposeMissingVariable[];
-  /**
-   * Compose keys this file declares that openship does not model. Reported, never
-   * thrown (same reason as `missingRequired`): the caller decides, and a `blocking`
-   * entry is the one it must refuse on rather than deploy.
-   *
-   * The point is that a dropped key stops being invisible. Before this, a compose
-   * file asking for a namespace, a capability, or a tmpfs deployed as if it had
-   * asked for none of them, and nothing anywhere said so (#533).
-   */
-  unsupported: ComposeUnsupportedField[];
-}
-
-/** One compose key the file declares and openship can't honor. */
-export interface ComposeUnsupportedField {
-  /** Service it was declared on. */
-  service: string;
-  /** The key as the FILE spells it (`network_mode`, `cap_add`) — what the user greps for. */
-  field: string;
-  /** Operator-facing explanation. Never interpolates a value that could carry a secret. */
-  reason: string;
-  /**
-   * The caller must REFUSE the import instead of continuing.
-   *
-   * Reserved for the cases where proceeding deploys something materially
-   * different from what the file describes, in a direction the author can't see:
-   * a namespace escape (`network_mode: host`), a value we'd have to guess at, or
-   * a mount whose kind would change (a tmpfs becoming a persistent disk-backed
-   * volume). Everything else is a warning — the service still runs, just without
-   * the extra, which is how `advanced` has always degraded.
-   */
-  blocking?: boolean;
-}
-
-/** A mandatory compose variable with no value yet. */
-export interface ComposeMissingVariable {
-  variable: string;
-  /** The author's own word after `:?`, VERBATIM — never interpolated, so a
-   *  nested `${SECRET}` in the message can't ride out through a scan response. */
-  message?: string;
 }
 
 export interface ComposeEnvironmentMeta {
@@ -112,9 +61,6 @@ export interface ComposeEnvironmentMeta {
   defaultValue?: string;
   resolvedValue: string;
   expression?: string;
-  /** The file declares this one mandatory (`:?` / `?`). Only set when it also
-   *  came back unresolved, i.e. alongside `source: "missing"`. */
-  required?: boolean;
 }
 
 export interface ComposeParseOptions {
@@ -126,20 +72,6 @@ export interface ComposeParseOptions {
 
 // ─── Parser ──────────────────────────────────────────────────────────────────
 
-/**
- * Parse a compose file. Throws ONLY when the file itself is unusable (invalid
- * YAML) — never because a variable has no value.
- *
- * A mandatory-variable operator (`${VAR:?msg}`) is a hard stop for
- * `docker compose up`, but every caller here is INSPECTING a file (import scan,
- * server migration, redeploy drift) at a point where the user hasn't supplied
- * values yet: that's the whole reason the wizard shows an env form. Throwing
- * there took the entire repo load down with "Could not parse the Docker Compose
- * file: set POSTGRES_PASSWORD in .env" (#472) and left no way forward. So an
- * unsatisfied mandatory variable resolves to "" like any other unset one, marked
- * `required` in `environmentMeta` (the wizard's "Needs value" state) and listed
- * in `missingRequired`.
- */
 export function parseComposeFile(content: string, options: ComposeParseOptions = {}): ComposeParseResult {
   // `merge: true` is required, not cosmetic: the parser defaults to YAML 1.2,
   // where `<<` is an ordinary key. Compose files that hoist shared config into
@@ -148,23 +80,19 @@ export function parseComposeFile(content: string, options: ComposeParseOptions =
   const doc = parseYaml(content, { merge: true });
 
   if (!doc || typeof doc !== "object") {
-    return { services: [], volumes: [], networks: [], missingRequired: [], unsupported: [] };
+    return { services: [], volumes: [], networks: [] };
   }
 
   const interpolationEnv = buildInterpolationEnv(options);
-  const missingRequired = new Map<string, string | undefined>();
-  missingRequiredSinks.set(interpolationEnv, missingRequired);
   const rawServices = doc.services ?? {};
   const services: ComposeService[] = [];
-  const unsupported: ComposeUnsupportedField[] = [];
 
   for (const [name, def] of Object.entries(rawServices)) {
     if (!def || typeof def !== "object") continue;
     const svc = def as Record<string, unknown>;
     const build = parseBuild(svc.build, interpolationEnv);
     const environment = parseEnvironment(svc.environment, interpolationEnv);
-    const advanced = parseAdvanced(svc, interpolationEnv, name, unsupported);
-    collectUnsupported(name, svc, unsupported);
+    const advanced = parseAdvanced(svc, interpolationEnv);
 
     services.push({
       name,
@@ -185,51 +113,7 @@ export function parseComposeFile(content: string, options: ComposeParseOptions =
   const volumes = doc.volumes ? Object.keys(doc.volumes) : [];
   const networks = doc.networks ? Object.keys(doc.networks) : [];
 
-  return {
-    services,
-    volumes,
-    networks,
-    missingRequired: [...missingRequired].map(([variable, message]) => ({
-      variable,
-      ...(message && { message }),
-    })),
-    unsupported,
-  };
-}
-
-/** Any entry the caller must refuse the import on. */
-export function blockingComposeFields(
-  unsupported: readonly ComposeUnsupportedField[],
-): ComposeUnsupportedField[] {
-  return unsupported.filter((u) => u.blocking);
-}
-
-/** One operator-facing message for a set of blocking entries. */
-export function describeBlockingComposeFields(
-  blocking: readonly ComposeUnsupportedField[],
-): string {
-  return blocking.map((b) => `Service "${b.service}": ${b.reason}`).join("\n");
-}
-
-/**
- * Where {@link resolveInterpolationExpression} reports unsatisfied mandatory
- * variables. Keyed by the interpolation env object of the parse that's running,
- * so a sink is scoped to one `parseComposeFile` call and there is no global state
- * to reset — a resolver reached with any other env record (`.env` self-expansion
- * in `parseComposeEnvFile`) simply has nowhere to report, which is fine.
- */
-const missingRequiredSinks = new WeakMap<Record<string, string>, Map<string, string | undefined>>();
-
-function reportMissingRequired(
-  key: string,
-  rawWord: string,
-  env: Record<string, string>,
-): { value: string; source: "missing"; variable: string; required: true } {
-  const sink = missingRequiredSinks.get(env);
-  // First mention wins: the same variable is often required in several services
-  // and the first message is as good as the last.
-  if (sink && !sink.has(key)) sink.set(key, rawWord.trim() || undefined);
-  return { value: "", source: "missing", variable: key, required: true };
+  return { services, volumes, networks };
 }
 
 // ─── Field parsers ───────────────────────────────────────────────────────────
@@ -253,12 +137,27 @@ function parsePorts(ports: unknown, env: Record<string, string>): string[] {
     if (typeof p === "string") return interpolateComposeString(p, env);
     if (typeof p === "number") return String(p);
     if (p && typeof p === "object") {
-      // Long form → short form via the SHARED fold, so this parser and the CLI's
-      // `docker compose config` reader can't disagree about it (see compose-spec.ts).
-      const spec = composePortToSpec(p as Record<string, unknown>, (v) =>
-        interpolateComposeString(v, env),
-      );
-      if (spec !== undefined) return spec;
+      const port = p as Record<string, unknown>;
+      const target = port.target ?? port.container_port;
+      const published = port.published ?? port.host_port;
+      // Long form carries protocol as a separate `protocol: tcp|udp` field;
+      // fold it back into the "/proto" suffix so the string form is lossless.
+      const proto = typeof port.protocol === "string" ? port.protocol.toLowerCase() : undefined;
+      const suffix = proto && proto !== "tcp" ? `/${proto}` : "";
+      // Long form carries the bind interface as a separate `host_ip` field;
+      // fold it back into the leading "<ip>:" segment the short form spells.
+      const hostIp =
+        typeof port.host_ip === "string" ? interpolateComposeString(port.host_ip, env) : undefined;
+      if (target) {
+        const hostPart = published
+          ? hostIp
+            ? `${hostIp}:${published}:`
+            : `${published}:`
+          : hostIp
+            ? `${hostIp}::`
+            : "";
+        return `${hostPart}${target}${suffix}`;
+      }
     }
     return String(p);
   });
@@ -326,13 +225,27 @@ function parseVolumes(vols: unknown, env: Record<string, string>): string[] {
   return vols.map((v) => {
     if (typeof v === "string") return interpolateComposeString(v, env);
     if (v && typeof v === "object") {
-      // Long form → short form via the SHARED fold. The CLI's sync mapper spelled
-      // this itself and dropped `read_only`, turning every declared-read-only bind
-      // into a writable one; one implementation is why that can't recur (#533).
-      const spec = composeMountToSpec(v as Record<string, unknown>, (s) =>
-        interpolateComposeString(s, env),
-      );
-      if (spec !== undefined) return spec;
+      const vol = v as Record<string, unknown>;
+      const src = vol.source ?? vol.name;
+      const tgt = vol.target;
+      // Long form carries read-only/selinux/nocopy intent as separate nested
+      // fields; fold them back into the single mode suffix the short-form
+      // string spells (the downstream MODE_SUFFIX regex in volume-namespace.ts
+      // only matches ONE flag, no combining — so read_only wins when more than
+      // one is set, since silently granting write access is the worse miss).
+      const bindOpts = vol.bind as Record<string, unknown> | undefined;
+      const volumeOpts = vol.volume as Record<string, unknown> | undefined;
+      const selinux = typeof bindOpts?.selinux === "string" ? bindOpts.selinux : undefined;
+      const mode =
+        vol.read_only === true
+          ? ":ro"
+          : volumeOpts?.nocopy === true
+            ? ":nocopy"
+            : selinux === "z" || selinux === "Z"
+              ? `:${selinux}`
+              : "";
+      if (src && tgt) return `${src}:${tgt}${mode}`;
+      if (tgt) return String(tgt);
     }
     return String(v);
   });
@@ -363,14 +276,9 @@ function parseCommand(
  * Extract the extended compose keys that live under `service.advanced`. Returns
  * undefined when nothing was found so callers can omit the field entirely (keeps
  * it out of drift comparisons and the runtime payload). Grows as more keys are
- * supported.
+ * supported; for A1 only `healthcheck` is read.
  */
-function parseAdvanced(
-  svc: Record<string, unknown>,
-  env: Record<string, string>,
-  serviceName: string,
-  unsupported: ComposeUnsupportedField[],
-): ComposeAdvanced | undefined {
+function parseAdvanced(svc: Record<string, unknown>, env: Record<string, string>): ComposeAdvanced | undefined {
   const advanced: ComposeAdvanced = {};
 
   const healthcheck = parseHealthcheck(svc.healthcheck, env);
@@ -379,202 +287,7 @@ function parseAdvanced(
   const resources = parseServiceResources(svc, env);
   if (resources) advanced.resources = resources;
 
-  const networkMode = parseNamespaceField(svc.network_mode, "network_mode", env, serviceName, unsupported);
-  if (networkMode) advanced.networkMode = networkMode;
-
-  const pidMode = parseNamespaceField(svc.pid, "pid", env, serviceName, unsupported);
-  if (pidMode) advanced.pidMode = pidMode;
-
-  // Shutdown behavior. Both are kept as authored strings — the runtime maps
-  // stop_signal → StopSignal verbatim and rounds stop_grace_period to the whole
-  // seconds Docker's StopTimeout expects.
-  const rawSignal = svc.stop_signal;
-  if (typeof rawSignal === "string") {
-    const signal = interpolateComposeString(rawSignal, env).trim();
-    if (signal) advanced.stopSignal = signal;
-  }
-  const rawGrace = svc.stop_grace_period;
-  const grace =
-    typeof rawGrace === "string"
-      ? interpolateComposeString(rawGrace, env).trim()
-      : typeof rawGrace === "number"
-        ? String(rawGrace)
-        : undefined;
-  if (grace) advanced.stopGracePeriod = grace;
-
   return Object.keys(advanced).length > 0 ? advanced : undefined;
-}
-
-/**
- * Validate one namespace key and report it when it can't be honored.
- *
- * A rejection is BLOCKING on purpose. Every other unsupported key degrades to
- * "runs without the extra"; a namespace does not — a service the author confined
- * to a VPN sidecar's netns, deployed with its own interface instead, egresses in
- * the clear while looking healthy. Refusing the import is the only outcome that
- * doesn't quietly change what the file asked for. See compose-namespace.ts.
- */
-function parseNamespaceField(
-  raw: unknown,
-  field: ComposeNamespaceField,
-  env: Record<string, string>,
-  serviceName: string,
-  unsupported: ComposeUnsupportedField[],
-): string | undefined {
-  const interpolated = typeof raw === "string" ? interpolateComposeString(raw, env) : raw;
-  const parsed = parseComposeNamespace(interpolated, field);
-  if (!parsed) return undefined;
-  if (!parsed.ok) {
-    unsupported.push({ service: serviceName, field, reason: parsed.reason, blocking: true });
-    return undefined;
-  }
-  return parsed.value;
-}
-
-/**
- * Compose keys openship does not model, so the wizard can say so instead of the
- * file quietly deploying as something else.
- *
- * Grouped by what the omission costs, because that is what decides `blocking`:
- * the privilege/namespace/runtime-shape keys leave a service running with less
- * than it asked for (a warning), while a mount whose KIND would change is a
- * different workload than the file describes (blocking, handled separately in
- * {@link collectUnsupportedMounts}).
- */
-const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
-  // ── Host privilege + namespaces ──
-  privileged: "privileged is not modeled — the container runs unprivileged.",
-  cap_add: "cap_add is not modeled — no extra capabilities are granted.",
-  cap_drop: "cap_drop is not modeled — the default capability set is kept.",
-  devices: "devices is not modeled — no host devices are passed through.",
-  device_cgroup_rules: "device_cgroup_rules is not modeled.",
-  security_opt: "security_opt is not modeled — default seccomp/AppArmor apply.",
-  sysctls: "sysctls is not modeled — kernel parameters stay at their defaults.",
-  ulimits: "ulimits is not modeled — daemon defaults apply.",
-  shm_size: "shm_size is not modeled — /dev/shm stays at Docker's 64MB default.",
-  ipc: "ipc is not modeled — the container gets its own IPC namespace.",
-  userns_mode: "userns_mode is not modeled.",
-  uts: "uts is not modeled.",
-  cgroup: "cgroup is not modeled.",
-  cgroup_parent: "cgroup_parent is not modeled.",
-  group_add: "group_add is not modeled.",
-  pids_limit: "pids_limit is not modeled.",
-  oom_kill_disable: "oom_kill_disable is not modeled.",
-  oom_score_adj: "oom_score_adj is not modeled.",
-  runtime: "runtime is not modeled — the daemon's default runtime is used.",
-  isolation: "isolation is not modeled.",
-  storage_opt: "storage_opt is not modeled.",
-  blkio_config: "blkio_config is not modeled.",
-  // ── Container shape ──
-  entrypoint: "entrypoint is not modeled — the image's own ENTRYPOINT runs (use `command`).",
-  user: "user is not modeled — the container runs as the image's user.",
-  working_dir: "working_dir is not modeled — the image's WORKDIR is used.",
-  hostname: "hostname is not modeled — Openship sets the hostname to the service name.",
-  domainname: "domainname is not modeled.",
-  mac_address: "mac_address is not modeled.",
-  platform: "platform is not modeled — the image is pulled for the host's architecture.",
-  init: "init is not modeled — no init process is injected.",
-  read_only: "read_only (root filesystem) is not modeled — the root filesystem stays writable.",
-  tmpfs: "tmpfs is not modeled — no in-memory filesystem is mounted.",
-  // ── Networking ──
-  dns: "dns is not modeled — the container uses the Docker network's resolver.",
-  dns_search: "dns_search is not modeled.",
-  dns_opt: "dns_opt is not modeled.",
-  extra_hosts: "extra_hosts is not modeled — services resolve each other by service name.",
-  links: "links is legacy and not modeled — services already resolve by service name.",
-  external_links: "external_links is not modeled — link the app as a service connection instead.",
-  expose: "expose is not modeled — every service is reachable by name on the project network.",
-  // ── Compose model ──
-  configs: "configs is not modeled — use a bind-mounted file instead.",
-  secrets: "secrets is not modeled — use environment variables instead.",
-  volumes_from: "volumes_from is legacy and not modeled — declare the volume on both services.",
-  profiles: "profiles is not modeled — every service in the file is imported.",
-  labels: "labels is not modeled — Openship sets its own container labels.",
-  logging: "logging is not modeled — the daemon's default log driver is used.",
-};
-
-/**
- * Did the file actually ASK for something here, or just write down the default?
- *
- * `privileged: false`, `init: false`, `pids_limit: 0`, `cap_add: []` all name a key
- * we don't model while requesting exactly the behaviour the container already gets.
- * Reporting those is worse than saying nothing: it teaches the operator to skim a
- * list that includes items where nothing was lost, and the one line that DID matter
- * is in the same list.
- */
-function requestsSomething(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
-  if (value === false || value === 0 || value === "") return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-}
-
-function collectUnsupported(
-  serviceName: string,
-  svc: Record<string, unknown>,
-  unsupported: ComposeUnsupportedField[],
-): void {
-  for (const [key, reason] of Object.entries(UNSUPPORTED_SERVICE_KEYS)) {
-    if (!requestsSomething(svc[key])) continue;
-    unsupported.push({ service: serviceName, field: key, reason });
-  }
-
-  // `deploy:` carries one key we DO honor (resources.limits, see
-  // parseServiceResources) — report only the rest, and only when present, so a
-  // file that just sets a memory cap doesn't get told `deploy` was dropped.
-  const deploy = svc.deploy as Record<string, unknown> | undefined;
-  if (deploy && typeof deploy === "object") {
-    const modeled = new Set(["resources"]);
-    const rest = Object.keys(deploy).filter((k) => !modeled.has(k));
-    if (rest.length > 0) {
-      unsupported.push({
-        service: serviceName,
-        field: "deploy",
-        reason:
-          `deploy.${rest.join("/")} is not modeled — Openship runs one container per ` +
-          `service (only deploy.resources.limits is honored).`,
-      });
-    }
-  }
-
-  // A service pinned to named networks: openship puts every service on ONE
-  // project network, so the topology flattens. They still resolve each other by
-  // name, which is why this is a warning rather than a refusal.
-  const networks = svc.networks;
-  const networkNames = Array.isArray(networks)
-    ? networks.filter((n): n is string => typeof n === "string")
-    : networks && typeof networks === "object"
-      ? Object.keys(networks)
-      : [];
-  if (networkNames.length > 0) {
-    unsupported.push({
-      service: serviceName,
-      field: "networks",
-      reason:
-        `networks (${networkNames.join(", ")}) is flattened — every service joins the ` +
-        `one project network and still resolves the others by service name.`,
-    });
-  }
-
-  collectUnsupportedMounts(serviceName, svc.volumes, unsupported);
-}
-
-/** Long-form mount options {@link parseVolumes} can't fold into a bind spec. The
- *  rules live in @repo/core so the CLI's sync mapper enforces the identical set —
- *  a file the API refuses must not be accepted by `openship service sync`. */
-function collectUnsupportedMounts(
-  serviceName: string,
-  vols: unknown,
-  unsupported: ComposeUnsupportedField[],
-): void {
-  if (!Array.isArray(vols)) return;
-  for (const v of vols) {
-    if (!v || typeof v !== "object") continue;
-    for (const issue of composeMountIssues(v as Record<string, unknown>)) {
-      unsupported.push({ service: serviceName, ...issue });
-    }
-  }
 }
 
 /**
@@ -870,7 +583,6 @@ function resolveComposeValue(
         defaultValue: resolved.defaultValue,
         resolvedValue: resolved.value,
         expression: trimmed,
-        ...(resolved.required && { required: true }),
       },
     };
   }
@@ -923,13 +635,7 @@ function resolveBareEnvironmentKey(
 function resolveInterpolationExpression(
   expression: string,
   env: Record<string, string>,
-): {
-  value: string;
-  source: ComposeEnvironmentMeta["source"];
-  variable?: string;
-  defaultValue?: string;
-  required?: boolean;
-} {
+): { value: string; source: ComposeEnvironmentMeta["source"]; variable?: string; defaultValue?: string } {
   const match = expression.match(/^([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-+?])(.*))?$/s);
   if (!match) return { value: "", source: "missing" };
 
@@ -956,10 +662,10 @@ function resolveInterpolationExpression(
       }
     case ":?":
       if (isNonEmpty) return { value, source: "env-file", variable: key };
-      return reportMissingRequired(key, rawWord, env);
+      throw new Error(word());
     case "?":
       if (hasValue) return { value, source: "env-file", variable: key };
-      return reportMissingRequired(key, rawWord, env);
+      throw new Error(word());
     case ":+":
       if (!isNonEmpty) return { value: "", source: "missing", variable: key };
       {

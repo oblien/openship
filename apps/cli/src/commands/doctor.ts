@@ -233,14 +233,6 @@ async function interactiveDoctor(): Promise<void> {
     if (s.corrupted || (!s.apiUp && dataDirExists()) || (s.health?.db && !s.health.db.ok)) {
       options.push({ value: "repair", label: "Repair database", hint: "backup → heal → verify" });
     }
-    // Only when host control is actually broken — the row is absent when this box wants
-    // no channel. This action re-runs the install-time preflight for an operator who got
-    // here after the fact: it opens the firewall for a dropped dial (#490), and for a
-    // channel that was never provisioned it prints the state and the `openship up` that
-    // repairs it (#509), which is not something doctor can do on the operator's behalf.
-    if (s.components.some((c) => c.id === "host-control" && c.state === "fail")) {
-      options.push({ value: "host-control", label: "Fix host control", hint: "probe the channel, print the fix" });
-    }
     options.push({ value: "recheck", label: "Re-run checks" });
     if (s.service.installed) options.push({ value: "restart", label: "Restart the service" });
     options.push({ value: "logs", label: "View recent errors" });
@@ -272,14 +264,6 @@ async function interactiveDoctor(): Promise<void> {
       const r = restartService();
       const up = r.restarted ? await waitApiHealthy(45) : false;
       sp.stop(r.restarted && up ? chalk.green("Restarted and healthy.") : chalk.yellow(r.detail), r.restarted && up ? 0 : 1);
-      continue;
-    }
-    if (action === "host-control") {
-      const { verifyHostChannel } = await import("../lib/host-channel-preflight");
-      const report = await verifyHostChannel().catch(() => null);
-      if (report?.status === "fixed") log.success("Host control is reachable now.");
-      else if (report?.status === "ok") log.success("Host control was already reachable.");
-      // Anything else already printed its own diagnosis and the rule to paste.
       continue;
     }
     if (action === "logs") {

@@ -260,12 +260,6 @@ export function subscribeSetupSession(
 
   session.subscribers.add(writer);
 
-  // The session id, first — the generic consent modal (useSystemPrepareModal)
-  // learns it ONLY from this frame and can't answer a takeover prompt without
-  // it. The wizard's own useSetupStream tracks the id separately and ignores
-  // this event, so it's a safe additive frame for both consumers.
-  writer("session", JSON.stringify({ type: "session", sessionId: session.id }));
-
   // Replay current progress state
   writer("progress", JSON.stringify({
     type: "progress",

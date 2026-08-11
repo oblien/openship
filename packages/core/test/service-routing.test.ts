@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildPublicUrlLookup,
-  effectiveServiceAlias,
-  findPublicUrlPlaceholders,
   firstServicePort,
-  hasUnresolvedPlaceholder,
   internalServiceAddress,
   resolvePublicUrlPlaceholders,
-  resolvePublicUrlTemplate,
   resolveServiceHostnameLabel,
   MAX_SERVICE_LABEL_LENGTH,
 } from "../src/service-routing";
@@ -44,29 +39,6 @@ describe("internalServiceAddress", () => {
   it("falls back to the bare name when no port is known", () => {
     expect(internalServiceAddress("worker", [])).toBe("worker");
     expect(internalServiceAddress("worker", undefined)).toBe("worker");
-  });
-});
-
-describe("effectiveServiceAlias", () => {
-  it("returns the fallback (service name / slug) when no custom alias is set", () => {
-    expect(effectiveServiceAlias("api", undefined)).toBe("api");
-    expect(effectiveServiceAlias("api", null)).toBe("api");
-    expect(effectiveServiceAlias("api", "")).toBe("api");
-  });
-
-  it("prefers the custom alias, DNS-normalized, when it carries usable characters", () => {
-    expect(effectiveServiceAlias("api", "gateway")).toBe("gateway");
-    // Same normalization the deploy path (aliasExtras → normalizeServiceLabel) and
-    // the write validator (normalizeAliasStrict) apply, so the displayed string
-    // equals what embedded DNS actually answers.
-    expect(effectiveServiceAlias("api", "My Gateway")).toBe("my-gateway");
-  });
-
-  it("falls back to the name for an all-symbol alias (no usable DNS chars)", () => {
-    // normalizeAliasStrict returns null here (not the "service" fallback), so the
-    // stable name shows instead of a meaningless placeholder.
-    expect(effectiveServiceAlias("api", "___")).toBe("api");
-    expect(effectiveServiceAlias("api", "  ")).toBe("api");
   });
 });
 
@@ -107,114 +79,6 @@ describe("resolvePublicUrlPlaceholders", () => {
     );
     expect(out.A).toBe("");
     expect(out.B).toBe("");
-  });
-});
-
-describe("placeholder totality — a raw {{…}} may never reach a user or a container", () => {
-  // Field bug: the Convex app Overview rendered `{{publicUrl:backend:3210}}` as
-  // its DEPLOYMENT URL. The token is persisted in the service's env by design
-  // (resolved per deploy), so every surface that READS that env has to resolve
-  // it — and say so when it can't, instead of passing the token through.
-  const CONVEX_ENV = "{{publicUrl:backend:3210}}";
-
-  it("finds every token with its service and port", () => {
-    expect(findPublicUrlPlaceholders(CONVEX_ENV)).toEqual([
-      { token: "{{publicUrl:backend:3210}}", service: "backend", port: 3210 },
-    ]);
-    expect(findPublicUrlPlaceholders("{{publicUrl:web}}/callback")).toEqual([
-      { token: "{{publicUrl:web}}", service: "web" },
-    ]);
-    expect(findPublicUrlPlaceholders("https://already.resolved")).toEqual([]);
-  });
-
-  it("reports the unresolved token instead of echoing it", () => {
-    const out = resolvePublicUrlTemplate(CONVEX_ENV, () => undefined);
-    expect(out.value).not.toContain("{{");
-    expect(out.unresolved).toEqual([
-      { token: "{{publicUrl:backend:3210}}", service: "backend", port: 3210 },
-    ]);
-  });
-
-  it("resolves to the real URL and reports nothing when a route exists", () => {
-    const out = resolvePublicUrlTemplate(CONVEX_ENV, () => "https://convex.example.com");
-    expect(out).toEqual({ value: "https://convex.example.com", unresolved: [] });
-  });
-
-  it("flags a surviving placeholder of ANY grammar", () => {
-    expect(hasUnresolvedPlaceholder(CONVEX_ENV)).toBe(true);
-    expect(hasUnresolvedPlaceholder("postgres://u:{{config:PASSWORD}}@db:5432")).toBe(true);
-    expect(hasUnresolvedPlaceholder("http://1.2.3.4:3210")).toBe(false);
-    expect(hasUnresolvedPlaceholder("")).toBe(false);
-    expect(hasUnresolvedPlaceholder(undefined)).toBe(false);
-  });
-});
-
-describe("buildPublicUrlLookup", () => {
-  const CONVEX = [
-    {
-      name: "backend",
-      portPairs: [
-        { host: 3210, container: 3210 },
-        { host: 3211, container: 3211 },
-      ],
-      primaryPort: 3210,
-    },
-  ];
-
-  it("prefers a PERSISTED route over the port fallback", () => {
-    const lookup = buildPublicUrlLookup(
-      [{ ...CONVEX[0], routedUrls: new Map([[3210, "https://api.example.com"]]) }],
-      "203.0.113.9",
-    );
-    expect(lookup.get("backend:3210")).toBe("https://api.example.com");
-    expect(lookup.get("backend")).toBe("https://api.example.com");
-    // The unrouted second port stays honest rather than borrowing the first's host.
-    expect(lookup.get("backend:3211")).toBe("http://203.0.113.9:3211");
-  });
-
-  it("falls back to the reachable host:port when nothing is routed", () => {
-    const lookup = buildPublicUrlLookup(CONVEX, "203.0.113.9");
-    expect(lookup.get("backend")).toBe("http://203.0.113.9:3210");
-    expect(lookup.get("backend:3210")).toBe("http://203.0.113.9:3210");
-    expect(lookup.get("backend:3211")).toBe("http://203.0.113.9:3211");
-  });
-
-  it("NEVER invents a <slug>.<cloud> hostname for a routeless service", () => {
-    // No persisted route and no known host → no URL at all. The caller then
-    // reports the token unresolved and the card shows "—". Minting a free
-    // subdomain here would advertise a hostname that resolves nowhere.
-    const lookup = buildPublicUrlLookup(CONVEX, null);
-    expect(lookup.size).toBe(0);
-    const { value, unresolved } = resolvePublicUrlTemplate(
-      "{{publicUrl:backend:3210}}",
-      (name, port) => lookup.get(port !== undefined ? `${name}:${port}` : name),
-    );
-    expect(value).toBe("");
-    expect(unresolved).toHaveLength(1);
-  });
-
-  it("maps an asymmetric mapping's CONTAINER port to the published host port", () => {
-    // The token names the container port (the route target); reachability is the
-    // host port. Keying only host ports left `{{publicUrl:api:3000}}` unresolved.
-    const lookup = buildPublicUrlLookup(
-      [{ name: "api", portPairs: [{ host: 8080, container: 3000 }], primaryPort: 3000 }],
-      "example.internal",
-    );
-    expect(lookup.get("api:3000")).toBe("http://example.internal:8080");
-    expect(lookup.get("api:8080")).toBe("http://example.internal:8080");
-    expect(lookup.get("api")).toBe("http://example.internal:8080");
-  });
-
-  it("keeps a routed service and an unroutable sibling independent", () => {
-    const lookup = buildPublicUrlLookup(
-      [
-        { name: "web", routedUrls: new Map([[80, "https://shop.example.com"]]), primaryPort: 80 },
-        { name: "db", portPairs: [] },
-      ],
-      null,
-    );
-    expect(lookup.get("web")).toBe("https://shop.example.com");
-    expect(lookup.has("db")).toBe(false);
   });
 });
 

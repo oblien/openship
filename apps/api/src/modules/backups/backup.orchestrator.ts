@@ -19,7 +19,6 @@
 
 import {
   repos,
-  type Project,
   type Service,
   type BackupRunStatus,
   type BackupPolicy,
@@ -43,33 +42,17 @@ import {
   type BackupExecutor,
   type BackupTrigger,
   type PayloadKind,
-  type ProducerOpts,
-  type RuntimeAdapter,
   type ServiceHandle,
 } from "@repo/adapters";
 import { Readable } from "node:stream";
-import {
-  disposeRuntime,
-  resolveDeploymentPlatform,
-  resolveTargetPlatform,
-} from "../../lib/deployment-runtime";
+import { resolveDeploymentPlatform, resolveTargetPlatform } from "../../lib/deployment-runtime";
+import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
-import { serviceHandleFor } from "./service-handle";
 import crypto from "node:crypto";
 import { safeErrorMessage } from "@repo/core";
-import {
-  boundedStorableText,
-  sanitizeStorableStrings,
-} from "../deployments/build-log-sanitize";
 
 const TRUNCATE_ERROR = 4096;
 const TRUNCATE_HOOK_LOG = 64 * 1024;
-/** Cap on waiting for a finished hook's stdout to drain (see runHook). */
-const HOOK_DRAIN_TIMEOUT_MS = 500;
-/** Short form for the notification payload + destination verify note. */
-const TRUNCATE_ERROR_SUMMARY = 500;
-/** A `PutResult.etag` in this shape is a sha256 we can compare ours against. */
-const SHA256_HEX = /^[0-9a-f]{64}$/i;
 
 // ─── Public surface ──────────────────────────────────────────────────────────
 
@@ -251,11 +234,6 @@ export class BackupOrchestrator {
     let policy = null as Awaited<ReturnType<typeof repos.backupPolicy.findById>> | null;
     let executor: BackupExecutor | null = null;
     let serviceHandle: ServiceHandle | null = null;
-    // The runtime the BackupExecutor wraps. Held for the whole run (it shells into
-    // the container to produce the dump) and released in the `finally` — on a
-    // remote server it carries a Docker-over-SSH loopback bridge that only
-    // `dispose()` closes, so a scheduled policy would otherwise strand one per run.
-    let sourceRuntime: RuntimeAdapter | null = null;
 
     try {
       await this.transition(runId, "preparing");
@@ -327,7 +305,6 @@ export class BackupOrchestrator {
           (activeDeployment?.meta ?? {}) as Parameters<typeof resolveDeploymentPlatform>[0],
           { organizationId: destinationRow.organizationId },
         );
-        sourceRuntime = platform.platform.runtime;
         executor = resolveExecutor(platform.platform.runtime.name, platform.platform.runtime);
 
         ctx = {
@@ -385,21 +362,18 @@ export class BackupOrchestrator {
       }> = [];
       let totalBytes = 0;
 
-      // D5: forward the payloadConfig WHOLE. Hand-picking sourceIds/command/
-      // exclude here dropped every custom_command key — produceCommand,
-      // restoreCommand, artifactName — which is exactly what a mail-server
-      // policy writes, so every mail backup captured an unrestorable artifact.
-      // The producer's own cast hid it from the typechecker; the keys are
-      // declared on ProducerOpts now, and this forwards unfiltered so a new
-      // payload key can never be silently lost again.
-      const producerOpts = (policy.payloadConfig ?? {}) as ProducerOpts;
+      const producerOpts = {
+        sourceIds: (policy.payloadConfig as { sourceIds?: string[] })?.sourceIds,
+        command: (policy.payloadConfig as { command?: string })?.command,
+        exclude: (policy.payloadConfig as { exclude?: string[] })?.exclude,
+      };
 
       for await (const artifact of producer.produce(serviceHandle, executor, producerOpts)) {
         const recorded = await this.uploadArtifact(destination, baseKey, artifact);
         artifactsRecorded.push(recorded);
         totalBytes += recorded.sizeBytes;
         await this.transition(runId, "uploading", {
-          artifacts: sanitizeStorableStrings(artifactsRecorded),
+          artifacts: artifactsRecorded,
           bytesTransferred: totalBytes,
         });
       }
@@ -425,17 +399,11 @@ export class BackupOrchestrator {
         },
       });
       const manifestK = manifestKey(baseKey);
-      const manifestBody = Buffer.from(JSON.stringify(manifest, null, 2));
-      await destination.put(manifestK, Readable.from([manifestBody]), {
-        contentType: "application/json",
-        // Buffered, so both the real length and the digest are knowable up
-        // front. That makes this the one put in this file that can hand the
-        // destination a sha256 to gate on (the previous `size: 0` also lied to
-        // S3's multipart threshold), and the manifest is the file restore keys
-        // "is this run complete" off.
-        size: manifestBody.byteLength,
-        sha256: crypto.createHash("sha256").update(manifestBody).digest("hex"),
-      });
+      await destination.put(
+        manifestK,
+        Readable.from([Buffer.from(JSON.stringify(manifest, null, 2))]),
+        { contentType: "application/json", size: 0 },
+      );
 
       // 7. Post-hook. Failure is logged but doesn't fail the run.
       if (policy.postHook) {
@@ -458,8 +426,8 @@ export class BackupOrchestrator {
       await this.transition(runId, "succeeded", {
         manifestKey: manifestK,
         bytesTransferred: totalBytes,
-        artifacts: sanitizeStorableStrings(artifactsRecorded),
-        hookLog: boundedStorableText(hookLog.join("\n"), TRUNCATE_HOOK_LOG),
+        artifacts: artifactsRecorded,
+        hookLog: hookLog.join("\n").slice(0, TRUNCATE_HOOK_LOG),
       });
 
       notification.emit({
@@ -476,22 +444,18 @@ export class BackupOrchestrator {
         },
       });
     } catch (err) {
-      // Both forms are scrubbed independently: a second `.slice` over an
-      // already-scrubbed string can split a surrogate pair back open.
-      const raw = safeErrorMessage(err);
-      const message = boundedStorableText(raw, TRUNCATE_ERROR);
-      const summary = boundedStorableText(raw, TRUNCATE_ERROR_SUMMARY);
+      const message = safeErrorMessage(err);
       console.error(`[backup-orchestrator] run ${runId} failed: ${message}`);
 
       if (policy?.destinationId) {
         // Note the destination verify failed so the UI surfaces it.
         await repos.backupDestination
-          .setLastVerified(policy.destinationId, false, summary)
+          .setLastVerified(policy.destinationId, false, message.slice(0, 500))
           .catch(() => {});
       }
 
       await this.transition(runId, "failed", {
-        errorMessage: message,
+        errorMessage: message.slice(0, TRUNCATE_ERROR),
       });
 
       // Fan-out to subscribers. We re-fetch destination if needed —
@@ -509,13 +473,11 @@ export class BackupOrchestrator {
             resourceId: runId,
             payload: {
               destinationName: destForNotify.name,
-              errorMessage: summary,
+              errorMessage: message.slice(0, 500),
             },
           });
         }
       }
-    } finally {
-      disposeRuntime(sourceRuntime);
     }
   }
 
@@ -573,40 +535,13 @@ export class BackupOrchestrator {
     // sha256 + byte count as bytes flow.
     artifact.stream.pipe(hasher);
 
-    // S3 stores each metadata key as an `x-amz-meta-*` HTTP header, and
-    // header values may only contain printable ASCII — no newlines. Some
-    // producers (e.g. custom_command) stash multiline shell commands in
-    // metadata for restore, so only header-safe values go to the put call.
-    // The unfiltered `artifact.metadata` is still recorded on the backup
-    // run below (`recorded.metadata`), which is what restore reads from.
-    const headerSafeMetadata = Object.fromEntries(
-      Object.entries(artifact.metadata ?? {}).filter(
-        ([, v]) => typeof v === "string" && /^[\x20-\x7e]*$/.test(v),
-      ),
-    );
-
-    const result = await destination.put(key, hasher, {
+    await destination.put(key, hasher, {
       size: artifact.sizeHint,
       contentType: "application/octet-stream",
-      metadata: headerSafeMetadata as Record<string, string>,
+      metadata: artifact.metadata as Record<string, string>,
     });
 
     const { sha256, bytesWritten } = hasher.summary();
-
-    // An artifact's digest doesn't exist until its bytes have already been
-    // written, so it can't be handed to `put` as a precondition (see
-    // PutOpts.sha256). Where the destination reports one back — local hashes as
-    // it lands the file — compare: a disagreement means what's stored is not
-    // what we hashed, and recording OUR digest would make restore's verification
-    // pass against corrupt bytes. S3's ETag is an MD5/multipart composite and
-    // SFTP reports none, so the shape guard keeps this to destinations where the
-    // comparison means something.
-    if (result?.etag && SHA256_HEX.test(result.etag) && result.etag.toLowerCase() !== sha256) {
-      throw new Error(
-        `Artifact "${artifact.name}" changed in transit: hashed ${sha256} on the way out, destination stored ${result.etag.toLowerCase()}`,
-      );
-    }
-
     return {
       name: artifact.name,
       key,
@@ -636,36 +571,12 @@ export class BackupOrchestrator {
     stdout.on("data", (chunk: Buffer) => {
       if (chunks.length < 64) chunks.push(chunk);
     });
-    // `awaitExit` can settle before the stream has delivered its buffered chunks,
-    // which loses the hook's output entirely for a hook that finishes fast. Wait
-    // for the stream as well — bounded, because a killed exec can leave it open
-    // forever and a hook log must never hold up the backup.
-    const drained = new Promise<void>((resolve) => {
-      stdout.once("end", () => resolve());
-      stdout.once("close", () => resolve());
-      stdout.once("error", () => resolve());
-    });
     const exit = await awaitExit;
-    let drainTimer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      drained,
-      new Promise<void>((resolve) => {
-        drainTimer = setTimeout(resolve, HOOK_DRAIN_TIMEOUT_MS);
-      }),
-    ]);
-    if (drainTimer) clearTimeout(drainTimer);
     const stdoutText = Buffer.concat(chunks).toString("utf8").slice(0, 8 * 1024);
     log.push(stdoutText);
     if (exit.stderr) log.push(`[${phase}-hook stderr] ${exit.stderr.slice(0, 4 * 1024)}`);
-    // An UNKNOWN exit status is not success. Executors can surface a null exit
-    // code (docker reports ExitCode: null while an exec is still reaping, ssh2
-    // reports none when a channel dies), and the pre-hook is what guarantees the
-    // snapshot is consistent — reading "don't know" as 0 would ship a torn dump.
-    const code: number | null | undefined = exit.code;
-    if (code !== 0) {
-      throw new Error(
-        `${phase}-hook exited with code ${code ?? "unknown (no exit status reported)"}`,
-      );
+    if (exit.code !== 0) {
+      throw new Error(`${phase}-hook exited with code ${exit.code}`);
     }
   }
 
@@ -732,20 +643,43 @@ export class BackupOrchestrator {
     const project = await repos.project.findById(serviceRow.projectId);
     if (!project) throw new Error(`Project ${serviceRow.projectId} not found`);
 
-    return serviceHandleFor(serviceRow, {
+    // Decrypt env vars at the boundary so producers can use them
+    // (pg_dump -U $POSTGRES_USER etc.). Two sources:
+    //   service.environment — plaintext defaults from compose
+    //   env_var rows         — encrypted per-key (user-set)
+    // Project env wins over service defaults.
+    const envFromService =
+      (serviceRow.environment as Record<string, string> | null) ?? {};
+    const envFromProjectEncrypted = await repos.project
+      .listEnvVars(serviceRow.projectId)
+      .then((vars) => {
+        const out: Record<string, string> = {};
+        for (const v of vars) out[v.key] = v.value;
+        return out;
+      })
+      .catch(() => ({}));
+    const projectEnv = decryptEnvMap(envFromProjectEncrypted);
+    const decrypted = { ...envFromService, ...projectEnv };
+
+    return {
+      id: serviceRow.id,
+      projectId: serviceRow.projectId,
+      name: serviceRow.name,
+      image: serviceRow.image,
+      env: decrypted,
+      volumes: (serviceRow.volumes as string[] | null) ?? [],
+      containerId: await this.resolveServiceContainerId(serviceRow),
       projectSlug: project.slug,
-      containerId: await this.resolveServiceContainerId(project, serviceRow),
-    });
+      namespaceVolumes: serviceRow.namespaceVolumes,
+    };
   }
 
   /** Find the live container id for a service, via the shared resolver —
    *  verified against the host, so a backup never targets a container a
    *  redeploy already replaced. */
-  private async resolveServiceContainerId(
-    project: Project,
-    serviceRow: Service,
-  ): Promise<string | null> {
-    if (!project.activeDeploymentId) return null;
+  private async resolveServiceContainerId(serviceRow: Service): Promise<string | null> {
+    const project = await repos.project.findById(serviceRow.projectId);
+    if (!project?.activeDeploymentId) return null;
     const dep = await repos.deployment.findById(project.activeDeploymentId);
     if (!dep) return null;
     return liveContainerIdForService(project, dep, serviceRow, { projectId: project.id });

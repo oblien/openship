@@ -2,7 +2,6 @@ import { eq, and, desc, gte, lte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { deployment, buildSession, project } from "../schema";
-import { detailOf } from "./storable-detail";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -544,61 +543,16 @@ export function createDeploymentRepo(db: Database) {
         .where(eq(buildSession.id, id));
     },
 
-    /**
-     * Terminal write for a build session. `status` / `durationMs` /
-     * `finishedAt` are the RECORD; `logs` is observability. jsonb refuses a
-     * payload containing a NUL or an unpaired surrogate, and raw build output
-     * carries both — so a hostile payload sheds itself (replaced by a marker
-     * naming the DB error, then dropped) rather than costing us the status
-     * write. `logs` undefined means "don't touch the column": that caller has
-     * no payload to shed, so its error propagates untouched.
-     */
     async finishBuildSession(id: string, status: string, durationMs: number, logs?: unknown[]) {
-      const OMIT = Symbol("omit");
-      // `logs` is spread in only when there is a payload — the column is left
-      // untouched by ABSENCE from the SET clause, not by an undefined value.
-      const write = (payload: unknown[] | null | typeof OMIT) =>
-        db
-          .update(buildSession)
-          .set({
-            status,
-            durationMs,
-            finishedAt: new Date(),
-            ...(payload === OMIT ? {} : { logs: payload as never }),
-          })
-          .where(eq(buildSession.id, id));
-
-      if (logs === undefined) {
-        await write(OMIT);
-        return;
-      }
-
-      try {
-        await write(logs);
-        return;
-      } catch (err) {
-        // `detailOf` strips the bytes the driver error may itself carry — the
-        // rejected payload's NUL/surrogate is often echoed in the message, so a
-        // marker built from the RAW error would be just as unstorable as the
-        // logs it replaces, and the salvage write below would fail too.
-        const detail = detailOf(err);
-        console.error(
-          `[db] build_session ${id}: log payload rejected (${detail}) — keeping status "${status}" without it`,
-        );
-        try {
-          await write([
-            {
-              timestamp: new Date().toISOString(),
-              message: `Build logs could not be stored: ${detail}`,
-              level: "error",
-            },
-          ]);
-          return;
-        } catch {
-          // Even the marker didn't land — the status still has to.
-        }
-        await write(null);
-      }
+      await db
+        .update(buildSession)
+        .set({
+          status,
+          durationMs,
+          logs: logs as never,
+          finishedAt: new Date(),
+        })
+        .where(eq(buildSession.id, id));
     },
 
     async deleteDeployment(id: string) {

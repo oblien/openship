@@ -72,7 +72,7 @@
       "serverLabel": "Sunucu",
       "loadingServers": "Sunucular yükleniyor…",
       "noServerConnected": "Bağlı sunucu yok",
-      "connectServerFirst": "Bu sayfadan ayrılmadan hemen bir sunucu ekleyin.",
+      "connectServerFirst": "Önce bir sunucu bağlayın, ardından kuruluma devam etmek için geri dönün.",
       "addServer": "Sunucu Ekle",
       "selectServer": "Bir sunucu seçin…",
       "addNewServer": "Yeni sunucu ekle…"
@@ -232,8 +232,7 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "Yapılandırılmadı",
-      "selectDomain": "Alan adı seçin",
-      "allDomains": "Tüm alan adları"
+      "selectDomain": "Alan adı seçin"
     },
     "publicEndpoints": {
       "mappedToPort": "Port {port} ile eşleştirildi.",
@@ -264,39 +263,7 @@
       "permanent": "kalıcı",
       "cleanUrls": "Temiz URL'ler",
       "cleanUrlsHint": "(.html uzantısını kaldır)",
-      "trailingSlash": "Sondaki eğik çizgi",
-      "proxyLimits": "İstek sınırları",
-      "proxyLimitsHint": "Yükleme boyutu ve zaman aşımları. Boş bırakılırsa proxy varsayılanları geçerli olur — 1 MB yükleme ve 60s zaman aşımı.",
-      "maxBodySize": "Maksimum yükleme boyutu",
-      "maxBodySizeHint": "örn. 25m. Daha büyük istekler 413 ile reddedilir. Varsayılan 1m.",
-      "readTimeout": "Okuma zaman aşımı",
-      "readTimeoutHint": "örn. 300s. Uygulamanın yanıtı ne kadar beklenecek. Varsayılan 60s.",
-      "sendTimeout": "Gönderme zaman aşımı",
-      "sendTimeoutHint": "örn. 300s. Uygulamaya gönderirken ne kadar beklenecek. Varsayılan 60s.",
-      "bodyTimeout": "Yükleme zaman aşımı",
-      "bodyTimeoutHint": "örn. 300s. Büyük yüklemeler için bunu da artırın, yoksa transfer ortasında kesilir. Varsayılan 60s.",
-      "proxyBuffering": "Yanıtları arabelleğe al",
-      "proxyBufferingHint": "(akış / SSE için kapatın)",
-      "gzip": "Yanıtları sıkıştır",
-      "gzipHint": "(metin, JSON, JS, CSS için gzip)",
-      "proxyGroups": {
-        "body": "İstek gövdesi",
-        "timeouts": "Upstream zaman aşımları",
-        "buffering": "Yanıt arabelleği",
-        "compression": "Sıkıştırma",
-        "headers": "Başlıklar ve protokol",
-        "upstreamTls": "Uygulamaya TLS"
-      },
-      "proxyInherit": "nginx varsayılanı",
-      "proxyNotSet": "ayarlanmadı",
-      "proxyLiveLabel": "Sunulan:",
-      "proxyLiveVaries": "sunucuya göre değişiyor",
-      "proxyDrift": "kayıtlı değerden farklı",
-      "proxyDriftSummary": "Edge şu ayarlar için farklı değerler sunuyor:",
-      "proxyAdoptLive": "Canlı değerleri benimse",
-      "proxyLiveUnavailable": "Bu projenin sunucusundaki canlı yapılandırma okunamadı.",
-      "proxyLiveSource": "Okunduğu yer:",
-      "proxyRefreshLive": "Canlı yapılandırmayı yeniden oku"
+      "trailingSlash": "Sondaki eğik çizgi"
     },
     "settingsCard": {
       "recordLabels": {

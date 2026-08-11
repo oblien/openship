@@ -22,21 +22,6 @@ import { DEFAULT_IMAGE_REGISTRY } from "@repo/core";
 
 const COMPOSE_PATH = join(import.meta.dirname, "../../../../docker/docker-compose.yml");
 
-/**
- * The container path the host-op SSH key is mounted at, and the tolerant source
- * expression that mounts it.
- *
- * Both halves are load-bearing and neither is importable — the api reads the target
- * out of `OPENSHIP_HOST_SSH_KEY`, which `.env.example` and the docs tell operators to
- * set to this exact value, and compose resolves the source. The two drifting apart is
- * the "Cannot read host SSH key" bug: the docs said to set the env var while this file
- * mounted nothing (#509). `/dev/null` is the default on purpose — it is what lets the
- * stack start on a box with no key at all, rather than compose creating a DIRECTORY at
- * a missing bind source.
- */
-const HOST_KEY_TARGET = "/run/secrets/openship_host_key";
-const HOST_KEY_MOUNT = `\${OPENSHIP_HOST_KEY_PATH:-/dev/null}:${HOST_KEY_TARGET}:ro`;
-
 interface ComposeFile {
   services: Record<string, { volumes?: string[]; image?: string }>;
   volumes?: Record<string, unknown> | null;
@@ -46,21 +31,10 @@ function compose(): ComposeFile {
   return parse(readFileSync(COMPOSE_PATH, "utf8")) as ComposeFile;
 }
 
-/**
- * Mounts that exist for reasons other than edge state, keyed by their CONTAINER
- * path: the docker socket, and the host SSH key.
- *
- * Excluded by TARGET rather than by "the source doesn't start with /", which is what
- * this filter used to do — the host-key mount escaped it only because its source is
- * `${OPENSHIP_HOST_KEY_PATH:-…}`. Hardcode that path one day and this suite fails
- * with a message about EDGE mounts, which is the wrong place to look (#509).
- */
-const NON_EDGE_TARGETS = ["/var/run/docker.sock", HOST_KEY_TARGET];
-
 /** `host:container:z` → `host:container`, dropping the SELinux flag. */
 function mountPairs(volumes: string[] | undefined): string[] {
   return (volumes ?? [])
-    .filter((v) => !NON_EDGE_TARGETS.some((t) => v.includes(t)))
+    .filter((v) => v.startsWith("/") && !v.includes("docker.sock"))
     .map((v) => v.split(":").slice(0, 2).join(":"));
 }
 
@@ -98,12 +72,6 @@ describe("docker/docker-compose.yml — edge mounts match EDGE_CONTAINER_MOUNTS"
       if (m.host === m.container) continue;
       expect(m.host.startsWith(EDGE_HOST_STATE_DIR)).toBe(true);
     }
-  });
-
-  it("mounts the host SSH key where OPENSHIP_HOST_SSH_KEY points, tolerantly", () => {
-    // The CLI writes the same line into its generated compose file
-    // (apps/cli/src/lib/compose.ts) — this is the raw-Docker copy of it.
-    expect(compose().services.api?.volumes ?? []).toContain(HOST_KEY_MOUNT);
   });
 
   it("falls back to the shared registry default", () => {

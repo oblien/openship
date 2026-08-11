@@ -91,17 +91,6 @@ describe("validatedPublicEndpointPayload", () => {
       validatedPublicEndpointPayload(server({ customDomain: "  WWW.Example.COM " }), true),
     ).toMatchObject({ customDomain: "www.example.com" });
   });
-
-  // #342: the API now rejects a bogus custom hostname, and it normalizes with
-  // `normalizeCustomHostname` (scheme + trailing slash stripped) before checking.
-  // Saving a differently-normalized value here would send `https://example.com`
-  // where the API expects `example.com` — accepted by POST /domains and the service
-  // routing patch, so it has to be accepted on this path too.
-  it("strips a pasted scheme and trailing slash, like the API", () => {
-    expect(
-      validatedPublicEndpointPayload(server({ customDomain: "HTTPS://App.Example.com/" }), true),
-    ).toMatchObject({ customDomain: "app.example.com" });
-  });
 });
 
 describe("resolvePublicEndpointHostname", () => {
