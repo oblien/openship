@@ -19,22 +19,18 @@
  *     the unchanged service was never disturbed.
  *
  * Same two seams as the single-app cycle test: platform/runtime LOCATION and
- * GitHub check emission. Skips without a daemon.
+ * GitHub check emission. Skips without a reachable daemon — and FAILS instead
+ * under RUN_DOCKER_E2E=1, which is what CI sets (see test/helpers/docker-e2e.ts).
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { existsSync } from "node:fs";
+import { it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
-import {
-  DockerRuntime,
-  NoopInfraProvider,
-  createHostExecutor,
-  resolveLocalDockerSocketPath,
-} from "@repo/adapters";
+import { DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
 import { repos } from "@repo/db";
+import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import {
   seedOrg,
   seedProject,
@@ -42,8 +38,6 @@ import {
   seedService,
   seedServiceDeployment,
 } from "../helpers/seed";
-
-const hasDaemon = existsSync(resolveLocalDockerSocketPath());
 
 const BASE_IMAGE = "busybox:latest";
 const WEB_V1 = "openship/e2e-compose-web:v1";
@@ -77,7 +71,7 @@ async function get(url: string, attempts = 60): Promise<string> {
   throw new Error(`${url} never answered: ${String(lastErr)}`);
 }
 
-describe.skipIf(!hasDaemon)("compose rollback cycle through the real entry point", () => {
+describeDockerE2E("compose rollback cycle through the real entry point", () => {
   let runtime: DockerRuntime;
   let project: { id: string; organizationId: string; slug: string | null };
   let web: { id: string; name: string };
@@ -113,8 +107,8 @@ describe.skipIf(!hasDaemon)("compose rollback cycle through the real entry point
   };
 
   beforeAll(async () => {
+    await requireDocker();
     runtime = await DockerRuntime.create({ transport: "socket" });
-    if (!(await runtime.ping().catch(() => false))) return;
     try {
       await runtime.pullImage(BASE_IMAGE);
     } catch {
@@ -201,7 +195,7 @@ describe.skipIf(!hasDaemon)("compose rollback cycle through the real entry point
   }, 300_000);
 
   afterAll(async () => {
-    if (!hasDaemon || !project) return;
+    if (!project) return;
     for (const id of await runtime.listProjectContainerIds(project.id).catch(() => [])) {
       await runtime.destroy(id).catch(() => {});
     }

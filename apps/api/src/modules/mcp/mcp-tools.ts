@@ -7,9 +7,12 @@ import {
 } from "../../lib/route-permission";
 import {
   PROJECT_ROOTED,
+  permitsAction,
   roleAllowsResourceType,
   type CheckedResourceType,
 } from "../../lib/permission";
+import type { Permission } from "@repo/db";
+import { env } from "../../config";
 
 /**
  * MCP tool generation from the HTTP route registry. A route is exposed as a
@@ -57,6 +60,22 @@ export interface McpPrincipal {
   readOnly: boolean;
   /** Resource types the token holds grants on — only consulted when role === "restricted". */
   grantedRootTypes: ReadonlySet<string>;
+  /**
+   * The token's WILDCARD grants (resourceId "*"), keyed by resource type, holding
+   * each one's permission array.
+   *
+   * Separate from `grantedRootTypes` because that set cannot tell `{server,"*"}`
+   * from `{server,"S1"}`, and only the former satisfies a collection op — so it
+   * cannot mirror the wildcard arm of `checkPermission`. Carrying the permissions
+   * (not just the type) is what lets this filter answer the verb question the arm
+   * answers: a `{job,"*",[read]}` grant lists the job GETs and hides `post_jobs`.
+   *
+   * REQUIRED, unlike `sourceCapabilities`: an omitted map would silently deny
+   * every collection tool, and a filter that quietly under-advertises is the same
+   * advertise/enforce drift as one that over-advertises. Making it required means
+   * the compiler names every construction site instead.
+   */
+  wildcardGrants: ReadonlyMap<string, readonly Permission[]>;
   /** True when the token holds a create-capable project wildcard grant
    *  ({project, "*", permissions:["create"]}) — the "own projects" scope. Lets a
    *  restricted token see the project-create routes and the project list (which
@@ -88,6 +107,13 @@ function includeRoute(route: RegisteredRoute): boolean {
   const spec = route.spec;
   if (isPublicSpec(spec)) return false;
   if (HARD_DENY.has(route.module)) return false;
+  // A `localOnly` route 404s on the hosted control plane, so advertising it there
+  // hands the agent a tool that can only ever fail. Not hypothetical: the jobs
+  // router is localOnly while `app.ts` mounts it unconditionally, so all 11 jobs
+  // tools were listed on the SaaS. Reading it from the spec is why router-level
+  // `localOnly` had to become a `secureRouter` option — as middleware it never
+  // reached the registry.
+  if (spec.localOnly && env.CLOUD_MODE) return false;
   return spec.mcp != null; // opt-in allowlist
 }
 
@@ -154,6 +180,19 @@ function annotationsFor(route: RegisteredRoute): { readOnlyHint: boolean; destru
 }
 
 let cached: McpToolDef[] | null = null;
+
+/**
+ * Drop the memo. The registry is populated as a side effect of importing route
+ * modules, several of which `app.ts` imports lazily and mode-dependently, so a tool
+ * list built too early is permanently short. In production the first
+ * `getMcpTools()` call happens inside a request handler, long after mounting — but
+ * a test that calls it before importing its route modules caches an empty array and
+ * then passes vacuously. Exported so such a test can reset instead of being ordered
+ * around the cache.
+ */
+export function resetMcpToolCache(): void {
+  cached = null;
+}
 
 /** All curated tools, generated once from the route registry. */
 export function getMcpTools(): McpToolDef[] {
@@ -230,6 +269,18 @@ const GITHUB_GRANT_FAMILY: ReadonlySet<string> = new Set([
   "github_repository",
 ]);
 
+/**
+ * The action the route layer actually asserts for a tag.
+ *
+ * A `:list` tag asserts `read` — `requirePermission`'s isList branch hardcodes it
+ * rather than passing `"list"` through, because "list" is a scope, not a verb. The
+ * other branches pass the tag's action unchanged. Mapping it here keeps this
+ * filter reading the same verb the enforcement path will.
+ */
+function assertedAction(tagAction: string): Permission {
+  return (tagAction === "list" ? "read" : tagAction) as Permission;
+}
+
 /** Does the principal hold a grant whose root type enables this tool? */
 function principalHasGrantFor(granted: ReadonlySet<string>, grantRoot: string): boolean {
   if (grantRoot === "github") {
@@ -284,18 +335,21 @@ export function filterToolsForPrincipal(tools: McpToolDef[], principal: McpPrinc
     // Restricted: a per-resource op needs a grant on its root type (github grants
     // matched as a family).
     if (t.perm.wildcard) {
-      // An ORG-SINGLETON wildcard op is reachable for a scoped token that holds a
-      // grant on the singleton type itself: the restricted arm of
-      // `checkPermission` authorizes {leaf,"*"} directly from that grant
-      // (permission.ts). Advertise iff such a grant is held — hiding a tool the
-      // token can actually call is the same advertise/enforce drift as listing one
-      // it can't, just inverted.
+      // A wildcard op — :list, collection write, or org-singleton — is authorized
+      // by a WILDCARD grant on the asserted type and nothing else. Same rule, same
+      // authority (`permitsAction`) as the wildcard arm of `checkPermission`, so
+      // "is listed" and "can call" cannot drift.
       //
-      // A LIST or COLLECTION wildcard stays denied: no arm authorizes those from a
-      // grant, so they'd 404 (the `project` create/list capability is the sole
-      // exception, and it is handled above via `canCreateProjects`).
-      if (!ORG_SINGLETON_RESOURCES.has(t.perm.leaf)) return false;
-      return principal.grantedRootTypes.has(t.perm.leaf);
+      // This is verb-aware where the old org-singleton-only test was not: it
+      // advertised any singleton tool whose type had a grant, so a
+      // `{job,"*",[read]}` token was shown `post_jobs` (job:write) and got a 404
+      // on calling it. It also no longer hard-denies non-singleton collections —
+      // a `{server,"*",read}` token can genuinely enumerate servers now.
+      //
+      // A per-id grant still fails here, correctly: `wildcardGrants` holds only
+      // resourceId "*" rows.
+      const held = principal.wildcardGrants.get(t.perm.leaf);
+      return held ? permitsAction(held, assertedAction(t.perm.action)) : false;
     }
     return principalHasGrantFor(principal.grantedRootTypes, t.perm.grantRoot);
   });

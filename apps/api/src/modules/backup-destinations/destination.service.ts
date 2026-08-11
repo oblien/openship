@@ -13,91 +13,28 @@
 import { repos, type BackupDestination } from "@repo/db";
 import { type DestinationKind, type BackupDestinationRow } from "@repo/adapters";
 import crypto from "node:crypto";
-import path from "node:path";
-import { realpath } from "node:fs/promises";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { env } from "../../config/env";
 import { assertPublicUrl, assertPublicHost } from "../../lib/ssrf-guard";
 import { toAdapterRow, hydrateServerAdapterRow } from "./hydrate-server";
+import { assertLocalDestinationAllowed } from "./local-gate";
 import { safeErrorMessage, type ConnectivityCode } from "@repo/core";
 import { runConnectivityCheck } from "../../lib/connectivity";
 import "../../lib/connectivity-checks"; // registers the backup-destination check
 
 /**
- * Resolve + sandbox a local destination endpoint. Refuses any path
- * that escapes `BACKUP_LOCAL_ROOT` or sits inside known system
- * directories. Symlinks are resolved before the comparison so an
- * attacker can't slip a symlink-into-/etc past the check.
+ * Gate + sandbox a local destination endpoint at WRITE time, so the operator gets
+ * the refusal while they're still editing rather than at the next backup run.
  *
- * The realpath() will fail if the endpoint doesn't exist yet — we
- * fall back to resolving the parent + appending the leaf, which is
- * sufficient because the destination's writes go through fs.mkdir
- * later and a deceptive non-existent path can't outflank the check.
+ * The policy itself lives in ./local-gate.ts and is enforced again on every path
+ * that USES a destination (`toAdapterRow`) — this call is the early, friendly copy
+ * of that check, not the authority. Keeping one implementation is the point: the
+ * two used to be able to disagree, and only this one existed.
  */
-const LOCAL_DEST_DENY = [
-  "/etc",
-  "/proc",
-  "/sys",
-  "/dev",
-  "/root",
-  "/var/lib/postgresql",
-  "/var/lib/docker",
-  "/var/lib/openship",
-  "/boot",
-];
-
 async function validateLocalEndpoint(endpoint: string): Promise<void> {
-  if (env.CLOUD_MODE) {
-    throw new Error("Local destinations are disabled in cloud mode");
-  }
-  if (!env.BACKUP_ALLOW_LOCAL_DESTINATION) {
-    throw new Error(
-      "Local destinations are disabled. Set BACKUP_ALLOW_LOCAL_DESTINATION=true and BACKUP_LOCAL_ROOT to enable.",
-    );
-  }
-  if (!path.isAbsolute(endpoint)) {
-    throw new Error("Local destination path must be absolute");
-  }
-  const root = path.resolve(env.BACKUP_LOCAL_ROOT);
-  const requested = path.resolve(endpoint);
-
-  // Reject any path that lands inside a denied system directory, even
-  // before we resolve symlinks (catches the obvious case + makes the
-  // error message useful).
-  for (const denied of LOCAL_DEST_DENY) {
-    if (requested === denied || requested.startsWith(denied + path.sep)) {
-      throw new Error(
-        `Local destination path is inside a protected directory (${denied})`,
-      );
-    }
-  }
-
-  // Resolve symlinks where possible. If the leaf doesn't exist yet,
-  // resolve the closest existing ancestor and append the remainder.
-  let resolved = requested;
-  try {
-    resolved = await realpath(requested);
-  } catch {
-    let parent = requested;
-    while (parent !== path.dirname(parent)) {
-      parent = path.dirname(parent);
-      try {
-        const real = await realpath(parent);
-        resolved = path.join(real, requested.slice(parent.length));
-        break;
-      } catch {
-        // keep walking up
-      }
-    }
-  }
-
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error(
-      `Local destination must be inside BACKUP_LOCAL_ROOT (${root})`,
-    );
-  }
+  await assertLocalDestinationAllowed(endpoint);
 }
 
 // ─── Public shapes ───────────────────────────────────────────────────────────

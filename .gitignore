@@ -14,6 +14,8 @@ out/
 apps/api/release-dist/
 # Desktop staged payload (apps/desktop/build/stage.ts)
 apps/desktop/resources/
+# CLI arch-independent runtime payload (apps/cli/build/stage-cli-payload.ts)
+apps/cli/.cli-payload/
 # CLI README is staged from the root README at pack time (apps/cli prepack)
 apps/cli/README.md
 # bun build --compile scratch/leftover binaries

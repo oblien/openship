@@ -23,6 +23,7 @@ import {
   Link2,
   Globe,
   ChevronRight,
+  ChevronDown,
   KeyRound,
   ShieldCheck,
 } from "lucide-react";
@@ -1464,6 +1465,7 @@ export function ServerMigrationWizard({
                           <ServiceConfigCard
                             key={uid}
                             service={service}
+                            sourceServerId={selectedId}
                             isNew={isNew}
                             deployAction={action}
                             routes={active.serviceRoutes[uid]}
@@ -1948,6 +1950,7 @@ export function ServerMigrationWizard({
                   <ServiceConfigCard
                     key={uid}
                     service={service}
+                    sourceServerId={selectedId}
                     isNew={isNew}
                     deployAction={action}
                     routes={active.serviceRoutes[uid]}
@@ -2176,6 +2179,7 @@ export function ServerMigrationWizard({
                       <ServiceConfigCard
                         key={uid}
                         service={service}
+                        sourceServerId={selectedId}
                         isNew={isNew}
                         deployAction={action}
                         routes={active.serviceRoutes[uid]}
@@ -3029,6 +3033,7 @@ function ServiceMapPanel({
  *  discovered container's env and only carries an override once edited. */
 function ServiceConfigCard({
   service,
+  sourceServerId,
   routes,
   envOverride,
   sameServer,
@@ -3042,6 +3047,9 @@ function ServiceConfigCard({
   onSetRouteMode,
 }: {
   service: DiscoveredService;
+  /** Source server the container lives on — used to reveal its real (masked) env.
+   *  Null before a server is picked; repo-only `isNew` cards have no container. */
+  sourceServerId: string | null;
   routes: PublicEndpoint[] | undefined;
   envOverride: Record<string, string> | undefined;
   sameServer: boolean;
@@ -3060,8 +3068,17 @@ function ServiceConfigCard({
   const { t } = useI18n();
   const s = t.migration.wizard.steps;
   const d = t.migration.discover;
+  // Borrowed from the home status row: "1 issue"/"{n} issues" is already translated
+  // in all 9 locales there, where a migration-namespace copy would be English-only
+  // in the 5 locales that have no migration.json.
+  const issueLabel =
+    service.warnings.length === 1
+      ? t.dashboard.home.oneIssue
+      : interpolate(t.dashboard.home.manyIssues, { n: String(service.warnings.length) });
   const port = routes?.[0]?.port ?? firstContainerPort(service);
   const [envModalOpen, setEnvModalOpen] = useState(false);
+  const [imageEnvOpen, setImageEnvOpen] = useState(false);
+  const [warningsOpen, setWarningsOpen] = useState(false);
   const existing = service.existingRoute;
   // Flat {domain, path} pairs the foreign proxy already serves for this service —
   // a path-fan-out vhost yields several (e.g. api.onvo.me `/`, api.onvo.me `/v3`).
@@ -3105,6 +3122,23 @@ function ServiceConfigCard({
 
   const envRecord = envOverride ?? service.env;
   const envRows = useMemo(() => envToRows(envRecord), [envRecord]);
+  // On-demand reveal: the scan masks env, so the eye / "Show values" fetches the
+  // real values for THIS container from the source server. Only wired when there's
+  // a running container to read (repo-only `isNew` cards have no server-side env).
+  const containerId = service.containerId;
+  const onRevealAll = useMemo(() => {
+    if (!sourceServerId || !containerId) return undefined;
+    const serverId = sourceServerId;
+    const cid = containerId;
+    return () =>
+      dockerMigrationApi.revealEnv({ serverId, containerId: cid }).then((r) => r.environment);
+  }, [sourceServerId, containerId]);
+  // Image-supplied vars not yet pinned as config — importing them adds them to the
+  // override, which empties this list and bumps the env count.
+  const pendingImageEnv = useMemo(
+    () => Object.entries(service.envImageDefaults ?? {}).filter(([k]) => !(k in envRecord)),
+    [service.envImageDefaults, envRecord],
+  );
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-4 space-y-3">
@@ -3123,6 +3157,28 @@ function ServiceConfigCard({
             the repo, or pull a registry image. `New` marks a repo service with no
             running container — it deploys fresh from the repo, not adopted. */}
         <span className="ms-auto flex items-center gap-1.5">
+          {/* Caveats collapse to a count here. Expanded by default they pushed a
+              wall of yellow prose above every card's Route row, which read as
+              "something is broken" on a stack where each bind mount is one line
+              of expected detail. */}
+          {service.warnings.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setWarningsOpen((v) => !v)}
+              aria-expanded={warningsOpen}
+              // Bordered so it reads as the one clickable thing in a row of
+              // same-toned static badges (`New` is warning-coloured too).
+              className="flex items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning transition-opacity hover:opacity-80"
+            >
+              <AlertTriangle className="size-3 shrink-0" />
+              {issueLabel}
+              {warningsOpen ? (
+                <ChevronDown className="size-3 shrink-0" />
+              ) : (
+                <ChevronRight className="size-3 shrink-0" />
+              )}
+            </button>
+          )}
           {isNew && (
             <span className="rounded-md bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning">
               {s.serviceNewBadge}
@@ -3143,6 +3199,18 @@ function ServiceConfigCard({
           </span>
         </span>
       </div>
+
+      {/* What discovery could not carry over: build-time vars, bind mounts, dropped ports */}
+      {warningsOpen && service.warnings.length > 0 && (
+        <div className="space-y-1 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
+          {service.warnings.map((warning) => (
+            <p key={warning} className="flex items-start gap-1.5 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              {warning}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Route: Free / Custom / None (+ Keep when a route was already detected) */}
       <div className="space-y-2">
@@ -3269,6 +3337,48 @@ function ServiceConfigCard({
         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
       </button>
 
+      {/* Env the IMAGE supplies, not the operator (recovered from Docker's
+          create-time merge order). Deliberately muted, not a warning: nothing is
+          lost — the same image re-supplies it — but it's one click to pin as
+          explicit config, which is what you want before rebuilding from source. */}
+      {pendingImageEnv.length > 0 && (
+        <div className="rounded-lg border border-border/50 bg-muted/10 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setImageEnvOpen((v) => !v)}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-start text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {imageEnvOpen ? (
+                <ChevronDown className="size-3.5 shrink-0" />
+              ) : (
+                <ChevronRight className="size-3.5 shrink-0" />
+              )}
+              <span className="truncate">
+                {interpolate(d.envFromImage, { n: String(pendingImageEnv.length) })}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetEnv({ ...envRecord, ...Object.fromEntries(pendingImageEnv) })}
+              className="shrink-0 rounded-md border border-border/60 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+            >
+              {d.envFromImageImport}
+            </button>
+          </div>
+          {imageEnvOpen && (
+            <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
+              <p className="text-[11px] text-muted-foreground/70">{d.envFromImageHint}</p>
+              {pendingImageEnv.map(([key, value]) => (
+                <p key={key} className="truncate font-mono text-[11px] text-muted-foreground">
+                  {key}={value}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <Modal
         isOpen={envModalOpen}
         onClose={() => setEnvModalOpen(false)}
@@ -3306,6 +3416,7 @@ function ServiceConfigCard({
             borderless
             envVars={envRows}
             onEnvVarsChange={(rows) => onSetEnv(rowsToEnv(rows))}
+            onRevealAll={onRevealAll}
           />
         </div>
       </Modal>

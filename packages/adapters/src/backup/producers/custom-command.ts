@@ -28,12 +28,6 @@ import type {
   ServiceHandle,
 } from "../types";
 
-interface CustomConfig {
-  produceCommand?: string;
-  restoreCommand?: string;
-  artifactName?: string;
-}
-
 class CustomCommandProducerImpl implements BackupProducer {
   readonly kind = "custom_command" as const;
 
@@ -44,8 +38,10 @@ class CustomCommandProducerImpl implements BackupProducer {
     executor: BackupExecutor,
     opts: ProducerOpts,
   ): AsyncIterable<Artifact> {
-    const cfg = (opts as ProducerOpts & CustomConfig);
-    const produceCommand = cfg.produceCommand ?? opts.command;
+    // Read straight off `opts` — the keys are declared on ProducerOpts. The cast
+    // that used to sit here is what let the orchestrator drop all three of them
+    // (D5) without a type error.
+    const produceCommand = opts.produceCommand ?? opts.command;
     if (!produceCommand) {
       throw new Error("custom_command producer requires `produceCommand` in policy payload config");
     }
@@ -57,12 +53,15 @@ class CustomCommandProducerImpl implements BackupProducer {
     ]);
 
     yield {
-      name: cfg.artifactName ?? "custom-backup.bin",
+      name: opts.artifactName ?? "custom-backup.bin",
       stream: stdout,
       payloadKind: "custom_command",
       metadata: {
         produceCommand,
-        restoreCommand: cfg.restoreCommand ?? null,
+        // The ONLY record of how to put this artifact back. Nothing downstream
+        // can reconstruct it, which is why losing it here made every captured
+        // run unrestorable.
+        restoreCommand: opts.restoreCommand ?? null,
       },
     };
 
@@ -84,7 +83,8 @@ class CustomCommandProducerImpl implements BackupProducer {
       (artifact.metadata.restoreCommand as string | null) ?? null;
     if (!restoreCommand) {
       throw new Error(
-        "Backup has no restoreCommand recorded — restore is not possible for this artifact",
+        "Backup has no restoreCommand recorded — restore is not possible for this artifact. " +
+          "Re-run the backup policy to capture a restorable one.",
       );
     }
 

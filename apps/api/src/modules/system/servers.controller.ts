@@ -10,15 +10,17 @@ import { hostControlDisabled } from "@repo/adapters";
 import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
 import { invalidateHostCapacity } from "@/lib/host-capacity";
 import { env } from "../../config";
-import { sshManager } from "../../lib/ssh-manager";
+import { sshManager, type ReachabilityDiagnosis } from "../../lib/ssh-manager";
 import { resolvesToLocalHost } from "@/lib/self-host";
 import { boxOwningOrgId } from "@/lib/box-org";
+import { ensureLocalServer, localServerHostChannel } from "@/lib/startup/self-server";
 import { encryptSecretField } from "@/lib/credential-encryption";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { assertNotCloud } from "../../lib/controller-helpers";
 import { primeGeo, countryForIp } from "@/lib/geo-ip";
+import { execOnHost } from "../../lib/agent-exec";
 
 /** Public shape - what the controller returns to clients (no SSH secrets). */
 function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
@@ -34,6 +36,10 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
     sshUser: s.sshUser,
     sshAuthMethod: s.sshAuthMethod,
     sshKeyPath: s.sshKeyPath,
+    // Never return the key material itself — only whether one is stored, so the
+    // edit form can offer "a key is stored; leave blank to keep it" (same idea as
+    // the password field, which is simply absent from this shape).
+    hasStoredKeyMaterial: !!s.sshPrivateKey,
     sshJumpHost: s.sshJumpHost,
     sshArgs: s.sshArgs,
     createdAt: s.createdAt,
@@ -49,6 +55,11 @@ export async function listServers(c: Context) {
 
   // Org-scoped: only the caller's org's servers.
   const ctx = getRequestContext(c);
+  // Self-heal: "this box is a deploy target" is an invariant about the MACHINE, so
+  // materialize it on read instead of trusting whichever install branch ran (that
+  // trust is why a free-domain install listed no servers). Idempotent, single-flight
+  // and a no-op — one findLocal — once the row exists.
+  await ensureLocalServer().catch(() => null);
   const rows = await repos.server.listByOrganization(ctx.organizationId);
   // Host control off (`openship up --no-host-control`): this box is not a deploy
   // target and every host operation refuses, so the local row is hidden rather
@@ -60,7 +71,22 @@ export async function listServers(c: Context) {
   const projectCounts = await repos.project
     .countActiveByServer(ctx.organizationId)
     .catch(() => ({} as Record<string, number>));
-  return c.json(all.map((s) => ({ ...serializeServer(s), projectCount: projectCounts[s.id] ?? 0 })));
+  // The local row's container→host channel, as an ANNOTATION (#509). Never a filter:
+  // ordinary container deploys run over the mounted Docker socket and survive a dead
+  // channel, so hiding the row would break them — only `hostControlDisabled()` above
+  // withholds it. Null for a remote row, and null when the diagnosis itself fails.
+  const channels = await Promise.all(
+    // `.catch` at the call site as well as inside: one rejected probe must not 500 the
+    // whole list. An annotation that can break the page it annotates is a gate.
+    all.map((s) => (s.isLocal ? localServerHostChannel(s.id).catch(() => null) : null)),
+  );
+  return c.json(
+    all.map((s, i) => ({
+      ...serializeServer(s),
+      projectCount: projectCounts[s.id] ?? 0,
+      hostChannel: channels[i] ?? null,
+    })),
+  );
 }
 
 /** GET /servers/:id - get a single server. */
@@ -76,14 +102,34 @@ export async function getServer(c: Context) {
   if (!server) return c.json({ error: "Server not found" }, 404);
 
   await primeGeo();
-  return c.json(serializeServer(server));
+  // Same name, same source, same meaning as the list's `projectCount` — the detail
+  // view decides "is an absent edge an issue or an offer" and "what does Remove
+  // server unbind" from it, and a second field name would let those disagree with
+  // the fleet view. It's also the only PRE-delete reading of that number:
+  // deleteServer's `unboundProjects` ships with the response, i.e. once the row is
+  // already gone, so no confirm can be built from it.
+  const projectCounts = await repos.project
+    .countActiveByServer(ctx.organizationId)
+    .catch(() => ({}) as Record<string, number>);
+  return c.json({
+    ...serializeServer(server),
+    projectCount: projectCounts[id] ?? 0,
+    hostChannel: server.isLocal
+      ? await localServerHostChannel(server.id).catch(() => null)
+      : null,
+  });
 }
 
 /**
  * GET /servers/:id/reachability - lightweight liveness probe for the list view.
- * Reuses sshManager.probeReachable (already-connected → instant true, else a
+ * Reuses sshManager.diagnoseReachability (already-connected → instant true, else a
  * short TCP probe behind the circuit breaker). Never throws — an unreachable
  * host or transient failure is just `{ reachable: false }`.
+ *
+ * Carries the REASON too: `target` is the address we actually dial, which for THIS
+ * box is the container→host SSH bridge and not the row's display `sshHost`. Without
+ * it the UI could only name `127.0.0.1` and sent operators to check a port that is
+ * supposed to be closed, on the wrong machine (#490).
  */
 export async function probeReachability(c: Context) {
   const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
@@ -94,8 +140,18 @@ export async function probeReachability(c: Context) {
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return c.json({ error: "Server not found" }, 404);
 
-  const reachable = await sshManager.probeReachable(id).catch(() => false);
-  return c.json({ reachable });
+  const d: ReachabilityDiagnosis = await sshManager
+    .diagnoseReachability(id)
+    .catch(() => ({ reachable: false, code: "unknown" }));
+  return c.json({
+    reachable: d.reachable,
+    code: d.code,
+    target: d.target ?? null,
+    port: d.port ?? null,
+    hint: d.hint ?? null,
+    rule: d.rule ?? null,
+    channel: d.channel ?? null,
+  });
 }
 
 /** POST /servers - create a new server */
@@ -124,17 +180,20 @@ export async function createServer(c: Context) {
         400,
       );
     }
-    // Adopt the canonical isLocal "This Server" row (create it if the boot
-    // reconcile hasn't run yet) so the box is a first-class, working deploy
-    // target with the right transport — never a duplicate loopback SSH row.
-    const local =
-      (await repos.server.findLocal(ctx.organizationId)) ??
-      (await repos.server.create({
-        organizationId: ctx.organizationId,
-        name: body.name?.trim() || "This Server",
-        sshHost: host,
-        isLocal: true,
-      }));
+    // Adopt the canonical isLocal "This Server" row (create it if nothing has yet)
+    // so the box is a first-class, working deploy target with the right transport —
+    // never a duplicate loopback SSH row. Through the ONE registration primitive,
+    // so this can't race the boot hook / an install call into a second row.
+    const local = await ensureLocalServer({ name: body.name?.trim(), sshHost: host });
+    if (!local) {
+      // Only reachable with host control off (`--no-host-control`): every host
+      // operation refuses and listServers hides the row, so creating one would hand
+      // back a server that cannot work. Say so instead.
+      return c.json(
+        { error: "Host control is disabled on this instance, so the local host can't be a deploy target." },
+        400,
+      );
+    }
     return c.json(serializeServer(local), 201);
   }
 
@@ -149,6 +208,7 @@ export async function createServer(c: Context) {
     // Decrypted only inside `buildSshConfig` when the ssh2 client needs it.
     sshPassword: encryptSecretField(body.sshPassword),
     sshKeyPath: body.sshKeyPath || null,
+    sshPrivateKey: encryptSecretField(body.sshPrivateKey),
     sshKeyPassphrase: encryptSecretField(body.sshKeyPassphrase),
     sshJumpHost: body.sshJumpHost?.trim() || null,
     sshArgs: body.sshArgs?.trim() || null,
@@ -204,6 +264,7 @@ export async function updateServer(c: Context) {
   // Sensitive fields are encrypted at rest; see lib/credential-encryption.
   if (body.sshPassword !== undefined) patch.sshPassword = encryptSecretField(body.sshPassword);
   if (body.sshKeyPath !== undefined) patch.sshKeyPath = body.sshKeyPath || null;
+  if (body.sshPrivateKey !== undefined) patch.sshPrivateKey = encryptSecretField(body.sshPrivateKey);
   if (body.sshKeyPassphrase !== undefined) patch.sshKeyPassphrase = encryptSecretField(body.sshKeyPassphrase);
   if (body.sshJumpHost !== undefined) patch.sshJumpHost = body.sshJumpHost?.trim() || null;
   if (body.sshArgs !== undefined) patch.sshArgs = body.sshArgs?.trim() || null;
@@ -233,6 +294,7 @@ export async function updateServer(c: Context) {
   if (body.sshArgs !== undefined) auditAfter.sshArgs = updated?.sshArgs ?? null;
   // Sentinels for credential rotation (no values).
   if (body.sshPassword !== undefined) auditAfter.sshPasswordChanged = true;
+  if (body.sshPrivateKey !== undefined) auditAfter.sshPrivateKeyChanged = true;
   if (body.sshKeyPassphrase !== undefined) auditAfter.sshKeyPassphraseChanged = true;
 
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
@@ -261,6 +323,17 @@ export async function deleteServer(c: Context) {
   if (existing.isLocal) {
     return c.json({ error: "This is the current host and can't be removed." }, 400);
   }
+
+  // Count what this unbinds BEFORE the row goes. `project.server_id` is ON DELETE SET
+  // NULL, so once it's deleted nothing records which projects pointed here. Their next
+  // deploy falls through the nulled column to a stale `meta.serverId` and fails with an
+  // org-mismatch message that cannot mention a server it can no longer read — so this
+  // count is the only thing tying that error back to this action. Same coalesce rule the
+  // deploy resolver uses, so it counts the projects that will actually break.
+  const counts = await repos.project
+    .countActiveByServer(ctx.organizationId)
+    .catch(() => ({}) as Record<string, number>);
+  const unboundProjects = counts[id] ?? 0;
 
   await repos.server.delete(id);
   // Server is hard-deleted — purge any per-server resource grants so
@@ -292,8 +365,87 @@ export async function deleteServer(c: Context) {
     after: {
       name: existing.name,
       sshHost: existing.sshHost,
+      unboundProjects,
     },
   });
 
-  return c.json({ ok: true });
+  return c.json({ ok: true, unboundProjects });
+}
+
+/**
+ * POST /api/system/servers/:id/exec — run a command on this server's host.
+ *
+ * The sanctioned execution point for an agent, and the reason it exists: the only
+ * other way to run a command was a custom command JOB, whose `job` tag is an
+ * org-singleton — so that grant reaches EVERY server in the org and could not be
+ * narrowed to one. Here the permission is asserted on the server itself, so a
+ * `{server, <id>, [admin]}` grant confines an agent to exactly this box.
+ *
+ * `admin` rather than `write`: this is unrestricted shell as the server's SSH user
+ * (root in Openship's model), which is strictly more than any other `server:write`
+ * route can do. It is the same tier `/api/system/install` asserts, which is the
+ * closest existing capability.
+ */
+export async function execOnServer(c: Context) {
+  const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
+
+  const id = c.req.param("id")!;
+  // Primary gate: permission resolver (404 on deny, IDOR-safe). Asserted BEFORE the
+  // row is read, so a caller without access cannot distinguish "no such server"
+  // from "not yours".
+  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: id, action: "admin" });
+  const ctx = getRequestContext(c);
+  const server = await repos.server.getInOrganization(id, ctx.organizationId);
+  if (!server) return c.json({ error: "Server not found" }, 404);
+
+  const body = await c.req.json<{
+    command?: string;
+    cwd?: string;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+  }>();
+  const command = body.command?.trim();
+  if (!command) return c.json({ error: "command required", code: "COMMAND_REQUIRED" }, 400);
+
+  const result = await sshManager
+    .withExecutor(id, (executor) =>
+      execOnHost(executor, {
+        command,
+        cwd: body.cwd,
+        timeoutMs: body.timeoutMs,
+        maxOutputBytes: body.maxOutputBytes,
+      }),
+    )
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      return { transportError: message };
+    });
+
+  if ("transportError" in result) {
+    return c.json(
+      { error: `Could not reach the server: ${result.transportError}`, code: "SERVER_UNREACHABLE" },
+      502,
+    );
+  }
+
+  // The command IS recorded, unlike the counts-only audit used elsewhere: an exec
+  // that ran is the single most important thing to be able to reconstruct later, and
+  // the operator who granted the access is entitled to see what was done with it.
+  // Output is NOT recorded — it is unbounded and may contain secrets the command read.
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "server.exec",
+    resourceType: "server",
+    resourceId: id,
+    after: {
+      command,
+      cwd: body.cwd ?? null,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      truncated: result.truncated,
+      durationMs: result.durationMs,
+      outputBytes: result.output.length,
+    },
+  });
+
+  return c.json({ data: result });
 }

@@ -1,6 +1,10 @@
 import {
   createPlatform,
   DockerRuntime,
+  isHostChannelUnavailableError,
+  peekPlatform,
+  resolveStaticOutputPath,
+  unavailableExecutor,
   type CommandExecutor,
   type DockerConnectionOptions,
   type Platform,
@@ -9,7 +13,14 @@ import {
 } from "@repo/adapters";
 import type { Deployment } from "@repo/db";
 import { repos } from "@repo/db";
-import type { DeployTarget, RuntimeMode } from "@repo/core";
+import {
+  HOST_CHANNEL_UNAFFECTED,
+  HostUnreachableError,
+  resolveWorkload,
+  safeErrorMessage,
+  type DeployTarget,
+  type RuntimeMode,
+} from "@repo/core";
 import { env } from "../config";
 import { cloudClient, getOrgCloudToken } from "./cloud/client";
 import { resolveOrgCloudUserId } from "./cloud/transport";
@@ -17,6 +28,9 @@ import { platform } from "./controller-helpers";
 import { buildSshConfig, sshManager } from "./ssh-manager";
 import { createProvisionLock } from "./provision-lock";
 import { isLocalHostRow } from "./box-org";
+import { isConnectionLoss } from "./remote-state";
+import { resolveAcmeProviderOptions } from "./acme-config";
+import { findLocalServer } from "./startup/self-server";
 
 /**
  * The shape of `deployment.meta` JSONB. Snapshotted per-deploy —
@@ -97,6 +111,45 @@ export interface DeploymentMeta {
   staticServeOutputDir?: string;
 }
 
+/**
+ * The host directory a deployment SERVES static files from, or null when it isn't
+ * a static one. THE one answer to that question outside the deploy pipeline — the
+ * live route apply and the output-check probe both read it, and they have to agree:
+ * the probe reports on the very directory the vhost was pointed at, so two copies
+ * of this formula means the probe can pass on a path nothing serves (or fail on one
+ * that works).
+ *
+ * `containerId` on a static-file-serve deployment is its release root on the host.
+ * `staticServeOutputDir` MUST come from meta and is checked for PRESENCE, not
+ * truthiness — `""` is the real answer for a Docker-sandbox build (which already
+ * extracted the doc root), and treating it as absent points one directory too deep
+ * at a path that doesn't exist. `?? project.outputDirectory` covers deployments
+ * predating the field.
+ *
+ * Null for a project that runs a server (its routes are upstreams, not files), a
+ * deployment with no release root, or an outputDirectory `resolveStaticOutputPath`
+ * rejects as absolute/escaping.
+ */
+export function resolveDeploymentStaticRoot(
+  deployment: Pick<Deployment, "containerId" | "meta">,
+  project: { hasServer?: boolean | null; workloadType?: string | null; outputDirectory?: string | null },
+): string | null {
+  // Only a STATIC workload serves a release directory. A worker also has
+  // `hasServer=false` but its containerId is a real container, not a doc-root, so
+  // classify by workload — not the legacy boolean — or a worker's stop/start would
+  // dial a bogus static path (#538-B).
+  if (resolveWorkload(project.workloadType, project.hasServer) !== "static" || !deployment.containerId) {
+    return null;
+  }
+  const meta = (deployment.meta ?? {}) as DeploymentMeta;
+  const outputDirectory = meta.staticServeOutputDir ?? project.outputDirectory ?? "";
+  try {
+    return resolveStaticOutputPath(deployment.containerId, outputDirectory);
+  } catch {
+    return null;
+  }
+}
+
 /** One exposed port's advisory probe outcome (persisted in `deployment.meta`). */
 export interface PortCheckResult {
   /** The exposed/public port that was probed. */
@@ -169,10 +222,11 @@ async function resolveOrgServer(
       // existence/name oracle. So we explain the likely cause + recovery without
       // revealing whether the id exists elsewhere.
       throw new Error(
-        "The selected deploy target isn't in this project's organization. This usually " +
-          "happens after re-deploying Openship at the same URL (a stale session) or when " +
-          "your active organization differs from the project's. Re-open the deploy target " +
-          "picker and reselect a server, or switch your active organization to match, then redeploy.",
+        "This project's deploy target is no longer available. That server may have been " +
+          "removed from Openship (deleting one unbinds its projects), or this is a stale " +
+          "session after re-deploying Openship at the same URL, or your active organization " +
+          "differs from the project's. Re-open the deploy target picker and reselect a " +
+          "server, or switch your active organization to match, then redeploy.",
       );
     }
     return server;
@@ -259,6 +313,7 @@ async function resolveCloudPlatformForOrg(organizationId?: string): Promise<Plat
   return createPlatform({
     target: "cloud",
     cloudToken: result.token,
+    allowHostBuild: !env.CLOUD_MODE,
     cloudAdminProxy: {
       createPage: (input) => cloudClient({ organizationId }).pages.create(input),
       disablePage: (slug) => cloudClient({ organizationId }).pages.disable(slug),
@@ -360,7 +415,9 @@ export async function resolveTargetPlatform(
         target: "selfhosted",
         runtime: runtimeMode,
         executor,
+        localHost: true,
         docker: runtimeMode === "docker" ? { transport: "socket" as const } : undefined,
+        nginx: resolveAcmeProviderOptions(),
         provisionLock: createProvisionLock("provision:local"),
       });
     }
@@ -371,20 +428,54 @@ export async function resolveTargetPlatform(
       executor, // ← managed executor from pool
       ssh: ssh!,
       docker: runtimeMode === "docker" ? toDockerSshTransport(ssh!, executor) : undefined,
+      nginx: resolveAcmeProviderOptions(),
       // Serialize provisioning per target server, so concurrent deploys (across
       // projects / single-app + compose) never race apt/openresty/networks/state.
       provisionLock: createProvisionLock(`provision:server:${id}`),
     });
   }
 
-  // Local target - no SSH, no pooling needed. Still serialize provisioning: two
-  // local deploys share the same host's openresty/docker/state.
+  // "local" is not a destination anyone picks — it is the ABSENCE of a binding
+  // (no cloud workspace, no serverId), so it always means "this box". Nothing
+  // offers it: `project.server_id` is ON DELETE SET NULL, so deleting a server is
+  // enough to make the next deploy for that project derive it.
+  //
+  // Which is why it resolves through the SAME executor as the isLocal "This Server"
+  // row above. One machine, one path — whether the deploy arrived with that row
+  // picked in the wizard or with no binding left at all. Before this, the branch
+  // took `createPlatform`'s default `createExecutor()`, a plain local executor: on a
+  // compose install that ran every host-side step inside the API CONTAINER, against
+  // the wrong filesystem, which is precisely the hazard `createHostExecutor` exists
+  // to refuse — reached through a different door. Now a dead channel refuses out
+  // loud, with the remedy, and the container workload deploys as before.
+  //
+  // READ the row, never create it. `findLocalServer` shares its gates with
+  // `ensureLocalServer` (self-server.ts), so there is no second definition of "this
+  // box's row" to drift from — but registering a server is preparation, not part of
+  // resolving a deploy. Calling the ensure here made every deploy on a row-less box
+  // responsible for an insert plus the creation path's public-IP lookup (an outbound
+  // request), on a function that also runs for plain runtime reads.
+  //
+  // Only the id is wanted, and only as bookkeeping: null and non-null both resolve to
+  // the same pooled host channel below, so a missing row degrades into "no borrow
+  // marker", never into a different machine.
+  const localRow = await findLocalServer().catch(() => null);
   return createPlatform({
     target: "selfhosted",
     runtime: runtimeMode,
+    executor: await acquireLocalHostExecutor(localRow?.id),
+    // Explicit, and load-bearing now that an executor is injected: `createPlatform`
+    // infers "this machine" from `localHost ?? !executor`, so an injected executor
+    // would otherwise read as REMOTE — turning off the containerized edge provider
+    // and the same-path-mount rule (`sharedMountExecutor`) for the local box.
+    localHost: true,
     docker: runtimeMode === "docker"
       ? { transport: "socket" as const }
       : undefined,
+    nginx: resolveAcmeProviderOptions(),
+    // Still serialize provisioning: two local deploys share the same host's
+    // openresty/docker/state. Same lock name as the isLocal row's branch, because
+    // it is the same host being provisioned.
     provisionLock: createProvisionLock("provision:local"),
   });
 }
@@ -414,6 +505,121 @@ export async function createServerDockerRuntime(
     return DockerRuntime.create({ transport: "socket" });
   }
   return DockerRuntime.create(toDockerSshTransport(ssh!, executor));
+}
+
+/**
+ * Executors we handed back REFUSING, and the reason, so the fact travels with the
+ * handle instead of in a cache someone has to invalidate (#509).
+ *
+ * Keyed by the executor object on purpose: a deploy already holds the very executor
+ * that was demoted, so identity answers "were host operations available to THIS
+ * deploy, on THIS box?" with no key, no TTL, and no way to describe a different
+ * target's channel. Entries die with the executor.
+ */
+const hostChannelRefusals = new WeakMap<CommandExecutor, string>();
+
+/** Last demotion reason we logged, so the decision is logged once per outage and
+ *  not once per resolve — see the `console.warn` below. Cleared on recovery. */
+let lastLoggedRefusal: string | null = null;
+
+/**
+ * One line for a deploy log: host operations were skipped, why, and that the deploy
+ * itself is unaffected.
+ *
+ * Callers emit this ONCE per deploy, before the fan-out. Without it the #509 box does
+ * not fail any more — it degrades in silence, because each host touchpoint absorbs the
+ * refusal on its own terms: `allocateHostPort` reports an unscanned host (and only
+ * under `loopback-port` routing), and the edge/routing step logs "deploy continues".
+ * Neither names the channel, so the first legible symptom is a container that dies
+ * later over a config file that never landed.
+ *
+ * Returns null unless this executor is one we demoted — the notice is EVIDENCE, so it
+ * is never printed for a target whose channel nothing has decided anything about.
+ */
+export function hostChannelDeployNotice(executor?: CommandExecutor | null): string | null {
+  const reason = executor ? hostChannelRefusals.get(executor) : undefined;
+  if (!reason) return null;
+  return (
+    "Host operations are unavailable on this deploy target, so this deploy skips them: " +
+    "live host port-occupancy scans and host-side edge/routing steps. Anything that MUST " +
+    "be written on the host — an app template's generated config file — still fails.\n" +
+    `${reason}\n${HOST_CHANNEL_UNAFFECTED}`
+  );
+}
+
+/**
+ * This box's host executor, with "this box has no host channel" demoted from a
+ * resolve-time throw to a use-time one.
+ *
+ * `serverId` is the canonical isLocal row when the box has one, and the executor is
+ * then POOLED — `sshManager.acquire` hands back the shared host channel, which is what
+ * stops one deploy from leaving behind an sshd session (#291). Without a row (desktop,
+ * the SaaS, `--no-host-control`) there is nothing to pool against, so the channel is
+ * constructed directly. Same box either way, so it must be the same policy: one
+ * function, so a target that arrives by the derived `local` door cannot end up with a
+ * gentler rule than the one that arrives as a picked server row.
+ *
+ * A local row's WORKLOAD lives behind the mounted Docker socket; the executor is
+ * for host-side extras (static file serve, port scans, host config). So a box with
+ * host control off — or containerized with no channel provisioned — should still
+ * deploy containers, and only fail on the extras. Before this, `createHostExecutor`
+ * throwing at construction meant every deploy to "This Server" died the moment host
+ * control was switched off, which is exactly what a blocked-channel banner used to
+ * recommend (#490).
+ *
+ * A channel that is configured but UNREACHABLE arrives here as the same typed error,
+ * raised by the manager once it has watched the channel fail — and it is demoted for
+ * the same reason. That is not pretending it works: the executor handed back refuses
+ * every call with the firewall remedy attached, and the banner and server health both
+ * report host control as unavailable. The alternative is what #490 actually did —
+ * every container deploy to "This Server" dying on a channel it never needed.
+ *
+ * The demotion is RECORDED and LOGGED here, because this is where it is decided:
+ * before, "this box cannot drive its host" was concluded silently and the operator's
+ * first evidence was a symptom several steps downstream (#509). `hostChannelRefusals`
+ * carries it forward to the deploy log; the log line covers everything that never
+ * reaches a deploy log at all.
+ *
+ * Any other acquire failure still propagates.
+ */
+async function acquireLocalHostExecutor(serverId?: string): Promise<CommandExecutor> {
+  try {
+    // One pooled channel either way — `acquire(localRow)` resolves to the very same
+    // executor `acquireHostChannel()` returns, and the row id only adds the borrow
+    // marker that lets `probeReachable`/idle cleanup see the row. So the branch is
+    // bookkeeping, never a difference in WHICH executor this box gets.
+    //
+    // The no-row door used to call `createHostExecutor()` here instead, which is a
+    // fresh SshExecutor outside the pool, outside the concurrent-acquire dedup and
+    // outside the channel-health gate — the unpooled idiom that reached 8,000+
+    // orphaned sshd sessions (#291), reintroduced on the one path that has no row to
+    // launder through `acquire`. Both doors now take the pooled channel.
+    const executor = serverId
+      ? await sshManager.acquire(serverId)
+      : await sshManager.acquireHostChannel();
+    // Recovered — re-arm the log so the NEXT outage is reported rather than deduped
+    // against the last one.
+    lastLoggedRefusal = null;
+    return executor;
+  } catch (err) {
+    if (!isHostChannelUnavailableError(err)) throw err;
+    // Carry the CODE through, not just the prose: the refusal this stands in for is the
+    // same fact as the acquire that failed, so a `disabled` channel must not be re-labelled
+    // `not_configured` when the refusal is finally raised at use time.
+    const executor = unavailableExecutor(err.message, err.code);
+    hostChannelRefusals.set(executor, err.message);
+    // Once per outage, not per resolve: this sits on every deploy AND on read paths
+    // (logs, status polls), so an unconditional line here would bury the log it is
+    // meant to be found in. The reason carries the remedy.
+    if (lastLoggedRefusal !== err.message) {
+      lastLoggedRefusal = err.message;
+      console.warn(
+        `[host-channel] host operations unavailable on this box (${err.code}). ` +
+          `${HOST_CHANNEL_UNAFFECTED} ${err.message}`,
+      );
+    }
+    return executor;
+  }
 }
 
 /**
@@ -464,7 +670,7 @@ export async function resolveServerExecutor(
     // stops one deploy from leaving behind an sshd session (#291).
     return {
       id: server.id,
-      executor: await sshManager.acquire(server.id),
+      executor: await acquireLocalHostExecutor(server.id),
       conn,
       isLocal: true,
       ssh: null,
@@ -567,6 +773,227 @@ export async function resolveDeploymentRuntime(
  * Callers own `runtime.dispose()` (tears down the SSH loopback bridge; no-op on
  * the socket transport).
  */
+/**
+ * Every container an existing deployment owns: its services' containers when it
+ * has any, else its own single container.
+ *
+ * Shared because "the deployment's container" is plural for a compose project and
+ * singular everywhere else, and each caller that re-derived it got a different
+ * answer — `disableProject` read `deployment.containerId` alone, so pausing a
+ * compose project stopped the app and left every sidecar running.
+ */
+export async function deploymentContainerIds(
+  dep: Pick<Deployment, "id" | "containerId">,
+): Promise<string[]> {
+  // Deliberately NOT error-swallowing: if we can't read the service rows we don't
+  // know how many containers this deployment has, and falling back to the single
+  // `containerId` would quietly act on one of them.
+  const rows = await repos.service.listByDeployment(dep.id);
+  const serviceIds = [...new Set(rows.map((r) => r.containerId).filter((id): id is string => !!id))];
+  if (serviceIds.length > 0) return serviceIds;
+  return dep.containerId ? [dep.containerId] : [];
+}
+
+/**
+ * Run one container action against a deployment's runtime — THE entry point for
+ * every non-deploy runtime operation (enable/disable, restart, logs, info, usage).
+ *
+ * It exists because each of those call sites used to open its own transport, and
+ * each got a different subset of the three things all of them need:
+ *
+ *   1. the READ resolver, not a full platform. A full platform builds the infra
+ *      provider, which runs `detectOpenRestyPaths` plus the edge-Lua self-heal
+ *      inside the `provision:local` provision lock — so a status read or a pause
+ *      queued behind any in-flight deploy. That is the "the action takes forever"
+ *      half of the service-panel timeouts, and the project actions still had it.
+ *   2. `dispose()`, always. The SSH branch mints a NEW loopback bridge per
+ *      runtime (see docker.ts `watchContainerEvents`), so a call site that
+ *      forgets leaks a listening socket plus an ssh client per click — and the
+ *      bridge's own accept path warns about exactly the fd pressure that causes.
+ *   3. one error classification. A refused key or an unreachable box is not a
+ *      client error; mapping it here means every caller reports 503 with the real
+ *      cause instead of each inventing a status.
+ *
+ * For a LONG-LIVED runtime (log streaming, where the transport must outlive this
+ * call) use `resolveDeploymentRuntimeForRead` directly and dispose in the
+ * stream's cleanup — this helper's whole contract is that the runtime is dead
+ * when it returns.
+ */
+export async function withDeploymentRuntime<T>(
+  dep: Pick<Deployment, "meta" | "organizationId">,
+  fn: (runtime: RuntimeAdapter, serverId: string | null) => Promise<T>,
+): Promise<T> {
+  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep);
+  try {
+    return await fn(runtime, serverId);
+  } catch (err) {
+    throw asHostUnreachable(err);
+  } finally {
+    disposeRuntime(runtime);
+  }
+}
+
+/**
+ * THE disposal step, so "how do we release a transport" has one answer.
+ *
+ * Best-effort and non-blocking on purpose: a transport that is already dead can't
+ * be closed politely, and a teardown failure must never replace the caller's real
+ * error. Optional-called because a bare/cloud runtime has nothing to release —
+ * calling it on those is a deliberate no-op, which is what lets every call site
+ * dispose unconditionally instead of first asking what kind of runtime it got.
+ */
+export function disposeRuntime(runtime: RuntimeAdapter | null | undefined): void {
+  release(runtime);
+}
+
+/** The one place `dispose()` is actually invoked. Structural rather than typed to
+ *  `RuntimeAdapter` because the platform loop below releases whichever layers we
+ *  decided to release, and those don't share an interface. */
+function release(layer: { dispose?: () => Promise<void> } | null | undefined): void {
+  if (!layer || ownedByProcessPlatform(layer)) return;
+  void Promise.resolve(layer.dispose?.()).catch(() => {});
+}
+
+/**
+ * Is this layer one the process-wide platform owns, rather than one this resolve built?
+ *
+ * `resolveDeploymentPlatform` returns `basePlatform` itself — the `getPlatform()` singleton —
+ * whenever the effective target is cloud and no org-scoped platform is needed, which on the
+ * SaaS (`CLOUD_MODE`) is every such request. `withDeploymentPlatform`'s `finally` then hands
+ * the singleton's own layers to `release()`, so one deploy's teardown would dispose the
+ * transport every other request in the process is using. It is a no-op today only because a
+ * cloud runtime happens to have no `dispose()` — which is precisely the assumption
+ * `PLATFORM_DISPOSAL` exists to stop us from making, and it dies the day one gains one.
+ *
+ * Identity, not a flag: the caller cannot know whether the resolver handed it a fresh
+ * platform or the shared one, so asking it to declare ownership reintroduces the bug at
+ * fourteen call sites. `peekPlatform` rather than `platform()` because disposal must still
+ * work before startup and in unit tests, where "there is no singleton" means "not it".
+ */
+function ownedByProcessPlatform(layer: object): boolean {
+  const shared = peekPlatform();
+  if (!shared) return false;
+  return (Object.keys(PLATFORM_DISPOSAL) as PlatformDisposableField[]).some(
+    (field) => shared[field] === layer,
+  );
+}
+
+/**
+ * Every `Platform` field that CAN be disposed — read off the type, not listed by
+ * hand, so a provider that gains a `dispose()` cannot stay invisible here.
+ *
+ * The probe is `"dispose" extends keyof T` rather than `T extends { dispose?: … }`
+ * because an OPTIONAL member is satisfied by every object type: that predicate
+ * matches all seven fields and asserts nothing.
+ */
+type PlatformDisposableField = {
+  [K in keyof Platform]-?: "dispose" extends keyof NonNullable<Platform[K]> ? K : never;
+}[keyof Platform];
+
+/**
+ * Release it, or keep it and say who owns it instead. Total over
+ * `PlatformDisposableField`, so a `dispose()` added to `RoutingProvider`,
+ * `SslProvider` or `SystemManager` is a missing-key error here (TS2739) rather than
+ * a silent leak at all fourteen `disposePlatform` sites — a leak that surfaces as fd
+ * exhaustion hours later, nowhere near the resolve that caused it. The union value
+ * type is what makes it a decision: you cannot satisfy the key with `undefined`.
+ */
+const PLATFORM_DISPOSAL: Record<PlatformDisposableField, "release" | { keep: string }> = {
+  runtime: "release",
+  // NEVER released. `executor` is the pooled per-server SSH executor that
+  // `sshManager` owns and that concurrent deploys, routing applies and cert
+  // issuance on that box all share — disposing it here would tear the transport out
+  // from under every one of them, and the three `.ssl`-only sites in domain-ssl.ts
+  // depend on surviving exactly this call. The runtime's Docker-over-SSH bridge is a
+  // per-resolve loopback listener, which is why that one is ours to close.
+  executor: { keep: "pooled per server by sshManager; shared with concurrent work" },
+};
+
+/**
+ * `disposeRuntime` for anything that carries a platform. Use in a `finally` on
+ * flows too long to wrap in `withDeploymentPlatform`.
+ *
+ * Takes either shape the resolvers hand back — `resolveTargetPlatform` returns a
+ * bare `Platform`, `resolveDeploymentPlatform` wraps it next to the effective target
+ * and server id. Both are real and both need releasing, so accepting both beats
+ * making ten call sites reach through `.platform`; `Platform` declares no `platform`
+ * field, so the narrowing is exact.
+ */
+export function disposePlatform(
+  resolved: Platform | { platform: Platform } | null | undefined,
+): void {
+  if (!resolved) return;
+  const p = "platform" in resolved ? resolved.platform : resolved;
+  const decisions = Object.entries(PLATFORM_DISPOSAL) as [
+    PlatformDisposableField,
+    (typeof PLATFORM_DISPOSAL)[PlatformDisposableField],
+  ][];
+  for (const [field, decision] of decisions) {
+    if (decision === "release") release(p[field]);
+  }
+}
+
+/**
+ * `withDeploymentRuntime`'s twin for the FULL platform — routing + ssl + system
+ * alongside the runtime.
+ *
+ * Separate function rather than a flag because the two have genuinely different
+ * costs and the choice must stay visible at the call site: this one builds the
+ * infra provider (OpenResty detect + edge-Lua self-heal, under the provision
+ * lock), which is right for a route apply and wrong for a status read.
+ *
+ * The reason it exists at all: `createPlatform` builds its Docker runtime
+ * EAGERLY, and an SSH one binds a loopback bridge in the constructor path — so
+ * even a caller that only wanted `.routing` and never touches `.runtime` had
+ * already bound a listener that only `dispose()` closes.
+ */
+export async function withDeploymentPlatform<T>(
+  dep: Pick<Deployment, "meta" | "organizationId">,
+  fn: (resolved: {
+    runtime: RuntimeAdapter;
+    routing: Platform["routing"];
+    ssl: Platform["ssl"];
+    effectiveTarget: DeployTarget;
+    serverId: string | null;
+  }) => Promise<T>,
+): Promise<T> {
+  const resolved = await resolveDeploymentPlatform((dep.meta ?? {}) as DeploymentMeta, {
+    organizationId: dep.organizationId,
+  });
+  try {
+    return await fn({
+      runtime: resolved.platform.runtime,
+      routing: resolved.platform.routing,
+      ssl: resolved.platform.ssl,
+      effectiveTarget: resolved.effectiveTarget,
+      serverId: resolved.serverId,
+    });
+  } catch (err) {
+    throw asHostUnreachable(err);
+  } finally {
+    disposePlatform(resolved);
+  }
+}
+
+/**
+ * Re-label "we could not reach the host" as a 503 `HostUnreachableError`, keeping
+ * the underlying message (which already names the target and the fix — see
+ * ssh-support.ts). Anything else passes through untouched.
+ *
+ * The distinction is the whole point: a 400 tells the operator they sent a bad
+ * request, when in fact their request was fine and the server was not.
+ */
+function asHostUnreachable(err: unknown): unknown {
+  if (err instanceof HostUnreachableError) return err;
+  // isConnectionLoss, not the raw adapter predicate: lib/remote-state.ts is this
+  // app's one present/absent/unreachable classifier, and it additionally catches
+  // the executor's lowercase command-timeout string.
+  if (isHostChannelUnavailableError(err) || isConnectionLoss(err)) {
+    return new HostUnreachableError(safeErrorMessage(err));
+  }
+  return err;
+}
+
 export async function resolveDeploymentRuntimeForRead(
   dep: Pick<Deployment, "meta" | "organizationId">,
 ): Promise<{ runtime: RuntimeAdapter; serverId: string | null }> {

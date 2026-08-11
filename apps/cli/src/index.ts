@@ -25,6 +25,7 @@ import { logsCommand } from "./commands/logs";
 import { projectCommand } from "./commands/project";
 import { serviceCommand } from "./commands/service";
 import { domainCommand } from "./commands/domain";
+import { edgeCommand } from "./commands/edge";
 
 // Self-host infrastructure
 import { serverCommand } from "./commands/server";
@@ -46,6 +47,9 @@ import { cacheCommand } from "./commands/cache";
 import { runWizard, runControl, isSetupInProgress } from "./commands/wizard";
 import { serviceStatus } from "./lib/service";
 import { readInstallMethod } from "./lib/compose";
+
+//completion
+import { attachCompletion } from "./commands/completion";
 
 // Injected at build time by tsup (define). Always present in the built binary.
 declare const __CLI_VERSION__: string;
@@ -101,6 +105,7 @@ program.addCommand(logsCommand);
 program.addCommand(projectCommand);
 program.addCommand(serviceCommand);
 program.addCommand(domainCommand);
+program.addCommand(edgeCommand);
 
 // Self-host infrastructure (secondary)
 program.addCommand(serverCommand);
@@ -115,5 +120,8 @@ program.addCommand(resetAdminCommand);
 
 // `cache` is a maintenance concern of `install`, not a top-level verb.
 installCommand.addCommand(cacheCommand);
+
+// for autocomplete
+attachCompletion(program);
 
 program.parse();

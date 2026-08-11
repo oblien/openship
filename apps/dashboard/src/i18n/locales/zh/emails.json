@@ -3,6 +3,7 @@
     "title": "邮件服务器",
     "subtitle": "几次点击即可搭建自托管邮件服务器",
     "backToServers": "返回邮件服务器",
+    "backToAdmin": "返回邮件管理",
     "addServer": "添加邮件服务器",
     "removeModal": {
       "title": "移除此邮件服务器？",
@@ -81,7 +82,10 @@
     "willStream": "安装开始后日志将在此处实时显示。",
     "jumpToLatest": "跳到最新",
     "setupFailed": "安装失败",
-    "retryFromStep": "从第 {resumeStep} 步重试"
+    "retryFromStep": "从第 {resumeStep} 步重试",
+    "resumePausedTitle": "安装已暂停",
+    "stepLabel": "步骤 {step}",
+    "continueFromStep": "从步骤 {step} 继续"
   },
   "serverList": {
     "title": "邮件服务器",
@@ -90,7 +94,8 @@
     "removeAria": "将 {name} 从邮件列表中移除",
     "installing": "正在安装",
     "running": "运行中",
-    "incomplete": "未完成"
+    "incomplete": "未完成",
+    "stoppedAt": "已停止 · 步骤 {step}"
   },
   "setup": {
     "title": "邮件服务器设置",
@@ -100,7 +105,7 @@
     "willBeAtBefore": "你的邮件服务器将位于 ",
     "adminPasswordLabel": "管理员密码",
     "passwordPlaceholder": "强密码 - 或点击“生成”",
-    "passwordHint": "用于设置完成后登录邮箱。之后可在下方的管理面板中修改。",
+    "passwordHint": "至少 12 个字符。用于设置完成后登录邮箱，之后可在下方的管理面板中修改。",
     "startSetup": "开始设置",
     "adoptCta": "已有邮件服务器？采用它",
     "whatInstalled": "将安装的内容",
@@ -117,6 +122,7 @@
     "prerequisites": "前置条件",
     "prereq1": "一个可访问 DNS 的域名",
     "prereq2": "端口 25 未被你的提供商屏蔽",
+    "prereq2Relay": "端口 25 需为收件开放（发件通过中继）",
     "prereq3": "干净的 Ubuntu/Debian 服务器（推荐）",
     "hide": "隐藏",
     "reveal": "显示",

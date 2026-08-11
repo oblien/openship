@@ -20,7 +20,7 @@
  * the source-built fields.
  */
 
-import { STACKS, type StackDefinition, type StackId } from "@repo/core";
+import { normalizeServiceLabel, STACKS, type StackDefinition, type StackId } from "@repo/core";
 import type { ComposeService } from "./compose-parser";
 
 /** Source-built sub-app fields. Only meaningful when `kind === "monorepo"`. */
@@ -161,4 +161,26 @@ export function resolveServicePort(
     parseServicePort(service.ports?.[0]) ??
     (typeof fallback === "number" && fallback > 0 ? fallback : null)
   );
+}
+
+/**
+ * The operator's custom east-west DNS alias for a service, if any — the ONE rule
+ * for it.
+ *
+ * `advanced.alias` resolves ALONGSIDE the default (the row name), so this returns
+ * only the EXTRA names; the primary is added by `buildNetworkAliases`. Shared by
+ * the compose deploy (which passes it as `extraAliases` on the runtime config) and
+ * by the migration attach-live network join — a reused container has to answer to
+ * exactly the same names a natively-deployed one does, or east-west resolves for
+ * deployed services and silently fails for migrated ones.
+ */
+export function serviceAliasExtras(service: {
+  name: string;
+  advanced?: unknown;
+}): string[] | undefined {
+  const raw = (service.advanced as { alias?: string } | null | undefined)?.alias;
+  if (!raw) return undefined;
+  const alias = normalizeServiceLabel(raw);
+  if (!alias || alias === normalizeServiceLabel(service.name)) return undefined;
+  return [alias];
 }

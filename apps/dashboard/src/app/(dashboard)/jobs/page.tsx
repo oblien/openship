@@ -453,7 +453,15 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
     : s.serviceName
       ? `${s.projectName ?? "—"} / ${s.serviceName}`
       : s.projectName ?? "—";
-  const manageHref = isMail ? "/emails" : s.projectId ? `/projects/${s.projectId}/backup` : null;
+  // "Manage" has to land on the tab that owns this schedule, the way the project
+  // link does — bare /emails drops the operator on the server list instead.
+  const manageHref = isMail
+    ? s.mailServerId
+      ? `/emails?serverId=${encodeURIComponent(s.mailServerId)}&tab=backup`
+      : "/emails"
+    : s.projectId
+      ? `/projects/${s.projectId}/backup`
+      : null;
   const run = s.lastRun;
   const norm = run ? normalizeBackupStatus(run.status) : null;
   const Icon = norm ? statusIcon(norm) : null;

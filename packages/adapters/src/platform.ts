@@ -88,6 +88,17 @@ export interface PlatformConfig {
    */
   cloudAdminProxy?: import("./runtime/cloud").CloudAdminProxy;
   /**
+   * Allow a CLOUD-target runtime to do work on the machine this API process runs on
+   * (the "build locally, upload the output" strategy, and the local-source Dockerfile
+   * path). Cloud target only — the selfhosted and desktop runtimes ARE the host.
+   *
+   * Omitted → DENY. That is the opposite of every other optional field here, and
+   * deliberately so: this one is a boundary, and a permissive default is exactly how
+   * a tenant's build commands came to be runnable on the multi-tenant control plane.
+   * A self-hosted box orchestrating a cloud deploy must opt in explicitly.
+   */
+  allowHostBuild?: boolean;
+  /**
    * SSH config for remote server management (self-hosted only).
    *
   * When provided, all system checks, installations, and Nginx file
@@ -104,6 +115,20 @@ export interface PlatformConfig {
    * connection per server.
    */
   executor?: CommandExecutor;
+  /**
+   * The target IS the machine this API process runs on (self-hosted only).
+   *
+   * `!executor && !ssh` used to stand in for this, and the proxy broke for the
+   * auto-registered "This Server" row: it deploys to the local box but injects the
+   * pooled HOST executor, so the local-edge fast path was skipped and routing took an
+   * SSH excursion to `host.docker.internal` — the same machine, the long way round,
+   * and one more thing that can fail. On a compose install with a default-deny
+   * firewall that excursion is exactly what killed every deploy (#490), while the
+   * Docker socket that does the real work was fine the whole time.
+   *
+   * Unset → inferred from the absence of an injected executor, as before.
+   */
+  localHost?: boolean;
   /**
    * Custom state store for caching setup results.
    * Defaults to FileStateStore. The API layer can provide a DB-backed store.
@@ -147,6 +172,46 @@ export interface Platform {
    * Null for cloud/desktop (no system management needed).
    */
   readonly executor: CommandExecutor | null;
+  /**
+   * The deploy target IS the machine this API process runs on.
+   *
+   * The RESOLVED answer, not the config hint — `createSelfHostedPlatform` already
+   * derives it (an `ssh` config always wins over the flag), and consumers that
+   * re-derived it from "is `executor` injected" got the auto-registered "This
+   * Server" row wrong. Exposed because it decides which executor reaches a path the
+   * api container SHARES with its host (see EDGE_CONTAINER_MOUNTS): on the local box
+   * those paths are the same files, so they need no host channel at all.
+   */
+  readonly localHost: boolean;
+}
+
+/**
+ * The executor that reaches a path the api container shares 1:1 with its host.
+ *
+ * `EDGE_SAME_PATH_MOUNTS` is the set that qualifies — today the static release tree
+ * (`STATIC_RELEASE_BASE`) and certbot's store (`/etc/letsencrypt`) —
+ * so on the local box they are the same files, a local executor reaches them, and no
+ * host channel is involved. Routing them over the host SSH channel instead is what
+ * made static deploys, static rollback and cert adoption the things a blocked or
+ * disabled channel broke for no reason (#490); the edge that serves those files is on
+ * this box too, reading the same mount.
+ *
+ * ONLY for a same-path mount. `sites-enabled` is bind-mounted from
+ * `EDGE_HOST_STATE_DIR` to a DIFFERENT path inside the container
+ * (`OPENRESTY_DEFAULT_PATHS.sitesDir`), so a local read there looks somewhere else
+ * entirely — vhost reads must stay on the host executor.
+ *
+ * A remote target shares no mount at all, so there its own executor is the only thing
+ * that can see the path. Takes the two fields it decides on rather than a whole
+ * `Platform`, so a caller holding a resolved `{ isLocal, executor }` can use it too.
+ */
+export async function sharedMountExecutor(target: {
+  localHost: boolean;
+  executor: CommandExecutor | null;
+}): Promise<CommandExecutor | null> {
+  if (!target.localHost) return target.executor;
+  const { createExecutor } = await import("./system/executor");
+  return createExecutor();
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
@@ -189,11 +254,16 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
 
   return {
     target: "cloud",
-    runtime: new CloudRuntime(client, { adminProxy: config.cloudAdminProxy }),
+    runtime: new CloudRuntime(client, {
+      adminProxy: config.cloudAdminProxy,
+      allowHostBuild: config.allowHostBuild,
+    }),
     routing: infra,
     ssl: infra,
     system: null,
     executor: null,
+    // The workload runs in Oblien's infrastructure, never on this box.
+    localHost: false,
   };
 }
 
@@ -209,6 +279,8 @@ async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> 
     ssl: noop,
     system: null,
     executor: null,
+    // "This Machine" — the desktop app deploys to the box it runs on.
+    localHost: true,
   };
 }
 
@@ -251,8 +323,8 @@ async function createInfraProvider(
   // No bare edge on a non-Linux host. The paths below are Linux FHS (`/var/www/acme`,
   // `/usr/local/openresty/...`) and provisioning them needs root, so on macOS this
   // failed the deploy outright with `EACCES: mkdir '/var/www'` — before the workload
-  // was even built. Nothing here is installable there either: `installOpenResty` only
-  // implements apt.
+  // was even built. Nor is there anything to install: the edge is a Linux container
+  // image, and the host-package path it used to fall back to is gone.
   //
   // Gated on the executor being LOCAL, because `process.platform` describes THIS
   // process, not the target: a Mac driving a remote Linux box must still get the real
@@ -271,7 +343,46 @@ async function createInfraProvider(
   const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } = await import(
     "./infra/openresty-lua"
   );
-  const paths = await detectOpenRestyPaths(executor);
+
+  // Guarded for the same reason as `ensureOpenRestyConfig` below, one step earlier:
+  // this is the first thing here that touches the target box, so an executor that
+  // cannot reach it AT ALL threw straight out of platform construction — upstream of
+  // every best-effort routing step — and failed the deploy before the build even
+  // started. That is exactly what a firewalled container→host bridge produced (#490):
+  // a compose install where every deploy died on an SSH handshake timeout while the
+  // Docker socket that does the actual work was fine.
+  //
+  // No reachable edge is a routing gap, and routing gaps never fail a deploy.
+  let paths: Awaited<ReturnType<typeof detectOpenRestyPaths>>;
+  try {
+    paths = await detectOpenRestyPaths(executor);
+  } catch (err) {
+    console.error(
+      `[openresty] cannot reach the edge host (deploy continues without routing): ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+    );
+    const { NoopInfraProvider } = await import("./infra/noop");
+    const noop = new NoopInfraProvider();
+    return { routing: noop, ssl: noop };
+  }
+
+  // Everything from here on WRITES to root-owned paths — nginx.conf, the Lua dir, the
+  // vhost dir, /etc/letsencrypt — so a non-root login needs sudo for all of it. Detection
+  // above is a read and deliberately stays unelevated; this is the boundary.
+  //
+  // Refusal is not fatal for the same reason the two `catch`es around this one aren't: an
+  // unwritable edge is a routing gap, and routing gaps never fail a deploy. It is logged
+  // so the operator has the cause, because the alternative — what shipped — was an EACCES
+  // attributed to whichever vhost write happened to surface it.
+  // A separate binding rather than reassigning the parameter: the writes below need the
+  // gate's answer specifically, and shadowing `executor` with a widened type is how the
+  // unelevated one reached them in the first place.
+  const { rootOrDegrade } = await import("./system/privilege");
+  const edgeExecutor = await rootOrDegrade(executor, {
+    purpose: "Configuring routing and TLS",
+    consequence: "Routing may be incomplete (deploy continues; the app still runs on its port).",
+    report: (message) => console.error(`[openresty] ${message}`),
+  });
 
   // Idempotent, but writes the SHARED nginx.conf (grep||sed). Concurrent deploys
   // would race the non-atomic edit and lose/duplicate the include — serialize it.
@@ -283,7 +394,7 @@ async function createInfraProvider(
     // threw during platform CONSTRUCTION, upstream of every best-effort routing
     // step, so the invariant never got a chance to apply (that's what turned a
     // macOS `mkdir /var/www` EACCES into "Deployment Failed").
-    await ensureOpenRestyConfig(executor, paths).catch((err: unknown) => {
+    await ensureOpenRestyConfig(edgeExecutor, paths).catch((err: unknown) => {
       console.error(
         `[openresty] ensureOpenRestyConfig failed (deploy continues, routing may be ` +
           `incomplete): ${err instanceof Error ? err.message : String(err)}`,
@@ -293,12 +404,12 @@ async function createInfraProvider(
     // (reinstall, manual rm, a pre-embed release) would otherwise 500 every
     // request. Cheap: one listing, writes only what's missing, reloads only if
     // it repaired something. deployLuaScripts (with geo deps) stays install-only.
-    await ensureLuaScripts(executor, paths);
+    await ensureLuaScripts(edgeExecutor, paths);
   };
   await (config.provisionLock ? config.provisionLock.run(ensureConfig) : ensureConfig());
 
   const { NginxProvider } = await import("./infra/nginx");
-  const nginx = new NginxProvider({ paths, ...config.nginx, executor });
+  const nginx = new NginxProvider({ paths, ...config.nginx, executor: edgeExecutor });
   return { routing: nginx, ssl: nginx };
 }
 
@@ -310,8 +421,11 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   // it needs the dockerode executor. A REMOTE box's container edge is resolved by
   // probing that box (createInfraProvider) — not from this env, which describes
   // the control plane and says nothing about the target.
-  const useDockerEdge =
-    !config.executor && !config.ssh && process.env.OPENSHIP_EDGE_MODE === "docker";
+  //
+  // An `ssh` config is unambiguously remote and always wins; otherwise trust the
+  // explicit flag, falling back to the old inference. See PlatformConfig.localHost.
+  const targetIsThisMachine = !config.ssh && (config.localHost ?? !config.executor);
+  const useDockerEdge = targetIsThisMachine && process.env.OPENSHIP_EDGE_MODE === "docker";
   const edgeContainer = process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge";
 
   // Executor - use injected (managed/pooled) executor, or create a fresh one
@@ -360,6 +474,7 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     ssl,
     system,
     executor,
+    localHost: targetIsThisMachine,
   };
 }
 
@@ -393,6 +508,19 @@ export function getPlatform(): Platform {
       "Platform not initialized. Call initPlatform() at server startup.",
     );
   }
+  return _platform;
+}
+
+/**
+ * The singleton if there is one, without demanding that there be one.
+ *
+ * `getPlatform()` throws by design — service code that reads the platform has a bug if
+ * startup never ran. This is for the one question with the opposite shape: "is this object
+ * the process-wide platform?", asked by disposal code that must not tear down a layer it
+ * does not own. That question is meaningful before init and inside unit tests, where the
+ * answer is simply "no", and a throw there would turn an ownership check into an outage.
+ */
+export function peekPlatform(): Platform | null {
   return _platform;
 }
 

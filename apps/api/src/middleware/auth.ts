@@ -10,6 +10,7 @@ import { hashPatToken } from "../lib/pat";
 import { isPatToken, parseBearerToken } from "../lib/bearer";
 import {
   buildRequestContext,
+  type PrincipalKind,
   type RequestContext,
   type RequestContextRole,
   type SessionKind,
@@ -123,6 +124,7 @@ async function finishBearer(
   principalId: string,
   boundOrg: string | null,
   patScope: { tokenId: string; scoped: boolean } | undefined,
+  principalKind: PrincipalKind,
 ): Promise<typeof PAT_HANDLED> {
   await applyAuthedRequest(
     c,
@@ -130,6 +132,7 @@ async function finishBearer(
     { id: principalId, activeOrganizationId: boundOrg },
     "bearer",
     patScope,
+    principalKind,
   );
   await next();
   return PAT_HANDLED;
@@ -276,7 +279,15 @@ async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof 
   }
 
   const patScope = resolved.scoped ? { tokenId: resolved.tokenId, scoped: true } : undefined;
-  return finishBearer(c, next, user, resolved.principalId, resolved.organizationId, patScope);
+  return finishBearer(
+    c,
+    next,
+    user,
+    resolved.principalId,
+    resolved.organizationId,
+    patScope,
+    resolved.kind,
+  );
 }
 
 export async function authMiddleware(c: Context, next: Next) {
@@ -375,6 +386,7 @@ async function applyAuthedRequest(
     | null,
   sessionKind: SessionKind,
   patScope?: { tokenId: string; scoped: boolean },
+  principalKind?: PrincipalKind,
 ): Promise<void> {
   c.set("user", user);
   if (session && sessionKind !== "zero-auth") c.set("session", session);
@@ -420,6 +432,7 @@ async function applyAuthedRequest(
       membershipId: membership.id,
       sessionId: session?.id ?? "zero-auth",
       sessionKind,
+      principalKind: principalKind ?? null,
       tokenScope: patScope?.scoped ? { tokenId: patScope.tokenId } : null,
       clientIp,
       userAgent,

@@ -330,6 +330,56 @@ describe("buildServiceRouteDomains — custom-domain SSL gate", () => {
   });
 });
 
+// The atomic invariant: an EXPOSED free service is never silently unrouted just
+// because no slug was chosen. Before the fix the empty-free primary was dropped
+// by resolveServicePublicEndpoints, so a compose service deployed running but
+// with no route. Now buildServiceRouteDomains synthesizes the default subdomain.
+describe("buildServiceRouteDomains — exposed free service with no slug", () => {
+  const project = { slug: "my-app", name: "My App" } as any;
+  const freeSvc = {
+    id: "svc_api",
+    name: "api",
+    exposed: true,
+    exposedPort: "3000",
+    domain: null,
+    domainType: "free",
+    publicEndpoints: [],
+  } as any;
+
+  it("plans a route at the default <project>-<service> subdomain", () => {
+    const [route] = buildServiceRouteDomains({
+      project,
+      service: freeSvc,
+      runtimeName: "bare",
+      usesManagedRouting: true,
+    });
+    expect(route?.hostname).toBe(`my-app-api.${getRoutingBaseDomain()}`);
+    expect(route?.domainType).toBe("free");
+    expect(route?.targetPort).toBe(3000);
+  });
+
+  it("collapses a 'web' service to the bare project label (compose shortcut)", () => {
+    const [route] = buildServiceRouteDomains({
+      project,
+      service: { ...freeSvc, id: "svc_web", name: "web" },
+      runtimeName: "bare",
+      usesManagedRouting: true,
+    });
+    expect(route?.hostname).toBe(`my-app.${getRoutingBaseDomain()}`);
+  });
+
+  it("still plans nothing on a box that does not do managed routing", () => {
+    expect(
+      buildServiceRouteDomains({
+        project,
+        service: freeSvc,
+        runtimeName: "bare",
+        usesManagedRouting: false,
+      }),
+    ).toEqual([]);
+  });
+});
+
 describe("resolveRouteDestination", () => {
   // Pins the caveats the dedup audit flagged as load-bearing when this ternary
   // was collapsed out of buildProjectRouteDomains' two loops.

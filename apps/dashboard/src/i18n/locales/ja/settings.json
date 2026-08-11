@@ -53,6 +53,7 @@
       "notifications": "通知",
       "audit": "監査ログ",
       "cloud": "クラウド",
+      "infrastructure": "インフラ",
       "instance": "インスタンス"
     }
   },
@@ -112,10 +113,6 @@
     "noServers": "サーバーはまだ構成されていません - デプロイピッカーから追加してください。",
     "clearDefault": "デフォルトをクリア（毎回尋ねる）",
     "targets": {
-      "local": {
-        "label": "このマシン",
-        "desc": "ローカルの Docker / ランタイム"
-      },
       "server": {
         "label": "自分のサーバー",
         "desc": "構成済みの SSH サーバー"
@@ -127,8 +124,7 @@
     },
     "labelFor": {
       "yourServer": "自分のサーバー",
-      "cloud": "Openship Cloud",
-      "local": "このマシン"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "まずサーバーを選択してください",
@@ -454,6 +450,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "アプリ内"
     },
     "form": {
@@ -463,6 +460,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "@BotFather で取得したボットトークン",
+      "telegramChatPlaceholder": "チャットID（例: -1001234567890）",
+      "telegramHint": "@BotFather でボットを作成し、返信を許可するためにボットにメッセージを送る（またはグループに追加する）必要があります。",
       "adding": "追加中…",
       "addChannel": "チャンネルを追加",
       "labelRequired": "ラベルは必須です"
@@ -471,6 +471,7 @@
       "title": "通知を受け取る対象",
       "description": "どのイベントをどのチャンネルに送るかを選択します。各セルが 1 つのサブスクリプションです。",
       "empty": "イベントをサブスクライブするには、まずチャンネルを追加してください。",
+      "allTab": "すべて",
       "eventHeader": "イベント",
       "cellAria": "{channel} 経由の {category}",
       "notifyMe": "通知"
@@ -484,11 +485,11 @@
   },
   "audit": {
     "heading": "監査ログ",
-    "subtitle": "この組織内のすべての変更、実行者、実行日時。",
-    "searchPlaceholder": "イベント、実行者、リソースを検索...",
-    "allEvents": "すべてのイベント",
-    "noMatch": "検索に一致するイベントはありません。",
-    "noEvents": "イベントはまだありません。",
+    "subtitle": "この組織で起きたこと、実行者、実行日時。",
+    "searchPlaceholder": "アプリ、サーバー、ドメイン、ユーザーを検索…",
+    "noMatch": "この条件に一致するものはありません。",
+    "noEvents": "まだ何も記録されていません。",
+    "clearFilters": "条件をクリア",
     "showing": "{total} 件中 {from}-{to} 件を表示",
     "actor": "実行者",
     "name": "名前",
@@ -504,7 +505,50 @@
     "after": "変更後",
     "removed": "削除済み",
     "system": "システム",
-    "actorPrefix": "実行者 {id}"
+    "actorPrefix": "実行者 {id}",
+    "recording": {
+      "title": "アクティビティを記録",
+      "description": "この組織で行われたすべての変更を記録します。既定でオンです。",
+      "paused": "記録はオフです。新しい記録は追加されません — 以下はオフにする前に記録された内容です。",
+      "retention": "保持期間",
+      "retentionOption": "{days} 日",
+      "retentionHint": "古い記録は自動的に削除されます。",
+      "adminOnly": "変更できるのはオーナーと管理者のみです。",
+      "saveFailed": "アクティビティ設定を保存できませんでした。"
+    },
+    "filters": {
+      "anyone": "すべてのユーザー",
+      "period": "期間",
+      "allTime": "すべての期間",
+      "today": "今日",
+      "last7": "過去 7 日間",
+      "last30": "過去 30 日間",
+      "last90": "過去 90 日間"
+    },
+    "tabs": {
+      "all": "すべて"
+    },
+    "sources": {
+      "all": "すべて",
+      "dashboard": "ダッシュボード",
+      "mcp": "AI アシスタント",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "システム",
+      "unknown": "不明"
+    },
+    "day": {
+      "today": "今日",
+      "yesterday": "昨日"
+    },
+    "details": {
+      "who": "実行者",
+      "when": "日時",
+      "cameFrom": "経路",
+      "technical": "技術的な詳細",
+      "eventType": "イベントタイプ"
+    }
   },
   "updates": {
     "title": "アップデート",
@@ -529,6 +573,20 @@
     "security3": "）。データを取得するのは",
     "securityPulls": "取得",
     "security4": "このデータのみです — サードパーティのサービスも、Openship が運用するサーバーも、アップデートやシグナルをあなたのインストールにプッシュすることはできません。アドバイザリは各リリースに固定されているため、未リリースの変更が届くことはありません。重大なセキュリティアドバイザリは常に一度だけ表示され、それ以外はすべて上記のトグルに従います。"
+  },
+  "infrastructure": {
+    "title": "プラットフォームコンポーネント",
+    "description": "サーバー上のエッジ／メールコンテナを最新に保つ方法",
+    "autoUpdateLabel": "サーバーインフラを自動更新",
+    "autoUpdateDesc": "このコントロールプレーンが更新されたときに、接続済みサーバーのエッジおよびメールコンテナも自動的に更新します。既定ではオフで、その場合は更新が各サーバーでワンクリック適用できるよう通知されます。",
+    "autoScanLabel": "サーバーインフラを自動スキャン",
+    "autoScanDesc": "サーバーページやホームページを開いたときにサーバーを控えめに再確認し、停止中または未インストールのエッジを手動スキャンなしで検出します。既定で有効 — 検出のみで、何も変更しません。",
+    "attentionOne": "1 件のコンポーネントに対応が必要",
+    "attentionMany": "{n} 件のコンポーネントに対応が必要",
+    "updatesOne": "更新 1 件あり",
+    "updatesMany": "更新 {n} 件あり",
+    "allHealthy": "すべてのプラットフォームコンポーネントは最新です",
+    "manageLink": "サーバーで管理"
   },
   "dataTransfer": {
     "export": {

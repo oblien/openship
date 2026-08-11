@@ -1,4 +1,4 @@
-import { db, schema, eq } from "@repo/db";
+import { repos } from "@repo/db";
 
 import { resolvesToLocalHost } from "./self-host";
 
@@ -21,12 +21,7 @@ let cachedBoxOrgId: string | null = null;
  */
 export async function boxOwningOrgId(): Promise<string | null> {
   if (cachedBoxOrgId) return cachedBoxOrgId;
-  const [admin] = await db
-    .select({ id: schema.user.id })
-    .from(schema.user)
-    .where(eq(schema.user.autoProvisioned, false))
-    .orderBy(schema.user.createdAt)
-    .limit(1);
+  const admin = await repos.user.findFoundingAdmin();
   if (!admin?.id) return null;
   cachedBoxOrgId = `org_${admin.id}`;
   return cachedBoxOrgId;

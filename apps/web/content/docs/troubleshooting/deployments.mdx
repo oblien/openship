@@ -35,8 +35,7 @@ fix. The most common ones are covered in the sections below.
 
 <Callout type="error">
 The build runs a command that doesn't match your app — for example it tries `next build` on a plain
-Vite app, or the deploy "succeeds" but serves the wrong files. You may also see the preflight warning
-**"Build is enabled but no build command configured - deployment will use source files directly."**
+Vite app, or the deploy "succeeds" but serves the wrong files.
 </Callout>
 
 **What it means** — when you import a repo, Openship inspects it and guesses the framework, package
@@ -65,8 +64,8 @@ Deploy again. Openship remembers these values for future deploys and redeploys.
 </Steps>
 
 <Callout type="info" title="Static sites don't run a start command">
-If your project is a static site, a leftover start command is harmless — preflight warns *"Static site
-has a start command configured - it will be ignored. Files will be served from the edge."* and continues.
+If your project is a static site, a leftover start command is harmless — it's ignored, the deploy
+continues, and the files are served from the edge.
 </Callout>
 
 ## A required command (or the port) is missing
@@ -145,6 +144,41 @@ to do — a **Port In Use** prompt saying *"Port 3000 is occupied by … This ma
 deployment."* with **Free Port & Continue** or **Cancel Deploy**. Choose *Free Port* only if you
 recognize the occupant as a stale deployment; otherwise cancel and change the port. If it can't be freed
 you'll see *"Deploy aborted: port 3000 is in use by …"*.
+</Callout>
+
+## The app needs a bigger machine than this one
+
+<Callout type="error">
+`Pre-deploy checks failed: Host capacity: PostHog needs 8 GB of RAM (this machine has 2 GB) and
+4 vCPU (this machine has 2 vCPU). Install it on a bigger machine, or pick a different destination.`
+</Callout>
+
+**What it means** — a few catalog apps are genuinely heavy (a nine-container analytics stack, a
+Postgres fork that wants 8 GB) and declare a host floor. Openship reads what your destination's
+Docker daemon reports and compares. This is the *first* install of that app, so it stops rather than
+letting you watch nine containers get OOM-killed one by one.
+
+**How to fix it**
+
+<Steps>
+
+<Step>
+**Pick a bigger destination.** Reopen the app's install wizard — it states the floor next to the
+destination picker and flags a server that's short *before* you install anything.
+</Step>
+
+<Step>
+**Or resize the server** you already chose, then deploy again. The reading is cached briefly, so give
+it a minute after a resize.
+</Step>
+
+</Steps>
+
+<Callout type="info" title="It only ever stops a first install">
+Once an app has deployed successfully, a shortfall is a warning, never a refusal — otherwise an app
+running on a box that turned out to be undersized could never be redeployed. Likewise, a machine
+Openship can't measure is never treated as too small, and Openship Cloud is sized from its tier, not
+from host hardware. See [Host requirements](/docs/reference/app-catalog).
 </Callout>
 
 ## The build ran out of memory
@@ -265,6 +299,14 @@ then try again.
 `Docker build failed: docker build exited with code 1` (or a similar generic non-zero exit) means the
 failure is inside your build itself, not Openship. Scroll up in the build log to the first red error —
 that line is the real cause (a failing test, a TypeScript error, a missing dependency).
+</Callout>
+
+<Callout type="warn" title="“This operation targets the HOST machine, but no host channel is configured”">
+Not a build failure at all: this containerized install can't reach the machine it runs on, so the one
+step that needs the host (a `:80`/`:443` takeover, the mail engine, a catalog app whose config file is
+written on the host) refuses rather than run against the wrong filesystem. Ordinary deploys are
+unaffected. The repair differs by install shape —
+[Host control channel](/docs/troubleshooting/host-channel).
 </Callout>
 
 ## Related

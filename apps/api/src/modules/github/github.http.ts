@@ -65,6 +65,25 @@ async function timedFetch(url: string, init: RequestInit): Promise<Response> {
 }
 
 /**
+ * The bounded, canonically-headered request itself, response unparsed.
+ *
+ * For the one caller that needs a RESPONSE HEADER rather than the body: PAT scope is
+ * published in `x-oauth-scopes`, which no JSON-returning variant can hand back. It went
+ * out through a bare `fetch` instead, which meant its own headers and — the part that
+ * matters — no timeout, so a stalled github.com held the request that was saving the
+ * token. Every other call on this surface is bounded; this exists so that one can be too,
+ * rather than the rule having an exception.
+ */
+export async function ghSend(token: string, req: GhRequest): Promise<Response> {
+  const method = req.method ?? "GET";
+  return timedFetch(withQuery(req.url, method, req.params), {
+    method,
+    headers: ghHeaders(token, req.headers),
+    body: method !== "GET" ? JSON.stringify(req.params ?? {}) : undefined,
+  });
+}
+
+/**
  * Throwing variant. 204 → `{ success: true }`; non-2xx → throws with
  * GitHub's own error message. This is the contract `githubFetch` relies on.
  */

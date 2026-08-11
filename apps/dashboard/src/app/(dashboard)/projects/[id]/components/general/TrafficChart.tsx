@@ -41,7 +41,7 @@ export const TrafficChart: React.FC<Props> = ({
     <div className="bg-card rounded-2xl border border-border/50 p-4 sm:p-6 h-[320px] sm:h-[380px] flex flex-col">
       <div className="flex items-center justify-between gap-2 sm:gap-0 mb-4 sm:mb-5">
         <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-          {generateIcon('chart%204%20line-5-1666004410.png', 24, 'hsl(var(--primary))')}
+          {generateIcon('chart%204%20line-5-1666004410.png', 24, 'var(--primary)')}
           <div className="min-w-0">
             <h3 className="text-sm sm:text-lg font-semibold text-foreground truncate">{t.projectDetail.general.traffic.title}</h3>
             <p className="text-[10px] sm:text-sm text-muted-foreground/70 truncate">{dateRange || t.projectDetail.general.traffic.last24Hours}</p>
@@ -94,7 +94,7 @@ export const TrafficChart: React.FC<Props> = ({
               className="absolute inset-0 w-full h-full text-primary"
               viewBox="0 0 1000 200"
               preserveAspectRatio="none"
-              style={{ color: "hsl(var(--primary))" }}
+              style={{ color: "var(--primary)" }}
             >
               <defs>
                 <linearGradient id="trafficGradient" x1="0%" y1="0%" x2="0%" y2="100%">

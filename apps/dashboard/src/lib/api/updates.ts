@@ -14,17 +14,21 @@ export interface UpdateStatusItem {
   currentLabel: string | null;
   latestLabel: string | null;
   detail: unknown;
+  /** When the UPSTREAM side was last polled. `behind` itself is computed live. */
   checkedAt: string;
 }
 
 export interface ScanSummary {
   scanned: number;
   supported: number;
-  behind: number;
 }
 
 export const updatesApi = {
-  /** All cached update statuses for the org (optionally only those behind). */
+  /**
+   * Every project with a drift question, whether or not a scan has run — the read
+   * is read-through server-side, so an absent entry means "nothing to compare"
+   * (never deployed, no remote source), not "not checked yet".
+   */
   list: (behindOnly = false) =>
     api.get<{ data: UpdateStatusItem[] }>(
       behindOnly ? endpoints.updates.behind : endpoints.updates.list,

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { registerImportedSites } from "./takeover";
 import { makeTestCert } from "./test-certs";
-import type { CommandExecutor, SslResult } from "../../types";
+import type { CommandExecutor, RouteConfig, SslResult } from "../../types";
 import type { ImportedSite } from "../types";
 import type { RoutingProvider, SslProvider } from "../../infra/types";
 
@@ -9,7 +9,13 @@ const OK: SslResult = { domain: "", expiresAt: "", issuer: "", verified: true };
 
 /** Minimal provider doubles capturing the calls registerImportedSites makes. */
 function providers() {
-  const routing = { registerRoute: vi.fn(async () => {}), removeRoute: vi.fn(async () => {}) };
+  // Parameters are declared so `mock.calls[n][0]` is TYPED as the route — an
+  // arg-less `vi.fn()` records each call as an empty tuple, and indexing it is a
+  // compile error (the assertion below reads the captured route directly).
+  const routing = {
+    registerRoute: vi.fn(async (_route: RouteConfig) => {}),
+    removeRoute: vi.fn(async (_domain: string) => {}),
+  };
   const ssl = {
     provisionCert: vi.fn(async (): Promise<SslResult> => OK),
     installCert: vi.fn(async (): Promise<SslResult> => OK),
@@ -134,6 +140,43 @@ describe("registerImportedSites", () => {
     expect(o.warnings.some((w) => w.includes("unsafe"))).toBe(true);
   });
 
+  it("announces a fresh ACME issuance before the call so it isn't mistaken for a hang", async () => {
+    // A migrate that can't carry a cert falls to a per-domain Let's Encrypt issuance
+    // — the one step with real wall-clock cost. Reuse (installCert) is silent; the
+    // fresh path must LOG, or a slow migrate looks hung with no attributable cause.
+    const { routing, ssl } = providers();
+    const logs: string[] = [];
+    const sites: ImportedSite[] = [
+      // No `tls` and no inline PEM → nothing to reuse → provisionCert.
+      { serverNames: ["fresh.com"], ssl: true, target: { kind: "proxy", url: "http://127.0.0.1:3000" } },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, {
+      onLog: (l) => logs.push(l.message),
+      warnings: [],
+    });
+
+    expect(ssl.installCert).not.toHaveBeenCalled();
+    expect(ssl.provisionCert).toHaveBeenCalledWith("fresh.com");
+    expect(logs.some((m) => m.includes("fresh.com") && /requesting a new one/i.test(m))).toBe(true);
+  });
+
+  it("does NOT log a fresh issuance when an existing cert is reused", async () => {
+    // The reuse branch must stay silent — a log there would cry wolf on the fast path.
+    const { routing, ssl } = providers();
+    const logs: string[] = [];
+    const sites: ImportedSite[] = [
+      { serverNames: ["a.com"], ssl: true, target: { kind: "proxy", url: "http://127.0.0.1:3000" } },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, {
+      onLog: (l) => logs.push(l.message),
+      warnings: [],
+      certPems: { "a.com": { certPem: "CERT", keyPem: "KEY" } },
+    });
+
+    expect(ssl.installCert).toHaveBeenCalledWith("a.com", { certPem: "CERT", keyPem: "KEY" });
+    expect(logs.some((m) => /requesting a new one/i.test(m))).toBe(false);
+  });
+
   // The carry must not hand over a cert for the WRONG hostname. A vhost naming two
   // hosts off a single-name cert used to carry that cert to both, so the second
   // domain served a mismatched cert under a green padlock.
@@ -205,5 +248,130 @@ describe("registerImportedSites", () => {
 
     expect(registered).toEqual(["good.com"]);
     expect(o.warnings.some((w) => w.includes("bad.com") && w.includes("boom"))).toBe(true);
+  });
+
+  /**
+   * Taking :80/:443 over swaps the config every imported site is served from. A site
+   * whose old vhost allowed 50 MB uploads starts 413-ing at nginx's 1 MB default the
+   * moment we bind — a regression the operator never asked for and has no reason to
+   * connect to the takeover.
+   */
+  it("carries the source vhost's tunables onto the route", async () => {
+    const { routing, ssl } = providers();
+    const sites: ImportedSite[] = [
+      {
+        serverNames: ["big.com"],
+        ssl: false,
+        target: { kind: "proxy", url: "http://127.0.0.1:3000" },
+        proxy: { clientMaxBodySize: "50m", proxyReadTimeout: "300s" },
+        // Verbatim display data — must NOT reach the renderer.
+        proxyRaw: { clientMaxBodySize: "50m", proxyReadTimeout: "300s" },
+      },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, opts());
+
+    expect(routing.registerRoute).toHaveBeenCalledWith({
+      domain: "big.com",
+      tls: false,
+      terminatesTlsLocally: false,
+      targetUrl: "http://127.0.0.1:3000",
+      proxy: { clientMaxBodySize: "50m", proxyReadTimeout: "300s" },
+    });
+  });
+
+  it("carries them onto an adopted static root too", async () => {
+    const { routing, ssl } = providers();
+    const sites: ImportedSite[] = [
+      {
+        serverNames: ["static.com"],
+        ssl: false,
+        target: { kind: "static", root: "/var/www/s" },
+        proxy: { gzip: true },
+      },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, opts());
+
+    expect(routing.registerRoute).toHaveBeenCalledWith({
+      domain: "static.com",
+      tls: false,
+      terminatesTlsLocally: false,
+      staticRoot: "/var/www/s",
+      staticRootAdopted: true,
+      proxy: { gzip: true },
+    });
+  });
+
+  /**
+   * A container edge can't read a docroot outside its bind mounts, so the CLI copies
+   * the tree in host-side and hands the corrected root here keyed by primary hostname.
+   * Substituting it (not the original) is what keeps the site from 500ing after
+   * cutover — and what lands in the route sidecar cert renewal re-reads. See #456.
+   */
+  it("substitutes staticRootOverrides for an adopted static root, keyed by primary hostname", async () => {
+    const { routing, ssl } = providers();
+    const sites: ImportedSite[] = [
+      { serverNames: ["front.com", "www.front.com"], ssl: false, target: { kind: "static", root: "/home/app/dist" } },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, {
+      onLog: () => {},
+      warnings: [],
+      staticRootOverrides: { "front.com": "/opt/openship/static/_adopted/front.com" },
+    });
+
+    // Both server names register, and BOTH get the corrected root (the override keys
+    // on the primary name that the copy was performed for).
+    expect(routing.registerRoute).toHaveBeenCalledWith({
+      domain: "front.com",
+      tls: false,
+      terminatesTlsLocally: false,
+      staticRoot: "/opt/openship/static/_adopted/front.com",
+      staticRootAdopted: true,
+    });
+    expect(routing.registerRoute).toHaveBeenCalledWith({
+      domain: "www.front.com",
+      tls: false,
+      terminatesTlsLocally: false,
+      staticRoot: "/opt/openship/static/_adopted/front.com",
+      staticRootAdopted: true,
+    });
+  });
+
+  it("falls back to the original root when no override matches the site", async () => {
+    const { routing, ssl } = providers();
+    const sites: ImportedSite[] = [
+      { serverNames: ["b.com"], ssl: false, target: { kind: "static", root: "/var/www/b" } },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, {
+      onLog: () => {},
+      warnings: [],
+      // A key for a DIFFERENT site (operator left this one) must not leak across.
+      staticRootOverrides: { "other.com": "/opt/openship/static/_adopted/other.com" },
+    });
+
+    expect(routing.registerRoute).toHaveBeenCalledWith({
+      domain: "b.com",
+      tls: false,
+      terminatesTlsLocally: false,
+      staticRoot: "/var/www/b",
+      staticRootAdopted: true,
+    });
+  });
+
+  it("omits `proxy` entirely when the source vhost tuned nothing", async () => {
+    // `proxy: undefined` and "no proxy key" are the same thing to the renderer, but
+    // only the second keeps the RouteConfig sidecar clean.
+    const { routing, ssl } = providers();
+    const sites: ImportedSite[] = [
+      {
+        serverNames: ["plain.com"],
+        ssl: false,
+        target: { kind: "proxy", url: "http://127.0.0.1:3000" },
+        // A vhost holding only values our validators reject parses to raw-only.
+        proxyRaw: { proxyReadTimeout: "1d" },
+      },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, opts());
+
+    expect(routing.registerRoute.mock.calls[0]![0]).not.toHaveProperty("proxy");
   });
 });

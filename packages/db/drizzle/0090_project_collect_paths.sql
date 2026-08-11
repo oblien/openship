@@ -1,0 +1,18 @@
+-- Top Paths becomes opt-in.
+--
+-- The per-path aggregation is the one analytics dimension that isn't effectively free.
+-- Measured on the shipped edge image, per request:
+--
+--   paths (whole block)     1.72 us   <- 57% of the log handler's counter path
+--     of which string work  1.38 us   normalize_path + is_static_asset
+--   minute buckets          0.61 us
+--   country                 0.24 us
+--   status                  0.14 us
+--
+-- It is also the highest-cardinality dimension (up to 2000 keys per domain per day) and
+-- the largest column in the daily rollup. So it is now a per-project switch, read on the
+-- hot path from the edge's `rules` shared dict and pushed there on every route apply.
+--
+-- DEFAULT false, which turns it off for existing projects as well. Deliberate: no one
+-- opted into the cost, so no one should keep paying it without asking.
+ALTER TABLE "project" ADD COLUMN IF NOT EXISTS "collect_paths" boolean DEFAULT false NOT NULL;

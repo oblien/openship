@@ -14,8 +14,9 @@
  * Good enough for: development, macOS desktop, CI environments.
  */
 
-import type { CommandExecutor, LogEntry, LogCallback } from "../../types";
+import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage } from "../../types";
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
+import { sampleBareUsage, ZERO_USAGE } from "./usage";
 import { sq, parseLogLevel } from "../build-pipeline";
 import { probeListeningPort } from "../port-conflict";
 import { execReliable } from "../../system/remote-journal";
@@ -209,6 +210,20 @@ export class NohupSupervisor implements ProcessSupervisor {
     const pid = await this.readPid(deploymentId);
     if (!pid) return false;
     return this.isAlive(pid);
+  }
+
+  /**
+   * Usage for the tracked process.
+   *
+   * No cgroup candidates: nohup does not create one (that's the documented
+   * limitation above), so the probe uses /proc on Linux and `ps` on macOS. Both
+   * measure the LEADER only — a start command that forks will under-report, which
+   * is the same tradeoff as this supervisor's lack of restart and reboot handling.
+   */
+  async getUsage(deploymentId: string): Promise<ResourceUsage> {
+    const pid = await this.readPid(deploymentId);
+    if (!pid) return { ...ZERO_USAGE };
+    return sampleBareUsage(this.executor, pid);
   }
 
   async getLogs(deploymentId: string, tail?: number): Promise<LogEntry[]> {

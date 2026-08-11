@@ -163,12 +163,31 @@
       "pruned": "Anheften nicht möglich — das Artefakt wurde bereits bereinigt"
     },
     "deleteDeployment": "Deployment löschen",
-    "confirmRollback": "Auf diese Version zurücksetzen?\n\nStellt nur den Anwendungscode wieder her. Datenbank- und Volume-Daten bleiben unverändert.",
     "rollbackFailed": "Rollback fehlgeschlagen",
     "pinFailed": "Deployment konnte nicht angeheftet werden",
     "unpinFailed": "Anheftung des Deployments konnte nicht aufgehoben werden",
     "rollbackModeInstant": "Sofortige Wiederherstellung — nutzt das aufbewahrte Image dieser Version, kein Neubau.",
     "rollbackModeRebuild": "Neubau — das Image dieser Version liegt nicht mehr auf dem Host, ihr Commit wird neu gebaut.",
     "rollbackModeMixed": "Größtenteils sofort — {count} Service(s) haben ihr Image verloren und werden neu gebaut."
+  },
+  "rollbackConfirm": {
+    "title": "Auf diese Version zurücksetzen?",
+    "dataUnchanged": "Stellt nur den Anwendungscode wieder her. Datenbank- und Volume-Daten bleiben unverändert.",
+    "envHeading": "Umgebungsvariablen",
+    "envSummaryOverlay": "{count} Variable(n) ändern sich — die Werte dieser Version werden über die aktuellen gelegt.",
+    "envSummaryReplace": "{count} Variable(n) ändern sich — die Umgebung dieser Version wird genau so verwendet, wie sie erfasst wurde.",
+    "envNoChanges": "Keine Umgebungsvariable ändert sich.",
+    "envUnchanged": "Der bestehende Container wird neu gestartet statt neu erstellt, seine Umgebung bleibt unberührt.",
+    "envNoValues": "Werte werden hier nie angezeigt.",
+    "envTruncated": "{shown} von {total} angezeigt.",
+    "dirFrozenWins": "kehrt zum Wert dieser Version zurück",
+    "dirRemovedSince": "kommt zurück — seit dieser Version gelöscht",
+    "dirAddedSinceKept": "bleibt wie jetzt — nach dieser Version hinzugefügt",
+    "dirAddedSinceDropped": "entfällt — nach dieser Version hinzugefügt",
+    "scopeAmbiguous": "ohne Service-Zuordnung erfasst, daher gilt ein Wert für alle Services",
+    "untouchedHeading": "Nach dieser Version hinzugefügte Services",
+    "untouchedNote": "Diese laufen weiter und werden nicht angetastet: {names}",
+    "confirm": "Zurücksetzen",
+    "cancel": "Abbrechen"
   }
 }

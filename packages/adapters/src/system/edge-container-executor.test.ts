@@ -7,7 +7,10 @@ import {
   readMaybeInContainer,
   writeEdgeFile,
 } from "./edge-container-executor";
-import type { CommandExecutor } from "../types";
+import { EXECUTOR_DELEGATE } from "./elevated-executor";
+import { cacheKeyFor } from "./environment";
+import { logEntry } from "./local-shell";
+import type { CommandExecutor, LogEntry } from "../types";
 
 function fakeExecutor(overrides: Partial<CommandExecutor> = {}): CommandExecutor {
   return {
@@ -69,9 +72,13 @@ describe("edgeContainerExecutor", () => {
     const onLog = vi.fn();
     await edgeContainerExecutor(inner, "openship-edge").streamExec("certbot certonly", onLog);
 
+    // The opts (abort signal) forward through transparently — undefined here since
+    // this caller passes none, but the live-log transport relies on it reaching the
+    // inner executor so an aborted stream kills the curl inside the container.
     expect(inner.streamExec).toHaveBeenCalledWith(
       "docker exec 'openship-edge' sh -c 'certbot certonly'",
       onLog,
+      undefined,
     );
   });
 
@@ -140,6 +147,183 @@ describe("edgeContainerExecutor", () => {
     const edge = edgeContainerExecutor(inner, "openship-edge");
     await edge.dispose?.();
     expect(inner.dispose).toHaveBeenCalled();
+  });
+
+  /**
+   * The exception to the passthrough above, and the reason it is an exception: this wrapper
+   * changes WHICH MACHINE `exec` runs on. `EXECUTOR_DELEGATE` claims the opposite — it is how
+   * `elevatedExecutor` tells the profile cache that two objects are one box — so answering it
+   * here would file the container's os-release and uid under the host's key. The elevated
+   * `inner` is not hypothetical: it is exactly what `containerEdgeProvider` passes.
+   */
+  it("is never mistaken for another view of the host, even over an elevated inner", () => {
+    const inner = fakeExecutor();
+    const elevated = new Proxy(inner, {
+      get: (t, p) => (p === EXECUTOR_DELEGATE ? t : Reflect.get(t, p, t)),
+    });
+    const edge = edgeContainerExecutor(elevated, "openship-edge");
+
+    const delegate = (e: CommandExecutor) => (e as unknown as Record<symbol, unknown>)[EXECUTOR_DELEGATE];
+    expect(delegate(elevated)).toBe(inner);
+    expect(delegate(edge)).toBeUndefined();
+    expect(cacheKeyFor(edge)).toBe(edge);
+    expect(cacheKeyFor(elevated)).toBe(inner);
+  });
+});
+
+/**
+ * What an operator is told when the edge itself is down.
+ *
+ * The failure this fixes, verbatim from a live box: a STATIC app's cert flow printed
+ * `Error response from daemon: Container b8968804d6a7…5771c7 is restarting, wait until
+ * the container is running` — the daemon's resolved 64-hex id, no name, no cause. A
+ * static project has no container of its own (the edge serves it from the shared
+ * volume), so read from there it looks like we went hunting for a container that
+ * shouldn't exist. We didn't: certbot runs INSIDE the edge, and the edge was crash-looping.
+ */
+describe("edgeContainerExecutor — the edge container is down", () => {
+  const RESTARTING =
+    "Error response from daemon: Container b8968804d6a78cb51ae5151a0840eff7428b4a778380838c580c9f852d5771c7 " +
+    "is restarting, wait until the container is running";
+  const CRASH_LOG =
+    `2026/08/03 14:13:37 [notice] 1#1: using the "epoll" event method\n` +
+    `2026/08/03 14:13:37 [emerg] 1#1: cannot load certificate ` +
+    `"/etc/letsencrypt/live/test.hekai.org/fullchain.pem": BIO_new_file() failed`;
+
+  /** Inner executor of a box whose edge is crash-looping on a missing cert. */
+  function crashLoopingHost(): CommandExecutor {
+    return fakeExecutor({
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.startsWith("docker inspect")) return "restarting\n";
+        if (cmd.startsWith("docker logs")) return CRASH_LOG;
+        throw new Error(RESTARTING);
+      }),
+    });
+  }
+
+  it("rewrites the daemon's bare container id into the name, the state and the cause", async () => {
+    const inner = crashLoopingHost();
+    const edge = edgeContainerExecutor(inner, "openship-edge");
+
+    await expect(edge.exec("certbot certonly --standalone")).rejects.toThrow(
+      /the edge container is not running \("openship-edge"\) \(restarting\)/,
+    );
+    // The three things the daemon's message lacked, and the operator needs.
+    await expect(edge.exec("certbot certonly --standalone")).rejects.toThrow(/crash-looping/);
+    await expect(edge.exec("certbot certonly --standalone")).rejects.toThrow(
+      /cannot load certificate/,
+    );
+    // The original is kept below the explanation — never swallowed.
+    await expect(edge.exec("certbot certonly --standalone")).rejects.toThrow(/is restarting, wait/);
+  });
+
+  it("diagnoses over the SAME channel the failed command went out on", async () => {
+    // A remote server: the inner executor is the pooled SSH one, so the probes must
+    // be shell commands on that host. A second Docker client or a tunnel here would
+    // mean a remote edge could never be diagnosed at all.
+    const inner = crashLoopingHost();
+    await edgeContainerExecutor(inner, "openship-edge").exec("openresty -t").catch(() => {});
+
+    expect(execCalls(inner)).toEqual([
+      "docker exec 'openship-edge' sh -c 'openresty -t'",
+      "docker inspect -f '{{.State.Status}}' 'openship-edge' 2>/dev/null",
+      "docker logs --tail 40 'openship-edge' 2>&1",
+    ]);
+  });
+
+  // The cost guard, and the reason enrichment is gated instead of unconditional: a
+  // non-zero exit is ORDINARY here. `files:"auto"` probes container paths with
+  // `test -e` and `cat`, which report absence by failing — paying two extra `docker`
+  // round-trips per read miss would be a real cost on a healthy box.
+  it("adds no round-trips — and no rewriting — to an ordinary failed command", async () => {
+    const boom = new Error("cat: /etc/letsencrypt/live/a/fullchain.pem: No such file or directory");
+    const inner = fakeExecutor({ exec: vi.fn().mockRejectedValue(boom) });
+
+    // The SAME error object, not a copy: nothing about a routine failure is touched.
+    await expect(edgeContainerExecutor(inner, "openship-edge").exec("cat /x")).rejects.toBe(boom);
+    expect(execCalls(inner)).toEqual(["docker exec 'openship-edge' sh -c 'cat /x'"]);
+  });
+
+  it("still explains itself when the diagnosis probes also fail", async () => {
+    // Same dead SSH connection that broke the exec can break the probes. A partial
+    // answer — the NAME — still beats a 64-hex id, and the probe failing must not
+    // replace the real failure with an error about diagnosing it.
+    const inner = fakeExecutor({
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.startsWith("docker ")) throw new Error(cmd.includes("exec") ? RESTARTING : "ssh: connection closed");
+        return "";
+      }),
+    });
+
+    await expect(edgeContainerExecutor(inner, "openship-edge").exec("openresty -t")).rejects.toThrow(
+      /the edge container is not running \("openship-edge"\) — .*docker logs --tail 40 openship-edge/,
+    );
+  });
+
+  // streamExec REPORTS failure instead of throwing it, and its callers build the error
+  // they raise out of what was STREAMED (`_execCertbot` accumulates onLog lines and
+  // throws that text). Appending to the return value alone would leave certbot's caller
+  // raising the daemon's bare container id — i.e. the original bug, untouched.
+  it("routes the explanation through onLog so a streaming caller's error carries it", async () => {
+    const inner = fakeExecutor({
+      exec: vi.fn(async (cmd: string) =>
+        cmd.startsWith("docker inspect") ? "restarting\n" : CRASH_LOG,
+      ),
+      streamExec: vi.fn(async (_cmd: string, onLog: (l: LogEntry) => void) => {
+        onLog(logEntry(RESTARTING, "error"));
+        return { code: 1, output: RESTARTING };
+      }),
+    });
+
+    // Exactly how `_execCertbot` builds the error it throws.
+    let streamed = "";
+    const result = await edgeContainerExecutor(inner, "openship-edge").streamExec(
+      "certbot certonly --standalone",
+      (log) => {
+        streamed += log.message;
+      },
+    );
+
+    expect(streamed).toMatch(/the edge container is not running \("openship-edge"\)/);
+    expect(streamed).toMatch(/cannot load certificate/);
+    expect(result.code).toBe(1);
+    expect(result.output).toMatch(/the edge container is not running/);
+  });
+
+  it("leaves a streamed certbot failure that is NOT the edge alone", async () => {
+    // A real DNS failure must keep certbot's own diagnosis, and must not be
+    // reframed as "the edge is down" — the operator would go fix the wrong thing.
+    const dns = "Detail: DNS problem: NXDOMAIN looking up A for test.hekai.org";
+    const inner = fakeExecutor({
+      streamExec: vi.fn(async (_cmd: string, onLog: (l: LogEntry) => void) => {
+        onLog(logEntry(dns, "error"));
+        return { code: 1, output: dns };
+      }),
+    });
+
+    const result = await edgeContainerExecutor(inner, "openship-edge").streamExec("certbot", () => {});
+    expect(result).toEqual({ code: 1, output: dns });
+    expect(execCalls(inner)).toEqual([]); // no diagnosis round-trips either
+  });
+
+  // `openresty -s reload` printing `invalid PID number ""` arrives immediately after
+  // "test is successful", so it reads like a config problem. It isn't: openresty is
+  // PID 1 in the container, so an empty pid file means the master is already gone.
+  it("diagnoses an empty pid file as the edge being gone, not a bad config", async () => {
+    const emptyPid =
+      `nginx: configuration file /usr/local/openresty/nginx/conf/nginx.conf test is successful\n` +
+      `nginx: [error] invalid PID number "" in "/usr/local/openresty/nginx/logs/nginx.pid"`;
+    const inner = fakeExecutor({
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.startsWith("docker inspect")) return "restarting\n";
+        if (cmd.startsWith("docker logs")) return CRASH_LOG;
+        throw new Error(emptyPid);
+      }),
+    });
+
+    await expect(edgeContainerExecutor(inner, "openship-edge").exec("openresty -s reload")).rejects.toThrow(
+      /the edge container is not running.*cannot load certificate/s,
+    );
   });
 });
 

@@ -2,6 +2,11 @@
 
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { CLOUD_DASHBOARD_URL, CLOUD_API_URL } from "@repo/core";
+import {
+  clearProductViewCookie,
+  type ProductView,
+  writeProductViewCookie,
+} from "@/lib/product-view";
 
 /** Default cloud domain - matches SYSTEM.DOMAINS.CLOUD_DOMAIN in @repo/core */
 const DEFAULT_CLOUD_DOMAIN = "opsh.io";
@@ -15,6 +20,18 @@ interface PlatformContextValue {
    *  deployable target, auto-registered as the isLocal "This Server". */
   isServerHost: boolean;
   authMode: "cloud" | "local" | "none";
+  /** What the INSTANCE declares it is (from /health/env). Used by the settings
+   *  toggle to show the operator what the box-wide default currently is. */
+  productMode: ProductView;
+  /** What THIS user sees: `productMode` plus their cookie override. Read this,
+   *  not `productMode`, to decide what to render. */
+  productView: ProductView;
+  /** Set the per-user override. Writes the cookie and reloads — the rail, the
+   *  brand name and the document title all come from the server render, so
+   *  local state alone would leave them stale. */
+  setProductView: (v: ProductView) => void;
+  /** Remove the override and follow `productMode` again. */
+  clearProductView: () => void;
   cloudAuthUrl: string;
   cloudApiUrl: string;
   machineName?: string;
@@ -49,6 +66,8 @@ interface PlatformProviderProps {
   deployMode?: string;
   isServerHost?: boolean;
   authMode?: "cloud" | "local" | "none";
+  productMode?: ProductView;
+  productView?: ProductView;
   cloudAuthUrl?: string;
   cloudApiUrl?: string;
   machineName?: string;
@@ -69,6 +88,8 @@ export function PlatformProvider({
   deployMode = "docker",
   isServerHost = false,
   authMode = "local",
+  productMode = "platform",
+  productView = "platform",
   cloudAuthUrl = CLOUD_DASHBOARD_URL,
   cloudApiUrl = CLOUD_API_URL,
   machineName,
@@ -78,6 +99,26 @@ export function PlatformProvider({
   const baseDomain = hostDomain || DEFAULT_CLOUD_DOMAIN;
   const setSelfHosted = useCallback((v: boolean) => setSelfHostedState(v), []);
 
+  // No local state for productView on purpose: it's resolved in the server
+  // layout, so the cookie IS the state — a second copy here would let the two
+  // disagree after a navigation.
+  //
+  // Reload rather than router.refresh(): the proxy injects the cookie as a
+  // request header for the layout to read, and the brand name + <title> come
+  // from the root layout's metadata, so the whole document has to re-render.
+  // (This also keeps useRouter out of the provider, which is mounted bare in
+  // unit tests with no App Router — useRouter throws there.)
+  const setProductView = useCallback((v: ProductView) => {
+    writeProductViewCookie(v);
+    window.location.reload();
+  }, []);
+
+  /** Drop the override and follow the instance default again. */
+  const clearProductView = useCallback(() => {
+    clearProductViewCookie();
+    window.location.reload();
+  }, []);
+
   return (
     <PlatformContext.Provider
       value={{
@@ -85,6 +126,10 @@ export function PlatformProvider({
         deployMode,
         isServerHost,
         authMode,
+        productMode,
+        productView,
+        setProductView,
+        clearProductView,
         cloudAuthUrl,
         cloudApiUrl,
         machineName,

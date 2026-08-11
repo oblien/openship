@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { servers } from "../schema";
 
@@ -16,6 +16,34 @@ export function createServerRepo(db: Database) {
       return db.query.servers.findMany({
         orderBy: (s, { asc }) => [asc(s.createdAt)],
       });
+    },
+
+    /**
+     * Batch id → display name, for naming servers in list responses. Falls back
+     * to the SSH host, which is what an unnamed server is called everywhere else.
+     */
+    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
+      if (ids.length === 0) return [];
+      return db
+        .select({ id: servers.id, name: sql<string>`coalesce(${servers.name}, ${servers.sshHost})` })
+        .from(servers)
+        .where(inArray(servers.id, ids));
+    },
+
+    /** Ids of servers in an org whose name or SSH host matches a search term. */
+    async searchIdsByName(organizationId: string, term: string, limit = 200): Promise<string[]> {
+      const pattern = `%${term}%`;
+      const rows = await db
+        .select({ id: servers.id })
+        .from(servers)
+        .where(
+          and(
+            eq(servers.organizationId, organizationId),
+            sql`(${servers.name} ILIKE ${pattern} OR ${servers.sshHost} ILIKE ${pattern})`,
+          ),
+        )
+        .limit(limit);
+      return rows.map((r) => r.id);
     },
 
     /**

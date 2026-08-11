@@ -115,7 +115,12 @@ export class BareBackupExecutor implements BackupExecutor {
         : compression === "gzip"
           ? `tar -cz -C ${shellEscape(path)} ${excludeArgs.join(" ")} .`
           : `tar -c -C ${shellEscape(path)} ${excludeArgs.join(" ")} .`;
-    return this.execStream(service, ["sh", "-c", tarCmd]);
+    // Forward the ceiling instead of dropping it: `timeoutMs` is declared on
+    // StreamPathOpts, and accepting an option you ignore is how the custom-command
+    // producer came to drop three of them. There is no idle equivalent here —
+    // rawExec's channel closes when the SSH connection dies, which is the bound
+    // the docker helper had to build for itself.
+    return this.execStream(service, ["sh", "-c", tarCmd], { timeoutMs: opts?.timeoutMs });
   }
 
   async receiveStream(

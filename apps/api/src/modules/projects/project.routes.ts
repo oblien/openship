@@ -20,6 +20,8 @@ import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
 import * as transfer from "./transfer.controller";
 import * as routeRules from "../route-rules/route-rule.controller";
+import * as edgeConfig from "./edge-config.controller";
+import * as incidents from "../monitoring/incident.controller";
 import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
 import * as incomingWebhooks from "../incoming-webhooks/incoming.controller";
 import {
@@ -60,11 +62,28 @@ r.get("/local", { tag: "project:list", localOnly: true }, ctrl.listLocal);
 r.post("/scan", { tag: "project:write", collection: true, localOnly: true }, ctrl.scanLocal);
 r.post("/import", { tag: "project:write", collection: true, localOnly: true }, ctrl.importLocal);
 
+/* ─── Live edge config read-back (saved vs. served, per hostname) ───────── */
+r.get("/:id/edge-config", { tag: "project:read", localOnly: true }, edgeConfig.getEdgeConfig);
+
 /* ─── Route rules (self-hosted OpenResty edge: rate-limit · ban · allow/deny) ── */
 r.get("/:id/route-rules", { tag: "project:read", localOnly: true }, routeRules.listRouteRules);
 r.post("/:id/route-rules", { tag: "project:write", localOnly: true }, routeRules.createRouteRule);
 r.patch("/:id/route-rules/:ruleId", { tag: "project:write", localOnly: true }, routeRules.updateRouteRule);
 r.delete("/:id/route-rules/:ruleId", { tag: "project:write", localOnly: true }, routeRules.deleteRouteRule);
+
+/* ─── Health (container incidents recorded by the health watch) ─────────── */
+r.get(
+  "/:id/incidents",
+  {
+    tag: "project:read",
+    localOnly: true,
+    mcp: {
+      description:
+        "Container runtime health for this project: OPEN incidents (a workload the health watch found `unhealthy`, `crash_loop`, or `down`, each with its reason, exit code, restart count, OOM flag and a log excerpt) plus recently-resolved ones. Two fields decide whether an empty list means anything, so always read them: `watching` is false when health monitoring is turned OFF — with it off, the absence of incidents is NOT evidence of health; `serverUnreachable` is non-null when the box itself is unreachable, in which case this project's rows are frozen and stale (nothing is being observed). Read this whenever a project looks unhealthy, or a deploy that reported success still isn't serving — it reports the RUNTIME state and complements the pending-actions tool (which covers deploy/domain/routing items that each carry a concrete fix). Incidents auto-resolve when the workload recovers; the usual move for an open one is to redeploy or inspect its `logExcerpt`. Self-hosted only.",
+    },
+  },
+  incidents.listProjectIncidents,
+);
 
 /* ─── Folder upload → deploy ─────────────────────────────────────────────
  * Browser-based folder deploy for clients with no filesystem-shared API.
@@ -245,7 +264,7 @@ r.get(
     tag: "project:read",
     mcp: {
       description:
-        "What is waiting on a human for this project, and how to resolve each item. Covers a deploy blocked on a named cause (e.g. a port already in use), a deploy HELD right now on a decision (answer it with the build-respond tool — the exact action id and body are in the item's resolveWith, and `expiresAt` is when the deploy gives up), a partial-failure release awaiting keep/reject, unsynced routing, unverified domains, and failed/expired certificates. Each item carries `resolveWith`, an array of concrete {method, path, body} calls — use those rather than guessing. Call this after starting a deploy that seems stuck, and whenever a project reads as Action Required.",
+        "What is waiting on a human for this project, and how to resolve each item. Covers a deploy blocked on a named cause (e.g. a port already in use), a deploy HELD right now on a decision (answer it with the build-respond tool — the exact action id and body are in the item's resolveWith, and `expiresAt` is when the deploy gives up), a partial-failure release awaiting keep/reject, unsynced routing, unverified domains, and failed/expired certificates. Each item carries `resolveWith`, an array of concrete {method, path, body} calls — use those rather than guessing. Call this after starting a deploy that seems stuck, and whenever a project reads as Action Required. This covers deploy/domain/routing items only — for container-runtime health (crash loops, unhealthy or down containers) read the project's incidents instead. Scoped to ONE project: to ask what is broken across the whole installation (these items for every project, plus runtime incidents, unreachable servers and edge/mail state, ranked by severity), read the issues feed instead.",
     },
   },
   cloudProjectProxy,

@@ -106,6 +106,30 @@ export interface BackupRestore {
   bytesRestored: number | null;
   errorMessage: string | null;
   confirmationToken: string | null;
+  /**
+   * Outcome facts a status can't carry. `integrity` records WHICH check prepare
+   * ran; `destructive` / `partialWrite` say whether a cancelled or failed
+   * restore left the target holding half an archive.
+   */
+  meta?: {
+    integrity?: "sha256" | "size-only" | "deferred";
+    destructive?: boolean;
+    destructiveSource?: string;
+    partialWrite?: boolean;
+    serviceLeftStopped?: boolean;
+    forced?: boolean;
+  } | null;
+  cancelRequested?: boolean;
+}
+
+/** What POST /cancel reports. `status: "applying"` means the request was taken
+ *  and the running phase will honor it — not that it already happened. */
+export interface CancelRestoreResult {
+  ok: true;
+  accepted: boolean;
+  status: BackupRestore["status"];
+  destructive: boolean;
+  forced: boolean;
 }
 
 export interface BackupRun {
@@ -254,7 +278,7 @@ export const backupsApi = {
     ),
 
   cancelRestore: (restoreId: string) =>
-    api.post<{ data: { ok: true } }>(endpoints.backups.cancelRestore(restoreId)),
+    api.post<{ data: CancelRestoreResult }>(endpoints.backups.cancelRestore(restoreId)),
 
   getRestore: (restoreId: string) =>
     api.get<{ data: BackupRestore }>(endpoints.backups.getRestore(restoreId)),

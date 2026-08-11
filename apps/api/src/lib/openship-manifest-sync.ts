@@ -16,7 +16,11 @@
 import type { CommandExecutor } from "@repo/adapters";
 import { repos, dumpSubgraph, type Project, type Deployment } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
-import { resolveDeploymentPlatform, type DeploymentMeta } from "./deployment-runtime";
+import {
+  disposePlatform,
+  resolveDeploymentPlatform,
+  type DeploymentMeta,
+} from "./deployment-runtime";
 import {
   readManifest,
   writeManifest,
@@ -158,6 +162,9 @@ export async function removeProjectFromServerManifests(project: Project): Promis
       const resolved = await resolveDeploymentPlatform(meta, {
         organizationId: dep.organizationId,
       });
+      // Only the executor is wanted (which sshManager owns), so the docker
+      // transport this eagerly bound can go straight back.
+      disposePlatform(resolved);
       const exec = resolved.platform.executor;
       if (exec) {
         await removeProjectFromManifest(exec, project.id);

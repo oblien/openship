@@ -43,6 +43,12 @@ export const tokensApi = {
      *  "no limits" (isUnscopedTemplate), rather than a scoped pick that came
      *  out empty. The server refuses to guess between the two. */
     fullAccess?: boolean;
+    /** "edit" re-scopes an already-connected client from the settings MCP tab.
+     *  Omit for the consent flow. */
+    mode?: "consent" | "edit";
+    /** Required to widen an edit to unscoped — the server refuses without it,
+     *  because that takes effect on the agent's very next request. */
+    confirmWiden?: boolean;
   }) =>
     api.post<{ data: { ok: boolean; scoped: boolean; readOnly: boolean } }>(
       endpoints.tokens.mcpAuthorize,
@@ -51,6 +57,10 @@ export const tokensApi = {
 
   /** The caller's connected MCP clients (OAuth bindings) for the settings list. */
   listMcpClients: () => api.get<{ data: McpClient[] }>(endpoints.tokens.mcpClients),
+
+  /** One client WITH its grants — the prefill for the access editor. */
+  getMcpClient: (clientId: string) =>
+    api.get<{ data: McpClientDetail }>(endpoints.tokens.mcpClient(clientId)),
 
   /** Disconnect a client: revoke its tokens + drop its binding/consent. */
   disconnectMcpClient: (clientId: string) =>
@@ -68,4 +78,16 @@ export interface McpClient {
   grantCount: number;
   authorizedAt: string;
   lastUsedAt: string | null;
+}
+
+/**
+ * A client plus the grants it actually holds. Only the detail route returns these —
+ * the list ships a count, since that is all its rows render.
+ *
+ * `scope` is present on a grant that carries a source-path restriction and MUST be
+ * handed back on save: `mcp-authorize` replaces grants wholesale, so dropping it on
+ * load silently strips the restriction.
+ */
+export interface McpClientDetail extends McpClient {
+  grants: PickerGrant[];
 }

@@ -112,6 +112,14 @@ export type DeploymentInfo = {
    *  is itself a deployable target, auto-registered as an isLocal server. */
   isServerHost?: boolean;
   authMode: "cloud" | "local" | "none";
+  /**
+   * Which product this instance presents itself as — "platform" (the full deploy
+   * platform) or "mail" (Openship Mail). Resolved by the API's single
+   * product-mode resolver, so it already accounts for CLOUD_MODE and the
+   * operator's instance_settings toggle. Optional because an older API won't
+   * send it; `resolveProductView` treats a missing value as "platform".
+   */
+  productMode?: "platform" | "mail";
   cloudAuthUrl: string;
   cloudApiUrl: string;
   machineName?: string;

@@ -1,6 +1,13 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { AppManagement, AppSettingGroup, AppTemplate } from "@repo/core";
+import type {
+  AppManagement,
+  AppMinResources,
+  AppSettingGroup,
+  AppTemplate,
+  HostCapacity,
+  ResourceFit,
+} from "@repo/core";
 
 /** One catalog entry as returned by GET /apps/catalog. */
 export interface AppCatalogField {
@@ -26,6 +33,9 @@ export interface AppCatalogEntry {
   management: AppManagement | null;
   /** Verified trust mark — official open-source image + reviewed pipeline. */
   verified?: boolean;
+  /** Hosting model — drives the card badge + wizard notice. "experimental" =
+   *  runs but not production-grade. */
+  hosting?: "self-hosted" | "experimental";
   /** A per-org user-uploaded app — always unverified; render an "Unverified" chip. */
   custom?: boolean;
   /** Not installable this version — render dimmed + block install. */
@@ -35,12 +45,49 @@ export interface AppCatalogEntry {
   requiresUpdate?: { minVersion?: string };
   /** A newer (engine-gated) version exists; the bundled copy is being served. */
   updateAvailable?: boolean;
+  /** What the app declares it needs from the machine. Absent for almost every
+   *  app; when present the wizard shows it against the chosen destination and
+   *  deploy preflight enforces it. */
+  minResources?: AppMinResources;
   configFields: AppCatalogField[];
+}
+
+/** GET /apps/catalog/:id/host-fit — an app's declared minimum vs. a destination.
+ *  Advisory; `capacity.source === "unknown"` means we couldn't measure, which is
+ *  never a shortfall. */
+export interface AppHostFitView {
+  minResources: AppMinResources | null;
+  capacity: HostCapacity;
+  fit: ResourceFit;
 }
 
 export type InstallAppResult =
   | { kind: "flow"; flowHref: string }
   | { kind: "template"; projectId: string; slug: string };
+
+/** An org's never-deployed draft of a catalog app — the project an install of the
+ *  same name adopts instead of creating a new one. */
+export interface AppOpenDraft {
+  projectId: string;
+  slug: string;
+  name: string;
+}
+
+/**
+ * One endpoint's routing choice, sent WITH the install so the project's services
+ * are created with the routing the operator picked. An endpoint the caller omits
+ * gets no public route — the server never invents a hostname.
+ */
+export interface InstallAppRoute {
+  service: string;
+  port: number;
+  /** port = no public route (published host port only). */
+  mode: "port" | "free" | "custom";
+  /** free: subdomain slug. Omit to take the template's default label. */
+  domain?: string;
+  /** custom: the hostname you own (required for mode "custom"). */
+  customDomain?: string;
+}
 
 /** Effective value for one setting field (secrets are never sent back). */
 export interface AppSettingValue {
@@ -91,6 +138,12 @@ export interface AppConnectionOutput {
   variants?: { id: string; label: LocalizedString; value: string }[];
   /** Layout hint: "half" pairs with the next half-width output on one line. */
   width?: "full" | "half";
+  /** "url" → render an Open-in-new-tab action to the right of the value. */
+  kind?: "text" | "url";
+  /** The value is ALREADY an internal east-west address (`http://<alias>:<port>`),
+   *  synthesized for a non-template project — the connect flow injects it verbatim
+   *  in internal mode rather than rewriting a public URL. */
+  internal?: boolean;
 }
 
 /** Opinionated handover guidance (localizable copy). */
@@ -112,13 +165,34 @@ export const appsApi = {
   catalog: () => api.get<{ data: AppCatalogEntry[] }>(endpoints.apps.catalog),
 
   /** One app's full template (runtime catalog — overlay-fresh) for the install
-   *  wizard, so a repo-fresh app opens + installs without a redeploy. */
-  template: (id: string) => api.get<{ data: AppTemplate }>(endpoints.apps.catalogEntry(id)),
+   *  wizard, so a repo-fresh app opens + installs without a redeploy. `draft` is
+   *  this org's never-deployed draft of the app, which an install of the same name
+   *  ADOPTS — the wizard rehydrates its pickers from it instead of showing template
+   *  defaults it would then overwrite. */
+  template: (id: string) =>
+    api.get<{ data: AppTemplate; draft?: AppOpenDraft | null }>(endpoints.apps.catalogEntry(id)),
+
+  /** Does a chosen destination meet the app's declared minimum? Advisory — the
+   *  wizard shows the shortfall before anything is created; deploy preflight is
+   *  the gate that refuses. Only worth calling for an app with `minResources`. */
+  hostFit: (id: string, target: { deployTarget?: string; serverId?: string }) =>
+    api.get<{ data: AppHostFitView }>(endpoints.apps.catalogHostFit(id), {
+      params: {
+        ...(target.deployTarget ? { deployTarget: target.deployTarget } : {}),
+        ...(target.serverId ? { serverId: target.serverId } : {}),
+      },
+    }),
 
   /** Install an app from the catalog. Template apps return the new project;
-   *  flow apps return the wizard route to hand off to. */
-  install: (body: { templateId: string; name?: string; config?: Record<string, string> }) =>
-    api.post<{ data: InstallAppResult }>(endpoints.apps.install, body),
+   *  flow apps return the wizard route to hand off to. `routes` carries the
+   *  install wizard's per-endpoint routing choice — it is the ONLY way an app
+   *  install gets a public hostname. */
+  install: (body: {
+    templateId: string;
+    name?: string;
+    config?: Record<string, string>;
+    routes?: InstallAppRoute[];
+  }) => api.post<{ data: InstallAppResult }>(endpoints.apps.install, body),
 
   /** Add a custom app from an uploaded JSON definition (validated + stored per-org,
    *  always unverified). Returns its id; then it appears in the catalog. */

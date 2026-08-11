@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { getProjectStatus } from "./project-status";
+import {
+  PROJECT_STATUS_META,
+  getProjectStatus,
+  projectDisplayDomain,
+  projectStatusLabel,
+} from "./project-status";
+import { baseDictionary as en } from "@/i18n";
 import {
   calculateDeploymentStats,
   filterDeployments,
@@ -71,6 +77,72 @@ describe("getProjectStatus — a blocked deploy needs attention", () => {
   });
 });
 
+describe("getProjectStatus — a failed latest deploy is never Live", () => {
+  it("reports failed when the only deploy failed", () => {
+    expect(getProjectStatus({ latestDeploymentId: "d1", latestDeploymentStatus: "failed" })).toBe(
+      "failed",
+    );
+  });
+
+  it("reports failed when the failed deploy is somehow also the live pointer", () => {
+    // Shouldn't happen (a failure never advances the pointer) but if it does,
+    // "live" is the one answer that is definitely wrong.
+    expect(
+      getProjectStatus({
+        activeDeploymentId: "d1",
+        latestDeploymentId: "d1",
+        latestDeploymentStatus: "failed",
+      }),
+    ).toBe("failed");
+  });
+
+  it("reports attention — not live — when an older release serves and the newest deploy failed", () => {
+    // The site IS up, so "failed" would be a lie; the newest deploy died, so
+    // "live" hides it. Same signal the other operator-needed states use.
+    expect(
+      getProjectStatus({
+        activeDeploymentId: "d1",
+        latestDeploymentId: "d2",
+        latestDeploymentStatus: "failed",
+      }),
+    ).toBe("attention");
+  });
+
+  it("reports attention for a failed latest even when the caller omits latestDeploymentId", () => {
+    // Environment summaries pass activeDeploymentId + status only. A failure
+    // never advances the pointer, so a set pointer means an older release.
+    expect(getProjectStatus({ activeDeploymentId: "d1", latestDeploymentStatus: "failed" })).toBe(
+      "attention",
+    );
+  });
+
+  it("keeps a blocked latest at attention even with a live release", () => {
+    expect(
+      getProjectStatus({ activeDeploymentId: "d1", latestDeploymentStatus: "action_required" }),
+    ).toBe("attention");
+  });
+
+  it("still reports live for the self-app, which has no deployment at all", () => {
+    expect(getProjectStatus({ appTemplateId: "openship", latestDeploymentStatus: "failed" })).toBe(
+      "live",
+    );
+  });
+});
+
+describe("projectDisplayDomain — only a persisted route", () => {
+  it("returns nothing when the project has no route", () => {
+    // Was `<slug>.<baseDomain>`: the Apps list advertised "convex.opsh.io" for a
+    // project whose Domains page correctly said "No domain".
+    expect(projectDisplayDomain({})).toBeNull();
+    expect(projectDisplayDomain({ primaryDomain: null })).toBeNull();
+    expect(projectDisplayDomain({ primaryDomain: "   " })).toBeNull();
+  });
+
+  it("returns the persisted primary route", () => {
+    expect(projectDisplayDomain({ primaryDomain: "convex.example.com" })).toBe("convex.example.com");
+  });
+});
+
 describe("deployments list — a blocked deploy is visible and counted", () => {
   it("gets its own chip instead of falling through to Pending", () => {
     const config = getStatusConfig("action_required");
@@ -97,5 +169,56 @@ describe("deployments list — a blocked deploy is visible and counted", () => {
     ]);
     expect(stats.failed).toBe(2);
     expect(stats.success).toBe(1);
+  });
+});
+
+/**
+ * A project the operator PAUSED must not read "Live".
+ *
+ * Pausing stops containers; it does not touch the deployment row. So every
+ * surface that derives its pill from the deployment — the cards, the sidebar, the
+ * home list — reported a green "Live" over a project serving nothing, which is
+ * also why a pause looked like it had failed.
+ *
+ * `enabled` is server-derived from `disabled_at` in enrichProject, so this one
+ * derivation fixes all of those surfaces at once.
+ */
+describe("getProjectStatus — paused", () => {
+  const paused = { enabled: false, activeDeploymentId: "d1", latestDeploymentStatus: "ready" };
+
+  it("reads paused, not live", () => {
+    expect(getProjectStatus(paused)).toBe("paused");
+  });
+
+  it("is unaffected when the field is absent — old payloads read exactly as before", () => {
+    expect(getProjectStatus({ activeDeploymentId: "d1", latestDeploymentStatus: "ready" })).toBe(
+      "live",
+    );
+    expect(
+      getProjectStatus({ enabled: true, activeDeploymentId: "d1", latestDeploymentStatus: "ready" }),
+    ).toBe("live");
+  });
+
+  it("yields to an in-flight deploy — a redeploy of a paused project is news", () => {
+    expect(getProjectStatus({ ...paused, latestDeploymentStatus: "building" })).toBe("building");
+    expect(getProjectStatus({ ...paused, latestDeploymentStatus: "deploying" })).toBe("deploying");
+  });
+
+  it("yields to teardown, which outranks a pause", () => {
+    expect(getProjectStatus({ ...paused, deletionInProgress: true })).toBe("deleting");
+  });
+
+  it("never applies to the control plane, which cannot be paused", () => {
+    expect(getProjectStatus({ ...paused, appTemplateId: "openship" })).toBe("live");
+  });
+
+  it("wins over a paused project's stale deploy flags, so the pill matches what the operator did", () => {
+    expect(getProjectStatus({ ...paused, routingUnsynced: true })).toBe("paused");
+    expect(getProjectStatus({ ...paused, awaitingDecision: true })).toBe("paused");
+  });
+
+  it("has presentation + a localized label like every other status", () => {
+    expect(PROJECT_STATUS_META.paused).toBeDefined();
+    expect(projectStatusLabel("paused", en as never)).toBe("Paused");
   });
 });

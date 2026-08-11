@@ -207,9 +207,13 @@ function Field({
   secretSetLabel: string;
   onChange: (v: FormValue) => void;
 }) {
+  // Same field treatment as the surfaces this form sits on (the app-install
+  // wizard's "Name" box, project settings): `border-border/50` + a focus ring.
+  // `border-input` is double the alpha on dark, so a settings field read as an
+  // outlined box next to its borderless neighbours.
   const base =
-    "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring";
-  const inputCls = `${base} ${error ? "border-danger" : "border-input"}`;
+    "w-full rounded-xl border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25";
+  const inputCls = `${base} ${error ? "border-danger" : "border-border/50"}`;
   const str = typeof value === "string" ? value : "";
   // Password type OR an explicitly-secret field masks (fixes the old bug where a
   // type:"password" non-secret field rendered as visible text).

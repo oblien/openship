@@ -90,6 +90,7 @@
         "id": "ui",
         "label": "Kafka UI",
         "source": "publicUrl:kafka-ui",
+        "kind": "url",
         "help": "Sign in with the username + password below."
       },
       {

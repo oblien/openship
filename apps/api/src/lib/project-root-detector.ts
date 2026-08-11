@@ -882,7 +882,11 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     rootDirectory,
     stack: stack.stack,
     category: stack.category,
-    packageManager: stack.packageManager,
+    // Same "unknown" → "npm" normalization as prepare.service.ts's ProjectInfo
+    // builder (issue #415) — this MonorepoApp round-trips through the dashboard
+    // into project creation just like the single-root path does, and
+    // PackageManagerEnum rejects the raw sentinel the same way there.
+    packageManager: stack.packageManager === "unknown" ? "npm" : stack.packageManager,
     buildCommand: dockerOwnsBuild ? "" : stack.buildCommand,
     installCommand: dockerOwnsBuild ? "" : stack.installCommand,
     startCommand: dockerOwnsBuild ? "" : stack.startCommand,

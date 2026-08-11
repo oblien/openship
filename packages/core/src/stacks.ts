@@ -286,6 +286,34 @@ export const STACKS = {
       deps: ["@remix-run/react", "@remix-run/node", "remix"],
     },
   },
+  "tanstack-start": {
+    name: "TanStack Start",
+    language: "typescript",
+    category: "fullstack",
+    outputDirectory: ".output",
+    defaultPort: 3000,
+    defaultBuildCommand: "vite build",
+    defaultStartCommand: "node .output/server/index.mjs",
+    // Nitro/Vinxi server bundle is self-contained under .output — same shape as Nuxt.
+    productionPaths: [".output"],
+    detection: {
+      // TanStack Start is Vite/Rsbuild-based; app.config.* is the older
+      // framework-specific marker, while current apps commonly ship vite.config.*
+      // or rsbuild.config.* plus the start package dep.
+      rootMarkers: [
+        "app.config.ts",
+        "app.config.js",
+        "app.config.mjs",
+        "vite.config.ts",
+        "vite.config.js",
+        "vite.config.mjs",
+        "rsbuild.config.ts",
+        "rsbuild.config.js",
+        "rsbuild.config.mjs",
+      ],
+      deps: ["@tanstack/react-start", "@tanstack/start"],
+    },
+  },
   astro: {
     name: "Astro",
     language: "typescript",
@@ -1089,6 +1117,27 @@ export function getProjectType(stackId: StackId): ProjectType {
 }
 
 /**
+ * Normalizes a framework input (stack ID or display name like "Static Site", "Next.js")
+ * to its canonical stack ID ("static", "nextjs", etc.).
+ */
+export function normalizeFramework(framework?: string | null): string {
+  if (!framework) return "unknown";
+  const trimmed = framework.trim();
+  if (!trimmed) return "unknown";
+  const lower = trimmed.toLowerCase();
+  if (lower in STACKS) return lower;
+  for (const [id, def] of Object.entries(STACKS)) {
+    if (def.name.toLowerCase() === lower) return id;
+  }
+  // Common display aliases
+  if (lower === "static site" || lower === "plain html" || lower === "html/js") return "static";
+  if (lower === "nextjs" || lower === "next.js" || lower === "next") return "nextjs";
+  if (lower === "nuxtjs" || lower === "nuxt.js" || lower === "nuxt") return "nuxt";
+  if (lower === "dockerfile" || lower === "docker compose") return "docker";
+  return lower;
+}
+
+/**
  * Is a project SERVICE-FIRST — i.e. the project itself IS a set of services
  * (a docker-compose / "services" stack), NOT a single/static app that merely
  * had sidecar services added to it? Keyed on the project's own framework, so
@@ -1145,6 +1194,7 @@ export const STACK_ICONS: Partial<Record<StackId, string>> = {
   nuxt:        `${DI}/nuxtjs/nuxtjs-original.svg`,
   sveltekit:   `${DI}/svelte/svelte-original.svg`,
   remix:       `${DI}/react/react-original.svg`,
+  "tanstack-start": `${DI}/react/react-original.svg`,
   astro:       `${DI}/astro/astro-original.svg`,
   vite:        `${DI}/vitejs/vitejs-original.svg`,
   angular:     `${DI}/angular/angular-original.svg`,

@@ -98,13 +98,5 @@
     "title": "トークン使用量",
     "lastNDays": "過去{period}日間",
     "tokensTooltip": "{count}トークン"
-  },
-  "updates": {
-    "title": "Updates available",
-    "updateAction": "Update",
-    "updating": "Updating…",
-    "newVersion": "New version",
-    "started": "Updating {name}…",
-    "failed": "Couldn't start the update. Please try again."
   }
 }

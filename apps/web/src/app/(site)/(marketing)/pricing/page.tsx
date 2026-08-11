@@ -11,27 +11,22 @@ type Plan = {
   lead: string;
   cta: string;
   ctaHref: string;
-  external?: boolean;
   features: string[];
   highlight?: boolean;
   ribbon?: string;
-  ribbonMuted?: boolean;
-  muted?: boolean;
 };
 
 const PLANS: Plan[] = [
   {
     n: "01",
     name: "Self-hosted",
-    tag: "Unavailable",
-    price: "Unavailable",
-    priceNote: "Paused while we finish setting up payments",
-    lead: "The self-hosted plan is temporarily unavailable while we sort out billing. It'll be back shortly — leave your email and we'll tell you the moment it opens.",
-    cta: "Notify me",
-    ctaHref: "/contact",
-    ribbon: "Unavailable",
-    ribbonMuted: true,
-    muted: true,
+    tag: "Open source",
+    price: "Free",
+    priceNote: "Apache 2.0 — free forever, no credit card",
+    lead: "Run the whole platform on machines you own. Any Linux box, any provider, any region. No metering, no seat caps, no telemetry.",
+    cta: "Start self-hosting",
+    ctaHref: "/docs/getting-started/quickstart",
+    ribbon: "Available now",
     features: [
       "Full platform, open source (Apache 2.0)",
       "Unlimited deploys, domains, projects",
@@ -45,8 +40,8 @@ const PLANS: Plan[] = [
     name: "Openship Cloud",
     tag: "Managed",
     price: "Coming soon",
-    priceNote: "Plans announced once billing is live",
-    lead: "Fully managed Openship — multi-region, auto-scaling, backups included. Plans open as soon as payments are ready.",
+    priceNote: "Pricing announced before launch",
+    lead: "Fully managed Openship — multi-region, auto-scaling, backups included. We're finishing payments setup; leave your email and you'll hear first.",
     cta: "Get notified",
     ctaHref: "/contact",
     ribbon: "Coming soon",
@@ -66,12 +61,12 @@ const PLANS: Plan[] = [
 
 const FAQ = [
   {
-    q: "Why are the plans unavailable right now?",
-    a: "We're finishing setting up payments and billing. Rather than show plans we can't complete sign-up for yet, we've paused them for the moment. It's temporary — leave your email on the contact page and we'll tell you the instant they open.",
+    q: "Is self-hosting really free?",
+    a: "Yes — free forever. Run the full platform on your own servers with no metering, no seat caps, and no telemetry. It's open source under Apache 2.0, and there's nothing to buy or sign up for: install the CLI, point it at a box, and you're running.",
   },
   {
     q: "How much does Openship Cloud cost?",
-    a: "Cloud pricing hasn't been announced yet, and sign-ups are paused while we finish billing setup. Leave your email on the contact page and we'll let you know before it launches.",
+    a: "Cloud pricing hasn't been announced yet — we're still finalizing it, along with payments. Leave your email on the contact page and we'll let you know before it launches. This only affects Cloud; self-hosting is available today.",
   },
   {
     q: "Can I move between self-hosted and cloud later?",
@@ -101,20 +96,20 @@ export default function PricingPage() {
           <div className="pp-container pp-hero-inner">
             <p className="pp-eyebrow">Pricing</p>
             <h1 className="pp-headline">
-              Plans are on pause.<br />
-              <span className="pp-headline-soft">Back as soon as billing is live.</span>
+              Free to self-host.<br />
+              <span className="pp-headline-soft">Forever, on your own servers.</span>
             </h1>
             <p className="pp-sub">
-              We're finishing setting up payments. Self-hosted is temporarily
-              unavailable and Openship Cloud is coming soon — leave your email
-              and we'll let you know the moment plans open up.
+              Openship is open source under Apache 2.0 — run the whole platform
+              on any Linux box today, with no metering, no seat caps, and no
+              credit card. Fully managed Openship Cloud is coming soon.
             </p>
 
             <ul className="pp-hero-trust">
               <li>Open source · Apache 2.0</li>
+              <li>Free forever, self-hosted</li>
               <li>No lock-in</li>
-              <li>Cloud or self-hosted</li>
-              <li>Get notified at launch</li>
+              <li>Cloud coming soon</li>
             </ul>
           </div>
         </section>
@@ -126,10 +121,10 @@ export default function PricingPage() {
               {PLANS.map((p) => (
                 <article
                   key={p.name}
-                  className={`pp-plan ${p.highlight ? "pp-plan--highlight" : ""} ${p.muted ? "pp-plan--muted" : ""}`}
+                  className={`pp-plan ${p.highlight ? "pp-plan--highlight" : ""}`}
                 >
                   {p.ribbon && (
-                    <span className={`pp-plan-ribbon ${p.ribbonMuted ? "pp-plan-ribbon--muted" : ""}`}>
+                    <span className={`pp-plan-ribbon ${p.highlight ? "" : "pp-plan-ribbon--muted"}`}>
                       {p.ribbon}
                     </span>
                   )}
@@ -149,8 +144,7 @@ export default function PricingPage() {
 
                   <a
                     href={p.ctaHref}
-                    {...(p.external ? { target: "_blank", rel: "noreferrer" } : {})}
-                    className={`pp-plan-cta ${p.highlight ? "pp-plan-cta--filled" : ""} ${p.muted ? "pp-plan-cta--muted" : ""}`}
+                    className={`pp-plan-cta ${p.highlight ? "pp-plan-cta--filled" : ""}`}
                   >
                     {p.cta}
                   </a>
@@ -201,18 +195,18 @@ export default function PricingPage() {
         <section className="pp-end">
           <div className="pp-container">
             <div className="pp-end-card">
-              <h2 className="pp-end-title">Want in when plans open?</h2>
+              <h2 className="pp-end-title">Start today, or wait for Cloud.</h2>
               <p className="pp-end-sub">
-                We're finishing billing setup — self-hosted is paused and Cloud
-                is coming soon. Leave your email and you'll be first to know the
-                moment plans go live.
+                Self-hosting is free and available right now — one command on any
+                Linux box. If you'd rather we ran it for you, leave your email and
+                we'll tell you the moment Openship Cloud opens.
               </p>
               <div className="pp-end-cta-row">
-                <a href="/contact" className="pp-btn pp-btn--primary">
-                  Get notified
+                <a href="/docs/getting-started/quickstart" className="pp-btn pp-btn--primary">
+                  Start self-hosting
                 </a>
-                <a href="/docs" className="pp-btn pp-btn--ghost">
-                  Explore the platform
+                <a href="/contact" className="pp-btn pp-btn--ghost">
+                  Get notified about Cloud
                 </a>
               </div>
             </div>

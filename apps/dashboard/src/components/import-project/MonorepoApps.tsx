@@ -46,9 +46,11 @@ function previewSubAppHost(app: MonorepoAppConfig, projectName: string, baseDoma
   if (ep?.domainType === "custom" && ep.customDomain) {
     return ep.customDomain;
   }
-  const slugify = (v: string) =>
-    v.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-  const label = ep?.domain || `${slugify(app.name)}-${slugify(projectName || "app")}`;
+  // Only a slug the user actually chose. The `<app>-<project>` fallback that used
+  // to stand in here previewed a host nothing creates: a free route with no
+  // subdomain is dropped when the endpoints are resolved, so the sub-app deploys
+  // reachable on its port and that hostname never exists.
+  const label = ep?.domain?.trim();
   if (!label) return null;
   return `${label}.${baseDomain}`;
 }

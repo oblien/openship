@@ -74,6 +74,12 @@ const SYNCED_PKGS = [
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const forceBranch = args.includes("--force-branch");
+// `--force` re-releases a tag that ALREADY exists: instead of refusing, delete
+// it (local + origin) and re-push, firing a fresh release run. Off by default
+// and explicit on purpose — re-pointing a tag people may already have pulled
+// silently diverges their bytes. The safe use is salvaging a tag whose release
+// failed and published nothing (see the refusal block below).
+const force = args.includes("--force");
 if (args.includes("--help") || args.includes("-h")) usageAndExit(0);
 
 // `publish` is the announcement switch. Without it a release ships SILENTLY —
@@ -222,18 +228,29 @@ if (dryRun) {
     log(`[dry-run] would write an announcement advisory to release-advisories.json:`);
     log(JSON.stringify(buildAdvisory(next, { critical, message, modes }), null, 2));
   }
+  if (force && tagExists(tag)) {
+    log(`[dry-run] --force: tag ${tag} exists → would DELETE it (local + origin) and re-push`);
+  }
   log(`[dry-run] no files written, no git ops executed.`);
   process.exit(0);
 }
 
 if (tagExists(tag)) {
-  console.error(
-    `Refusing: tag ${tag} already exists. ` +
-      (bump.kind === "current"
-        ? `Bump the version (patch/minor/major) instead of re-releasing ${tag}.`
-        : `Pick a different version.`),
-  );
-  process.exit(1);
+  if (!force) {
+    console.error(
+      `Refusing: tag ${tag} already exists. ` +
+        (bump.kind === "current"
+          ? `Bump the version (patch/minor/major), or pass --force to re-release ${tag}.`
+          : `Pick a different version, or pass --force to re-release ${tag}.`),
+    );
+    process.exit(1);
+  }
+  // --force: salvage an existing tag. Delete it locally AND on origin so the
+  // `git tag` + push below create a FRESH ref — a same-SHA re-push reports
+  // "up-to-date" and fires no workflow, which is exactly why a plain re-run of
+  // an existing tag does nothing.
+  log(`⚠ --force: tag ${tag} exists — deleting it (local + origin) to re-release`);
+  retireExistingTag(tag);
 }
 
 /* ─── Apply ─────────────────────────────────────────────────────────── */
@@ -348,6 +365,10 @@ function usageAndExit(code = 1): never {
       "  --dry-run      print the plan, don't touch anything (with `publish`, also",
       "                 prints the exact advisory JSON that would be written)",
       "  --force-branch run from a non-main branch (default refuses)",
+      "  --force        re-release an EXISTING tag: delete it (local + origin) and",
+      "                 re-push, firing a fresh build. For salvaging a tag whose",
+      "                 release failed. Refuses without it (re-pointing a pulled",
+      "                 tag diverges users' bytes).",
       "  --help, -h     show this help",
       "",
       "In every case CI builds installers for macOS (arm64 + x64), Windows,",
@@ -364,6 +385,20 @@ function tagExists(t: string): boolean {
   if (local) return true;
   const remote = git("ls-remote", "--tags", "origin", t, { capture: true }).trim();
   return remote.length > 0;
+}
+
+/** Delete a tag wherever it exists (local + origin) so it can be re-pushed as a
+ *  FRESH ref. Each side is guarded on presence — `git()` exits on any non-zero,
+ *  so deleting a side that isn't there would abort the release. */
+function retireExistingTag(t: string): void {
+  if (git("tag", "--list", t, { capture: true }).trim()) {
+    git("tag", "-d", t);
+    log(`  ✓ deleted local tag ${t}`);
+  }
+  if (git("ls-remote", "--tags", "origin", t, { capture: true }).trim()) {
+    git("push", "origin", `:refs/tags/${t}`);
+    log(`  ✓ deleted origin tag ${t}`);
+  }
 }
 
 /**
@@ -856,6 +891,19 @@ async function runWizard(): Promise<string[] | null> {
           const msg = await ask("banner text (empty = default, points at release notes):");
           if (msg) answers.message = msg;
         }
+      }
+
+      // Re-releasing a tag that already exists needs --force downstream (it
+      // deletes + re-pushes). Surface it here so the wizard can salvage a
+      // failed release instead of dead-ending on "tag already exists".
+      if (tagExists(`v${target}`)) {
+        console.log(`\n  ${dim(`tag v${target} already exists — a prior release used it.`)}`);
+        const doForce = await confirm(
+          `Re-release v${target}? Deletes the old tag + re-pushes to fire a fresh build`,
+          true,
+        );
+        if (!doForce) return null;
+        answers.force = true;
       }
     }
 

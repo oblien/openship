@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import { auth } from "../lib/auth";
+import { isAllowedMcpResource, publicOriginFor, publicRequestUrl } from "../lib/mcp-resource";
 
 /**
  * Gate the MCP OAuth authorize flow: (1) force it through our consent page, and
@@ -27,7 +28,22 @@ import { auth } from "../lib/auth";
  * Must be mounted BEFORE the /api/auth catch-all.
  */
 export async function forceMcpConsent(c: Context, next: Next): Promise<Response | void> {
-  const url = new URL(c.req.url);
+  const url = publicRequestUrl(c.req.raw);
+
+  // (0) RFC 8707: a client may name the resource it wants the token for. Accept
+  // only identifiers that address THIS instance's MCP endpoint — an unknown one
+  // is `invalid_target`, not something to silently ignore, or the client ends up
+  // holding a token it believes is scoped to a server we never authorized.
+  const resource = url.searchParams.get("resource");
+  if (resource && !isAllowedMcpResource(resource, publicOriginFor(c.req.raw))) {
+    return c.json(
+      {
+        error: "invalid_target",
+        error_description: `The requested resource "${resource}" is not served by this authorization server.`,
+      },
+      400,
+    );
+  }
 
   // (2) Desktop zero-auth: no session on this authorize request → mint one so we
   // land on consent, not login. Only when a session doesn't already exist.

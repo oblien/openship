@@ -13,7 +13,14 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { commandToArgv } from "@repo/core";
+import {
+  commandToArgv,
+  composeMountIssues,
+  composeMountToSpec,
+  composePortToSpec,
+  parseComposeNamespace,
+  type ComposeAdvanced,
+} from "@repo/core";
 import { apiRequest, ApiError, paginate } from "../lib/api-client";
 import { sseRequest } from "../lib/sse";
 import { getToken } from "../lib/config";
@@ -263,37 +270,39 @@ function relativizeContext(ctx: string | undefined, baseDir: string): string | u
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+// `docker compose config` ALWAYS normalizes to long form, so these two are the
+// only path a synced port or mount takes — which is why they spelling their own
+// fold was so costly: this mapper dropped `read_only`, and every `:ro` in every
+// synced compose file became a WRITABLE bind mount of a host directory the author
+// had marked read-only. It dropped `host_ip` the same way. Both now go through the
+// one shared fold in @repo/core, the same one the API's YAML parser uses (#533).
 function mapPorts(ports: unknown): string[] {
   if (!Array.isArray(ports)) return [];
   return ports.map((p) => {
     if (typeof p === "string") return p;
     if (typeof p === "number") return String(p);
     if (p && typeof p === "object") {
-      const o = p as Record<string, unknown>;
-      const target = o.target ?? o.container_port;
-      const published = o.published ?? o.host_port;
-      const proto = typeof o.protocol === "string" ? o.protocol.toLowerCase() : undefined;
-      const suffix = proto && proto !== "tcp" ? `/${proto}` : "";
-      if (target != null) {
-        return published != null && published !== ""
-          ? `${published}:${target}${suffix}`
-          : `${target}${suffix}`;
-      }
+      const spec = composePortToSpec(p as Record<string, unknown>);
+      if (spec !== undefined) return spec;
     }
     return String(p);
   });
 }
 
-function mapVolumes(vols: unknown): string[] {
+function mapVolumes(vols: unknown, name: string, errors: string[]): string[] {
   if (!Array.isArray(vols)) return [];
   return vols.map((v) => {
     if (typeof v === "string") return v;
     if (v && typeof v === "object") {
-      const o = v as Record<string, unknown>;
-      const src = o.source ?? o.name;
-      const tgt = o.target;
-      if (src && tgt) return `${src}:${tgt}`;
-      if (tgt) return String(tgt);
+      // The same mount rules the API import enforces. Without this, a file the
+      // wizard refuses (a tmpfs that would become persistent disk, a subpath that
+      // would mount the whole volume) synced cleanly through the CLI instead —
+      // one policy accepted by one door and rejected by the other.
+      for (const issue of composeMountIssues(v as Record<string, unknown>)) {
+        if (issue.blocking) errors.push(`  ${name}: ${issue.reason}`);
+      }
+      const spec = composeMountToSpec(v as Record<string, unknown>);
+      if (spec !== undefined) return spec;
     }
     return String(v);
   });
@@ -326,7 +335,37 @@ function mapDependsOn(deps: unknown): string[] {
   return [];
 }
 
-function mapComposeService(name: string, def: unknown, baseDir: string): Record<string, unknown> {
+/**
+ * Shared namespaces for the sync payload, refusing what can't be honored.
+ *
+ * Returns the rejection reasons alongside the value so `sync` can print them and
+ * exit non-zero rather than uploading a service list that quietly omits them —
+ * the CLI's half of "error out instead of silently dropping" (#533).
+ */
+function mapNamespaces(
+  name: string,
+  d: Record<string, unknown>,
+): { advanced: ComposeAdvanced; errors: string[] } {
+  const advanced: ComposeAdvanced = {};
+  const errors: string[] = [];
+  for (const [key, raw, field] of [
+    ["networkMode", d.network_mode, "network_mode"],
+    ["pidMode", d.pid, "pid"],
+  ] as const) {
+    const parsed = parseComposeNamespace(raw, field);
+    if (!parsed) continue;
+    if (parsed.ok) advanced[key] = parsed.value;
+    else errors.push(`  ${name}: ${parsed.reason}`);
+  }
+  return { advanced, errors };
+}
+
+export function mapComposeService(
+  name: string,
+  def: unknown,
+  baseDir: string,
+  errors: string[],
+): Record<string, unknown> {
   const d = (def ?? {}) as Record<string, unknown>;
   const svc: Record<string, unknown> = { name };
 
@@ -347,7 +386,7 @@ function mapComposeService(name: string, def: unknown, baseDir: string): Record<
   if (dependsOn.length) svc.dependsOn = dependsOn;
   const environment = mapEnv(d.environment);
   if (Object.keys(environment).length) svc.environment = environment;
-  const volumes = mapVolumes(d.volumes);
+  const volumes = mapVolumes(d.volumes, name, errors);
   if (volumes.length) svc.volumes = volumes;
 
   // #332: carry structured argv (list verbatim / string shell-split) so the
@@ -360,6 +399,13 @@ function mapComposeService(name: string, def: unknown, baseDir: string): Record<
   }
 
   if (typeof d.restart === "string") svc.restart = d.restart;
+
+  // Extended keys. The sync endpoint has always accepted `advanced` as an open
+  // object; this mapper simply never filled it, so a synced stack lost its shared
+  // namespaces the same way it lost read-only mounts.
+  const { advanced, errors: namespaceErrors } = mapNamespaces(name, d);
+  errors.push(...namespaceErrors);
+  if (Object.keys(advanced).length > 0) svc.advanced = advanced;
 
   return svc;
 }
@@ -399,11 +445,20 @@ const syncCmd = stackCommand("sync")
     }
 
     const baseDir = path.dirname(abs);
+    const mapErrors: string[] = [];
     const services = Object.entries(doc.services ?? {}).map(([name, def]) =>
-      mapComposeService(name, def, baseDir),
+      mapComposeService(name, def, baseDir, mapErrors),
     );
     if (services.length === 0) {
       err("  No services found in the compose file.");
+      process.exit(1);
+    }
+    // Refuse rather than upload a list that omits what the file asked for. Syncing
+    // anyway is how a compose file's namespace intent used to disappear silently.
+    if (mapErrors.length > 0) {
+      err(
+        `  This compose file declares options Openship can't deploy faithfully:\n${mapErrors.join("\n")}`,
+      );
       process.exit(1);
     }
 

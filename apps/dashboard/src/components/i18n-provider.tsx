@@ -18,6 +18,7 @@ import {
   type Dictionary,
   type Locale,
 } from "@/i18n";
+import { brandNameFor, type ProductView } from "@/lib/product-view";
 
 /* ------------------------------------------------------------------ */
 /*  Context                                                            */
@@ -28,6 +29,11 @@ type I18nContextValue = {
   setLocale: (l: Locale) => void;
   t: Dictionary;
   dir: "ltr" | "rtl";
+  /** Which product this shell is presenting as. Lives here rather than in
+   *  PlatformContext because the brand appears on screens that render OUTSIDE
+   *  the dashboard providers — /login, /authorize, the API-unavailable and
+   *  not-found shells — while the root layout wraps all of them. */
+  productView: ProductView;
 };
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -57,6 +63,7 @@ export function I18nProvider({
   children,
   initialLocale = defaultLocale,
   initialDictionary,
+  productView = "platform",
 }: {
   children: React.ReactNode;
   /** Locale resolved on the server from the cookie, so first paint matches. */
@@ -64,6 +71,10 @@ export function I18nProvider({
   /** Active locale's dictionary, loaded server-side for non-English so SSR
    *  renders in the right language with no English→translated flash. */
   initialDictionary?: Dictionary;
+  /** Product view resolved on the server (cookie + instance default), so the
+   *  brand name is right on first paint. Changing it is a full reload — see
+   *  `setProductView` in PlatformContext. */
+  productView?: ProductView;
 }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
   // Seeded with the server-resolved dictionary (or bundled English), so the
@@ -115,8 +126,8 @@ export function I18nProvider({
   }, [locale, dir]);
 
   const value = useMemo<I18nContextValue>(
-    () => ({ locale, setLocale, t, dir }),
-    [locale, setLocale, t, dir],
+    () => ({ locale, setLocale, t, dir, productView }),
+    [locale, setLocale, t, dir, productView],
   );
 
   return (
@@ -128,10 +139,28 @@ export function I18nProvider({
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
 
+// Fallback used only when a consumer renders outside I18nProvider — in practice
+// just Next's provider-less boundaries (global-error.tsx, and any error/not-found
+// fallback that replaces the root layout). Degrading to the bundled English
+// dictionary keeps those screens rendering instead of throwing a second error on
+// top of whatever already broke. The provider is hoisted to the root layout, so
+// every normal route still receives the live context.
+const I18N_FALLBACK: I18nContextValue = {
+  locale: defaultLocale,
+  setLocale: () => {},
+  t: baseDictionary,
+  dir: isRtl(defaultLocale) ? "rtl" : "ltr",
+  productView: "platform",
+};
+
 export function useI18n() {
-  const ctx = useContext(I18nContext);
-  if (!ctx) throw new Error("useI18n must be used within <I18nProvider>");
-  return ctx;
+  return useContext(I18nContext) ?? I18N_FALLBACK;
+}
+
+/** Brand name for the current shell — "OpenShip" or "OpenShip Mail". */
+export function useBrandName(): string {
+  const { t, productView } = useI18n();
+  return brandNameFor(t.brand, productView);
 }
 
 /**

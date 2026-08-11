@@ -19,6 +19,8 @@ import { BuildSettings } from "../components/BuildSettings";
 import { LogsSettings } from "../components/LogsSettings";
 import { BackupSettings } from "../components/BackupSettings";
 import { Deployments } from "../components/Deployments";
+import { HealthTab } from "../components/HealthTab";
+import { MonitoringTab } from "../components/MonitoringTab";
 import { AdvancedSettings } from "../components/AdvancedSettings";
 import { OverviewTab } from "../components/OverviewTab";
 import { AppConfiguration } from "../components/AppConfiguration";
@@ -721,6 +723,10 @@ const ProjectSettingsContent = () => {
         return <DomainSettings />;
       case "deployments":
         return <Deployments />;
+      case "health":
+        return <HealthTab />;
+      case "monitoring":
+        return <MonitoringTab />;
       case "source":
       case "git":
         return <GitSettings />;
@@ -845,7 +851,13 @@ const ProjectSettingsContent = () => {
     // dashboard for the duration of the teardown. A never-deployed project
     // has no activeDeploymentId — that's the discriminator vs. a live delete.
     (status === "deleting" && !projectData.activeDeploymentId);
-  if (isNeverDeployed && activeTab === "overview") {
+  // A draft renders the focused screen for EVERY tab, not just overview:
+  // DraftProjectView is a draft's whole surface ("you never have to enter the
+  // production tabbed UI while a project is still draft"). Config editing lives
+  // in the deploy wizard, not an in-project tab — so a draft that lands on
+  // /runtime (e.g. via the wizard's post-save return, or a stale deep link)
+  // gets the draft screen, never the read-only Configuration tab.
+  if (isNeverDeployed) {
     return (
       <PageContainer>
         <div className="mb-6">

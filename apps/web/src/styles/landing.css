@@ -1995,10 +1995,6 @@
   color: var(--th-text-muted);
   border-color: var(--th-bd-default);
 }
-/* An unavailable plan reads as paused, not sold — dim it and soften its CTA. */
-.pp-plan--muted { opacity: 0.86; }
-.pp-plan--muted .pp-plan-amt { color: var(--th-text-muted); }
-.pp-plan-cta--muted { opacity: 0.7; }
 .pp-plan-top {
   display: flex;
   align-items: baseline;

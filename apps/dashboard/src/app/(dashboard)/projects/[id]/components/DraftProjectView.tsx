@@ -55,7 +55,7 @@ function relativeTime(iso: string | undefined, t: Dictionary): string {
 }
 
 export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
-  const { id, projectData, setActiveTab } = useProjectSettings();
+  const { id, projectData } = useProjectSettings();
   const { t } = useI18n();
   const router = useRouter();
 
@@ -93,30 +93,51 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
     };
   }, [id]);
 
-  const handleDeploy = useCallback(() => {
-    if (!projectData?.id) return;
-    const params = new URLSearchParams({ projectId: projectData.id });
-    if (hasRepoSource) {
-      router.push(`/deploy/${encodeRepoSlug(projectData.gitOwner, projectData.gitRepo)}?${params}`);
-      return;
-    }
-    if (hasLocalSource) {
-      router.push(`/deploy/${encodeLocalSlug(projectData.localPath)}?${params}`);
-      return;
-    }
-    // A catalog app reopens its install wizard (adopting this draft) rather than
-    // the technical deploy wizard. Fall back to /deploy if the template id is
-    // somehow missing.
+  // A draft edits its config in the deploy WIZARD — the single edit owner — not
+  // in the project's own (read-only) Configuration tab. `mode=config` opens the
+  // wizard's config step and SAVES without deploying, so the draft stays a draft.
+  // This is the same deep-link the live project's Configuration tab links out to.
+  const goToConfig = useCallback(() => {
+    const pid = projectData?.id;
+    if (!pid) return;
+    // A catalog app reopens its install wizard (its own config surface).
     if (isApp && appTemplateId) {
-      router.push(`/apps/new/${appTemplateId}?projectId=${projectData.id}`);
+      router.push(`/apps/new/${appTemplateId}?projectId=${pid}`);
       return;
     }
-    if (isApp) {
-      router.push(`/deploy/${encodeProjectSlug(projectData.id)}`);
+    const slug = hasRepoSource
+      ? encodeRepoSlug(projectData.gitOwner, projectData.gitRepo)
+      : hasLocalSource
+        ? encodeLocalSlug(projectData.localPath)
+        : encodeProjectSlug(pid);
+    router.push(`/deploy/${slug}?projectId=${pid}&mode=config`);
+  }, [projectData, isApp, appTemplateId, hasRepoSource, hasLocalSource, router]);
+
+  const handleDeploy = useCallback(() => {
+    const pid = projectData?.id;
+    if (!pid) return;
+    // A catalog app reopens its install wizard (adopting this draft) rather than
+    // the technical deploy wizard. Falls through to the saved-session deploy
+    // below if the template id is somehow missing.
+    if (isApp && appTemplateId) {
+      router.push(`/apps/new/${appTemplateId}?projectId=${pid}`);
       return;
     }
-    setActiveTab("settings");
-  }, [projectData, hasRepoSource, hasLocalSource, isApp, appTemplateId, router, setActiveTab]);
+    // A draft is NOT a fresh import — it already carries a saved deployment
+    // session (build/runtime config, env, target). Deploy it by HYDRATING that
+    // saved session: the wizard's project-slug path (decoded.kind === "project")
+    // loads straight from the DB rows and keeps the finish button "Deploy". The
+    // repo/local slugs instead RE-DETECTED from GitHub / the folder and threw the
+    // saved settings away — turning "Deploy now" into a fresh first-deploy of an
+    // already-configured project. Repo-less apps/services already deployed this
+    // way; repo- and local-backed drafts now redeploy their session identically.
+    if (hasSource) {
+      router.push(`/deploy/${encodeProjectSlug(pid)}`);
+      return;
+    }
+    // No source yet → open the wizard to set one up (never the in-project tab).
+    goToConfig();
+  }, [projectData, isApp, appTemplateId, hasSource, router, goToConfig]);
 
   const heading =
     status === "failed"
@@ -192,7 +213,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
                   {hasSource ? t.projects.draft.deployNow : t.projects.draft.connectSource}
                 </button>
                 <button
-                  onClick={() => setActiveTab("settings")}
+                  onClick={goToConfig}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                 >
                   <Settings className="size-4" />
@@ -292,7 +313,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
             <p className="text-sm text-muted-foreground">
               {t.projects.draft.noSourceText}{" "}
               <button
-                onClick={() => setActiveTab("settings")}
+                onClick={goToConfig}
                 className="font-medium text-primary hover:underline"
               >
                 {t.projects.draft.connectLink}

@@ -111,6 +111,21 @@ const AdvancedSchema = Type.Object(
         Type.Null(),
       ]),
     ),
+    /** Custom east-west DNS alias resolving ALONGSIDE the service name on the
+     *  project network. Free-form here (normalized + collision-checked by
+     *  validateServiceAlias); `null`/`""` clears it. */
+    alias: Type.Optional(Type.Union([Type.String({ maxLength: 100 }), Type.Null()])),
+    /**
+     * Shared network / PID namespace (compose `network_mode` / `pid`) — the
+     * compose file owns these, so they are here to be ROUND-TRIPPED, not authored:
+     * a client that reads a service and PATCHes the whole `advanced` blob back
+     * would otherwise 400 against this strict object. `host` is refused by
+     * parseComposeNamespace wherever the value is read, and a `service:`/
+     * `container:` reference is resolved and re-validated at deploy — so a
+     * hand-set value can shorten no check. `null` clears it.
+     */
+    networkMode: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
+    pidMode: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
   },
   { additionalProperties: false },
 );
@@ -195,6 +210,14 @@ export const UpdateServiceBody = Type.Object(
     name: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
     ...ComposeFieldsBlock,
     ...MonorepoSubAppFieldsSchema,
+    // Nullable ONLY here, not in Create: on a partial update absent means "keep"
+    // and there has to be some other way to say "clear". `mergeServiceRoutingPatch`
+    // reads these two with `!== undefined`, so null unroutes the row — which is
+    // what a re-install that drops a hostname (the webmail proxy variant) needs to
+    // express. On Create there is nothing to keep, so null would just be a second
+    // spelling of absent.
+    domain: Type.Optional(Type.Union([Type.String({ maxLength: 255 }), Type.Null()])),
+    customDomain: Type.Optional(Type.Union([Type.String({ maxLength: 255 }), Type.Null()])),
   },
   { additionalProperties: false },
 );

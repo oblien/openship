@@ -44,7 +44,7 @@ const resolveTxt = publicResolver.resolveTxt.bind(publicResolver);
 const reverse = publicResolver.reverse.bind(publicResolver);
 import { sshManager } from "../../../lib/ssh-manager";
 import { readState } from "../mail-state";
-import { safeErrorMessage } from "@repo/core";
+import { relayedDomainsFor, safeErrorMessage } from "@repo/core";
 
 export type DnsCheckStatus = "pass" | "warn" | "fail" | "unknown";
 
@@ -85,7 +85,7 @@ interface ExpectedRecords {
   dmarc?: ExpectedRecord;
   /**
    * Extra records beyond the fixed set — the outbound-relay send-hop records
-   * (SES DKIM CNAMEs + MAIL FROM MX/TXT). Verified with type-aware lookups.
+   * (relay DKIM CNAMEs + MAIL FROM MX/TXT). Verified with type-aware lookups.
    */
   extraRecords?: ExpectedRecord[];
 }
@@ -119,6 +119,16 @@ export async function scanDns(serverId: string, domain?: string): Promise<DnsSca
 
   const target = domain?.trim().toLowerCase() || state.domain;
   const isPrimary = target === state.domain;
+  const relay = state.outboundRelay?.enabled ? state.outboundRelay : undefined;
+  // Scope `all` is the only config with no direct outbound path left — see checkPtr.
+  const relayedAll = relay !== undefined && relay.scope !== "selected";
+  // Does THIS domain send through the smarthost? Same rule `applyRelayToState` uses
+  // to decide which domains get relay records, read from @repo/core so the scan
+  // can't disagree with what we published.
+  const relayed =
+    relayedAll ||
+    (relay !== undefined &&
+      relayedDomainsFor({ domains: relay.domains, addresses: relay.addresses }).includes(target));
 
   if (isPrimary) {
     if (!state.dnsRecords) {
@@ -129,11 +139,11 @@ export async function scanDns(serverId: string, domain?: string): Promise<DnsSca
       checkA(target, expected.a),
       checkAaaa(target, expected.aaaa),
       checkMx(target, expected.mx),
-      checkSpf(target, expected.spf),
+      checkSpf(target, expected.spf, relayed),
       checkDkim(target, expected.dkim),
       checkDmarc(target, expected.dmarc),
-      checkPtr(expected.a, target),
-      // Outbound-relay send-hop records (SES DKIM CNAMEs + MAIL FROM), if any.
+      checkPtr(expected.a, target, relayedAll),
+      // Outbound-relay send-hop records (relay DKIM CNAMEs + MAIL FROM), if any.
       ...(expected.extraRecords ?? []).map((r, i) => checkExtra(r, i)),
     ]);
     return {
@@ -151,10 +161,10 @@ export async function scanDns(serverId: string, domain?: string): Promise<DnsSca
   const expected = additional as unknown as ExpectedRecords;
   const checks = await Promise.all([
     checkMx(target, expected.mx),
-    checkSpf(target, expected.spf),
+    checkSpf(target, expected.spf, relayed),
     checkDkim(target, expected.dkim),
     checkDmarc(target, expected.dmarc),
-    // Outbound-relay send-hop records (SES DKIM CNAMEs + MAIL FROM) when this
+    // Outbound-relay send-hop records (relay DKIM CNAMEs + MAIL FROM) when this
     // domain routes through the relay — mirrors the primary-domain branch.
     ...(expected.extraRecords ?? []).map((r, i) => checkExtra(r, i)),
   ]);
@@ -269,7 +279,31 @@ async function checkMx(domain: string, exp?: ExpectedRecord): Promise<DnsCheck |
   }
 }
 
-async function checkSpf(domain: string, exp?: ExpectedRecord): Promise<DnsCheck | null> {
+/**
+ * SPF mechanisms in `actual` that can authorise a THIRD-PARTY sender and that we
+ * didn't ask for — an operator's own `ip4:` for their smarthost, an `include:` they
+ * pasted by hand. Bare `a` / `mx` / `ptr` don't count: they resolve to the domain's
+ * own hosts, which is never the relay.
+ */
+function foreignSenderMechanisms(actual: string, expected: string): string[] {
+  const want = expected.toLowerCase();
+  return [
+    ...actual.toLowerCase().matchAll(/(?:ip4:|ip6:|include:|exists:|a:|redirect=)\S+/g),
+  ]
+    .map((m) => m[0])
+    .filter((m) => !want.includes(m));
+}
+
+/**
+ * `relayed` = this domain's outbound goes through the smarthost, which changes what
+ * a correct SPF record even looks like: the connection the receiver checks comes
+ * from the PROVIDER's IPs, so `mx` and our `ip4:` no longer cover it.
+ */
+async function checkSpf(
+  domain: string,
+  exp?: ExpectedRecord,
+  relayed = false,
+): Promise<DnsCheck | null> {
   if (!exp?.value) return null;
   try {
     const txt = (await resolveTxt(domain)).map((parts) => parts.join(""));
@@ -304,30 +338,51 @@ async function checkSpf(domain: string, exp?: ExpectedRecord): Promise<DnsCheck 
       };
     }
     // We can't do a strict equality - operators sometimes add their own
-    // ip4: / include: entries. Pass if the record contains the install's
-    // mechanism (typically "mx" or matching include:). When the outbound
-    // relay is on, the expected value carries `include:amazonses.com` — then
-    // the published record MUST include it too, or SES-relayed mail fails SPF.
+    // ip4: / include: entries. So we check the two mechanisms we generated,
+    // independently. When an outbound relay is on, the expected value also
+    // carries the provider's `include:` — read from the expected value rather
+    // than naming a provider, so this works for any relay in the registry (and
+    // for an operator's own include).
+    //
+    // A relay include does NOT retire `mx`: the server still delivers direct for
+    // every sender the relay isn't scoped to (and in `selected` scope that's most
+    // of them), and `mx` is what authorises those. So both are required, at
+    // different severities — a missing include means relayed mail hard-fails SPF
+    // right now, while a missing `mx` only costs the senders still going direct.
     const containsMx = /\bmx\b/i.test(spf);
-    const needsSes = /include:amazonses\.com/i.test(exp.value);
-    const containsSes = /include:amazonses\.com/i.test(spf);
-    const ok = needsSes ? containsSes : containsMx;
+    const wantIncludes = [...exp.value.matchAll(/include:[A-Za-z0-9._-]+/gi)].map((m) => m[0].toLowerCase());
+    const missingIncludes = wantIncludes.filter((inc) => !spf.toLowerCase().includes(inc));
+    // The one way this check could go green on mail that fails SPF every single
+    // time: a relayed domain for which we published NO include at all, because the
+    // provider's token is account- or region-specific (Resend, Oracle) or it's a
+    // `custom` smarthost. Then nothing in the record covers the host that actually
+    // connects to the receiver — unless the operator authorised it themselves with a
+    // mechanism we never generated, in which case we stay quiet rather than nag a
+    // working setup we can't fully verify.
+    const unauthorisedRelay =
+      relayed && wantIncludes.length === 0 && foreignSenderMechanisms(spf, exp.value).length === 0;
+    const status: DnsCheckStatus =
+      missingIncludes.length || unauthorisedRelay ? "fail" : containsMx ? "pass" : "warn";
     return {
       key: "spf",
       label: "SPF record",
       description: "Lets receivers verify this server is authorised to send for the domain.",
       queriedName: domain,
       recordType: "TXT",
-      status: ok ? "pass" : "warn",
+      status,
       expected: exp.value,
       actual: spf,
-      message: ok
-        ? needsSes
-          ? "SPF record authorises this server (mx) and Amazon SES (include)."
-          : "SPF record exists and authorises the MX (this server)."
-        : needsSes
-          ? "SPF record is missing `include:amazonses.com`. Mail relayed through SES will fail SPF until you add it."
-          : "SPF record exists but doesn't include `mx`. Mail from this server may fail SPF.",
+      message: missingIncludes.length
+        ? `SPF record is missing \`${missingIncludes.join("`, `")}\`. Mail relayed through your provider fails SPF until you add it.`
+        : unauthorisedRelay
+          ? "This domain sends through your relay, but its SPF record only authorises this server - so every relayed message fails SPF. Add your provider's SPF include in the Sending tab and re-publish."
+          : containsMx
+            ? wantIncludes.length
+              ? `SPF record authorises this server and the relay (${wantIncludes.join(", ")}).`
+              : "SPF record exists and authorises the MX (this server)."
+            : wantIncludes.length
+              ? "SPF record authorises the relay but no longer includes `mx`. Anything this server sends directly will fail SPF."
+              : "SPF record exists but doesn't include `mx`. Mail from this server may fail SPF.",
     };
   } catch (err) {
     return missing("spf", "SPF record", domain, "TXT", exp.value, err);
@@ -439,57 +494,62 @@ async function checkDmarc(domain: string, exp?: ExpectedRecord): Promise<DnsChec
   }
 }
 
+/**
+ * PTR (reverse DNS) for the mail host's IP.
+ *
+ * `relayedAll` = every outbound message leaves through the smarthost (relay scope
+ * `all`), so no receiver ever opens a connection FROM this IP and its PTR cannot
+ * cost a delivery. Missing PTR then warns instead of failing: this is the exact
+ * box the relay exists to rescue — blocklisted IP, blocked :25, no rDNS control on
+ * a container host — and painting the thing the operator deliberately routed
+ * around red is a false alarm that buries the rows that do matter. Scope
+ * `selected` keeps a direct path alive for every sender it doesn't cover, so PTR
+ * stays required there.
+ */
 async function checkPtr(
   aRecord: ExpectedRecord | undefined,
   domain: string,
+  relayedAll = false,
 ): Promise<DnsCheck | null> {
   if (!aRecord?.value) return null;
   const expectedHost = trimDot(`mail.${domain}`);
+  const base = {
+    key: "ptr",
+    label: "PTR (reverse DNS)",
+    description: relayedAll
+      ? "Set at your VPS provider - NOT your DNS provider. Only affects mail this server sends directly; yours goes through the relay."
+      : "Set at your VPS provider - NOT your DNS provider. Required by Gmail/Outlook for mail acceptance.",
+    queriedName: aRecord.value,
+    recordType: "PTR",
+    expected: expectedHost,
+  };
+  const missStatus: DnsCheckStatus = relayedAll ? "warn" : "fail";
+  const missMessage = relayedAll
+    ? "No PTR record set. Outbound mail goes through your relay, so nothing is blocked today - set it before switching back to direct sending."
+    : "No PTR record set. Gmail and Outlook will mark your outbound mail as spam or reject it.";
   try {
     const names = await reverse(aRecord.value);
     if (names.length === 0) {
-      return {
-        key: "ptr",
-        label: "PTR (reverse DNS)",
-        description:
-          "Set at your VPS provider - NOT your DNS provider. Required by Gmail/Outlook for mail acceptance.",
-        queriedName: aRecord.value,
-        recordType: "PTR",
-        status: "fail",
-        expected: expectedHost,
-        actual: "",
-        message:
-          "No PTR record set. Gmail and Outlook will mark your outbound mail as spam or reject it.",
-      };
+      return { ...base, status: missStatus, actual: "", message: missMessage };
     }
     const matched = names.some((n) => trimDot(n) === expectedHost);
     return {
-      key: "ptr",
-      label: "PTR (reverse DNS)",
-      description:
-        "Set at your VPS provider - NOT your DNS provider. Required by Gmail/Outlook for mail acceptance.",
-      queriedName: aRecord.value,
-      recordType: "PTR",
+      ...base,
       status: matched ? "pass" : "warn",
-      expected: expectedHost,
       actual: names.join(", "),
       message: matched
         ? "PTR matches the mail hostname."
-        : `PTR resolves to ${names.join(", ")} instead of ${expectedHost}. Gmail/Outlook may still reject your mail.`,
+        : relayedAll
+          ? `PTR resolves to ${names.join(", ")} instead of ${expectedHost}. Harmless while outbound goes through your relay.`
+          : `PTR resolves to ${names.join(", ")} instead of ${expectedHost}. Gmail/Outlook may still reject your mail.`,
     };
   } catch (err) {
     if (isNotFound(err)) {
       return {
-        key: "ptr",
-        label: "PTR (reverse DNS)",
-        description:
-          "Set at your VPS provider - NOT your DNS provider. Required by Gmail/Outlook for mail acceptance.",
-        queriedName: aRecord.value,
-        recordType: "PTR",
-        status: "fail",
-        expected: expectedHost,
+        ...base,
+        status: missStatus,
         actual: "",
-        message: "No PTR record set. Configure it at your VPS provider's panel.",
+        message: relayedAll ? missMessage : "No PTR record set. Configure it at your VPS provider's panel.",
       };
     }
     return missing("ptr", "PTR (reverse DNS)", aRecord.value, "PTR", expectedHost, err);
@@ -497,7 +557,7 @@ async function checkPtr(
 }
 
 /**
- * Verify one "extra" send-hop record (SES DKIM CNAME, or MAIL FROM MX/TXT).
+ * Verify one "extra" send-hop record (relay DKIM CNAME, or MAIL FROM MX/TXT).
  * Type-aware: CNAME → resolveCname, MX → resolveMx, TXT → resolveTxt. A record
  * flagged `required:false` (MAIL FROM) warns rather than fails when missing.
  */
@@ -507,10 +567,10 @@ async function checkExtra(exp: ExpectedRecord, idx: number): Promise<DnsCheck | 
   const key = `extra:${type.toLowerCase()}:${idx}`;
   const missStatus: DnsCheckStatus = exp.required === false ? "warn" : "fail";
   const isDkim = type === "CNAME";
-  const label = isDkim ? "SES DKIM (CNAME)" : type === "MX" ? "MAIL FROM (MX)" : "MAIL FROM (TXT)";
+  const label = isDkim ? "Relay DKIM (CNAME)" : type === "MX" ? "MAIL FROM (MX)" : "MAIL FROM (TXT)";
   const description = isDkim
-    ? `Delegates DKIM signing for the SES send-hop (${exp.name}).`
-    : `Custom MAIL FROM record for SES SPF/bounce alignment (${exp.name}).`;
+    ? `Delegates DKIM signing for the relay send-hop (${exp.name}).`
+    : `Custom MAIL FROM record for relay SPF/bounce alignment (${exp.name}).`;
   try {
     if (type === "CNAME") {
       const targets = await resolveCname(exp.name);
@@ -522,7 +582,7 @@ async function checkExtra(exp: ExpectedRecord, idx: number): Promise<DnsCheck | 
         expected: wanted,
         actual: targets.join(", "),
         message: matched
-          ? "CNAME points at the SES DKIM target."
+          ? "CNAME points at the provider's DKIM target."
           : targets.length
             ? `CNAME resolves to ${targets.join(", ")} instead of ${wanted}.`
             : "CNAME not published yet.",
@@ -540,16 +600,23 @@ async function checkExtra(exp: ExpectedRecord, idx: number): Promise<DnsCheck | 
         message: matched
           ? "MAIL FROM MX is published."
           : mxs.length
-            ? "An MX exists but doesn't match the SES feedback host."
+            ? "An MX exists but doesn't match the provider's feedback host."
             : "MAIL FROM MX not published (recommended for alignment).",
       };
     }
     // TXT (MAIL FROM SPF).
     const txt = (await resolveTxt(exp.name)).map((parts) => parts.join(""));
     const wanted = exp.value.replace(/\s+/g, "");
+    // Lenient second pass: any v=spf1 record carrying the include we expect is
+    // good enough (operators reorder mechanisms). Provider-agnostic — the token
+    // comes from the expected value, not a hardcoded provider.
+    const wantedIncludes = [...exp.value.matchAll(/include:[A-Za-z0-9._-]+/gi)].map((m) => m[0].toLowerCase());
     const matched =
       txt.some((tt) => tt.replace(/\s+/g, "") === wanted) ||
-      txt.some((tt) => /^v=spf1\b/i.test(tt) && /include:amazonses\.com/i.test(tt));
+      (wantedIncludes.length > 0 &&
+        txt.some(
+          (tt) => /^v=spf1\b/i.test(tt) && wantedIncludes.every((inc) => tt.toLowerCase().includes(inc)),
+        ));
     return {
       key, label, description, queriedName: exp.name, recordType: "TXT",
       status: matched ? "pass" : txt.length ? "warn" : missStatus,

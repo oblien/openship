@@ -12,10 +12,16 @@ import { migrationGuard } from "./middleware/migration-guard";
 import { initPlatform } from "@repo/adapters";
 import { resolvePlatformConfig } from "./lib/controller-helpers";
 import { runWithRequestStore } from "./lib/request-store";
+import { runWithCallSource } from "./lib/call-source";
 
 import { authRoutes } from "./modules/auth/auth.routes";
 import { auth } from "./lib/auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
+import {
+  MCP_RESOURCE_PATHS,
+  protectedResourceMetadata,
+  publicOriginFor,
+} from "./lib/mcp-resource";
 import { projectRoutes } from "./modules/projects/project.routes";
 import { appRoutes } from "./modules/apps/app.routes";
 import { appSettingsRoutes } from "./modules/apps/app-settings.routes";
@@ -24,6 +30,7 @@ import { projectConnectionRoutes } from "./modules/projects/project-connection.r
 import { projectStorageRoutes } from "./modules/projects/project-storage.routes";
 import { deploymentRoutes } from "./modules/deployments/deployment.routes";
 import { domainRoutes } from "./modules/domains/domain.routes";
+import { issuesRoutes } from "./modules/issues/issues.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
 import { serviceRoutes } from "./modules/services/service.routes";
@@ -74,6 +81,10 @@ app.use("*", logger());
 // auth-mode, installations) to one call each — a single /github/status was
 // fanning out into ~6 /cloud/account + 3 installations round-trips otherwise.
 app.use("*", (_c, next) => runWithRequestStore(() => next()));
+// Ambient call source (dashboard / mcp / cli / api). Seeded here so the audit
+// emitters that run outside the handler chain — Better Auth's organization hooks
+// — can still record WHERE a member/invitation change came from.
+app.use("*", (c, next) => runWithCallSource(c, () => next()));
 app.use("*", clientIpMiddleware);
 // CSRF defence: reject mutating requests from untrusted origins BEFORE
 // the auth chain touches the session. Webhooks (Stripe, Oblien) don't
@@ -140,6 +151,8 @@ app.route("/api/audit", auditRoutes);
 app.route("/api/permissions", permissionsRoutes);
 app.route("/api/notifications", notificationsRoutes);
 app.route("/api/updates", updatesRoutes);
+// Org-wide issue feed — reads the caches the jobs above write; no detection of its own.
+app.route("/api/issues", issuesRoutes);
 app.route("/api/jobs", jobRoutes);
 // Platform status notices — banner feed (public read) + operator push (internal).
 // Both modes; primarily consumed on the SaaS.
@@ -151,6 +164,33 @@ app.route("/api/notices", noticeRoutes);
 // so `Authorization`-less requests to /api/mcp can be discovered end-to-end.
 app.get("/.well-known/oauth-authorization-server", (c) => oauthAuthServerMetadata(c.req.raw));
 app.get("/.well-known/oauth-protected-resource", (c) => oauthProtectedResourceMetadata(c.req.raw));
+
+// RFC 9728 §3.1: metadata for a resource whose identifier has a PATH lives at
+// the well-known prefix FOLLOWED BY that path. A client configured with
+// `https://host/api/mcp` looks there, not at the root — and the root document's
+// `resource` (the bare origin) doesn't match the URL it connected to, so a
+// strict client (Claude.ai) rejects the authorization it just completed.
+// Serve one document per URL that addresses this instance's MCP endpoint.
+const OAUTH_DISCOVERY_HEADERS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+} as const;
+
+for (const path of MCP_RESOURCE_PATHS) {
+  app.get(`/.well-known/oauth-protected-resource${path}`, (c) => {
+    const origin = publicOriginFor(c.req.raw);
+    const body = protectedResourceMetadata(origin, `${origin}${path}`);
+    return new Response(JSON.stringify(body), { status: 200, headers: OAUTH_DISCOVERY_HEADERS });
+  });
+  // RFC 8414 path-aware authorization-server metadata. Same document as the
+  // root one — served here so a client that only probes the path-aware location
+  // finds it instead of falling back.
+  app.get(`/.well-known/oauth-authorization-server${path}`, (c) =>
+    oauthAuthServerMetadata(c.req.raw),
+  );
+}
 
 /* ---------- OAuth callback landing pages ---------- */
 const authCallbackHtml = `<!DOCTYPE html><html><head><title>Success</title></head><body><script>window.close();</script><p>Authentication successful. You can close this window.</p></body></html>`;
@@ -232,8 +272,11 @@ if (env.CLOUD_MODE) {
   const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
   app.route("/api/billing", billingLocalRoutes);
 
-  // Analytics is scraped ON-DEMAND when a server's analytics is viewed
-  // (analytics.controller → scrapeServerIfStale) — no background interval.
+  // Analytics is scraped on two triggers, neither wired here: the
+  // `analytics:scrape` system job owns durability (the edge holds counters in RAM
+  // under a TTL, so an unswept server loses them), and the read handlers scrape
+  // on view for freshness. Both go through scrapeServerIfStale, which throttles
+  // and dedups, so they collapse rather than compete.
 }
 
 // ─── Backup job runner + boot reconcile ─────────────────────────────

@@ -98,14 +98,13 @@ async function authorizedByGitHubGate(
 
 /* ── Door 1: types authorized through checkPermission ───────────────────────── */
 
-const VIA_CHECK_PERMISSION = [
-  "project",
-  "server",
-  "mail_server",
-  "backup_destination",
-  "billing",
-  "audit",
-] as const;
+// Derived, not listed: every grantable type that is NOT a GitHub grant target must
+// be authorized by `checkPermission`, and the two GitHub types by the GitHub gate.
+// Spelling the membership out again is how this ratchet would come to disagree with
+// the surface it guards.
+const VIA_CHECK_PERMISSION = GRANTABLE_RESOURCE_TYPES.filter(
+  (t) => t !== "github_installation" && t !== "github_repository",
+);
 
 describe("door 1 — authorized through checkPermission", () => {
   it("per-resource types authorize on a concrete id", async () => {
@@ -117,11 +116,46 @@ describe("door 1 — authorized through checkPermission", () => {
   });
 
   it('org-singletons authorize at resourceId "*" — the billing/audit fix', async () => {
-    for (const type of ["billing", "audit"]) {
+    // Covers every grantable platform feature, not just the two this test was
+    // written for: `job`, `notifications`, `analytics`, `settings`, `updates` and
+    // `cloud` reach the same arm, which is why making them grantable needed no new
+    // enforcement code.
+    const platform = GRANTABLE_RESOURCE_TYPES.filter((t) => ORG_SINGLETON_RESOURCES.has(t));
+    expect(platform.length, "expected the platform features to be grantable").toBeGreaterThan(2);
+    for (const type of platform) {
       const g = { resourceType: type, resourceId: "*", permissions: ["read"] };
       expect(await authorizedByCheckPermission(g, "read"), `${type} read`).toBe(true);
       // Cumulative: a read-only grant must NOT authorize write.
       expect(await authorizedByCheckPermission(g, "write"), `${type} write`).toBe(false);
+    }
+  });
+
+  it('a platform grant at a NON-wildcard id does not satisfy the "*" its routes assert', async () => {
+    // The write paths now reject this shape (SINGLETON_REQUIRES_WILDCARD), but rows
+    // predating that guard could exist, so the enforcement side must also refuse it.
+    //
+    // Asserted at "*" deliberately: every route for these types is an org-singleton
+    // and asserts "*" (route-permission's isList and singleton branches), so "*" is
+    // the only assertion a stored row can ever be tested against. Note billing/audit
+    // DO resolve at a concrete id — `loadRootOrgId` reads their resourceId as the ORG
+    // id — but since no route asserts them that way, such a row is inert either way.
+    for (const type of GRANTABLE_RESOURCE_TYPES.filter((t) => ORG_SINGLETON_RESOURCES.has(t))) {
+      const atOtherId = { resourceType: type, resourceId: "R1", permissions: RWA };
+      const ok = await checkPermission(
+        "u1",
+        "org1",
+        { resourceType: type as never, resourceId: "*", action: "read" },
+        scoped([atOtherId]),
+      );
+      expect(ok, `${type} granted at R1 must not satisfy "*"`).toBe(false);
+    }
+  });
+
+  it("ungrantable types stay ungrantable — self-escalation and un-toolable", async () => {
+    // `permissions` would let a grantee widen its own access; `terminal` has only
+    // WebSocket routes, which no tool can reach.
+    for (const type of ["permissions", "terminal"]) {
+      expect(GRANTABLE_RESOURCE_TYPES).not.toContain(type);
     }
   });
 

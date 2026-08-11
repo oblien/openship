@@ -3,6 +3,27 @@
     "title": "Language",
     "description": "Choose the language used across the dashboard."
   },
+  "productView": {
+    "title": "Interface",
+    "description": "Which control plane this dashboard shows you.",
+    "platformLabel": "Full platform",
+    "platformDesc": "Projects, apps, deployments, servers — everything this install can do.",
+    "mailLabel": "Mail only",
+    "mailDesc": "The mail control plane in the sidebar: domains, mailboxes, DNS, queue, logs.",
+    "instanceDefault": "This instance defaults to {mode}.",
+    "useDefault": "Use the instance default"
+  },
+  "mailMode": {
+    "title": "Product mode",
+    "description": "What this instance presents itself as. This is the default for everyone here — each user can still pick their own view under Settings → General.",
+    "platformLabel": "Full platform",
+    "platformDesc": "Projects, apps, deployments, servers — everything this install can do.",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "Brands the instance as Openship Mail and makes the sidebar the mail control plane.",
+    "savedOverridden": "Saved. Your own view is unchanged — you picked it under Settings → General.",
+    "errorToast": "Couldn't change the product mode.",
+    "envNote": "This instance follows OPENSHIP_PRODUCT=mail from the environment. Picking a mode here overrides it."
+  },
   "common": {
     "cancel": "Cancel",
     "save": "Save",
@@ -52,8 +73,10 @@
       "team": "Team",
       "notifications": "Notifications",
       "email": "Email",
+      "systemSender": "System sender",
       "audit": "Audit log",
       "cloud": "Cloud",
+      "infrastructure": "Infrastructure",
       "instance": "Instance"
     }
   },
@@ -191,10 +214,6 @@
     "noServers": "No servers configured yet - add one from the deploy picker.",
     "clearDefault": "Clear default (ask every time)",
     "targets": {
-      "local": {
-        "label": "This Machine",
-        "desc": "Local Docker / runtime"
-      },
       "server": {
         "label": "My Server",
         "desc": "A configured SSH server"
@@ -206,8 +225,7 @@
     },
     "labelFor": {
       "yourServer": "your server",
-      "cloud": "Openship Cloud",
-      "local": "This Machine"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Pick a server first",
@@ -351,7 +369,21 @@
     "toast": {
       "disconnected": "MCP client disconnected",
       "disconnectFailed": "Failed to disconnect"
-    }
+    },
+    "editAccess": "Edit access",
+    "editScopeTitle": "{client} access",
+    "editScopeSubtitle": "Changes apply on the agent's next request — it does not need to reconnect.",
+    "editScopeOrg": "In {org}",
+    "wasNResourcesOne": "currently 1 resource",
+    "wasNResourcesMany": "currently {count} resources",
+    "saveScope": "Save access",
+    "scopeSaved": "Access updated",
+    "scopeSaveFailed": "Could not update access",
+    "loadScopeFailed": "Could not load this client's access",
+    "scopeGrantRejected": "You can no longer grant {resource}, so it was removed. Save again to continue.",
+    "confirmWidenTitle": "This removes every restriction",
+    "confirmWidenBody": "The agent will act with your full access, effective immediately. Press again to confirm.",
+    "confirmWidenAction": "Remove all restrictions"
   },
   "team": {
     "heading": "Team",
@@ -589,6 +621,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "In-app"
     },
     "form": {
@@ -598,6 +631,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Bot token from @BotFather",
+      "telegramChatPlaceholder": "Chat ID (e.g. -1001234567890)",
+      "telegramHint": "Create a bot with @BotFather, then message the bot (or add it to your group) so it's allowed to reply.",
       "adding": "Adding…",
       "addChannel": "Add channel",
       "labelRequired": "Label is required",
@@ -609,6 +645,7 @@
       "title": "What to be notified about",
       "description": "Pick which events go to which channel. Each cell is one subscription.",
       "empty": "Add a channel first to subscribe to events.",
+      "allTab": "All",
       "eventHeader": "Event",
       "cellAria": "{category} via {channel}",
       "notifyMe": "Notify me"
@@ -622,11 +659,11 @@
   },
   "audit": {
     "heading": "Audit log",
-    "subtitle": "Every change in this organization, who made it, and when.",
-    "searchPlaceholder": "Search events, actors, resources...",
-    "allEvents": "All events",
-    "noMatch": "No events match your search.",
-    "noEvents": "No events yet.",
+    "subtitle": "Everything that happened in this organization, who did it, and when.",
+    "searchPlaceholder": "Search apps, servers, domains, people…",
+    "noMatch": "Nothing matches these filters.",
+    "noEvents": "Nothing has been recorded yet.",
+    "clearFilters": "Clear filters",
     "showing": "Showing {from}-{to} of {total}",
     "actor": "Actor",
     "name": "Name",
@@ -642,7 +679,50 @@
     "after": "After",
     "removed": "Removed",
     "system": "System",
-    "actorPrefix": "Actor {id}"
+    "actorPrefix": "Actor {id}",
+    "recording": {
+      "title": "Record activity",
+      "description": "Keep a record of every change made in this organization. On by default.",
+      "paused": "Recording is off. Nothing new is being added — the entries below are what was captured before it was switched off.",
+      "retention": "Keep entries for",
+      "retentionOption": "{days} days",
+      "retentionHint": "Older entries are deleted automatically.",
+      "adminOnly": "Only owners and admins can change this.",
+      "saveFailed": "Could not save the activity settings."
+    },
+    "filters": {
+      "anyone": "Anyone",
+      "period": "Period",
+      "allTime": "All time",
+      "today": "Today",
+      "last7": "Last 7 days",
+      "last30": "Last 30 days",
+      "last90": "Last 90 days"
+    },
+    "tabs": {
+      "all": "All"
+    },
+    "sources": {
+      "all": "Everything",
+      "dashboard": "Dashboard",
+      "mcp": "AI assistant",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "System",
+      "unknown": "Unknown"
+    },
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "details": {
+      "who": "Who",
+      "when": "When",
+      "cameFrom": "Came from",
+      "technical": "Technical details",
+      "eventType": "Event type"
+    }
   },
   "updates": {
     "title": "Updates",
@@ -667,6 +747,20 @@
     "security3": "). It only ever",
     "securityPulls": "pulls",
     "security4": "this data — no third-party service and no Openship-operated server can push updates or signals to your install. Advisories are pinned to each release, so unreleased changes never reach you. Critical security advisories are always shown once; everything else respects the toggle above."
+  },
+  "infrastructure": {
+    "title": "Platform components",
+    "description": "How the edge and mail containers on your servers are kept up to date",
+    "autoUpdateLabel": "Auto-update server infrastructure",
+    "autoUpdateDesc": "When this control plane updates, automatically update the edge and mail containers on your connected servers. Off by default — otherwise updates are flagged for a one-click apply on each server.",
+    "autoScanLabel": "Auto-scan server infrastructure",
+    "autoScanDesc": "Quietly re-check your servers when you open the Servers page or the home page, so a down or missing edge is flagged without a manual scan. On by default — detect-only, it never changes anything.",
+    "attentionOne": "1 component needs attention",
+    "attentionMany": "{n} components need attention",
+    "updatesOne": "1 update available",
+    "updatesMany": "{n} updates available",
+    "allHealthy": "All platform components are up to date",
+    "manageLink": "Manage in Servers"
   },
   "dataTransfer": {
     "export": {

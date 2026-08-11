@@ -1,10 +1,13 @@
 export * from "./types";
 export * from "./stacks";
 export * from "./volumes";
+export * from "./compose-namespace";
+export * from "./compose-spec";
 export * from "./object-storage";
 export * from "./constants";
 export * from "./shell-split";
 export * from "./edge-image-ref";
+export * from "./mail-image-ref";
 export * from "./system";
 export * from "./utils";
 export * from "./errors";
@@ -31,7 +34,15 @@ export {
   MAX_SUPPORTED_SCHEMA,
   type AppTemplateRejection,
 } from "./apps/schema";
+export * from "./apps/install-phases";
 export * from "./app-settings";
 export * from "./project-source";
+export * from "./deployment-class";
 export * from "./updates";
 export * from "./proxy-settings";
+export * from "./audit-taxonomy";
+export * from "./access-grants";
+export * from "./answer";
+export * from "./host-profile";
+export * from "./host-firewall";
+export * from "./host-channel";

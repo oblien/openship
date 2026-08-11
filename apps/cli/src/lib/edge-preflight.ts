@@ -38,10 +38,13 @@ import {
   edgeProxy,
   edgeProxyFor,
   collectProxyCerts,
+  unreachableStaticRoots,
+  copyStaticRootIntoEdge,
   type CommandExecutor,
   type EdgeStatus,
   type ImportedSite,
   type ProxyKind,
+  type UnreachableStaticRoot,
 } from "@repo/adapters/proxy";
 
 export type EdgeAction = "migrate" | "takeover" | "cancel";
@@ -49,12 +52,25 @@ export type EdgeAction = "migrate" | "takeover" | "cancel";
 export interface EdgePlan {
   /** Proceed to `docker compose up`? False = the user cancelled (proxy left running). */
   proceed: boolean;
+  /**
+   * Why we're not proceeding, when it wasn't the user's choice — currently only
+   * "we stopped the proxy and the ports still didn't come free". Without this the
+   * caller can't tell a cancel from a failed handover and prints the wrong thing.
+   */
+  blockedBy?: string;
   /** What the user chose when a foreign proxy was found (absent when the edge was clean). */
   action?: EdgeAction;
   /** Sites parsed from the foreign proxy — passed to the api's import endpoint (migrate). */
   sites?: ImportedSite[];
   /** Foreign cert PEMs read host-side, keyed by hostname (migrate + TLS sites). */
   certPems?: Record<string, { certPem: string; keyPem: string }>;
+  /**
+   * Corrected static roots (keyed by primary hostname) for adopted static sites
+   * whose original docroot the container edge can't reach — the files were copied
+   * into the edge's static bind mount host-side. Forwarded to the import endpoint
+   * so the route records the reachable root. See #456.
+   */
+  staticRootOverrides?: Record<string, string>;
 }
 
 export interface EdgePreflightDeps {
@@ -69,12 +85,23 @@ export interface EdgePreflightDeps {
     executor: CommandExecutor,
     status: EdgeStatus,
   ): Promise<{ sites: ImportedSite[]; warnings: string[] }>;
-  /** Journal-then-free: writes the rollback record BEFORE stopping the proxy. */
+  /**
+   * Journal-then-free: writes the rollback record BEFORE stopping the proxy, then
+   * waits for the sockets to be released and reports whether they were. `freed:false`
+   * means the handover did not happen, so bringing the stack up would just crash-loop
+   * the edge on `bind() … (98: Address already in use)`.
+   *
+   * The shape is derived from the real function rather than restated: a hand-written
+   * `{ freed, stillBound }` is how the fake kept typechecking after the real one grew
+   * `privilegeDegraded`, leaving this path reporting a refused stop as a port conflict.
+   */
   beginEdgeTakeover(
     executor: CommandExecutor,
     status: EdgeStatus,
     onLog: (message: string, level?: "info" | "warn" | "error") => void,
-  ): Promise<void>;
+  ): Promise<Awaited<ReturnType<typeof realBeginEdgeTakeover>>>;
+  /** Undo a `beginEdgeTakeover` from THIS run. True when something came back up. */
+  rollbackHostEdge(): Promise<boolean>;
   /** Restore a proxy stopped by an earlier (crashed) run before we re-probe. */
   recoverInterruptedTakeover(
     executor: CommandExecutor,
@@ -114,6 +141,26 @@ export interface EdgePreflightDeps {
   /** Ask which action to take (interactive path only). */
   confirm(info: { owner: string; known: boolean; importable: number }): Promise<EdgeAction>;
   warn(message: string): void;
+}
+
+/**
+ * What a blocked takeover has to add when the stop was never allowed to run.
+ *
+ * `stillBound` reads as "something else is holding the port", which is only true once
+ * the stop actually ran. Refused, that same field means the proxy we set out to stop
+ * is simply still there — and "find what else is holding it and retry" sends the
+ * operator round a loop that cannot succeed as this login. Shared by both blocked
+ * paths below, and worded to match the api's 409 (`ensureEdgeClear`) so an operator
+ * meets one explanation whichever surface they hit.
+ */
+function privilegeClause(privilegeDegraded: boolean): string {
+  if (!privilegeDegraded) return "";
+  return (
+    " — and Openship could not run the stop as root on this host (see the privilege " +
+    "warning above), so stopping it was almost certainly refused rather than too slow. " +
+    "Retrying as this user will fail the same way: re-run as root, or as a user with " +
+    "passwordless sudo"
+  );
 }
 
 /**
@@ -166,12 +213,83 @@ export async function planAndApplyHostEdge(
   // takeover just frees the ports and lets the imported sites drop.
   const certPems =
     action === "migrate" ? await deps.collectCerts(executor, sites, { status }) : undefined;
+  // Adopted static sites whose docroot the container edge can't see would 500 after
+  // cutover — copy them into the edge's static mount host-side and record the
+  // corrected root (both are host ops, done before we stop the proxy). The compose
+  // edge is ALWAYS a container, so containerEdge:true here. See #456.
+  const staticRootOverrides =
+    action === "migrate"
+      ? await remediateUnreachableStaticRoots({
+          unreachable: unreachableStaticRoots(sites, { containerEdge: true }),
+          executor,
+          interactive: deps.interactive,
+        })
+      : undefined;
   // Journaled stop: if the caller's bring-up fails it calls rollbackHostEdge()
   // and the operator's proxy comes back, instead of the box staying dark.
-  await deps.beginEdgeTakeover(executor, status, (m, l) =>
+  const freed = await deps.beginEdgeTakeover(executor, status, (m, l) =>
     deps.warn(l === "info" ? m : chalk.yellow(m)),
   );
-  return action === "migrate" ? { proceed: true, action, sites, certPems } : { proceed: true, action };
+  // The stop didn't release the ports, so `compose up` would bring up an edge that
+  // crash-loops. Stop here and hand the proxy back rather than reporting a handover
+  // that didn't happen.
+  if (!freed.freed) {
+    const plural = freed.stillBound.length > 1;
+    const restored = await deps.rollbackHostEdge();
+    return {
+      proceed: false,
+      blockedBy:
+        `port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ${plural ? "are" : "is"} still in use ` +
+        `after stopping ${owner}` +
+        (restored ? " (the previous proxy has been restored)" : "") +
+        privilegeClause(freed.privilegeDegraded),
+    };
+  }
+  return action === "migrate"
+    ? { proceed: true, action, sites, certPems, staticRootOverrides }
+    : { proceed: true, action };
+}
+
+/** What `previewHostEdge` found on :80/:443. */
+export interface EdgePreview {
+  /** Human label of what holds the ports; null when they're free or already ours. */
+  owner: string | null;
+  /** A FOREIGN proxy holds them, so `up` would have to migrate or take over. */
+  blocked: boolean;
+  /** Sites parsed off that proxy — what "migrate" would carry across. */
+  sites: ImportedSite[];
+  /** Config items that wouldn't migrate automatically. */
+  warnings: string[];
+}
+
+/**
+ * Who holds :80/:443 right now, and what a real `up` would offer to do about it —
+ * for `--dry-run`. STRICTLY read-only.
+ *
+ * Not `planAndApplyHostEdge` with a flag: that flow's first act is
+ * `recoverInterruptedTakeover` (it restarts a proxy an earlier crashed run left
+ * stopped), and it ends by journaling and STOPPING the occupant. A preview must do
+ * neither — it only probes and parses, so it is safe on a box the operator is
+ * merely evaluating.
+ */
+export async function previewHostEdge(
+  overrides: Partial<Pick<EdgePreflightDeps, "platform" | "makeExecutor" | "foreignProxyOnEdge" | "importSites">> = {},
+): Promise<EdgePreview> {
+  const deps = { ...defaultDeps(), ...overrides };
+  const empty: EdgePreview = { owner: null, blocked: false, sites: [], warnings: [] };
+  // Host networking (and thus the :80/:443 contention) is a Linux concept.
+  if (deps.platform !== "linux") return empty;
+  try {
+    const executor = deps.makeExecutor();
+    const { status, blocked, owner } = await deps.foreignProxyOnEdge(executor);
+    if (!blocked) return { ...empty, owner: owner || null };
+    const { sites, warnings } = await deps.importSites(executor, status);
+    return { owner: owner || null, blocked: true, sites, warnings };
+  } catch {
+    // A probe that can't run (no `ss`, no docker, no permission) must not fail the
+    // preview — the rest of the plan is still worth printing.
+    return empty;
+  }
 }
 
 /**
@@ -306,10 +424,11 @@ export interface EdgeDiagnosis {
   occupant: string | null;
   /**
    * The occupant is a competing OPENRESTY/proxy on the HOST while our edge is
-   * containerized. This is the case the takeover flow misses: `ourLuaOnHost`
-   * marks a host OpenResty as "ours", so `foreignProxyOnEdge` reports
-   * blocked=false and nothing stops it — it just squats :80/:443 forever and the
-   * edge container crash-loops on `bind() … Address already in use`.
+   * containerized — a deprecated bare edge, or someone's own nginx. Detect used to
+   * miss the first case by marking a host OpenResty "ours", so `foreignProxyOnEdge`
+   * reported blocked=false, nothing stopped it, and it squatted :80/:443 forever
+   * while the edge container crash-looped on `bind() … Address already in use`.
+   * A host OpenResty is now an ordinary migration source, so this reports it.
    */
   hostProxySquatting: boolean;
   /** Sites parsed off the occupant, when it's an importable proxy. */
@@ -398,7 +517,7 @@ export async function repairEdgeConflict(
     return { ok: false, registered: [], detail: "the containerized edge is Linux-only" };
   }
   const executor = new LocalExecutor();
-  const { status } = await realForeignProxyOnEdge(executor);
+  const { status, owner } = await realForeignProxyOnEdge(executor);
   if (status.occupants.length === 0) {
     spawnSync("docker", ["restart", "openship-edge"], { stdio: "ignore" });
     return { ok: true, registered: [], detail: "ports were already free — restarted the edge" };
@@ -409,7 +528,24 @@ export async function repairEdgeConflict(
     mode === "migrate" ? await collectCertsFromProxy(executor, scan.sites, { status }) : undefined;
 
   // Journaled: if the edge still won't come up, rollbackHostEdge() restores this.
-  await realBeginEdgeTakeover(executor, status, (entry) => onLog(entry.message, entry.level));
+  const freed = await realBeginEdgeTakeover(executor, status, (entry) =>
+    onLog(entry.message, entry.level),
+  );
+  // A stop that didn't release the socket means the edge will just crash-loop again
+  // and we'd report "freed :80/:443" for a box that is still dark. Put the occupant
+  // back instead — the journal is exactly what that's for.
+  if (!freed.freed) {
+    const restored = await rollbackHostEdge();
+    return {
+      ok: false,
+      registered: [],
+      detail:
+        `port${freed.stillBound.length > 1 ? "s" : ""} ${freed.stillBound.join(" and ")} still in use ` +
+        `after stopping ${owner || "the existing proxy"}` +
+        (restored ? " — the previous proxy has been restored" : " — and the restore did NOT bring it back") +
+        privilegeClause(freed.privilegeDegraded),
+    };
+  }
   spawnSync("docker", ["restart", "openship-edge"], { stdio: "ignore" });
 
   if (mode === "migrate" && scan.sites.length > 0) {
@@ -546,6 +682,81 @@ export async function confirmEdgeAction(info: {
   return isCancel(choice) ? "cancel" : (choice as EdgeAction);
 }
 
+/**
+ * Adopted static sites whose docroot the containerized edge can't see would 500
+ * after cutover (try_files can't find the index in a directory that isn't
+ * mounted). Before the handover, list them and — on Copy — snapshot each tree
+ * into the edge's static bind mount HOST-SIDE, returning `{ primaryHost:
+ * correctedRoot }` for the server to substitute into the route. THE one
+ * remediation presenter, shared by the compose preflight and the bare wizard
+ * (#456).
+ *
+ * Takes the already-computed `unreachable` list rather than recomputing: the
+ * compose edge is ALWAYS a container (so its caller computes with
+ * `containerEdge:true`), but the bare wizard's edge may be container OR bare, and
+ * only the server's preflight knows which — passing the list keeps that
+ * determination authoritative instead of hardcoding it here.
+ *
+ * Batch (not per-site): a 15-site migrate shouldn't ask 15 times. Returns
+ * undefined when nothing is unreachable or the operator chose Leave (the sites
+ * migrate at their original root and 500 — their explicit choice). A copy that
+ * fails for one site drops it from the map (left as-is) with a warning rather
+ * than aborting the whole migrate. Non-interactive defaults to Copy — Leave would
+ * silently 500, the exact failure #456 is about.
+ */
+export async function remediateUnreachableStaticRoots(opts: {
+  unreachable: UnreachableStaticRoot[];
+  executor: CommandExecutor;
+  interactive: boolean;
+}): Promise<Record<string, string> | undefined> {
+  const { unreachable } = opts;
+  if (unreachable.length === 0) return undefined;
+
+  note(
+    unreachable.map((u) => `${chalk.bold(u.host)} → ${chalk.dim(u.root)}`).join("\n"),
+    `${unreachable.length} static site${unreachable.length === 1 ? "" : "s"} rooted outside the edge`,
+  );
+  log.warn("Their files live outside the edge container's mounts, so they'd return 500 after cutover.");
+
+  let copy = true;
+  if (opts.interactive) {
+    const choice = await select({
+      message: "Copy these sites' files into the edge so they keep serving?",
+      options: [
+        {
+          value: "copy" as const,
+          label: `Copy ${unreachable.length === 1 ? "it" : "all"} into the edge`,
+          hint: "snapshot the files under /opt/openship/static (recommended)",
+        },
+        {
+          value: "leave" as const,
+          label: "Leave as-is",
+          hint: "they stop serving until you mount their directory yourself",
+        },
+      ],
+      initialValue: "copy",
+    });
+    copy = !isCancel(choice) && choice === "copy";
+  } else {
+    log.info("Non-interactive: copying unreachable static roots into the edge.");
+  }
+  if (!copy) return undefined;
+
+  const overrides: Record<string, string> = {};
+  for (const u of unreachable) {
+    try {
+      const newRoot = await copyStaticRootIntoEdge(opts.executor, { root: u.root, host: u.host });
+      overrides[u.host] = newRoot;
+      log.success(`Copied ${u.host} → ${newRoot}`);
+    } catch (err) {
+      log.warn(
+        `Couldn't copy ${u.host} (${u.root}) — it will migrate as-is: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
 function defaultDeps(): EdgePreflightDeps {
   return {
     platform: process.platform,
@@ -555,6 +766,7 @@ function defaultDeps(): EdgePreflightDeps {
     importSites: realImportSites,
     beginEdgeTakeover: (executor, status, onLog) =>
       realBeginEdgeTakeover(executor, status, (entry) => onLog(entry.message, entry.level)),
+    rollbackHostEdge,
     recoverInterruptedTakeover: (executor, onLog, isEdgeHealthy) =>
       realRecoverInterruptedTakeover(
         executor,

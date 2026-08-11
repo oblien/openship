@@ -1,0 +1,24 @@
+/*
+ * Chart styling shared by every recharts surface (monitoring, billing).
+ *
+ * Global rather than imported per component: the rule below matches recharts' own class,
+ * and making billing import a stylesheet out of components/monitoring would be the wrong
+ * dependency direction.
+ */
+
+/* ── Chart tooltip stacking ──────────────────────────────────────────────────
+ * The panel itself is styled inline (lib/chart-theme.ts) because recharts writes its own
+ * inline contentStyle that a stylesheet cannot override. All that is left for CSS is the
+ * stacking order — the donut's centred total is an absolutely-positioned sibling, so
+ * without an explicit order the tooltip painted UNDERNEATH it — and that has to sit on
+ * the positioned wrapper, which is recharts' element, not ours.
+ *
+ * Keyed off recharts' class on purpose: recharts 3 forwards `wrapperClassName` to the
+ * CONTENT div (`.recharts-default-tooltip`), not to this wrapper as v2 did. A class of
+ * ours therefore landed one level in, so `.our-class > *` hit the label <p> and the item
+ * <ul> instead of the panel and gave each row its own blurred, shadowed box — that was
+ * the grey slab behind the timestamp.
+ */
+.recharts-tooltip-wrapper {
+  z-index: 40;
+}

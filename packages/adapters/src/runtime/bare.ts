@@ -30,6 +30,7 @@ import type {
 } from "../types";
 
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
+import { ensureOwnedDir } from "../system/elevated-executor";
 import { execReliable } from "../system/remote-journal";
 import { STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, type StackId, type StackDefinition } from "@repo/core";
 import { checkToolchainForStack, installTools } from "../toolchain";
@@ -40,7 +41,15 @@ import type {
   RollbackInput,
   MakeActiveResult,
 } from "./types";
-import { BuildCancelledError, BuildLogger, detectBuildKillHint, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
+import {
+  BuildCancelledError,
+  BuildLogger,
+  detectBuildKillHint,
+  killProcessesUnderDir,
+  runBuildPipeline,
+  sq,
+  type BuildEnvironment,
+} from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
 import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
@@ -107,6 +116,12 @@ export class BareRuntime implements RuntimeAdapter {
     "destroy",
     "runtimeLogs",
     "streamLogs",
+    // Real measurements now (cgroup → /proc → ps, via the supervisor), so this can
+    // finally be declared. It was absent while getUsage returned a zeros stub — but
+    // nothing checked, so callers rendered those zeros as data. Anything reading
+    // usage should gate on supports("usage") rather than trust the numbers.
+    // Network is the one gap: per-process rx/tx needs eBPF or a netns, so it stays 0.
+    "usage",
     "containerIp",
     "rollback",
     // The release dir + supervisor unit survive a redeploy, so restoring a
@@ -261,7 +276,7 @@ export class BareRuntime implements RuntimeAdapter {
     const releaseDir = this.releaseDir(deploymentId);
     if (artifactPath === releaseDir) return releaseDir;
 
-    await this.executor.mkdir(`${this.workDir}/releases`);
+    await ensureOwnedDir(this.executor, `${this.workDir}/releases`);
     await this.executor.rm(releaseDir);
 
     // Capistrano-style hard-link dedup: when we know the previous
@@ -581,16 +596,10 @@ export class BareRuntime implements RuntimeAdapter {
       abort.abort();
       this.activeBuilds.delete(sessionId);
     }
-    // Aborting only gates the API BETWEEN commands — the in-flight remote
-    // command (git/npm/vite) keeps running on the target until killed. Kill every
-    // process whose CWD is (under) this build's dir — SIGTERM, then SIGKILL the
-    // survivors. Killing it closes the streamExec channel so the pipeline unwinds
-    // to a cancelled result. Best-effort; a no-op for local builds / non-Linux
-    // targets (nothing runs under this dir there).
-    const dir = sq(this.buildDir(sessionId));
-    const scan = (sig: string) =>
-      `for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null); case "$c" in ${dir}|${dir}/*) kill -${sig} "\${p##*/}" 2>/dev/null || true;; esac; done`;
-    await this.executor.exec(`${scan("TERM")}; sleep 2; ${scan("KILL")}`).catch(() => {});
+    // Aborting only gates the API BETWEEN commands — the in-flight remote command
+    // (git/npm/vite) keeps running on the target until killed. Shared with the
+    // docker runtime so both remote-build cancels kill the same way.
+    await killProcessesUnderDir(this.executor, this.buildDir(sessionId));
   }
 
   async getBuildLogs(sessionId: string): Promise<LogEntry[]> {
@@ -851,11 +860,19 @@ export class BareRuntime implements RuntimeAdapter {
     return sv.streamLogs(containerId, onLog, opts);
   }
 
-  async getUsage(_containerId: string): Promise<ResourceUsage> {
-    // Resource usage monitoring is supervisor-independent - systemd can use
-    // cgroup stats, nohup can use /proc. For now return zeros; the dashboard
-    // already handles this gracefully.
-    return { cpuPercent: 0, memoryMb: 0, diskMb: 0, networkRxBytes: 0, networkTxBytes: 0 };
+  /**
+   * CPU / memory / disk-IO for the deployment's process.
+   *
+   * `containerId` is the DEPLOYMENT id here, not a docker container id — that's the
+   * bare runtime's convention throughout (it's what the supervisor keys units and
+   * PID files on).
+   *
+   * The supervisor owns the measurement because the identity differs: systemd has a
+   * unit and a cgroup, nohup has a PID file. Both land on the same probe.
+   */
+  async getUsage(containerId: string): Promise<ResourceUsage> {
+    const sv = await this.supervisor();
+    return sv.getUsage(containerId);
   }
 
   // ── Network ────────────────────────────────────────────────────────────

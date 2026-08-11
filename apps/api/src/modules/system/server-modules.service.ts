@@ -15,6 +15,8 @@ import {
   resolveVerifiedCatalog,
   reconcileServerModule,
   readManifest,
+  ourEdgeContainerRunning,
+  isHostChannelUnavailableError,
   type CommandExecutor,
   type ReconcileResult,
 } from "@repo/adapters";
@@ -32,6 +34,19 @@ interface ModuleDef {
   seed?: { legacyMarkerPath: string; baselineVersion: string };
   /** Post-apply hook (config test + reload). Best-effort. */
   postApply?: (executor: CommandExecutor) => Promise<void>;
+  /**
+   * Why this module — though `presenceProbe` finds it — is NOT what serves traffic
+   * on this box, or null when it is. Migrations run against the host install, so a
+   * superseded module must be neither reported nor applied.
+   *
+   * `presenceProbe` asks "is the binary here", which stopped being the same
+   * question as "is this the edge" once the edge became a container on every box.
+   * A legacy box converted to the container edge keeps its host OpenResty, and
+   * without this its row reads as a version for the edge while describing a config
+   * nothing loads — and applying a migration would stamp that config "current"
+   * and reload a binary serving nothing.
+   */
+  supersededBy?: (executor: CommandExecutor) => Promise<string | null>;
 }
 
 const OPENRESTY_BIN = "$(command -v openresty || echo /usr/local/openresty/bin/openresty)";
@@ -52,6 +67,18 @@ const MODULE_DEFS: Record<string, ModuleDef> = {
       await executor.exec(`${OPENRESTY_BIN} -t 2>&1`);
       await executor.exec(`${OPENRESTY_BIN} -s reload 2>&1`);
     },
+    // A running edge container OWNS 80/443 (see `ourEdgeContainerRunning`), so a
+    // host binary alongside it is not the edge — and the container's config is
+    // baked into its image, which is why the answer is to skip rather than to
+    // `docker exec` the migration in: an edit inside the container is lost the next
+    // time it is recreated. A container edge converges by taking a new image.
+    //
+    // Keys on RUNNING, not merely present: a Docker-less box (the case bare host
+    // OpenResty still exists for) has no container to find, so it stays eligible.
+    supersededBy: async (executor) =>
+      (await ourEdgeContainerRunning(executor))
+        ? "this box serves through the openship-edge container, whose config is baked into its image"
+        : null,
   },
 };
 
@@ -71,6 +98,20 @@ export interface ServerModuleView {
   note?: string;
 }
 
+/**
+ * Let the host channel's own diagnosis through a best-effort catch.
+ *
+ * Every exec on a container→host channel that is firewalled (#490) or was never
+ * provisioned (#509) refuses with the classified remedy from @repo/core attached.
+ * Swallowing that into "the probe said no" reported the box as having no native
+ * modules at all — an answer that names no cause and points an operator at
+ * reinstalling OpenResty instead of at the channel.
+ */
+function rethrowIfHostUnavailable(err: unknown): null {
+  if (isHostChannelUnavailableError(err)) throw err;
+  return null;
+}
+
 async function probeVersion(executor: CommandExecutor, def: ModuleDef): Promise<string | null> {
   try {
     return def.parseVersion(await executor.exec(def.versionCommand)) ?? null;
@@ -87,7 +128,13 @@ async function detectModule(
   executor: CommandExecutor,
   def: ModuleDef,
 ): Promise<ServerModuleView | null> {
-  const present = await executor.exec(def.presenceProbe).then(() => true).catch(() => false);
+  const present = await executor
+    .exec(def.presenceProbe)
+    .then(() => true)
+    .catch((err: unknown) => {
+      rethrowIfHostUnavailable(err);
+      return false;
+    });
   if (!present) return null;
 
   const installedVersion = await probeVersion(executor, def);
@@ -123,7 +170,13 @@ async function detectModule(
     seed: def.seed,
   });
 
-  const behind = dry.appliedSteps.length > 0 || dry.pendingConsent.length > 0;
+  // A dry run that FAILED is not "nothing to do". The runner already classified why
+  // (manifest unreadable, a catalog serial below the box's high-water, a malformed
+  // version) and only the step counts were read — so every one of those rendered as an
+  // up-to-date row and the diagnosis was thrown away. `note` is the field the
+  // no-catalog branch above already reports through, and `dry.error` goes in verbatim:
+  // the runner's words, not a second set.
+  const behind = dry.ok && (dry.appliedSteps.length > 0 || dry.pendingConsent.length > 0);
   return {
     module: def.name,
     installed: true,
@@ -134,6 +187,7 @@ async function detectModule(
     pendingConsent: dry.pendingConsent,
     autoPending: dry.appliedSteps,
     catalogAvailable: true,
+    ...(dry.ok ? {} : { note: `update check failed: ${dry.error ?? "unknown error"}` }),
   };
 }
 
@@ -158,13 +212,23 @@ function upsertView(server: Server, view: ServerModuleView): Promise<void> {
   });
 }
 
-/** Scan every known module on a server, caching the results. Best-effort. */
+/** Scan every known module on a server, caching the results. Best-effort per module —
+ *  except a host channel that can't be reached, which propagates so the caller reports
+ *  the cause instead of an empty, cause-less "no modules here". */
 export async function scanServer(server: Server): Promise<ServerModuleView[]> {
   const views: ServerModuleView[] = [];
   await sshManager.withExecutor(server.id, async (executor) => {
     for (const name of KNOWN_MODULES) {
       const def = MODULE_DEFS[name]!;
-      const view = await detectModule(executor, def).catch(() => null);
+      // Superseded → drop any row a previous scan left. A box that was bare when
+      // it was last scanned and now runs the container edge would otherwise keep
+      // showing a version, and an update prompt, for a config nothing loads.
+      const superseded = await def.supersededBy?.(executor).catch(() => null);
+      if (superseded) {
+        await repos.serverModuleStatus.remove(server.id, name).catch(() => {});
+        continue;
+      }
+      const view = await detectModule(executor, def).catch(rethrowIfHostUnavailable);
       if (view) {
         views.push(view);
         await upsertView(server, view).catch(() => {});
@@ -188,6 +252,14 @@ export async function applyServerModule(
   await repos.serverModuleStatus.setInProgress(server.id, moduleName, true).catch(() => {});
   try {
     return await sshManager.withExecutor(server.id, async (executor) => {
+      // Checked here too, not just in the scan: a row cached before the box moved
+      // to the container edge still renders an Update button, and the CLI and API
+      // can call this directly. Applying would rewrite a config nothing loads and
+      // stamp it current.
+      const superseded = await def.supersededBy?.(executor).catch(() => null);
+      if (superseded) {
+        throw new Error(`${moduleName} migrations do not apply here: ${superseded}`);
+      }
       const catalog = await resolveVerifiedCatalog(moduleName);
       if (!catalog) {
         throw new Error(`no verified catalog available for ${moduleName} (unsigned/offline)`);

@@ -3,6 +3,7 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
   real,
   jsonb,
   index,
@@ -41,9 +42,29 @@ export const serverAnalytics = pgTable(
     // ── Counters ──────────────────────────────────────────────────────────
 
     requests: integer("requests").notNull().default(0),
+    /**
+     * Non-static ("page") requests in this minute — NOT distinct visitors.
+     *
+     * It comes from `s:{domain}:{min}:u`, which site_logger.lua increments for any
+     * request whose URI isn't a static asset. It was surfaced to the dashboard as
+     * "unique IPs", which it never was: five page views from one browser count
+     * five. Real distinct visitors are `serverAnalyticsGeo.visitors`, which is
+     * dedup'd at the edge.
+     */
     uniqueRequests: integer("unique_requests").notNull().default(0),
-    bandwidthIn: integer("bandwidth_in").notNull().default(0),
-    bandwidthOut: integer("bandwidth_out").notNull().default(0),
+
+    /**
+     * Bytes in / out for this ONE MINUTE. bigint, not integer.
+     *
+     * int4 caps at 2,147,483,647 — about 2.1 GB, which a single minute reaches at
+     * ~286 Mbps. Entirely normal for a site serving video or large downloads. On
+     * overflow Postgres raises "integer out of range", the upsert fails, and the
+     * scrape for that domain dies — so the busiest domains would be exactly the
+     * ones with no analytics. `mode: "number"` is safe here: JS integers are exact
+     * to 2^53, ~9 PB per minute.
+     */
+    bandwidthIn: bigint("bandwidth_in", { mode: "number" }).notNull().default(0),
+    bandwidthOut: bigint("bandwidth_out", { mode: "number" }).notNull().default(0),
 
     /** Average response time in seconds (float) */
     responseTime: real("response_time").notNull().default(0),
@@ -63,11 +84,20 @@ export const serverAnalytics = pgTable(
   ],
 );
 
-// ─── Server Analytics - Daily Geo Aggregates ─────────────────────────────────
+// ─── Server Analytics - Daily Rollups ────────────────────────────────────────
 
 /**
- * Daily country-level aggregates per domain per server.
- * Scraped from GET /analytics/geo?domain=&day=YYYYMMDD.
+ * Daily per-domain, per-server rollup: countries, distinct visitors, top paths,
+ * status-code mix. Scraped from GET /analytics/geo?domain=&day=YYYYMMDD.
+ *
+ * The table name says `geo` because countries were all it once held. Everything
+ * here shares one `g:{domain}:{day}:` key prefix in the edge's shared dict
+ * specifically so the whole day is readable in a SINGLE dict scan — which is why
+ * these live together rather than in a table each.
+ *
+ * Daily, not per-minute, for the two high-cardinality metrics: a per-minute
+ * visitor set is ~1440x the shared-dict keys for a number nobody plots, and
+ * per-minute path counters would evict the request counters they annotate.
  */
 export const serverAnalyticsGeo = pgTable(
   "server_analytics_geo",
@@ -87,6 +117,34 @@ export const serverAnalyticsGeo = pgTable(
 
     /** Country breakdown: { "US": 1234, "DE": 567, ... } */
     countries: jsonb("countries").notNull(),
+
+    /**
+     * Distinct visitors for the day — a COUNT, deduplicated at the edge.
+     *
+     * The edge hashes each address with a per-day salt that never leaves the box
+     * and stores only a set-membership marker; this column is the cardinality of
+     * that set. No address and no per-visitor row exists at any layer, here or
+     * upstream, which is what keeps "we don't collect behavioural analytics on
+     * your end users" true while still reporting a real visitor number.
+     *
+     * APPROXIMATE on a very busy domain: the edge's `visitors` zone LRU-evicts
+     * past ~1M distinct/day, which UNDERSTATES. mgmt_api `GET /status` reports
+     * that zone's free space so a reader can label it.
+     */
+    visitors: integer("visitors").notNull().default(0),
+
+    /**
+     * Top paths: { "/": 900, "/orders/:id": 120, "other": 40 }.
+     *
+     * Normalized at the edge — query string stripped (so no token or id ever
+     * becomes a key), numeric/UUID segments collapsed to `:id`, key length capped,
+     * and the tail past a cardinality cap folded into "other" so a URL-fuzzing
+     * scanner can't evict real counters.
+     */
+    paths: jsonb("paths"),
+
+    /** Status-code mix: { "200": 4210, "404": 17, "502": 3 }. */
+    statuses: jsonb("statuses"),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

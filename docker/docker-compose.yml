@@ -47,8 +47,13 @@
 #
 # REMOTE ACCESS: reaching this from another machine (LAN IP or a reverse proxy)
 # requires OPENSHIP_PUBLIC_URL in .env — else the dashboard loads but login is
-# rejected (403 ORIGIN_REJECTED). Behind a proxy also set TRUST_PROXY=true. Set
-# OPENSHIP_BIND_ADDR to publish the ports on one interface instead of all. See
+# rejected (403 ORIGIN_REJECTED). Behind a proxy also set TRUST_PROXY=true.
+#
+# BIND INTERFACE: the api/dashboard ports publish on 127.0.0.1 (loopback) by
+# default — the bundled `edge` (host-networked OpenResty) fronts your public
+# domains and reaches them over loopback, so nothing needs to sit on a public
+# interface. Set OPENSHIP_BIND_ADDR only if you deliberately want direct off-box
+# access without a domain (e.g. OPENSHIP_BIND_ADDR=0.0.0.0 or a LAN IP). See
 # .env.example → "Remote access".
 # ──────────────────────────────────────────────────────────
 
@@ -103,9 +108,10 @@ services:
     image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
     ports:
-      # Publish on all interfaces by default; OPENSHIP_BIND_ADDR pins one.
+      # Loopback by default — the host-net edge reaches it over loopback.
+      # OPENSHIP_BIND_ADDR opts into a public/LAN interface (see header note).
       # API_PORT overrides the port (host + container move together).
-      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${API_PORT:-4000}:${API_PORT:-4000}"
+      - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${API_PORT:-4000}:${API_PORT:-4000}"
     # Host Docker socket → the API (dockerode) builds + runs deployed apps on the
     # host daemon. dockerode's local transport targets this exact path.
     #
@@ -124,9 +130,21 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:z
       - /var/lib/openship/edge/acme:/var/www/acme:z
       - /opt/openship/static:/opt/openship/static:z
+      # Host-op SSH key (createHostExecutor → host.docker.internal), at the path
+      # OPENSHIP_HOST_SSH_KEY names. /dev/null when the host channel isn't
+      # provisioned, which is what lets this stack come up on a box with no key:
+      # OPENSHIP_HOST_SSH_HOST stays unset, host operations REFUSE (they'd
+      # otherwise run against this container's filesystem, #509) and ordinary
+      # deploys keep working over the socket above. Set OPENSHIP_HOST_KEY_PATH to
+      # an ABSOLUTE host path to activate it — a relative one resolves against
+      # docker/, not the directory you run compose from. See .env.example → "Host
+      # operations from the container".
+      - ${OPENSHIP_HOST_KEY_PATH:-/dev/null}:/run/secrets/openship_host_key:ro
     # Reach the HOST over the internal docker bridge (host.docker.internal →
     # host-gateway) for host-OS ops when configured (OPENSHIP_HOST_SSH_*, set up
-    # by `openship up`). Harmless when unset. Linux needs the explicit mapping.
+    # by `openship up`; by hand on this file — see .env.example). Harmless when
+    # unset: host ops refuse rather than target the container. Linux needs the
+    # explicit mapping.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Mode + secrets (CLOUD_MODE, DEPLOY_MODE, OPENSHIP_TARGET, Oblien, GitHub
@@ -161,7 +179,7 @@ services:
     image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
     ports:
-      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
+      - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
     env_file:
       - ../.env
     environment:

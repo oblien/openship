@@ -26,6 +26,8 @@ export const endpoints = {
     edgeStatus: (id: string | number) => `projects/${id}/routing/edge-status`,
     clearCache: (id: string | number) => `projects/${id}/clear-cache`,
     clearBuild: (id: string | number) => `projects/${id}/clear-build`,
+    incidents: (id: string | number) => `projects/${id}/incidents`,
+    edgeConfig: (id: string | number) => `projects/${id}/edge-config`,
     routeRules: (id: string | number) => `projects/${id}/route-rules`,
     routeRule: (id: string | number, ruleId: string) => `projects/${id}/route-rules/${ruleId}`,
     deploymentSession: (id: string | number) => `projects/${id}/deployment-session`,
@@ -72,6 +74,7 @@ export const endpoints = {
   apps: {
     catalog: "apps/catalog",
     catalogEntry: (id: string) => `apps/catalog/${id}`,
+    catalogHostFit: (id: string) => `apps/catalog/${id}/host-fit`,
     install: "apps",
     custom: "apps/custom",
     customEntry: (appId: string) => `apps/custom/${appId}`,
@@ -241,7 +244,11 @@ export const endpoints = {
     overview: "analytics/overview",
     deployments: "analytics/deployments",
     usage: "analytics/usage",
+    resources: "analytics/resources",
+    usageHistory: "analytics/usage/history",
     usageStream: "analytics/usage/stream",
+    geo: "analytics/geo",
+    pathsCollection: "analytics/paths-collection",
     container: "analytics/container",
     dashboard: "analytics/dashboard",
     server: (serverId: string) => `analytics/server/${serverId}`,
@@ -280,6 +287,25 @@ export const endpoints = {
     serverModulesScan: (id: string) => `system/servers/${id}/modules/scan`,
     serverModuleApply: (id: string, module: string) =>
       `system/servers/${id}/modules/${module}/apply`,
+    // Managed-container versioning (edge / mail images pinned to APP_VERSION)
+    serverContainers: (id: string) => `system/servers/${id}/containers`,
+    serverContainersScan: (id: string) => `system/servers/${id}/containers/scan`,
+    serverContainerApply: (id: string, component: string) =>
+      `system/servers/${id}/containers/${component}/apply/stream`,
+    // Read-only siblings of the apply stream, for page-reload re-attach:
+    // /session reports a running swap, /stream (GET) re-attaches to it.
+    serverContainerApplySession: (id: string, component: string) =>
+      `system/servers/${id}/containers/${component}/apply/session`,
+    serverContainerApplyAttach: (id: string, component: string) =>
+      `system/servers/${id}/containers/${component}/apply/stream`,
+    containersBehind: () => `system/containers/behind`,
+    // Actionable-issue rollup (edge down / absent-with-projects) for the dot + home
+    containersIssues: () => `system/containers/issues`,
+    // Global infra view (every server × component) + detect-only refresh
+    allContainers: () => `system/containers`,
+    allContainersScan: () => `system/containers/scan`,
+    // Fleet bulk apply — server-derived targets, body only picks the intents
+    allContainersApply: () => `system/containers/apply-all`,
     // Per-server GitHub auth (self-hosted)
     serverGithub: (id: string) => `system/servers/${id}/github`,
     serverGithubConnect: (id: string) => `system/servers/${id}/github/connect`,
@@ -388,6 +414,7 @@ export const endpoints = {
   dockerMigration: {
     scan: "migration/scan",
     scanStream: "migration/scan/stream",
+    revealEnv: "migration/reveal-env",
     adopt: "migration/adopt",
     reimport: "migration/reimport",
     repoCompose: "migration/repo-compose",
@@ -417,6 +444,15 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Audit log (activity feed, filter facets, recording switch)      */
+  /* ---------------------------------------------------------------- */
+  audit: {
+    list: "audit",
+    facets: "audit/facets",
+    settings: "audit/settings",
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Notifications (channels, subscriptions, defaults, deliveries)   */
   /* ---------------------------------------------------------------- */
   notifications: {
@@ -440,6 +476,15 @@ export const endpoints = {
     behind: "updates?behind=1",
     scan: "updates/scan",
     apply: (projectId: string) => `updates/${projectId}/apply`,
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Issues (org-wide feed over every check the system runs)         */
+  /* ---------------------------------------------------------------- */
+  issues: {
+    open: "issues",
+    resolved: "issues?status=resolved",
+    rescan: "issues/rescan",
   },
 
   /* ---------------------------------------------------------------- */

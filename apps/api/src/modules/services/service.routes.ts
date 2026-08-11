@@ -21,6 +21,7 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./service.controller";
+import { AgentExecBody } from "../../lib/agent-exec.schema";
 import {
   CreateServiceBody,
   SetServiceEnvVarsBody,
@@ -111,6 +112,26 @@ r.get(
   { tag: "project:service:read" },
   cloudProjectProxy,
   ctrl.runtimeLogStream,
+);
+// In-container exec. `project:service:write` means a {project,<id>,[write]} grant
+// confines an agent to this project's services — per-resource scope, unlike the
+// org-singleton `job` tag the previous exec workaround rode on.
+r.post(
+  "/:serviceId/exec",
+  {
+    tag: "project:service:write",
+    // Tighter than the default-authed 3000/min: each call opens a pooled SSH
+    // connection and runs an arbitrary command, so the generic read budget is the
+    // wrong shape for it.
+    rateLimit: "write-authed",
+    body: AgentExecBody,
+    mcp: {
+      description:
+        "Run a shell command inside this service's running container and return its exit code and combined output. Interpreted by `sh -c`; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Requires a Docker runtime — a bare or cloud-hosted service has no container to enter.",
+    },
+  },
+  cloudProjectProxy,
+  ctrl.execInService,
 );
 r.patch(
   "/:serviceId",

@@ -1,10 +1,17 @@
 import { serve } from "@hono/node-server";
-import { setBackupCredentialSecret, setDefaultEdgeImage } from "@repo/adapters";
+import {
+  setBackupCredentialSecret,
+  setDefaultEdgeImage,
+  setDefaultMailImage,
+  setManagedImagesFromSource,
+} from "@repo/adapters";
 import { isDevWatchReload } from "@repo/db";
 import { app } from "./app";
 import { cloudRuntimeTarget, cloudRuntimeTargetId, env, runtimeTargetId } from "./config/env";
 import { getAuthMode } from "./lib/auth-mode";
-import { pinnedEdgeImage } from "./lib/edge-image";
+import { edgeBuildSpec, pinnedEdgeImage } from "./lib/edge-image";
+import { reportHostChannelAtBoot } from "./lib/host-channel-banner";
+import { mailBuildSpec, pinnedMailImage } from "./lib/mail-image";
 import { getJobRunner } from "./lib/job-runner";
 import { enforceRouteScanAtBoot } from "./lib/route-scanner";
 import { attachTunnelingLifecycle, type TunnelingLifecycle } from "./modules/tunneling";
@@ -23,8 +30,26 @@ setBackupCredentialSecret(env.BETTER_AUTH_SECRET);
 // Same pattern, same reason: adapters can't derive the pinned edge image (it comes
 // from APP_VERSION, i.e. apps/api/package.json), so declare it once here. Without
 // this, any edge install that forgot to pass the pin fell back to `:latest` and
-// could run edge Lua from a different build than the API driving it.
+// could run edge Lua from a different build than the API driving it. In a dev
+// checkout `pinnedEdgeImage()` carries a content-derived `…-dev.<hash>` suffix, so a
+// source edit moves the tag and the drift scan flips `behind`; `deliverManagedImage`
+// builds that tag from our source on the control plane and ships it to the box.
 setDefaultEdgeImage(pinnedEdgeImage());
+
+// Same pattern for the mail engine: adapters can't derive the APP_VERSION-pinned
+// ref, so declare it once here so a mail install that passes no image still runs
+// the engine matching this build (dev-suffixed the same way).
+setDefaultMailImage(pinnedMailImage());
+
+// Tell the adapters, PER COMPONENT, whether its managed image is FROM SOURCE (a dev
+// checkout with a build spec) vs a pulled published tag (prod). Same signal that
+// dev-suffixes the tags above. When from-source, a managed image missing from a box
+// means the control-plane build/ship didn't complete — the tag is unpublished, so
+// create/swap surface that plainly instead of a doomed `docker pull` that blames the
+// registry. Per component because a box may build one from source while pulling the
+// other's published tag. No build spec (prod / compiled) ⇒ false ⇒ pulls as before.
+setManagedImagesFromSource("edge", Boolean(edgeBuildSpec()));
+setManagedImagesFromSource("mail", Boolean(mailBuildSpec()));
 
 // Refuse to start if any registered route is mis-tagged or any
 // mutation route was mounted on a raw Hono instance (bypassing
@@ -57,6 +82,12 @@ void (async () => {
   console.error("!!! Loopback-only guard is in authMiddleware.");
   console.error("");
 })();
+
+// Same shape, for the container→host SSH channel (#490) — silent unless the channel
+// is actually broken. At boot and not only at install: `openship up` probes it now,
+// but a box provisioned before that existed never saw the check, and a firewall can
+// change under a running install.
+void reportHostChannelAtBoot().catch(() => {});
 
 // Attach the tunnel agent lifecycle if this instance has been migrated
 // via Path C (teamMode === "tunneled"). Local-API-only by design —
@@ -142,6 +173,20 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       await stopAllTunnels();
     } catch (err) {
       console.warn("[shutdown] port-forward close failed:", err);
+    }
+
+    // Health-watch Docker event streams. Each holds a `retain()` on a pooled SSH
+    // connection, so these must be released before sshManager.destroy() below —
+    // and before it, not after, so the pool isn't tearing down connections a
+    // reconnect is still trying to use. Skipped on a reload for the same reason as
+    // the tunnels: the successor's first poll tick re-subscribes.
+    try {
+      const { stopAllContainerEventWatchers } = await import(
+        "./modules/monitoring/container-events"
+      );
+      await stopAllContainerEventWatchers();
+    } catch (err) {
+      console.warn("[shutdown] container event watcher close failed:", err);
     }
   }
 

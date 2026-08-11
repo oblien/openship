@@ -163,12 +163,31 @@
       "pruned": "Não é possível fixar — o artefacto já foi removido"
     },
     "deleteDeployment": "Eliminar implantação",
-    "confirmRollback": "Voltar para esta versão?\n\nRestaura apenas o código da aplicação. Dados de banco e volumes não mudam.",
     "rollbackFailed": "A reversão falhou",
     "pinFailed": "Falha ao fixar a implantação",
     "unpinFailed": "Falha ao desafixar a implantação",
     "rollbackModeInstant": "Restauração instantânea — reutiliza a imagem retida desta versão, sem rebuild.",
     "rollbackModeRebuild": "Rebuild — a imagem desta versão não está mais no host, então o commit é construído novamente.",
     "rollbackModeMixed": "Quase instantâneo — {count} serviço(s) perderam a imagem e serão reconstruídos."
+  },
+  "rollbackConfirm": {
+    "title": "Voltar para esta versão?",
+    "dataUnchanged": "Restaura apenas o código da aplicação. Os dados de banco e de volumes não mudam.",
+    "envHeading": "Variáveis de ambiente",
+    "envSummaryOverlay": "{count} variável(is) mudam — os valores desta versão são aplicados sobre os atuais.",
+    "envSummaryReplace": "{count} variável(is) mudam — o ambiente desta versão é usado exatamente como foi capturado.",
+    "envNoChanges": "Nenhuma variável de ambiente muda.",
+    "envUnchanged": "O contêiner existente é reiniciado em vez de recriado, então o ambiente dele não muda.",
+    "envNoValues": "Os valores nunca são exibidos aqui.",
+    "envTruncated": "Mostrando {shown} de {total}.",
+    "dirFrozenWins": "volta ao valor desta versão",
+    "dirRemovedSince": "retorna — removida depois desta versão",
+    "dirAddedSinceKept": "mantida como está — adicionada depois desta versão",
+    "dirAddedSinceDropped": "removida — adicionada depois desta versão",
+    "scopeAmbiguous": "capturada sem escopo de serviço, então um único valor vale para todos os serviços",
+    "untouchedHeading": "Serviços adicionados depois desta versão",
+    "untouchedNote": "Eles continuam rodando e não são alterados: {names}",
+    "confirm": "Voltar",
+    "cancel": "Cancelar"
   }
 }

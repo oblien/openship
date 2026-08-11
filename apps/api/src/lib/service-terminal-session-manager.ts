@@ -16,7 +16,8 @@
 
 import { randomBytes } from "node:crypto";
 import { env } from "../config/env";
-import type { ShellSession } from "@repo/adapters";
+import type { RuntimeAdapter, ShellSession } from "@repo/adapters";
+import { disposeRuntime } from "./deployment-runtime";
 import type { TerminalExitReason } from "@repo/db";
 import type { RequestContext } from "./request-context";
 
@@ -89,6 +90,18 @@ export interface ActiveServiceSession {
   serviceId: string;
   startedAt: number;
   shell: ShellSession;
+  /**
+   * The runtime whose transport this session's SHELL rides on, released by
+   * `unregisterServiceSession`.
+   *
+   * Owned by the SESSION and not by the WebSocket connection, because a session
+   * outlives its connection: a parked session keeps this shell across a drop, and
+   * the connection that later RESUMES it resolves a different runtime it never
+   * uses. Hanging the lifetime off the connection therefore released the wrong
+   * handle and stranded the one actually carrying the shell — on a remote server
+   * that is a Docker-over-SSH loopback bridge per terminal opened.
+   */
+  runtime: RuntimeAdapter | null;
   onTimeout: (sessionId: string, reason: TerminalExitReason) => void;
   lastActivityAt: number;
   idleTimer: ReturnType<typeof setTimeout>;
@@ -117,6 +130,8 @@ export function registerServiceSession(args: {
   userId: string;
   serviceId: string;
   shell: ShellSession;
+  /** The runtime that opened `shell`; disposed when the session ends. */
+  runtime?: RuntimeAdapter | null;
   onTimeout: (sessionId: string, reason: TerminalExitReason) => void;
 }): ActiveServiceSession {
   const now = Date.now();
@@ -129,6 +144,7 @@ export function registerServiceSession(args: {
     serviceId: args.serviceId,
     startedAt: now,
     shell: args.shell,
+    runtime: args.runtime ?? null,
     onTimeout: args.onTimeout,
     lastActivityAt: now,
     closed: false,
@@ -257,6 +273,10 @@ export function unregisterServiceSession(sessionId: string): boolean {
 
   clearTimeout(session.idleTimer);
   clearTimeout(session.hardCapTimer);
+  // The one place every ending path converges (user close, remote exit, idle and
+  // hard-cap timeouts all land here), so the shell's transport is released once.
+  disposeRuntime(session.runtime);
+  session.runtime = null;
   session.scrollback = [];
   session.scrollbackSize = 0;
   sessions.delete(sessionId);

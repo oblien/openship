@@ -30,7 +30,7 @@ import {
 function withFolder<T extends { folder?: string }>(input: T) {
   return { ...input, folder: normalizeFolderSlug(input.folder) };
 }
-import { sanitizeMailHtml } from '../../lib/sanitize';
+import { sanitizeMailHtml, blockRemoteImages } from '../../lib/sanitize';
 
 // Recipients arrive from the client as `{email, name}` objects (Sender).
 // We accept either that or a bare email string for backward compat.
@@ -254,9 +254,10 @@ export const mailRouter = router({
       return thread?.latest.attachments ?? [];
     }),
 
-  // Server-side HTML sanitize used by the read-pane preview. Remote-image
-  // blocking is best-effort: when `shouldLoadImages` is false we rewrite
-  // <img src=> to a 1×1 transparent gif and flag the result.
+  // Server-side HTML sanitize used by the read-pane preview. When
+  // `shouldLoadImages` is false every remote fetch in the body is
+  // neutralized (src, srcset, CSS url()) and the result is flagged so the
+  // client can show the "images hidden" banner.
   processEmailContent: protectedProcedure
     .input(
       z.object({
@@ -270,12 +271,8 @@ export const mailRouter = router({
       if (input.shouldLoadImages) {
         return { processedHtml: clean, hasBlockedImages: false };
       }
-      let hasBlockedImages = false;
-      const blocked = clean.replace(/<img\b([^>]*?)\bsrc\s*=\s*("[^"]*"|'[^']*')/gi, (_m, pre) => {
-        hasBlockedImages = true;
-        return `<img${pre}src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="`;
-      });
-      return { processedHtml: blocked, hasBlockedImages };
+      const { html, blocked } = blockRemoteImages(clean);
+      return { processedHtml: html, hasBlockedImages: blocked };
     }),
 
   // Autocomplete recipients out of the Sent envelope cache. Stub

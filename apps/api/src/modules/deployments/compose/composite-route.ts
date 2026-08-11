@@ -92,6 +92,9 @@ export function buildCompositeProxyLocations(
 }
 
 export interface CompositeRegistration {
+  /** vercel.json rules the compiler could not reproduce, for the caller to LOG. Nothing
+   *  read `compiled.skipped` before, so a dropped rule vanished without a word. */
+  skipped: string[];
   register: RouteRegister;
   frontendServiceId: string;
   backendServiceId: string;
@@ -147,6 +150,7 @@ export function buildCompositeRegistration(input: {
   return {
     frontendServiceId: plan.frontendServiceId,
     backendServiceId: plan.backendServiceId,
+    skipped: compiled?.skipped ?? [],
     register: {
       hostname: domain.hostname,
       isCustomDomain: domain.isCustomDomain,
@@ -155,6 +159,8 @@ export function buildCompositeRegistration(input: {
       proxyLocations,
       ...(compiled?.redirects.length ? { redirects: compiled.redirects } : {}),
       ...(compiled?.headerRules.length ? { headerRules: compiled.headerRules } : {}),
+      ...(compiled?.cleanUrls ? { cleanUrls: true } : {}),
+      ...(compiled?.trailingSlash === undefined ? {} : { trailingSlash: compiled.trailingSlash }),
     },
   };
 }

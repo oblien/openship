@@ -57,7 +57,7 @@ const CLI_OPTIONS = [
 ];
 
 const STEPS = [
-  { num: "01", title: "Install", desc: "One command in any package manager. Bun runtime, no daemons or agents." },
+  { num: "01", title: "Install", desc: "One command in any package manager. Runs on Node, no daemons or agents." },
   { num: "02", title: "Run",     desc: "openship up starts Openship locally (API + dashboard), or openship install for the desktop app." },
   { num: "03", title: "Ship",    desc: "openship init links your project, then openship deploy. TLS, DNS, databases, edge - done." },
 ];

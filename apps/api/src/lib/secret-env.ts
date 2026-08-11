@@ -34,8 +34,19 @@ export function maskEnv(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   if (!env) return out;
-  for (const key of Object.keys(env)) out[key] = ENV_MASK;
+  for (const key of Object.keys(env)) out[key] = maskValue(env[key]);
   return out;
+}
+
+/**
+ * An EMPTY value stays empty — there is nothing there to hide, and dots in its
+ * place are an active lie: the wizard reads "no value" off the empty string to
+ * flag a variable as needing one (`${VAR:?…}`, #472). Masking it showed the user
+ * a filled-looking secret field for a variable that was in fact unset, and the
+ * write path then unmask-merged the sentinel straight back to empty.
+ */
+function maskValue(value: string): string {
+  return value === "" ? "" : ENV_MASK;
 }
 
 /**
@@ -106,14 +117,15 @@ interface EnvMetaLike {
   defaultValue?: string;
   resolvedValue?: string;
   expression?: string;
+  required?: boolean;
 }
 
 /**
  * Mask a compose `environmentMeta` map. Keeps the structural fields (`source`,
- * `variable` — the variable NAME, not its value) so the scan UI can still show
- * where a value resolved from, but strips every value-bearing field
- * (`resolvedValue`, `defaultValue`, `expression` — a `${VAR:-secret}` default
- * embeds the value) so a secret can't leak through the metadata.
+ * `variable` — the variable NAME, not its value, and `required`) so the scan UI
+ * can still show where a value resolved from, but strips every value-bearing
+ * field (`resolvedValue`, `defaultValue`, `expression` — a `${VAR:-secret}`
+ * default embeds the value) so a secret can't leak through the metadata.
  */
 export function maskEnvironmentMeta(
   meta: Record<string, EnvMetaLike> | null | undefined,
@@ -124,8 +136,9 @@ export function maskEnvironmentMeta(
     out[key] = {
       ...(m.source !== undefined && { source: m.source }),
       ...(m.variable !== undefined && { variable: m.variable }),
-      ...(m.resolvedValue !== undefined && { resolvedValue: ENV_MASK }),
-      ...(m.defaultValue !== undefined && { defaultValue: ENV_MASK }),
+      ...(m.required !== undefined && { required: m.required }),
+      ...(m.resolvedValue !== undefined && { resolvedValue: maskValue(m.resolvedValue) }),
+      ...(m.defaultValue !== undefined && { defaultValue: maskValue(m.defaultValue) }),
     };
   }
   return out;

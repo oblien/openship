@@ -22,6 +22,11 @@
     "backToSetup": "Kurulum ekranına dön",
     "personal": "Kişisel"
   },
+  "mailRail": {
+    "selectServer": "E-posta sunucusu seç",
+    "switchServer": "E-posta sunucusunu değiştir",
+    "setupIncomplete": "Kurulum tamamlanmadı"
+  },
   "migration": {
     "inProgressTitle": "Taşıma işlemi devam ediyor",
     "inProgressBody": "Verileriniz taşınıyor. Geçiş tamamlandığında bu sayfa yenilenecektir — genellikle 30-90 saniye sürer.",

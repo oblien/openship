@@ -2,6 +2,7 @@ import { repos, type Project, type Deployment } from "@repo/db";
 import { isServiceSuccessStatus, isServiceFailureStatus } from "@repo/core";
 import { runtimeTarget } from "../../config";
 import { buildBackgroundContext } from "../../lib/request-context";
+import { resolveOrgOwner } from "../../lib/org-actor";
 import { createCheckRun, updateCheckRun } from "../github/github.service";
 
 // Per-service GitHub-Checks + service_deployment fan-out for a multi-service
@@ -97,13 +98,15 @@ export async function emitServiceCheckRun(opts: {
   const { project, dep, serviceDeploymentId, serviceName, phase, conclusion, output } = opts;
   if (!project.gitOwner || !project.gitRepo || !dep.commitSha) return;
 
-  const orgMembers = await repos.member
-    .listByOrganization(dep.organizationId)
-    .catch(() => [] as Array<{ userId: string }>);
-  const actorUserId = orgMembers[0]?.userId;
-  if (!actorUserId) return;
+  // Act as the org OWNER, not `members[0]`. A check run is Openship reporting on a
+  // build it already ran — not a member action — but the GitHub authorization gate
+  // resolves the actor's real role from the DB, so an arbitrary first member
+  // (ordering is unspecified) made this feature work or silently vanish depending
+  // on who happened to sort first and what repos they were granted.
+  const actor = await resolveOrgOwner(dep.organizationId).catch(() => null);
+  if (!actor?.userId) return;
   const actorCtx = buildBackgroundContext({
-    userId: actorUserId,
+    userId: actor.userId,
     organizationId: dep.organizationId,
     label: "build:check-run",
   });

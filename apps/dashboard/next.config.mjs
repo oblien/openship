@@ -37,6 +37,19 @@ const nextConfig = {
           source: "/.well-known/oauth-protected-resource",
           destination: "/api/proxy/.well-known/oauth-protected-resource",
         },
+        // RFC 9728 / RFC 8414 PATH-AWARE discovery: a client configured with
+        // `https://host/api/mcp` looks for its metadata under the well-known
+        // prefix + that path. Without these the strict clients (Claude.ai) 404
+        // and fall back to the origin document, whose `resource` doesn't match
+        // the URL they connected to.
+        {
+          source: "/.well-known/oauth-authorization-server/:path*",
+          destination: "/api/proxy/.well-known/oauth-authorization-server/:path*",
+        },
+        {
+          source: "/.well-known/oauth-protected-resource/:path*",
+          destination: "/api/proxy/.well-known/oauth-protected-resource/:path*",
+        },
         { source: "/api/auth/:path*", destination: "/api/proxy/api/auth/:path*" },
         { source: "/api/mcp", destination: "/api/proxy/api/mcp" },
       ],

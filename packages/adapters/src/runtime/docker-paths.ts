@@ -1,8 +1,36 @@
 import { access, readdir } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 function toPosixPath(value: string): string {
   return value.split(sep).filter(Boolean).join("/");
+}
+
+/**
+ * Split a caller-supplied path into segments, refusing any that climbs out of
+ * the directory it will be resolved against.
+ *
+ * These values are joined onto a host temp build-context dir, interpolated as
+ * a generated Dockerfile `WORKDIR`, and used as the root of the tarball
+ * uploaded to a cloud workspace. A surviving `..` escapes all three — which is
+ * how `rootDirectory: "../.."` archived arbitrary host directories into the
+ * caller's own cloud workspace (GHSA-443m-7g52-94w8).
+ *
+ * Throwing rather than stripping is deliberate: silently rewriting `../../etc`
+ * to the repo root would build and deploy something the caller did not ask for.
+ * Segmenting on BOTH separators is also deliberate — splitting on the platform
+ * `sep` would let a Windows control plane pass `..\..` through as one opaque
+ * segment that never equals "..".
+ */
+function toSafeSegments(value: string, label: string): string[] {
+  const segments = value.split(/[\\/]/).filter((segment) => segment && segment !== ".");
+
+  if (segments.includes("..")) {
+    throw new Error(
+      `Invalid ${label} ${JSON.stringify(value)}: path segments must not contain "..".`,
+    );
+  }
+
+  return segments;
 }
 
 export function normalizeDockerRelativePath(value?: string | null): string {
@@ -14,7 +42,29 @@ export function normalizeDockerRelativePath(value?: string | null): string {
     return "";
   }
 
-  return normalized.split(/[\\/]/).filter(Boolean).join("/");
+  return toSafeSegments(normalized, "path").join("/");
+}
+
+/**
+ * Join a sub-path onto a base directory and PROVE the result stayed inside it.
+ *
+ * Backstop for the tar-and-upload path, which archives whatever directory it is
+ * handed: correctness there must not depend on a normalizer having been called
+ * upstream. Absolute input is treated as relative to the base rather than
+ * honoured, so it is contained rather than followed.
+ */
+export function resolveWithinDirectory(baseDir: string, relativePath?: string | null): string {
+  const base = resolve(baseDir);
+  const target = resolve(base, ...toSafeSegments(relativePath?.trim() ?? "", "path"));
+  const escape = relative(base, target);
+
+  // Segment-precise: a plain startsWith("..") would also reject a directory
+  // legitimately named "..foo".
+  if (escape === ".." || escape.startsWith(`..${sep}`) || isAbsolute(escape)) {
+    throw new Error(`Resolved path ${JSON.stringify(target)} escapes ${JSON.stringify(base)}.`);
+  }
+
+  return target;
 }
 
 export function normalizeDockerRootDirectory(rootDirectory?: string, localPath?: string): string {
@@ -43,7 +93,10 @@ export function normalizeDockerRootDirectory(rootDirectory?: string, localPath?:
     return "";
   }
 
-  return toPosixPath(normalized);
+  // Must run for relative input too. The `..` check above is reachable only
+  // when the value is absolute AND localPath is known, so a plain "../.." used
+  // to walk straight through to the callers.
+  return toSafeSegments(normalized, "rootDirectory").join("/");
 }
 
 function resolveExplicitDockerfileCandidate(

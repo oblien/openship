@@ -13,6 +13,11 @@
  *
  * No build/start-command knobs - the engine is fully prescriptive for
  * webmail. Operators only choose where and what domain.
+ *
+ * One extra state: a webmail deployed by a PRE-CATALOG openship can't be
+ * redeployed, only replaced. The API refuses it with 409 `LEGACY_WEBMAIL` until
+ * the request carries `replaceLegacy`, so this page explains what goes and turns
+ * Deploy into Replace - the operator confirms by pressing that, not a dialog.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -24,7 +29,9 @@ import {
   Globe,
   Inbox,
   Loader2,
+  RefreshCw,
   Server,
+  TriangleAlert,
 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { OptionCard } from "../[slug]/components/DeployTargetStep";
@@ -35,7 +42,10 @@ import {
   type MailSetupStatus,
   type WebmailTargetOption,
 } from "@/lib/api";
-import { getApiErrorMessage } from "@/lib/api/client";
+import { getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
+
+/** The API's code for "this webmail predates the catalog app". */
+const LEGACY_WEBMAIL_CODE = "LEGACY_WEBMAIL";
 
 export default function DeployMailPage() {
   const searchParams = useSearchParams();
@@ -55,6 +65,9 @@ export default function DeployMailPage() {
   const [selectedKey, setSelectedKey] = useState("");
   const [targets, setTargets] = useState<WebmailTargetOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // Armed from the mail status (the normal path), or by a 409 LEGACY_WEBMAIL on a
+  // stale page - either way the operator sees the notice before the button acts.
+  const [replacing, setReplacing] = useState(false);
 
   useEffect(() => {
     if (!mailServerId) {
@@ -69,7 +82,20 @@ export default function DeployMailPage() {
       if (cancelled) return;
       if (st) {
         setStatus(st);
-        if (st.domain) setDomain(`mail.${st.domain}`);
+        // An existing webmail's own hostname wins: a redeploy (or a replace) that
+        // silently defaulted to `mail.<domain>` would MOVE a webmail the operator
+        // came here to redeploy in place.
+        //
+        // `routingUnknown` is that same move by a different route: the API returns no
+        // hostname when it could not READ the routing, which is indistinguishable here
+        // from having none. So an unknown one prefills nothing and the operator types
+        // the address — an empty field asks a question, a guessed one relocates a live
+        // webmail without ever asking.
+        const existing = st.webmail?.hostname;
+        if (existing) setDomain(existing);
+        else if (st.webmail?.routingUnknown) setDomain("");
+        else if (st.domain) setDomain(`mail.${st.domain}`);
+        if (st.webmail?.legacy) setReplacing(true);
       }
       setTargets(tg.options);
       const first = tg.options.find((o) => !o.disabled);
@@ -118,9 +144,20 @@ export default function DeployMailPage() {
         mailServerId,
         hostname: domain.toLowerCase(),
         target,
+        // Only ever true once the notice below has been on screen.
+        replaceLegacy: replacing,
       });
       router.push(`/build/${deploymentId}`);
     } catch (err) {
+      // The status this page loaded predates the legacy webmail it's about to
+      // deploy over. Show what a replace costs and let them press again - never
+      // retry a destructive action for them.
+      if (getApiErrorCode(err) === LEGACY_WEBMAIL_CODE && !replacing) {
+        setReplacing(true);
+        toast.showToast(tm.legacyBody, "error", tm.legacyTitle);
+        setSubmitting(false);
+        return;
+      }
       toast.showToast(
         getApiErrorMessage(err, tm.deployFailed),
         "error",
@@ -177,6 +214,17 @@ export default function DeployMailPage() {
 
       <div className="grid lg:grid-cols-[1fr_340px] gap-6">
         <div className="space-y-6">
+          {replacing && (
+            <div className="rounded-xl border border-warning-border bg-warning-bg p-4 flex gap-3">
+              <TriangleAlert className="size-4 text-warning shrink-0 mt-0.5" strokeWidth={2} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{tm.legacyTitle}</p>
+                <p className="text-sm text-muted-foreground mt-1">{tm.legacyBody}</p>
+                <p className="text-sm text-muted-foreground mt-1">{tm.legacyKept}</p>
+              </div>
+            </div>
+          )}
+
           <Section
             title={tm.deployToTitle}
             hint={tm.deployToHint}
@@ -259,6 +307,11 @@ export default function DeployMailPage() {
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin" /> {tm.starting}
+              </>
+            ) : replacing ? (
+              <>
+                <RefreshCw className="size-4" />
+                {tm.replaceButton}
               </>
             ) : (
               <>

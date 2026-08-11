@@ -1,0 +1,13 @@
+-- User-chosen internal DNS alias for a single-app native project.
+--
+-- Single-app containers now join their own `openship-<slug>` network with a
+-- stable default alias (`<slug>`), the same east-west reachability compose
+-- services already have. This column lets an operator add a custom hostname
+-- that resolves ALONGSIDE the default (both point at the container) — it never
+-- replaces the default and never changes public exposure (the edge stays the
+-- sole public ingress; publishing is loopback-only).
+--
+-- Nullable, no default: absence means "default alias only" and existing rows
+-- need no backfill. Compose services store the equivalent in the zero-migration
+-- `service.advanced.alias` JSONB, so only single-app needs a column.
+ALTER TABLE "project" ADD COLUMN IF NOT EXISTS "internal_alias" text;

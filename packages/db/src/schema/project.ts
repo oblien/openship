@@ -19,6 +19,7 @@ import type {
 } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
+import { servers } from "./servers";
 
 // ─── Project apps ────────────────────────────────────────────────────────────
 
@@ -269,6 +270,25 @@ export const project = pgTable(
      */
     runtimeMode: text("runtime_mode"),
     /**
+     * Deployment-class axes (see @repo/core deployment-class.ts). These
+     * deconflate the legacy `hasServer`/`hasBuild` booleans, which each mixed
+     * two independent concerns (issue #538). All three are EXPLICIT OVERRIDES:
+     * NULL means "derive from the legacy flags + framework + source", so every
+     * pre-existing row keeps classifying exactly as before and no backfill is
+     * needed. Snapshotted onto each deployment's config, like `runtimeMode`.
+     *
+     *  sourceKind   — "git" | "image" | "upload": where code comes from (git
+     *                 needs a clone token; the #538-A gate reads this).
+     *  buildKind    — "dockerfile" | "buildpack" | "static" | "prebuilt".
+     *  workloadType — "web" | "worker" | "static": the third runtime state
+     *                 (#538-B). "worker" = a portless long-running container
+     *                 (no listening port, no route); reachable only by setting
+     *                 this explicitly.
+     */
+    sourceKind: text("source_kind"),
+    buildKind: text("build_kind"),
+    workloadType: text("workload_type"),
+    /**
      * How many past releases stay restorable. Explicit operator override;
      * NULL = AUTO — use `rollbackWindowComputed` (sized from the deploy
      * host's free disk), falling back to
@@ -286,7 +306,11 @@ export const project = pgTable(
     /** Mean on-disk size of ONE retained release for this project, in bytes
      *  (measured from the project's own built images). Null = never measured. */
     snapshotSizeBytes: bigint("snapshot_size_bytes", { mode: "number" }),
-    /** When snapshotSizeBytes / rollbackWindowComputed were last measured. */
+    /** When the auto window was last sized — i.e. the last time BOTH the
+     *  snapshot size and the host's free disk were readable. A deploy whose disk
+     *  probe failed still refreshes `snapshotSizeBytes` and leaves this (and
+     *  `rollbackWindowComputed`) alone, so "auto" is never claimed on a figure we
+     *  didn't measure. */
     capacityMeasuredAt: timestamp("capacity_measured_at"),
     /**
      * Retention preference for this project's rollback artifacts:
@@ -384,6 +408,36 @@ export const project = pgTable(
      */
     cloudWorkspaceId: text("cloud_workspace_id"),
 
+    /**
+     * Durable owner of the SERVER this project deploys to (self-hosted). The
+     * per-deployment `deployment.meta.serverId` is a volatile snapshot that a
+     * fresh/partial redeploy could fail to re-derive, which then let the deploy
+     * fall back to "local" and null the project's verified custom-domain ports —
+     * the Access-URL-regressed-to-localhost bug. This column is the single
+     * durable binding; `resolveSnapshotTarget` reads it first and re-stamps meta.
+     *
+     * Unlike a `deployTarget` column (which we deliberately do NOT add — see
+     * cloudWorkspaceId above), this doesn't duplicate a source of truth: the
+     * effective target is DERIVED — `cloudWorkspaceId ? "cloud" : serverId ?
+     * "server" : "local"`. That derivation lives in ONE function,
+     * `deriveProjectDeployTarget` in @repo/core, so this rule has a single
+     * implementation to change; read surfaces reach it through
+     * `projectService.resolveProjectDeployTarget`. ON DELETE SET NULL so removing a
+     * server unbinds its projects rather than cascade-deleting them.
+     */
+    serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
+
+    /**
+     * User-chosen internal DNS alias for a single-app native project. Resolves
+     * east-west ALONGSIDE the default `<slug>` alias on the project's
+     * `openship-<slug>` network (both point at the container) — it never
+     * replaces the default and never changes public exposure (edge stays the
+     * sole ingress). Null = no custom alias, default only. Normalized to a
+     * DNS-safe label (`normalizeServiceLabel`) before it reaches Docker.
+     * Compose services carry the equivalent in `service.advanced.alias`.
+     */
+    internalAlias: text("internal_alias"),
+
     /* ── State ──────────────────────────────────────────────────────────── */
     /** Currently active deployment ID */
     activeDeploymentId: text("active_deployment_id"),
@@ -402,12 +456,36 @@ export const project = pgTable(
     webhookSecret: text("webhook_secret"),
     /** Whether pushes to the branch trigger auto-deploy */
     autoDeploy: boolean("auto_deploy").notNull().default(false),
+    /**
+     * Collect per-path request counts at the edge ("Top Paths").
+     *
+     * OPT-IN, and the only analytics dimension that is: measured on the shipped edge
+     * image, the path block is 1.72 us of the log handler's ~3.0 us — 57% — and 1.38 us of
+     * that is string normalization rather than counter writes. It is also the
+     * highest-cardinality dimension (up to 2000 keys per domain per day, against ~200
+     * countries) and the largest column in the daily rollup.
+     *
+     * Everything else is effectively free because the edge is already handling the
+     * request; this one is not, so it is a choice rather than a default.
+     *
+     * Default false applies to EXISTING projects on upgrade too, which is deliberate —
+     * nobody opted into paying for this, so nobody keeps paying for it silently.
+     */
+    collectPaths: boolean("collect_paths").notNull().default(false),
     /** Auto-detected favicon URL from the deployed site */
     favicon: text("favicon"),
     /** Last time favicon detection was attempted for this project */
     faviconCheckedAt: timestamp("favicon_checked_at"),
     /** Soft delete */
     deletedAt: timestamp("deleted_at"),
+    /**
+     * Set when the operator disables the project (containers stopped on purpose),
+     * cleared on enable. Recorded because intent is otherwise unknowable from the
+     * outside: a stopped container looks identical whether a human stopped it or it
+     * crashed, so without this marker the health watch would page about every
+     * deliberately-disabled project forever.
+     */
+    disabledAt: timestamp("disabled_at"),
     /**
      * Set true at the start of the atomic teardown flow so concurrent
      * requests refuse to operate on the row. The teardown either succeeds

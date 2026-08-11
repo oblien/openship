@@ -9,6 +9,7 @@
  */
 
 import { SYSTEM } from "@repo/core";
+import type { InstallPhaseEvent, InstallPhaseId } from "@repo/core";
 import { TtlCache } from "../../lib/cache";
 import type { LogEntry, PromptPayload } from "@repo/adapters";
 import { PromptRegistry } from "../../lib/prompt-gateway";
@@ -33,6 +34,10 @@ export interface BuildSessionState {
   errorMessage?: string;
   /** Per-service deployment statuses (compose projects only, for replay on reconnect) */
   serviceStatuses: Map<string, ServiceStatusPayload>;
+  /** Latest state of each install phase (catalog-app installs). Stored — not just
+   *  broadcast — so a page refresh/reconnect replays the stepper. Parallel to the
+   *  low-level build-step/progress model; see @repo/core install-phases. */
+  installPhases: Map<InstallPhaseId, InstallPhaseEvent>;
   /** The prompt currently awaiting a user decision (e.g. edge 80/443 takeover,
    *  port conflict). Held here — not just broadcast — so a page refresh /
    *  reconnect re-shows it (replayed in subscribe). Cleared on response/timeout. */
@@ -106,6 +111,7 @@ export function createSession(
     status: "queued",
     logs: [],
     serviceStatuses: new Map(),
+    installPhases: new Map(),
     subscribers: new Set(),
     startedAt: Date.now(),
     nextSeq: 0,
@@ -178,6 +184,27 @@ export function broadcastServiceStatus(
   const dead: SseWriter[] = [];
   for (const writer of session.subscribers) {
     const ok = writer("service-status", payload);
+    if (!ok) dead.push(writer);
+  }
+  for (const w of dead) session.subscribers.delete(w);
+}
+
+/** Broadcast an install-phase transition (catalog-app installs). Stored latest-
+ *  per-id for reconnect replay. This is the stepper's source of truth — it does
+ *  NOT touch the build-step/progress model. */
+export function broadcastInstallPhase(
+  sessionId: string,
+  phase: InstallPhaseEvent,
+): void {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  session.installPhases.set(phase.id, phase);
+
+  const payload = JSON.stringify({ type: "install-phase", ...phase });
+  const dead: SseWriter[] = [];
+  for (const writer of session.subscribers) {
+    const ok = writer("install-phase", payload);
     if (!ok) dead.push(writer);
   }
   for (const w of dead) session.subscribers.delete(w);
@@ -317,6 +344,11 @@ export function subscribe(
       type: "service-status",
       ...svcStatus,
     }));
+  }
+
+  // Replay install-phase state (catalog-app installs) so a refresh resumes the stepper
+  for (const phase of session.installPhases.values()) {
+    writer("install-phase", JSON.stringify({ type: "install-phase", ...phase }));
   }
 
   // Re-show a still-pending decision prompt (edge takeover, port conflict) so a

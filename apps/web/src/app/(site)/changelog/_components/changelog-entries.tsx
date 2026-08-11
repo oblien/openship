@@ -1,5 +1,6 @@
-import type { ChangelogEntry } from "@/lib/changelog";
+import type { ChangelogEntry, ChangelogSection } from "@/lib/changelog";
 import { ShareButton } from "./share-button";
+import { ChangelogControls } from "./changelog-controls";
 
 export type Entry = ChangelogEntry;
 
@@ -18,10 +19,79 @@ function fmtDate(iso: string): { top: string; year: string } {
   };
 }
 
+function Chevron({ className }: { className: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M6 4l4 4-4 4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** One `### ` group: a label, its bullets, and any trailing note paragraphs. */
+function Section({ section }: { section: ChangelogSection }) {
+  return (
+    <section className="cl-section">
+      {section.title ? <h3 className="cl-section-title">{section.title}</h3> : null}
+
+      {section.items.length > 0 ? (
+        <ul className="cl-items">
+          {section.items.map((item) =>
+            item.detailHtml ? (
+              <li className="cl-item" key={item.title}>
+                <details className="cl-item-details">
+                  <summary className="cl-item-sum">
+                    <Chevron className="cl-chev cl-chev--item" />
+                    <span
+                      className="cl-item-title"
+                      dangerouslySetInnerHTML={{ __html: item.title }}
+                    />
+                  </summary>
+                  <div
+                    className="cl-item-detail changelog-prose"
+                    dangerouslySetInnerHTML={{ __html: item.detailHtml }}
+                  />
+                </details>
+              </li>
+            ) : (
+              // A one-liner has nothing to open — render it flat, not as a dead toggle.
+              <li className="cl-item cl-item--flat" key={item.title}>
+                <span className="cl-dot" aria-hidden="true" />
+                <span className="cl-item-title" dangerouslySetInnerHTML={{ __html: item.title }} />
+              </li>
+            ),
+          )}
+        </ul>
+      ) : null}
+
+      {section.notesHtml.map((note) => (
+        <div
+          key={note}
+          className="cl-note changelog-prose"
+          dangerouslySetInnerHTML={{ __html: note }}
+        />
+      ))}
+    </section>
+  );
+}
+
 /**
- * Renders the changelog entry list. `highlightSlug` (set on `/changelog/<slug>`)
- * gives that one entry a highlighted card treatment; callers pin it to the top
- * so a shared link lands on it as entry #1.
+ * Renders the changelog as three collapsed tiers — version → item → detail — so a
+ * page carrying every release opens as a short scannable list instead of many
+ * screens of prose, and a closed tier costs no layout or paint.
+ *
+ * Native `<details>` on purpose: no client JS, no hydration payload (this stays a
+ * server component, so the entry HTML is never serialized), and closed content is
+ * still in the document for crawlers and find-in-page.
+ *
+ * The open version is the newest one, or — on `/changelog/<slug>` — the shared
+ * entry, which `highlightSlug` also gives a highlighted card treatment. Callers
+ * pin that entry to the top so a shared link lands on it as entry #1.
  */
 export function ChangelogEntries({
   entries,
@@ -31,55 +101,65 @@ export function ChangelogEntries({
   highlightSlug?: string;
 }) {
   return (
-    <>
-      {entries.map((entry) => {
+    <div className="cl-list">
+      <ChangelogControls releaseCount={entries.length} />
+
+      {entries.map((entry, i) => {
         const highlighted = entry.slug === highlightSlug;
         const { top, year } = fmtDate(entry.date);
         return (
           <article
             key={entry.slug}
             id={entry.slug}
-            className={`changelog-entry grid grid-cols-1 gap-4 py-12 sm:grid-cols-[140px_1fr] sm:gap-8 ${
-              highlighted ? "changelog-highlight" : "border-t"
-            }`}
-            style={highlighted ? undefined : { borderColor: "var(--th-bd-subtle)" }}
+            className={`changelog-entry cl-entry ${highlighted ? "changelog-highlight" : ""}`}
           >
-            <div className="sm:pt-1">
-              <div className="th-text-title text-sm font-semibold">{top}</div>
-              <div className="th-text-muted text-sm">{year}</div>
-            </div>
-
-            <div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <span className="th-text-heading text-xl font-semibold tracking-[-0.01em]">
-                  {entry.displayVersion}
+            <details className="cl-version" open={highlightSlug ? highlighted : i === 0}>
+              <summary className="cl-version-sum">
+                <span className="cl-date">
+                  <span className="cl-date-top">{top}</span>
+                  <span className="cl-date-year">{year}</span>
                 </span>
-                {entry.tags.map((t) => {
-                  const s =
-                    TAG_STYLE[t] ?? {
+
+                <span className="cl-version-head">
+                  <Chevron className="cl-chev cl-chev--version" />
+                  <span className="cl-version-num">{entry.displayVersion}</span>
+
+                  {entry.tags.map((t) => {
+                    const s = TAG_STYLE[t] ?? {
                       bg: "var(--th-sf-06)",
                       fg: "var(--th-text-secondary)",
                     };
-                  return (
-                    <span
-                      key={t}
-                      className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide"
-                      style={{ background: s.bg, color: s.fg }}
-                    >
-                      {t}
-                    </span>
-                  );
-                })}
-                <ShareButton slug={entry.slug} className="ml-auto" />
+                    return (
+                      <span className="cl-tag" key={t} style={{ background: s.bg, color: s.fg }}>
+                        {t}
+                      </span>
+                    );
+                  })}
+
+                  <span className="cl-count">
+                    {entry.itemCount} {entry.itemCount === 1 ? "update" : "updates"}
+                  </span>
+                  <ShareButton slug={entry.slug} className="cl-share" />
+                </span>
+              </summary>
+
+              <div className="cl-version-body">
+                {/* On /changelog/<slug> the page header already carries this entry's
+                    lead paragraph — don't print it twice. */}
+                {entry.leadHtml && !highlighted ? (
+                  <div
+                    className="cl-lead changelog-prose"
+                    dangerouslySetInnerHTML={{ __html: entry.leadHtml }}
+                  />
+                ) : null}
+                {entry.sections.map((section) => (
+                  <Section key={section.title || "intro"} section={section} />
+                ))}
               </div>
-              <div
-                className="changelog-prose th-text-body mt-4 text-[15px] leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: entry.html }}
-              />
-            </div>
+            </details>
           </article>
         );
       })}
-    </>
+    </div>
   );
 }

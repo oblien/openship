@@ -10,13 +10,14 @@ import {
   githubFetch,
   getGitHubAuthMode,
 } from "./github.auth";
-import { ghFetch } from "./github.http";
+import { ghFetch, ghSend } from "./github.http";
 import { mapRepositories } from "./sources/mappers";
 import { isIgnoredRepoPath } from "../../lib/project-root-detector";
 import type { RequestContext } from "../../lib/request-context";
 import { buildBackgroundContext } from "../../lib/request-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
-import { safeErrorMessage } from "@repo/core";
+import { assertGitHubRepoAccess, canUseGitHubRepo } from "./github-access";
+import { AppError, safeErrorMessage } from "@repo/core";
 import { repos as dbRepos } from "@repo/db";
 import { encrypt, decrypt } from "../../lib/encryption";
 import type {
@@ -101,13 +102,7 @@ export interface PatScopeReport {
  * GitHub-specific and the constants above belong with it.
  */
 export async function inspectPatScope(token: string): Promise<PatScopeReport> {
-  const res = await fetch("https://api.github.com/user", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  const res = await ghSend(token, { url: "https://api.github.com/user" });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(
@@ -284,6 +279,7 @@ export async function getRepository(
   const data = await githubFetch<GitHubRepository>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
   });
 
@@ -314,6 +310,28 @@ export async function createRepository(
   name: string,
   opts: { description?: string; private?: boolean; owner?: string; } = {},
 ): Promise<GitHubRepository> {
+  // Owner-level WRITE gate (defense-in-depth for GHSA-hp2g-hw7g-f3vm). Creating
+  // a repo under an org account uses the org's App installation token, so it must
+  // clear a write grant at that owner — a read grant, or a grant on some other
+  // owner, must not authorize it. Creating under the caller's OWN account
+  // (no owner) uses the caller's own credential and needs no org gate.
+  if (opts.owner) {
+    // "authority", not the default "reach": creating a repo is an ACCOUNT-level
+    // mutation, so a write grant on one repo under `acme` is not authority to add
+    // repos to `acme`. Only an installation-level or all-GitHub grant (or the
+    // owner) is.
+    const allowed = await canUseGitHubRepo(ctx, { owner: opts.owner }, "write", {
+      ownerLevel: "authority",
+    });
+    if (!allowed) {
+      throw new AppError(
+        `You don't have permission to create repositories under ${opts.owner}. Ask an organization owner to grant you write access.`,
+        403,
+        "GITHUB_ACCESS_DENIED",
+      );
+    }
+  }
+
   const url = opts.owner
     ? `https://api.github.com/orgs/${encodeURIComponent(opts.owner)}/repos`
     : "https://api.github.com/user/repos";
@@ -339,9 +357,13 @@ export async function deleteRepository(
   owner: string,
   repo: string
 ): Promise<void> {
+  // Per-repo WRITE gate (defense-in-depth for GHSA-hp2g-hw7g-f3vm) — a read grant,
+  // or a grant on a DIFFERENT repo under this owner, must not delete this one.
+  await assertGitHubRepoAccess(ctx, { owner, repo }, "write");
   await githubFetch({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
     method: "DELETE",
   });
@@ -366,8 +388,14 @@ export async function createDeployKey(
   return githubFetch<{ id: number }>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/keys`,
     method: "POST",
+    // READ tier despite being a POST: deploy keys are minted lazily AT DEPLOY TIME
+    // for a server in `ssh-deploy-key` mode, and the key is read-only. "May I
+    // deploy this repo" is what authorizes it, so requiring a write grant here
+    // would break deploys for a member holding a legitimate read grant.
+    authorizeAs: "read",
     params: { title, key: publicKey, read_only: readOnly },
   });
 }
@@ -382,8 +410,12 @@ export async function revokeDeployKey(
   await githubFetch({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/keys/${keyId}`,
     method: "DELETE",
+    // Same tier as minting it (see createDeployKey) — this revokes OUR OWN
+    // read-only key on disconnect, not the caller's repo administration.
+    authorizeAs: "read",
   });
 }
 
@@ -400,6 +432,7 @@ export async function listBranches(
   return githubFetch<GitHubBranch[]>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
     params: { per_page: 100 },
   });
@@ -418,6 +451,7 @@ export async function getLatestCommit(
     const data = await githubFetch<{ sha: string; commit: { message: string } }>({
       ctx,
       owner,
+      repo,
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(branch)}`,
     });
     return { sha: data.sha, message: data.commit.message };
@@ -455,6 +489,7 @@ export async function getRecentCommits(
     }>>({
       ctx,
       owner,
+      repo,
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`,
       params: { sha: branch, per_page: String(perPage) },
     });
@@ -496,6 +531,7 @@ export async function compareCommits(
     }>({
       ctx,
       owner,
+      repo,
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
     });
     const out = new Set<string>();
@@ -524,6 +560,7 @@ export async function listFiles(
   return githubFetch<GitHubFileContent[]>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${filePath}`,
     params: opts.branch ? { ref: opts.branch } : undefined,
   });
@@ -542,6 +579,7 @@ export async function listRepositoryTree(
   const data = await githubFetch<GitHubTreeResponse>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(ref)}`,
     params: { recursive: 1 },
   });
@@ -579,6 +617,7 @@ export async function getFileContent(
   const data = await githubFetch<GitHubFileContent>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${file}`,
     params: opts.branch ? { ref: opts.branch } : undefined,
   });
@@ -614,6 +653,7 @@ export async function listWebhooks(
   return githubFetch<GitHubWebhook[]>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`,
   });
 }
@@ -641,6 +681,7 @@ export async function createWebhook(
   const data = await githubFetch<GitHubWebhook>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`,
     method: "POST",
     params: {
@@ -671,6 +712,7 @@ export async function updateWebhook(
   const data = await githubFetch<GitHubWebhook>({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks/${hookId}`,
     method: "PATCH",
     params: patch,
@@ -687,9 +729,12 @@ export async function deleteWebhook(
   repo: string,
   hookId: number
 ): Promise<void> {
+  // Per-repo WRITE gate (defense-in-depth for GHSA-hp2g-hw7g-f3vm).
+  await assertGitHubRepoAccess(ctx, { owner, repo }, "write");
   await githubFetch({
     ctx,
     owner,
+    repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks/${hookId}`,
     method: "DELETE",
   });
@@ -718,8 +763,13 @@ export async function createCheckRun(
     const data = await githubFetch<{ id: number; html_url?: string }>({
       ctx,
       owner,
+      repo,
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs`,
       method: "POST",
+      // READ tier: a check run REPORTS the status of a build we were already
+      // authorized to run. It is deploy-tier status reporting, not repo
+      // administration, so a read grant is the right authority.
+      authorizeAs: "read",
       params: {
         name: opts.name,
         head_sha: opts.headSha,
@@ -756,8 +806,11 @@ export async function updateCheckRun(
     await githubFetch({
       ctx,
       owner,
+      repo,
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${checkRunId}`,
       method: "PATCH",
+      // Same tier as createCheckRun — status reporting on a build already authorized.
+      authorizeAs: "read",
       params: {
         status: opts.status,
         completed_at: new Date().toISOString(),
@@ -1020,6 +1073,10 @@ export async function registerWebhook(
   webhookUrl = sharedWebhookUrl(),
   opts: { projectId?: string } = {},
 ): Promise<{ hookId: number | null; events: string[] }> {
+  // Per-repo WRITE gate (defense-in-depth for GHSA-hp2g-hw7g-f3vm) — registering a
+  // deploy webhook mutates the repo, so it must clear a write grant on THIS repo.
+  // Background callers (the boot-sweep backfill) run as the org owner and pass.
+  await assertGitHubRepoAccess(ctx, { owner, repo }, "write");
   // Per-project secret (reuse-or-mint, persisted by ensureProjectWebhookSecret)
   // for project-scoped registrations; env fallback for project-less callers.
   const secret = opts.projectId

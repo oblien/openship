@@ -33,13 +33,19 @@ import {
 import { runCloudPreflight } from "../../lib/cloud-preflight";
 import { cloudRuntimeTarget } from "../../config/env";
 import * as githubAuth from "../github/github.auth";
+import { canMintInstallationToken } from "../github/github-access";
 import {
   proxyCloudAnalytics,
   CloudAnalyticsForbiddenError,
   type CloudAnalyticsOperation,
 } from "./cloud-analytics.service";
 import { revokeCloudSession } from "./cloud-session.service";
-import { syncCloudEdgeProxy, deleteCloudEdgeProxy } from "./cloud-edge-proxy.service";
+import {
+  syncCloudEdgeProxy,
+  deleteCloudEdgeProxy,
+  requestCloudEdgeVerification,
+  checkCloudEdgeVerification,
+} from "./cloud-edge-proxy.service";
 import {
   createCloudPage,
   dispatchCloudPageAction,
@@ -473,6 +479,52 @@ export async function deleteEdgeProxy(c: Context) {
     return c.json({ ok: true, removed: result.removed });
   } catch (err) {
     return oblienErrorResponse(c, err, "Failed to delete edge proxy");
+  }
+}
+
+/**
+ * POST /api/cloud/edge-proxy/verify  { target }
+ *
+ * Start proving that the caller controls a routing target. Returns a one-time token
+ * and the path to serve it at; the box installs it on its edge and then calls
+ * /verify-check. Namespace-scoped, so the record belongs to the caller's org.
+ */
+export async function requestEdgeVerification(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{ target?: string }>();
+  if (!body.target) {
+    return c.json({ error: "target is required" }, 400);
+  }
+  try {
+    const result = await requestCloudEdgeVerification(ctx.organizationId, { target: body.target });
+    if (!result.ok) return c.json({ error: result.error }, result.status);
+    return c.json({ ok: true, verification: result.verification });
+  } catch (err) {
+    return oblienErrorResponse(c, err, "Failed to request edge target verification");
+  }
+}
+
+/**
+ * POST /api/cloud/edge-proxy/verify-check  { verificationId }
+ *
+ * Run the probe for a challenge this org requested. The upstream fetches the token
+ * from the target over an SSRF-safe pinned connection; on success the target becomes
+ * routable and the route is pinned to the validated IP.
+ */
+export async function checkEdgeVerification(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{ verificationId?: number }>();
+  if (typeof body.verificationId !== "number") {
+    return c.json({ error: "verificationId is required" }, 400);
+  }
+  try {
+    const result = await checkCloudEdgeVerification(ctx.organizationId, {
+      verificationId: body.verificationId,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status);
+    return c.json({ ok: true, verification: result.verification });
+  } catch (err) {
+    return oblienErrorResponse(c, err, "Failed to check edge target verification");
   }
 }
 
@@ -1104,13 +1156,37 @@ export async function githubInstallations(c: Context) {
  * against github.com for the actual git clone — cloud never sees the
  * source code.
  *
- * SECURITY: `installationId` is intentionally NOT accepted from the
- * request body — see service comments.
+ * SECURITY, two halves:
+ *   - `installationId` is intentionally NOT accepted from the request body, so a
+ *     caller cannot name another org's installation — see service comments.
+ *   - the caller must hold a GitHub grant for what they are asking for. The route
+ *     tag alone does NOT establish this: "cloud" is an org-singleton resource, so a
+ *     plain `member` satisfies `cloud:write`. See the gate in the handler.
  */
 export async function githubInstallationToken(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{ owner?: string; repos?: string[] }>();
   if (!body.owner) return c.json({ error: "owner is required" }, 400);
+
+  // The repo-grant gate. Without it the route's `cloud:write` tag was the only check,
+  // and "cloud" is an org SINGLETON resource — so the assert runs with resourceId "*"
+  // and roleAllowsResourceType lets plain `member` through. Any member could mint a
+  // live GitHub App installation token, and the grant system that decides WHICH repos
+  // a member may touch was never consulted. The repos-vs-no-repos distinction is the
+  // security-relevant part; it lives in canMintInstallationToken.
+  const requested = (body.repos ?? []).map((r) => r.trim()).filter(Boolean);
+  if (!(await canMintInstallationToken(ctx, body.owner, body.repos))) {
+    return c.json(
+      {
+        error: requested.length
+          ? `You don't have access to all of the requested repositories under ${body.owner}. Ask an organization owner to grant you access.`
+          : `You don't have access to every repository under ${body.owner}. Ask an organization owner to grant you access, or request specific repositories instead.`,
+        code: "GITHUB_ACCESS_DENIED",
+      },
+      403,
+    );
+  }
+
   const result = await mintOrgInstallationToken(ctx.organizationId, body.owner, body.repos);
   if (result.kind === "not-found") {
     return c.json({ error: `No GitHub App installation found for ${result.owner}` }, 404);

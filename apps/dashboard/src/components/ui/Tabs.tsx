@@ -6,6 +6,8 @@ export interface TabDef<K extends string = string> {
   key: K;
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
+  /** Badge after the label — how many rows this tab holds. `0` still renders. */
+  count?: number;
   /** When true the tab is not rendered (e.g. Backup only for stateful services). */
   hidden?: boolean;
   /**
@@ -35,7 +37,7 @@ export function Tabs<K extends string>({ tabs, value, onChange, className = "" }
     <div className={`flex items-center gap-1 overflow-x-auto border-b border-border/50 scrollbar-hide ${className}`}>
       {tabs
         .filter((tab) => !tab.hidden)
-        .map(({ key, label, icon: Icon, href }) => {
+        .map(({ key, label, icon: Icon, href, count }) => {
           const active = key === value;
           const className = `relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors ${
             active ? "text-foreground" : "text-muted-foreground hover:text-foreground/70"
@@ -44,8 +46,22 @@ export function Tabs<K extends string>({ tabs, value, onChange, className = "" }
             <>
               {Icon && <Icon className="size-4" />}
               {label}
+              {count !== undefined && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
+                    active ? "bg-muted text-foreground" : "bg-muted/60 text-muted-foreground"
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
               {active && (
-                <span className="absolute bottom-0 start-0 end-0 h-0.5 rounded-full bg-primary" />
+                // Inset by the item's own `px-4`, so the underline is exactly as
+                // wide as the label it marks. That also puts the FIRST tab's
+                // underline on the container's content edge instead of a padding
+                // box's worth to the left of it — inside a card, an indicator that
+                // starts left of every other left edge reads as a misalignment.
+                <span className="absolute bottom-0 start-4 end-4 h-0.5 rounded-full bg-primary" />
               )}
             </>
           );

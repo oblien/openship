@@ -3,6 +3,7 @@
     "title": "Email Server",
     "subtitle": "Set up a self-hosted mail server with a few clicks",
     "backToServers": "Back to mail servers",
+    "backToAdmin": "Back to mail admin",
     "addServer": "Add mail server",
     "removeModal": {
       "title": "Remove this mail server?",
@@ -81,7 +82,10 @@
     "willStream": "Logs will stream here once setup starts.",
     "jumpToLatest": "Jump to latest",
     "setupFailed": "Setup failed",
-    "retryFromStep": "Retry from step {resumeStep}"
+    "retryFromStep": "Retry from step {resumeStep}",
+    "resumePausedTitle": "Setup paused",
+    "stepLabel": "Step {step}",
+    "continueFromStep": "Continue from step {step}"
   },
   "serverList": {
     "title": "Mail servers",
@@ -90,7 +94,8 @@
     "removeAria": "Remove {name} from the mail list",
     "installing": "Installing",
     "running": "Running",
-    "incomplete": "Incomplete"
+    "incomplete": "Incomplete",
+    "stoppedAt": "Stopped · step {step}"
   },
   "setup": {
     "title": "Mail Server Setup",
@@ -100,16 +105,18 @@
     "willBeAtBefore": "Your mail server will be at ",
     "adminPasswordLabel": "Admin Password",
     "passwordPlaceholder": "Strong password - or click Generate",
-    "passwordHint": "Used to log into the mailbox after setup. You can change it later from the admin panel below.",
+    "passwordHint": "At least 12 characters. Used to log into the mailbox after setup — change it later from the admin panel below.",
     "relay": {
-      "toggle": "Relay outbound through Amazon SES",
-      "hint": "Recommended. Send via SES's trusted IPs (fresh-server IPs are often blocklisted, and many hosts block outbound port 25). Receiving stays on this server.",
-      "region": "SES region",
+      "toggle": "Relay outbound through an email provider",
+      "hint": "Recommended. Send through a provider's trusted IPs — fresh-server IPs are often blocklisted, and many hosts block outbound port 25. Receiving stays on this server.",
+      "region": "Region",
       "username": "SMTP username",
       "password": "SMTP password",
-      "perDomainNote": "Applies to all domains. Per-domain routing + each domain's SES DKIM records are configured after install in the Sending tab."
+      "perDomainNote": "Applies to all domains. Per-domain routing and each domain's provider DKIM / MAIL FROM records are configured after install in the Sending tab."
     },
     "startSetup": "Start Setup",
+    "startFailed": "Setup couldn't start",
+    "startFailedFallback": "Setup couldn't start, and the server gave no reason. Check the API logs.",
     "adoptCta": "Already have a mail server? Adopt it",
     "whatInstalled": "What gets installed",
     "features": {
@@ -125,6 +132,7 @@
     "prerequisites": "Prerequisites",
     "prereq1": "A domain with DNS access",
     "prereq2": "Port 25 not blocked by your provider",
+    "prereq2Relay": "Port 25 open for incoming mail (outbound goes through your relay)",
     "prereq3": "Clean Ubuntu/Debian server (recommended)",
     "hide": "Hide",
     "reveal": "Reveal",

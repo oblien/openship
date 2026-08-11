@@ -344,3 +344,19 @@ export function validatePlanPriceIds(): PlanPriceIdValidation {
  */
 export const ENV_MASK = "••••••••";
 export const isMaskedValue = (value: unknown): boolean => value === ENV_MASK;
+
+/**
+ * Successful runs a backup policy keeps when it says nothing about retention.
+ *
+ * `retain_count` and `retain_days` were the only two fields on the policy insert
+ * with no meaningful default and no column default, so every policy created
+ * through the API stored NULL for both — and the prune short-circuits on
+ * "no retention configured". Result: retention never ran for any API- or
+ * MCP-created policy, and their runs grew until the destination filled.
+ *
+ * The value is the dashboard's own default (`PolicyEditor`'s `retainCount`
+ * state), so the DB column default, the API fallback, and the form a human
+ * actually sees all agree. Changing it here means changing all three at once —
+ * which is the point. Existing NULL rows were backfilled by migration 0096.
+ */
+export const DEFAULT_RETAIN_COUNT = 7;

@@ -53,6 +53,7 @@
       "notifications": "通知",
       "audit": "审计日志",
       "cloud": "云",
+      "infrastructure": "基础设施",
       "instance": "实例"
     }
   },
@@ -112,10 +113,6 @@
     "noServers": "尚未配置任何服务器 —— 请从部署选择器中添加一个。",
     "clearDefault": "清除默认（每次都询问）",
     "targets": {
-      "local": {
-        "label": "本机",
-        "desc": "本地 Docker / 运行时"
-      },
       "server": {
         "label": "我的服务器",
         "desc": "已配置的 SSH 服务器"
@@ -127,8 +124,7 @@
     },
     "labelFor": {
       "yourServer": "你的服务器",
-      "cloud": "Openship Cloud",
-      "local": "本机"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "请先选择一个服务器",
@@ -454,6 +450,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "应用内"
     },
     "form": {
@@ -463,6 +460,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "来自 @BotFather 的机器人令牌",
+      "telegramChatPlaceholder": "聊天 ID（例如 -1001234567890）",
+      "telegramHint": "先用 @BotFather 创建机器人，然后向它发送一条消息（或把它加入群组），它才能回复。",
       "adding": "正在添加…",
       "addChannel": "添加渠道",
       "labelRequired": "标签为必填项"
@@ -471,6 +471,7 @@
       "title": "要接收哪些通知",
       "description": "选择哪些事件发送到哪个渠道。每个单元格对应一个订阅。",
       "empty": "请先添加一个渠道以订阅事件。",
+      "allTab": "全部",
       "eventHeader": "事件",
       "cellAria": "通过 {channel} 接收 {category}",
       "notifyMe": "通知我"
@@ -484,11 +485,11 @@
   },
   "audit": {
     "heading": "审计日志",
-    "subtitle": "此组织中的每一次更改、执行者以及时间。",
-    "searchPlaceholder": "搜索事件、执行者、资源...",
-    "allEvents": "所有事件",
-    "noMatch": "没有与你的搜索匹配的事件。",
-    "noEvents": "尚无事件。",
+    "subtitle": "此组织中发生的一切、执行者以及时间。",
+    "searchPlaceholder": "搜索应用、服务器、域名、成员…",
+    "noMatch": "没有符合这些筛选条件的记录。",
+    "noEvents": "尚未记录任何内容。",
+    "clearFilters": "清除筛选",
     "showing": "正在显示第 {from}-{to} 项，共 {total} 项",
     "actor": "执行者",
     "name": "姓名",
@@ -504,7 +505,50 @@
     "after": "之后",
     "removed": "已移除",
     "system": "系统",
-    "actorPrefix": "执行者 {id}"
+    "actorPrefix": "执行者 {id}",
+    "recording": {
+      "title": "记录活动",
+      "description": "记录此组织中的每一次更改。默认开启。",
+      "paused": "记录已关闭。不会再添加新内容 — 下面是关闭前已记录的条目。",
+      "retention": "保留条目",
+      "retentionOption": "{days} 天",
+      "retentionHint": "较早的条目会被自动删除。",
+      "adminOnly": "只有所有者和管理员可以更改。",
+      "saveFailed": "无法保存活动设置。"
+    },
+    "filters": {
+      "anyone": "任何人",
+      "period": "时间范围",
+      "allTime": "全部时间",
+      "today": "今天",
+      "last7": "最近 7 天",
+      "last30": "最近 30 天",
+      "last90": "最近 90 天"
+    },
+    "tabs": {
+      "all": "全部"
+    },
+    "sources": {
+      "all": "全部",
+      "dashboard": "控制台",
+      "mcp": "AI 助手",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "系统",
+      "unknown": "未知"
+    },
+    "day": {
+      "today": "今天",
+      "yesterday": "昨天"
+    },
+    "details": {
+      "who": "执行者",
+      "when": "时间",
+      "cameFrom": "来源",
+      "technical": "技术详情",
+      "eventType": "事件类型"
+    }
   },
   "updates": {
     "title": "更新",
@@ -529,6 +573,20 @@
     "security3": "）。它只会",
     "securityPulls": "拉取",
     "security4": "这些数据 —— 没有任何第三方服务，也没有任何 Openship 运营的服务器能向你的安装推送更新或信号。公告与每个版本绑定，因此未发布的更改绝不会送达你。关键安全公告始终会显示一次；其他一切都遵循上面的开关设置。"
+  },
+  "infrastructure": {
+    "title": "平台组件",
+    "description": "服务器上的边缘与邮件容器如何保持最新",
+    "autoUpdateLabel": "自动更新服务器基础设施",
+    "autoUpdateDesc": "当此控制平面更新时，自动更新已连接服务器上的边缘与邮件容器。默认关闭——否则更新会被标记，可在每台服务器上一键应用。",
+    "autoScanLabel": "自动扫描服务器基础设施",
+    "autoScanDesc": "打开服务器页面或主页时会静默重新检查你的服务器，这样停止或缺失的边缘无需手动扫描即可被标记。默认开启——仅检测，不会更改任何内容。",
+    "attentionOne": "1 个组件需要处理",
+    "attentionMany": "{n} 个组件需要处理",
+    "updatesOne": "有 1 项更新",
+    "updatesMany": "有 {n} 项更新",
+    "allHealthy": "所有平台组件均为最新",
+    "manageLink": "在服务器中管理"
   },
   "dataTransfer": {
     "export": {

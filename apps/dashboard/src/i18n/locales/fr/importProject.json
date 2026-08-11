@@ -101,6 +101,10 @@
     "serverOnPort": "Serveur sur le port {port}",
     "serverPortNotSet": "Port du serveur non défini",
     "staticFromEdge": "Statique depuis l'edge",
+    "modeServer": "Serveur",
+    "modeWorker": "Worker",
+    "modeStatic": "Statique",
+    "workerModeDesc": "S'exécute en continu sans port ni URL publique — un consommateur de file, une tâche cron ou un bot.",
     "staticPathHint": "Servi en tant que fichiers statiques depuis l'edge — aucun processus ne s'exécute.",
     "buildSettingsTitle": "Paramètres de compilation"
   },

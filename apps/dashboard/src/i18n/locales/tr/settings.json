@@ -54,6 +54,7 @@
       "email": "E-posta",
       "audit": "Denetim günlüğü",
       "cloud": "Bulut",
+      "infrastructure": "Altyapı",
       "instance": "Kurulum"
     }
   },
@@ -152,10 +153,6 @@
     "noServers": "Henüz yapılandırılmış sunucu yok - dağıtım seçiciden bir tane ekleyin.",
     "clearDefault": "Varsayılanı temizle (her seferinde sor)",
     "targets": {
-      "local": {
-        "label": "Bu Bilgisayar",
-        "desc": "Yerel Docker / çalışma zamanı"
-      },
       "server": {
         "label": "Sunucum",
         "desc": "Yapılandırılmış bir SSH sunucusu"
@@ -167,8 +164,7 @@
     },
     "labelFor": {
       "yourServer": "sunucunuz",
-      "cloud": "Openship Bulut",
-      "local": "Bu Bilgisayar"
+      "cloud": "Openship Bulut"
     },
     "toast": {
       "pickServer": "Önce bir sunucu seçin",
@@ -523,6 +519,7 @@
       "email": "E-posta",
       "webhook": "Webhook",
       "slack": "Slack",
+      "telegram": "Telegram",
       "in_app": "Uygulama içi"
     },
     "form": {
@@ -530,6 +527,9 @@
       "emailPlaceholder": "kullanici@example.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "telegramTokenPlaceholder": "@BotFather'dan alınan bot jetonu",
+      "telegramChatPlaceholder": "Sohbet kimliği (örn. -1001234567890)",
+      "telegramHint": "@BotFather ile bir bot oluşturun, ardından yanıt verebilmesi için bota bir mesaj gönderin (veya botu grubunuza ekleyin).",
       "adding": "Ekleniyor…",
       "addChannel": "Kanal ekle",
       "labelRequired": "Etiket gereklidir",
@@ -541,6 +541,7 @@
       "title": "Neler hakkında bildirim alınacak",
       "description": "Hangi olayların hangi kanala gideceğini seçin. Her hücre bir aboneliktir.",
       "empty": "Olaylara abone olmak için önce bir kanal ekleyin.",
+      "allTab": "Tümü",
       "eventHeader": "Olay",
       "cellAria": "{channel} üzerinden {category}",
       "notifyMe": "Bana bildir"
@@ -554,11 +555,11 @@
   },
   "audit": {
     "heading": "Denetim günlüğü",
-    "subtitle": "Bu organizasyondaki her değişiklik, kimin tarafından ve ne zaman yapıldığı.",
-    "searchPlaceholder": "Olaylarda, aktörlerde, kaynaklarda ara...",
-    "allEvents": "Tüm olaylar",
-    "noMatch": "Aramanızla eşleşen olay yok.",
-    "noEvents": "Henüz olay yok.",
+    "subtitle": "Bu organizasyonda olan her şey, kimin yaptığı ve ne zaman.",
+    "searchPlaceholder": "Uygulama, sunucu, alan adı, kişi ara…",
+    "noMatch": "Bu filtrelerle eşleşen bir şey yok.",
+    "noEvents": "Henüz hiçbir şey kaydedilmedi.",
+    "clearFilters": "Filtreleri temizle",
     "showing": "Toplam {total} kayıttan {from}-{to} arası gösteriliyor",
     "actor": "Aktör",
     "name": "Ad",
@@ -574,7 +575,50 @@
     "after": "Sonra",
     "removed": "Kaldırıldı",
     "system": "Sistem",
-    "actorPrefix": "Aktör {id}"
+    "actorPrefix": "Aktör {id}",
+    "recording": {
+      "title": "Etkinliği kaydet",
+      "description": "Bu organizasyonda yapılan her değişikliğin kaydını tutar. Varsayılan olarak açık.",
+      "paused": "Kayıt kapalı. Yeni hiçbir şey eklenmiyor — aşağıdaki kayıtlar kapatılmadan önce toplananlar.",
+      "retention": "Kayıtları şu süre boyunca tut",
+      "retentionOption": "{days} gün",
+      "retentionHint": "Daha eski kayıtlar otomatik olarak silinir.",
+      "adminOnly": "Bunu yalnızca sahipler ve yöneticiler değiştirebilir.",
+      "saveFailed": "Etkinlik ayarları kaydedilemedi."
+    },
+    "filters": {
+      "anyone": "Herkes",
+      "period": "Dönem",
+      "allTime": "Tüm zamanlar",
+      "today": "Bugün",
+      "last7": "Son 7 gün",
+      "last30": "Son 30 gün",
+      "last90": "Son 90 gün"
+    },
+    "tabs": {
+      "all": "Tümü"
+    },
+    "sources": {
+      "all": "Tümü",
+      "dashboard": "Panel",
+      "mcp": "Yapay zekâ asistanı",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "Sistem",
+      "unknown": "Bilinmiyor"
+    },
+    "day": {
+      "today": "Bugün",
+      "yesterday": "Dün"
+    },
+    "details": {
+      "who": "Kim",
+      "when": "Ne zaman",
+      "cameFrom": "Nereden",
+      "technical": "Teknik detaylar",
+      "eventType": "Olay türü"
+    }
   },
   "updates": {
     "title": "Güncellemeler",
@@ -599,6 +643,20 @@
     "security3": "). Yalnızca bu verileri",
     "securityPulls": "çeker (pull)",
     "security4": "— hiçbir üçüncü taraf servisi ve Openship tarafından işletilen hiçbir sunucu kurulumunuza güncelleme veya sinyal gönderemez (push). Duyurular her sürüme sabitlenmiştir, böylece yayınlanmamış değişiklikler size asla ulaşmaz. Kritik güvenlik duyuruları her zaman bir kez gösterilir; diğer her şey yukarıdaki ayara uyar."
+  },
+  "infrastructure": {
+    "title": "Platform bileşenleri",
+    "description": "Sunucularınızdaki edge ve e-posta kapsayıcıları nasıl güncel tutulur",
+    "autoUpdateLabel": "Sunucu altyapısını otomatik güncelle",
+    "autoUpdateDesc": "Bu kontrol düzlemi güncellendiğinde, bağlı sunucularınızdaki edge ve mail konteynerlerini de otomatik olarak güncelle. Varsayılan olarak kapalı — aksi hâlde güncellemeler her sunucuda tek tıkla uygulanmak üzere işaretlenir.",
+    "autoScanLabel": "Sunucu altyapısını otomatik denetle",
+    "autoScanDesc": "Sunucular sayfasını ya da ana sayfayı açtığınızda sunucularınızı sessizce yeniden denetler; böylece durmuş veya kurulu olmayan bir edge, elle denetim yapmadan işaretlenir. Varsayılan olarak açık — yalnızca algılar, hiçbir şeyi değiştirmez.",
+    "attentionOne": "1 bileşen ilgi bekliyor",
+    "attentionMany": "{n} bileşen ilgi bekliyor",
+    "updatesOne": "1 güncelleme mevcut",
+    "updatesMany": "{n} güncelleme mevcut",
+    "allHealthy": "Tüm platform bileşenleri güncel",
+    "manageLink": "Sunucular'da yönet"
   },
   "dataTransfer": {
     "export": {

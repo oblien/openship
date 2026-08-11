@@ -249,6 +249,121 @@ describe("apache: names and TLS detection", () => {
   });
 });
 
+describe("apache: quoted arguments and the one-argument ProxyPass", () => {
+  test("quoted ProxyPass arguments yield a bare path and upstream", async () => {
+    const res = await scanApache(
+      exec(`
+<VirtualHost *:443>
+    ServerName q.example.com
+    SSLEngine on
+    ProxyPass "/api" "http://127.0.0.1:9000/"
+    ProxyPass "/" "http://127.0.0.1:8080/"
+    ProxyPassReverse "/" "http://127.0.0.1:8080/"
+</VirtualHost>
+`),
+    );
+    expect(urlOf(res.sites[0])).toBe("http://127.0.0.1:8080/");
+    expect(res.sites[0].routes).toEqual([
+      { path: "/api", url: "http://127.0.0.1:9000/" },
+      { path: "/", url: "http://127.0.0.1:8080/" },
+    ]);
+  });
+
+  test("quoted ServerName and ServerAlias are hostnames, not quoted strings", async () => {
+    const res = await scanApache(
+      exec(`
+<VirtualHost *:443>
+    ServerName "q.example.com"
+    ServerAlias "www.q.example.com" 'alt.q.example.com'
+    SSLEngine on
+    ProxyPass / http://127.0.0.1:8080/
+</VirtualHost>
+`),
+    );
+    expect(res.sites[0].serverNames).toEqual([
+      "q.example.com",
+      "www.q.example.com",
+      "alt.q.example.com",
+    ]);
+  });
+
+  test("quoted cert paths stay usable for the carry", async () => {
+    const res = await scanApache(
+      exec(`
+<VirtualHost *:443>
+    ServerName q.example.com
+    SSLEngine on
+    SSLCertificateFile "/etc/letsencrypt/live/q.example.com/fullchain.pem"
+    SSLCertificateKeyFile "/etc/letsencrypt/live/q.example.com/privkey.pem"
+    ProxyPass / http://127.0.0.1:8080/
+</VirtualHost>
+`),
+    );
+    expect(res.sites[0].tls).toEqual({
+      certPath: "/etc/letsencrypt/live/q.example.com/fullchain.pem",
+      keyPath: "/etc/letsencrypt/live/q.example.com/privkey.pem",
+    });
+  });
+
+  test("a one-argument ProxyPass takes the path of its <Location>", async () => {
+    const res = await scanApache(
+      exec(`
+<VirtualHost *:443>
+    ServerName loc.example.com
+    SSLEngine on
+    <Location "/api">
+        ProxyPass "http://127.0.0.1:9000/"
+        ProxyPassReverse "http://127.0.0.1:9000/"
+    </Location>
+    <Location "/">
+        ProxyPass "http://127.0.0.1:8080/"
+        ProxyPassReverse "http://127.0.0.1:8080/"
+    </Location>
+</VirtualHost>
+`),
+    );
+    expect(res.sites[0].routes).toEqual([
+      { path: "/api", url: "http://127.0.0.1:9000/" },
+      { path: "/", url: "http://127.0.0.1:8080/" },
+    ]);
+    expect(urlOf(res.sites[0])).toBe("http://127.0.0.1:8080/");
+  });
+
+  test("a one-argument ProxyPass under <LocationMatch> is reported as regex proxying", async () => {
+    const res = await scanApache(
+      exec(`
+<VirtualHost *:443>
+    ServerName rx.example.com
+    SSLEngine on
+    <LocationMatch "^/v[0-9]+/">
+        ProxyPass "http://127.0.0.1:9000/"
+    </LocationMatch>
+</VirtualHost>
+`),
+    );
+    expect(res.sites).toEqual([]);
+    expect(res.warnings).toContain(
+      "apache: rx.example.com proxies from inside a <LocationMatch> (regex proxying) — re-add it manually",
+    );
+  });
+
+  test("a one-argument ProxyPass with no enclosing <Location> is not given a `/` route", async () => {
+    const res = await scanApache(
+      exec(`
+<VirtualHost *:443>
+    ServerName bare.example.com
+    SSLEngine on
+    ProxyPass "http://127.0.0.1:9000/"
+</VirtualHost>
+`),
+    );
+    expect(res.sites).toEqual([]);
+    expect(res.warnings).toContain(
+      "apache: bare.example.com has neither ProxyPass nor DocumentRoot — skipped",
+    );
+  });
+});
+
 describe("apache: apachectl -S vhost discovery", () => {
   test("finds vhost files in a non-standard path from the real dump format", async () => {
     // Verbatim `apachectl -S` shape from httpd:2.4 — the paths come from its

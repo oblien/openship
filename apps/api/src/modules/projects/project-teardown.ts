@@ -35,6 +35,7 @@ import { repos, type Project, type BackupRun, type BackupRestore } from "@repo/d
 import { safeErrorMessage } from "@repo/core";
 import {
   collectProjectManifest,
+  disposeManifestRuntimes,
   executeCleanup,
 } from "./project-cleanup.service";
 import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sync";
@@ -42,10 +43,7 @@ import { cancelBuildSession } from "../deployments/build.service";
 import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
 import { env } from "../../config";
-import {
-  cleanupWebmailInstall,
-  mailServerIdFromWebmailSlug,
-} from "../mail/webmail/webmail-project.service";
+import { cleanupWebmailInstall } from "../mail/webmail/webmail-install.service";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -617,6 +615,19 @@ async function stepDeleteWebhook(
       push({ step: "github_webhook", status: "skipped", details: "already gone" });
       return;
     }
+    // The actor may delete the PROJECT (project:admin) without holding write on the
+    // REPO — deleting a repo webhook needs the latter, and borrowing a wider
+    // credential to do it anyway is the escalation GHSA-hp2g-hw7g-f3vm reported.
+    // Not touching their repo is the correct outcome, so report it as a skip with
+    // the reason rather than failing the teardown into a 207.
+    if ((err as { code?: unknown } | null)?.code === "GITHUB_ACCESS_DENIED") {
+      push({
+        step: "github_webhook",
+        status: "skipped",
+        details: "no write access to the repo — hook left in place",
+      });
+      return;
+    }
     push({ step: "github_webhook", status: "failed", error: msg });
   }
 }
@@ -708,6 +719,9 @@ async function stepRuntimeCleanup(
       status: "ok",
       details: `${destroyable.length} force-orphaned (storage-only delete)${orphanNote}`,
     });
+    // This path deliberately never calls executeCleanup, so the transports the
+    // manifest is holding have to be released here instead.
+    disposeManifestRuntimes(manifest);
     return orphans;
   }
 
@@ -773,22 +787,26 @@ async function persistOrphans(
   return out;
 }
 
+/**
+ * The webmail's off-project leftovers: a proxy vhost on the MAIL server (not the
+ * one this project ran on), and — for a pre-catalog webmail — a host state dir
+ * and the mail-state block that held its session key. Everything else about the
+ * app is an ordinary container + volume the runtime step already removed.
+ *
+ * Runs before `stepDeleteRow`, so the project's domain rows are still readable
+ * here — which is how the proxy variant is told apart from a routed one.
+ */
 async function stepWebmailTeardown(
   project: Project,
   push: (s: TeardownStep) => void,
 ): Promise<void> {
-  if (project.framework !== "webmail") {
-    push({ step: "webmail", status: "skipped", details: "not a webmail project" });
-    return;
-  }
-  const mailServerId = mailServerIdFromWebmailSlug(project.slug);
-  if (!mailServerId) {
-    push({ step: "webmail", status: "skipped", details: "no mail server id" });
-    return;
-  }
   try {
-    await cleanupWebmailInstall({ mailServerId });
-    push({ step: "webmail", status: "ok", details: mailServerId });
+    const details = await cleanupWebmailInstall(project);
+    push(
+      details
+        ? { step: "webmail", status: "ok", details }
+        : { step: "webmail", status: "skipped", details: "nothing webmail-specific" },
+    );
   } catch (err) {
     push({ step: "webmail", status: "failed", error: safeErrorMessage(err) });
   }

@@ -1,5 +1,6 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { servers } from "./servers";
+import { project } from "./project";
 
 /**
  * Mail-server install record.
@@ -32,6 +33,38 @@ export const mailServers = pgTable("mail_servers", {
 
   /** Stamped when the install wizard hits the "completed" terminal state. */
   installedAt: timestamp("installed_at"),
+
+  /**
+   * The step the setup wizard is paused at, mirrored from the on-host state
+   * file's `resumeStep` whenever the install halts (a failed step, or a
+   * DNS/PTR hold). NULL once the wizard completes or before it ever halts.
+   *
+   * Lets the /emails server list show WHERE an incomplete install stopped
+   * ("Stopped · step 6: Retrieve DKIM Keys") without the per-server SSH probe
+   * this table exists to avoid — the human label is derived from the step id
+   * against MAIL_SETUP_STEPS, so only the id is stored here.
+   */
+  resumeStep: integer("resume_step"),
+
+  /**
+   * The webmail project serving this mail server, when one was installed from
+   * the app catalog (`catalog/webmail.json`). Null = no webmail, or one an
+   * operator runs outside openship.
+   *
+   * A stored FK, not a naming convention: webmail installs through the SAME
+   * generic catalog installer as every other app, so its slug comes from the
+   * project NAME the operator typed. The old `webmail-<serverId>` slug regex
+   * therefore can't be produced any more — and while it existed it mislinked
+   * any project a user happened to name "Webmail Prod" (slug `webmail-prod`,
+   * read back as mail server "prod").
+   *
+   * ON DELETE SET NULL: deleting the webmail project clears the link, so
+   * /emails falls back to offering the install CTA instead of pointing at a row
+   * that no longer exists.
+   */
+  webmailProjectId: text("webmail_project_id").references(() => project.id, {
+    onDelete: "set null",
+  }),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

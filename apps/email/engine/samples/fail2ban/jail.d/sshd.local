@@ -1,7 +1,10 @@
 [sshd]
 backend     = polling
 journalmatch=
-enabled     = true
+# openship-mail runs no sshd (SSH is on the host, not in the mail container), so
+# there is no /var/log/auth.log for this jail to tail — leaving it enabled makes
+# fail2ban crash-loop on a missing logpath. Disabled for the containerized engine.
+enabled     = false
 filter      = sshd
 logpath     = PH_SSHD_LOGFILE tail
 action      = PH_FAIL2BAN_ACTION[name=sshd, port="PH_SSHD_PORT", protocol=tcp]

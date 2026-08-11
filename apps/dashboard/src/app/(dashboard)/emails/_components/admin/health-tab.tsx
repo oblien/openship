@@ -9,13 +9,18 @@
  *   1. Daemons   - live systemd status of Postfix, Dovecot, Amavis,
  *                  ClamAV, etc. Polled every 10 s. Check this when
  *                  "mail isn't sending" - usually a daemon is down.
- *   2. DNS scan  - live public-DNS lookup for every record the install
+ *   2. Outbound  - where this server hands mail off, and what the queue
+ *                  says about it. Rides the same poll as the daemons.
+ *                  Check this when the daemons are green and mail still
+ *                  isn't arriving - a wrong relay password looks exactly
+ *                  like a healthy box until you read the queue.
+ *   3. DNS scan  - live public-DNS lookup for every record the install
  *                  expected the operator to publish. Compares actual
  *                  values against expected and reports pass/warn/fail.
  *                  Check this when "mail sends but lands in spam" or
  *                  "Gmail/Outlook reject with PTR/SPF errors".
  *
- * A header banner aggregates both into one verdict.
+ * A header banner aggregates all three into one verdict.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -27,14 +32,20 @@ import {
   CircleAlert,
   CircleDashed,
   CircleX,
+  Clock,
   Globe,
+  KeyRound,
   Loader2,
+  Lock,
   Play,
   RefreshCcw,
   RotateCw,
   ScrollText,
   Search,
+  Send,
+  ShieldAlert,
   Square,
+  Unplug,
 } from "lucide-react";
 import {
   mailAdminApi,
@@ -45,6 +56,10 @@ import {
   type DnsScanResult,
   type MailComponentHealth,
   type MailComponentStatus,
+  type MailDeferral,
+  type MailDeferralKind,
+  type MailDeliveryHealth,
+  type MailDeliveryStatus,
 } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { SectionCard } from "./_shared/section-card";
@@ -53,14 +68,19 @@ import { StatusPill, type PillTone } from "./_shared/status-pill";
 import { LogsDrawer } from "./_shared/logs-drawer";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-
-type HealthDict = (typeof import("@/i18n/locales/en/emailsAdmin.json"))["health"];
+import { useMailRailOwnsTabs } from "../../_lib/mail-section";
+import { summarizeHealth, type HealthDict } from "../../_lib/health-summary";
 
 const HEALTH_POLL_MS = 10_000;
 
 export function HealthTab({ serverId }: { serverId: string }) {
   const { t } = useI18n();
+  // Heading lives in the page header in mail view — see ../../_lib/mail-section.
+  const hoisted = useMailRailOwnsTabs(serverId);
   const [components, setComponents] = useState<MailComponentHealth[] | null>(null);
+  // Same response as the daemons, so the same poll and the same error banner —
+  // the send path is a second reading off one connection, not a second request.
+  const [delivery, setDelivery] = useState<MailDeliveryHealth | null>(null);
   const [componentsErr, setComponentsErr] = useState<string | null>(null);
   const [componentsLastUpdated, setComponentsLastUpdated] = useState<number | null>(null);
 
@@ -72,6 +92,7 @@ export function HealthTab({ serverId }: { serverId: string }) {
     try {
       const r = await mailApi.getHealth(serverId);
       setComponents(r.components);
+      setDelivery(r.delivery);
       setComponentsErr(null);
       setComponentsLastUpdated(Date.now());
     } catch (err) {
@@ -119,16 +140,23 @@ export function HealthTab({ serverId }: { serverId: string }) {
     }
   };
 
-  const summary = summarizeHealth(components, dns?.checks ?? null, t.emailsAdmin.health);
+  const summary = summarizeHealth(
+    components,
+    dns?.checks ?? null,
+    delivery,
+    t.emailsAdmin.health,
+  );
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">{t.emailsAdmin.health.heading}</h2>
-        <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-          {t.emailsAdmin.health.description}
-        </p>
-      </div>
+      {!hoisted && (
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">{t.emailsAdmin.health.heading}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
+            {t.emailsAdmin.health.description}
+          </p>
+        </div>
+      )}
 
       {summary && (
         <div
@@ -185,6 +213,15 @@ export function HealthTab({ serverId }: { serverId: string }) {
           </div>
         ) : null}
       </SectionCard>
+
+      {/* ── Outbound delivery ─────────────────────────────────────────────
+          Hidden only until the first reading lands, and only if that first
+          reading failed — the error is already shown above, and an empty card
+          would read as "nothing is queued". Later failures keep the last
+          reading on screen, like the daemon rows do. */}
+      {(delivery || !componentsErr) && (
+        <DeliverySection delivery={delivery} />
+      )}
 
       {/* ── DNS scan ──────────────────────────────────────────────────── */}
       <SectionCard
@@ -359,6 +396,13 @@ function DaemonRow({
               {interpolate(h.up, { time: timeAgo(new Date(component.activeSince).getTime(), h.time) })}
             </p>
           )}
+          {/* The probe's own words for an undetermined state. Server-generated
+              (docker/supervisord output), so it is not a translation key. */}
+          {component.detail && (
+            <p className="text-[11px] text-warning mt-0.5 break-words">
+              {component.detail}
+            </p>
+          )}
         </div>
         <StatusPill tone={presentation.tone} icon={presentation.PillIcon}>
           {statusLabel}
@@ -398,6 +442,216 @@ function DaemonRow({
         />
       )}
     </>
+  );
+}
+
+// ─── Outbound delivery ───────────────────────────────────────────────────────
+
+/**
+ * Where mail leaves this box, and what the queue says about it.
+ *
+ * Rows follow the order an operator triages in: the hop, then the depth, then
+ * the remote's own refusal. Deferral rows are all styled alike on purpose - the
+ * verdict is the server's (`delivery.status`, in the pill), and re-deriving
+ * severity per row here would be a second copy of the grading rule that is free
+ * to drift from the one in `mail-delivery.service.ts`.
+ */
+function DeliverySection({ delivery }: { delivery: MailDeliveryHealth | null }) {
+  const { t } = useI18n();
+  const d = t.emailsAdmin.health.delivery;
+
+  return (
+    <SectionCard
+      title={d.title}
+      description={d.desc}
+      density="split"
+      icon={Send}
+      action={
+        delivery && (
+          <StatusPill tone={DELIVERY_TONE[delivery.status]}>
+            {d.status[delivery.status]}
+          </StatusPill>
+        )
+      }
+    >
+      {delivery === null ? (
+        <DeliverySkeleton />
+      ) : (
+        <div className="divide-y divide-border/40">
+          <SendPathRow delivery={delivery} />
+          {delivery.status === "unknown" ? (
+            <DeliveryRow
+              Icon={CircleDashed}
+              iconBg="bg-muted"
+              iconColor="text-muted-foreground"
+              title={d.status.unknown}
+              // The probe's own words for a reading we couldn't take.
+              // Server-generated, so not a translation key.
+              detail={delivery.detail}
+            />
+          ) : (
+            <>
+              <DeliveryRow
+                Icon={delivery.queued > 0 ? Clock : Check}
+                iconBg={delivery.queued > 0 ? "bg-warning-bg" : "bg-muted"}
+                iconColor={
+                  delivery.queued > 0 ? "text-warning" : "text-muted-foreground"
+                }
+                eyebrow={d.queue}
+                title={
+                  delivery.queued === 0
+                    ? d.queueEmpty
+                    : interpolate(
+                        delivery.queued === 1 ? d.queueOne : d.queueOther,
+                        { count: String(delivery.queued) },
+                      )
+                }
+                note={delivery.sampled ? d.sampled : undefined}
+              />
+              {delivery.deferrals.length > 0 && (
+                <div className="px-5 py-2.5 bg-muted/30">
+                  <p className="text-[10px] uppercase tracking-wide font-medium text-muted-foreground">
+                    {d.reasons}
+                  </p>
+                </div>
+              )}
+              {delivery.deferrals.map((deferral) => (
+                <DeferralRow
+                  key={deferral.reason}
+                  deferral={deferral}
+                  mode={delivery.mode}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function SendPathRow({ delivery }: { delivery: MailDeliveryHealth }) {
+  const { t } = useI18n();
+  const d = t.emailsAdmin.health.delivery;
+  const relaying = delivery.mode === "relay";
+  const domains = delivery.relayDomains ?? [];
+
+  // Under `selected` scope the domain list IS the explanation, so with nothing
+  // in it we say nothing rather than print "Only selected senders relay:".
+  const sub = !relaying
+    ? d.directHint
+    : delivery.relayScope === "selected"
+      ? domains.length > 0
+        ? interpolate(d.relaySelected, { domains: domains.join(", ") })
+        : undefined
+      : d.relayAll;
+
+  return (
+    <DeliveryRow
+      Icon={relaying ? Send : Globe}
+      iconBg="bg-muted"
+      iconColor="text-muted-foreground"
+      eyebrow={d.sendPath}
+      title={
+        relaying
+          ? interpolate(d.relay, { host: delivery.relayHost ?? "" })
+          : d.direct
+      }
+      sub={sub}
+    />
+  );
+}
+
+function DeferralRow({
+  deferral,
+  mode,
+}: {
+  deferral: MailDeferral;
+  mode: MailDeliveryHealth["mode"];
+}) {
+  const { t } = useI18n();
+  const d = t.emailsAdmin.health.delivery;
+  // An auth refusal on a relayed box can only be the relay credentials - the
+  // relay is the only host we authenticate to - so that case names the fix.
+  const hint =
+    deferral.kind === "auth" && mode === "relay" ? d.hint.authRelay : d.hint[deferral.kind];
+
+  return (
+    <DeliveryRow
+      Icon={DEFERRAL_ICON[deferral.kind]}
+      iconBg="bg-warning-bg"
+      iconColor="text-warning"
+      title={d.kind[deferral.kind]}
+      badge={interpolate(
+        deferral.count === 1 ? d.affectedOne : d.affectedOther,
+        { count: String(deferral.count) },
+      )}
+      sub={hint}
+      // The remote's verbatim refusal - the one line that actually names the
+      // cause, so it is shown as-is and never translated.
+      reason={deferral.reason}
+    />
+  );
+}
+
+function DeliveryRow({
+  Icon,
+  iconBg,
+  iconColor,
+  eyebrow,
+  title,
+  badge,
+  sub,
+  reason,
+  note,
+  detail,
+}: {
+  Icon: typeof Check;
+  iconBg: string;
+  iconColor: string;
+  eyebrow?: string;
+  title: string;
+  badge?: string;
+  sub?: string;
+  reason?: string;
+  note?: string;
+  detail?: string;
+}) {
+  return (
+    <div className="flex items-start gap-4 px-5 py-4">
+      <div
+        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}
+      >
+        <Icon className={`size-5 ${iconColor}`} strokeWidth={2} />
+      </div>
+      <div className="min-w-0 flex-1">
+        {eyebrow && (
+          <p className="text-[10px] uppercase tracking-wide font-medium text-muted-foreground/80 mb-0.5">
+            {eyebrow}
+          </p>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-foreground break-words">{title}</p>
+          {badge && (
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {badge}
+            </span>
+          )}
+        </div>
+        {sub && (
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{sub}</p>
+        )}
+        {reason && (
+          <p className="font-mono text-[11px] text-muted-foreground/80 mt-1.5 break-words leading-relaxed">
+            {reason}
+          </p>
+        )}
+        {note && <p className="text-[11px] text-muted-foreground/70 mt-1">{note}</p>}
+        {detail && (
+          <p className="text-[11px] text-warning mt-0.5 break-words">{detail}</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -481,6 +735,23 @@ function DaemonsSkeleton() {
             <Skeleton className="h-2.5 w-72 max-w-full" />
           </div>
           <Skeleton className="h-5 w-20 rounded-full shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeliverySkeleton() {
+  return (
+    <div className="divide-y divide-border/40">
+      {Array.from({ length: 2 }).map((_, i) => (
+        <div key={i} className="flex items-start gap-4 px-5 py-4">
+          <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-2 w-16" />
+            <Skeleton className="h-3 w-52 max-w-full" />
+            <Skeleton className="h-2.5 w-72 max-w-full" />
+          </div>
         </div>
       ))}
     </div>
@@ -583,6 +854,22 @@ function daemonStatusPresentation(status: MailComponentStatus): StatusPresentati
   }
 }
 
+/** The card's pill. The server already graded it; this only picks the colour. */
+const DELIVERY_TONE: Record<MailDeliveryStatus, PillTone> = {
+  ok: "success",
+  warn: "warning",
+  fail: "danger",
+  unknown: "neutral",
+};
+
+const DEFERRAL_ICON: Record<MailDeferralKind, typeof Check> = {
+  auth: KeyRound,
+  tls: Lock,
+  network: Unplug,
+  rejected: ShieldAlert,
+  other: CircleAlert,
+};
+
 interface DnsStatusPresentation {
   Icon: typeof Check;
   iconBg: string;
@@ -626,119 +913,6 @@ function dnsStatusPresentation(status: DnsCheckStatus): DnsStatusPresentation {
         label: "Unknown",
       };
   }
-}
-
-// ─── Banner summary ──────────────────────────────────────────────────────────
-
-interface BannerSummary {
-  Icon: typeof Check;
-  banner: string;
-  iconBg: string;
-  iconColor: string;
-  textColor: string;
-  label: string;
-  sub: string;
-}
-
-function summarizeHealth(
-  components: MailComponentHealth[] | null,
-  checks: DnsCheck[] | null,
-  h: HealthDict,
-): BannerSummary | null {
-  if (!components && !checks) return null;
-
-  // Separate "missing" from "down" - a unit that isn't installed on this
-  // host is a different operator problem than one that exists and is
-  // failing. The banner names which is which so the user doesn't have
-  // to scan the whole list to figure out what's broken.
-  const downComponents =
-    components?.filter(
-      (c) => c.status === "failed" || c.status === "inactive",
-    ) ?? [];
-  const missingComponents =
-    components?.filter((c) => c.status === "missing") ?? [];
-  const dnsFails = checks?.filter((c) => c.status === "fail").length ?? 0;
-  const dnsWarns = checks?.filter((c) => c.status === "warn").length ?? 0;
-
-  const allClean =
-    downComponents.length === 0 &&
-    missingComponents.length === 0 &&
-    dnsFails === 0 &&
-    dnsWarns === 0;
-
-  if (allClean && (components || checks)) {
-    return {
-      Icon: CheckCircle2,
-      banner: "bg-success-bg border-success-border",
-      iconBg: "bg-success-bg",
-      iconColor: "text-success",
-      textColor: "text-success",
-      label: h.summary.allGoodLabel,
-      sub: h.summary.allGoodSub,
-    };
-  }
-
-  if (
-    downComponents.length === 0 &&
-    missingComponents.length === 0 &&
-    dnsFails === 0
-  ) {
-    return {
-      Icon: AlertTriangle,
-      banner: "bg-warning-bg border-warning-border",
-      iconBg: "bg-warning-bg",
-      iconColor: "text-warning",
-      textColor: "text-warning",
-      label: h.summary.almostLabel,
-      sub: interpolate(dnsWarns === 1 ? h.summary.almostSubOne : h.summary.almostSubOther, { count: String(dnsWarns) }),
-    };
-  }
-
-  // If only "missing" daemons (nothing actually down, no DNS fails), it's
-  // a soft warning - the box doesn't ship that daemon. Don't paint the
-  // whole banner red for that.
-  if (
-    downComponents.length === 0 &&
-    missingComponents.length > 0 &&
-    dnsFails === 0
-  ) {
-    const names = missingComponents.map((c) => c.label).join(", ");
-    return {
-      Icon: AlertTriangle,
-      banner: "bg-warning-bg border-warning-border",
-      iconBg: "bg-warning-bg",
-      iconColor: "text-warning",
-      textColor: "text-warning",
-      label: interpolate(h.summary.notInstalledLabel, { names }),
-      sub:
-        missingComponents.length === 1
-          ? h.summary.notInstalledSubOne
-          : h.summary.notInstalledSubOther,
-    };
-  }
-
-  const parts: string[] = [];
-  if (downComponents.length > 0) {
-    parts.push(interpolate(h.summary.partDown, { names: downComponents.map((c) => c.label).join(", ") }));
-  }
-  if (missingComponents.length > 0) {
-    parts.push(
-      interpolate(h.summary.partNotInstalled, { names: missingComponents.map((c) => c.label).join(", ") }),
-    );
-  }
-  if (dnsFails > 0) {
-    parts.push(interpolate(dnsFails === 1 ? h.summary.partDnsOne : h.summary.partDnsOther, { count: String(dnsFails) }));
-  }
-
-  return {
-    Icon: CircleX,
-    banner: "bg-danger-bg border-danger-border",
-    iconBg: "bg-danger-bg",
-    iconColor: "text-danger",
-    textColor: "text-danger",
-    label: h.summary.issuesLabel,
-    sub: parts.join(" · "),
-  };
 }
 
 // ─── Status label maps (localized) ───────────────────────────────────────────

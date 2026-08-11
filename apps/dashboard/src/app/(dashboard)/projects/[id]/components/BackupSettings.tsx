@@ -29,6 +29,7 @@ import {
   type BackupRun,
 } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
+import { workloadOf } from "@/context/deployment/types";
 import { RollbackRetentionCards } from "@/components/rollback/RollbackRetentionCards";
 import { projectsApi } from "@/lib/api";
 import type { RollbackCapacityUI } from "@/lib/api/projects";
@@ -250,9 +251,13 @@ export function BackupSettings(): React.JSX.Element {
         <RollbackRetentionCards
           strategy={rollbackStrategy}
           capacity={rollbackCapacity}
-          // Static projects retain built FILES, not images.
+          // Static projects retain built FILES, not images. A worker runs a
+          // container and retains an image like any running workload (#538).
           artifactKind={
-            projectData.hasServer === false && (servicesData.services?.length ?? 0) === 0
+            workloadOf({
+              workloadType: projectData.workloadType ?? projectData.options?.workloadType,
+              hasServer: projectData.hasServer ?? projectData.options?.hasServer,
+            }) === "static" && (servicesData.services?.length ?? 0) === 0
               ? "files"
               : "image"
           }
@@ -471,7 +476,7 @@ export function BackupSettings(): React.JSX.Element {
                 <li key={run.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <StatusChip status={run.status} />
+                      <StatusChip status={run.status} statusLabels={t.widgets.backup.runCard.status} />
                       <span className="text-xs text-muted-foreground">
                         {new Date(run.startedAt).toLocaleString()}
                       </span>
@@ -538,7 +543,13 @@ export function BackupSettings(): React.JSX.Element {
   );
 }
 
-function StatusChip({ status }: { status: BackupRun["status"] }): React.JSX.Element {
+function StatusChip({
+  status,
+  statusLabels,
+}: {
+  status: BackupRun["status"];
+  statusLabels: ReturnType<typeof useI18n>["t"]["widgets"]["backup"]["runCard"]["status"];
+}): React.JSX.Element {
   const meta = (() => {
     switch (status) {
       case "succeeded":
@@ -552,10 +563,32 @@ function StatusChip({ status }: { status: BackupRun["status"] }): React.JSX.Elem
     }
   })();
   const Icon = meta.icon;
+  const label = (() => {
+    switch (status) {
+      case "queued":
+        return statusLabels.queued;
+      case "preparing":
+        return statusLabels.preparing;
+      case "snapshotting":
+        return statusLabels.snapshotting;
+      case "uploading":
+        return statusLabels.uploading;
+      case "verifying":
+        return statusLabels.verifying;
+      case "succeeded":
+        return statusLabels.succeeded;
+      case "failed":
+        return statusLabels.failed;
+      case "cancelled":
+        return statusLabels.cancelled;
+      case "server_error":
+        return statusLabels.serverError;
+    }
+  })();
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.color}`}>
       <Icon className={`size-3 ${status === "succeeded" || status === "failed" || status === "server_error" || status === "cancelled" ? "" : "animate-spin"}`} />
-      {status}
+      {label}
     </span>
   );
 }

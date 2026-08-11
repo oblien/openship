@@ -45,8 +45,6 @@ export type ResolvedAppTemplate = AppTemplate & {
   requiresUpdate?: { minVersion?: string };
   /** A newer (engine-gated) version exists in the overlay; the bundled copy is served. */
   updateAvailable?: boolean;
-  /** A per-org user-uploaded app — always unverified (provenance-based trust). */
-  custom?: boolean;
 };
 
 /** This instance's Openship version, for the `minEngine` gate.
@@ -220,10 +218,12 @@ export function getRuntimeTemplate(id: string | null | undefined): ResolvedAppTe
 }
 
 /** An org's custom (user-uploaded) apps as catalog entries — always unverified
- *  (provenance-based trust; the stored `verified` is ignored). */
+ *  (provenance-based trust; the stored `verified` is ignored), and always listed:
+ *  the grid is a custom app's only entry point, so an authored `unlisted` would
+ *  make it unreachable. */
 export async function listOrgCustomApps(organizationId: string): Promise<ResolvedAppTemplate[]> {
   const rows = await repos.customAppTemplate.listByOrg(organizationId);
-  return rows.map((r) => ({ ...r.template, verified: false, custom: true }));
+  return rows.map((r) => ({ ...r.template, verified: false, unlisted: false, custom: true }));
 }
 
 /** Resolve a template by id FOR AN ORG: the curated catalog first, else the
@@ -237,7 +237,7 @@ export async function getTemplateForOrg(
   const curated = getRuntimeTemplate(id);
   if (curated) return curated;
   const custom = await repos.customAppTemplate.findByAppId(organizationId, id);
-  return custom ? { ...custom.template, verified: false, custom: true } : undefined;
+  return custom ? { ...custom.template, verified: false, unlisted: false, custom: true } : undefined;
 }
 
 // Warm the overlay at boot so instances pick up repo changes promptly. Skipped

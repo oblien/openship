@@ -1,17 +1,21 @@
-import { pgTable, text, timestamp, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { project } from "./project";
 import { organization } from "./organization";
 
 /**
- * Cached result of the unified update scanner — one row per updatable entity
- * (every entity is a project row: git projects, release/dist projects, the
- * self-app, webmail, and installed template apps). The `updates:scan` job runs
- * the single resolver (`getProjectCommitStatus` — commit | release | image) and
- * upserts the outcome here so the dashboard home Updates block and the Apps tab
- * can render "new release for X" without recomputing drift on every page load.
+ * Cached UPSTREAM state for the unified update scanner — one row per updatable
+ * entity (every entity is a project row: git projects, release/dist projects, the
+ * self-app, webmail, and installed template apps). `updates:scan` polls what each
+ * project's SOURCE currently offers (branch HEAD, newest release tag, registry
+ * digest per service) and parks the answer here, because that side costs a
+ * network round-trip per project and nothing local signals when it moves.
  *
- * Source of truth for drift is always the live resolver; this table is a cache
- * refreshed by the scan (+ on demand), keyed uniquely by projectId.
+ * This table holds ONLY that upstream side. It deliberately stores no `behind`
+ * flag, no deployed version and no display labels: those depend on the project's
+ * ACTIVE deployment, which seven code paths can change, and a cached copy of them
+ * went stale between scans — advertising updates for commits already shipped.
+ * They are computed on read instead (`evaluateDrift` + `updates.service`), so the
+ * only invalidation this cache needs is "the project's source changed".
  */
 export const updateStatus = pgTable(
   "update_status",
@@ -25,23 +29,22 @@ export const updateStatus = pgTable(
       .references(() => project.id, { onDelete: "cascade" }),
     /** Drift kind: "commit" | "release" | "image" (mirrors UpdatableKind). */
     kind: text("kind").notNull(),
-    /** True when an update is available (any image service behind, new commit, higher semver). */
-    behind: boolean("behind").notNull().default(false),
-    /** The latest matching version/commit is already deploying — suppress the nudge. */
-    latestInProgress: boolean("latest_in_progress").notNull().default(false),
-    /** Human labels for the UI (e.g. "v0.3.1" / "abc1234" / "n8nio/n8n"). */
-    currentLabel: text("current_label"),
-    latestLabel: text("latest_label"),
-    /** Full resolver payload (per-service image drift, branch, etc.) for the UI. */
+    /**
+     * The upstream payload, shaped by `kind`:
+     *   commit  → { branch, latestSha, latestMessage }   (full sha — it gets compared)
+     *   release → { latestVersion, pinned }
+     *   image   → { services: [{ serviceId, name, ref, latestDigest }] }
+     */
     detail: jsonb("detail"),
-    /** When this row was last refreshed by a scan. */
+    /** When the upstream side was last polled. */
     checkedAt: timestamp("checked_at").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("uq_update_status_project").on(t.projectId),
-    // Home/Apps query: "everything in this org that has an update".
-    index("idx_update_status_org_behind").on(t.organizationId, t.behind),
+    // Home/Apps query: every cached row in this org (the behind/not-behind split
+    // is computed after loading, so it can't be an index predicate).
+    index("idx_update_status_org").on(t.organizationId),
   ],
 );

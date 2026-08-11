@@ -14,7 +14,12 @@
 
 import { repos } from "@repo/db";
 import { SYSTEM } from "@repo/core";
-import { manageDomainSsl, tlsIssuedElsewhere } from "./domain-ssl";
+import {
+  MAIL_DOMAIN_OWNER,
+  manageDomainSsl,
+  resolveMailOwner,
+  tlsIssuedElsewhere,
+} from "./domain-ssl";
 import { notification } from "./notification-dispatcher";
 
 // ─── Core renewal logic ──────────────────────────────────────────────────────
@@ -74,12 +79,31 @@ export async function renewExpiringCerts(): Promise<RenewalResult> {
     });
   }
 
+  /**
+   * The notification context for one row. A project-owned row gets it from the
+   * project; a MAIL-owned row has no project, so it resolves the org from the mail
+   * server (`resolveMailOwner`). Without this branch `ctx` was undefined for mail
+   * and the `if (ctx)` guard below silently dropped the alert — so a mail
+   * certificate whose renewal FAILED went to `sslStatus: "error"` and told nobody,
+   * which is the same silent-expiry shape this row exists to prevent.
+   */
+  const notifyContext = async (
+    d: (typeof batch)[number],
+  ): Promise<{ organizationId: string; projectName: string } | undefined> => {
+    if (d.projectId) return projectCache.get(d.projectId);
+    if (d.ownerType !== MAIL_DOMAIN_OWNER) return undefined;
+    const owner = await resolveMailOwner(d.hostname).catch(() => null);
+    return owner
+      ? { organizationId: owner.organizationId, projectName: `Mail (${d.hostname})` }
+      : undefined;
+  };
+
   const details: RenewalResult["details"] = [];
   let renewed = 0;
   let failed = 0;
 
   for (const domain of batch) {
-    const ctx = domain.projectId ? projectCache.get(domain.projectId) : undefined;
+    const ctx = await notifyContext(domain);
 
     try {
       // manageDomainSsl resolves the provider on the serving host and persists

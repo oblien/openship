@@ -22,6 +22,11 @@
     "backToSetup": "العودة إلى الإعداد",
     "personal": "شخصي"
   },
+  "mailRail": {
+    "selectServer": "اختر خادم بريد",
+    "switchServer": "تبديل خادم البريد",
+    "setupIncomplete": "الإعداد غير مكتمل"
+  },
   "migration": {
     "inProgressTitle": "جارٍ الترحيل",
     "inProgressBody": "يتم نقل بياناتك. ستُحدَّث هذه الصفحة عند انتهاء عملية التحويل — عادةً خلال 30-90 ثانية.",

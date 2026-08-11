@@ -1,0 +1,453 @@
+---
+title: Add an app
+description: Write the catalog JSON that makes a one-click Openship app, built up field by field from a bare service to a complete submission — plus how to ship it as a pull request or upload it privately to your own organization.
+---
+
+Openship's **Apps** tab is a catalog of one-click installs. Each entry is a single JSON file, and that
+file is the whole deliverable: it describes the containers, how they wire together, which secrets to
+generate, how it gets exposed, and what the user sees once it is running.
+
+This page walks through writing one from scratch. Every field is catalogued in the
+[App catalog JSON reference](/docs/reference/app-catalog); here we build a real app end to end.
+
+| | Curated catalog entry | Custom app |
+|---|---|---|
+| How | A **pull request** adding `catalog/<id>.json` | Upload JSON in your dashboard, or `POST /api/apps/custom` |
+| Who sees it | Everyone, on every instance | Only your organization |
+| Reviewed | Yes, by a maintainer | No — always marked unverified |
+| Good for | An app the whole community wants | Your own internal stack, or trying an idea out |
+
+Both use the **same format** and the **same strict validation**, so everything below applies either
+way. [Jump to the custom-app path](#upload-a-custom-app-no-pull-request) if you are not opening a PR.
+
+## What a pull request contains
+
+One file: `packages/core/src/apps/catalog/<id>.json`, plus the regenerated `catalog.json`. Optionally
+a logo SVG. That is it — no code.
+
+```
+packages/core/src/apps/catalog/umami.json    ← the app you wrote
+packages/core/src/apps/catalog.json          ← regenerated (a drift test fails CI without it)
+apps/dashboard/public/app-logos/umami.svg    ← only if the logo is not on simpleicons
+```
+
+### The bar it has to clear
+
+The catalog is **curated, not open-ended** — installing an app never runs arbitrary third-party code.
+Expect review on exactly these points:
+
+- **Open-source only.** A well-known project with a public source repository, so anyone can see what
+  it is before installing.
+- **Official or reputable images, pinned.** The project's own published image at a pinned version
+  (`postgres:16-alpine`, `qdrant/qdrant:v1.18.3`) — never an unpinned tag or an unknown publisher.
+- **Secure defaults.** Credentials auto-generated, never plaintext defaults. Publicly-exposed admin
+  UIs require auth.
+- **Fully auditable.** The JSON is the whole truth — images, ports, env, volumes, all in one small
+  file. Nothing fetched from a private source.
+
+## Build it up
+
+We will add **Umami**, a self-hosted analytics app that needs a Postgres database. Each step below is
+one decision; the [complete file](#the-complete-file) is at the end.
+
+<Callout title="Keep the $schema line" type="info">
+Start the file with `"$schema": "https://openship.io/app.schema.json"`. Your editor then autocompletes
+field names and flags bad **values** — an invalid `category`, a wrong `type`, a missing required
+field. It cannot flag a misspelled field *name*, because unknown keys are deliberately ignored rather
+than rejected, so lean on the autocomplete.
+</Callout>
+
+### 1. Identity, and the app itself
+
+`id` is a stable kebab-case slug and the filename must match it. Start with `available: false` so the
+app appears as *coming soon* and cannot be installed while you are still working on it.
+
+```json
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "id": "umami",
+  "name": "Umami",
+  "description": "Privacy-focused web analytics — a lightweight, self-hosted alternative to Google Analytics.",
+  "kind": "template",
+  "logo": "umami",
+  "category": "analytics",
+  "tags": ["analytics", "privacy", "statistics"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "umami",
+      "image": "ghcr.io/umami-software/umami:postgresql-v2.11.3",
+      "ports": ["3000:3000"],
+      "exposedPort": 3000,
+      "exposed": true,
+      "restart": "unless-stopped"
+    }
+  ]
+}
+```
+
+`kind: "template"` means "instantiate these services" — the normal case. (`kind: "flow"` exists only
+for apps with a bespoke built-in wizard, like the mail stack, and declares no services.)
+
+### 2. Add the database, and share the generated password
+
+Umami needs Postgres. Add it as a second service — and remember that **the service name is the
+hostname**: `umami` reaches the database at `umami-db` on the project network.
+
+The password must never be a plaintext default. Declare it as a `configField` with
+`generate: "secret"`, and Openship mints a random value at install that the operator never types.
+
+The interesting part is getting that one generated password into **two** places — the database's own
+`POSTGRES_PASSWORD`, and the connection string the app reads:
+
+```json
+"services": [
+  {
+    "name": "umami-db",
+    "image": "postgres:16-alpine",
+    "environment": { "POSTGRES_DB": "umami", "POSTGRES_USER": "umami" },
+    "secretEnv": ["POSTGRES_PASSWORD"],
+    "volumes": ["umami_db_data:/var/lib/postgresql/data"],
+    "healthcheck": { "test": "pg_isready -U umami", "interval": "5s", "retries": 10 },
+    "restart": "unless-stopped"
+  },
+  {
+    "name": "umami",
+    "image": "ghcr.io/umami-software/umami:postgresql-v2.11.3",
+    "ports": ["3000:3000"],
+    "exposedPort": 3000,
+    "exposed": true,
+    "dependsOn": ["umami-db"],
+    "environment": {
+      "DATABASE_TYPE": "postgresql",
+      "DATABASE_URL": "postgresql://umami:{{config:POSTGRES_PASSWORD}}@umami-db:5432/umami"
+    },
+    "secretEnv": ["DATABASE_URL", "APP_SECRET"],
+    "restart": "unless-stopped"
+  }
+],
+"configFields": [
+  { "key": "POSTGRES_PASSWORD", "service": "umami-db", "label": "Database password",
+    "generate": "secret", "secret": true },
+  { "key": "APP_SECRET", "service": "umami", "label": "App secret",
+    "help": "Signs session tokens. Auto-generated.", "generate": "secret", "secret": true }
+]
+```
+
+Three things worth understanding here, because they are where most authoring mistakes happen:
+
+- **`{{config:KEY}}`** inlines a generated value into any `environment` string. That is how one
+  password ends up inside `DATABASE_URL` on a *different* service.
+- **`secretEnv`** lists env keys on that service which are secrets — forced encrypted and never
+  written as plaintext, whether the value came from `environment` or from a `configField`.
+  `DATABASE_URL` is listed because it *embeds* a secret.
+- **`dependsOn` + `healthcheck`** is how you make the app wait for a real, ready database rather than
+  just a started container.
+
+<Callout title="generateGroup is the other sharing mechanism">
+Use `{{config:KEY}}` when one generated value belongs in another service's env string. Use
+`generateGroup` when two separate **`configFields`** must receive the *same* generated value — for
+example a database's `MYSQL_ROOT_PASSWORD` and an app's own `database__connection__password`. Give
+both fields the same `generateGroup` and they always match.
+</Callout>
+
+### 3. Choose how it gets exposed
+
+`endpoints` is what the install wizard asks the operator about. Omit it and Openship derives one
+`http` endpoint per exposed service — fine here, but declaring it lets you label it properly:
+
+```json
+"endpoints": [
+  { "service": "umami", "port": 3000, "label": "Dashboard", "kind": "http" }
+]
+```
+
+Use `kind: "tcp"` for a raw port with no domain, such as a database that should not be
+domain-routable. `defaultMode` preselects an exposure and `allowedModes` restricts the choices.
+
+<Callout title="A domain is never invented for you" type="warn">
+Public hostnames come only from the operator's routing choice at install. An app that nobody routes
+installs **port-only**, which is the correct outcome for a database or an internal tool.
+</Callout>
+
+### 4. What the user sees after install
+
+This is the part that separates a good submission from a bare one. `connection` becomes the
+post-install **Connection card** — the URLs and keys the user actually needs:
+
+```json
+"connection": {
+  "title": "Umami",
+  "description": "Sign in to the dashboard, then add a website to get its tracking snippet.",
+  "outputs": [
+    { "id": "dashboard", "label": "Dashboard", "source": "publicUrl:umami",
+      "kind": "url", "recommended": true }
+  ],
+  "firstLogin": {
+    "username": "admin",
+    "password": "umami",
+    "note": "Change this immediately after the first sign-in."
+  }
+}
+```
+
+- **`source`** must be `env:<service>:<KEY>`, `publicUrl:<service>[:<port>]`, or `template:…`.
+- **`kind: "url"`** adds an open-in-new-tab action next to the value.
+- **`secret: true`** masks a value behind a reveal action — use it for any credential.
+- **`envKey`** prefills the handover when a user wires this app into another project.
+- **`firstLogin`** is for **static** credentials the image ships with (Umami's `admin` / `umami`).
+  Those are fixed values, not resolved from a running service, which is why they cannot be `outputs`.
+
+### 5. Day-2 settings
+
+`settings` renders a curated form instead of leaving the user to edit raw env. Anything with
+`installStep: true` is *also* collected during install:
+
+```json
+"settings": [
+  {
+    "id": "tracking",
+    "label": "Tracking",
+    "description": "How the tracker behaves on your sites.",
+    "fields": [
+      { "key": "DISABLE_TELEMETRY", "service": "umami", "label": "Disable telemetry",
+        "type": "boolean", "trueValue": "1", "falseValue": "0", "default": "0",
+        "requiresRedeploy": true },
+      { "key": "TRACKER_SCRIPT_NAME", "service": "umami", "label": "Tracker script name",
+        "type": "text", "advanced": true, "requiresRedeploy": true }
+    ]
+  }
+]
+```
+
+<Callout title="settings vs configFields — the #1 mistake" type="warn">
+If the **user types it**, it is a `setting` (with `installStep: true` to collect it during install).
+If the operator **never types it** — a generated secret, a signed key, a derived default — it is a
+`configField`, which is resolved server-side and never rendered as an input. See
+[the comparison table](/docs/reference/app-catalog#two-field-systems).
+</Callout>
+
+### The complete file
+
+Everything above, assembled — this is exactly what the PR adds:
+
+```json
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "id": "umami",
+  "name": "Umami",
+  "description": "Privacy-focused web analytics — a lightweight, self-hosted alternative to Google Analytics.",
+  "kind": "template",
+  "logo": "umami",
+  "category": "analytics",
+  "tags": ["analytics", "privacy", "statistics"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "umami-db",
+      "image": "postgres:16-alpine",
+      "environment": { "POSTGRES_DB": "umami", "POSTGRES_USER": "umami" },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["umami_db_data:/var/lib/postgresql/data"],
+      "healthcheck": { "test": "pg_isready -U umami", "interval": "5s", "retries": 10 },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "umami",
+      "image": "ghcr.io/umami-software/umami:postgresql-v2.11.3",
+      "ports": ["3000:3000"],
+      "exposedPort": 3000,
+      "exposed": true,
+      "dependsOn": ["umami-db"],
+      "environment": {
+        "DATABASE_TYPE": "postgresql",
+        "DATABASE_URL": "postgresql://umami:{{config:POSTGRES_PASSWORD}}@umami-db:5432/umami"
+      },
+      "secretEnv": ["DATABASE_URL", "APP_SECRET"],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    { "key": "POSTGRES_PASSWORD", "service": "umami-db", "label": "Database password",
+      "help": "Auto-generated. Also inlined into the app's DATABASE_URL.",
+      "generate": "secret", "secret": true },
+    { "key": "APP_SECRET", "service": "umami", "label": "App secret",
+      "help": "Signs session tokens. Auto-generated.", "generate": "secret", "secret": true }
+  ],
+  "endpoints": [
+    { "service": "umami", "port": 3000, "label": "Dashboard", "kind": "http" }
+  ],
+  "settings": [
+    {
+      "id": "tracking",
+      "label": "Tracking",
+      "description": "How the tracker behaves on your sites.",
+      "fields": [
+        { "key": "DISABLE_TELEMETRY", "service": "umami", "label": "Disable telemetry",
+          "help": "Stop Umami sending anonymous usage data upstream.",
+          "type": "boolean", "trueValue": "1", "falseValue": "0", "default": "0",
+          "requiresRedeploy": true },
+        { "key": "TRACKER_SCRIPT_NAME", "service": "umami", "label": "Tracker script name",
+          "help": "Rename the tracker script to dodge ad blockers, e.g. \"stats\".",
+          "type": "text", "advanced": true, "requiresRedeploy": true }
+      ]
+    }
+  ],
+  "connection": {
+    "title": "Umami",
+    "description": "Sign in to the dashboard, then add a website to get its tracking snippet.",
+    "outputs": [
+      { "id": "dashboard", "label": "Dashboard", "source": "publicUrl:umami",
+        "kind": "url", "recommended": true }
+    ],
+    "firstLogin": {
+      "username": "admin",
+      "password": "umami",
+      "note": "Change this immediately after the first sign-in."
+    }
+  }
+}
+```
+
+<Callout title="Pin to the current release" type="info">
+The image tag above is illustrative. Check the project's releases and pin the version you actually
+tested.
+</Callout>
+
+### Going further
+
+Two fields worth knowing for richer apps, both covered in the reference:
+
+- **[`prepare`](/docs/reference/app-catalog#prepare)** runs a command **inside** a service container
+  after start — never a host shell — and can capture its stdout into an env var. This is how an app
+  creates a first bucket or mints an admin key. Must be re-run safe, or gated with `once`.
+- **[`provides` / `requires`](/docs/reference/app-catalog#provides-and-requires)** wire apps to each
+  other: `provides` advertises a connectable bundle (an S3 endpoint plus its keys), and `requires`
+  declares something this app needs from another project, which the wizard offers a picker for.
+
+`packages/core/src/apps/catalog/minio.json` is a good real example of both.
+
+### Build a service instead of pulling an image
+
+Every service so far has pulled a prebuilt `image`. Some apps can't — the upstream ships a base image
+that still needs extra packages and a provisioning entrypoint baked in (Neon's compute node is the
+canonical case). For those, give the service a **`build`** instead of an `image`: an inline Dockerfile
+plus its build-context files, which Openship materializes and `docker build`s on the deploy host at
+deploy time. Set **exactly one** of `image` or `build` per service.
+
+```json
+{
+  "name": "compute",
+  "build": {
+    "dockerfile": "FROM ghcr.io/example/base:1.2.3\nRUN apt-get update && apt-get install -y curl jq\nCOPY compute/start.sh /start.sh\nRUN chmod +x /start.sh\nENTRYPOINT [\"/start.sh\"]\n",
+    "files": [
+      { "path": "start.sh", "content": "#!/bin/sh\nexec my-server --config {{config:SERVER_MODE}}\n" }
+    ]
+  }
+}
+```
+
+The one thing to get right: **COPY sources are prefixed by the service name**. Each buildable service
+is materialized under a subdir named after it inside one shared context, so a `files[].path` of
+`start.sh` on service `compute` is copied as `COPY compute/start.sh …`, not `COPY start.sh …`.
+`{{config:KEY}}` resolves in both `dockerfile` and `files[].content`; a Dockerfile `ARG` is fed from
+the project's build env (declare it as `environment` / a `configField`, no separate args map). Full
+rules in **[Building an image](/docs/reference/app-catalog#building-an-image)**.
+
+## Give it a logo
+
+`logo` is an id resolved by the dashboard's `AppLogo` component:
+
+- **On [simpleicons](https://simpleicons.org)?** Set `logo` to the slug (`"umami"`, `"ghost"`,
+  `"grafana"`) and you are done.
+- **Not there, or the mark renders wrong?** Drop an SVG at
+  `apps/dashboard/public/app-logos/<id>.svg` and add a `LOGO_CONFIG` entry mapping the id to it. Apps
+  with no good mark fall back to a generic glyph.
+
+## Regenerate and validate
+
+The bundle imports one merged artifact, so regenerate it and run the catalog test:
+
+```bash
+cd packages/core
+bun scripts/gen-catalog.ts                  # rewrites src/apps/catalog.json from catalog/*.json
+bunx vitest run src/apps/catalog.test.ts    # asserts sync + every app passes the full schema
+```
+
+The test checks the merged file is in sync **and** that your entry passes validation — required
+fields, valid `category`, and every [referential rule](/docs/reference/app-catalog#validation) (each
+`service` reference resolves, each `output.source` is well-formed, and so on).
+
+Order in `catalog.json` is preserved from the existing file (curated, featured-first); a **new** app
+is appended alphabetically, so reorder it by hand if you want it featured earlier.
+
+## Ship it
+
+Set `"available": true` once it deploys cleanly end to end. Until then it shows as *coming soon* and
+install is refused server-side, not just hidden in the UI.
+
+<Callout title="A merged app reaches existing instances without a redeploy" type="info">
+The runtime catalog is the bundled copy overlaid by a live fetch of `catalog.json` from the repo, on a
+10-minute TTL. So your app appears on instances that are already running — gated per-entry by
+[`minEngine`](/docs/reference/app-catalog#stability-and-versioning). If your definition uses a
+capability that only shipped in a given release, set `minEngine` to it: older instances then show a
+guided *Requires Openship ≥ X* card instead of failing the install.
+</Callout>
+
+## What the user sees on install
+
+Four named phases, rendered as a stepper:
+
+| Phase | Meaning |
+|---|---|
+| **Preparing images** | Pulling or building. Skipped for pull-only apps. |
+| **Starting services** | Creating and starting the containers. |
+| **Finishing setup** | Your `prepare` steps. Present only if the app declares any. |
+| **Live** | Done — the Connection card is available. |
+
+You can label your own `prepare` steps in that third phase with `title` and `description`.
+
+## Checklist
+
+- [ ] **Open-source** app; **official or reputable** image **pinned** to a version.
+- [ ] `catalog/<id>.json` created, `id` matches the filename, kebab-case.
+- [ ] Services wire by name; one service `exposed` with an `exposedPort`.
+- [ ] Secrets use `generate` with `secret: true` — no plaintext credentials anywhere.
+- [ ] Env that *embeds* a secret (a connection URL) is listed in `secretEnv`.
+- [ ] Anything the user types is an `installStep` setting, not a `configField`.
+- [ ] `connection` gives the user the URLs and keys they need, with `secret: true` on credentials.
+- [ ] Logo resolves — simpleicons slug, or a vendored SVG plus a `LOGO_CONFIG` entry.
+- [ ] `bun scripts/gen-catalog.ts` run and `catalog.json` committed.
+- [ ] `bunx vitest run src/apps/catalog.test.ts` passes.
+- [ ] `minEngine` set if the definition uses a recently added capability.
+- [ ] `available: true` only once it deploys cleanly end to end.
+
+## Upload a custom app (no pull request)
+
+The same JSON, kept private to your organization and needing no review. In the dashboard open
+**Apps → Add a custom app**, paste or upload the file. Or over the API:
+
+```bash
+curl -X POST https://your-host/api/apps/custom \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data @umami.json
+```
+
+It runs through the **same strict validation** as the curated catalog and installs through the normal
+services pipeline, with the same in-container boundary as any project you deploy yourself — no new
+privilege. Four rules are enforced:
+
+- **Always unverified.** Trust comes from provenance, never the file: `verified` and `available` are
+  set by the server, so a JSON claiming `"verified": true` is ignored.
+- **`kind` must be `template`.** Flow apps point at built-in wizards and cannot be uploaded.
+- **The `id` cannot shadow a built-in.** Curated apps always win.
+- **It must validate**, with the offending detail returned in the error.
+
+## See also
+
+- [App catalog JSON](/docs/reference/app-catalog) — every field, in detail
+- [Apps API](/docs/api/apps) — catalog, install, custom apps, settings, connection
+- [Compose / multi-service](/docs/guides/compose-multi-service) — the engine an app deploys through

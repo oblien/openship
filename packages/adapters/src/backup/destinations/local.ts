@@ -74,7 +74,7 @@ class LocalDestinationImpl implements BackupDestination {
     }
   }
 
-  async put(key: string, body: Readable, _opts: PutOpts): Promise<PutResult> {
+  async put(key: string, body: Readable, opts: PutOpts): Promise<PutResult> {
     const targetPath = this.resolveKey(key);
     await fs.mkdir(dirname(targetPath), { recursive: true });
 
@@ -90,8 +90,19 @@ class LocalDestinationImpl implements BackupDestination {
       },
     });
 
+    let digest: string;
     try {
       await pipelineP(body, counterAndHasher, createWriteStream(tmpPath));
+      digest = hash.digest("hex");
+      // `PutOpts.sha256` is a gate. Checked BEFORE the rename so a body that
+      // arrived corrupt never becomes a readable object — a half-good artifact
+      // that restore later trusts is worse than a failed backup.
+      const expected = opts.sha256?.trim().replace(/^sha256:/i, "").toLowerCase();
+      if (expected && expected !== digest) {
+        throw new Error(
+          `sha256 mismatch writing ${key}: caller declared ${expected}, bytes hashed to ${digest}`,
+        );
+      }
       // POSIX atomic rename.
       await fs.rename(tmpPath, targetPath);
     } catch (err) {
@@ -100,7 +111,7 @@ class LocalDestinationImpl implements BackupDestination {
       throw err;
     }
 
-    return { bytesWritten, etag: hash.digest("hex") };
+    return { bytesWritten, etag: digest };
   }
 
   async get(key: string): Promise<Readable> {

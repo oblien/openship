@@ -5,12 +5,30 @@ import { endpoints } from "./endpoints";
 
 export interface NotificationCategory {
   id: string;
+  /** Group id — matches a `NotificationCategoryGroup.id` from the same response. */
+  group: string;
   label: string;
   description: string;
   defaultEnabled: boolean;
 }
 
-export type ChannelKind = "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams";
+/**
+ * Category groups, already in tab order. English like the category labels: the
+ * backend owns both, so adding a group never touches the locale files.
+ */
+export interface NotificationCategoryGroup {
+  id: string;
+  label: string;
+}
+
+export type ChannelKind =
+  | "email"
+  | "webhook"
+  | "in_app"
+  | "slack"
+  | "discord"
+  | "msteams"
+  | "telegram";
 export type DeliveryStatus = "queued" | "sending" | "sent" | "failed" | "seen";
 
 /* ── Channel ─────────────────────────────────────────────────────── */
@@ -26,7 +44,8 @@ export interface NotificationChannel {
    *    in_app  → {}
    *    slack   → { webhookUrlConfigured, channelName | null }
    *    discord → { webhookUrlConfigured }
-   *    msteams → { webhookUrlConfigured } */
+   *    msteams → { webhookUrlConfigured }
+   *    telegram → { botTokenConfigured, botId | null, chatId, messageThreadId | null } */
   config: Record<string, unknown>;
   verified: boolean;
   enabled: boolean;
@@ -78,7 +97,9 @@ export interface NotificationDelivery {
 export const notificationsApi = {
   // ── Categories
   listCategories: () =>
-    api.get<{ categories: NotificationCategory[] }>(endpoints.notifications.categories),
+    api.get<{ categories: NotificationCategory[]; groups: NotificationCategoryGroup[] }>(
+      endpoints.notifications.categories,
+    ),
 
   // ── Channels
   listChannels: () =>

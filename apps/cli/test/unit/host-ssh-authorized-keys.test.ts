@@ -1,10 +1,36 @@
-import { describe, it, expect } from "vitest";
-import { rewriteHostAuthorizedKeys } from "../../src/lib/compose";
+import { describe, it, expect, vi } from "vitest";
+
+/**
+ * Pin the box these assertions are about (Ubuntu, systemd) instead of measuring the
+ * machine running the suite. `renderHostChannelIssue` now names the sshd unit THIS host
+ * answers to, so left unmocked its remedy is `systemsetup -setremotelogin` on a mac and
+ * `rc-service sshd` on Alpine. Only the resolver is replaced — the command is still
+ * rendered by the real `envOps`, so this can't drift from the one table.
+ */
+vi.mock("@repo/adapters", async (importOriginal) => {
+  const fixtures = await import("../../../../packages/adapters/src/system/environment.fixtures");
+  return {
+    ...(await importOriginal<typeof import("@repo/adapters")>()),
+    resolveLocalEnvironmentSync: () => fixtures.profileFixture(),
+  };
+});
+
+import {
+  rewriteHostAuthorizedKeys,
+  stripHostAuthorizedKeys,
+  chooseHostChannelUser,
+  listensOnPort,
+  renderHostChannelIssue,
+} from "../../src/lib/compose";
 
 /**
  * The docker→host channel authorizes a key in the host user's authorized_keys.
  * That file decides who can log into the box, so the surgery on it is tested
  * directly: an over-broad or un-revoked line here is a standing credential.
+ *
+ * The tail of this file covers the other two decisions provisioning makes without a
+ * packet: whether the host runs an SSH server at all, and what `up` says when the
+ * channel didn't come out working (#509).
  */
 
 const PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexample openship-host-executor";
@@ -68,7 +94,205 @@ describe("rewriteHostAuthorizedKeys", () => {
   });
 });
 
+/**
+ * The `--no-host-control` half. The flag's copy says the channel's key is taken back,
+ * and it used to leave the authorized line in place — "off" was true of this install's
+ * behaviour and false of the box's attack surface, which is the half the flag is set for.
+ */
+describe("stripHostAuthorizedKeys", () => {
+  it("drops our line and leaves the operator's alone", () => {
+    const out = stripHostAuthorizedKeys(`${OPERATOR_KEY}\n${hardened(PUB)}\n`);
+    expect(out).toBe(`${OPERATOR_KEY}\n`);
+  });
+
+  it("drops a legacy unrestricted line too, so a pre-hardening install is revoked", () => {
+    expect(stripHostAuthorizedKeys(`${OPERATOR_KEY}\n${PUB}\n`)).toBe(`${OPERATOR_KEY}\n`);
+  });
+
+  it("drops every one of ours, not just the last", () => {
+    const out = stripHostAuthorizedKeys(
+      `${hardened(OTHER_PUB)}\n${OPERATOR_KEY}\n${hardened(PUB)}\n`,
+    );
+    expect(out).not.toContain("openship-host-executor");
+    expect(out).toContain(OPERATOR_KEY);
+  });
+
+  it("empties a file that held nothing else — no stray newline for sshd to read", () => {
+    expect(stripHostAuthorizedKeys(`${hardened(PUB)}\n`)).toBe("");
+  });
+
+  it("leaves a file with none of ours byte-identical in content", () => {
+    expect(stripHostAuthorizedKeys(`${OPERATOR_KEY}\n`)).toBe(`${OPERATOR_KEY}\n`);
+  });
+});
+
 /** The hardened form, as the provisioner writes it. */
 function hardened(pub: string): string {
   return `from="172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1",restrict,pty ${pub}`;
 }
+
+/**
+ * The host channel must log in as root — the account the platform runs every host op as
+ * (/root/.openship, mail, edge) and the account the auto-created server record says. A
+ * channel provisioned for the invoking sudo user instead is issue #489.
+ */
+describe("chooseHostChannelUser", () => {
+  it("uses root directly when invoked as root", () => {
+    const out = chooseHostChannelUser({
+      invokerUid: 0,
+      invokerName: "root",
+      invokerHome: "/root",
+      hasPasswordlessSudo: false,
+    });
+    expect(out).toEqual({
+      user: "root",
+      authKeysPath: "/root/.ssh/authorized_keys",
+      viaSudo: false,
+      rootUnavailable: false,
+    });
+  });
+
+  it("authorizes root via sudo when a non-root user has passwordless sudo", () => {
+    const out = chooseHostChannelUser({
+      invokerUid: 1000,
+      invokerName: "ubuntu",
+      invokerHome: "/home/ubuntu",
+      hasPasswordlessSudo: true,
+    });
+    expect(out).toEqual({
+      user: "root",
+      authKeysPath: "/root/.ssh/authorized_keys",
+      viaSudo: true,
+      rootUnavailable: false,
+    });
+  });
+
+  it("falls back to the invoking user (flagged) when root is unreachable", () => {
+    const out = chooseHostChannelUser({
+      invokerUid: 1000,
+      invokerName: "deploy",
+      invokerHome: "/home/deploy",
+      hasPasswordlessSudo: false,
+    });
+    expect(out).toEqual({
+      user: "deploy",
+      authKeysPath: "/home/deploy/.ssh/authorized_keys",
+      viaSudo: false,
+      rootUnavailable: true,
+    });
+  });
+});
+
+/**
+ * #509, one layer along: `ssh-keygen` is the openssh CLIENT and `authorized_keys` is just
+ * a file, so provisioning "succeeds" and writes all five OPENSHIP_HOST_* keys on a host
+ * with no SSH SERVER at all. This is the prerequisite check, and a false negative here
+ * would tell an operator their working host has no sshd — so it is read off a listing we
+ * actually got, and matched on a whole address column.
+ */
+describe("listensOnPort", () => {
+  const SS = [
+    "LISTEN 0      4096         127.0.0.53%lo:53         0.0.0.0:*",
+    "LISTEN 0      128                0.0.0.0:22         0.0.0.0:*",
+    "LISTEN 0      128                   [::]:22            [::]:*",
+  ].join("\n");
+
+  const NETSTAT = [
+    "Active Internet connections (only servers)",
+    "Proto Recv-Q Send-Q Local Address           Foreign Address         State",
+    "tcp        0      0 0.0.0.0:2222            0.0.0.0:*               LISTEN",
+    "tcp6       0      0 :::80                   :::*                    LISTEN",
+  ].join("\n");
+
+  it("finds sshd in an `ss -ltn` listing, v4 or v6", () => {
+    expect(listensOnPort(SS, 22)).toBe(true);
+  });
+
+  it("finds it in a `netstat -ltn` listing too", () => {
+    expect(listensOnPort(NETSTAT, 2222)).toBe(true);
+  });
+
+  it("reports absent when nothing listens on that port", () => {
+    expect(listensOnPort(SS, 2222)).toBe(false);
+    expect(listensOnPort(NETSTAT, 22)).toBe(false);
+    expect(listensOnPort("", 22)).toBe(false);
+  });
+
+  it("never lets :22 match :2222 (or the other way round)", () => {
+    const only2222 = "LISTEN 0      128                0.0.0.0:2222       0.0.0.0:*";
+    expect(listensOnPort(only2222, 22)).toBe(false);
+    expect(listensOnPort(only2222, 2222)).toBe(true);
+  });
+
+  it("ignores rows that aren't listeners — a header, or an established connection", () => {
+    const established = [
+      "Proto Recv-Q Send-Q Local Address           Foreign Address         State",
+      "tcp        0      0 10.0.0.5:51234          10.0.0.9:22             ESTABLISHED",
+    ].join("\n");
+    // An outbound ssh session is not a listening sshd, and reading it as one is how a
+    // host with no server reports a healthy channel.
+    expect(listensOnPort(established, 22)).toBe(false);
+  });
+});
+
+/**
+ * The reason a channel is missing exists ONLY at provisioning time: every later surface
+ * (the install preflight, the API banner, the dashboard, `openship doctor`) sees an unset
+ * OPENSHIP_HOST_SSH_HOST and can't tell a failed keygen from an operator who opted out.
+ * So this warning is the whole account of the cause — and the framing around it comes
+ * from @repo/core so it reads as the same story those surfaces tell.
+ */
+describe("renderHostChannelIssue", () => {
+  const AT = { target: "host.docker.internal:22", kept: false };
+
+  it("names the cause a later surface cannot recover", () => {
+    const out = renderHostChannelIssue(
+      { code: "keygen", detail: "ssh-keygen is not installed" },
+      AT,
+    );
+    expect(out).toContain("could NOT be provisioned");
+    expect(out).toContain("ssh-keygen is not installed");
+  });
+
+  it("says host operations refuse rather than target the container", () => {
+    const out = renderHostChannelIssue({ code: "empty-key" }, AT);
+    expect(out).toContain("OPENSHIP_HOST_SSH_HOST");
+    expect(out).toContain("refuse");
+  });
+
+  it("says it KEPT the channel the install already had, when it did", () => {
+    const out = renderHostChannelIssue({ code: "error", detail: "EACCES" }, { ...AT, kept: true });
+    expect(out).toContain("Kept the host channel this install already had");
+    // ...and does not also claim the keys are gone.
+    expect(out).not.toContain("is therefore unset");
+  });
+
+  it("reports a missing SSH server as provisioned-but-unusable, with core's own remedy", () => {
+    const out = renderHostChannelIssue({ code: "no-sshd", detail: "port 22" }, AT);
+    expect(out).toContain("nothing on this host is listening for SSH");
+    // The repair is core's refusal remedy, quoted rather than re-worded here — with the
+    // unit name of the host mocked at the top of this file rather than a global default.
+    expect(out).toContain("sudo systemctl enable --now ssh");
+    expect(out).toContain("host.docker.internal:22");
+    // The channel WAS written, so it must not claim the keys are unset or kept.
+    expect(out).not.toContain("is therefore unset");
+    expect(out).not.toContain("Kept the host channel");
+  });
+
+  it("always carries the reassurance, the blocked list and the re-check command", () => {
+    // A degraded install is not a failed one, and an operator who reads only "host control
+    // failed" tears down a box whose deploys were fine.
+    for (const issue of [
+      { code: "keygen" as const },
+      { code: "empty-key" as const },
+      { code: "error" as const },
+      { code: "no-sshd" as const },
+    ]) {
+      const out = renderHostChannelIssue(issue, AT);
+      expect(out, issue.code).toContain("Ordinary deploys to this box still work");
+      expect(out, issue.code).toContain("the host terminal");
+      expect(out, issue.code).toContain("installing or updating the mail engine");
+      expect(out, issue.code).toContain("`openship doctor`");
+    }
+  });
+});

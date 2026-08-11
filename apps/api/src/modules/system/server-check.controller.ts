@@ -22,20 +22,26 @@ import {
   COMPONENT_UNINSTALLERS,
   ensureEdge,
   getRemovalSupport,
+  isHostChannelUnavailableError,
   isSshAuthError,
   recoverInterruptedTakeover,
   scanPorts,
   probeTcp,
   type PortScanResult,
+  type SystemLog,
   SYSTEM_COMPONENTS,
   getSystemComponentDefinition,
 } from "@repo/adapters";
 import { formatDuration, systemDebug } from "@/lib/system-debug";
-import { sshManager, buildSshConfig } from "../../lib/ssh-manager";
-import { withPinnedEdgeImage } from "../../lib/edge-image";
+import { sshManager, buildSshConfig, isTransportFailure } from "../../lib/ssh-manager";
+import { sshKeyPathProblem } from "../../lib/ssh-key-path";
+import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
+import { deliverManagedImage } from "../../lib/deliver-managed-image";
+import { resolveAcmeProviderOptions } from "../../lib/acme-config";
 import { runConnectivityCheck } from "../../lib/connectivity";
 import "../../lib/connectivity-checks"; // registers ssh / ssh-server / backup-destination
 import { repos } from "@repo/db";
+import { refreshServerContainer } from "./server-containers.service";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 import { safeErrorMessage } from "@repo/core";
@@ -119,8 +125,13 @@ function resolveInfraComponents(): string[] {
  * **without** persisting them to the database. Used by the server
  * form to validate before saving.
  *
- * Body: { sshHost, sshPort?, sshUser?, sshAuthMethod, sshPassword?, sshKeyPath?, sshKeyPassphrase? }
- * Returns: { ok: boolean, message: string }
+ * Body: { sshHost, sshPort?, sshUser?, sshAuthMethod, sshPassword?, sshKeyPath?,
+ *         sshPrivateKey?, sshKeyPassphrase?, sshJumpHost?, sshArgs? }
+ * Returns: { ok: boolean, message: string, code?: ConnectivityCode }
+ *
+ * `sshJumpHost`/`sshArgs` are not optional decoration: a host only reachable
+ * through a bastion must be PROBED through it, or the test contradicts the save.
+ * The dashboard's `SshProbeInput` is this list.
  */
 /**
  * Run an ephemeral SSH echo test from request-body credentials (no DB row).
@@ -227,6 +238,29 @@ async function buildEphemeralSshConfig(c: Context) {
     return c.json({ ok: false, message: "SSH host is required" }, 400);
   }
 
+  // Diagnose the key path BEFORE buildSshConfig, which folds every key failure
+  // into a null return that reads as "Invalid auth configuration". This route
+  // exists to tell the operator what's wrong, and "wrong" here is usually
+  // concrete: a relative path, a key that was never copied to THIS host, or one
+  // outside the allowlisted roots (the desktop file picker can reach those).
+  const rawKeyPath = typeof body.sshKeyPath === "string" ? body.sshKeyPath.trim() : "";
+  const rawKeyMaterial = typeof body.sshPrivateKey === "string" ? body.sshPrivateKey.trim() : "";
+  if (body.sshAuthMethod === "key") {
+    // Pasted/uploaded material lives in the request, not on this host — no path
+    // to diagnose. Only fall back to the path diagnostic when no key was pasted.
+    if (!rawKeyMaterial && rawKeyPath) {
+      const problem = sshKeyPathProblem(rawKeyPath);
+      if (problem) {
+        return c.json({ ok: false, message: problem, code: "key_path_invalid" }, 400);
+      }
+    } else if (!rawKeyMaterial && !rawKeyPath) {
+      return c.json(
+        { ok: false, message: "Paste a private key or provide a key path", code: "key_missing" },
+        400,
+      );
+    }
+  }
+
   // buildSshConfig also handles "agent" auth (uses the host's SSH_AUTH_SOCK,
   // like VSCode) and THROWS a clear message when agent is selected but no
   // agent is available — surface that as a clean 400 instead of a 500.
@@ -239,6 +273,7 @@ async function buildEphemeralSshConfig(c: Context) {
       sshAuthMethod: body.sshAuthMethod as string,
       sshPassword: body.sshPassword as string ?? null,
       sshKeyPath: body.sshKeyPath as string ?? null,
+      sshPrivateKey: body.sshPrivateKey as string ?? null,
       sshKeyPassphrase: body.sshKeyPassphrase as string ?? null,
       sshJumpHost: body.sshJumpHost as string ?? null,
       sshArgs: body.sshArgs as string ?? null,
@@ -267,26 +302,43 @@ export async function checkServer(c: Context) {
 
   const startedAt = Date.now();
 
+  const body = await c.req.json().catch(() => ({}));
+  const serverId = body.serverId as string | undefined;
+  if (!serverId) return c.json({ error: "serverId is required" }, 400);
+
+  // OUTSIDE the try, and that is the point: `permission.assert` throws NotFoundError
+  // for a row the caller may not see, which the error handler turns into a 404. Caught
+  // here it fell through to the connection diagnosis below and answered 502 with the
+  // host channel's real address and remedy — an unauthorized caller learning the
+  // endpoint from a permission failure.
+  await permission.assert(getRequestContext(c), {
+    resourceType: "server",
+    resourceId: serverId,
+    action: "admin",
+  });
+
+  // Same reasoning, smaller stakes: a rejected component list is a 400 about the
+  // request, not a connection failure, so it must not reach the catch either. Which
+  // also means it can no longer be a non-array that throws on `.filter` and lands as
+  // a 502 about a healthy server.
+  const requestedComponents = body.components;
+  if (requestedComponents !== undefined && !Array.isArray(requestedComponents)) {
+    return c.json({ error: "components must be an array" }, 400);
+  }
+  const valid: string[] | null = requestedComponents?.length
+    ? (requestedComponents as string[]).filter((n) => ALLOWED_COMPONENTS.has(n))
+    : null;
+  if (valid && valid.length === 0) {
+    return c.json({ error: "Invalid component names" }, 400);
+  }
+
   try {
-    const body = await c.req.json().catch(() => ({}));
-    const serverId = body.serverId as string | undefined;
-    if (!serverId) return c.json({ error: "serverId is required" }, 400);
-
-    getRequestContext(c);
-    await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "admin" });
-
-    const requestedComponents = body.components as string[] | undefined;
-    systemDebug("system-check", 
-      `check:start server=${serverId} ${requestedComponents?.length ? requestedComponents.join(",") : "all"}`,
+    systemDebug("system-check",
+      `check:start server=${serverId} ${valid?.length ? valid.join(",") : "all"}`,
     );
 
     let components;
-    if (requestedComponents?.length) {
-      // Validate against allowlist
-      const valid = requestedComponents.filter((n) => ALLOWED_COMPONENTS.has(n));
-      if (valid.length === 0) {
-        return c.json({ error: "Invalid component names" }, 400);
-      }
+    if (valid) {
       components = await sshManager.withExecutor(serverId, async (executor) =>
         withCapabilities(executor, await checkComponents(executor, valid)),
       );
@@ -336,6 +388,35 @@ export async function checkServer(c: Context) {
     if (isSshAuthError(err)) {
       return c.json({ error: "auth_failed", message }, 400);
     }
+
+    // A connect failure on THIS box is almost never "the server is down" — it's the
+    // container→host SSH channel, and the row's display sshHost (127.0.0.1) names
+    // neither the right machine nor the right port (#490). Hand the UI the address
+    // we actually dial plus the remedy, so the banner stops pointing at loopback.
+    //
+    // Only for failures that came from the transport: a component check that threw for
+    // its own reasons is not evidence about the channel, and diagnosing it anyway costs
+    // a TCP probe to tell the operator about a firewall that was never involved.
+    if (isHostChannelUnavailableError(err) || isTransportFailure(err)) {
+      const d = await sshManager.diagnoseReachability(serverId).catch(() => null);
+      if (d?.code === "host_channel_blocked") {
+        return c.json(
+          {
+            error: "host_channel_blocked",
+            code: "host_channel_blocked",
+            message,
+            target: d.target ?? null,
+            hint: d.hint ?? null,
+            rule: d.rule ?? null,
+            // Which state this is. `host_channel_blocked` is one verdict over several
+            // states whose remedies differ, and the banner has to pick copy per state
+            // rather than infer it from which fields happen to be null (#509).
+            channel: d.channel ?? null,
+          },
+          502,
+        );
+      }
+    }
     return c.json({ error: "connection_failed", message }, 502);
   }
 }
@@ -368,6 +449,28 @@ export async function installRespond(c: Context) {
 }
 
 /**
+ * Edge-only Stage-B APPLY ahead of a component installer: build our source onto the
+ * box (or ship + build for a remote one) so the create path adopts the dev image
+ * instead of pulling an unpublished dev tag from GHCR (the reported bug). A no-op for
+ * every non-edge component (docker/git/rsync aren't our images) and in prod (no
+ * checkout → deliver returns at once). Shared by the two install entry points below so
+ * the edge gate and the deliver call can't drift between them.
+ */
+async function deliverEdgeBeforeInstall(
+  component: string,
+  executor: CommandExecutor,
+  onLog: (log: SystemLog) => void,
+): Promise<void> {
+  if (component !== "edge") return;
+  await deliverManagedImage({
+    kind: "edge",
+    image: pinnedEdgeImage(),
+    targetExecutor: executor,
+    onLog,
+  });
+}
+
+/**
  * POST /system/install
  *
  * Install a specific component on a server.
@@ -382,8 +485,8 @@ export async function installComponent(c: Context) {
   const serverId = body.serverId as string | undefined;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
-  getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  await permission.assert(ctx, { resourceType: "server", resourceId: serverId, action: "admin" });
 
   const componentName = body.component as string;
 
@@ -397,15 +500,19 @@ export async function installComponent(c: Context) {
     return c.json({ error: `No installer for ${componentName}` }, 400);
   }
 
+  // Hoisted so the catch can return whatever the build/install already logged: a
+  // from-source edge build that fails throws with its output ONLY in these lines, and
+  // a success-only `logs` would drop exactly the diagnostic the operator needs.
+  const logs: string[] = [];
   try {
-    const logs: string[] = [];
-    const installResult = await sshManager.withExecutor(serverId, (executor) =>
-      installerFn(
+    const installResult = await sshManager.withExecutor(serverId, async (executor) => {
+      await deliverEdgeBeforeInstall(componentName, executor, (log) => logs.push(log.message));
+      return installerFn(
         executor,
         (log) => logs.push(log.message),
         withPinnedEdgeImage(body.config ?? {}),
-      ),
-    );
+      );
+    });
 
     return c.json({
       ...installResult,
@@ -418,12 +525,12 @@ export async function installComponent(c: Context) {
       message === "No server configured" ||
       message === "Invalid SSH auth configuration"
     ) {
-      return c.json({ error: "no_server", message }, 400);
+      return c.json({ error: "no_server", message, logs }, 400);
     }
     if (isSshAuthError(err)) {
-      return c.json({ error: "auth_failed", message }, 400);
+      return c.json({ error: "auth_failed", message, logs }, 400);
     }
-    return c.json({ error: "install_failed", message }, 502);
+    return c.json({ error: "install_failed", message, logs }, 502);
   }
 }
 
@@ -503,8 +610,8 @@ export async function installStream(c: Context) {
   const serverId = body.serverId as string | undefined;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
-  getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  await permission.assert(ctx, { resourceType: "server", resourceId: serverId, action: "admin" });
 
   const requestedComponents = body.components as string[] | undefined;
   // Pinned here, at the boundary — the edge image is never caller-supplied.
@@ -553,6 +660,8 @@ export async function installStream(c: Context) {
     // the SSE stream stays open via the promise below
     const installPromise = (async () => {
       let hasFailure = false;
+      /** Per-component failure reason, for the cached row below. */
+      const failures = new Map<string, string>();
 
       // Before installing the edge, self-heal a takeover that crashed mid-flight
       // on this server on a prior attempt (restores the previous proxy if the
@@ -581,9 +690,9 @@ export async function installStream(c: Context) {
 
         updateComponentProgress(session.id, name, "installing");
 
-        // Bind the interactive "hold" to this session so installOpenResty can
-        // pause on an edge (80/443) conflict and surface the SAME prompt modal
-        // the deploy pipeline uses. Non-openresty installers ignore it.
+        // Bind the interactive "hold" to this session so the edge installer can
+        // pause on an 80/443 conflict and surface the SAME prompt modal the deploy
+        // pipeline uses. Installers other than `edge` ignore it.
         const promptUser: PromptUserFn = (prompt) => promptSetupUser(session.id, prompt);
 
         const onLog = (log: { message: string; level: "info" | "warn" | "error" }) =>
@@ -591,13 +700,22 @@ export async function installStream(c: Context) {
 
         try {
           const result = await sshManager.withExecutor(serverId, async (executor) => {
+            await deliverEdgeBeforeInstall(name, executor, onLog);
             // Single edge-prepare point: the installer raises the edge-conflict
             // consent prompt via promptUser; on "migrate", ensureEdge runs the
             // takeover. Its InstallResult is returned unchanged when no migration.
             const edge = await ensureEdge(
               executor,
               (p) => installerFn(executor, onLog, { ...config, promptUser: p }),
-              { promptUser, onLog, acmeEmail: config?.acmeEmail },
+              {
+                promptUser,
+                onLog,
+                acmeEmail: config?.acmeEmail,
+                nginx: {
+                  ...resolveAcmeProviderOptions(),
+                  ...(config?.acmeEmail ? { acmeEmail: config.acmeEmail } : {}),
+                },
+              },
             );
             if (!edge.migrated) return edge.value;
             return {
@@ -611,16 +729,30 @@ export async function installStream(c: Context) {
             appendSetupLog(session.id, name, `${name} installed successfully${result.version ? ` (${result.version})` : ""}`);
             updateComponentProgress(session.id, name, "installed");
           } else {
-            appendSetupLog(session.id, name, result.error ?? `${name} installation failed`, "error");
+            const msg = result.error ?? `${name} installation failed`;
+            appendSetupLog(session.id, name, msg, "error");
             updateComponentProgress(session.id, name, "failed", result.error);
+            failures.set(name, msg);
             hasFailure = true;
           }
         } catch (err) {
           const msg = safeErrorMessage(err);
           appendSetupLog(session.id, name, msg, "error");
           updateComponentProgress(session.id, name, "failed", msg);
+          failures.set(name, msg);
           hasFailure = true;
         }
+      }
+
+      // Write what the box now looks like into the cached edge row. Without this the
+      // install told nobody: a SUCCESSFUL "Fix edge" left the stale `down` row in
+      // place, so the operator refreshed and still saw "Edge down" — indistinguishable
+      // from the fix having done nothing. A FAILED one lands its reason on the same
+      // row, so the attention card names the cause (`bind() … Address already in use`)
+      // instead of repeating "is down". Edge only: it's the sole component here that
+      // has a container row (mail is provisioned by its own wizard).
+      if (validNames.includes("edge")) {
+        await refreshServerContainer(serverId, "edge", failures.get("edge"));
       }
 
       finishSetupSession(session.id, hasFailure ? "failed" : "completed");

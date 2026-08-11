@@ -101,6 +101,50 @@ describe("edgeProxyFor", () => {
   it("has no cert source for a takeover-only proxy", async () => {
     expect(await edgeProxyFor(exec(), "haproxy").certFor("a.com")).toBeNull();
   });
+
+  /**
+   * The live read-back (drift badge, adopt-live, migrate carry) all read the tunables
+   * through THIS surface, so the values it hands back have to be the ones actually
+   * serving traffic. A host with both an :80 helper and a :443 block is the normal
+   * shape, and reporting the helper's defaults would show permanent false drift.
+   */
+  const DUAL = `
+server {
+  listen 80;
+  server_name dual.com;
+  client_max_body_size 1m;
+  location / { proxy_pass http://127.0.0.1:5000; }
+}
+server {
+  listen 443 ssl;
+  server_name dual.com;
+  ssl_certificate /c.pem;
+  ssl_certificate_key /k.pem;
+  client_max_body_size 50m;
+  proxy_read_timeout 300s;
+  location / { proxy_pass http://127.0.0.1:5000; }
+}
+`;
+
+  it("reads the tunables the vhost is serving", async () => {
+    const api = edgeProxyFor(exec({ conf: NGINX_CONF("/c.pem", "/k.pem") }), "nginx");
+    // Nothing tuned in the fixture — absent, not an empty object.
+    expect((await api.siteFor("a.com"))?.proxy).toBeUndefined();
+  });
+
+  it("prefers the TLS vhost's tunables when a host has both an :80 and a :443 block", async () => {
+    const api = edgeProxyFor(exec({ conf: DUAL }), "nginx");
+    const site = await api.siteFor("dual.com");
+    expect(site?.ssl).toBe(true);
+    expect(site?.proxy).toEqual({ clientMaxBodySize: "50m", proxyReadTimeout: "300s" });
+  });
+
+  it("carries the TLS vhost's tunables through the by-port index too", async () => {
+    // The migrate/import join reads the port index, not siteFor — same precedence.
+    const api = edgeProxyFor(exec({ conf: DUAL }), "nginx");
+    const entry = (await api.sitesByPort()).get(5000)?.[0];
+    expect(entry?.proxy).toEqual({ clientMaxBodySize: "50m", proxyReadTimeout: "300s" });
+  });
 });
 
 describe("collectProxyCerts", () => {

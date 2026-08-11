@@ -1,6 +1,280 @@
+/* ── Layout ─────────────────────────────────────────────────────────
+   The version row and its body share one gutter so an open version's
+   content lines up under the version number, not under the date. */
+.cl-list {
+  --cl-gutter: 140px;
+  --cl-gap: 2rem;
+}
+
 /* Anchor offset so #slug deep-links clear the fixed navbar. */
 .changelog-entry {
   scroll-margin-top: 7rem;
+  border-top: 1px solid var(--th-bd-subtle);
+}
+.changelog-entry:first-of-type {
+  border-top: 0;
+}
+
+/* ── Toolbar ────────────────────────────────────────────────────── */
+.cl-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+}
+.cl-toolbar-count {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--th-text-muted);
+}
+.cl-btn {
+  border-radius: 9999px;
+  border: 1px solid var(--th-bd-subtle);
+  padding: 0.3rem 0.75rem;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.cl-btn:hover {
+  color: var(--th-text-title);
+  background: var(--th-sf-06);
+  border-color: var(--th-bd-default);
+}
+
+/* ── Tier 1 · version ───────────────────────────────────────────── */
+.cl-version > summary::-webkit-details-marker {
+  display: none;
+}
+.cl-version-sum {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  list-style: none;
+  cursor: pointer;
+  padding: 1.25rem 0.75rem;
+  margin: 0 -0.75rem;
+  border-radius: 12px;
+  transition: background 0.15s;
+}
+.cl-version-sum:hover {
+  background: var(--th-sf-03);
+}
+.cl-version-sum:focus-visible {
+  outline: 2px solid var(--th-clr-plum);
+  outline-offset: 2px;
+}
+
+.cl-date {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 14px;
+}
+.cl-date-top {
+  font-weight: 600;
+  color: var(--th-text-title);
+}
+.cl-date-year {
+  color: var(--th-text-muted);
+}
+
+.cl-version-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+.cl-version-num {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--th-text-heading);
+}
+.cl-tag {
+  border-radius: 9999px;
+  padding: 0.25rem 0.625rem;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.cl-count {
+  font-size: 12px;
+  color: var(--th-text-muted);
+  white-space: nowrap;
+}
+.cl-share {
+  margin-left: auto;
+}
+
+/* Chevrons: leading in both tiers, so titles share one indent. */
+.cl-chev {
+  flex: none;
+  color: var(--th-text-muted);
+  transition: transform 0.18s ease, color 0.15s;
+}
+.cl-chev--version {
+  width: 16px;
+  height: 16px;
+  margin-right: -0.125rem;
+}
+.cl-chev--item {
+  width: 13px;
+  height: 13px;
+  margin-top: 0.3rem;
+}
+/* Descendant, not child — the version chevron sits inside the header span. Scoped
+   to the summary, so an open version never rotates its items' chevrons. */
+details[open] > summary .cl-chev {
+  transform: rotate(90deg);
+}
+summary:hover .cl-chev {
+  color: var(--th-text-title);
+}
+
+/* ── Tier 2 · sections and items ────────────────────────────────── */
+.cl-version-body {
+  padding-bottom: 1.5rem;
+}
+.cl-section + .cl-section {
+  margin-top: 1.75rem;
+}
+.cl-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--th-text-label);
+  margin-bottom: 0.5rem;
+}
+
+.cl-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.cl-item + .cl-item {
+  border-top: 1px solid var(--th-bd-subtle);
+}
+.cl-item-sum,
+.cl-item--flat {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.cl-item-sum {
+  list-style: none;
+  cursor: pointer;
+  color: var(--th-text-strong);
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+.cl-item-sum::-webkit-details-marker {
+  display: none;
+}
+.cl-item-sum:hover {
+  background: var(--th-sf-03);
+  color: var(--th-text-heading);
+}
+.cl-item-sum:focus-visible {
+  outline: 2px solid var(--th-clr-plum);
+  outline-offset: 2px;
+}
+.cl-item--flat {
+  color: var(--th-text-body);
+}
+/* Stands in for the chevron so a flat row's text lines up with its siblings. */
+.cl-dot {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  margin: 0.55rem 0.45rem 0 0.45rem;
+  border-radius: 9999px;
+  background: var(--th-text-ghost);
+}
+.cl-item-title {
+  min-width: 0;
+}
+
+/* ── Tier 3 · detail ────────────────────────────────────────────── */
+.cl-item-detail {
+  padding: 0.125rem 0 0.875rem calc(13px + 0.5rem);
+  font-size: 14.5px;
+  color: var(--th-text-body);
+}
+.cl-lead {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--th-text-body);
+  margin-bottom: 1.5rem;
+}
+.cl-note {
+  margin-top: 1rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 10px;
+  border: 1px solid var(--th-bd-subtle);
+  background: var(--th-sf-02);
+  font-size: 14px;
+  color: var(--th-text-body);
+}
+
+/* An opened tier fades in — height can't be transitioned on <details>, and
+   animating it would thrash layout on a page this long. */
+details[open] > .cl-version-body,
+details[open] > .cl-item-detail {
+  animation: cl-reveal 0.18s ease-out;
+}
+@keyframes cl-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cl-chev,
+  details[open] > .cl-version-body,
+  details[open] > .cl-item-detail {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ── Wide screens: date in its own gutter ───────────────────────── */
+@media (min-width: 640px) {
+  .cl-version-sum {
+    grid-template-columns: var(--cl-gutter) 1fr;
+    gap: var(--cl-gap);
+    align-items: baseline;
+  }
+  .cl-date {
+    display: block;
+    padding-top: 0.25rem;
+  }
+  .cl-date-top,
+  .cl-date-year {
+    display: block;
+  }
+  .cl-version-body {
+    padding-left: calc(var(--cl-gutter) + var(--cl-gap));
+  }
+}
+
+/* The entry a shared /changelog/<slug> link lands on: pinned to #1 + highlighted. */
+.changelog-highlight {
+  border-top: 0;
+  border-radius: 16px;
+  background: var(--th-clr-plum-bg);
+  box-shadow: inset 0 0 0 1px var(--th-clr-plum-bdr);
+  padding: 0 1.25rem;
 }
 
 /* Shared-link button (per entry, right-aligned). */
@@ -22,16 +296,7 @@
   background: var(--th-sf-06);
 }
 
-/* The entry a shared /changelog/<slug> link lands on: pinned to #1 + highlighted. */
-.changelog-highlight {
-  border-radius: 16px;
-  background: var(--th-clr-plum-bg);
-  box-shadow: inset 0 0 0 1px var(--th-clr-plum);
-  padding-left: 1.25rem;
-  padding-right: 1.25rem;
-}
-
-/* Minimal prose styling for rendered changelog MDX bodies. */
+/* ── Prose (rendered changelog markdown) ────────────────────────── */
 .changelog-prose > * + * {
   margin-top: 0.75rem;
 }
@@ -57,9 +322,15 @@
   padding: 0.1em 0.35em;
   font-size: 0.9em;
 }
-.changelog-prose h3 {
-  color: var(--th-text-title);
+
+/* Item headlines carry inline markdown; the row already sets weight and color. */
+.cl-item-title code {
+  background: var(--th-sf-06);
+  border-radius: 5px;
+  padding: 0.1em 0.32em;
+  font-size: 0.88em;
+  font-weight: 500;
+}
+.cl-item-title strong {
   font-weight: 600;
-  font-size: 0.95rem;
-  margin-top: 1.25rem;
 }

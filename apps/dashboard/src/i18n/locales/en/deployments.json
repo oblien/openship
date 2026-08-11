@@ -163,12 +163,31 @@
       "pruned": "Cannot pin — artifact has already been pruned"
     },
     "deleteDeployment": "Delete Deployment",
-    "confirmRollback": "Roll back to this version?\n\nThis restores the application code only. Database and volume data are unchanged.",
     "rollbackFailed": "Rollback failed",
     "pinFailed": "Failed to pin deployment",
     "unpinFailed": "Failed to unpin deployment",
     "rollbackModeInstant": "Instant restore — reuses this version's retained image, no rebuild.",
     "rollbackModeRebuild": "Rebuild — this version's image is no longer on the host, so its commit is built again.",
     "rollbackModeMixed": "Mostly instant — {count} service(s) lost their image and will be rebuilt."
+  },
+  "rollbackConfirm": {
+    "title": "Roll back to this version?",
+    "dataUnchanged": "This restores the application code only. Database and volume data are unchanged.",
+    "envHeading": "Environment variables",
+    "envSummaryOverlay": "{count} variable(s) change — this release's values are replayed over the current ones.",
+    "envSummaryReplace": "{count} variable(s) change — this release's environment is used exactly as captured.",
+    "envNoChanges": "No environment variables change.",
+    "envUnchanged": "The existing container is restarted rather than recreated, so its environment is untouched.",
+    "envNoValues": "Values are never shown here.",
+    "envTruncated": "Showing {shown} of {total}.",
+    "dirFrozenWins": "reverts to this release's value",
+    "dirRemovedSince": "comes back — deleted since this release",
+    "dirAddedSinceKept": "kept as it is now — added since this release",
+    "dirAddedSinceDropped": "dropped — added since this release",
+    "scopeAmbiguous": "captured without a service scope, so one value lands on every service",
+    "untouchedHeading": "Services added since this release",
+    "untouchedNote": "These keep running and are not touched: {names}",
+    "confirm": "Roll back",
+    "cancel": "Cancel"
   }
 }

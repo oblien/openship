@@ -154,6 +154,99 @@ export function validateAgainstCapacity(
   return null;
 }
 
+// ─── App requirements vs the machine ────────────────────────────────────────
+
+/**
+ * What an app needs from the machine it runs on, declared in its catalog entry
+ * (`minResources`). Only the two things a host can actually be probed for — disk
+ * isn't readable through the daemon's `/info`, and a number we can't verify would
+ * be a refusal based on a guess.
+ *
+ * A MINIMUM, not a limit: it never sizes a container (that's `ResourceValues`),
+ * it only decides whether this app has any business being installed here.
+ */
+export interface AppMinResources {
+  /** Total RAM the app needs, in MB. */
+  memoryMb?: number;
+  /** vCPU the app needs. */
+  cpuCores?: number;
+}
+
+/** One unmet requirement — declared vs what the machine reported. */
+export interface ResourceShortfall {
+  needed: number;
+  available: number;
+}
+
+export interface ResourceFit {
+  /** False ONLY when a known capacity is measurably short of a declared minimum. */
+  ok: boolean;
+  memory?: ResourceShortfall;
+  cpu?: ResourceShortfall;
+}
+
+/**
+ * A "16 GB" machine reports ~15.6 GB: firmware and the kernel take their cut
+ * before Docker ever sees MemTotal, so an app declaring 16384 MB would be refused
+ * on exactly the box it was written for. Allow a tenth under the declared figure —
+ * far too small to let a 4 GB box pass a 16 GB requirement, big enough that the
+ * declared number can be the round one an operator recognises.
+ */
+const CAPACITY_TOLERANCE = 0.9;
+
+/**
+ * Does this machine meet the app's declared minimum?
+ *
+ * An unknown reading (0 / probe failed) never fails the check — same rule as
+ * `validateAgainstCapacity`, and for the same reason: an unreachable box means we
+ * didn't look, not that the hardware is too small. Pure, so both the install
+ * preflight and the wizard's notice read the identical verdict.
+ */
+export function fitsCapacity(
+  min: AppMinResources | null | undefined,
+  capacity: HostCapacity,
+): ResourceFit {
+  const fit: ResourceFit = { ok: true };
+  if (!min) return fit;
+
+  if (min.memoryMb && min.memoryMb > 0 && capacity.memoryMb > 0) {
+    if (capacity.memoryMb < min.memoryMb * CAPACITY_TOLERANCE) {
+      fit.ok = false;
+      fit.memory = { needed: min.memoryMb, available: capacity.memoryMb };
+    }
+  }
+  if (min.cpuCores && min.cpuCores > 0 && capacity.cpuCores > 0) {
+    if (capacity.cpuCores < min.cpuCores * CAPACITY_TOLERANCE) {
+      fit.ok = false;
+      fit.cpu = { needed: min.cpuCores, available: capacity.cpuCores };
+    }
+  }
+  return fit;
+}
+
+/** True when the app declares something worth checking at all. */
+export function hasMinResources(min?: AppMinResources | null): boolean {
+  return !!min && ((min.memoryMb ?? 0) > 0 || (min.cpuCores ?? 0) > 0);
+}
+
+/** The shortfall as one English sentence — the API's refusal message. The
+ *  dashboard builds its own from the same numbers, translated. */
+export function describeResourceFit(fit: ResourceFit): string | null {
+  if (fit.ok) return null;
+  const parts: string[] = [];
+  if (fit.memory) {
+    parts.push(
+      `${formatMemoryMb(fit.memory.needed)} of RAM (this machine has ${formatMemoryMb(fit.memory.available)})`,
+    );
+  }
+  if (fit.cpu) {
+    parts.push(
+      `${formatCpuCores(fit.cpu.needed)} (this machine has ${formatCpuCores(fit.cpu.available)})`,
+    );
+  }
+  return parts.length > 0 ? parts.join(" and ") : null;
+}
+
 /** "no limit" / "512 MB" / "3 GB" — shared by the API's log lines and the UI. */
 export function formatMemoryMb(mb: number): string {
   if (!mb || mb <= 0) return "no limit";

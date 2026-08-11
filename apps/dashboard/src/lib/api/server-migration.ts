@@ -21,6 +21,11 @@ export interface DiscoveredService {
   dockerfile?: string;
   ports: string[];
   env: Record<string, string>;
+  /** Env that provably came from the IMAGE, not the operator (recovered from
+   *  Docker's create-time merge order). Not imported — the same image re-supplies
+   *  it — but carried with values so the card can show what was left behind and
+   *  offer a one-click import. Absent when nothing was left behind. */
+  envImageDefaults?: Record<string, string>;
   volumes: DiscoveredVolumeMount[];
   networks: string[];
   dependsOn: string[];
@@ -348,6 +353,14 @@ export const dockerMigrationApi = {
         }
       })();
     }),
+
+  /** On-demand reveal of ONE discovered container's real env (scan masks it).
+   *  Write-gated (server:write) — same bar as the service-env reveal (#336). */
+  revealEnv: (input: { serverId: string; containerId: string }) =>
+    api.post<{ success: boolean; environment: Record<string, string> }>(
+      endpoints.dockerMigration.revealEnv,
+      input,
+    ),
 
   /** Create an Openship project from the selected discovered services (records only). */
   adopt: (input: { serverId: string; projectName: string; serviceNames: string[] }) =>

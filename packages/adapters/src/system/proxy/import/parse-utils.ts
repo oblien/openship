@@ -1,18 +1,50 @@
 /** Small, dependency-free helpers for reading & parsing proxy configs. */
 
-import type { CommandExecutor } from "../../../types";
+/**
+ * Re-exported so the seven parsers here keep one import for "the things I read configs
+ * with", rather than each growing a second import for the executor half. The
+ * implementation — and the `null` vs `""` rule the parsers depend on — lives in one place.
+ */
+export { tryExec } from "../../probe-exec";
 
-export async function tryExec(executor: CommandExecutor, command: string): Promise<string | null> {
-  try {
-    return await executor.exec(command);
-  } catch {
-    return null;
-  }
-}
-
-/** Strip `#` line comments (nginx / caddy / apache all use them). */
+/**
+ * Strip `#` line comments (nginx / caddy / apache all use them) — but not a `#`
+ * that sits inside a quoted string.
+ *
+ * `/#.*$/gm` was fine until a config WE write carried one. The edge's not-found
+ * page is embedded as `return 404 '<html>…</html>'` (see `edge-not-found.ts`) and a
+ * CSS `#fff` in it truncated the line, taking ~40 closing braces with it. The edge
+ * scan reads every vhost through a single `cat` whose glob puts `_default.conf`
+ * first, so the file's brace balance broke and `extractBlocks` swallowed every
+ * vhost AFTER it: the box scanned as zero sites, and the migrate wizard offered no
+ * domains and no certificates to carry. Nothing failed — it just found nothing.
+ *
+ * Quote state is tracked per LINE and reset at each newline. All three config
+ * languages close a quoted value on the line that opens it (nginx's multi-line
+ * `log_format` is one quoted chunk per line), and a config with one stray quote
+ * would otherwise turn every following line into "string" and delete the rest of
+ * the file. Confining a misread to its own line keeps the worst case no worse than
+ * the regex this replaces.
+ */
 export function stripComments(text: string): string {
-  return text.replace(/#.*$/gm, "");
+  return text
+    .split("\n")
+    .map((line) => {
+      let quote: '"' | "'" | undefined;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (quote) {
+          if (ch === "\\") i++; // `\"` inside a quoted value — skip the escapee
+          else if (ch === quote) quote = undefined;
+        } else if (ch === '"' || ch === "'") {
+          quote = ch;
+        } else if (ch === "#") {
+          return line.slice(0, i);
+        }
+      }
+      return line;
+    })
+    .join("\n");
 }
 
 /**

@@ -4,6 +4,7 @@
   "id": "convex",
   "name": "Convex",
   "description": "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
+  "repository": "https://github.com/get-convex/convex-backend",
   "kind": "template",
   "logo": "convex",
   "category": "backend",
@@ -16,7 +17,7 @@
   "services": [
     {
       "name": "backend",
-      "image": "ghcr.io/get-convex/convex-backend:latest",
+      "image": "ghcr.io/get-convex/convex-backend:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
       "ports": [
         "3210:3210",
         "3211:3211"
@@ -58,7 +59,7 @@
     },
     {
       "name": "dashboard",
-      "image": "ghcr.io/get-convex/convex-dashboard:latest",
+      "image": "ghcr.io/get-convex/convex-dashboard:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
       "ports": [
         "6791:6791"
       ],
@@ -91,11 +92,14 @@
       "service": "backend",
       "command": "./generate_admin_key.sh",
       "capture": "adminKey",
-      "capturePattern": "Admin key:\\s*(\\S+)",
+      "capturePattern": "([^\\r\\n]+)\\s*$",
       "persistAs": {
         "key": "CONVEX_ADMIN_KEY"
       },
-      "once": true
+      "once": true,
+      "title": "Generate admin key",
+      "description": "Mint the dashboard and CLI admin key from the instance secret.",
+      "icon": "key"
     }
   ],
   "connection": {
@@ -103,9 +107,17 @@
     "description": "Sign in to the Convex dashboard, or point the Convex CLI here, with these values.",
     "outputs": [
       {
+        "id": "dashboard",
+        "label": "Dashboard URL",
+        "source": "publicUrl:dashboard",
+        "kind": "url",
+        "help": "Open the Convex dashboard UI, then sign in with the deployment URL and admin key below."
+      },
+      {
         "id": "url",
         "label": "Deployment URL",
-        "source": "env:backend:CONVEX_CLOUD_ORIGIN"
+        "source": "env:backend:CONVEX_CLOUD_ORIGIN",
+        "kind": "url"
       },
       {
         "id": "adminKey",
