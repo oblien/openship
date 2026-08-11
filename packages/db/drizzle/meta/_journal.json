@@ -722,6 +722,13 @@
       "when": 1787782907325,
       "tag": "0102_project_workload_axes",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1787869307325,
+      "tag": "0103_dns_credential",
+      "breakpoints": true
     }
   ]
 }

@@ -88,6 +88,8 @@ export {
   type NewBuildSession,
   type Domain,
   type NewDomain,
+  type DnsCredential,
+  type NewDnsCredential,
   type Service,
   type NewService,
   type ServiceDeployment,

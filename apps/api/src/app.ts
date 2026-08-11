@@ -30,6 +30,7 @@ import { projectConnectionRoutes } from "./modules/projects/project-connection.r
 import { projectStorageRoutes } from "./modules/projects/project-storage.routes";
 import { deploymentRoutes } from "./modules/deployments/deployment.routes";
 import { domainRoutes } from "./modules/domains/domain.routes";
+import { dnsRoutes } from "./modules/dns/dns.routes";
 import { issuesRoutes } from "./modules/issues/issues.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
@@ -137,6 +138,7 @@ app.route("/api/projects/:id/connections", projectConnectionRoutes);
 app.route("/api/projects/:id/storage", projectStorageRoutes);
 app.route("/api/deployments", deploymentRoutes);
 app.route("/api/domains", domainRoutes);
+app.route("/api/dns", dnsRoutes);
 app.route("/api/webhooks", webhookRoutes);
 app.route("/api/github", githubRoutes);
 app.route("/api/analytics", analyticsRoutes);

@@ -21,6 +21,7 @@
       "cloud": "クラウド",
       "defaults": "デフォルト",
       "settings": "設定",
+      "dns": "DNS",
       "notifications": "通知",
       "team": "チーム",
       "members": "メンバー",
@@ -51,6 +52,7 @@
       "mcp": "MCP",
       "team": "チーム",
       "notifications": "通知",
+      "dns": "DNS",
       "audit": "監査ログ",
       "cloud": "クラウド",
       "infrastructure": "インフラ",
@@ -774,6 +776,42 @@
     "toast": {
       "setTo": "ルーティング方式を {mode} に設定しました",
       "failed": "ルーティング方式の更新に失敗しました"
+    }
+  },
+  "dns": {
+    "title": "DNS プロバイダー",
+    "description": "ドメインの DNS レコードを Openship に書き込ませます",
+    "explainer": "プロバイダーを接続しておくと、カスタムドメインを追加した時点でレコードが書き込まれます。何も貼り付けなくてもドメインが検証され、証明書が発行されます。",
+    "explainerOwnership": "Openship が削除するのは、自身が作成したレコードだけです。",
+    "addProvider": "プロバイダーを接続",
+    "connect": "接続",
+    "namePlaceholder": "ラベル（例: Cloudflare 本番）",
+    "tokenPlaceholder": "Cloudflare API トークン",
+    "scopesHint": "{scopes} の権限を持つトークンが必要です。",
+    "createTokenLink": "作成する",
+    "noneConnected": "接続済みの DNS プロバイダーはありません。ドメインには手動で追加するレコードが表示されます。",
+    "badgeActive": "有効",
+    "badgeInvalid": "対応が必要",
+    "invalidHint": "プロバイダーがこのトークンを拒否しました。自動レコードを再開するには再接続してください。",
+    "metaLine": " · {provider} · 最終確認 {verified}",
+    "zoneCheck": {
+      "title": "ドメインを確認",
+      "description": "追加する前に、接続済みのプロバイダーがそのホスト名のゾーンを管理しているか確認します。",
+      "placeholder": "app.example.com",
+      "check": "確認",
+      "matched": "ここで管理されています — ゾーン {zone}。このドメインのレコードは自動で書き込まれます。",
+      "none": "このドメインのゾーンを管理している接続済みプロバイダーはありません。レコードは手動で追加します。",
+      "unauthorized": "保存されているトークンが拒否されました。再接続してからもう一度お試しください。",
+      "unavailable": "DNS プロバイダーに接続できなかったため不明です。設定に問題があるという意味ではありません。"
+    },
+    "toast": {
+      "loadFailed": "DNS プロバイダーを読み込めませんでした",
+      "needBoth": "ラベルと API トークンを入力してください",
+      "connected": "{name} を接続しました",
+      "connectFailed": "プロバイダーを接続できませんでした",
+      "disconnected": "{name} を切断しました",
+      "disconnectFailed": "プロバイダーを切断できませんでした",
+      "checkFailed": "そのドメインを確認できませんでした"
     }
   }
 }

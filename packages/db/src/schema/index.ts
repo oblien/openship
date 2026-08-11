@@ -72,3 +72,4 @@ export {
   billingUsageSnapshot,
 } from "./billing";
 export { customAppTemplate } from "./custom-app-template";
+export { dnsCredential } from "./dns-credential";

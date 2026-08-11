@@ -21,6 +21,7 @@
       "cloud": "云",
       "defaults": "默认设置",
       "settings": "设置",
+      "dns": "DNS",
       "notifications": "通知",
       "team": "团队",
       "members": "成员",
@@ -51,6 +52,7 @@
       "mcp": "MCP",
       "team": "团队",
       "notifications": "通知",
+      "dns": "DNS",
       "audit": "审计日志",
       "cloud": "云",
       "infrastructure": "基础设施",
@@ -774,6 +776,42 @@
     "toast": {
       "setTo": "路由策略已设为 {mode}",
       "failed": "更新路由策略失败"
+    }
+  },
+  "dns": {
+    "title": "DNS 提供商",
+    "description": "让 Openship 为你的域名写入 DNS 记录",
+    "explainer": "连接提供商后，添加自定义域名时会立即写入其记录，域名无需你粘贴任何内容即可完成验证并获得证书。",
+    "explainerOwnership": "Openship 只会删除它自己创建的记录。",
+    "addProvider": "连接提供商",
+    "connect": "连接",
+    "namePlaceholder": "标签，例如 Cloudflare 生产",
+    "tokenPlaceholder": "Cloudflare API 令牌",
+    "scopesHint": "需要具有 {scopes} 权限的令牌。",
+    "createTokenLink": "创建一个",
+    "noneConnected": "尚未连接 DNS 提供商。域名将显示需要你手动添加的记录。",
+    "badgeActive": "有效",
+    "badgeInvalid": "需要处理",
+    "invalidHint": "提供商拒绝了此令牌。重新连接即可恢复自动写入记录。",
+    "metaLine": " · {provider} · 最后验证 {verified}",
+    "zoneCheck": {
+      "title": "检查域名",
+      "description": "在添加之前，查看已连接的提供商是否管理该主机名所属的区域。",
+      "placeholder": "app.example.com",
+      "check": "检查",
+      "matched": "由此处管理 — 区域 {zone}。该域名的记录将自动写入。",
+      "none": "没有已连接的提供商管理该域名所属的区域。你需要手动添加其记录。",
+      "unauthorized": "已保存的令牌被拒绝。请重新连接后再试。",
+      "unavailable": "无法连接 DNS 提供商，因此结果未知 — 这并不表示有任何配置错误。"
+    },
+    "toast": {
+      "loadFailed": "无法加载 DNS 提供商",
+      "needBoth": "请输入标签和 API 令牌",
+      "connected": "已连接 {name}",
+      "connectFailed": "无法连接提供商",
+      "disconnected": "已断开 {name}",
+      "disconnectFailed": "无法断开提供商",
+      "checkFailed": "无法检查该域名"
     }
   }
 }

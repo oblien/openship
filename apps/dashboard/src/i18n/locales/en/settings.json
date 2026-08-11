@@ -42,6 +42,7 @@
       "cloud": "Cloud",
       "defaults": "Defaults",
       "settings": "Settings",
+      "dns": "DNS",
       "notifications": "Notifications",
       "team": "Team",
       "members": "Members",
@@ -73,6 +74,7 @@
       "team": "Team",
       "notifications": "Notifications",
       "email": "Email",
+      "dns": "DNS",
       "systemSender": "System sender",
       "audit": "Audit log",
       "cloud": "Cloud",
@@ -118,6 +120,42 @@
     "disable": "Disable & clear SMTP",
     "disabled": "SMTP disabled",
     "toastTitle": "Email"
+  },
+  "dns": {
+    "title": "DNS providers",
+    "description": "Let Openship write your domains' DNS records for you",
+    "explainer": "With a provider connected, adding a custom domain writes its records straight away, so the domain verifies and gets its certificate without you pasting anything.",
+    "explainerOwnership": "Openship only ever removes records it created.",
+    "addProvider": "Connect a provider",
+    "connect": "Connect",
+    "namePlaceholder": "Label, e.g. Cloudflare production",
+    "tokenPlaceholder": "Cloudflare API token",
+    "scopesHint": "Needs a token scoped to {scopes}.",
+    "createTokenLink": "Create one",
+    "noneConnected": "No DNS provider connected. Domains will show the records for you to add by hand.",
+    "badgeActive": "Active",
+    "badgeInvalid": "Needs attention",
+    "invalidHint": "The provider rejected this token. Reconnect it to resume automatic records.",
+    "metaLine": " · {provider} · last verified {verified}",
+    "zoneCheck": {
+      "title": "Check a domain",
+      "description": "See whether a connected provider manages a hostname's zone before you add it.",
+      "placeholder": "app.example.com",
+      "check": "Check",
+      "matched": "Managed here — zone {zone}. This domain's records will be written automatically.",
+      "none": "No connected provider manages this domain's zone. You'll add its records by hand.",
+      "unauthorized": "A stored token was rejected. Reconnect it and try again.",
+      "unavailable": "Couldn't reach the DNS provider, so this is unknown — it doesn't mean anything is misconfigured."
+    },
+    "toast": {
+      "loadFailed": "Couldn't load DNS providers",
+      "needBoth": "Enter a label and an API token",
+      "connected": "Connected {name}",
+      "connectFailed": "Couldn't connect the provider",
+      "disconnected": "Disconnected {name}",
+      "disconnectFailed": "Couldn't disconnect the provider",
+      "checkFailed": "Couldn't check that domain"
+    }
   },
   "github": {
     "title": "GitHub",

@@ -21,6 +21,7 @@
       "cloud": "Bulut",
       "defaults": "Varsayılanlar",
       "settings": "Ayarlar",
+      "dns": "DNS",
       "notifications": "Bildirimler",
       "team": "Ekip",
       "members": "Üyeler",
@@ -52,6 +53,7 @@
       "team": "Ekip",
       "notifications": "Bildirimler",
       "email": "E-posta",
+      "dns": "DNS",
       "audit": "Denetim günlüğü",
       "cloud": "Bulut",
       "infrastructure": "Altyapı",
@@ -96,6 +98,42 @@
     "disable": "SMTP'yi devre dışı bırak ve temizle",
     "disabled": "SMTP devre dışı bırakıldı",
     "toastTitle": "E-posta"
+  },
+  "dns": {
+    "title": "DNS sağlayıcıları",
+    "description": "Alan adlarınızın DNS kayıtlarını Openship yazsın",
+    "explainer": "Bir sağlayıcı bağlıyken, özel bir alan adı eklediğinizde kayıtları hemen yazılır; böylece alan adı hiçbir şey yapıştırmanıza gerek kalmadan doğrulanır ve sertifikasını alır.",
+    "explainerOwnership": "Openship yalnızca kendi oluşturduğu kayıtları siler.",
+    "addProvider": "Sağlayıcı bağla",
+    "connect": "Bağla",
+    "namePlaceholder": "Etiket, örn. Cloudflare üretim",
+    "tokenPlaceholder": "Cloudflare API belirteci",
+    "scopesHint": "{scopes} izinlerine sahip bir belirteç gerekir.",
+    "createTokenLink": "Bir tane oluştur",
+    "noneConnected": "Bağlı DNS sağlayıcısı yok. Alan adları, elle eklemeniz için kayıtları gösterecek.",
+    "badgeActive": "Etkin",
+    "badgeInvalid": "İlgilenilmesi gerekiyor",
+    "invalidHint": "Sağlayıcı bu belirteci reddetti. Otomatik kayıtları sürdürmek için yeniden bağlayın.",
+    "metaLine": " · {provider} · son doğrulama {verified}",
+    "zoneCheck": {
+      "title": "Bir alan adını denetle",
+      "description": "Eklemeden önce bağlı bir sağlayıcının o ana makine adının bölgesini yönetip yönetmediğine bakın.",
+      "placeholder": "app.example.com",
+      "check": "Denetle",
+      "matched": "Burada yönetiliyor — {zone} bölgesi. Bu alan adının kayıtları otomatik yazılacak.",
+      "none": "Bağlı hiçbir sağlayıcı bu alan adının bölgesini yönetmiyor. Kayıtlarını elle ekleyeceksiniz.",
+      "unauthorized": "Kayıtlı bir belirteç reddedildi. Yeniden bağlayıp tekrar deneyin.",
+      "unavailable": "DNS sağlayıcısına ulaşılamadı, bu yüzden sonuç bilinmiyor — bir şeyin yanlış yapılandırıldığı anlamına gelmez."
+    },
+    "toast": {
+      "loadFailed": "DNS sağlayıcıları yüklenemedi",
+      "needBoth": "Bir etiket ve bir API belirteci girin",
+      "connected": "{name} bağlandı",
+      "connectFailed": "Sağlayıcı bağlanamadı",
+      "disconnected": "{name} bağlantısı kesildi",
+      "disconnectFailed": "Sağlayıcı bağlantısı kesilemedi",
+      "checkFailed": "Bu alan adı denetlenemedi"
+    }
   },
   "github": {
     "title": "GitHub",

@@ -1,0 +1,143 @@
+---
+title: DNS API
+description: Connect a DNS provider token so Openship writes your domains' records itself, instead of printing them for you to paste.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+Adding a custom domain normally ends with Openship telling you which records to create and waiting for you
+to go and create them. Connect a DNS provider here and it writes them itself: the domain verifies on its own
+and gets its certificate without you leaving the page. In the dashboard this is **Settings → DNS**.
+
+Cloudflare is the only provider today. The provider list is served by the API rather than hard-coded in the
+dashboard, so `GET /api/dns/providers` is the authoritative answer to "what can I connect?".
+
+<Callout title="Base path & auth">
+All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/dns/credentials`.
+Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
+[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
+[API overview](/docs/api) for the full auth model.
+</Callout>
+
+## Endpoints
+
+| Method & path | Permission | What it does |
+|---|---|---|
+| `GET /api/dns/providers` | `settings:read` | List supported providers and the token scopes each needs. |
+| `GET /api/dns/credentials` | `settings:read` | List connected credentials for the organization. |
+| `GET /api/dns/credentials/:id` | `settings:read` | Read one connected credential. |
+| `POST /api/dns/credentials` | `settings:admin` | Connect a credential. The token is verified before it is stored. |
+| `DELETE /api/dns/credentials/:id` | `settings:admin` | Disconnect a credential. Records already written are left alone. |
+| `POST /api/dns/verify-zone` | `settings:read` | Check whether a connected provider manages a hostname's zone. Creates and changes nothing. |
+
+## Connect a provider
+
+```
+POST /api/dns/credentials
+```
+
+<TypeTable
+  type={{
+    provider: { type: '"cloudflare"', description: 'Provider to connect. Must be one of the names returned by GET /api/dns/providers.', required: true },
+    name: { type: 'string', description: 'Your label for this credential, e.g. "Cloudflare production". Unique per provider within the organization.', required: true },
+    apiToken: { type: 'string', description: 'The provider API token. Verified against the provider before it is stored, so a token that does not work is rejected here rather than failing silently later.', required: true },
+  }}
+/>
+
+```bash
+curl -X POST https://your-host/api/dns/credentials \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"cloudflare","name":"Cloudflare production","apiToken":"cf-..."}'
+```
+
+For Cloudflare, create a token at
+[dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) scoped to
+**Zone:Zone:Read** and **Zone:DNS:Edit**, limited to the zones you want Openship to manage.
+
+<Callout title="The token is write-only from here on" type="warn">
+It is encrypted at rest (AES-256-GCM, key derived from `BETTER_AUTH_SECRET`) and no endpoint returns it —
+not in full and not as a prefix. `tokenMasked` is a fixed `••••••••`. There is no "reveal"; to change a
+token, disconnect the credential and connect a new one.
+
+Rotating `BETTER_AUTH_SECRET` makes stored tokens undecryptable. The credential then reports
+`status: "invalid"` the next time Openship tries to use it, and you re-connect it.
+</Callout>
+
+## Check a zone
+
+```
+POST /api/dns/verify-zone
+```
+
+<TypeTable
+  type={{
+    hostname: { type: 'string', description: 'The fully-qualified hostname to check, e.g. app.example.com.', required: true },
+  }}
+/>
+
+The response separates four outcomes, because they call for different actions:
+
+| `status` | `matched` | Meaning |
+|---|---|---|
+| `matched` | `true` | A connected provider hosts this zone; records for this domain will be written automatically. |
+| `none` | `false` | We asked, and no connected provider hosts it. You add the records yourself. |
+| `unauthorized` | `false` | A stored token was rejected. Re-connect it — `credentialId` says which. |
+| `unavailable` | `false` | The provider could not be reached (rate limit, outage). Unknown, **not** a sign of misconfiguration. |
+
+```bash
+curl -X POST https://your-host/api/dns/verify-zone \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"app.example.com"}'
+```
+
+## What happens when you add a domain
+
+With a provider connected, `POST /api/domains` writes the records it would otherwise have only shown you,
+and the response carries an extra `autoDns` object reporting what happened per record:
+
+```json
+{
+  "data": { "id": "dom_123", "hostname": "app.example.com" },
+  "records": { "mode": "selfhosted", "records": [{ "type": "A", "name": "app.example.com", "value": "203.0.113.10" }] },
+  "autoDns": {
+    "provisioned": true,
+    "records": [{ "name": "app.example.com", "type": "A", "outcome": "applied" }]
+  }
+}
+```
+
+`autoDns` is absent when no connected provider manages the zone — that absence is the signal to show the
+records for the operator to add by hand. When it is present, `provisioned` is `true` only if every record
+landed; a partial write reports `provisioned: false` with a `reason` and the per-record `outcome`, so
+"we wrote them" and "we wrote some of them" are never the same answer.
+
+No verification is triggered at that moment. The records are seconds old, a resolver may still be holding a
+negative answer for the name, and a failed check burns one of Let's Encrypt's per-hostname validation
+failures. The domain stays pending and the `domains:verify-pending` sweep picks it up after its
+ten-minute grace window.
+
+## Removing records
+
+Disconnecting a credential does not touch DNS. Removing a *domain* does — but only records Openship created,
+identified by the `Managed by Openship` comment it writes on every record.
+
+<Callout title="Why ownership is tracked, not inferred" type="info">
+For an apex domain the record name *is* the zone apex, where your `MX`, SPF `TXT` and `CAA` records also
+live. Deleting "every record at this name" would take your mail with it, so Openship deletes only what it
+can prove it wrote.
+
+Connecting a domain does repoint an existing record at that name — that is what connecting it means — but
+repointing is not adoption: Openship leaves such a record's comment untouched, so it never carries the
+`Managed by Openship` marker and removing the domain later will not delete it.
+</Callout>
+
+## Errors
+
+| Code | Status | Meaning |
+|---|---|---|
+| `DNS_UNKNOWN_PROVIDER` | 400 | `provider` is not a name from `GET /api/dns/providers`. |
+| `DNS_PROVIDER_NOT_READY` | 400 | The provider rejected the token during the pre-store check. |
+| `DNS_RECORD_CONFLICT` | 409 | Several records already answer for that name and type and none are Openship's — a round-robin or multi-host set it will not rewrite. |
+| `DNS_API_ERROR` | 502 | The provider's API failed. The upstream status is in the message. |

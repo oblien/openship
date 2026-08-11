@@ -21,6 +21,7 @@
       "cloud": "السحابة",
       "defaults": "الإعدادات الافتراضية",
       "settings": "الإعدادات",
+      "dns": "DNS",
       "notifications": "الإشعارات",
       "team": "الفريق",
       "members": "الأعضاء",
@@ -51,6 +52,7 @@
       "mcp": "MCP",
       "team": "الفريق",
       "notifications": "الإشعارات",
+      "dns": "DNS",
       "audit": "سجل التدقيق",
       "cloud": "السحابة",
       "infrastructure": "البنية التحتية",
@@ -774,6 +776,42 @@
     "toast": {
       "setTo": "تم ضبط أسلوب التوجيه إلى {mode}",
       "failed": "تعذّر تحديث أسلوب التوجيه"
+    }
+  },
+  "dns": {
+    "title": "مزوّدو DNS",
+    "description": "اترك Openship يكتب سجلات DNS لنطاقاتك",
+    "explainer": "مع وجود مزوّد متصل، تُكتب سجلات النطاق المخصّص فور إضافته، فيتم التحقق من النطاق ويحصل على شهادته دون أن تلصق أي شيء.",
+    "explainerOwnership": "لا يحذف Openship سوى السجلات التي أنشأها هو.",
+    "addProvider": "ربط مزوّد",
+    "connect": "ربط",
+    "namePlaceholder": "التسمية، مثل Cloudflare للإنتاج",
+    "tokenPlaceholder": "رمز Cloudflare API",
+    "scopesHint": "يتطلب رمزًا بصلاحيات {scopes}.",
+    "createTokenLink": "أنشئ واحدًا",
+    "noneConnected": "لا يوجد مزوّد DNS متصل. ستعرض النطاقات السجلات لتضيفها يدويًا.",
+    "badgeActive": "نشِط",
+    "badgeInvalid": "يحتاج إلى انتباه",
+    "invalidHint": "رفض المزوّد هذا الرمز. أعد ربطه لاستئناف كتابة السجلات تلقائيًا.",
+    "metaLine": " · {provider} · آخر تحقق {verified}",
+    "zoneCheck": {
+      "title": "تحقّق من نطاق",
+      "description": "اطّلع على ما إذا كان مزوّد متصل يدير منطقة اسم المضيف قبل إضافته.",
+      "placeholder": "app.example.com",
+      "check": "تحقّق",
+      "matched": "مُدار هنا — المنطقة {zone}. ستُكتب سجلات هذا النطاق تلقائيًا.",
+      "none": "لا يدير أي مزوّد متصل منطقة هذا النطاق. ستضيف سجلاته يدويًا.",
+      "unauthorized": "تم رفض رمز محفوظ. أعد ربطه ثم حاول مرة أخرى.",
+      "unavailable": "لم نتمكن من الوصول إلى مزوّد DNS، لذا فالنتيجة غير معروفة — وهذا لا يعني وجود خطأ في الإعداد."
+    },
+    "toast": {
+      "loadFailed": "تعذّر تحميل مزوّدي DNS",
+      "needBoth": "أدخل تسمية ورمز API",
+      "connected": "تم ربط {name}",
+      "connectFailed": "تعذّر ربط المزوّد",
+      "disconnected": "تم فصل {name}",
+      "disconnectFailed": "تعذّر فصل المزوّد",
+      "checkFailed": "تعذّر التحقق من هذا النطاق"
     }
   }
 }
