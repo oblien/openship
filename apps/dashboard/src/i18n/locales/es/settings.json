@@ -21,6 +21,7 @@
       "cloud": "Cloud",
       "defaults": "Valores predeterminados",
       "settings": "Ajustes",
+      "dns": "DNS",
       "notifications": "Notificaciones",
       "team": "Equipo",
       "members": "Miembros",
@@ -51,6 +52,7 @@
       "mcp": "MCP",
       "team": "Equipo",
       "notifications": "Notificaciones",
+      "dns": "DNS",
       "audit": "Registro de auditoría",
       "cloud": "Cloud",
       "infrastructure": "Infraestructura",
@@ -774,6 +776,42 @@
     "toast": {
       "setTo": "Estrategia de enrutamiento establecida en {mode}",
       "failed": "No se pudo actualizar la estrategia de enrutamiento"
+    }
+  },
+  "dns": {
+    "title": "Proveedores de DNS",
+    "description": "Deja que Openship escriba los registros DNS de tus dominios",
+    "explainer": "Con un proveedor conectado, al añadir un dominio propio sus registros se escriben al instante, así que el dominio se verifica y obtiene su certificado sin que pegues nada.",
+    "explainerOwnership": "Openship solo elimina registros que él mismo creó.",
+    "addProvider": "Conectar un proveedor",
+    "connect": "Conectar",
+    "namePlaceholder": "Etiqueta, p. ej. Cloudflare producción",
+    "tokenPlaceholder": "Token de API de Cloudflare",
+    "scopesHint": "Necesita un token con los permisos {scopes}.",
+    "createTokenLink": "Crear uno",
+    "noneConnected": "Ningún proveedor de DNS conectado. Los dominios mostrarán los registros para que los añadas a mano.",
+    "badgeActive": "Activo",
+    "badgeInvalid": "Requiere atención",
+    "invalidHint": "El proveedor rechazó este token. Vuelve a conectarlo para reanudar los registros automáticos.",
+    "metaLine": " · {provider} · verificado por última vez {verified}",
+    "zoneCheck": {
+      "title": "Comprobar un dominio",
+      "description": "Comprueba si un proveedor conectado gestiona la zona de un host antes de añadirlo.",
+      "placeholder": "app.example.com",
+      "check": "Comprobar",
+      "matched": "Gestionado aquí — zona {zone}. Los registros de este dominio se escribirán automáticamente.",
+      "none": "Ningún proveedor conectado gestiona la zona de este dominio. Añadirás sus registros a mano.",
+      "unauthorized": "Se rechazó un token guardado. Vuelve a conectarlo e inténtalo de nuevo.",
+      "unavailable": "No se pudo contactar con el proveedor de DNS, así que esto es desconocido; no significa que algo esté mal configurado."
+    },
+    "toast": {
+      "loadFailed": "No se pudieron cargar los proveedores de DNS",
+      "needBoth": "Introduce una etiqueta y un token de API",
+      "connected": "{name} conectado",
+      "connectFailed": "No se pudo conectar el proveedor",
+      "disconnected": "{name} desconectado",
+      "disconnectFailed": "No se pudo desconectar el proveedor",
+      "checkFailed": "No se pudo comprobar ese dominio"
     }
   }
 }

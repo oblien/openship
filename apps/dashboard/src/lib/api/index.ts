@@ -40,6 +40,7 @@ export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps"
 export { deployApi } from "./deploy";
 export type { RestorePlanUI } from "./deploy";
 export { domainsApi } from "./domains";
+export { dnsApi, type DnsProviderDescriptor, type SanitizedDnsCredential, type AddDnsCredentialInput, type VerifyZoneResult } from "./dns";
 export {
   jobsApi,
   type JobView,

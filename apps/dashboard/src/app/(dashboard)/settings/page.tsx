@@ -9,6 +9,7 @@
  *   - tokens         → clone credentials, API access tokens
  *   - mcp             → MCP connection (endpoint + client config)
  *   - team           → organization members + invitations (moved from /members)
+ *   - dns            → DNS provider credentials for automatic records, admin+ only
  *   - audit          → audit log feed (moved from /audit), admin+ only
  *   - cloud          → cloud connection (self-hosted only)
  *   - infrastructure → edge/mail container versions + scan, untracked edge
@@ -42,6 +43,7 @@ import { InfrastructureTab } from "./_components/InfrastructureTab";
 import { TeamTab } from "./_components/TeamTab";
 import { NotificationsTab } from "./_components/NotificationsTab";
 import { EmailSettings } from "./_components/EmailSettings";
+import { DnsProviders } from "./_components/DnsProviders";
 import { AuditTab } from "./_components/AuditTab";
 import { DataTransferTab } from "./_components/DataTransferTab";
 import {
@@ -158,6 +160,8 @@ function SettingsPageInner() {
           {activeTab === "notifications" && <NotificationsTab />}
 
           {activeTab === "email" && selfHosted && <EmailSettings />}
+
+          {activeTab === "dns" && <DnsProviders />}
 
           {activeTab === "audit" && <AuditTab />}
 

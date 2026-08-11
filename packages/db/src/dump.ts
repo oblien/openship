@@ -350,6 +350,22 @@ const TABLES: ReadonlyArray<TableSpec> = [
     hasOrganizationId: true,
   },
 
+  // DNS
+  // Carried by an org transfer so the receiving instance keeps writing that org's
+  // domain records instead of silently reverting them to manual. Paired with its
+  // ENCRYPTED_COLUMNS spec below: catalogued without one, the restore-side null
+  // pass skips api_token_enc and a crafted ingest could plant ciphertext for a
+  // zone the tenant does not own.
+  {
+    sqlName: "dns_credential",
+    table: schema.dnsCredential,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "organizationId" },
+    ],
+    hasOrganizationId: true,
+  },
+
   // Notifications
   {
     sqlName: "notification_channel",
@@ -464,6 +480,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "backup_destination", column: "sftpPasswordEnc" },
   { table: "backup_destination", column: "sftpPrivateKeyEnc" },
   { table: "backup_destination", column: "sftpKeyPassphraseEnc" },
+  { table: "dns_credential", column: "apiTokenEnc" },
   { table: "servers", column: "sshPassword" },
   { table: "servers", column: "sshPrivateKey" },
   { table: "servers", column: "sshKeyPassphrase" },

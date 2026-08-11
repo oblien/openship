@@ -157,6 +157,16 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  DNS (Provider credentials & zones)                              */
+  /* ---------------------------------------------------------------- */
+  dns: {
+    providers: "dns/providers",
+    credentials: "dns/credentials",
+    credentialById: (id: string) => `dns/credentials/${encodeURIComponent(id)}`,
+    verifyZone: "dns/verify-zone",
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Jobs (self-hosted scheduled tasks)                              */
   /* ---------------------------------------------------------------- */
   jobs: {

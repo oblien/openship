@@ -286,6 +286,22 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     tone: "danger",
     description: "Automatic renewal failed — the certificate will expire unless this is fixed.",
   },
+  "dns_credential.connected": {
+    category: "domains",
+    action: "connected the DNS provider",
+    label: "DNS provider connected",
+    tone: "info",
+    description:
+      "An API token that lets Openship write this organization's DNS records was stored. The token itself is never recorded.",
+  },
+  "dns_credential.disconnected": {
+    category: "domains",
+    action: "disconnected the DNS provider",
+    label: "DNS provider disconnected",
+    tone: "warning",
+    description:
+      "Openship can no longer write DNS records for domains in that provider's zones; records already written are left in place.",
+  },
   "domain:write": {
     category: "domains",
     action: "changed the domain",
@@ -838,6 +854,7 @@ export const AUDIT_RESOURCE_LABELS: Record<string, string> = {
   container: "a container",
   deployment: "a deployment",
   domain: "a domain",
+  dns_credential: "a DNS provider",
   server: "a server",
   mail_server: "the mail server",
   job: "a job",

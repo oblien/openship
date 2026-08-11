@@ -57,6 +57,9 @@ export async function add(c: Context) {
       ...(result.preexistingEdgeSite
         ? { preexistingEdgeSite: result.preexistingEdgeSite }
         : {}),
+      // Present only when a connected DNS provider manages the zone. Its absence
+      // is what tells the client "show the records for the operator to paste".
+      ...(result.autoDns ? { autoDns: result.autoDns } : {}),
     },
     201,
   );

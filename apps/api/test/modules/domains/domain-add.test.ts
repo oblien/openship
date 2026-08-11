@@ -46,6 +46,14 @@ vi.mock("../../../src/lib/domain-ssl", () => ({
   manageDomainSsl: vi.fn(),
 }));
 
+// Stubbed so the provisioning ARGUMENTS are assertable: which hostnames Openship
+// actually writes records for is the thing that matters, not what Cloudflare says.
+const provisionRecords = vi.fn().mockResolvedValue({ provisioned: true, records: [] });
+vi.mock("../../../src/modules/dns/dns-credential.service", () => ({
+  provisionRecords: (...args: unknown[]) => provisionRecords(...args),
+  releaseRecords: vi.fn().mockResolvedValue({ deleted: 0 }),
+}));
+
 vi.mock("../../../src/lib/dns-resolver", () => ({
   resolveRecords: vi.fn(),
 }));
@@ -213,6 +221,15 @@ describe("addDomain retries", () => {
     expect(result.domain.hostname).toBe("example.com");
     expect(result.www).toBeUndefined();
     expect(result.wwwError).toContain("www.example.com");
+
+    // The panel still LISTS www so the operator knows what it would need...
+    expect(result.records.records.some((r: any) => r.name === "www.example.com")).toBe(true);
+    // ...but nothing is WRITTEN for a hostname another project owns. removeDomain
+    // releases only the apex and its challenge name, so such a record would be
+    // orphaned with nothing on this side able to take it back.
+    const written = (provisionRecords.mock.calls.at(-1)?.[2] ?? []) as { name: string }[];
+    expect(written.map((r) => r.name)).not.toContain("www.example.com");
+    expect(written.map((r) => r.name)).toContain("example.com");
   });
 
   it("never stacks www on www", async () => {
