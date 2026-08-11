@@ -9,6 +9,7 @@
  *   usage     GET    /deployments/:id/usage     (container usage)
  *   redeploy  POST   /deployments/:id/redeploy  { useExistingCommit? }
  *   rollback  POST   /deployments/:id/rollback
+ *   bisect    —      binary search over list + rollback, no new route
  *   pin       POST   /deployments/:id/pin       { pinned }
  *   cancel    POST   /deployments/:id/cancel
  *   restart   POST   /deployments/:id/restart
@@ -20,9 +21,12 @@
  */
 import { Command } from "commander";
 import { createInterface } from "node:readline";
+import { isCancel, select } from "@clack/prompts";
 import { apiRequest, ApiError } from "../lib/api-client";
 import { readProjectLink } from "../lib/project-link";
-import { isJsonMode, printJson, printTable, ok, err } from "../lib/output";
+// `info` is aliased — this module already binds that name to the `info` subcommand.
+import { isJsonMode, printJson, printTable, ok, err, info as note } from "../lib/output";
+import { bisectDone, bisectMidpoint, bisectStep } from "../lib/bisect";
 
 /** Wrap a subcommand action so ApiError surfaces cleanly and exits non-zero. */
 function run<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
@@ -46,8 +50,8 @@ function shortSha(v: unknown): string {
   return typeof v === "string" ? v.slice(0, 7) : "";
 }
 
-/** Resolve the project scope, clamp paging to the API's 100-row ceiling, and
- *  return one page of deployments. */
+/** Shared by `list` and `bisect`: resolve the project scope, clamp paging to the
+ *  API's 100-row ceiling, and return one page of deployments. */
 async function fetchDeployments(opts: {
   project?: string;
   env?: string;
@@ -159,6 +163,125 @@ const rollback = new Command("rollback")
     run(async (id: string) => {
       const res = await apiRequest(`/deployments/${id}/rollback`, { method: "POST" });
       report(res, `Rolled back to ${id}`);
+    }),
+  );
+
+interface BisectCandidate {
+  id: string;
+  branch: string;
+  commitSha: string | null;
+  version: number | null;
+  url: string | null;
+  createdAt: string;
+}
+
+function describeCandidate(d: BisectCandidate): string {
+  return `${d.id} (${d.version ? `v${d.version}` : shortSha(d.commitSha)}, ${d.branch}, ${d.createdAt})`;
+}
+
+const bisect = new Command("bisect")
+  .description("Binary-search deployment history to find the first bad deployment")
+  .option("--project <id>", "Scope to a project (defaults to the linked project)")
+  .option("--env <environment>", "Filter by environment: production | preview")
+  .option("--limit <n>", "Max deployments to search through", "50")
+  .option("--good <id>", "Known-good deployment ID (defaults to the oldest fetched)")
+  .option("--bad <id>", "Known-bad deployment ID (defaults to the most recent)")
+  .action(
+    run(async (opts) => {
+      if (!process.stdin.isTTY || isJsonMode()) {
+        err("`deployment bisect` is interactive — it needs a TTY and cannot run under --json.");
+        process.exit(1);
+      }
+
+      // Only ready/partial_failure actually deployed something visitable —
+      // queued/building/failed/cancelled/rejected have nothing to look at.
+      const testable: BisectCandidate[] = (await fetchDeployments(opts))
+        .filter((d) => d.status === "ready" || d.status === "partial_failure")
+        .map((d) => ({
+          id: String(d.id),
+          branch: String(d.branch ?? ""),
+          commitSha: (d.commitSha as string | null) ?? null,
+          version: (d.version as number | null) ?? null,
+          url: (d.url as string | null) ?? null,
+          createdAt: String(d.createdAt ?? ""),
+        }))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      if (testable.length < 2) {
+        err(
+          `Need at least two testable deployments (status ready/partial_failure) to bisect; found ${testable.length}. Try --env or raise --limit.`,
+        );
+        process.exit(1);
+      }
+
+      const goodIndex = opts.good ? testable.findIndex((d) => d.id === opts.good) : 0;
+      const badIndex = opts.bad
+        ? testable.findIndex((d) => d.id === opts.bad)
+        : testable.length - 1;
+
+      if (opts.good && goodIndex === -1) {
+        err(
+          `--good ${opts.good} not found among the last ${testable.length} testable deployments. Try --limit.`,
+        );
+        process.exit(1);
+      }
+      if (opts.bad && badIndex === -1) {
+        err(
+          `--bad ${opts.bad} not found among the last ${testable.length} testable deployments. Try --limit.`,
+        );
+        process.exit(1);
+      }
+      if (goodIndex >= badIndex) {
+        err(
+          "--good must be chronologically before --bad (need at least two testable deployments to bisect).",
+        );
+        process.exit(1);
+      }
+
+      let range = testable.slice(goodIndex, badIndex + 1);
+      note(
+        `Bisecting ${range.length} deployments between ${range[0].id} (good) and ${range[range.length - 1].id} (bad).\n`,
+      );
+
+      while (!bisectDone(range)) {
+        const mid = bisectMidpoint(range);
+        const candidate = range[mid];
+        note(`Testing ${describeCandidate(candidate)}`);
+        if (candidate.url) {
+          note(`  ${candidate.url}`);
+          try {
+            const { default: open } = await import("open");
+            await open(candidate.url);
+          } catch {
+            /* best-effort only; the URL above still works */
+          }
+        }
+
+        const answer = await select({
+          message: "Is this deployment good or bad?",
+          options: [
+            { value: "good" as const, label: "Good", hint: "this deployment works" },
+            { value: "bad" as const, label: "Bad", hint: "this deployment is broken" },
+            { value: "skip" as const, label: "Skip", hint: "can't tell — untestable" },
+            { value: "abort" as const, label: "Abort bisect" },
+          ],
+        });
+        if (isCancel(answer) || answer === "abort") {
+          err("Bisect aborted.");
+          process.exit(1);
+        }
+        range = bisectStep(range, mid, answer);
+      }
+
+      const goodDep = range[0];
+      const badDep = range[range.length - 1];
+      ok(`\nFirst bad deployment: ${describeCandidate(badDep)}`);
+      note(`Last known good:      ${describeCandidate(goodDep)}`);
+
+      if (await confirm(`\nRoll back to ${goodDep.id} now?`)) {
+        const rbRes = await apiRequest(`/deployments/${goodDep.id}/rollback`, { method: "POST" });
+        report(rbRes, `Rolled back to ${goodDep.id}`);
+      }
     }),
   );
 
@@ -286,6 +409,7 @@ export const deploymentCommand = new Command("deployment")
   .addCommand(usage)
   .addCommand(redeploy)
   .addCommand(rollback)
+  .addCommand(bisect)
   .addCommand(pin)
   .addCommand(cancel)
   .addCommand(restart)

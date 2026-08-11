@@ -91,3 +91,156 @@ describe("openship deployment rollback", () => {
     expect(fetchStub.calls[0].url).toBe("http://api.test/api/deployments/dep1/rollback");
   });
 });
+
+// The interactive good/bad/skip loop and the final rollback prompt both read
+// real stdin (@clack/prompts `select`, the local readline `confirm`) once a
+// TTY is present — there's no mock seam for either in this harness (no other
+// command's tests exercise that path either), so only the deterministic
+// branches below are covered here. The binary-search math itself is fully
+// unit-tested in test/unit/bisect.test.ts.
+describe("openship deployment bisect", () => {
+  const realIsTTY = process.stdin.isTTY;
+  afterEach(() => {
+    (process.stdin as { isTTY?: boolean }).isTTY = realIsTTY;
+  });
+
+  it("refuses to run without a TTY — bisect needs a human to judge each candidate", async () => {
+    (process.stdin as { isTTY?: boolean }).isTTY = false;
+    const { err: errOut, code } = await runCommand(deploymentCommand, [
+      "bisect",
+      "--project",
+      "p1",
+    ]);
+    expect(code).toBe(1);
+    expect(errOut).toContain("interactive");
+  });
+
+  it("errors when nothing in range is testable", async () => {
+    (process.stdin as { isTTY?: boolean }).isTTY = true;
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: [
+          { id: "dep1", status: "building", branch: "main", createdAt: "2024-01-01T00:00:00Z" },
+        ],
+      },
+    }));
+    const { err: errOut, code } = await runCommand(deploymentCommand, [
+      "bisect",
+      "--project",
+      "p1",
+    ]);
+    expect(code).toBe(1);
+    expect(errOut).toContain("Need at least two testable deployments");
+  });
+
+  it("errors on a single testable deployment without blaming flags the user never passed", async () => {
+    (process.stdin as { isTTY?: boolean }).isTTY = true;
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: [
+          { id: "dep-only", status: "ready", branch: "main", createdAt: "2024-01-01T00:00:00Z" },
+        ],
+      },
+    }));
+    const { err: errOut, code } = await runCommand(deploymentCommand, [
+      "bisect",
+      "--project",
+      "p1",
+    ]);
+    expect(code).toBe(1);
+    expect(errOut).toContain("Need at least two testable deployments");
+    expect(errOut).not.toContain("--good");
+  });
+
+  it("errors when --good isn't among the fetched deployments", async () => {
+    (process.stdin as { isTTY?: boolean }).isTTY = true;
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: [
+          { id: "dep-old", status: "ready", branch: "main", createdAt: "2024-01-01T00:00:00Z" },
+          { id: "dep-new", status: "ready", branch: "main", createdAt: "2024-01-02T00:00:00Z" },
+        ],
+      },
+    }));
+    const { err: errOut, code } = await runCommand(deploymentCommand, [
+      "bisect",
+      "--project",
+      "p1",
+      "--good",
+      "dep-missing",
+    ]);
+    expect(code).toBe(1);
+    expect(errOut).toContain("dep-missing");
+    expect(errOut).toContain("not found");
+  });
+
+  it("errors when --bad isn't among the fetched deployments", async () => {
+    (process.stdin as { isTTY?: boolean }).isTTY = true;
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: [
+          { id: "dep-old", status: "ready", branch: "main", createdAt: "2024-01-01T00:00:00Z" },
+          { id: "dep-new", status: "ready", branch: "main", createdAt: "2024-01-02T00:00:00Z" },
+        ],
+      },
+    }));
+    const { err: errOut, code } = await runCommand(deploymentCommand, [
+      "bisect",
+      "--project",
+      "p1",
+      "--bad",
+      "dep-missing",
+    ]);
+    expect(code).toBe(1);
+    expect(errOut).toContain("dep-missing");
+    expect(errOut).toContain("not found");
+  });
+
+  it("errors when --good is chronologically at or after --bad", async () => {
+    (process.stdin as { isTTY?: boolean }).isTTY = true;
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: [
+          { id: "dep-old", status: "ready", branch: "main", createdAt: "2024-01-01T00:00:00Z" },
+          { id: "dep-new", status: "ready", branch: "main", createdAt: "2024-01-02T00:00:00Z" },
+        ],
+      },
+    }));
+    const { err: errOut, code } = await runCommand(deploymentCommand, [
+      "bisect",
+      "--project",
+      "p1",
+      "--good",
+      "dep-new",
+      "--bad",
+      "dep-old",
+    ]);
+    expect(code).toBe(1);
+    expect(errOut).toContain("chronologically before");
+  });
+
+  it("excludes queued/building/failed deployments from the testable set", async () => {
+    (process.stdin as { isTTY?: boolean }).isTTY = true;
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: [
+          { id: "dep-queued", status: "queued", branch: "main", createdAt: "2024-01-01T00:00:00Z" },
+          { id: "dep-failed", status: "failed", branch: "main", createdAt: "2024-01-02T00:00:00Z" },
+        ],
+      },
+    }));
+    const { err: errOut, code } = await runCommand(deploymentCommand, [
+      "bisect",
+      "--project",
+      "p1",
+      "--env",
+      "production",
+    ]);
+    expect(code).toBe(1);
+    expect(errOut).toContain("found 0");
+    // bisect scopes its fetch exactly like `deployment list` does.
+    expect(fetchStub.calls[0].url).toBe(
+      "http://api.test/api/deployments?projectId=p1&environment=production&perPage=50",
+    );
+  });
+});
