@@ -46,6 +46,25 @@ function shortSha(v: unknown): string {
   return typeof v === "string" ? v.slice(0, 7) : "";
 }
 
+/** Resolve the project scope, clamp paging to the API's 100-row ceiling, and
+ *  return one page of deployments. */
+async function fetchDeployments(opts: {
+  project?: string;
+  env?: string;
+  limit?: string;
+}): Promise<Record<string, unknown>[]> {
+  const projectId: string | undefined = opts.project || readProjectLink()?.projectId;
+  const params = new URLSearchParams();
+  if (projectId) params.set("projectId", projectId);
+  if (opts.env) params.set("environment", opts.env);
+  params.set("perPage", String(Math.min(Number(opts.limit) || 50, 100)));
+  const qs = params.toString();
+  const res = await apiRequest<{ data?: Record<string, unknown>[] }>(
+    `/deployments${qs ? `?${qs}` : ""}`,
+  );
+  return res.data ?? [];
+}
+
 async function confirm(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return true;
   const rl = createInterface({ input: process.stdin, output: process.stderr });
@@ -61,16 +80,7 @@ const list = new Command("list")
   .option("--limit <n>", "Max rows to fetch", "50")
   .action(
     run(async (opts) => {
-      const projectId: string | undefined = opts.project || readProjectLink()?.projectId;
-      const params = new URLSearchParams();
-      if (projectId) params.set("projectId", projectId);
-      if (opts.env) params.set("environment", opts.env);
-      params.set("perPage", String(Math.min(Number(opts.limit) || 50, 100)));
-      const qs = params.toString();
-      const res = await apiRequest<{ data?: Record<string, unknown>[] }>(
-        `/deployments${qs ? `?${qs}` : ""}`,
-      );
-      const rows = (res.data ?? []).map((d) => ({
+      const rows = (await fetchDeployments(opts)).map((d) => ({
         id: d.id,
         status: d.status,
         env: d.environment,
