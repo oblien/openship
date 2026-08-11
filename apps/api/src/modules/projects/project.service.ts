@@ -20,7 +20,6 @@ export {
   updateProject,
   linkProjectRepo,
   getGitInfo,
-  getProjectCommitStatus,
   setBranch,
   listProjectEnvironments,
   createProjectEnvironment,
@@ -29,6 +28,7 @@ export {
   getLatestDeploymentSession,
   enrichProject,
   enrichProjectsBatch,
+  resolveProjectDeployTarget,
   deploymentIsBlocked,
 } from "./project-crud.service";
 

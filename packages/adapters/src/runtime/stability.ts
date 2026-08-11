@@ -99,8 +99,12 @@ function plural(n: number, unit: string): string {
  * What the restart policy does with an exit, which decides whether "exited" is a
  * verdict or just the trough of a bounce. `always`/`unless-stopped` restart on
  * ANY exit; `on-failure` only on a non-zero one; `no`/unset never.
+ *
+ * Exported because the steady-state health watch asks the same question of a
+ * container that has been running for days, and the answer must not drift between
+ * "did this deploy work" and "is this still up".
  */
-function restartsAfter(policy: string | null, exitCode: number): boolean {
+export function restartsAfter(policy: string | null, exitCode: number): boolean {
   const p = (policy ?? "").trim().toLowerCase();
   if (p === "always" || p === "unless-stopped") return true;
   if (p === "on-failure") return exitCode !== 0;

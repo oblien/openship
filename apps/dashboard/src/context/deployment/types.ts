@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
-import { getBuildImage, STACKS, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier } from "@repo/core";
+import { getBuildImage, STACKS, resolveWorkload, type WorkloadType, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { randomUUID } from "@/lib/random-uuid";
 
@@ -190,6 +190,24 @@ export interface DeploymentOptions {
   rootDirectory: string;
   hasServer: boolean;
   hasBuild: boolean;
+  /**
+   * The runtime workload axis (#538): `web` listens on a port and is routed,
+   * `worker` runs a long-lived container with no port/route, `static` serves
+   * files from the edge. Absent → derive from `hasServer` (never a worker), so
+   * every legacy config classifies exactly as before. A worker shares
+   * `hasServer=false` with a static site — only this field distinguishes them,
+   * so readers that must tell them apart go through `workloadOf`.
+   */
+  workloadType?: WorkloadType;
+}
+
+/** Resolve an options block's runtime workload, sharing the canonical core
+ *  resolver so a dashboard gate can never disagree with the backend. */
+export function workloadOf(options: {
+  workloadType?: WorkloadType | null;
+  hasServer?: boolean | null;
+}): WorkloadType {
+  return resolveWorkload(options.workloadType, options.hasServer);
 }
 
 export interface DeploymentModeSnapshot {
@@ -386,6 +404,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
     rootDirectory: "./",
     hasServer: true,
     hasBuild: true,
+    workloadType: "web",
   },
   envVars: [],
   rootEnvVars: [],
@@ -524,7 +543,21 @@ function normalizePublicEndpointForMode(
 export function syncPublicEndpointState(
   config: DeploymentConfig,
 ): DeploymentConfig {
-  const linkedRuntimePort = config.options.hasServer
+  const workload = workloadOf(config.options);
+
+  // A worker (#538) binds no port and is never routed — it has no public
+  // endpoints at all. Clear them so the wizard neither shows nor submits a
+  // bogus static "/" route (a worker shares hasServer=false with a static site).
+  if (workload === "worker") {
+    return {
+      ...config,
+      publicEndpoints: [],
+      options: { ...config.options, productionPort: "" },
+    };
+  }
+
+  const isWeb = workload === "web";
+  const linkedRuntimePort = isWeb
     ? (
         config.options.productionPort ||
         config.publicEndpoints[0]?.port ||
@@ -533,7 +566,7 @@ export function syncPublicEndpointState(
     : config.options.productionPort;
   const endpoints = ensurePublicEndpoints(
     config.publicEndpoints,
-    config.options.hasServer
+    isWeb
       ? {
           port: linkedRuntimePort,
         }
@@ -541,7 +574,7 @@ export function syncPublicEndpointState(
           targetPath: "/",
         },
   ).map((endpoint, index) => normalizePublicEndpointForMode(endpoint, {
-    hasServer: config.options.hasServer,
+    hasServer: isWeb,
     runtimePort: linkedRuntimePort,
     isPrimary: index === 0,
   }));
@@ -552,7 +585,7 @@ export function syncPublicEndpointState(
     publicEndpoints: endpoints,
     options: {
       ...config.options,
-      productionPort: config.options.hasServer
+      productionPort: isWeb
         ? (linkedRuntimePort || primary?.port || "")
         : config.options.productionPort,
     },
@@ -565,24 +598,31 @@ export function usesServiceDeployment(
   return config.projectType === "services" && config.serviceDeploymentMode === "services";
 }
 
+/**
+ * The hostnames a deploy screen may PRINT for a config, in endpoint order.
+ *
+ * Only hosts the config actually names: a custom domain the operator typed, or
+ * `<chosen label>.<baseDomain>`. Empty when the config names none — the caller
+ * then hides the row / disables the link rather than showing a guess.
+ *
+ * It used to synthesize a missing endpoint from a `fallbackDomain` seeded with
+ * `config.projectName` — the RAW project name, not a slug — so "My App" became
+ * a `My App.opsh.io` Domain row AND the target of the primary "Visit Site"
+ * button on the deploy-success screen. That host never existed: the deploy mints
+ * its free route from the project's SLUG, so even the slug-shaped cases pointed
+ * somewhere else. Nothing may name a host this function can't derive from the
+ * config's own endpoints.
+ */
 export function getPublicEndpointHosts(
   endpoints: PublicEndpoint[] | undefined,
   baseDomain: string,
-  fallbackDomain: string,
 ): string[] {
-  return ensurePublicEndpoints(endpoints, {
-    domain: fallbackDomain,
-    domainType: "free",
-  })
-    .map((endpoint) => (
-      endpoint.domainType === "custom"
-        ? endpoint.customDomain
-        : endpoint.domain
-          ? `${endpoint.domain}.${baseDomain}`
-          : fallbackDomain
-            ? `${fallbackDomain}.${baseDomain}`
-            : ""
-    ))
+  return (endpoints ?? [])
+    .map((endpoint) => {
+      if (endpoint.domainType === "custom") return endpoint.customDomain?.trim() ?? "";
+      const label = endpoint.domain?.trim();
+      return label && baseDomain ? `${label}.${baseDomain}` : "";
+    })
     .filter((hostname, index, hostnames) => Boolean(hostname) && hostnames.indexOf(hostname) === index);
 }
 

@@ -162,6 +162,9 @@
     "bind": "chemin hôte",
     "nVolumes": "{n} volumes",
     "nEnv": "{n} variables d'env",
+    "envFromImage": "{n} variables viennent de l'image",
+    "envFromImageHint": "Non importées comme configuration — l'image les fournit à l'exécution. Importez-les pour figer les valeurs avant de reconstruire depuis les sources.",
+    "envFromImageImport": "Importer quand même",
     "alreadyManaged": "{count} conteneur(s) déjà géré(s) par Openship ont été ignorés."
   },
   "reimport": {

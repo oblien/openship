@@ -18,21 +18,37 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *      naming the ids was not. A caller must never have to guess an id.
  */
 
-const { projectFindById, findLatestByProject, deploymentFindById, listByProject } = vi.hoisted(
-  () => ({
-    projectFindById: vi.fn(),
-    findLatestByProject: vi.fn(),
-    deploymentFindById: vi.fn(),
-    listByProject: vi.fn(),
-  }),
-);
+const {
+  projectFindById,
+  projectListByOrganization,
+  findLatestByProject,
+  findLatestByProjects,
+  deploymentFindById,
+  findManyById,
+  listByProject,
+  listByProjects,
+} = vi.hoisted(() => ({
+  projectFindById: vi.fn(),
+  projectListByOrganization: vi.fn(),
+  findLatestByProject: vi.fn(),
+  findLatestByProjects: vi.fn(),
+  deploymentFindById: vi.fn(),
+  findManyById: vi.fn(),
+  listByProject: vi.fn(),
+  listByProjects: vi.fn(),
+}));
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
 
 vi.mock("@repo/db", () => ({
   repos: {
-    project: { findById: projectFindById },
-    deployment: { findLatestByProject, findById: deploymentFindById },
-    domain: { listByProject },
+    project: { findById: projectFindById, listByOrganization: projectListByOrganization },
+    deployment: {
+      findLatestByProject,
+      findLatestByProjects,
+      findById: deploymentFindById,
+      findManyById,
+    },
+    domain: { listByProject, listByProjects },
   },
 }));
 
@@ -40,6 +56,7 @@ vi.mock("../../../src/modules/deployments/session-manager", () => ({ getSession 
 
 import {
   getDeploymentPendingActions,
+  getOrgPendingActions,
   getProjectPendingActions,
 } from "../../../src/modules/projects/pending-actions.service";
 
@@ -73,11 +90,7 @@ const blockedByPort = (over: Record<string, unknown> = {}) =>
   });
 
 beforeEach(() => {
-  projectFindById.mockReset();
-  findLatestByProject.mockReset();
-  deploymentFindById.mockReset();
-  listByProject.mockReset();
-  getSession.mockReset();
+  vi.clearAllMocks();
 
   projectFindById.mockResolvedValue({
     id: PROJECT,
@@ -88,6 +101,60 @@ beforeEach(() => {
   deploymentFindById.mockResolvedValue(null);
   listByProject.mockResolvedValue([]);
   getSession.mockReturnValue(undefined);
+
+  projectListByOrganization.mockResolvedValue({ rows: [] });
+  findLatestByProjects.mockResolvedValue(new Map());
+  findManyById.mockResolvedValue(new Map());
+  listByProjects.mockResolvedValue(new Map());
+});
+
+/**
+ * `compiled.skipped` was read by NOTHING before this: a vercel.json rule the proxy
+ * couldn't translate simply never existed, with no log line and no UI. Recomputed here
+ * from the stored config (the compiler is pure), so it needs no column and can't go
+ * stale — and it reports before the project has ever deployed.
+ */
+describe("routing_rules_dropped", () => {
+  const withRouting = (routingConfig: unknown) =>
+    projectFindById.mockResolvedValue({ id: PROJECT, organizationId: ORG, routingConfig });
+
+  it("names each rule that is not live", async () => {
+    withRouting({
+      redirects: [
+        // Destination references a wildcard the source never captures.
+        { source: "/blog/:path*", destination: "/news/:slug*" },
+      ],
+    });
+
+    const [action] = await getProjectPendingActions(PROJECT, ORG);
+
+    expect(action.kind).toBe("routing_rules_dropped");
+    expect(action.severity).toBe("advisory");
+    expect(action.title).toBe("1 routing rule could not be applied");
+    expect(action.message).toContain("/blog/:path*");
+    expect((action.details as { skipped: string[] }).skipped).toHaveLength(1);
+  });
+
+  it("is silent for a config that compiles cleanly", async () => {
+    withRouting({
+      redirects: [{ source: "/blog/:path*", destination: "/news/:path*", permanent: true }],
+      cleanUrls: true,
+    });
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+
+  it("is silent with no routing config at all", async () => {
+    withRouting(null);
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+
+  // On a single-service project the app already receives `/api/…` via `location /`, and
+  // on a composite one the deploy path supplies the real backend. Reporting it as
+  // dropped would be noise in both cases.
+  it("does not report a path rewrite as dropped just for lacking a backend", async () => {
+    withRouting({ rewrites: [{ source: "/api/(.*)", destination: "/api/index.js" }] });
+    expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
 });
 
 describe("deploy_blocked — the case nothing could see before", () => {
@@ -475,6 +542,135 @@ describe("advisories stay advisories", () => {
     const actions = await getProjectPendingActions(PROJECT, ORG);
 
     expect(actions.map((a) => a.severity)).toEqual(["action_required", "advisory"]);
+  });
+});
+
+/**
+ * The org-wide loader behind the global issue feed. It exists to be BULK — the
+ * whole reason the feed is cheap — and to be identical to the project view, since
+ * both funnel through `collectPendingActions`. Both properties are silent when
+ * broken: a per-project fallback still renders, it just costs 3 queries × N.
+ */
+describe("org scope", () => {
+  const withOneProject = (over: Record<string, unknown> = {}) => {
+    const project = { id: PROJECT, organizationId: ORG, activeDeploymentId: "dep-live", ...over };
+    const latest = blockedByPort();
+    const active = dep({
+      id: "dep-live",
+      status: "partial_failure",
+      meta: { composeDeployment: { decision: "pending", failedServiceNames: ["worker"] } },
+    });
+    const domains = [
+      {
+        id: "dom-1",
+        hostname: "app.example.com",
+        status: "pending",
+        verified: false,
+        sslStatus: "none",
+        verifyAttempts: 3,
+        lastVerifyError: "DNS does not resolve to this server",
+      },
+    ];
+
+    // Project-scoped reads.
+    projectFindById.mockResolvedValue(project);
+    findLatestByProject.mockResolvedValue(latest);
+    deploymentFindById.mockResolvedValue(active);
+    listByProject.mockResolvedValue(domains);
+    // The same rows, bulk-shaped.
+    projectListByOrganization.mockResolvedValue({ rows: [project] });
+    findLatestByProjects.mockResolvedValue(new Map([[PROJECT, latest]]));
+    findManyById.mockResolvedValue(new Map([["dep-live", active]]));
+    listByProjects.mockResolvedValue(new Map([[PROJECT, domains]]));
+  };
+
+  it("emits exactly what the project's own view emits", async () => {
+    withOneProject();
+
+    const [one, all] = await Promise.all([
+      getProjectPendingActions(PROJECT, ORG),
+      getOrgPendingActions(ORG),
+    ]);
+
+    expect(all.get(PROJECT)).toEqual(one);
+    // Not vacuously equal — this project really has all three item families.
+    expect(one.map((a) => a.kind)).toEqual([
+      "deploy_blocked",
+      "partial_decision",
+      "domain_unverified",
+    ]);
+  });
+
+  it("loads in bulk — the same query count for 1 project and for 20", async () => {
+    withOneProject();
+    await getOrgPendingActions(ORG);
+    const one = {
+      projects: projectListByOrganization.mock.calls.length,
+      latest: findLatestByProjects.mock.calls.length,
+      active: findManyById.mock.calls.length,
+      domains: listByProjects.mock.calls.length,
+    };
+
+    vi.clearAllMocks();
+    const many = Array.from({ length: 20 }, (_, i) => ({
+      id: `p-${i}`,
+      organizationId: ORG,
+      activeDeploymentId: `d-${i}`,
+    }));
+    projectListByOrganization.mockResolvedValue({ rows: many });
+    findLatestByProjects.mockResolvedValue(new Map(many.map((p) => [p.id, blockedByPort()])));
+    findManyById.mockResolvedValue(new Map());
+    listByProjects.mockResolvedValue(new Map());
+
+    const all = await getOrgPendingActions(ORG);
+
+    expect(all.size).toBe(20);
+    expect({
+      projects: projectListByOrganization.mock.calls.length,
+      latest: findLatestByProjects.mock.calls.length,
+      active: findManyById.mock.calls.length,
+      domains: listByProjects.mock.calls.length,
+    }).toEqual(one);
+    expect(one).toEqual({ projects: 1, latest: 1, active: 1, domains: 1 });
+    // Per-project readers must stay untouched — one call here is 20 queries.
+    expect(findLatestByProject).not.toHaveBeenCalled();
+    expect(listByProject).not.toHaveBeenCalled();
+  });
+
+  it("asks for the active deployments in ONE lookup, only for projects that have one", async () => {
+    const rows = [
+      { id: "p-1", organizationId: ORG, activeDeploymentId: "d-1" },
+      { id: "p-2", organizationId: ORG, activeDeploymentId: null },
+      { id: "p-3", organizationId: ORG, activeDeploymentId: "d-3" },
+    ];
+    projectListByOrganization.mockResolvedValue({ rows });
+
+    await getOrgPendingActions(ORG);
+
+    expect(findLatestByProjects).toHaveBeenCalledWith(["p-1", "p-2", "p-3"]);
+    expect(findManyById).toHaveBeenCalledWith(["d-1", "d-3"]);
+  });
+
+  it("omits projects with nothing outstanding, so the feed has no empty groups", async () => {
+    projectListByOrganization.mockResolvedValue({
+      rows: [
+        { id: "p-quiet", organizationId: ORG, activeDeploymentId: null },
+        { id: "p-loud", organizationId: ORG, activeDeploymentId: null },
+      ],
+    });
+    findLatestByProjects.mockResolvedValue(new Map([["p-loud", blockedByPort()]]));
+
+    const all = await getOrgPendingActions(ORG);
+
+    expect([...all.keys()]).toEqual(["p-loud"]);
+  });
+
+  it("touches nothing else when the org has no projects", async () => {
+    projectListByOrganization.mockResolvedValue({ rows: [] });
+
+    expect((await getOrgPendingActions(ORG)).size).toBe(0);
+    expect(findLatestByProjects).not.toHaveBeenCalled();
+    expect(listByProjects).not.toHaveBeenCalled();
   });
 });
 

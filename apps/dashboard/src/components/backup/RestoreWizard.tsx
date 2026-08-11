@@ -23,6 +23,7 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
   const [typed, setTyped] = useState("");
   const [backupFirst, setBackupFirst] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
 
   const { restore } = useRestoreRunStream(restoreId);
 
@@ -89,14 +90,22 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
       return;
     }
     setBusy(true);
+    // A cancel during apply is a REQUEST the running phase honors at its next
+    // checkpoint, so the wizard stays open to report which of the two outcomes
+    // landed — clean, or "the target holds partial data". Closing here would
+    // hide exactly the fact the operator needs.
+    let keepOpen = false;
     try {
-      await backupsApi.cancelRestore(restoreId);
-    } catch {
-      // tolerated
+      const res = await backupsApi.cancelRestore(restoreId);
+      keepOpen = res.data.status === "applying";
+      if (keepOpen) setCancelRequested(true);
+    } catch (err) {
+      window.alert(getApiErrorMessage(err, m.cancelFailed));
+      keepOpen = true;
     } finally {
       setBusy(false);
-      onClose();
     }
+    if (!keepOpen) onClose();
   };
 
   return (
@@ -143,7 +152,14 @@ export function RestoreWizard({ sourceRun, serviceName, onClose }: Props): React
           />
         )}
 
-        {step === "applying" && <ApplyingStep restore={restore} />}
+        {step === "applying" && (
+          <ApplyingStep
+            restore={restore}
+            busy={busy}
+            cancelRequested={cancelRequested || restore?.cancelRequested === true}
+            onCancel={() => void cancelRestore()}
+          />
+        )}
 
         {step === "done" && <DoneStep restore={restore} onClose={onClose} />}
       </div>
@@ -392,9 +408,31 @@ function ConfirmStep({
   );
 }
 
-function ApplyingStep({ restore }: { restore: BackupRestore | null }): React.JSX.Element {
+/**
+ * Apply used to render with no cancel affordance at all — the phase that can run
+ * for hours was the one phase the operator could not interrupt (#434). The
+ * button has two states because the promise changes mid-phase: before the first
+ * write a cancel costs nothing, after it the target is left holding partial data
+ * and the service stays stopped. `destructive` arrives on the SSE channel the
+ * instant that crossing happens, and the abort path confirms in place rather
+ * than through window.confirm so the consequence can actually be spelled out.
+ */
+function ApplyingStep({
+  restore,
+  busy,
+  cancelRequested,
+  onCancel,
+}: {
+  restore: BackupRestore | null;
+  busy: boolean;
+  cancelRequested: boolean;
+  onCancel: () => void;
+}): React.JSX.Element {
   const { t } = useI18n();
   const m = t.misc.restoreWizard;
+  const [confirming, setConfirming] = useState(false);
+  const destructive = restore?.meta?.destructive === true;
+
   return (
     <div className="mt-6 space-y-3">
       <div className="rounded-xl bg-muted/40 p-4 text-sm flex items-center gap-3">
@@ -412,6 +450,53 @@ function ApplyingStep({ restore }: { restore: BackupRestore | null }): React.JSX
           </span>
         )}
       </div>
+
+      {cancelRequested ? (
+        <div className="rounded-xl border border-warning-border bg-warning-bg p-3 text-xs text-warning">
+          {m.cancelPending}
+        </div>
+      ) : confirming ? (
+        <div className="rounded-xl border border-danger-border bg-danger-bg p-3 space-y-3">
+          <div className="flex items-start gap-2 text-sm">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
+            <div>
+              <p className="font-medium text-foreground">{m.abortTitle}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {destructive ? m.abortBodyDestructive : m.abortBodyClean}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              {m.abortKeepGoing}
+            </button>
+            <button
+              onClick={onCancel}
+              disabled={busy}
+              className="rounded-lg bg-danger-solid px-3 py-1.5 text-xs font-medium text-white hover:bg-danger-solid/90 disabled:opacity-50"
+            >
+              {m.abortConfirm}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            {destructive ? m.destructiveNow : m.destructiveNotYet}
+          </p>
+          <button
+            onClick={() => setConfirming(true)}
+            disabled={busy}
+            className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {destructive ? m.abortRestore : m.cancelRestore}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -455,6 +540,16 @@ function DoneStep({
           </div>
         </div>
       </div>
+
+      {/* The row already carries the sentence in errorMessage; this repeats the
+          consequence as a standing banner because "the service is still down and
+          that was deliberate" is the part an operator otherwise misreads as a
+          second failure. */}
+      {restore?.meta?.partialWrite && (
+        <div className="rounded-xl border border-warning-border bg-warning-bg p-3 text-xs text-warning">
+          {m.partialDataNotice}
+        </div>
+      )}
 
       <div className="flex items-center justify-end">
         <button

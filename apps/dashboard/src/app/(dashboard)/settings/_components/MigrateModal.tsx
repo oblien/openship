@@ -28,6 +28,7 @@ import {
   ChevronRight,
   ChevronLeft,
   ExternalLink,
+  Plus,
 } from "lucide-react";
 import { migrationApi, systemApi, getApiErrorMessage } from "@/lib/api";
 import type {
@@ -41,6 +42,7 @@ import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useCloud } from "@/context/CloudContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { Modal } from "@/components/ui/Modal";
 
 type PathKind = "server" | "cloud" | "tunnel";
@@ -343,6 +345,7 @@ function ServerForm({
   showToast: (msg: string, kind: "success" | "error", topic?: string) => void;
 }) {
   const { t } = useI18n();
+  const openAddServer = useAddServerModal();
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [loadingServers, setLoadingServers] = useState(true);
   const [serverId, setServerId] = useState("");
@@ -421,8 +424,29 @@ function ServerForm({
             {t.settings.migrate.server.loadingServers}
           </div>
         ) : servers.length === 0 ? (
-          <div className="rounded-xl border border-border/50 px-3 py-3 text-xs text-muted-foreground">
-            {t.settings.migrate.server.noServersPrefix} <span className="font-mono">/system/servers</span>.
+          // Migrating needs a target, so a bare "go add one somewhere else"
+          // ended the wizard. Add it here and it becomes the picked target.
+          <div className="rounded-xl border border-border/50 px-3 py-3 space-y-2.5">
+            <p className="text-xs text-muted-foreground">
+              {t.settings.migrate.server.noServersPrefix} <span className="font-mono">/system/servers</span>.
+            </p>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() =>
+                openAddServer((created) => {
+                  setServers((prev) =>
+                    prev.some((s) => s.id === created.id) ? prev : [...prev, created],
+                  );
+                  setServerId(created.id);
+                  setPreflight(null);
+                })
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
+            >
+              <Plus className="size-3.5" />
+              {t.widgets.shared.serverSelector.addServer}
+            </button>
           </div>
         ) : (
           <select

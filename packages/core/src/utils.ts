@@ -242,3 +242,32 @@ export function withTimeout<T>(promise: Promise<T>, ms: number | undefined, mess
 export function isValidEnvKey(key: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
 }
+
+/**
+ * Greedy word wrap for prose bound for a terminal (boot banners, CLI output).
+ *
+ * Existing newlines are honoured as hard breaks, so a block that already has
+ * deliberate line structure — a copy-paste command on its own line, say — keeps it
+ * instead of being reflowed into the paragraph above.
+ */
+export function wrapText(text: string, width = 88): string[] {
+  const out: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      out.push("");
+      continue;
+    }
+    let line = "";
+    for (const word of words) {
+      if (line && line.length + 1 + word.length > width) {
+        out.push(line);
+        line = word;
+      } else {
+        line = line ? `${line} ${word}` : word;
+      }
+    }
+    if (line) out.push(line);
+  }
+  return out;
+}

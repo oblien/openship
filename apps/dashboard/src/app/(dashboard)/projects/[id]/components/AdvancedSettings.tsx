@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -10,9 +10,11 @@ import {
   HardDrive,
   Hammer,
   Loader2,
+  MoreVertical,
   Network,
   Package,
   Pause,
+  Pencil,
   Play,
   Server,
   Settings2,
@@ -23,11 +25,16 @@ import {
 } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeletionModal } from "./DeletionModal";
+import { ProjectRenameModal } from "./ProjectRenameModal";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { projectsApi } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api/client";
+import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import type { RouteStrategy } from "@/lib/api/settings";
 import type { OpenshipReadiness } from "@repo/core";
+import { workloadOf } from "@/context/deployment/types";
 import ReadinessSection from "@/components/project-settings/ReadinessSection";
 
 interface Props {
@@ -106,8 +113,18 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   const { showToast } = useToast();
   const { t } = useI18n();
   const { projectData } = useProjectSettings();
-  const [isProjectActive, setIsProjectActive] = useState(projectData?.active ?? true);
+  // `enabled` is the server's answer (derived from disabled_at in enrichProject).
+  // This local copy exists only so the button flips the instant the call returns;
+  // the effect below re-seeds it from the payload, so a refresh — or a toggle that
+  // failed on the host — always converges on what the API says. Reading a field
+  // the API never sent (`active`) is what made a disabled project render "Active".
+  const [isProjectActive, setIsProjectActive] = useState(projectData?.enabled ?? true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+
+  useEffect(() => {
+    if (typeof projectData?.enabled === "boolean") setIsProjectActive(projectData.enabled);
+  }, [projectData?.enabled]);
 
   const [loading, setLoading] = useState({
     disableProject: false,
@@ -115,43 +132,124 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
     clearBuildCache: false,
   });
 
+  /**
+   * Run one of this panel's async actions: hold the button, always release it,
+   * and report a failure with the API's own reason.
+   *
+   * All three actions used to hand-roll this and all three got it wrong the same
+   * way — they read `response.success` on a client that THROWS for any non-2xx
+   * (see `api.post`). So the failure branch was unreachable, the throw escaped
+   * the handler, and `setLoading(false)` never ran: the button sat spinning
+   * forever with no message. One runner means a fourth action can't repeat it.
+   */
+  const runAction = async (
+    key: keyof typeof loading,
+    action: () => Promise<unknown>,
+    failTitle: string,
+  ) => {
+    if (loading[key]) return false;
+    setLoading((s) => ({ ...s, [key]: true }));
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      showToast(getApiErrorMessage(err, failTitle), "error", failTitle);
+      return false;
+    } finally {
+      setLoading((s) => ({ ...s, [key]: false }));
+    }
+  };
+
   const handleDisableProject = async () => {
-    if (loading.disableProject) return;
-    setLoading((s) => ({ ...s, disableProject: true }));
-    const response = await projectsApi.toggle(projectData.id, !isProjectActive);
-    if (response.success) {
-      setIsProjectActive(!isProjectActive);
-    } else {
-      showToast(response.message, "error", t.projectSettings.advanced.toast.toggleFailed);
-    }
-    setLoading((s) => ({ ...s, disableProject: false }));
+    const next = !isProjectActive;
+    const ok = await runAction(
+      "disableProject",
+      () => projectsApi.toggle(projectData.id, next),
+      t.projectSettings.advanced.toast.toggleFailed,
+    );
+    if (!ok) return;
+    setIsProjectActive(next);
+    // The action stops/starts containers, so the whole project payload (status
+    // pill, access URL, health) is stale — invalidate rather than patch one field,
+    // and the provider re-seeds every consumer from the server.
+    invalidateProjectCaches(String(projectData.id));
   };
 
-  const handleClearInstallCache = async () => {
-    if (loading.clearInstallCache) return;
-    setLoading((s) => ({ ...s, clearInstallCache: true }));
-    const response = await projectsApi.clearCache(projectData.id);
-    if (!response.success) {
-      showToast(response.message, "error", t.projectSettings.advanced.toast.clearInstallFailed);
+  const handleClearInstallCache = () =>
+    runAction(
+      "clearInstallCache",
+      () => projectsApi.clearCache(projectData.id),
+      t.projectSettings.advanced.toast.clearInstallFailed,
+    );
+
+  const handleClearBuildCache = () =>
+    runAction(
+      "clearBuildCache",
+      () => projectsApi.clearBuild(projectData.id),
+      t.projectSettings.advanced.toast.clearBuildFailed,
+    );
+
+  const menu = t.projectSettings.advanced.projectMenu;
+
+  const handleCopyProjectId = async () => {
+    const id = String(projectData?.id ?? "");
+    if (!id) return;
+    try {
+      await navigator.clipboard.writeText(id);
+      showToast(id, "success", menu.idCopied);
+    } catch {
+      // Insecure context or a denied clipboard permission — say so rather than
+      // reporting a copy that never happened.
+      showToast(menu.copyFailed, "error", menu.copyId);
     }
-    setLoading((s) => ({ ...s, clearInstallCache: false }));
   };
 
-  const handleClearBuildCache = async () => {
-    if (loading.clearBuildCache) return;
-    setLoading((s) => ({ ...s, clearBuildCache: true }));
-    const response = await projectsApi.clearBuild(projectData.id);
-    if (!response.success) {
-      showToast(response.message, "error", t.projectSettings.advanced.toast.clearBuildFailed);
-    }
-    setLoading((s) => ({ ...s, clearBuildCache: false }));
-  };
+  /**
+   * Project-level actions for the Project Info header. Only Rename is new; the rest
+   * drive the controls this panel already owns (the pause toggle below, the deletion
+   * modal at the bottom) so there's one implementation of each, reachable from the
+   * heading as well as from its own section.
+   */
+  const menuActions: MenuAction[] = [
+    {
+      id: "rename",
+      label: menu.rename,
+      icon: <Pencil className="size-4" />,
+      onClick: () => setShowRenameModal(true),
+    },
+    {
+      id: "copy-id",
+      label: menu.copyId,
+      icon: <Copy className="size-4" />,
+      onClick: () => void handleCopyProjectId(),
+      divider: true,
+    },
+    {
+      id: "toggle",
+      label: isProjectActive ? menu.pause : menu.resume,
+      icon: isProjectActive ? <Pause className="size-4" /> : <Play className="size-4" />,
+      onClick: () => void handleDisableProject(),
+      disabled: loading.disableProject,
+      variant: isProjectActive ? "warning" : "success",
+      divider: true,
+    },
+    {
+      id: "delete",
+      label: menu.delete,
+      icon: <Trash2 className="size-4" />,
+      onClick: () => setShowDeleteModal(true),
+      variant: "danger",
+    },
+  ];
 
   return (
     <div className="space-y-5">
-      {/* Project Info */}
-      <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-        <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
+      {/* Project Info — no `overflow-hidden` (unlike the SectionCards below): the
+          header's ⋮ opens an absolutely-positioned menu, which a clipping ancestor
+          would cut off. Nothing here needs the clip — the header's rule sits well
+          below the corner radius. */}
+      <div className="rounded-2xl border border-border/50 bg-card">
+        <div className="flex items-start gap-3 rounded-t-2xl border-b border-border/40 px-5 py-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
             <Settings2 className="size-4 text-primary" />
           </div>
@@ -159,10 +257,31 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             <h3 className="text-[14px] font-semibold text-foreground">{t.projectSettings.advanced.projectInfo.title}</h3>
             <p className="mt-0.5 text-[12px] text-muted-foreground">{t.projectSettings.advanced.projectInfo.description}</p>
           </div>
+          {/* Project-level actions live on the heading, where the name is shown. */}
+          <DropdownMenu
+            actions={menuActions}
+            trigger={<MoreVertical className="size-4 text-muted-foreground" />}
+            triggerClassName="-me-1.5 shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="shrink-0"
+          />
         </div>
         <div className="flex items-center gap-6 px-5 py-4">
           <MetricRow label={t.projectSettings.advanced.metric.status} value={isProjectActive ? t.projectSettings.advanced.statusActive : t.projectSettings.advanced.statusDisabled} />
-          <MetricRow label={t.projectSettings.advanced.metric.project} value={projectData?.name || "-"} />
+          <MetricRow
+            label={t.projectSettings.advanced.metric.project}
+            value={projectData?.name || "-"}
+            action={
+              <button
+                type="button"
+                onClick={() => setShowRenameModal(true)}
+                aria-label={menu.rename}
+                title={menu.rename}
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Pencil className="size-3" />
+              </button>
+            }
+          />
           {projectData?.deployTarget && (
             <MetricRow
               label={t.projectSettings.advanced.metric.hostedOn}
@@ -239,6 +358,30 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             />
           </SectionCard>
         )}
+
+        {/* Internal hostname (east-west alias) — single-app, self-hosted, with a
+            running container only. Compose projects set this per service in the
+            service form; static/cloud apps have no private container to name. */}
+        {projectData?.deployTarget !== "cloud" &&
+          (projectData?.serviceCount ?? 0) === 0 &&
+          workloadOf({
+            workloadType: projectData?.workloadType ?? projectData?.options?.workloadType,
+            hasServer: projectData?.hasServer ?? projectData?.options?.hasServer,
+          }) !== "static" && (
+            <SectionCard
+              title={t.projectSettings.advanced.internalAlias.title}
+              description={t.projectSettings.advanced.internalAlias.description}
+              icon={Network}
+              iconTone="primary"
+              collapsible
+            >
+              <InternalAliasCard
+                projectId={projectData.id}
+                initial={(projectData?.internalAlias as string | null) ?? ""}
+                slug={(projectData?.slug as string | undefined) ?? ""}
+              />
+            </SectionCard>
+          )}
 
         {/* Health checks — collapsed, and off unless opted into. Reuses the
             wizard's section so the form and its copy exist once. */}
@@ -336,6 +479,11 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             </button>
           </div>
         </div>
+
+      <ProjectRenameModal
+        isOpen={showRenameModal}
+        onClose={() => setShowRenameModal(false)}
+      />
 
       <DeletionModal
         isOpen={showDeleteModal}
@@ -439,11 +587,102 @@ function RoutingStrategyCard({
   );
 }
 
-function MetricRow({ label, value }: { label: string; value: string }) {
+/**
+ * Single-app custom east-west hostname. Persists `project.internalAlias`, which
+ * the deploy adds as an EXTRA docker alias alongside the default `<slug>` (both
+ * resolve). Explicit Save (free-text) with optimistic toast + rollback, matching
+ * RoutingStrategyCard. Server normalizes + rejects an empty-after-normalize value;
+ * we mirror the "needs a usable char" check client-side for a fast inline error.
+ */
+function InternalAliasCard({
+  projectId,
+  initial,
+  slug,
+}: {
+  projectId: string;
+  initial: string;
+  slug: string;
+}) {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const c = t.projectSettings.advanced.internalAlias;
+  const [value, setValue] = useState(initial);
+  const [saved, setSaved] = useState(initial);
+  const [saving, setSaving] = useState(false);
+
+  const trimmed = value.trim();
+  const dirty = trimmed !== saved.trim();
+
+  async function handleSave() {
+    if (!dirty || saving) return;
+    // Empty clears it (server falls back to the slug). A non-empty value must
+    // carry at least one letter/digit or it normalizes to nothing.
+    if (trimmed && !/[a-z0-9]/i.test(trimmed)) {
+      showToast(c.toast.invalid, "error", c.title);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await projectsApi.update(projectId, { internalAlias: trimmed || null });
+      if ((res as { success?: boolean })?.success === false) throw new Error("update failed");
+      setSaved(trimmed);
+      showToast(c.toast.saved, "success", c.title);
+    } catch {
+      showToast(c.toast.failed, "error", c.title);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-[12px] text-muted-foreground">{c.intro}</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="flex-1">
+          <span className="mb-1 block text-[12px] font-medium text-foreground">{c.label}</span>
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); void handleSave(); }
+            }}
+            placeholder={slug || "app"}
+            spellCheck={false}
+            autoCapitalize="none"
+            className="h-11 w-full rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty || saving}
+          className="h-11 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          {c.save}
+        </button>
+      </div>
+      <p className="text-[12px] text-muted-foreground">{c.hint}</p>
+    </>
+  );
+}
+
+function MetricRow({
+  label,
+  value,
+  action,
+}: {
+  label: string;
+  value: string;
+  /** Optional trailing control (e.g. the name row's rename pencil). */
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="text-[13px] text-muted-foreground">{label}</span>
-      <span className="max-w-[180px] truncate text-end text-[13px] font-medium text-foreground">{value}</span>
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="max-w-[180px] truncate text-end text-[13px] font-medium text-foreground">{value}</span>
+        {action}
+      </span>
     </div>
   );
 }

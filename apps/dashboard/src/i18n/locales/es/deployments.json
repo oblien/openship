@@ -163,12 +163,31 @@
       "pruned": "No se puede fijar — el artefacto ya se ha eliminado"
     },
     "deleteDeployment": "Eliminar despliegue",
-    "confirmRollback": "¿Volver a esta versión?\n\nSolo restaura el código de la aplicación. Los datos de la base de datos y los volúmenes no cambian.",
     "rollbackFailed": "La reversión falló",
     "pinFailed": "No se pudo fijar el despliegue",
     "unpinFailed": "No se pudo desfijar el despliegue",
     "rollbackModeInstant": "Restauración instantánea: reutiliza la imagen retenida de esta versión, sin recompilar.",
     "rollbackModeRebuild": "Recompilación: la imagen de esta versión ya no está en el host, así que se compila su commit.",
     "rollbackModeMixed": "Casi instantáneo: {count} servicio(s) perdieron su imagen y se recompilarán."
+  },
+  "rollbackConfirm": {
+    "title": "¿Volver a esta versión?",
+    "dataUnchanged": "Solo restaura el código de la aplicación. Los datos de la base de datos y de los volúmenes no cambian.",
+    "envHeading": "Variables de entorno",
+    "envSummaryOverlay": "{count} variable(s) cambian — los valores de esta versión se aplican sobre los actuales.",
+    "envSummaryReplace": "{count} variable(s) cambian — se usa el entorno de esta versión tal como se capturó.",
+    "envNoChanges": "Ninguna variable de entorno cambia.",
+    "envUnchanged": "El contenedor existente se reinicia en lugar de recrearse, así que su entorno no se modifica.",
+    "envNoValues": "Aquí nunca se muestran los valores.",
+    "envTruncated": "Mostrando {shown} de {total}.",
+    "dirFrozenWins": "vuelve al valor de esta versión",
+    "dirRemovedSince": "se restaura — eliminada después de esta versión",
+    "dirAddedSinceKept": "se mantiene como está ahora — añadida después de esta versión",
+    "dirAddedSinceDropped": "se elimina — añadida después de esta versión",
+    "scopeAmbiguous": "capturada sin ámbito de servicio, por lo que un mismo valor se aplica a todos los servicios",
+    "untouchedHeading": "Servicios añadidos después de esta versión",
+    "untouchedNote": "Estos siguen en ejecución y no se modifican: {names}",
+    "confirm": "Revertir",
+    "cancel": "Cancelar"
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isCloudEdgeHost, isNonPublicHost } from "./edge-target";
+import { canonicalEdgeTarget, isCloudEdgeHost, isNonPublicHost } from "./edge-target";
 
 /**
  * `isNonPublicHost` is the guard that stops a free `.opsh.io` route from being
@@ -117,5 +117,63 @@ describe("isCloudEdgeHost", () => {
   it("stays disjoint from isNonPublicHost — a cloud host IS publicly routable", () => {
     expect(isNonPublicHost("myapp.opsh.io")).toBe(false);
     expect(isCloudEdgeHost("myapp.opsh.io")).toBe(true);
+  });
+});
+
+/**
+ * Openship Cloud keys a target's verification row on a NORMALIZED
+ * `scheme://host:port` and matches on it exactly, so verifying one string and
+ * routing another is a permanent `target_unverified` that reads as a broken
+ * feature. This is the single normalizer both sides call for that reason.
+ */
+describe("canonicalEdgeTarget", () => {
+  it("gives a bare host an explicit scheme", () => {
+    expect(canonicalEdgeTarget("203.0.113.10")).toBe("http://203.0.113.10");
+    expect(canonicalEdgeTarget("box.example.com")).toBe("http://box.example.com");
+  });
+
+  it("drops the default port for its scheme, since upstream normalizes it away", () => {
+    // `1.2.3.4`, `1.2.3.4:80` and `http://1.2.3.4:80` are ONE target upstream.
+    expect(canonicalEdgeTarget("203.0.113.10:80")).toBe("http://203.0.113.10");
+    expect(canonicalEdgeTarget("http://203.0.113.10:80")).toBe("http://203.0.113.10");
+    expect(canonicalEdgeTarget("https://box.example.com:443")).toBe("https://box.example.com");
+  });
+
+  it("KEEPS a non-default port — it is part of the identity", () => {
+    // The challenge is fetched on the target's port, so `:8080` verified is not
+    // `:80` verified. Collapsing them would verify an address nothing serves.
+    expect(canonicalEdgeTarget("203.0.113.10:8080")).toBe("http://203.0.113.10:8080");
+  });
+
+  it("strips path, query and trailing slash, and lowercases the host", () => {
+    expect(canonicalEdgeTarget("http://BOX.example.com/some/path?x=1")).toBe(
+      "http://box.example.com",
+    );
+    expect(canonicalEdgeTarget("http://box.example.com/")).toBe("http://box.example.com");
+  });
+
+  it("preserves an explicit https scheme rather than forcing http", () => {
+    expect(canonicalEdgeTarget("https://box.example.com")).toBe("https://box.example.com");
+  });
+
+  it("is idempotent — re-canonicalizing a stored target must not change it", () => {
+    // Stored rows are re-read and re-sent on every sweep; drift here would orphan
+    // a live verification behind a key nothing looks up.
+    for (const h of ["203.0.113.10", "box.example.com:8080", "https://box.example.com/x"]) {
+      const once = canonicalEdgeTarget(h);
+      expect(canonicalEdgeTarget(once)).toBe(once);
+    }
+  });
+
+  it("brackets IPv6 consistently", () => {
+    expect(canonicalEdgeTarget("[2001:db8::1]")).toBe("http://[2001:db8::1]");
+    expect(canonicalEdgeTarget("http://[2001:db8::1]:80")).toBe("http://[2001:db8::1]");
+  });
+
+  it("returns empty for empty input instead of a bare scheme", () => {
+    // A caller must be able to test falsiness; `http://` would pass that check and
+    // then be verified as a real target.
+    expect(canonicalEdgeTarget("")).toBe("");
+    expect(canonicalEdgeTarget("   ")).toBe("");
   });
 });

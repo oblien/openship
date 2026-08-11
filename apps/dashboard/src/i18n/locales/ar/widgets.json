@@ -72,7 +72,7 @@
       "serverLabel": "الخادم",
       "loadingServers": "جارٍ تحميل الخوادم…",
       "noServerConnected": "لا يوجد خادم متصل",
-      "connectServerFirst": "قم بتوصيل خادم أولاً، ثم عد لمتابعة الإعداد.",
+      "connectServerFirst": "أضف خادمًا الآن دون مغادرة هذه الصفحة.",
       "addServer": "إضافة خادم",
       "selectServer": "اختر خادمًا…",
       "addNewServer": "إضافة خادم جديد…"
@@ -209,7 +209,8 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "غير مُهيأ",
-      "selectDomain": "اختر نطاقًا"
+      "selectDomain": "اختر نطاقًا",
+      "allDomains": "كل النطاقات"
     },
     "publicEndpoints": {
       "mappedToPort": "معيّن إلى المنفذ {port}.",
@@ -240,7 +241,39 @@
       "permanent": "دائم",
       "cleanUrls": "روابط نظيفة",
       "cleanUrlsHint": "(إزالة ‎.html)",
-      "trailingSlash": "شرطة مائلة لاحقة"
+      "trailingSlash": "شرطة مائلة لاحقة",
+      "proxyLimits": "حدود الطلب",
+      "proxyLimitsHint": "حجم الرفع ومُدد الانتظار. إذا تُركت فارغة تُطبَّق القيم الافتراضية للوكيل — رفع بحجم 1 ميغابايت ومُدد انتظار 60s.",
+      "maxBodySize": "أقصى حجم للرفع",
+      "maxBodySizeHint": "مثال 25m. الطلبات الأكبر تُرفَض بالرمز 413. الافتراضي 1m.",
+      "readTimeout": "مدة انتظار القراءة",
+      "readTimeoutHint": "مثال 300s. مدة انتظار استجابة التطبيق. الافتراضي 60s.",
+      "sendTimeout": "مدة انتظار الإرسال",
+      "sendTimeoutHint": "مثال 300s. مدة الانتظار أثناء الإرسال إلى التطبيق. الافتراضي 60s.",
+      "bodyTimeout": "مدة انتظار الرفع",
+      "bodyTimeoutHint": "مثال 300s. ارفع هذه القيمة أيضاً للملفات الكبيرة، وإلا سيتوقف الرفع في منتصف النقل. الافتراضي 60s.",
+      "proxyBuffering": "تخزين الاستجابات مؤقتاً",
+      "proxyBufferingHint": "(أوقفه للبث المباشر / SSE)",
+      "gzip": "ضغط الاستجابات",
+      "gzipHint": "(gzip للنصوص وJSON وJS وCSS)",
+      "proxyGroups": {
+        "body": "جسم الطلب",
+        "timeouts": "مُهل الاتصال بالتطبيق",
+        "buffering": "تخزين الاستجابات مؤقتًا",
+        "compression": "الضغط",
+        "headers": "الترويسات والبروتوكول",
+        "upstreamTls": "TLS إلى التطبيق"
+      },
+      "proxyInherit": "الافتراضي في nginx",
+      "proxyNotSet": "غير محدَّد",
+      "proxyLiveLabel": "المُقدَّم حاليًا:",
+      "proxyLiveVaries": "يختلف حسب المضيف",
+      "proxyDrift": "يختلف عن المحفوظ",
+      "proxyDriftSummary": "الحاجز الأمامي يقدّم قيمًا مختلفة لـ:",
+      "proxyAdoptLive": "اعتماد القيم الحالية",
+      "proxyLiveUnavailable": "تعذّر قراءة الإعدادات الحالية من سيرفر هذا المشروع.",
+      "proxyLiveSource": "مقروء من:",
+      "proxyRefreshLive": "إعادة قراءة الإعدادات الحالية"
     },
     "settingsCard": {
       "recordLabels": {

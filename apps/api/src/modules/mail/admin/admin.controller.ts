@@ -49,7 +49,8 @@ import {
 import { getMailServerStats } from "./stats.service";
 import { scanDns } from "./dns-scan.service";
 import { sendTestEmail, TestEmailError } from "./test-email.service";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, isRelayProviderId, safeErrorMessage } from "@repo/core";
+import { handleApiError } from "../../../middleware/error-handler";
 import {
   getComponentLogs,
   restartAllComponents,
@@ -318,7 +319,9 @@ export async function putOutboundRelayHandler(c: Context) {
     return c.json({ error: "Server not found" }, 404);
   }
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
-  const provider = body.provider === "custom" ? "custom" : "ses";
+  // Unknown ids become `custom`, which requires an explicit host — so a bad id
+  // fails validation loudly instead of quietly relaying somewhere unintended.
+  const provider = isRelayProviderId(body.provider) ? body.provider : "custom";
 
   // Resolve the effective plaintext password: use the submitted one, else fall
   // back to the stored (encrypted) one so "change region only" doesn't require
@@ -346,7 +349,13 @@ export async function putOutboundRelayHandler(c: Context) {
           .map((r) => ({ name: r.name, value: r.value }))
       : undefined;
 
-  // Per-additional-domain SES identities: { "y.com": { mailFromDomain?, sesDkim? } }.
+  /** Untrusted string[] → trimmed, de-duplicated, empties dropped. */
+  const parseList = (v: unknown): string[] | undefined =>
+    Array.isArray(v)
+      ? [...new Set((v as unknown[]).filter((s): s is string => typeof s === "string").map((s) => s.trim()).filter(Boolean))]
+      : undefined;
+
+  // Per-additional-domain provider identities: { "y.com": { mailFromDomain?, sesDkim? } }.
   let identities: ConfigureRelayInput["identities"];
   if (body.identities && typeof body.identities === "object" && !Array.isArray(body.identities)) {
     identities = {};
@@ -363,14 +372,14 @@ export async function putOutboundRelayHandler(c: Context) {
   const input: ConfigureRelayInput = {
     provider,
     scope: body.scope === "selected" ? "selected" : "all",
-    domains: Array.isArray(body.domains)
-      ? (body.domains as unknown[]).filter((d): d is string => typeof d === "string")
-      : undefined,
+    domains: parseList(body.domains),
+    addresses: parseList(body.addresses),
     region: typeof body.region === "string" ? body.region : undefined,
     host: typeof body.host === "string" ? body.host : undefined,
     port: Number(body.port),
     username: typeof body.username === "string" ? body.username : "",
     password,
+    spfInclude: typeof body.spfInclude === "string" && body.spfInclude ? body.spfInclude : undefined,
     mailFromDomain: typeof body.mailFromDomain === "string" && body.mailFromDomain ? body.mailFromDomain : undefined,
     sesDkim: parseDkim(body.sesDkim),
     identities,
@@ -791,6 +800,14 @@ export async function getComponentLogsHandler(c: Context) {
 // ─── Error mapping ───────────────────────────────────────────────────────────
 
 function errorJson(c: Context, err: unknown) {
+  // A typed AppError already carries its status + code — MailEngineUnavailableError
+  // is the one every read here can raise (a stopped engine / a legacy box whose
+  // container never existed), and it must reach the panel as 409 +
+  // MAIL_ENGINE_NOT_{INSTALLED,RUNNING} so the UI can offer the fix. Flattening it
+  // to 500 is exactly what turned "your mail engine is stopped" into "API 500".
+  // The central mapper owns that translation; don't restate it per error type.
+  if (err instanceof AppError) return handleApiError(err, c);
+
   const message = safeErrorMessage(err);
   // The SSH+psql layer throws plain Error for any non-shape error
   // (connection failure, SQL syntax, validation). 500 is the right default;

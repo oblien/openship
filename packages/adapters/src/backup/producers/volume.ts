@@ -102,6 +102,7 @@ class VolumeCopyProducerImpl implements BackupProducer {
     await executor.receiveStream(service, volumeId, stream, {
       compression: (artifact.metadata.compression as "zstd" | "gzip" | "none") ?? "zstd",
       clearTarget: opts.clearTarget ?? true,
+      signal: opts.signal,
     });
   }
 }

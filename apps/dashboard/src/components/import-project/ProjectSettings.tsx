@@ -39,6 +39,9 @@ const ProjectSettings: React.FC = () => {
         startCommand: stackDef?.defaultStartCommand ?? "",
         productionPort: String(stackDef?.defaultPort ?? 3000),
         hasServer: !isStatic,
+        // Picking a framework is a web/static decision; clear any stale "worker"
+        // so the resolved workload matches hasServer (#538).
+        workloadType: isStatic ? "static" : "web",
       },
     });
   }, [updateConfig, config.options]);
@@ -59,7 +62,7 @@ const ProjectSettings: React.FC = () => {
           <div className="flex items-center justify-between p-3.5 rounded-xl border border-border/50 bg-muted/40">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-                {detectedFw.icon("hsl(var(--primary))")}
+                {detectedFw.icon("var(--primary)")}
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">
@@ -143,7 +146,7 @@ const ProjectSettings: React.FC = () => {
                   }`}
                 >
                   <div className="w-8 h-8 flex items-center justify-center">
-                    {fw.icon(isSelected ? "hsl(var(--primary))" : "hsl(var(--foreground))")}
+                    {fw.icon(isSelected ? "var(--primary)" : "var(--foreground)")}
                   </div>
                   <span className={`text-xs font-medium ${isSelected ? "text-primary" : "text-muted-foreground"}`}>
                     {fw.name}

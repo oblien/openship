@@ -16,7 +16,7 @@ const MODELS = [
       "Backups, monitoring, alerts included",
     ],
     price: "Coming soon",
-    priceNote: "Plans announced once billing is live",
+    priceNote: "Pricing announced before launch",
   },
   {
     n: "02",
@@ -45,7 +45,7 @@ const MODELS = [
       "One billing, one team, one dashboard",
     ],
     price: "Coming soon",
-    priceNote: "Available once plans open",
+    priceNote: "Available when Openship Cloud launches",
   },
 ];
 

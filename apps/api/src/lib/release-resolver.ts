@@ -1,9 +1,9 @@
 /**
  * ONE resolver for a prebuilt release/dist directory, generalizing the two
- * near-identical copies that used to live in migration/openship-dist.ts and
- * webmail-project.service.ts. A release-source project (or the openship-instance
- * / webmail apps) deploys the directory this returns as `localPath` with no
- * build.
+ * near-identical copies that used to live in migration/openship-dist.ts and the
+ * retired webmail dist shipper. A release-source project (or the
+ * openship-instance app) deploys the directory this returns as `localPath` with
+ * no build.
  *
  * Three-slot resolution (unchanged from the originals):
  *   1. env override           → point at a local dist (Docker/CI/air-gapped)

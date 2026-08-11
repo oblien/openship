@@ -26,6 +26,7 @@ import type { BackupDestinationRow } from "@repo/adapters";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { resolveSafeSshKeyPath } from "../../lib/ssh-key-path";
 import { safeErrorMessage } from "@repo/core";
+import { assertLocalDestinationAllowed } from "./local-gate";
 
 /**
  * Take a raw backup_destination DB row and produce a BackupDestinationRow
@@ -33,6 +34,13 @@ import { safeErrorMessage } from "@repo/core";
  * `openship_server` is the special case that needs server-table lookup.
  */
 export async function toAdapterRow(row: BackupDestination): Promise<BackupDestinationRow> {
+  // The consumer-side gate. Every path that USES a destination funnels through here
+  // (a backup run, the retention prune, both restore phases), so this is the one
+  // place that can speak for all of them — the create/update gate only ever
+  // constrained rows that took the write path. See ./local-gate.ts.
+  if (row.kind === "local") {
+    await assertLocalDestinationAllowed(row.endpoint);
+  }
   if (row.kind === "openship_server") {
     if (!row.serverId) {
       throw new Error(
@@ -83,7 +91,13 @@ export async function hydrateServerAdapterRow(params: {
   serverId: string;
 }): Promise<BackupDestinationRow> {
   const { id, organizationId, name, pathPrefix, serverId } = params;
-  const server = await repos.server.get(serverId);
+  // ORG-SCOPED: this function goes on to read the server's SSH password or private
+  // KEY MATERIAL and hand it to the SFTP adapter. An unscoped lookup would let a
+  // destination row whose serverId names another org's box borrow that box's
+  // credentials — and `backup_destination` is organization-scope dumpable, so a row
+  // can arrive by ingest without ever passing the create-time checks. A foreign id
+  // must read as "no longer exists", which is also what a deleted one reads as.
+  const server = await repos.server.getInOrganization(serverId, organizationId);
   if (!server) {
     throw new Error(
       `Server ${serverId} referenced by destination "${name}" no longer exists`,
@@ -96,33 +110,40 @@ export async function hydrateServerAdapterRow(params: {
 
   if (server.sshAuthMethod === "password" && server.sshPassword) {
     sftpPasswordEnc = server.sshPassword;
-  } else if (server.sshAuthMethod === "key" && server.sshKeyPath) {
-    // Centralised allowlist + traversal check — see lib/ssh-key-path.ts.
-    // homedir() is added as an extra root so an operator's
-    // ~/.ssh/openship key works without explicit env configuration.
-    let keyPath: string;
-    try {
-      keyPath = resolveSafeSshKeyPath(server.sshKeyPath, {
-        extraRoots: [homedir()],
-      });
-    } catch (err) {
-      throw new Error(
-        `Server ${server.id} sshKeyPath rejected: ${
-          safeErrorMessage(err)
-        }`,
-      );
+  } else if (server.sshAuthMethod === "key" && (server.sshPrivateKey || server.sshKeyPath)) {
+    if (server.sshPrivateKey) {
+      // Pasted/uploaded material — already `enc1:`-encrypted at rest, so hand it
+      // straight to the SFTP adapter (same passthrough as the password branch).
+      // No host filesystem to read, so buildSshConfig's path allowlist is moot.
+      sftpPrivateKeyEnc = server.sshPrivateKey;
+    } else {
+      // Key on THIS host's filesystem. Centralised allowlist + traversal check —
+      // see lib/ssh-key-path.ts. homedir() is added as an extra root so an
+      // operator's ~/.ssh/openship key works without explicit env configuration.
+      let keyPath: string;
+      try {
+        keyPath = resolveSafeSshKeyPath(server.sshKeyPath!, {
+          extraRoots: [homedir()],
+        });
+      } catch (err) {
+        throw new Error(
+          `Server ${server.id} sshKeyPath rejected: ${
+            safeErrorMessage(err)
+          }`,
+        );
+      }
+      let keyMaterial: string;
+      try {
+        keyMaterial = await readFile(keyPath, "utf-8");
+      } catch (err) {
+        throw new Error(
+          `Failed to read SSH key at ${keyPath} for server ${server.id}: ${
+            safeErrorMessage(err)
+          }`,
+        );
+      }
+      sftpPrivateKeyEnc = encryptSecretField(keyMaterial);
     }
-    let keyMaterial: string;
-    try {
-      keyMaterial = await readFile(keyPath, "utf-8");
-    } catch (err) {
-      throw new Error(
-        `Failed to read SSH key at ${keyPath} for server ${server.id}: ${
-          safeErrorMessage(err)
-        }`,
-      );
-    }
-    sftpPrivateKeyEnc = encryptSecretField(keyMaterial);
     if (server.sshKeyPassphrase) {
       sftpKeyPassphraseEnc = server.sshKeyPassphrase;
     }

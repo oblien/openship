@@ -21,6 +21,19 @@ export type RouteStrategySetting = RouteStrategy | "auto";
 
 type UpstreamRuntime = Pick<RuntimeAdapter, "supports" | "getContainerIp">;
 
+/** Runtime surface needed to read a container's CURRENT publishing. */
+type LiveUpstreamRuntime = UpstreamRuntime &
+  Pick<RuntimeAdapter, "name"> & { getContainerInfo?: RuntimeAdapter["getContainerInfo"] };
+
+/**
+ * Last-known upstream for a container, as persisted on `service_deployment`.
+ * A CACHE of a past live read — never authoritative on its own.
+ */
+export interface StoredUpstream {
+  ip?: string | null;
+  hostPort?: number | null;
+}
+
 export interface ResolveUpstreamArgs {
   strategy: RouteStrategy;
   runtime: UpstreamRuntime;
@@ -63,6 +76,67 @@ export async function resolveUpstreamUrl(args: ResolveUpstreamArgs): Promise<str
   }
   const ip = runtime.supports("containerIp") ? await runtime.getContainerIp(containerId) : "127.0.0.1";
   return buildUpstreamUrl({ strategy, ip, hostPort, containerPort });
+}
+
+/**
+ * Does the container publish a host port RIGHT NOW?
+ *
+ * `known:false` means "we could not ask" — an unreachable daemon, or a runtime
+ * that can't inspect. That is NOT the same as "publishes nothing", and every
+ * call site used to conflate the two by writing `info?.hostPort ?? row.hostPort`:
+ * a live read that answered "no binding" fell straight through to a stored port
+ * the container no longer had, so the edge kept dialing a dead
+ * `127.0.0.1:<port>`. That is how a same-server migration left a healthy app
+ * unreachable behind a Verified domain (#506).
+ */
+async function readLiveHostPort(
+  runtime: LiveUpstreamRuntime,
+  containerId: string,
+  strategy: RouteStrategy,
+): Promise<{ known: boolean; hostPort?: number }> {
+  // container-ip never dials a host port, and a bare workload owns
+  // `127.0.0.1:<appPort>` outright — neither has a publish to read.
+  if (strategy !== "loopback-port" || runtime.name === "bare") return { known: true };
+  if (!runtime.getContainerInfo || !runtime.supports("containerInfo")) return { known: false };
+  try {
+    const info = await runtime.getContainerInfo(containerId);
+    // A `missing` container answers too: it is gone, so it publishes nothing and
+    // a stored port must not resurrect it.
+    return { known: true, hostPort: info.hostPort };
+  } catch {
+    return { known: false };
+  }
+}
+
+/**
+ * The ONE live upstream resolver — what every route-registration site outside a
+ * deploy should call.
+ *
+ * Live container state decides the upstream: a routed workload with no loopback
+ * publish (migrated, adopted in place, or an internal compose service) resolves
+ * to its container IP instead of a port nothing listens on. `stored` — the
+ * persisted `service_deployment` row — is consulted ONLY when the live read
+ * could not be performed, so one failed inspect keeps the last-known route
+ * instead of blanking a working vhost.
+ */
+export async function resolveLiveUpstreamUrl(args: {
+  strategy: RouteStrategy;
+  runtime: LiveUpstreamRuntime;
+  containerId: string;
+  containerPort: number;
+  stored?: StoredUpstream;
+}): Promise<string | null> {
+  const { strategy, runtime, containerId, containerPort, stored } = args;
+  const live = await readLiveHostPort(runtime, containerId, strategy);
+  const hostPort = live.known ? live.hostPort : (stored?.hostPort ?? undefined);
+  const url = await resolveUpstreamUrl({
+    strategy,
+    runtime,
+    containerId,
+    containerPort,
+    hostPort,
+  }).catch(() => null);
+  return url ?? buildUpstreamUrl({ strategy, ip: stored?.ip, hostPort, containerPort });
 }
 
 /**

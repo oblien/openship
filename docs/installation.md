@@ -146,6 +146,9 @@ Fix by moving Docker's data-root to a native `ext4`/`xfs` disk (`/etc/docker/dae
 
 Add `--json` to most read commands for scripting.
 
+For alternate certificate authorities, EAB credentials, or a private ACME root,
+see [Custom ACME certificate authorities](acme.md).
+
 ---
 
 ## Quick decision

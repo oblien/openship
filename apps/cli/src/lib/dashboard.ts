@@ -14,7 +14,8 @@ import { join } from "node:path";
 import { CACHE_DIR, downloadToFile } from "./cache";
 import { assetUrl, expectedSha256, resolveLatestTag } from "./github-releases";
 
-const DASHBOARD_CACHE = join(CACHE_DIR, "dashboard");
+/** Where release bundles are cached (named by `up --dry-run`). */
+export const DASHBOARD_CACHE = join(CACHE_DIR, "dashboard");
 
 function assetName(tag: string): string {
   return `openship-dashboard-${tag}.tar.gz`;

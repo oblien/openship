@@ -1,0 +1,138 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "umami",
+  "name": "Umami",
+  "description": "Privacy-friendly, cookie-free web analytics — a self-hosted alternative to Google Analytics. Add one script tag to your site and see traffic in a clean dashboard you own.",
+  "kind": "template",
+  "logo": "umami",
+  "category": "analytics",
+  "tags": [
+    "analytics",
+    "web-analytics",
+    "privacy",
+    "statistics"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "umami",
+      "image": "ghcr.io/umami-software/umami:postgresql-v2.19.0",
+      "exposedPort": 3000,
+      "exposed": true,
+      "ports": [
+        "3000:3000"
+      ],
+      "routes": [
+        {
+          "port": 3000
+        }
+      ],
+      "dependsOn": [
+        "umami-db"
+      ],
+      "environment": {
+        "DATABASE_TYPE": "postgresql",
+        "DATABASE_URL": "postgresql://umami:{{config:POSTGRES_PASSWORD}}@umami-db:5432/umami"
+      },
+      "secretEnv": [
+        "DATABASE_URL"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O - http://127.0.0.1:3000/api/heartbeat 2>&1 | grep -q ok"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 10,
+        "startPeriod": "30s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "umami-db",
+      "image": "postgres:16-alpine",
+      "environment": {
+        "POSTGRES_DB": "umami",
+        "POSTGRES_USER": "umami"
+      },
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "umami_db:/var/lib/postgresql/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U umami -d umami"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5,
+        "startPeriod": "10s"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "umami-db",
+      "label": "Database password",
+      "help": "Auto-generated. The password for Umami's Postgres database.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "APP_SECRET",
+      "service": "umami",
+      "label": "App secret",
+      "help": "Auto-generated. Signs Umami's session tokens — keep it stable.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Umami",
+    "description": "Open the Umami dashboard and sign in, then add your website to get its tracking script.",
+    "guide": {
+      "intro": "Your project gets a self-hosted Umami analytics dashboard.",
+      "useHint": "Sign in, add your website under Settings → Websites, and paste the tracking snippet into your site's <head>."
+    },
+    "firstLogin": {
+      "username": "admin",
+      "password": "umami",
+      "note": "Change this password immediately from Settings → Profile after your first sign-in."
+    },
+    "outputs": [
+      {
+        "id": "dashboard",
+        "label": "Dashboard",
+        "source": "publicUrl:umami",
+        "kind": "url",
+        "envKey": "UMAMI_URL",
+        "recommended": true,
+        "help": "Sign in with the username + password below."
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "umami",
+      "port": 3000,
+      "label": "Dashboard",
+      "kind": "http"
+    },
+    {
+      "service": "umami-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp"
+    }
+  ]
+}

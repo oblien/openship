@@ -34,6 +34,28 @@
       "project": "Projekt",
       "hostedOn": "Gehostet auf"
     },
+    "projectMenu": {
+      "rename": "Projekt umbenennen",
+      "copyId": "Projekt-ID kopieren",
+      "idCopied": "Projekt-ID kopiert",
+      "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen",
+      "pause": "Projekt pausieren",
+      "resume": "Projekt fortsetzen",
+      "delete": "Projekt löschen"
+    },
+    "rename": {
+      "title": "Projekt umbenennen",
+      "description": "Ändert den Anzeigenamen. Es wird nichts neu bereitgestellt.",
+      "label": "Projektname",
+      "placeholder": "Mein Projekt",
+      "identityNote": "Das Projekt behält die Identität „{slug}“ — URL, Container-Namen und Volumes bleiben unverändert. Um die URL zu ändern, bearbeite die Domain unter „Domains & Routen“.",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "toast": {
+        "renamed": "Umbenannt in {name}",
+        "failed": "Projekt konnte nicht umbenannt werden"
+      }
+    },
     "statusActive": "Aktiv",
     "statusDisabled": "Deaktiviert",
     "hostedCloud": "Openship Cloud",
@@ -101,6 +123,19 @@
       "toast": {
         "saved": "Routing auf {mode} gesetzt",
         "failed": "Routing konnte nicht aktualisiert werden"
+      }
+    },
+    "internalAlias": {
+      "title": "Interner Hostname",
+      "description": "Eigener Name, unter dem andere Dienste diese App privat erreichen",
+      "intro": "Lege einen zusätzlichen DNS-Namen für diese App in ihrem privaten Projektnetzwerk fest. Er wird neben dem Standard (dem Projekt-Slug) aufgelöst – andere verknüpfte Dienste können beide verwenden. Der öffentliche Zugriff bleibt unverändert; dies gibt niemals einen Port frei.",
+      "label": "Hostname-Alias",
+      "hint": "Nur Buchstaben, Ziffern und Bindestriche. Leer lassen, um den Projekt-Slug zu verwenden.",
+      "save": "Speichern",
+      "toast": {
+        "saved": "Interner Hostname aktualisiert",
+        "failed": "Interner Hostname konnte nicht aktualisiert werden",
+        "invalid": "Gib mindestens einen Buchstaben oder eine Ziffer ein"
       }
     }
   },
@@ -186,7 +221,8 @@
       "staticNoServer": "Statisch (kein Server)",
       "modeSandboxed": "Sandbox (Container)",
       "modeDirect": "Direkt (Host-Prozess)",
-      "modeDefault": "Standard (beim Deploy aufgelöst)"
+      "modeDefault": "Standard (beim Deploy aufgelöst)",
+      "modeStatic": "Keine – als statische Dateien ausgeliefert"
     },
     "storage": {
       "title": "Dauerhafter Speicher",

@@ -29,10 +29,13 @@ import type { SSEStreamingApi } from "hono/streaming";
 import crypto from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { buildMailBackupPayload } from "./admin/backup-plan";
+// The mail server is one more backup SOURCE in the general system, so its policy
+// goes through the same cron validation + schedule registration as a project's.
+import { syncPolicySchedule, validateCronExpression } from "../backups/triggers/cron";
 import { streamSSE } from "../../lib/sse";
 import { invalidatePlatformTransport } from "../../lib/mail";
 import { env } from "../../config";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, DEFAULT_RETAIN_COUNT } from "@repo/core";
 import { sshManager } from "../../lib/ssh-manager";
 import { repos } from "@repo/db";
 import { getRequestContext, type RequestContext } from "../../lib/request-context";
@@ -41,9 +44,12 @@ import { permission } from "../../lib/permission";
 // the mail stack gives SSH-level reach into the box, so a cross-org
 // serverId here is the same severity as the terminal hole.
 import { isServerInOrg } from "../../lib/controller-helpers";
+import type { CommandExecutor } from "@repo/adapters";
+import { pinnedEdgeImage } from "../../lib/edge-image";
+import { pinnedMailImage } from "../../lib/mail-image";
+import { deliverManagedImage } from "../../lib/deliver-managed-image";
 import {
   MAIL_SETUP_STEPS,
-  detectMailInstall,
   TOTAL_STEPS,
   STEP_RUNNERS,
   STEP_TIMEOUT_MS,
@@ -51,14 +57,24 @@ import {
   type StepResult,
   type StepLogger,
   type BasicStepFn,
-  type RebootStepFn,
   type InstallerStepFn,
+  type SslStepFn,
   type IRedMailConfig,
 } from "./mail.service";
-import { checkMailHealth, MAIL_COMPONENTS } from "./mail-health.service";
+import { checkMailDelivery } from "./mail-delivery.service";
+import { checkMailHealth, mailIsServing, MAIL_COMPONENTS } from "./mail-health.service";
+import { resolveMailEngine } from "./mail-engine";
 import { updatePostmasterPassword } from "./mail-credentials.service";
 import { reserveMailSetup } from "./mail-setup-lease";
+import { preflightMailSetup } from "./mail-setup-preflight";
 import { applyRelayToState } from "./admin/outbound-relay.service";
+// The webmail is an ordinary project: its status is resolved from the DB, not
+// from this server's state file.
+import {
+  resolveLinkedWebmailProject,
+  resolveWebmailSummary,
+  type WebmailSummary,
+} from "./webmail/webmail-install.service";
 import {
   readState,
   writeState,
@@ -94,11 +110,18 @@ let active: ActiveSession | null = null;
  * The frontend type is the same as before - we just synthesise it from
  * the persistent state plus the in-memory `active` pointer.
  */
-function statusFromState(state: MailServerState | null, serverId: string) {
+function statusFromState(
+  state: MailServerState | null,
+  serverId: string,
+  webmail?: WebmailSummary,
+) {
   if (!state) {
     return {
       active: false,
       serverId,
+      // Present even with no install state: the webmail is a project of its own,
+      // and one can exist (or be mid-build) before or after this server's setup.
+      webmail,
       steps: MAIL_SETUP_STEPS.map((s) => ({ ...s, status: "pending" as const })),
     };
   }
@@ -134,21 +157,6 @@ function statusFromState(state: MailServerState | null, serverId: string) {
         smtpPort: 587,
         imapHost: `mail.${state.domain}`,
         imapPort: 993,
-      }
-    : undefined;
-
-  // Webmail block - never leak the branding admin token to the dashboard.
-  // The token is the shared secret openship's API uses to PATCH Zero's
-  // /admin/branding endpoint; the operator never needs to see or paste it.
-  const webmail = state.webmail
-    ? {
-        installed: state.webmail.installed,
-        targetServerId: state.webmail.targetServerId,
-        hostname: state.webmail.hostname,
-        url: state.webmail.url,
-        internalPort: state.webmail.internalPort,
-        deployedAt: state.webmail.deployedAt,
-        version: state.webmail.version,
       }
     : undefined;
 
@@ -255,22 +263,51 @@ export async function getStatus(c: Context) {
     return c.json({ error: "Server not found" }, 404);
   }
 
+  // The webmail is a project like any other, so its state comes from the DB —
+  // resolved BEFORE the SSH probe and independent of it. An unreachable mail
+  // server must not make a deployed webmail vanish from the page, and a
+  // mid-build one still has to link to its logs.
+  const mailRecord = await repos.mailServer.get(serverId).catch(() => undefined);
+  const webmail = mailRecord?.domain
+    ? await resolveWebmailSummary(ctx.organizationId, {
+        serverId,
+        domain: mailRecord.domain,
+        webmailProjectId: mailRecord.webmailProjectId ?? null,
+      }).catch(() => undefined)
+    : undefined;
+
   try {
-    let state = await sshManager.withExecutor(serverId, (executor) =>
-      readState(executor),
-    );
+    // One connection answers both questions: what HAS been installed (the state
+    // file) and what is actually there RIGHT NOW (the engine topology). The probe
+    // is memoized per executor and only runs on a box that has a state file, so
+    // this is two execs on a connection we were opening anyway — and it's what
+    // lets the admin panel say "the engine is stopped, here's the fix" instead of
+    // letting every tab discover it as a 409 of its own.
+    const probed = await sshManager.withExecutor(serverId, async (executor) => {
+      const found = await readState(executor);
+      const engine = found ? await resolveMailEngine(executor).catch(() => null) : null;
+      return { state: found, engine };
+    });
+    let state = probed.state;
     // Older state files (pre-IP-detection) don't carry A/AAAA records.
     // Backfill from the server's sshHost so the DNS banner doesn't have
     // a hole where the host records should be.
     if (state) {
       state = await augmentStateWithHostRecords(state, serverId);
-      state = await reconcileWebmailInstalled(state, serverId);
     }
-    return c.json(statusFromState(state, serverId));
+    return c.json({
+      ...statusFromState(state, serverId, webmail),
+      // OMITTED, never nulled, when the probe couldn't conclude: absence means
+      // "we didn't look", and the dashboard banner must never claim an engine is
+      // missing off a failed read.
+      ...(probed.engine
+        ? { engine: { flavor: probed.engine.flavor, running: probed.engine.running } }
+        : {}),
+    });
   } catch {
     // SSH unreachable - treat as no-state. The dashboard handles this
     // gracefully and shows the empty form.
-    return c.json({ active: false, serverId, steps: MAIL_SETUP_STEPS });
+    return c.json(statusFromState(null, serverId, webmail));
   }
 }
 
@@ -352,6 +389,10 @@ export async function listMailServers(c: Context) {
     .map((row) => {
       const s = serverById.get(row.serverId);
       if (!s) return null; // FK CASCADE should prevent this, but guard anyway
+      // Where an incomplete install paused, if anywhere. The human label is
+      // derived from the step id here (server side) so the list needn't fetch
+      // per-server status or duplicate the step table on the client.
+      const resumeStep = row.resumeStep ?? null;
       return {
         id: s.id,
         name: s.name || s.sshHost,
@@ -361,6 +402,10 @@ export async function listMailServers(c: Context) {
         domain: row.domain,
         completed: row.installedAt !== null,
         active: active?.serverId === s.id,
+        resumeStep,
+        resumeStepLabel: resumeStep
+          ? MAIL_SETUP_STEPS[resumeStep - 1]?.label ?? null
+          : null,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -396,7 +441,7 @@ export async function scanMailInstall(c: Context) {
     const { iredmailInstalled, state } = await sshManager.withExecutor(
       serverId,
       async (exec) => ({
-        iredmailInstalled: await detectMailInstall(exec),
+        iredmailInstalled: await mailIsServing(exec),
         state: await readState(exec),
       }),
     );
@@ -406,13 +451,23 @@ export async function scanMailInstall(c: Context) {
       MAIL_SETUP_STEPS.every(
         (step) => state.completedSteps[String(step.id)]?.success === true,
       );
+    // Informational: does openship already manage a webmail for this server?
+    // Read from the DB, since the webmail is a project — a re-adopted box whose
+    // openship DB was rebuilt correctly reads "not deployed": the container may
+    // still be running, but nothing here manages or can redeploy it.
+    const mailRecord = await repos.mailServer.get(serverId).catch(() => undefined);
+    const webmailProject = await resolveLinkedWebmailProject(
+      ctx.organizationId,
+      serverId,
+      mailRecord?.webmailProjectId ?? null,
+    ).catch(() => null);
     return c.json({
       serverId,
       iredmailInstalled,
       hasState: !!state,
       domain: state?.domain ?? null,
       installComplete,
-      webmailPresent: !!state?.webmail?.installed,
+      webmailPresent: !!webmailProject,
       // Something to adopt iff a live stack OR a state file with a domain exists.
       adoptable: iredmailInstalled || !!state?.domain,
     });
@@ -448,7 +503,7 @@ export async function adoptMailServer(c: Context) {
     const { iredmailInstalled, state } = await sshManager.withExecutor(
       serverId,
       async (exec) => ({
-        iredmailInstalled: await detectMailInstall(exec),
+        iredmailInstalled: await mailIsServing(exec),
         state: await readState(exec),
       }),
     );
@@ -531,47 +586,6 @@ async function augmentStateWithHostRecords(
   return { ...state, dnsRecords: augmented };
 }
 
-/**
- * Cross-check `state.webmail.installed` against the webmail project's latest
- * deployment — but ONLY when openship actually owns that deployment. A stale
- * `installed: true` written before a build ran (interrupted deploy) leaves a
- * `webmail-<serverId>` project whose deployment isn't `ready`; we override that.
- *
- * When there is NO `webmail-<serverId>` project at all, the webmail was adopted
- * / is managed outside openship's deploy pipeline (e.g. this openship DB was
- * rebuilt and the server re-adopted, so the deployment row no longer exists).
- * The on-server state file is the source of truth there, so we TRUST it rather
- * than masking it to not-installed — otherwise every refresh after an adopt
- * flips the webmail back to "not installed".
- *
- * Read-time only: we never write back. If an openship deploy later succeeds,
- * the onSuccess hook in deployment-lifecycle writes `installed=true`.
- */
-async function reconcileWebmailInstalled(
-  state: MailServerState,
-  serverId: string,
-): Promise<MailServerState> {
-  if (!state.webmail?.installed) return state;
-  try {
-    const project = await repos.project.findFirstBySlug(`webmail-${serverId}`);
-    // Adopted / externally-managed webmail (no openship-side project) — the
-    // server, not openship's deployment table, is authoritative. Trust the file.
-    if (!project) return state;
-    // openship owns this webmail deployment: downgrade only when it's genuinely
-    // gone / not live (interrupted or torn-down deploy).
-    if (!project.activeDeploymentId) {
-      return { ...state, webmail: { ...state.webmail, installed: false } };
-    }
-    const dep = await repos.deployment.findById(project.activeDeploymentId);
-    if (dep?.status !== "ready") {
-      return { ...state, webmail: { ...state.webmail, installed: false } };
-    }
-    return state;
-  } catch {
-    return state;
-  }
-}
-
 const IPV4_LITERAL = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 /**
@@ -607,6 +621,45 @@ async function resolveHostIPs(
 }
 
 /**
+ * A mail password travels to the box as one record in a line-delimited env-file
+ * and gets templated into the engine image's first-boot configs. A control
+ * character would break out of its record; the rest is defensive bounding.
+ *
+ * Mirrors the CR/LF rejection the relay credentials already do (see
+ * admin/outbound-relay.service.ts) — same reasoning, same class of sink.
+ */
+export function mailPasswordError(password: string, label = "Password"): string | null {
+  if (password.length < 12) return `${label} must be at least 12 characters`;
+  if (password.length > 128) return `${label} must be at most 128 characters`;
+  // Control characters (incl. CR/LF) would break out of the env-file record.
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(password)) {
+    return `${label} must be a single line without control characters`;
+  }
+  return null;
+}
+
+/** Validate the caller-supplied `config` on POST /mail/setup. Null when fine. */
+function validateSetupConfig(config: IRedMailConfig | undefined): string | null {
+  if (!config) return null;
+  if (config.adminPassword !== undefined) {
+    if (typeof config.adminPassword !== "string") {
+      return "Admin password must be a string";
+    }
+    const err = mailPasswordError(config.adminPassword, "Admin password");
+    if (err) return err;
+  }
+  if (
+    config.storageBackend !== undefined &&
+    config.storageBackend !== "postgresql" &&
+    config.storageBackend !== "mariadb"
+  ) {
+    return 'config.storageBackend must be "postgresql" or "mariadb"';
+  }
+  return null;
+}
+
+/**
  * POST /mail/setup - start (or resume) the mail setup wizard.
  *
  * Body: { serverId: string, domain: string, startStep?: number, config?: IRedMailConfig }
@@ -636,6 +689,16 @@ export async function startSetup(c: Context) {
   if (!domain || !/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(domain)) {
     return c.json({ error: "Invalid domain" }, 400);
   }
+  // `config` is a bare cast off the request body, so validate the fields that
+  // travel to the box. adminPassword becomes a record in the engine's env-file
+  // (see writeEnvFile) and is templated into the image's first-boot configs — a
+  // control character there injects further environment records. The writer
+  // rejects that too; this is the boundary layer so the caller gets a 400 rather
+  // than a mid-stream step failure.
+  const configError = validateSetupConfig(config);
+  if (configError) {
+    return c.json({ error: configError }, 400);
+  }
 
   // Primary gate: starting/resuming setup is a write (mutates server state).
   await permission.assert(getRequestContext(c), {
@@ -652,6 +715,14 @@ export async function startSetup(c: Context) {
 
   if (active) {
     return c.json({ error: "Setup already running" }, 409);
+  }
+
+  // Everything below this line answers with a 200: the response body IS the SSE
+  // stream. So "we couldn't even start" has to be decided here — see
+  // mail-setup-preflight (#492).
+  const preflight = await preflightMailSetup(serverId);
+  if (preflight) {
+    return c.json({ error: preflight.error, code: preflight.code }, 502);
   }
 
   // Reserve the process-local slot before the first database await so two
@@ -680,6 +751,21 @@ export async function startSetup(c: Context) {
   }
 
   const runSetup = async (stream: SSEStreamingApi) => {
+    /**
+     * The step every `error` frame is attributed to. A failure that happens
+     * around the loop — reading state, persisting it, an executor that dies —
+     * used to be reported with no step at all, so the wizard had nothing to mark
+     * failed and fell back to its empty form (#492). Pinning it to the step we
+     * were about to run (or are running) gives the step UI somewhere to put it.
+     */
+    let atStep = startStep;
+    const fail = async (message: string, extra: Record<string, unknown> = {}) => {
+      await stream.writeSSE({
+        event: "error",
+        data: JSON.stringify({ message, stepId: atStep, ...extra }),
+      });
+    };
+
     // Resolve initial state from the server. New install → fresh state.
     // Existing install on same domain → merge so secrets/completedSteps
     // survive across retries. Different domain on same server → wipe and
@@ -700,12 +786,9 @@ export async function startSetup(c: Context) {
         state = makeFreshState(serverId, domain);
       }
     } catch (err) {
-      await stream.writeSSE({
-        event: "error",
-        data: JSON.stringify({
-          message: `Could not read state from server: ${err instanceof Error ? err.message : "ssh error"}`,
-        }),
-      });
+      await fail(
+        `Could not read state from server: ${err instanceof Error ? err.message : "ssh error"}`,
+      );
       active = null;
       return;
     }
@@ -745,6 +828,15 @@ export async function startSetup(c: Context) {
       state = { ...state, finishedAt: extra.finishedAt ?? null, ...extra };
       await persist();
       active = null;
+      // Mirror the paused step onto the registry row so the /emails server list
+      // can show WHERE an incomplete install stopped without an SSH probe (the
+      // whole point of that table). A tracking write: never let it fail the
+      // stream — same posture as markInstalled below.
+      await repos.mailServer
+        .setResumeStep(serverId, state.resumeStep ?? null)
+        .catch((err) =>
+          console.warn("[mail] setResumeStep failed:", safeErrorMessage(err)),
+        );
     };
 
     try {
@@ -754,21 +846,20 @@ export async function startSetup(c: Context) {
 
       // ── PTR gate ──────────────────────────────────────────────────
       //
-      // Runs BEFORE the loop, so it fires when the user resumes from
-      // step 12+ with DNS acknowledged but PTR not yet. The flow is:
-      //   1. Step 11 emits dns_pending → user clicks "I've set DNS" →
-      //      ack endpoint flips dnsAcknowledged → resume with startStep=12
+      // Runs BEFORE the loop, so it fires when the user resumes from step 7+
+      // (request_ssl) with DNS acknowledged but PTR not yet. The flow is:
+      //   1. Step 6 (dkim_keys) emits dns_pending → user clicks "I've set DNS" →
+      //      ack endpoint flips dnsAcknowledged → resume with startStep=7
       //   2. Pre-loop check below: dnsAck=true, ptrAck=false → emit
       //      ptr_pending → halt
-      //   3. User clicks "I've set PTRs" → ack endpoint flips ptrAck →
-      //      resume with startStep=12 → pre-loop check passes → loop runs
+      //   3. User clicks "I've set PTRs" → ack flips ptrAck → resume with
+      //      startStep=7 → pre-loop check passes → loop runs request_ssl
       //
-      // The `startStep > 11` guard prevents the gate from firing when
-      // the user resumes from an earlier step (e.g., step 7 transfer) -
-      // in that case the loop will re-run step 11 and re-issue dns_pending,
-      // which is the right order.
+      // The `startStep > 6` guard prevents the gate from firing when the user
+      // resumes from an earlier step — the loop re-runs dkim_keys and re-issues
+      // dns_pending, which is the right order.
       if (
-        startStep > 11 &&
+        startStep > 6 &&
         state.dnsRecords &&
         state.dnsAcknowledged &&
         !state.ptrAcknowledged
@@ -785,11 +876,9 @@ export async function startSetup(c: Context) {
       }
 
       for (let stepId = startStep; stepId <= TOTAL_STEPS; stepId++) {
+        atStep = stepId;
         if (active?.cancelled) {
-          await stream.writeSSE({
-            event: "error",
-            data: JSON.stringify({ message: "Setup cancelled by user" }),
-          });
+          await fail("Setup cancelled by user");
           await halt({ resumeStep: stepId, errorMessage: "Setup cancelled by user" });
           return;
         }
@@ -811,26 +900,51 @@ export async function startSetup(c: Context) {
           // surface a failure here so the wizard isn't stuck staring at
           // silent output. The user can Retry (and on retry, the engine's
           // status file may show the work as already done).
+          // Dev/from-source APPLY for the two steps that BRING UP a managed
+          // container: build our source onto this box (or ship + build for a remote
+          // one) before the installer runs, so its create/swap adopts the dev image
+          // instead of pulling the published tag. No-op in prod (no checkout →
+          // deliver returns at once).
+          const deliverBefore = async (
+            kind: "edge" | "mail",
+            image: string,
+            executor: CommandExecutor,
+          ) => {
+            await deliverManagedImage({
+              kind,
+              image,
+              targetExecutor: executor,
+              onLog: (l) => log(stepId, l.level, l.message),
+            });
+          };
+
           const runStep = (): Promise<StepResult> => {
-            if (stepDef.key === "first_reboot" || stepDef.key === "configure_ssl") {
-              const reconnectFn = async () => {
-                sshManager.invalidate(serverId);
-                return sshManager.acquire(serverId);
-              };
-              return sshManager
-                .acquire(serverId)
-                .then((executor) =>
-                  (runner as RebootStepFn)(executor, domain, log, reconnectFn),
-                );
+            if (stepDef.key === "ensure_components") {
+              return sshManager.withExecutor(serverId, async (executor) => {
+                await deliverBefore("edge", pinnedEdgeImage(), executor);
+                return (runner as BasicStepFn)(executor, domain, log);
+              });
             }
-            if (stepDef.key === "run_installer") {
+            if (stepDef.key === "deploy_engine") {
               const installerConfig: IRedMailConfig = {
                 ...config,
                 prefillSecrets:
                   Object.keys(state.secrets).length > 0 ? state.secrets : undefined,
               };
+              return sshManager.withExecutor(serverId, async (executor) => {
+                await deliverBefore("mail", pinnedMailImage(), executor);
+                return (runner as InstallerStepFn)(executor, domain, log, installerConfig);
+              });
+            }
+            if (stepDef.key === "request_ssl") {
+              // Issues through `platform.ssl`, which is resolved per SERVER — so
+              // unlike every other step this one needs the server's identity, not
+              // just an executor.
               return sshManager.withExecutor(serverId, (executor) =>
-                (runner as InstallerStepFn)(executor, domain, log, installerConfig),
+                (runner as SslStepFn)(executor, domain, log, {
+                  serverId,
+                  organizationId: ctx.organizationId,
+                }),
               );
             }
             return sshManager.withExecutor(serverId, (executor) =>
@@ -866,10 +980,22 @@ export async function startSetup(c: Context) {
           data: result.data,
         });
 
-        // Installer step returns generated DB passwords - persist so
-        // retries reuse the same values iRedMail wrote into its configs.
-        if (stepDef.key === "run_installer" && result.data?.secrets) {
+        // The deploy step returns generated DB passwords - persist so a re-run
+        // reuses the same values the engine's first boot wrote into its configs.
+        if (stepDef.key === "deploy_engine" && result.data?.secrets) {
           state = mergeSecrets(state, result.data.secrets as Record<string, string>);
+        }
+
+        // ...and which engine image + container it brought up, so the dashboard can
+        // show the running version and the next deploy's swap compares against the
+        // real ref rather than re-deriving it.
+        if (stepDef.key === "deploy_engine" && result.data?.engine) {
+          const engine = result.data.engine as { image?: string; container?: string };
+          state = {
+            ...state,
+            ...(engine.image ? { engineImage: engine.image } : {}),
+            ...(engine.container ? { containerName: engine.container } : {}),
+          };
         }
 
         await stream.writeSSE({
@@ -909,13 +1035,7 @@ export async function startSetup(c: Context) {
         }
 
         if (!result.success) {
-          await stream.writeSSE({
-            event: "error",
-            data: JSON.stringify({
-              message: result.message,
-              resumeStep: stepId,
-            }),
-          });
+          await fail(result.message, { resumeStep: stepId });
           await halt({ resumeStep: stepId, errorMessage: result.message });
           return;
         }
@@ -993,10 +1113,7 @@ export async function startSetup(c: Context) {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Setup failed";
-      await stream.writeSSE({
-        event: "error",
-        data: JSON.stringify({ message }),
-      });
+      await fail(message);
       try {
         await halt({ errorMessage: message });
       } catch {
@@ -1254,7 +1371,11 @@ export async function getMailBackupPolicy(c: Context) {
 
 /** POST /mail/admin/:serverId/backup-policy — create or update the mail
  *  server's backup policy. Body: { destinationId, messageData?, keys?,
- *  cronExpression?, retainCount?, retainDays? }. */
+ *  cronExpression?, retainCount?, retainDays? }.
+ *
+ *  Retention follows the project-policy convention: omitted keeps the stored
+ *  value (or defaults ON when creating), explicit null means unlimited. An
+ *  invalid `cronExpression` is a 400 rather than a silently dead schedule. */
 export async function saveMailBackupPolicy(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
   const serverId = c.req.param("serverId");
@@ -1294,6 +1415,42 @@ export async function saveMailBackupPolicy(c: Context) {
   const keys = body.keys !== false; // default: include keys/secrets
   const payload = buildMailBackupPayload(mailRow.domain, { messageData, keys });
 
+  const cronExpression =
+    typeof body.cronExpression === "string" && body.cronExpression.trim()
+      ? body.cronExpression.trim()
+      : null;
+  // Rejected here rather than stored: `syncPolicySchedule` drops an unparseable
+  // cron with nothing but a console warning, so an accepted-but-invalid schedule
+  // shows as saved in the Backup tab and then never fires.
+  if (cronExpression) {
+    const check = validateCronExpression(cronExpression);
+    if (!check.valid) {
+      return c.json({ error: `Invalid schedule: ${check.reason ?? "unknown"}` }, 400);
+    }
+  }
+
+  const existing = await repos.backupPolicy.findActiveByMailServer(serverId);
+
+  // Omitted vs explicit-null, the same distinction `createPolicy` draws for
+  // project policies (backup.service.ts) — and it has to be drawn here because
+  // `shared` doubles as the update patch, so a blanket default would overwrite
+  // whatever the operator set. Omitted on an existing policy keeps the stored
+  // value; omitted on create turns retention ON, because two NULLs mean "keep
+  // everything forever" to `prunePolicy` and a caller who never sent the field
+  // did not ask for that. Explicit null still says unlimited. Only defaulted when
+  // NEITHER field was sent: setting days alone is a deliberate choice, and adding
+  // a count would silently tighten it.
+  const retentionUnspecified =
+    body.retainCount === undefined && body.retainDays === undefined;
+  const retainCount = retentionUnspecified
+    ? existing
+      ? existing.retainCount
+      : DEFAULT_RETAIN_COUNT
+    : (body.retainCount ?? null);
+  const retainDays = retentionUnspecified
+    ? (existing?.retainDays ?? null)
+    : (body.retainDays ?? null);
+
   const shared = {
     sourceKind: "mail_server" as const,
     mailServerId: serverId,
@@ -1301,17 +1458,13 @@ export async function saveMailBackupPolicy(c: Context) {
     serviceId: null,
     destinationId: body.destinationId,
     enabled: true,
-    cronExpression:
-      typeof body.cronExpression === "string" && body.cronExpression.trim()
-        ? body.cronExpression.trim()
-        : null,
-    retainCount: typeof body.retainCount === "number" ? body.retainCount : null,
-    retainDays: typeof body.retainDays === "number" ? body.retainDays : null,
+    cronExpression,
+    retainCount,
+    retainDays,
     payloadKind: payload.payloadKind,
     payloadConfig: payload.payloadConfig,
   };
 
-  const existing = await repos.backupPolicy.findActiveByMailServer(serverId);
   const policy = existing
     ? await repos.backupPolicy.update(existing.id, { ...shared, updatedAt: new Date() })
     : await repos.backupPolicy.create({
@@ -1319,6 +1472,18 @@ export async function saveMailBackupPolicy(c: Context) {
         createdBy: ctx.userId,
         ...shared,
       });
+
+  if (!policy) {
+    // The row was deleted between the read above and this write. Reporting the
+    // save as successful would leave the tab showing a schedule that no longer
+    // has a row, let alone a job.
+    return c.json({ error: "Backup policy no longer exists" }, 409);
+  }
+
+  // Register/refresh the recurring job (a no-op when the schedule is manual).
+  // Without this the row said "daily" while no job existed, and the schedule only
+  // came alive at the next API restart, when `reconcileAllSchedules()` swept it up.
+  await syncPolicySchedule(policy.id);
 
   return c.json({ policy });
 }
@@ -1362,11 +1527,16 @@ export async function setPostmasterPassword(c: Context) {
   const password = body.password as string | undefined;
 
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
-  if (typeof password !== "string" || password.length < 12) {
-    return c.json(
-      { error: "Password must be at least 12 characters" },
-      400,
-    );
+  // Same validation as setup's adminPassword: this value is stored in the
+  // server's mail-state and replayed into the engine env-file on the next
+  // container bring-up, so a control character here would inject an env record
+  // later (see writeEnvFile in ensure-container-mail.ts).
+  if (typeof password !== "string") {
+    return c.json({ error: "Password must be a string" }, 400);
+  }
+  const pwError = mailPasswordError(password);
+  if (pwError) {
+    return c.json({ error: pwError }, 400);
   }
 
   // Primary gate: rotating the postmaster password is destructive (admin).
@@ -1403,10 +1573,16 @@ export async function setPostmasterPassword(c: Context) {
 }
 
 /**
- * GET /mail/health/:serverId - live status of every mail-core daemon.
+ * GET /mail/health/:serverId - live status of every mail-core daemon, plus whether
+ * mail is actually leaving the box.
  *
  * Used by the dashboard's Mail tab to show running/stopped pills next to
  * each component. Cheap: one short SSH per unit, all parallel.
+ *
+ * `delivery` rides this response rather than a route of its own because it answers
+ * the same question at the same moment on the same connection, and the tab already
+ * polls this every 10s — a second endpoint would double the SSH traffic to show two
+ * halves of one verdict.
  */
 export async function getHealth(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
@@ -1426,10 +1602,18 @@ export async function getHealth(c: Context) {
   }
 
   try {
-    const components = await sshManager.withExecutor(serverId, (executor) =>
-      checkMailHealth(executor),
-    );
-    return c.json({ serverId, components, definitions: MAIL_COMPONENTS });
+    const { components, delivery } = await sshManager.withExecutor(serverId, async (executor) => {
+      // Both sweeps share the engine probe (memoized per executor), so running them
+      // together costs one extra exec, not a second topology detection.
+      const [components, delivery] = await Promise.all([
+        checkMailHealth(executor),
+        // `delivery` reports its own failures as `status: "unknown"` rather than
+        // throwing, so a box whose queue we can't read still renders its daemons.
+        checkMailDelivery(executor),
+      ]);
+      return { components, delivery };
+    });
+    return c.json({ serverId, components, definitions: MAIL_COMPONENTS, delivery });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Health check failed";
     return c.json({ error: message }, 500);

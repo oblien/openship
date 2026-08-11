@@ -15,8 +15,9 @@
  */
 
 import { repos, restoreSubgraph, PkCollisionError, type Service } from "@repo/db";
-import { slugify, safeErrorMessage } from "@repo/core";
-import type { ContainerStatus } from "@repo/adapters";
+import { slugify, safeErrorMessage, type ComposeAdvanced } from "@repo/core";
+import { buildNetworkAliases, type ContainerStatus } from "@repo/adapters";
+import { serviceAliasExtras } from "../../lib/deployable-service";
 import type { RequestContext } from "../../lib/request-context";
 import { ensureProject, createServicesProjectWithId } from "../projects/project-crud.service";
 import { getFileContent } from "../github/github.service";
@@ -29,6 +30,7 @@ import { discoverServerStack } from "./docker-inspect.service";
 import {
   EDGE_PORTS,
   parseComposePort,
+  isExternalHostPublish,
   type DiscoveredService,
   type DiscoveredVolumeMount,
   type OpenshipProjectGroup,
@@ -58,6 +60,11 @@ export interface RepoComposeService {
   command?: string;
   commandArgv?: string[] | null; // #332
   restart?: string;
+  /** Extended compose keys (healthcheck, resource caps, shared namespaces). Must be
+   *  declared here AND forwarded into the row below — carrying it only out of the
+   *  parser leaves it stranded on this shape, which is how the blob went missing
+   *  from every migrated stack in the first place. */
+  advanced?: ComposeAdvanced;
 }
 
 /**
@@ -102,6 +109,11 @@ export async function parseRepoCompose(
         command: s.command ?? undefined,
         commandArgv: s.commandArgv ?? null, // #332
         restart: s.restart ?? undefined,
+        // Extended keys (healthcheck, resource caps, shared namespaces). This
+        // hand-written map dropped the whole blob, so a migrated stack lost its
+        // healthchecks and per-service caps along with them — the same
+        // field-by-field omission #533 is about.
+        advanced: s.advanced ?? undefined,
       }));
     } catch {
       return []; // invalid YAML → graceful empty
@@ -157,50 +169,64 @@ function volumeToComposeString(v: DiscoveredVolumeMount): string | null {
   return `${v.source}:${v.target}${mode}`;
 }
 
-/** Normalize an adopted service's ports for the shared Openship service group:
+/** Normalize an adopted service's ports for the shared Openship service group.
  *
- *   - Ports 80/443 belong to Openship's OpenResty edge → drop the host side,
- *     keep the container port (e.g. "80:3000" → "3000"); OpenResty routes to it.
- *   - Every OTHER host-published port must be UNIQUE across the group — two
- *     containers cannot bind the same host port (the classic "two postgres both
- *     on 127.0.0.1:5432" migration failure: `port is already allocated`). The
- *     first service to claim a host port keeps it; a later collision drops only
- *     the HOST binding and keeps the container port, so the service stays
- *     reachable by name on the group network (`postgres-2:5432`).
+ *  Adoption deliberately leaves every service UNEXPOSED and drops the HOST side of
+ *  ALL published ports, keeping only the container port. Three reasons, one rule:
  *
- *  `claimed` is the shared set of host ports already taken by earlier services
- *  in the group (mutated here). Returns the rewritten ports + the host ports
- *  that were dropped as duplicates (for a user-facing note). */
-function normalizeHostPorts(
-  ports: string[],
-  claimed: Set<number>,
-): { ports: string[]; droppedDuplicates: number[] } {
-  const droppedDuplicates: number[] = [];
-  const out = ports.map((spec) => {
-    const { host, container, proto } = parseComposePort(spec);
+ *   - 80/443 belong to Openship's OpenResty edge — a service can't bind them, the
+ *     edge routes to the container port instead.
+ *   - A pinned host port (e.g. "5432:5432") collides with whatever already holds
+ *     it on the box: another adopted service, a second project's Postgres, or
+ *     Openship's OWN Postgres. That collision is the exact `port is already
+ *     allocated` failure #388 reports — and it aborts the whole deploy, not just
+ *     the one service. Stripping the host binding removes the entire class.
+ *   - Exposure is added LATER from the project's Domains tab, which runs the one
+ *     unified OpenResty-ensure + 80/443 takeover-consent flow (the wizard can't
+ *     surface that modal mid-import). Host-publishing here would both skip that
+ *     flow and re-introduce the collision.
+ *
+ *  A stripped service stays reachable by name on the group network
+ *  (`postgres-2:5432`) — compose service-to-service resolves the container with no
+ *  `ports:` entry — and the DISCOVERED ports are untouched, so the wizard still
+ *  shows the port for the operator to route to. Returns the rewritten ports + the
+ *  concrete host publishes that were dropped, each flagged `external` when it was
+ *  reachable off-box (so the warning can name the genuine exposure loss, not just
+ *  a port number; bare/random and edge publishes carry no host port to report). */
+function normalizeHostPorts(ports: string[]): {
+  ports: string[];
+  stripped: { host: number; external: boolean }[];
+} {
+  const stripped: { host: number; external: boolean }[] = [];
+  const out: string[] = [];
+  for (const spec of ports) {
+    const { host, hostIp, container, proto } = parseComposePort(spec);
     const containerOnly = proto ? `${container}/${proto}` : container;
-    if (host == null) return spec; // container-only expose — nothing published
-    if (EDGE_PORTS.has(host)) return containerOnly; // edge → OpenResty
-    if (claimed.has(host)) {
-      droppedDuplicates.push(host);
-      return containerOnly; // duplicate host port — keep only the container side
+    if (host == null) {
+      // A bare "<port>" is NOT "nothing published": compose publishes it on a
+      // RANDOM host port (docker `HostPort: ""`). Drop it for the same reason as a
+      // pinned one — adopted services are left unexposed and reached by name.
+      continue;
     }
-    claimed.add(host);
-    return spec; // unique host publish — keep as-is
-  });
-  return { ports: out, droppedDuplicates };
+    // Edge ports carry no host port worth reporting; every other concrete host
+    // publish is stripped and noted so the operator knows to re-route it — and
+    // whether it was externally reachable, which is what the strip actually costs.
+    if (!EDGE_PORTS.has(host)) stripped.push({ host, external: isExternalHostPublish(hostIp) });
+    out.push(containerOnly);
+  }
+  return { ports: out, stripped };
 }
 
 /**
  * Map selected discovered services → compose service rows for `syncFromCompose`.
  * Shared by adopt AND re-import so the two paths can't drift: unique names,
- * group-wide host-port de-dup, adopt-the-running-image (never rebuild), and —
- * critically — services are left UNEXPOSED. Exposing here would fire the
- * routing/OpenResty ensure mid-import (which needs the 80/443 takeover-consent
- * modal the wizard can't surface); instead the user adds routes from the
- * project's Domains tab, and THAT redeploy runs the one unified ensure-OpenResty
- * + takeover-consent flow. Pushes a per-service warning when a host port is
- * dropped as a duplicate.
+ * host-port stripping (see normalizeHostPorts), adopt-the-running-image (never
+ * rebuild), and — critically — services are left UNEXPOSED. Exposing here would
+ * fire the routing/OpenResty ensure mid-import (which needs the 80/443
+ * takeover-consent modal the wizard can't surface); instead the user adds routes
+ * from the project's Domains tab, and THAT redeploy runs the one unified
+ * ensure-OpenResty + takeover-consent flow. Pushes a per-service warning when a
+ * host publish is stripped.
  */
 export function buildAdoptedServiceRows(
   chosen: DiscoveredService[],
@@ -223,9 +249,6 @@ export function buildAdoptedServiceRows(
   rows: ParsedComposeList;
   renames: Record<string, string>;
   handover: Record<string, string>;
-  /** Host ports already claimed by the adopted rows — reused when normalizing the
-   *  new (container-less) repo rows so both paths strip 80/443 + dedupe together. */
-  claimedHostPorts: Set<number>;
 } {
   const nameCounts = new Map<string, number>();
   const firstUnique = new Map<string, string>(); // discovered name → FINAL row name
@@ -240,14 +263,26 @@ export function buildAdoptedServiceRows(
     return unique;
   });
 
-  const claimedHostPorts = new Set<number>();
   const handover: Record<string, string> = {};
   const rows = chosen.map((s, i) => {
-    const { ports, droppedDuplicates } = normalizeHostPorts(s.ports, claimedHostPorts);
-    if (droppedDuplicates.length > 0) {
+    const { ports, stripped } = normalizeHostPorts(s.ports);
+    if (stripped.length > 0) {
+      // Call out an off-box publish specifically: that exposure is the real thing
+      // the strip drops, and it's the security-meaningful signal (a raw compose
+      // publish DNATs past the host firewall). Loopback-only publishes never left
+      // the box, so they get the plainer note.
+      const external = stripped.filter((p) => p.external).map((p) => p.host);
+      const loopback = stripped.filter((p) => !p.external).map((p) => p.host);
+      const clauses: string[] = [];
+      if (external.length > 0)
+        clauses.push(
+          `Port(s) ${external.join(", ")} were published externally (reachable off-box) and are not re-published`,
+        );
+      if (loopback.length > 0)
+        clauses.push(`Loopback-only port(s) ${loopback.join(", ")} are not re-published`);
       s.warnings.push(
-        `Host port(s) ${droppedDuplicates.join(", ")} already published by another service — ` +
-          `kept ${uniqueNames[i]} on the internal network only (reachable as ${uniqueNames[i]}:<port>).`,
+        `${clauses.join("; ")} — kept ${uniqueNames[i]} on the internal network ` +
+          `(reachable as ${uniqueNames[i]}:<port>). Add a route from the project's Domains tab to expose it.`,
       );
     }
     // Source of truth for build/image:
@@ -287,16 +322,24 @@ export function buildAdoptedServiceRows(
       restart: s.restart,
       // Built additively: an adopted container's live cpu/memory caps must
       // survive even when it has no healthcheck (and vice versa).
+      //
+      // Healthcheck and caps come from LIVE truth, which is the whole adopt model.
+      // Shared namespaces come from the repo spec instead, because they are the one
+      // part live inspect doesn't give us — and the row is what the NEXT deploy
+      // recreates the container from, so dropping them here means a service the
+      // compose file pins to a sidecar's namespace quietly comes up on its own.
       advanced:
-        s.healthcheck || s.resources
+        s.healthcheck || s.resources || repo?.advanced?.networkMode || repo?.advanced?.pidMode
           ? {
               ...(s.healthcheck && { healthcheck: s.healthcheck }),
               ...(s.resources && { resources: s.resources }),
+              ...(repo?.advanced?.networkMode && { networkMode: repo.advanced.networkMode }),
+              ...(repo?.advanced?.pidMode && { pidMode: repo.advanced.pidMode }),
             }
           : undefined,
     };
   });
-  return { rows, renames, handover, claimedHostPorts };
+  return { rows, renames, handover };
 }
 
 
@@ -407,7 +450,7 @@ export async function adoptServerStack(opts: {
   };
   const { project_id, created } = await ensureProject(ensureBody, organizationId);
 
-  const { rows: parsed, renames, handover, claimedHostPorts } = buildAdoptedServiceRows(
+  const { rows: parsed, renames, handover } = buildAdoptedServiceRows(
     chosen,
     selected,
     serviceEnv,
@@ -426,11 +469,12 @@ export async function adoptServerStack(opts: {
   if (repoServices) {
     for (const [name, rs] of repoServices) {
       if (adoptedNames.has(name)) continue;
-      // Run the compose host ports through the SAME normalizer + claimed-set as
-      // the adopted rows: strip edge-owned 80/443 (OpenResty owns them) and dedupe
-      // host ports already taken by a sibling — else a new `web` on "80:80" would
-      // collide with the edge and fail the deploy.
-      const { ports } = normalizeHostPorts(rs.ports ?? [], claimedHostPorts);
+      // Run the compose host ports through the SAME normalizer as the adopted
+      // rows: strip every host binding (edge-owned 80/443 AND pinned ports) so a
+      // new `web` on "80:80" doesn't collide with the edge and a `db` on "5432:5432"
+      // doesn't collide with whatever holds it on the box — reachable by name,
+      // routed later from the Domains tab.
+      const { ports } = normalizeHostPorts(rs.ports ?? []);
       newRows.push({
         name,
         kind: "compose",
@@ -448,6 +492,10 @@ export async function adoptServerStack(opts: {
         command: rs.command,
         commandArgv: rs.commandArgv ?? null, // #332
         restart: rs.restart,
+        // The other half of the parser passthrough: without this the blob reaches
+        // RepoComposeService and stops there, so the migrated row still loses its
+        // healthcheck, caps, and shared namespaces.
+        advanced: rs.advanced,
       });
     }
   }
@@ -704,7 +752,13 @@ export async function joinReusedContainersToGroup(opts: {
     const discByName = new Map(attach.map((c) => [renames?.[c.name] ?? c.name, c]));
     const members = serviceRows
       .filter((s) => discByName.has(s.name))
-      .map((s) => ({ containerId: discByName.get(s.name)?.containerId ?? "", alias: s.name }))
+      .map((s) => ({
+        containerId: discByName.get(s.name)?.containerId ?? "",
+        // The SAME alias set a natively-deployed container gets (row name +
+        // `advanced.alias`), so east-west by a custom alias resolves for a reused
+        // container too instead of only for deployed ones.
+        aliases: buildNetworkAliases(s.name, serviceAliasExtras(s)),
+      }))
       .filter((m) => m.containerId.length > 0);
     await rt.joinServiceGroupContainers(slug, members);
   } finally {
@@ -741,8 +795,12 @@ async function refreshRestoredRuntime(
         containerId: sd.containerId,
         status: status === "running" ? "success" : "failure",
         imageRef: sd.imageRef ?? null,
-        hostPort: info?.hostPort ?? sd.hostPort ?? null,
-        ip: info?.ip ?? sd.ip ?? null,
+        // A live inspect that ANSWERED replaces the snapshot outright, including
+        // "publishes nothing" → null. Keeping the restored port here is what made
+        // the row claim a 127.0.0.1 publish the container doesn't have (#506).
+        // `info === null` = couldn't ask → keep the last-known values.
+        hostPort: info ? (info.hostPort ?? null) : (sd.hostPort ?? null),
+        ip: info ? (info.ip ?? null) : (sd.ip ?? null),
       });
     }
     await repos.deployment.updateStatus(deploymentId, deriveDeploymentStatus(states));

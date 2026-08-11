@@ -31,6 +31,7 @@ import {
 } from "@/context/deployment/types";
 import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
+import { parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -40,9 +41,6 @@ import { cn } from "@/lib/utils";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const getExposedPort = (svc: ComposeServiceInfo) =>
-  svc.ports[0]?.split(":").pop()?.split("/")[0];
 
 type EnvVarRow = { key: string; value: string; visible: boolean };
 
@@ -85,7 +83,7 @@ const missingEnvCount = (service: ComposeServiceInfo) =>
     ([key, meta]) => meta.source === "missing" && !service.environment[key],
   ).length;
 
-const portDisplay = (port: string) => port.split(":").pop()?.split("/")[0] || port;
+const portDisplay = (port: string) => parseContainerPort(port) || port;
 
 // ─── Port / volume rows (compose string[] ↔ editable rows) ───────────────────
 // Round-trips are LOSSLESS for the fields the UI doesn't edit: a port keeps its
@@ -194,7 +192,7 @@ const ServiceDomainSection: React.FC<{
     );
   }
 
-  const primaryPort = service.exposedPort || getExposedPort(service) || "";
+  const primaryPort = service.exposedPort || serviceExposedPort(service) || "";
   const defaultSubdomain =
     service.name === "web" || service.name === "app" || service.name === "frontend"
       ? normalizeSubdomain(projectName)
@@ -490,7 +488,7 @@ const ServiceConfigSection: React.FC<{
     [onChange],
   );
 
-  const routedPort = service.exposedPort || getExposedPort(service) || "";
+  const routedPort = service.exposedPort || serviceExposedPort(service) || "";
   const statefulOnCloud = isCloud && (isStatefulImage(service.image) || service.volumes.length > 0);
   const portsStr = interpolate(service.ports.length === 1 ? cnt.portOne : cnt.portOther, { count: String(service.ports.length) });
   const volumesStr = interpolate(service.volumes.length === 1 ? cnt.volumeOne : cnt.volumeOther, { count: String(service.volumes.length) });
@@ -978,7 +976,7 @@ const ComposeServices: React.FC = () => {
           ? normalizeSubdomain(projectNameForHost)
           : normalizeSubdomain(`${projectNameForHost}-${svc.name}`);
       const eps = ensurePublicEndpoints(svc.publicEndpoints, {
-        port: svc.exposedPort || getExposedPort(svc) || "",
+        port: svc.exposedPort || serviceExposedPort(svc) || "",
         domain: svc.domain || defaultSub,
         customDomain: svc.customDomain || "",
         domainType: svc.domainType || "free",

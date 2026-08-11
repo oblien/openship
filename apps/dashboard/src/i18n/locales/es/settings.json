@@ -53,6 +53,7 @@
       "notifications": "Notificaciones",
       "audit": "Registro de auditoría",
       "cloud": "Cloud",
+      "infrastructure": "Infraestructura",
       "instance": "Instancia"
     }
   },
@@ -112,10 +113,6 @@
     "noServers": "Aún no hay servidores configurados - añade uno desde el selector de despliegue.",
     "clearDefault": "Borrar predeterminado (preguntar cada vez)",
     "targets": {
-      "local": {
-        "label": "Esta máquina",
-        "desc": "Docker / runtime local"
-      },
       "server": {
         "label": "Mi servidor",
         "desc": "Un servidor SSH configurado"
@@ -127,8 +124,7 @@
     },
     "labelFor": {
       "yourServer": "tu servidor",
-      "cloud": "Openship Cloud",
-      "local": "Esta máquina"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Primero elige un servidor",
@@ -454,6 +450,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "En la app"
     },
     "form": {
@@ -463,6 +460,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Token del bot de @BotFather",
+      "telegramChatPlaceholder": "ID del chat (p. ej. -1001234567890)",
+      "telegramHint": "Crea un bot con @BotFather y luego envíale un mensaje (o añádelo a tu grupo) para que pueda responder.",
       "adding": "Añadiendo…",
       "addChannel": "Añadir canal",
       "labelRequired": "La etiqueta es obligatoria"
@@ -471,6 +471,7 @@
       "title": "Sobre qué recibir notificaciones",
       "description": "Elige qué eventos van a qué canal. Cada celda es una suscripción.",
       "empty": "Añade primero un canal para suscribirte a eventos.",
+      "allTab": "Todos",
       "eventHeader": "Evento",
       "cellAria": "{category} vía {channel}",
       "notifyMe": "Notificarme"
@@ -484,11 +485,11 @@
   },
   "audit": {
     "heading": "Registro de auditoría",
-    "subtitle": "Cada cambio en esta organización, quién lo hizo y cuándo.",
-    "searchPlaceholder": "Buscar eventos, actores, recursos...",
-    "allEvents": "Todos los eventos",
-    "noMatch": "Ningún evento coincide con tu búsqueda.",
-    "noEvents": "Aún no hay eventos.",
+    "subtitle": "Todo lo que ha pasado en esta organización, quién lo hizo y cuándo.",
+    "searchPlaceholder": "Buscar apps, servidores, dominios, personas…",
+    "noMatch": "Nada coincide con estos filtros.",
+    "noEvents": "Aún no se ha registrado nada.",
+    "clearFilters": "Borrar filtros",
     "showing": "Mostrando {from}-{to} de {total}",
     "actor": "Actor",
     "name": "Nombre",
@@ -504,7 +505,50 @@
     "after": "Después",
     "removed": "Eliminado",
     "system": "Sistema",
-    "actorPrefix": "Actor {id}"
+    "actorPrefix": "Actor {id}",
+    "recording": {
+      "title": "Registrar actividad",
+      "description": "Guarda un registro de cada cambio hecho en esta organización. Activado por defecto.",
+      "paused": "El registro está desactivado. No se añade nada nuevo: las entradas de abajo son las que se capturaron antes de apagarlo.",
+      "retention": "Conservar entradas durante",
+      "retentionOption": "{days} días",
+      "retentionHint": "Las entradas más antiguas se eliminan automáticamente.",
+      "adminOnly": "Solo los propietarios y administradores pueden cambiar esto.",
+      "saveFailed": "No se pudieron guardar los ajustes de actividad."
+    },
+    "filters": {
+      "anyone": "Cualquiera",
+      "period": "Periodo",
+      "allTime": "Todo el tiempo",
+      "today": "Hoy",
+      "last7": "Últimos 7 días",
+      "last30": "Últimos 30 días",
+      "last90": "Últimos 90 días"
+    },
+    "tabs": {
+      "all": "Todo"
+    },
+    "sources": {
+      "all": "Todo",
+      "dashboard": "Panel",
+      "mcp": "Asistente de IA",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "Sistema",
+      "unknown": "Desconocido"
+    },
+    "day": {
+      "today": "Hoy",
+      "yesterday": "Ayer"
+    },
+    "details": {
+      "who": "Quién",
+      "when": "Cuándo",
+      "cameFrom": "Origen",
+      "technical": "Detalles técnicos",
+      "eventType": "Tipo de evento"
+    }
   },
   "updates": {
     "title": "Actualizaciones",
@@ -529,6 +573,20 @@
     "security3": "). Solo alguna vez",
     "securityPulls": "descarga",
     "security4": "estos datos — ningún servicio de terceros ni servidor operado por Openship puede enviar actualizaciones o señales a tu instalación. Los avisos están anclados a cada versión, por lo que los cambios no publicados nunca te llegan. Los avisos de seguridad críticos siempre se muestran una vez; todo lo demás respeta el interruptor de arriba."
+  },
+  "infrastructure": {
+    "title": "Componentes de la plataforma",
+    "description": "Cómo se mantienen actualizados los contenedores de edge y correo en tus servidores",
+    "autoUpdateLabel": "Actualizar automáticamente la infraestructura del servidor",
+    "autoUpdateDesc": "Cuando este plano de control se actualice, actualiza automáticamente los contenedores de edge y correo de tus servidores conectados. Desactivado por defecto: si no, las actualizaciones se marcan para aplicarlas con un clic en cada servidor.",
+    "autoScanLabel": "Escanear la infraestructura del servidor automáticamente",
+    "autoScanDesc": "Vuelve a comprobar tus servidores en silencio cuando abres la página de Servidores o la página de inicio, para que un edge detenido o ausente se detecte sin un escaneo manual. Activado por defecto: solo detecta, nunca cambia nada.",
+    "attentionOne": "1 componente necesita atención",
+    "attentionMany": "{n} componentes necesitan atención",
+    "updatesOne": "1 actualización disponible",
+    "updatesMany": "{n} actualizaciones disponibles",
+    "allHealthy": "Todos los componentes de la plataforma están actualizados",
+    "manageLink": "Gestionar en Servidores"
   },
   "dataTransfer": {
     "export": {

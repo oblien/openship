@@ -16,6 +16,39 @@ export const InstallAppBody = Type.Object({
       description: "Template config-field values (key → string); keys come from the template's configFields.",
     }),
   ),
+  // The install write carries the routing decision. A service with no entry here
+  // gets NO public route: a hostname is never invented on the caller's behalf.
+  routes: Type.Optional(
+    Type.Array(
+      Type.Object(
+        {
+          service: Type.String({ minLength: 1, maxLength: 120, description: "Template service name." }),
+          port: Type.Integer({ minimum: 1, maximum: 65535, description: "Container port this choice routes." }),
+          mode: Type.Union(
+            [Type.Literal("port"), Type.Literal("free"), Type.Literal("custom")],
+            {
+              description:
+                "port = no public route (published host port only); free = managed *.opsh.io subdomain (needs Openship Cloud); custom = your own hostname.",
+            },
+          ),
+          domain: Type.Optional(
+            Type.String({
+              maxLength: 255,
+              description: "free mode: subdomain slug. Omit to take the template's default label.",
+            }),
+          ),
+          customDomain: Type.Optional(
+            Type.String({ maxLength: 255, description: "custom mode: the hostname you own (required)." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      {
+        maxItems: 40,
+        description: "Per-endpoint routing choice, one entry per exposable endpoint the operator decided on.",
+      },
+    ),
+  ),
 });
 
 /** POST /apps/custom — add a custom app from an uploaded JSON app definition. */

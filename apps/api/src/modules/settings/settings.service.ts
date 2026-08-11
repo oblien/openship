@@ -12,9 +12,25 @@ import type { BuildStrategy, TransferMode, TransferCompression } from "@repo/ada
 import { env } from "../../config";
 
 export type BuildMode = "auto" | "server" | "local";
-export type DefaultDeployTarget = "local" | "server" | "cloud";
 
-const VALID_DEPLOY_TARGETS: DefaultDeployTarget[] = ["local", "server", "cloud"];
+/**
+ * A deploy target a user can pick as their DEFAULT — a real destination, so a
+ * binding: a server row, or a cloud workspace.
+ *
+ * "local" is deliberately absent, even though `DeployTarget` (@repo/core) has it.
+ * That value is not a destination: it is the *absence* of a binding, derived per
+ * deploy from the project row (`cloudWorkspaceId ? cloud : serverId ? server :
+ * local`, see project.ts), and on a server-host the box already appears as its own
+ * "This Server" row — so offering it was a second, dimmer name for a server that is
+ * right there in the list, and picking it dropped that row's real address. Desktop
+ * still resolves it, but derives it; nobody chooses it.
+ *
+ * A stored legacy "local" therefore reads back as null (getDeployDefaults) and is
+ * rejected on write (400) — both through this one predicate.
+ */
+export type DefaultDeployTarget = "server" | "cloud";
+
+const VALID_DEPLOY_TARGETS: DefaultDeployTarget[] = ["server", "cloud"];
 
 export function isValidDefaultDeployTarget(value: unknown): value is DefaultDeployTarget {
   return typeof value === "string" && (VALID_DEPLOY_TARGETS as string[]).includes(value);

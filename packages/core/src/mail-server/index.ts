@@ -11,3 +11,5 @@
  */
 
 export * from "./routing";
+export * from "./relay-providers";
+export * from "./relay-senders";

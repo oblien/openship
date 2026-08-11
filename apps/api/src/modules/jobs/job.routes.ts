@@ -7,7 +7,6 @@
  */
 
 import { Hono } from "hono";
-import { localOnly } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./job.controller";
 import { UpdateJobBody, CreateJobBody } from "./job.schema";
@@ -15,9 +14,9 @@ import { UpdateJobBody, CreateJobBody } from "./job.schema";
 const r = secureRouter(new Hono(), {
   module: "jobs",
   basePath: "/api/jobs",
+  localOnly: true,
 });
 
-r.use("*", localOnly);
 
 r.get("/", { tag: "job:read", mcp: { description: "List system + custom jobs with cron, next run, and recent run history." } }, ctrl.list);
 r.post(

@@ -48,6 +48,39 @@ export interface CloudGithubUserStatus {
   id?: number;
 }
 
+// ─── Edge-target verification (Openship Cloud proves control of a target) ────
+//
+// Mirrors Oblien's `EdgeProxyVerification*` shapes, restated here rather than
+// re-exported: the SDK is a SaaS-side dependency, and a self-hosted box must be
+// able to type this call without pulling it in.
+
+export type CloudEdgeVerificationStatus = "pending" | "verified" | "failed" | "expired";
+
+/** What to serve, and where, to prove control of a target. */
+export interface CloudEdgeVerificationChallenge {
+  id: number;
+  target: string;
+  /** Absolute path the token must answer on, e.g.
+   *  `/.well-known/oblien-proxy-challenge/<token>`. Stored verbatim rather than
+   *  reconstructed — the upstream owns this path shape, not us. */
+  path: string;
+  /** Exact body to return with HTTP 200 at `path`. */
+  token: string;
+  instructions?: string;
+}
+
+/** Outcome of a probe. `error` is the upstream's own reason and is the only thing
+ *  that names the real cause (DNS, firewall, a proxy in front), so it is surfaced
+ *  verbatim rather than replaced with a generic message. */
+export interface CloudEdgeVerificationResult {
+  id: number;
+  target: string;
+  status: CloudEdgeVerificationStatus;
+  validatedIp?: string | null;
+  expiresAt?: string | null;
+  error?: string;
+}
+
 /**
  * The identity a cloud call runs as:
  *   - { userId }         → act AS this user (the connect/identity flow, and the
@@ -86,6 +119,20 @@ export interface CloudClient {
       target: string;
     }): Promise<{ ok: true; hostname: string } | null>;
     deregister(slug: string): Promise<{ ok: true; removed: boolean } | null>;
+    /**
+     * Ask Openship Cloud for a challenge proving we control `target`.
+     *
+     * `target` MUST be `canonicalEdgeTarget(host)` — the row is keyed on the
+     * normalized string, so a target verified in one spelling and routed in
+     * another stays permanently unverified.
+     *
+     * Re-requesting RESETS the token, which is why the caller keeps serving the
+     * previous one (see the retired-token rule on the persistence side).
+     */
+    requestVerification(target: string): Promise<CloudEdgeVerificationChallenge | null>;
+    /** Run the probe. Openship Cloud fetches the token from the target itself; we
+     *  only report the outcome. One call per attempt — never a poll loop. */
+    checkVerification(verificationId: number): Promise<CloudEdgeVerificationResult | null>;
   };
   analytics: {
     timeseries<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;

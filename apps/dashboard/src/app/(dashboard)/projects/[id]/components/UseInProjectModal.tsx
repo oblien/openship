@@ -157,10 +157,9 @@ export function UseInProjectModal({
         const list = (res?.projects ?? [])
           .filter((p: { id?: string }) => p.id && p.id !== sourceProjectId)
           .map((p: RawProject): TargetProject => {
-            const domain =
-              p.primaryDomain ||
-              (p.slug ? `${p.slug}.${baseDomain}` : null) ||
-              hostingLabel(p, t.projects.hosting);
+            // A persisted route or the hosting label — never `<slug>.<baseDomain>`,
+            // which labelled every routeless project with a host that doesn't exist.
+            const domain = p.primaryDomain || hostingLabel(p, t.projects.hosting);
             return {
               id: p.id,
               name: p.name ?? p.id,

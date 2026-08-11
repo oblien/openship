@@ -1,0 +1,92 @@
+{
+  "title": "Problèmes",
+  "subtitle": "Tout ce qu'Openship a trouvé d'anormal dans vos projets, serveurs et domaines.",
+  "tabs": {
+    "open": "Ouverts",
+    "resolved": "Résolus"
+  },
+  "resolvedNote": "L'historique couvre les incidents de conteneurs et de serveurs — les autres vérifications rapportent l'état actuel, un certificat ou un déploiement réparé disparaît donc simplement d'ici.",
+  "rescan": "Revérifier",
+  "rescanning": "Analyse en cours",
+  "filters": {
+    "searchPlaceholder": "Rechercher des problèmes",
+    "all": "Tous",
+    "outage": "Panne",
+    "action_required": "Action requise",
+    "advisory": "Information",
+    "clear": "Réinitialiser les filtres"
+  },
+  "scopes": {
+    "platform": "Openship",
+    "server": "Serveurs",
+    "project": "Projets",
+    "domain": "Domaines"
+  },
+  "scopeSubtitles": {
+    "platform": "Cette installation elle-même",
+    "server": "Les machines sur lesquelles tournent vos workloads",
+    "project": "Projets déployés et leurs conteneurs",
+    "domain": "Noms d'hôte personnalisés et certificats"
+  },
+  "kinds": {
+    "deploy_blocked": "Déploiement bloqué",
+    "prompt": "En attente d'une décision",
+    "partial_decision": "Version partielle",
+    "routing_unsynced": "Routage non synchronisé",
+    "domain_unverified": "Domaine non vérifié",
+    "ssl_error": "Problème de certificat",
+    "port_advisory": "Information sur un port",
+    "workload_unhealthy": "Échec des contrôles de santé",
+    "workload_crash_loop": "Redémarrages en boucle",
+    "workload_down": "Conteneur arrêté",
+    "server_unreachable": "Serveur inaccessible",
+    "edge_down": "Le edge est arrêté",
+    "edge_absent": "Edge non installé",
+    "mail_down": "Le moteur de messagerie est arrêté",
+    "update_available": "Mise à jour disponible",
+    "component_behind": "Mise à jour de composant disponible"
+  },
+  "since": "Depuis {when}",
+  "resolvedWhen": "Résolu {when}",
+  "expiresIn": "Abandon dans {n} min",
+  "view": "Voir",
+  "fix": "Réparer",
+  "install": "Installer",
+  "update": "Mettre à jour",
+  "mailSetup": "Configurer la messagerie",
+  "selfUpdateNote": "Cette installation se met à jour depuis la ligne de commande.",
+  "empty": {
+    "openTitle": "Rien ne demande votre attention",
+    "openBody": "Aucun déploiement bloqué ou en attente, aucun problème de certificat ou de domaine, rien en retard, rien sur un mauvais port. Les vérifications continuent en arrière-plan.",
+    "resolvedTitle": "Aucun incident résolu",
+    "resolvedBody": "Les incidents de conteneurs et de serveurs apparaissent ici dès qu'ils sont rétablis, et sont conservés 30 jours.",
+    "filteredTitle": "Aucun résultat",
+    "filteredBody": "Des problèmes sont ouverts — aucun ne correspond à ce filtre."
+  },
+  "summary": {
+    "title": "Aperçu",
+    "subtitle": "L'état en un coup d'œil",
+    "totalOpen": "ouvertes",
+    "totalResolved": "résolues",
+    "bySeverity": "Par gravité",
+    "byArea": "Par zone"
+  },
+  "home": {
+    "attentionTitle": "À surveiller",
+    "attentionSubtitle": "Quelque chose est cassé ou attend une décision",
+    "updatesTitle": "Mises à jour disponibles",
+    "updatesSubtitle": "Nouvelles versions prêtes à appliquer",
+    "more": "{n} de plus",
+    "hide": "Masquer jusqu'à un changement"
+  },
+  "loadFailed": "Impossible de charger les problèmes",
+  "toast": {
+    "title": "Problèmes",
+    "rescanned": "Analyse terminée",
+    "rescanPartial": "Analyse terminée, {n} vérification(s) en échec",
+    "rescanFailed": "Échec de l'analyse",
+    "resolved": "Terminé",
+    "resolveFailed": "Impossible d'appliquer cette correction",
+    "confirmDestructive": "Cette action a un effet de bord irréversible. Continuer ?"
+  }
+}

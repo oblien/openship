@@ -44,7 +44,36 @@ export type SubgraphScope =
 export interface DumpOptions {
   /** Null encrypted-at-rest columns; required for cross-host moves. */
   stripEncrypted?: boolean;
+  /**
+   * Null FK columns that point at INSTANCE-scope-only parents; required for
+   * cross-instance moves for the same reason `stripEncrypted` is.
+   *
+   * `servers` and `mail_servers` are declared instance-scope only, so they never
+   * travel in an organization or project dump — but their CHILDREN do, carrying a
+   * dangling reference. On a receiver where those tables are permanently empty (the
+   * SaaS never registers a server row) the FKs are not DEFERRABLE, so the insert
+   * takes a raw FK violation and promote-to-cloud / migrate-to-cloud fails outright.
+   *
+   * Scrubbing rather than rejecting, because a local project legitimately HAS a
+   * serverId — it just means nothing on the destination. Once scrubbed, any non-null
+   * value in a remapped dump can only have been crafted, which is what lets
+   * `assertDumpSelfContained` reject those columns outright.
+   */
+  stripInstanceRefs?: boolean;
 }
+
+/**
+ * FK columns whose parent is instance-scope only, keyed by dump table sqlName.
+ * Shared by the dump-side scrub and the ingest-side self-containment assert so the
+ * two cannot drift.
+ */
+export const INSTANCE_SCOPED_REFS: Record<string, readonly string[]> = {
+  project: ["serverId"],
+  backup_destination: ["serverId"],
+  backup_policy: ["mailServerId"],
+  backup_run: ["mailServerId"],
+  backup_restore: ["forkMailServerId"],
+};
 
 export interface DatabaseDump {
   formatVersion: number;
@@ -362,7 +391,22 @@ const TABLES: ReadonlyArray<TableSpec> = [
   // Analytics + audit — instance-only.
   { sqlName: "server_analytics", table: schema.serverAnalytics, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
   { sqlName: "server_analytics_geo", table: schema.serverAnalyticsGeo, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  // Project-scoped, unlike the two above (which are keyed by server + domain). So it
+  // carries a project scope as well as the instance one, and a project transfer takes
+  // its usage history along instead of silently resetting the charts on the receiver.
+  {
+    sqlName: "resource_usage",
+    table: schema.resourceUsage,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+    hasOrganizationId: false,
+  },
   { sqlName: "audit_event", table: schema.auditEvent, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  // Travels with audit_event: without it, an instance migration silently turns
+  // audit recording back on for an org that had switched it off.
+  { sqlName: "audit_settings", table: schema.auditSettings, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
 ];
 
 // Deliberately NOT in the catalogue — ephemeral, cloud-only, or re-derived on
@@ -421,6 +465,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "backup_destination", column: "sftpPrivateKeyEnc" },
   { table: "backup_destination", column: "sftpKeyPassphraseEnc" },
   { table: "servers", column: "sshPassword" },
+  { table: "servers", column: "sshPrivateKey" },
   { table: "servers", column: "sshKeyPassphrase" },
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
@@ -575,6 +620,7 @@ export async function dumpSubgraph(
   }
 
   const strippedEncryptedFields = opts.stripEncrypted ? stripEncryptedInPlace(tables) : undefined;
+  if (opts.stripInstanceRefs) stripInstanceRefsInPlace(tables);
 
   return {
     formatVersion: DUMP_FORMAT_VERSION,
@@ -591,6 +637,29 @@ function pickResolver(spec: TableSpec, scope: SubgraphScope): ScopeResolver | nu
     if (r.in === scope.kind) return r;
   }
   return null;
+}
+
+/**
+ * Null every instance-scope FK reference across a dump's tables, in-place.
+ *
+ * Every column in INSTANCE_SCOPED_REFS is nullable in the schema (all five are
+ * declared `.references(..., { onDelete: "set null" })`), so nulling is exactly what
+ * the schema already says happens when the parent goes away — which, from the
+ * destination instance's point of view, it has.
+ *
+ * Exported for testing and so a caller assembling a dump by other means can apply
+ * the same rule.
+ */
+export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
+  for (const [table, columns] of Object.entries(INSTANCE_SCOPED_REFS)) {
+    const rows = tables[table];
+    if (!rows || rows.length === 0) continue;
+    for (const row of rows) {
+      for (const col of columns) {
+        if (row[col] != null) row[col] = null;
+      }
+    }
+  }
 }
 
 /**
@@ -696,6 +765,27 @@ export function assertDumpSelfContained(dump: DatabaseDump): void {
     // this entry rejects such a row defensively if that scope is ever restored.
     channelId: "notification_channel",
   };
+
+  // Instance-scope parents (servers / mail_servers) NEVER travel in a remappable
+  // scope, and `stripInstanceRefs` nulls their children's references on every
+  // cross-instance dump — so on this path a non-null value cannot have come from a
+  // legitimate transfer. Rejecting it closes the same attach-to-a-pre-existing-parent
+  // shape the destinationId entry above describes, for the two columns it omitted:
+  // a crafted dump could otherwise point backup_destination.serverId at a server row
+  // that already exists on the receiver and have the restore adopt its SSH
+  // credentials. Derived from INSTANCE_SCOPED_REFS so the scrub and this assert
+  // cannot disagree about which columns are involved.
+  const INSTANCE_REF_PARENT: Record<string, string> = {
+    serverId: "servers",
+    mailServerId: "mail_servers",
+    forkMailServerId: "mail_servers",
+  };
+  for (const columns of Object.values(INSTANCE_SCOPED_REFS)) {
+    for (const col of columns) {
+      const parent = INSTANCE_REF_PARENT[col];
+      if (parent) FK_PARENT[col] = parent;
+    }
+  }
   const dumpedIds: Record<string, Set<string>> = {};
   for (const [sqlName, rows] of Object.entries(dump.tables)) {
     if (!rows) continue;

@@ -38,6 +38,7 @@ import {
 import { DnsRecordsView } from "@/components/shared/DnsRecordsView";
 import { SectionCard } from "./_shared/section-card";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 
 interface DnsTabProps {
   status: MailSetupStatus;
@@ -55,6 +56,8 @@ export function DnsTab({
   onSelectDomain,
 }: DnsTabProps) {
   const { t } = useI18n();
+  // Heading lives in the page header in mail view — see ../../_lib/mail-section.
+  const hoisted = useMailRailOwnsTabs(serverId);
   const activeDomain = selectedDomain || primaryDomain;
   const isPrimary = activeDomain === primaryDomain;
 
@@ -149,7 +152,7 @@ export function DnsTab({
 
   return (
     <div className="space-y-5">
-      <Header />
+      {!hoisted && <Header />}
 
       {/* Domain picker */}
       <div className="flex items-center gap-2 flex-wrap">

@@ -11,6 +11,17 @@
  * report "the connection closed before the operation reported a result" for an
  * operation the server actually finished (the verify modal's exact symptom).
  * Serializing here fixes it for every SSE consumer at once.
+ *
+ * Ordering alone is NOT enough, though. Serialization guarantees a frame leaves
+ * AFTER the ones before it — it cannot guarantee it leaves at all, because Hono
+ * closes the stream as soon as the handler resolves. A handler that awaits its
+ * terminal write is safe; the session-broadcast handlers are not, since they
+ * push through a synchronous `(event, data) => boolean` writer that does
+ * `void writeSSE(...)` and has nothing to await. Their `complete`/`end` frames
+ * sat in the queue while the handler returned, so the stream closed on top of
+ * them — the "Set up edge routing" modal reporting a dropped connection for a
+ * run that had already logged "Done — routes are live". Hence `drain()`: the
+ * handler's queued frames are flushed before the stream is allowed to close.
  */
 
 import type { Context } from "hono";
@@ -25,8 +36,13 @@ import { SYSTEM } from "@repo/core";
  * through the shadowing property) so the stream's own internals are untouched;
  * the returned promise still resolves per-call, so `await writeSSE(...)` keeps
  * meaning "my frame is queued in order".
+ *
+ * Returns `drain()` — resolves once every write queued so far has settled. A
+ * fire-and-forget writer (`void writeSSE(...)`) has no other way to know its
+ * frame actually went out, and the frames it drops that way are the terminal
+ * ones. Never rejects: a failed write is a gone client, which drains fine.
  */
-export function serializeWrites(stream: SSEStreamingApi): void {
+export function serializeWrites(stream: SSEStreamingApi): () => Promise<void> {
   const write = stream.writeSSE.bind(stream);
   let tail: Promise<unknown> = Promise.resolve();
   stream.writeSSE = (message) => {
@@ -39,6 +55,37 @@ export function serializeWrites(stream: SSEStreamingApi): void {
     );
     return result;
   };
+  return async () => {
+    // Re-await while the tail keeps moving: a frame can be enqueued BY an
+    // earlier frame's completion (a broadcast fanning out to the next
+    // subscriber), and awaiting the tail once would return before those.
+    // Bounded so a writer looping on its own completion can't spin here.
+    for (let i = 0; i < DRAIN_PASSES; i++) {
+      const settled = tail;
+      await settled;
+      if (settled === tail) return;
+    }
+  };
+}
+
+/** Max drain re-checks. More than a couple means writes are still being
+ *  produced, which is the handler's problem, not the stream's. */
+const DRAIN_PASSES = 8;
+
+/** `drain()` bounded by a deadline — a client that has gone away never accepts
+ *  the queued frames, and waiting on it would hold the response open. */
+async function drainWithDeadline(drain: () => Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      drain(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function streamSSE(
@@ -56,7 +103,7 @@ export function streamSSE(
   c.header("X-Accel-Buffering", "no");
 
   return _streamSSE(c, async (sseStream) => {
-    serializeWrites(sseStream);
+    const drain = serializeWrites(sseStream);
 
     const heartbeat = setInterval(() => {
       void sseStream
@@ -69,7 +116,12 @@ export function streamSSE(
     try {
       await cb(sseStream);
     } finally {
+      // Stop the ping BEFORE draining, so the timer can't keep extending the
+      // queue we're waiting on, then let the handler's queued frames — the
+      // terminal `complete`/`end` among them — reach the client. Returning
+      // from here is what closes the stream, so this is the last chance.
       clearInterval(heartbeat);
+      await drainWithDeadline(drain, SYSTEM.SSE.TERMINAL_DRAIN_TIMEOUT_MS);
     }
   });
 }

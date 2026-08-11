@@ -44,15 +44,31 @@ export function pickHostPort(
   throw new Error(`No free host port available in ${start}-${end}`);
 }
 
+export interface HostPortAllocation {
+  port: number;
+  /**
+   * Live occupancy was actually READ.
+   *
+   * `false` means the scan produced NO SIGNAL — an executor that cannot reach the
+   * host at all is the common cause (a container→host channel dropped by the host
+   * firewall, #490). The pick then rests on `avoid` alone, so it can land on a port
+   * something else already holds; Docker refuses the bind and the deploy fails with
+   * "port is already allocated", which names Docker and not the channel that was
+   * really at fault. Callers must SAY so rather than discard this — a scan that
+   * failed to run is not the same answer as "nothing is listening".
+   */
+  scanned: boolean;
+}
+
 /** Read live occupancy via the target's executor, then pick a free host port. */
 export async function allocateHostPort(
   executor: CommandExecutor,
   opts: AllocateHostPortOptions = {},
-): Promise<number> {
+): Promise<HostPortAllocation> {
   const scan = await scanPorts(executor);
   const occupied = new Set<number>();
   if (scan.scanned) {
     for (const l of scan.listeners) if (l.proto === "tcp") occupied.add(l.port);
   }
-  return pickHostPort(occupied, opts);
+  return { port: pickHostPort(occupied, opts), scanned: scan.scanned };
 }

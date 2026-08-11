@@ -3,14 +3,28 @@
  */
 
 export type {
+  DistroFamily,
   EnvironmentProfile,
   LinuxDistro,
   SystemArch,
+  SystemFirewall,
+  SystemLibc,
   SystemOs,
   SystemPackageManager,
+  SystemSelinux,
   SystemServiceManager,
 } from "./environment";
-export { resolveEnvironment } from "./environment";
+export {
+  ENVIRONMENT_PROFILE_TTL_MS,
+  invalidateEnvironment,
+  resolveEnvironment,
+} from "./environment";
+export type { EnvOps, HostCommands, HostFacts, Op, PackageVariants, ReleaseArch } from "./environment-ops";
+export { envOps, HOST_STATE_DIR, opScript } from "./environment-ops";
+export {
+  invalidateLocalEnvironment,
+  resolveLocalEnvironmentSync,
+} from "./environment-local";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type {
@@ -68,6 +82,8 @@ export { LocalExecutor, SshExecutor, SystemSshExecutor, createExecutor } from ".
 // Privilege elevation for non-root SSH users (component installs use it; the
 // broader remote-exec surface can adopt it as a follow-up — see #84).
 export { elevatedExecutor, elevateCommand } from "./elevated-executor";
+export type { Privileged, RootChecked } from "./privilege";
+export { privilegedExecutor, rootChecked, rootOrDegrade } from "./privilege";
 
 // ─── Checks ──────────────────────────────────────────────────────────────────
 export {
@@ -85,10 +101,8 @@ export {
   COMPONENT_INSTALLERS,
   COMPONENT_UNINSTALLERS,
   getRemovalSupport,
-  installCertbot,
   installDocker,
   installGit,
-  installOpenResty,
   installRsync,
   uninstallEdge,
   uninstallRsync,

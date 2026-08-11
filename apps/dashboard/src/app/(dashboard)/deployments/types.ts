@@ -52,6 +52,9 @@ export interface Deployment {
   branch?: string;
   projectId?: string;
   projectName?: string;
+  /** Auto-detected favicon of the deployed site, cached on the project.
+   *  When present it replaces the framework/Docker glyph as the row logo. */
+  favicon?: string | null;
   failureReason?: string;
   /** Rollback state — populated by the orchestrator-aware listing endpoint.
    *  `artifactRetainedAt` non-null = artifact is archived, rollback-eligible.

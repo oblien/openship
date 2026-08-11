@@ -1,9 +1,11 @@
 name: Docker images
 
-# Publishes the official pull-based images (openship-api + openship-dashboard +
-# openship-edge) to GHCR. Deliberately SEPARATE from release.yml (the bun
-# binary / npm CLI / desktop installers / GitHub release) so image publishing
-# can be iterated + tested on its own.
+# Publishes the official pull-based images to GHCR: the control plane
+# (openship-api + openship-dashboard + openship-edge) and the two products that
+# ship as images of their own (openship-mail, the iRedMail engine; and
+# openship-webmail, the Zero client that the app catalog installs). Deliberately
+# SEPARATE from release.yml (the bun binary / npm CLI / desktop installers /
+# GitHub release) so image publishing can be iterated + tested on its own.
 #
 # Triggers:
 #   • tag push v*.*.*      → real release: semver tags + :latest (RCs skip :latest)
@@ -39,13 +41,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge]
+        image: [api, dashboard, edge, mail, webmail]
         platform: [amd64, arm64]
+        # Two independent axes of `include`, both merged into every matching
+        # combination: platform → runner (native builds, no QEMU), and image →
+        # its Dockerfile. The image↔path map is spelled out rather than derived,
+        # because apps/email/ produces TWO images (the mail engine and the
+        # webmail client) — nothing shorter than a table can express that.
         include:
           - platform: amd64
             runner: ubuntu-24.04
           - platform: arm64
             runner: ubuntu-24.04-arm
+          - image: api
+            dockerfile: apps/api/Dockerfile
+          - image: dashboard
+            dockerfile: apps/dashboard/Dockerfile
+          - image: edge
+            dockerfile: apps/edge/Dockerfile
+          - image: mail
+            dockerfile: apps/email/Dockerfile
+          - image: webmail
+            dockerfile: apps/email/Dockerfile.webmail
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -73,7 +90,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/${{ matrix.image }}/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
@@ -102,7 +119,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge]
+        image: [api, dashboard, edge, mail, webmail]
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8

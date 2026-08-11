@@ -20,20 +20,44 @@ import { repos, type ChannelKind } from "@repo/db";
 import { getRequestContext } from "../../lib/request-context";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { encrypt } from "../../lib/encryption";
-import { CATEGORIES } from "../../lib/notification-categories";
+import { CATEGORIES, CATEGORY_GROUPS } from "../../lib/notification-categories";
 import { env } from "../../config/env";
 import { assertPublicUrlLiteral, SsrfError } from "../../lib/ssrf-guard";
 import { sendTestToChannel } from "../../lib/notification-workers";
 import { safeErrorMessage } from "@repo/core";
 import { randomBytes } from "node:crypto";
 
-const VALID_CHANNEL_KINDS = new Set(["email", "webhook", "in_app", "slack", "discord", "msteams"]);
+const VALID_CHANNEL_KINDS = new Set([
+  "email",
+  "webhook",
+  "in_app",
+  "slack",
+  "discord",
+  "msteams",
+  "telegram",
+]);
 
 /* ─── Categories (static, no DB) ─────────────────────────────────────── */
 
-/** GET /categories — list every notification category (static registry). */
+/**
+ * GET /categories — the static registry, plus the groups the Settings UI tabs by.
+ *
+ * Billing is dropped outside CLOUD_MODE: those two categories are fed by
+ * Stripe/Oblien, so on a self-hosted box they are toggles that can never fire.
+ * The filter lives HERE and not in `CATEGORIES` on purpose — `findCategory`
+ * supplies the title and body of every delivered alert
+ * (notification-workers.ts) and the dispatcher's `defaultEnabled` fallback, so
+ * the registry has to stay complete or an org that already holds a billing row
+ * would start rendering the raw category id.
+ */
 export async function listCategories(c: Context) {
-  return c.json({ categories: CATEGORIES });
+  if (env.CLOUD_MODE) {
+    return c.json({ categories: CATEGORIES, groups: CATEGORY_GROUPS });
+  }
+  return c.json({
+    categories: CATEGORIES.filter((cat) => cat.group !== "billing"),
+    groups: CATEGORY_GROUPS.filter((g) => g.id !== "billing"),
+  });
 }
 
 /* ─── Channels ───────────────────────────────────────────────────────── */
@@ -450,6 +474,39 @@ function sanitizeChannelConfig(
       }
       return { ok: true, value: { webhookUrl: encrypt(webhookUrl) } };
     }
+    case "telegram": {
+      // Two required inputs, and the token is the secret half. Same carry-forward
+      // rule as the webhook HMAC: an edit that only changes the chat id must not
+      // wipe the stored token (the client never receives it back to resend).
+      const provided = String(cfg.botToken ?? "").trim();
+      const storedEnc = typeof existing?.botToken === "string" ? existing.botToken : null;
+      if (provided && !/^\d{4,}:[A-Za-z0-9_-]{20,}$/.test(provided)) {
+        return { ok: false, error: "Invalid Telegram bot token (expected <id>:<secret>)" };
+      }
+      if (!provided && !storedEnc) return { ok: false, error: "Telegram bot token is required" };
+
+      // Numeric ids (negative for groups/supergroups) or @publicchannelname.
+      const chatId = String(cfg.chatId ?? "").trim();
+      if (!/^(-?\d+|@[A-Za-z][A-Za-z0-9_]{4,})$/.test(chatId)) {
+        return { ok: false, error: "Invalid Telegram chat ID" };
+      }
+
+      const out: Record<string, unknown> = {
+        botToken: provided ? encrypt(provided) : storedEnc,
+        chatId,
+      };
+      // The id half of the token is the bot's public user id, not a secret —
+      // keep it in the clear so the channel list can say WHICH bot sends.
+      const botId = provided ? provided.split(":")[0] : existing?.botId;
+      if (botId) out.botId = String(botId);
+
+      const thread = String(cfg.messageThreadId ?? "").trim();
+      if (thread) {
+        if (!/^\d+$/.test(thread)) return { ok: false, error: "Invalid Telegram topic ID" };
+        out.messageThreadId = thread;
+      }
+      return { ok: true, value: out };
+    }
     default:
       return { ok: false, error: `Unsupported channel kind: ${kind}` };
   }
@@ -488,6 +545,13 @@ function redactChannelConfig(
     case "msteams":
       return {
         webhookUrlConfigured: !!cfg.webhookUrl,
+      };
+    case "telegram":
+      return {
+        botTokenConfigured: !!cfg.botToken,
+        botId: cfg.botId ?? null,
+        chatId: cfg.chatId ?? "",
+        messageThreadId: cfg.messageThreadId ?? null,
       };
     default:
       return {};

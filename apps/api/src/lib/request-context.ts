@@ -2,6 +2,8 @@ import type { Context } from "hono";
 
 export type RequestContextRole = "owner" | "admin" | "member" | "restricted";
 export type SessionKind = "cookie" | "bearer" | "zero-auth";
+/** Which kind of bearer credential authenticated this request, if any. */
+export type PrincipalKind = "pat" | "oauth";
 
 export interface RequestContextUser {
   id: string;
@@ -37,6 +39,14 @@ export interface RequestContext {
 
   sessionId: string;
   sessionKind: SessionKind;
+
+  /**
+   * For a bearer request, WHICH credential: a personal access token or an OAuth
+   * (MCP) token. Null for cookie / zero-auth. This is identity, not feature
+   * state — it's what lets the audit log say an action came from an AI assistant
+   * rather than a script, since both arrive as `sessionKind: "bearer"`.
+   */
+  principalKind?: PrincipalKind | null;
 
   /**
    * Present ONLY for a scoped personal access token. When set, the caller is a
@@ -88,6 +98,7 @@ export interface BuildRequestContextInput {
   membershipId: string;
   sessionId: string;
   sessionKind: SessionKind;
+  principalKind?: PrincipalKind | null;
   tokenScope?: { tokenId: string } | null;
   clientIp: string | null;
   userAgent: string | null;
@@ -104,6 +115,7 @@ export function buildRequestContext(input: BuildRequestContextInput): RequestCon
     membershipId: input.membershipId,
     sessionId: input.sessionId,
     sessionKind: input.sessionKind,
+    principalKind: input.principalKind ?? null,
     tokenScope: input.tokenScope ?? null,
     clientIp: input.clientIp,
     userAgent: input.userAgent,

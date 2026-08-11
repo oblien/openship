@@ -13,6 +13,8 @@
  *     otherwise require interactive input (ACME email, domain, etc.)
  */
 
+import type { ProxySettings } from "@repo/core";
+
 import type { PromptUserFn } from "../runtime/deploy-pipeline";
 
 // ─── Log streaming ───────────────────────────────────────────────────────────
@@ -139,6 +141,17 @@ export interface InstallerConfig {
    * policy → the installer throws EdgeConflictError rather than guessing.
    */
   promptUser?: PromptUserFn;
+  /**
+   * Run the installer even when the component is already installed and working.
+   *
+   * The one way past `installDocker`'s skip (#491), and it exists because the thing
+   * it authorizes is destructive: the official installer pulls the CURRENT engine, so
+   * on an up-to-date box this is a major upgrade whose daemon restart bounces every
+   * container on the host. Only ever set from an explicit, per-component operator
+   * action ("Reinstall" on the Components tab, behind a confirm) — never inferred by
+   * a flow that merely needs Docker present.
+   */
+  reinstall?: boolean;
 }
 
 // ─── Edge (port 80/443) ownership ──────────────────────────────────────────────
@@ -170,7 +183,15 @@ export interface EdgeOccupant {
 
 export interface EdgeStatus {
   classification: EdgeClassification;
-  /** Foreign owners that must be resolved before we can bind 80/443. */
+  /**
+   * Owners that must be resolved before we can bind 80/443 — i.e. everything on
+   * the edge ports EXCEPT our own healthy edge container.
+   *
+   * A bare-host OpenResty belongs here even one an older Openship installed: the
+   * edge is a container now, so a host OpenResty is a proxy to migrate FROM like
+   * any other. Calling it "ours" was what let it keep :80 while the edge container
+   * crash-looped and every surface reported success.
+   */
   occupants: EdgeOccupant[];
   /** true for free | ours */
   canProceedClean: boolean;
@@ -212,6 +233,20 @@ export interface ImportedSite {
   routes?: { path: string; url: string }[];
   /** Existing certificate paths, if the source terminated TLS itself (reusable). */
   tls?: { certPath: string; keyPath: string };
+  /**
+   * Curated reverse-proxy tunables read off the live vhost, ADOPTABLE — every value
+   * survived `sanitizeProxySettings`, so storing it on `routingConfig.proxy` renders
+   * back byte-identically. Migrating a foreign site carries these over instead of
+   * silently resetting it to nginx's 1 MB / 60 s defaults.
+   */
+  proxy?: ProxySettings;
+  /**
+   * The same directives exactly as the config declares them, INCLUDING values our
+   * validators reject (`20M`, `1d`, an nginx variable). Display-only: this is what
+   * the box serves, so the UI shows it rather than reporting "not set" for a limit
+   * that is very much set. Keyed by `ProxySettings` key, not directive name.
+   */
+  proxyRaw?: Record<string, string>;
   /** Source config file, for traceability. */
   source?: string;
 }
@@ -241,4 +276,13 @@ export type EdgeConflictDetails = {
 
 // ─── Runtime mode ────────────────────────────────────────────────────────────
 
-export type RuntimeMode = "docker" | "bare";
+/**
+ * Re-exported, not redeclared: this was a second `"docker" | "bare"` that happened to
+ * agree with core's. Two identical unions type-check against each other, so nothing
+ * would have caught them drifting until a third member existed on one side only.
+ *
+ * Distinct from `runtime/index.ts`'s same-named type, which adds `"cloud"` — that one is
+ * a genuine superset for choosing a runtime adapter, which is why the barrel exports this
+ * one as `SystemRuntimeMode`.
+ */
+export type { RuntimeMode } from "@repo/core";

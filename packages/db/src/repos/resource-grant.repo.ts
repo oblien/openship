@@ -11,44 +11,18 @@ import {
   generateId,
   parseSourceAccessScope,
   serializeSourceAccessScope,
+  type Permission,
+  type ResourceType,
   type SourceAccessScope,
 } from "@repo/core";
 import type { Database } from "../client";
 import { resourceGrant } from "../schema/resource-grant";
 
 export type ResourceGrantRow = typeof resourceGrant.$inferSelect;
-// "create" is a collection-only capability: it authorizes creating NEW rows of
-// a resource type (currently only project via a `{project,"*",[create]}` grant)
-// WITHOUT granting read/write/admin on existing rows. It never satisfies a
-// per-resource read/write/admin check — see permission.ts.
-export type Permission = "read" | "write" | "admin" | "create";
-export type ResourceType =
-  | "project"
-  | "server"
-  | "mail_server"
-  | "backup_destination"
-  | "billing"
-  | "audit"
-  | "analytics"
-  | "github"
-  // GitHub access-control layer (default-deny, owner-granted). "github"
-  // (resourceId "*") = all GitHub; "github_installation" (resourceId =
-  // installation id) = every repo under one installation/org;
-  // "github_repository" (resourceId = "owner/repo") = a single repo.
-  | "github_installation"
-  | "github_repository"
-  | "permissions"
-  | "domain"
-  | "settings"
-  | "job"
-  | "terminal"
-  | "cloud"
-  | "notifications"
-  | "service"
-  | "deployment"
-  | "backup_policy"
-  | "backup_run"
-  | "backup_restore";
+// Both live in @repo/core — the dashboard needs them and has no @repo/db
+// dependency. Re-exported here so `import { ResourceType } from "@repo/db"`
+// keeps resolving for everything on the server side.
+export type { Permission, ResourceType } from "@repo/core";
 
 export interface ResourceGrant {
   id: string;

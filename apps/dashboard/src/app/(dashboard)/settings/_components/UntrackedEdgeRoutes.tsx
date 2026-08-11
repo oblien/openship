@@ -23,7 +23,7 @@ import { AlertTriangle, FileWarning, RefreshCw, Route, ServerOff, X } from "luci
 
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
-import { getApiErrorMessage, systemApi, type EdgeOrphanScan, type UntrackedEdgeSite } from "@/lib/api";
+import { ApiError, getApiErrorMessage, systemApi, type EdgeOrphanScan, type UntrackedEdgeSite } from "@/lib/api";
 import { authClient, useSession } from "@/lib/auth-client";
 import { SettingsSection } from "./SettingsSection";
 
@@ -42,6 +42,9 @@ export function UntrackedEdgeRoutes() {
 
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [scan, setScan] = useState<EdgeOrphanScan | null>(null);
+  /** The scan spans every org, so the API gates it on the INSTANCE admin role, which
+   *  an org owner need not have. Hide rather than explain — same rule as non-owners. */
+  const [forbidden, setForbidden] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState<UntrackedEdgeSite | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -69,6 +72,13 @@ export function UntrackedEdgeRoutes() {
       const res = await systemApi.listUntrackedEdgeSites();
       setScan(res.data);
     } catch (err) {
+      // Not authorized to read the instance-wide scan → drop the card entirely.
+      // There is no action this user could take (Remove is gated the same way), so
+      // a denial notice would be pure noise on their settings tab.
+      if (err instanceof ApiError && err.status === 403) {
+        setForbidden(true);
+        return;
+      }
       // `scanned: false` carries its own reason; a transport failure is different,
       // so surface it rather than rendering a misleading "all clear".
       setScan({ scanned: false, reason: getApiErrorMessage(err, copy.unavailable), orphans: [], knownCount: 0 });
@@ -101,7 +111,7 @@ export function UntrackedEdgeRoutes() {
   };
 
   // Same rule as DataTransferTab: non-owners see nothing rather than a denied card.
-  if (isOwner !== true) return null;
+  if (isOwner !== true || forbidden) return null;
   // Nothing to report and nothing to explain — don't take up space on the tab.
   if (scan?.scanned && scan.orphans.length === 0 && !loading) return null;
 

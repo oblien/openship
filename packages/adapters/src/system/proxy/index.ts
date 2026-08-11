@@ -19,16 +19,19 @@ import { runEdgeTakeover, type EdgeTakeoverOptions, type EdgeTakeoverResult } fr
 // ── Engine surface (single import point) ──────────────────────────────────────
 export {
   classifyProxy,
+  detectEdgeContainer,
   EDGE_CONTAINER_NAME,
   edgeFailureReason,
   EdgeConflictError,
   EdgeMigrateRequested,
+  edgeCrashReason,
+  edgeIsBroken,
   freeEdgeTargets,
   ourEdgeContainerRunning,
-  ourLuaOnHost,
   probeEdge,
   stopTargetsForStatus,
 } from "./detect";
+export type { EdgeFreeResult } from "./detect";
 export { runEdgeTakeover, registerImportedSites } from "./takeover";
 export {
   recoverInterruptedTakeover,
@@ -158,6 +161,7 @@ export async function ensureEdge<T>(
     promptUser?: PromptUserFn;
     onLog: SystemLogCallback;
     acmeEmail?: string;
+    nginx?: EdgeTakeoverOptions["nginx"];
     extraRoutes?: EdgeTakeoverOptions["extraRoutes"];
   },
 ): Promise<EnsureEdgeOutcome<T>> {
@@ -178,6 +182,7 @@ export async function takeoverOnMigrate(
   opts: {
     onLog: SystemLogCallback;
     acmeEmail?: string;
+    nginx?: EdgeTakeoverOptions["nginx"];
     extraRoutes?: EdgeTakeoverOptions["extraRoutes"];
   },
 ): Promise<EdgeTakeoverResult> {
@@ -189,7 +194,7 @@ export async function takeoverOnMigrate(
   );
   const takeover = await runEdgeTakeover(
     executor,
-    { status: migrate.status, sites: migrate.sites, acmeEmail: opts.acmeEmail, extraRoutes: opts.extraRoutes },
+    { status: migrate.status, sites: migrate.sites, acmeEmail: opts.acmeEmail, nginx: opts.nginx, extraRoutes: opts.extraRoutes },
     opts.onLog,
   );
   for (const w of [...migrate.warnings, ...takeover.warnings]) opts.onLog(sysLog(w, "warn"));

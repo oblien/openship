@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdtemp, rm as fsRm, stat, unlink } from "node:fs/promises";
 import { connect as netConnect } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join, posix } from "node:path";
 import { Duplex } from "node:stream";
 import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
@@ -27,9 +27,14 @@ import {
   sshTarget,
 } from "./system-ssh";
 import { openSystemSshReverseTunnel } from "./reverse-tunnel";
-import { SshDisconnectedError } from "./errors";
+import { commandForError, SshDisconnectedError } from "./errors";
 
 const execFileAsync = promisify(execFile);
+
+/** `dirname` for a path on the TARGET Linux box — always POSIX, never the control
+ *  plane's native separators. The plain `join` is the other namespace: LOCAL
+ *  staging paths under tmpdir. See SshExecutor for what a leaked backslash costs. */
+const remoteDirname = posix.dirname;
 
 /** Clamp a PTY window dimension to a sane range (mirrors SshExecutor). */
 function clampWindow(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -219,7 +224,7 @@ export class SystemSshExecutor implements CommandExecutor {
     const timeout = opts?.timeout ?? 30_000;
     const res = await this.runSsh(SystemSshExecutor.ENV_PREFIX + command, { timeout });
     if (res.timedOut) {
-      throw new Error(`Command timed out after ${timeout}ms: ${command}`);
+      throw new Error(`Command timed out after ${timeout}ms: ${commandForError(command)}`);
     }
     if (res.code !== 0) {
       // 255 is an SSH-level failure (auth/connection); map auth specially so
@@ -233,14 +238,29 @@ export class SystemSshExecutor implements CommandExecutor {
   async streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
     await this.ensureMaster();
+    const signal = opts?.signal;
+    if (signal?.aborted) return { code: 0, output: "" };
     return new Promise((resolve) => {
       const child = spawn(
         "ssh",
         [...this.baseArgs(), sshTarget(this.config), SystemSshExecutor.ENV_PREFIX + command],
         { env: sshChildEnv(this.config), stdio: ["ignore", "pipe", "pipe"] },
       );
+
+      // Abort = kill the ssh client, which tears the channel down. Resolve with
+      // code 0 like SshExecutor does: an abort is the caller's own decision, not
+      // a transport failure, and callers that care (a cancelled build) re-check
+      // `signal.aborted` themselves. Without this the signal was ignored outright
+      // and a cancelled remote build streamed to completion.
+      let aborted = false;
+      const onAbort = () => {
+        aborted = true;
+        child.kill("SIGKILL");
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
 
       // Raw passthrough (see LocalExecutor.streamExec): forward the untouched
       // byte stream as rawData so the client's xterm renders "\r"/ANSI natively
@@ -257,11 +277,13 @@ export class SystemSshExecutor implements CommandExecutor {
       child.stdout.on("data", (chunk: Buffer) => onChunk(chunk, "info"));
       child.stderr.on("data", (chunk: Buffer) => onChunk(chunk, "warn"));
       child.on("error", (err) => {
+        signal?.removeEventListener("abort", onAbort);
         onLog(logEntry(`Process error: ${err.message}`, "error"));
         resolve({ code: 1, output: err.message });
       });
       child.on("close", (code) => {
-        const c = code ?? 1;
+        signal?.removeEventListener("abort", onAbort);
+        const c = aborted ? 0 : (code ?? 1);
         void this.maybeSignalDisconnect(c).catch(() => {});
         resolve({ code: c, output: chunks.join("") });
       });
@@ -269,7 +291,7 @@ export class SystemSshExecutor implements CommandExecutor {
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    const remoteCommand = `mkdir -p ${sq(dirname(path))} && cat > ${sq(path)}`;
+    const remoteCommand = `mkdir -p ${sq(remoteDirname(path))} && cat > ${sq(path)}`;
     const res = await this.runSsh(remoteCommand, { input: content });
     if (res.code !== 0) {
       throw new Error(res.stderr.trim() || `Failed to write ${path} (exit ${res.code})`);
@@ -367,7 +389,7 @@ export class SystemSshExecutor implements CommandExecutor {
       onLog?.(logEntry("Packing source into a single archive..."));
       await packLocalArchive(tarArgs, localArchive);
       const totalBytes = (await stat(localArchive)).size;
-      await this.exec(`mkdir -p ${sq(dirname(remoteArchive))}`);
+      await this.exec(`mkdir -p ${sq(remoteDirname(remoteArchive))}`);
 
       const rsync = await canUseRemoteRsync(deps);
       if (rsync.ok) {

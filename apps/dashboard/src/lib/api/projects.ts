@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
-import type { RoutingConfig, RouteRuleSpec, OpenshipReadiness } from "@repo/core";
+import type { RoutingConfig, RouteRuleSpec, ProxySettings, OpenshipReadiness, WorkloadType } from "@repo/core";
 import { endpoints } from "./endpoints";
 
 /* ------------------------------------------------------------------ */
@@ -78,6 +78,9 @@ export interface ProjectOptionsBody {
   productionMode?: string;
   hasServer?: boolean;
   hasBuild?: boolean;
+  /** Runtime workload axis (#538) — the only way to persist a portless worker.
+   *  Omit to derive from hasServer (web/static, never worker). */
+  workloadType?: WorkloadType;
   runtimeMode?: "bare" | "docker";
 }
 
@@ -160,6 +163,64 @@ export interface RouteRuleRow {
   enabled: boolean;
 }
 
+/**
+ * One proxy directive's saved-vs-served state, from GET projects/:id/edge-config.
+ *
+ * `liveRaw` exists separately from `live` because a vhost can legally hold a value
+ * our validators reject (`20M`, `1d`): the UI must show what the box serves even
+ * when it isn't adoptable, rather than reporting "not set" for a value that is set.
+ */
+export interface EdgeDirectiveState {
+  key: string;
+  directive: string;
+  group: string;
+  expected?: string | number | boolean;
+  live?: string | number | boolean;
+  liveRaw?: string;
+  drift: boolean;
+}
+
+export interface EdgeConfigHostState {
+  hostname: string;
+  found: boolean;
+  tls: boolean;
+  directives: EdgeDirectiveState[];
+  adoptable: ProxySettings;
+  driftCount: number;
+}
+
+/** `reachable: false` = we couldn't read the box, NOT "no drift". */
+export interface EdgeConfigReport {
+  reachable: boolean;
+  proxyKind?: string;
+  ours?: boolean;
+  nginxVersion?: string;
+  saved: ProxySettings;
+  hosts: EdgeConfigHostState[];
+  error?: string;
+}
+
+/** A service_incident row as returned by the API (Health tab). */
+export interface ServiceIncidentRow {
+  id: string;
+  projectId: string | null;
+  serviceId: string | null;
+  serviceKey: string;
+  serviceName: string;
+  serverId: string | null;
+  containerId: string | null;
+  kind: "down" | "crash_loop" | "unhealthy" | "server_unreachable";
+  status: "open" | "resolved";
+  reason: string | null;
+  exitCode: number | null;
+  restartCount: number;
+  oomKilled: boolean;
+  logExcerpt: string | null;
+  openedAt: string;
+  resolvedAt: string | null;
+  lastSeenAt: string;
+}
+
 /** Body for creating / updating a route rule. */
 export interface RouteRuleInput {
   domainId?: string | null;
@@ -211,6 +272,8 @@ export const projectsApi = {
     }>;
     hasServer?: boolean;
     hasBuild?: boolean;
+    /** Runtime workload axis (#538) — persists a portless worker; omit to derive. */
+    workloadType?: WorkloadType;
     /** Project flavor - "monorepo" persists the sub-app + workspace fields below. */
     projectType?: "app" | "docker" | "services" | "monorepo";
     monorepoApps?: Array<{
@@ -467,6 +530,25 @@ export const projectsApi = {
 
   /** Clear build artifacts */
   clearBuild: (id: string | number) => api.post<any>(endpoints.projects.clearBuild(id)),
+
+  /** Container incidents recorded by the health watch. `watching: false` means
+   *  the watch job is off — an empty list then proves nothing. */
+  listIncidents: (id: string | number) =>
+    api.get<{
+      open: ServiceIncidentRow[];
+      resolved: ServiceIncidentRow[];
+      historyDays: number;
+      serverUnreachable: ServiceIncidentRow | null;
+      watching: boolean;
+    }>(endpoints.projects.incidents(id)),
+
+  /**
+   * What the edge is ACTUALLY serving for this project's hostnames, next to what
+   * the project saved. Read-only; `reachable: false` when the box can't be read
+   * (which is not the same as "no drift"). Self-hosted only.
+   */
+  getEdgeConfig: (id: string | number) =>
+    api.get<EdgeConfigReport>(endpoints.projects.edgeConfig(id)),
 
   /* ── Route rules (self-hosted edge: rate-limit / ban / allow-deny) ── */
   listRouteRules: (id: string | number) =>

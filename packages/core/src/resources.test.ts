@@ -4,11 +4,14 @@ import {
   RESOURCE_TIER_SPECS,
   UNLIMITED_RESOURCES,
   UNKNOWN_CAPACITY,
+  describeResourceFit,
   detectTier,
+  fitsCapacity,
   formatCpuCores,
   formatMemoryMb,
   hasCpuLimit,
   hasMemoryLimit,
+  hasMinResources,
   isUnlimited,
   resolveTierResources,
   validateAgainstCapacity,
@@ -128,6 +131,77 @@ describe("validateAgainstCapacity", () => {
     expect(validateAgainstCapacity({ cpuCores: 0, memoryMb: 64, diskMb: 0 }, box64())).toMatch(
       /at least 128 MB/,
     );
+  });
+});
+
+describe("hasMinResources", () => {
+  it("is false for nothing declared, so most apps are never checked", () => {
+    expect(hasMinResources(undefined)).toBe(false);
+    expect(hasMinResources(null)).toBe(false);
+    expect(hasMinResources({})).toBe(false);
+    expect(hasMinResources({ memoryMb: 0, cpuCores: 0 })).toBe(false);
+  });
+
+  it("is true as soon as either dimension is declared", () => {
+    expect(hasMinResources({ memoryMb: 8192 })).toBe(true);
+    expect(hasMinResources({ cpuCores: 4 })).toBe(true);
+  });
+});
+
+describe("fitsCapacity (app minimum vs. the machine)", () => {
+  it("passes when nothing is declared", () => {
+    expect(fitsCapacity(undefined, tinyBox())).toEqual({ ok: true });
+    expect(fitsCapacity({}, tinyBox())).toEqual({ ok: true });
+  });
+
+  it("fails a machine measurably short of the declared minimum", () => {
+    const fit = fitsCapacity({ memoryMb: 8192, cpuCores: 4 }, tinyBox());
+    expect(fit.ok).toBe(false);
+    expect(fit.memory).toEqual({ needed: 8192, available: 2048 });
+    expect(fit.cpu).toEqual({ needed: 4, available: 2 });
+  });
+
+  it("reports only the dimension that is short", () => {
+    const memOnly = fitsCapacity({ memoryMb: 8192 }, { cpuCores: 2, memoryMb: 2048, source: "docker" });
+    expect(memOnly.cpu).toBeUndefined();
+    expect(memOnly.memory).toEqual({ needed: 8192, available: 2048 });
+
+    const cpuOnly = fitsCapacity({ cpuCores: 4 }, { cpuCores: 2, memoryMb: 65536, source: "docker" });
+    expect(cpuOnly.memory).toBeUndefined();
+    expect(cpuOnly.cpu).toEqual({ needed: 4, available: 2 });
+  });
+
+  it("lets a machine pass the round number it is sold as (firmware takes its cut)", () => {
+    // A "16 GB" box reports ~15.6 GB, and a "4 vCPU" box can read 4.
+    expect(fitsCapacity({ memoryMb: 16384 }, { cpuCores: 4, memoryMb: 15990, source: "docker" }).ok)
+      .toBe(true);
+    expect(fitsCapacity({ memoryMb: 8192 }, { cpuCores: 2, memoryMb: 7900, source: "docker" }).ok)
+      .toBe(true);
+    expect(fitsCapacity({ cpuCores: 4 }, { cpuCores: 4, memoryMb: 65536, source: "docker" }).ok)
+      .toBe(true);
+  });
+
+  it("is not so tolerant that a small box passes a big requirement", () => {
+    expect(fitsCapacity({ memoryMb: 16384 }, { cpuCores: 8, memoryMb: 4096, source: "docker" }).ok)
+      .toBe(false);
+  });
+
+  it("never fails an unknown reading — we didn't look, the box isn't too small", () => {
+    expect(fitsCapacity({ memoryMb: 65536, cpuCores: 32 }, UNKNOWN_CAPACITY)).toEqual({ ok: true });
+    expect(fitsCapacity({ memoryMb: 65536 }, { cpuCores: 0, memoryMb: 0, source: "local" })).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe("describeResourceFit", () => {
+  it("says nothing when the machine fits", () => {
+    expect(describeResourceFit({ ok: true })).toBeNull();
+  });
+
+  it("names both shortfalls with the machine's own numbers", () => {
+    const text = describeResourceFit(fitsCapacity({ memoryMb: 8192, cpuCores: 4 }, tinyBox()));
+    expect(text).toBe("8 GB of RAM (this machine has 2 GB) and 4 vCPU (this machine has 2 vCPU)");
   });
 });
 

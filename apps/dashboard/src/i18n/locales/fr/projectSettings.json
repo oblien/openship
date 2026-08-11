@@ -34,6 +34,28 @@
       "project": "Projet",
       "hostedOn": "Hébergé sur"
     },
+    "projectMenu": {
+      "rename": "Renommer le projet",
+      "copyId": "Copier l'ID du projet",
+      "idCopied": "ID du projet copié",
+      "copyFailed": "Impossible de copier dans le presse-papiers",
+      "pause": "Mettre le projet en pause",
+      "resume": "Reprendre le projet",
+      "delete": "Supprimer le projet"
+    },
+    "rename": {
+      "title": "Renommer le projet",
+      "description": "Modifie le nom affiché. Rien n'est redéployé.",
+      "label": "Nom du projet",
+      "placeholder": "Mon projet",
+      "identityNote": "Le projet conserve l'identité « {slug} » : son URL, les noms de conteneurs et les volumes ne changent pas. Pour changer l'URL, modifiez le domaine dans « Domaines et routes ».",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "toast": {
+        "renamed": "Renommé en {name}",
+        "failed": "Échec du renommage du projet"
+      }
+    },
     "statusActive": "Actif",
     "statusDisabled": "Désactivé",
     "hostedCloud": "Openship Cloud",
@@ -101,6 +123,19 @@
       "toast": {
         "saved": "Routage défini sur {mode}",
         "failed": "Échec de la mise à jour du routage"
+      }
+    },
+    "internalAlias": {
+      "title": "Nom d'hôte interne",
+      "description": "Nom personnalisé que d'autres services utilisent pour joindre cette app en privé",
+      "intro": "Définissez un nom DNS supplémentaire pour cette app sur son réseau de projet privé. Il est résolu en plus du nom par défaut (le slug du projet) — les autres services liés peuvent utiliser l'un ou l'autre. L'accès public reste inchangé ; cela n'expose jamais de port.",
+      "label": "Alias de nom d'hôte",
+      "hint": "Lettres, chiffres et tirets uniquement. Laissez vide pour utiliser le slug du projet.",
+      "save": "Enregistrer",
+      "toast": {
+        "saved": "Nom d'hôte interne mis à jour",
+        "failed": "Impossible de mettre à jour le nom d'hôte interne",
+        "invalid": "Saisissez au moins une lettre ou un chiffre"
       }
     }
   },
@@ -186,7 +221,8 @@
       "staticNoServer": "Statique (sans serveur)",
       "modeSandboxed": "En bac à sable (conteneur)",
       "modeDirect": "Direct (processus hôte)",
-      "modeDefault": "Par défaut (résolu au déploiement)"
+      "modeDefault": "Par défaut (résolu au déploiement)",
+      "modeStatic": "Aucun — servi en fichiers statiques"
     },
     "storage": {
       "title": "Stockage persistant",

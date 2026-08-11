@@ -29,6 +29,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { DEFAULT_RETAIN_COUNT } from "@repo/core";
 import { user } from "./auth";
 import { project } from "./project";
 import { service } from "./service";
@@ -147,8 +148,16 @@ export const backupPolicy = pgTable(
     webhookLastFiredAt: timestamp("webhook_last_fired_at"),
 
     /* ── Retention ──────────────────────────────────────────────────── */
-    /** Keep at most N successful runs. Null = unlimited (but see retainDays). */
-    retainCount: integer("retain_count"),
+    /**
+     * Keep at most N successful runs. Explicit null = unlimited (but see
+     * retainDays); omitted = `DEFAULT_RETAIN_COUNT`.
+     *
+     * The default is deliberate rather than nullable-by-omission: with both
+     * retention fields null the prune short-circuits, so every policy that
+     * didn't say anything accumulated runs forever. Unlimited is still
+     * expressible — it just has to be asked for.
+     */
+    retainCount: integer("retain_count").default(DEFAULT_RETAIN_COUNT),
     /** Delete runs older than N days. Null = no age cap. */
     retainDays: integer("retain_days"),
 
@@ -325,6 +334,30 @@ export const backupRestore = pgTable(
     bytesRestored: bigint("bytes_restored", { mode: "number" }),
     errorMessage: text("error_message"),
     clientIp: text("client_ip"),
+
+    /**
+     * Outcome facts a status alone can't carry.
+     *
+     * `integrity`: "sha256" | "size-only" | "deferred" — WHICH check actually
+     * ran in prepare. A restore that only compared byte sizes is not the same
+     * assurance as one that re-hashed the archive, and an operator reading
+     * history months later has no other way to tell them apart.
+     * `verifiedBytes` / `verifyMs`: what that check cost.
+     * `manifest`: "verified" | "missing" — whether the destination's own
+     * manifest.json agreed with the DB artifact list.
+     */
+    meta: jsonb("meta").$type<Record<string, unknown>>().default({}),
+
+    /**
+     * Cancel is cooperative, so the request has to outlive the request handler:
+     * the node taking the cancel isn't guaranteed to be the node running the
+     * apply, and the running phase must see the flag rather than be interrupted.
+     * `cancelRequestedAt` holds the FIRST press — a second press ~2min later is
+     * the force-terminal escape hatch for a wedged `applying` row.
+     */
+    cancelRequested: boolean("cancel_requested").notNull().default(false),
+    cancelRequestedAt: timestamp("cancel_requested_at"),
+    cancelledAt: timestamp("cancelled_at"),
 
     /** Short token user typed to confirm. Stored for audit forensics. */
     confirmationToken: text("confirmation_token"),

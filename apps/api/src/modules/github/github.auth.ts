@@ -25,7 +25,7 @@ import { cacheStore } from "../../lib/cache-store";
 // gh-CLI (github.local-auth) is imported DYNAMICALLY at its two self-hosted
 // call sites (getUserStatus "cli" branch, getGitHubConnectionState gh probe)
 // so the gh module never loads in CLOUD_MODE (the SaaS). See those sites.
-import { ghFetch, ghFetchPublic } from "./github.http";
+import { ghFetch, ghFetchPublic, ghFetchSoft } from "./github.http";
 import { mapAccounts } from "./sources/mappers";
 import type { RequestContext } from "../../lib/request-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
@@ -544,6 +544,27 @@ export interface GitHubFetchOptions {
   url: string;
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   owner?: string;
+  /** Repo name. Threaded to `tokenFor` so the mint is gated PER-REPO — a grant
+   *  on repo A must not authorize an operation on repo B under the same owner.
+   *  Omitting it on a repo-specific call reopens the owner-wide half of
+   *  GHSA-hp2g-hw7g-f3vm, so pass it whenever the URL names a repo. */
+  repo?: string;
+  /**
+   * Narrow the mint gate's tier to "read". Defaults to the HTTP method: GET →
+   * "read", anything else → "write".
+   *
+   * The method is only a PROXY for the tier — the tier is a property of what the
+   * operation MEANS, and two mutating calls can sit on different sides of it.
+   * Registering a read-only deploy key or posting a check-run status is part of
+   * "deploy this repo", which a read grant authorizes; deleting the repo or
+   * managing its webhooks is repo ADMINISTRATION, which it must not.
+   *
+   * Deliberately typed `"read"` and not `GitHubAccessOp`: the only sound use is
+   * narrowing, so the type — not a comment someone has to obey — is what stops this
+   * from becoming a way to declare a management call harmless. Widening is what
+   * GHSA-hp2g-hw7g-f3vm did by accident.
+   */
+  authorizeAs?: "read";
   installationId?: number;
   params?: Record<string, unknown>;
   headers?: Record<string, string>;
@@ -586,7 +607,14 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
   const { tokenFor } = await import("./github.token");
   const result = await tokenFor(opts.ctx, "local", {
     owner: opts.owner,
+    repo: opts.repo,
     installationId: opts.installationId,
+    // A GET is a read; anything else mutates unless the caller declared its tier
+    // explicitly. Threading the op means a mutating GitHub call can only mint a
+    // token when the caller holds a WRITE grant on THIS repo — closing
+    // GHSA-hp2g-hw7g-f3vm at the single funnel every mint passes through,
+    // independent of whatever the route-level role check allowed.
+    op: opts.authorizeAs ?? (method === "GET" ? "read" : "write"),
   });
   const token = result?.token ?? null;
 
@@ -694,22 +722,17 @@ export async function getUserStatus(userId: string) {
     return { connected: false as const, tokenSource: null };
   }
 
-  try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
-    if (!res.ok) {
-      return { connected: false as const, tokenSource: null };
-    }
-    const user = (await res.json()) as { login: string; id: number; avatar_url: string };
-    return { connected: true as const, tokenSource, oauthConnected: true as const, ...user };
-  } catch {
+  // Soft on purpose, and it always was: a revoked token, a 403 and github.com being down
+  // are one answer to the question this function asks. Via the shared primitive rather than
+  // a bare `fetch` so it is bounded — an unbounded call here hung the connection status
+  // panel on a stalled github.com, with nothing to show why.
+  const user = await ghFetchSoft<{ login: string; id: number; avatar_url: string }>(token, {
+    url: "https://api.github.com/user",
+  });
+  if (!user) {
     return { connected: false as const, tokenSource: null };
   }
+  return { connected: true as const, tokenSource, oauthConnected: true as const, ...user };
 }
 
 /**

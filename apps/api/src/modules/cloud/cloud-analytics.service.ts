@@ -43,7 +43,7 @@
 import { Oblien } from "@repo/adapters";
 import { issueNamespaceToken } from "../../lib/openship-cloud";
 
-export type CloudAnalyticsOperation = "timeseries" | "requests" | "streamToken";
+export type CloudAnalyticsOperation = "timeseries" | "requests" | "streamToken" | "geo";
 
 export class CloudAnalyticsForbiddenError extends Error {
   readonly status = 403 as const;
@@ -97,6 +97,11 @@ function pickAnalyticsParams(
     case "requests":
       if (params.limit !== undefined) picked.limit = params.limit;
       break;
+    case "geo":
+      // AnalyticsGeoParams is {from?, to?} epoch ms — no interval, no limit.
+      if (params.from !== undefined) picked.from = params.from;
+      if (params.to !== undefined) picked.to = params.to;
+      break;
     case "streamToken":
       // SDK signature takes no params; allowlist is empty by design.
       break;
@@ -126,6 +131,11 @@ export async function proxyCloudAnalytics(
         return await client.analytics.requests(
           input.domain,
           pickAnalyticsParams("requests", input.params),
+        );
+      case "geo":
+        return await client.analytics.geo(
+          input.domain,
+          pickAnalyticsParams("geo", input.params),
         );
       case "streamToken":
         return await client.analytics.streamToken(input.domain);

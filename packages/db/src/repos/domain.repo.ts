@@ -1,4 +1,4 @@
-import { eq, and, ne, lt, inArray } from "drizzle-orm";
+import { eq, and, ne, lt, inArray, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { domain, project, service } from "../schema";
@@ -86,6 +86,29 @@ export function createDomainRepo(db: Database) {
     },
 
     /**
+     * Every domain row for a set of projects, in ONE round trip.
+     *
+     * The batch shape `getPrimariesByProjects` uses, but returning ALL rows grouped
+     * by project instead of one primary each: the Issues feed needs every hostname's
+     * verification and cert state, not the project's address. Projects with no
+     * domains are simply absent from the map, so callers should default to `[]`.
+     */
+    async listByProjects(projectIds: string[]): Promise<Map<string, Domain[]>> {
+      const out = new Map<string, Domain[]>();
+      if (projectIds.length === 0) return out;
+      const rows = await db.query.domain.findMany({
+        where: inArray(domain.projectId, projectIds),
+      });
+      for (const row of rows) {
+        if (!row.projectId) continue; // webhook-owned domains have no project
+        const list = out.get(row.projectId);
+        if (list) list.push(row);
+        else out.set(row.projectId, [row]);
+      }
+      return out;
+    },
+
+    /**
      * Single-row lookup for `(projectId, hostname)`. Use this instead
      * of `listByProject(...).find(d => d.hostname === h)` — controllers
      * that match a single hostname don't need to fan-out a full list.
@@ -97,6 +120,28 @@ export function createDomainRepo(db: Database) {
           eq(domain.hostname, hostname.toLowerCase()),
         ),
       });
+    },
+
+    /**
+     * Ids of domains in an org whose hostname matches a search term.
+     *
+     * Joined through project because `domain` has no organizationId of its own.
+     * Feeds the audit feed's search: a domain row stores `dom_…`, so "example.com"
+     * only finds it once the hostname is resolved to ids.
+     */
+    async searchIdsByHostname(organizationId: string, term: string, limit = 200): Promise<string[]> {
+      const rows = await db
+        .select({ id: domain.id })
+        .from(domain)
+        .innerJoin(project, eq(domain.projectId, project.id))
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            sql`${domain.hostname} ILIKE ${`%${term}%`}`,
+          ),
+        )
+        .limit(limit);
+      return rows.map((r) => r.id);
     },
 
     async listByIds(ids: string[]) {

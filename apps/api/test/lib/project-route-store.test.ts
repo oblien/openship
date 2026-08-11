@@ -254,4 +254,105 @@ describe("syncProjectPublicRoutes", () => {
       ).rejects.toThrow(/only redirect to another domain of this project/);
     });
   });
+
+  // Fix 2b: a DEPLOY (flag on) that mis-resolved its target must never erase a
+  // user's proven custom domain — the nulling/removal that regressed the Access URL
+  // to localhost. The Domains EDITOR (flag off) keeps full authority to remove/edit.
+  describe("preserveVerifiedCustom", () => {
+    const verifiedCustom = {
+      id: "dom_api",
+      projectId: "proj_123",
+      serviceId: null,
+      hostname: "api.openship.io",
+      targetPort: 4000,
+      targetPath: null,
+      domainType: "custom",
+      isPrimary: true,
+      verified: true,
+      status: "active",
+      redirectTo: null,
+      redirectStatus: null,
+    } as any;
+
+    it("KEEPS a verified custom domain the deploy's endpoint set omits", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        // Deploy resolved to only the free route; the custom domain is absent.
+        endpoints: [{ port: 3000, domain: "myapp", domainType: "free" }],
+        currentDomains: [verifiedCustom],
+        preserveVerifiedCustom: true,
+      });
+
+      expect(domainRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it("REMOVES that same omitted custom domain for the editor (flag off)", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        endpoints: [{ port: 3000, domain: "myapp", domainType: "free" }],
+        currentDomains: [verifiedCustom],
+        // preserveVerifiedCustom omitted → editor authority.
+      });
+
+      expect(domainRepo.remove).toHaveBeenCalledWith("dom_api");
+    });
+
+    it("does NOT protect an UNVERIFIED custom domain — the guard is verified-only", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        endpoints: [{ port: 3000, domain: "myapp", domainType: "free" }],
+        currentDomains: [{ ...verifiedCustom, verified: false, status: "pending" }],
+        preserveVerifiedCustom: true,
+      });
+
+      expect(domainRepo.remove).toHaveBeenCalledWith("dom_api");
+    });
+
+    it("does NOT protect a FREE domain — the guard is custom-only", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        endpoints: [{ port: 3000, customDomain: "api.openship.io", domainType: "custom" }],
+        currentDomains: [{
+          ...verifiedCustom,
+          id: "dom_free",
+          hostname: "old-slug.opsh.io",
+          domainType: "free",
+        }],
+        preserveVerifiedCustom: true,
+      });
+
+      expect(domainRepo.remove).toHaveBeenCalledWith("dom_free");
+    });
+
+    // The update-branch guard, isolated: the same portless desired route flips the
+    // live port between "kept" and "nulled" purely on the flag. A deploy that
+    // resolved without this domain's port must leave the proven upstream intact.
+    it("does NOT null a verified custom domain's port when the deploy omits it (flag on)", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        // Desired route survives normalization (has a path) but carries no port.
+        endpoints: [{ targetPath: "/api", customDomain: "api.openship.io", domainType: "custom" }],
+        currentDomains: [verifiedCustom],
+        preserveVerifiedCustom: true,
+      });
+
+      const patch = domainRepo.update.mock.calls.find(([id]: [string]) => id === "dom_api")?.[1] as
+        | Record<string, unknown>
+        | undefined;
+      expect(patch && "targetPort" in patch).toBeFalsy();
+    });
+
+    it("DOES null that port for the editor (flag off)", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        endpoints: [{ targetPath: "/api", customDomain: "api.openship.io", domainType: "custom" }],
+        currentDomains: [verifiedCustom],
+      });
+
+      expect(domainRepo.update).toHaveBeenCalledWith(
+        "dom_api",
+        expect.objectContaining({ targetPort: null }),
+      );
+    });
+  });
 });

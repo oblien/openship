@@ -444,8 +444,19 @@ export function isPublicSpec(spec: RouteSpec): spec is PublicSpec {
  * tell-tale `github '*' not found`.
  *
  * Deliberately limited to read/list. Write/admin GitHub routes (create or
- * delete repo, disconnect, instance-token) keep the strict org-wide check —
- * owner role or an all-GitHub grant — and MCP exposes no GitHub mutations.
+ * delete repo, disconnect, instance-token) keep the org-wide check on
+ * `{github,"*"}`, and MCP exposes no GitHub mutations.
+ *
+ * Be precise about what that org-wide check buys, because it is easy to misread as
+ * a defense it is not: it is strict only for a RESTRICTED principal (a scoped
+ * token), which needs an all-GitHub grant to pass. For a session-authenticated
+ * owner/admin/**member** it is satisfied by bare membership —
+ * `roleAllowsResourceType` (permission.ts) ignores the action level for those
+ * roles, so `github:admin` is no higher a bar than `github:read`. The per-repo,
+ * read-vs-write authority for those principals is enforced ONLY by
+ * `github-access.ts` at the token funnel and at the mutating service helpers.
+ * Reading this comment as "the route layer already gates writes" is what let
+ * GHSA-hp2g-hw7g-f3vm sit behind a `github:admin` tag.
  * Paramless GitHub routes (/home, /status, /repos) also stay on the org-wide
  * path: `filterToolsForPrincipal` already hides them from a scoped token via
  * `perm.wildcard`, and their handlers narrow results through

@@ -10,18 +10,19 @@ import {
 } from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
 import { useDeployment } from "@/context/DeploymentContext";
-import { usesServiceDeployment } from "@/context/deployment/types";
+import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import type { DeploymentConfig } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
-import { settingsApi } from "@/lib/api/settings";
+import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
 import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
 import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode } from "@/context/deployment/types";
 import { createPersistedValue } from "@/lib/persisted-value";
-import { AddServerModal } from "./AddServerModal";
+import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
+import { useAddServerModal } from "@/components/servers/add-server-modal";
 import ServerRuntimePicker from "./ServerRuntimePicker";
 import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -104,6 +105,12 @@ interface ServerPickerProps {
  *  each list row. */
 const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ server, active }) => {
   const { t } = useI18n();
+  // TODO: temporary desktop gate (useLocalDeployGate). Flag the local host as
+  // not-yet-available so the user sees it here rather than only on Deploy.
+  // Reads context only — no server fetch, and a no-op outside desktop mode.
+  const { deployMode } = usePlatform();
+  const localComingSoon =
+    server.isLocal && deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED;
   return (
     <>
       <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
@@ -121,7 +128,9 @@ const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ s
           )}
         </p>
         <p className="text-[11px] text-muted-foreground truncate">
-          {server.isLocal ? (
+          {localComingSoon ? (
+            "Running here is coming soon — connect a server"
+          ) : server.isLocal ? (
             t.deploy.targetStep.thisServerHost
           ) : (
             <>
@@ -480,7 +489,7 @@ export interface ResolvedTargets {
   hasCloudOption: boolean;
   /** True when there's a real choice to make */
   hasChoice: boolean;
-  /** Refetch the server list - used after returning from /servers/new */
+  /** Refetch the server list - used after the add-server modal saves one */
   refreshServers: () => void;
 }
 
@@ -544,7 +553,12 @@ export function useDesktopTargets(): ResolvedTargets {
 // Priority on seed: settings-API default > localStorage > auto-select fallback.
 
 export type LastPick = {
-  target: DeployTarget;
+  /** A pickable target only — the same two this step renders. Never "local":
+   *  that one is derived from the absence of a binding, and this step has no card
+   *  for it, so remembering it would select a target the UI can't show. A legacy
+   *  stored "local" fails validation below and falls through to the auto-pick,
+   *  which lands on this box's own server row (with its real address). */
+  target: Exclude<DeployTarget, "local">;
   serverId?: string | null;
 };
 
@@ -553,7 +567,7 @@ export const lastPickStore = createPersistedValue<LastPick>(
   (raw): raw is LastPick => {
     if (!raw || typeof raw !== "object") return false;
     const obj = raw as { target?: unknown; serverId?: unknown };
-    if (obj.target !== "local" && obj.target !== "server" && obj.target !== "cloud") return false;
+    if (obj.target !== "server" && obj.target !== "cloud") return false;
     if (obj.serverId !== undefined && obj.serverId !== null && typeof obj.serverId !== "string") return false;
     return true;
   },
@@ -573,17 +587,29 @@ export const lastPickStore = createPersistedValue<LastPick>(
  * async "spin then advance" was the visible flash on entry. The summary bar is
  * the affordance to change the pick (onEdit → the full step).
  *
- * `enabled` is false for existing projects: their saved target hydrates from
- * initializeFromProject and must never be overwritten by the global default.
+ * `enabled` is false for an existing project that HAS a saved target: that one
+ * hydrates from initializeFromProject and must never be overwritten by the global
+ * default. It stays TRUE for a saved project with no target yet — bound to nothing
+ * and never deployed — because there is nothing to preserve there, and leaving it off
+ * is what let DEFAULT_CONFIG's "cloud" reach the deploy payload. The caller resolves
+ * which case it is from the hydration result, not from the fact that it loaded a
+ * project; see the `savedTargetState` gate in the deploy page.
  */
 export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean): void {
   const { updateConfig } = useDeployment();
+  const { deployMode } = usePlatform();
+  // Stable for the session (deployMode comes from the platform context), so the
+  // one-shot effect below can read it without widening its tight dep array.
+  const localDeployBlocked = deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED;
   const appliedRef = useRef(false);
   useEffect(() => {
     if (!enabled || !targets.ready || appliedRef.current) return;
     let cancelled = false;
     const seed = (
-      def?: { defaultDeployTarget?: DeployTarget | null; defaultServerId?: string | null } | null,
+      def?: {
+        defaultDeployTarget?: DefaultDeployTarget | null;
+        defaultServerId?: string | null;
+      } | null,
     ) => {
       if (cancelled || appliedRef.current) return;
       appliedRef.current = true;
@@ -598,10 +624,6 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
         updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         return;
       }
-      if (target === "local") {
-        updateConfig({ deployTarget: "local", serverId: undefined });
-        return;
-      }
       // 2. Soft last-pick, validated against the current target list.
       const last = lastPickStore.read();
       if (last?.target === "server" && last.serverId && targets.servers.some((s) => s.id === last.serverId)) {
@@ -612,13 +634,15 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
         updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         return;
       }
-      if (last?.target === "local") {
-        updateConfig({ deployTarget: "local", serverId: undefined });
-        return;
-      }
       // 3. A server exists → deploy to it (prefer the local host); else cloud.
+      // TODO: temporary desktop gate — while running on this machine is disabled,
+      // prefer a REMOTE server so a desktop user isn't silently defaulted onto a
+      // destination the Deploy button will refuse. Falls back to the old pick when
+      // the local host is the only server (the gate then explains it on click).
       if (targets.servers.length > 0) {
-        const preferred = targets.servers.find((s) => s.isLocal) ?? targets.servers[0];
+        const preferred = localDeployBlocked
+          ? (targets.servers.find((s) => !s.isLocal) ?? targets.servers[0])
+          : (targets.servers.find((s) => s.isLocal) ?? targets.servers[0]);
         updateConfig({ deployTarget: "server", serverId: preferred.id });
         return;
       }
@@ -970,7 +994,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // operator's machine-local `gh`, which only exists on a desktop host.
   const isDesktop = deployMode === "desktop";
   const { showToast } = useToast();
-  const { showModal, hideModal } = useModal();
   const { t } = useI18n();
   const ts = t.deploy.targetStep;
   const { ready, servers, hasCloudConnected, hasCloudOption, hasChoice, refreshServers } = targets;
@@ -1006,21 +1029,11 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // Add server inline via modal. On create, refresh the server list and
   // auto-select the new one so the user lands on it immediately - no extra
   // clicks, no tab juggling, deploy config stays intact.
+  const addServerModal = useAddServerModal();
   const openAddServer = () => {
-    const id = showModal({
-      width: "720px",
-      maxWidth: "92vw",
-      showCloseButton: false,
-      customContent: (
-        <AddServerModal
-          onCancel={() => hideModal(id)}
-          onCreated={(server) => {
-            hideModal(id);
-            refreshServers();
-            updateConfig({ deployTarget: "server", serverId: server.id });
-          }}
-        />
-      ),
+    addServerModal((server) => {
+      refreshServers();
+      updateConfig({ deployTarget: "server", serverId: server.id });
     });
   };
   const isServiceDeployment = usesServiceDeployment(config);
@@ -1051,13 +1064,14 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   useEffect(() => {
     if (config.projectId || runtimeDefaultedRef.current) return;
     if (config.deployTarget !== "server") return;
-    if (!config.options.hasServer || config.projectType === "docker" || isServiceDeployment) return;
+    if (workloadOf(config.options) === "static" || config.projectType === "docker" || isServiceDeployment) return;
     runtimeDefaultedRef.current = true;
     if (config.runtimeMode !== "docker") updateConfig({ runtimeMode: "docker" });
   }, [
     config.projectId,
     config.deployTarget,
     config.options.hasServer,
+    config.options.workloadType,
     config.projectType,
     isServiceDeployment,
     config.runtimeMode,
@@ -1101,9 +1115,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         } else if (target === "cloud") {
           updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
           applied = true;
-        } else if (target === "local") {
-          updateConfig({ deployTarget: "local", serverId: undefined });
-          applied = true;
         }
 
         // No explicit settings-API default? Try the soft "last pick"
@@ -1119,9 +1130,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
               }
             } else if (last.target === "cloud" && hasCloudOption) {
               updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
-              applied = true;
-            } else if (last.target === "local") {
-              updateConfig({ deployTarget: "local", serverId: undefined });
               applied = true;
             }
           }
@@ -1424,6 +1432,16 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     ? (selectedServer.name || selectedServer.sshHost)
     : null;
 
+  // What this step actually PICKED, in the vocabulary both memories below use: a
+  // binding, or nothing. `config.deployTarget` can also be "local", which is not a
+  // pick — it's what an unbound project derives — so neither the cross-device
+  // default nor the soft last-pick may store it. Null therefore means "nothing to
+  // remember": the default is cleared and the last-pick is left alone.
+  const pickedTarget: DefaultDeployTarget | null =
+    config.deployTarget === "server" || config.deployTarget === "cloud"
+      ? config.deployTarget
+      : null;
+
   // Persist the current pick as the user's default - fire-and-forget so it
   // never blocks the deploy flow. Failures are surfaced as a toast; the
   // deploy itself continues either way.
@@ -1432,8 +1450,8 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     setSavingDefault(true);
     try {
       await settingsApi.updateDeployDefaults({
-        defaultDeployTarget: config.deployTarget,
-        defaultServerId: config.deployTarget === "server" ? (config.serverId ?? null) : null,
+        defaultDeployTarget: pickedTarget,
+        defaultServerId: pickedTarget === "server" ? (config.serverId ?? null) : null,
       });
       showToast(ts.savedToast, "success", ts.savedToastTitle);
     } catch {
@@ -1460,10 +1478,12 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     // Persist the soft "remember this target for next time" memory now — on
     // commit, not on every tentative click. This is what lets a returning user
     // skip straight to config next deploy.
-    lastPickStore.write({
-      target: config.deployTarget,
-      serverId: config.deployTarget === "server" ? (config.serverId ?? null) : null,
-    });
+    if (pickedTarget) {
+      lastPickStore.write({
+        target: pickedTarget,
+        serverId: pickedTarget === "server" ? (config.serverId ?? null) : null,
+      });
+    }
 
     void persistDefault();
     onContinue();
@@ -1486,10 +1506,10 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     showFullPicker && config.deployTarget === "server" && !!config.serverId;
   // Runtime-isolation (Sandbox/Direct) applies only to a self-hosted server APP
   // that runs a process: docker/compose always run sandboxed, and a static app
-  // (files served by the edge, hasServer=false) has nothing to isolate. Shown in
-  // the Advanced panel (right column).
+  // (files served by the edge) has nothing to isolate. A worker runs a process,
+  // so it isolates like a web app. Shown in the Advanced panel (right column).
   const showRuntimeIsolation =
-    config.options.hasServer &&
+    workloadOf(config.options) !== "static" &&
     config.projectType !== "docker" &&
     !isServiceDeployment;
   const showRightPanel = showCloudPicker || showServerAdvanced;
@@ -1637,7 +1657,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
           buildStrategy={config.buildStrategy}
           serverName={summaryServerName}
           showBuildStrategy={showBuildStrategy}
-          hasServer={config.options.hasServer}
+          hasServer={workloadOf(config.options) !== "static"}
           runtimeMode={config.runtimeMode}
           isServices={config.projectType === "services" || config.serviceDeploymentMode === "services"}
           onEdit={() => setExpanded(true)}
@@ -1829,8 +1849,9 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                     enabled={advancedOpen}
                     // A static project (nothing runs as a process) retains built
                     // FILES, not images — the same distinction the "Static ·
-                    // edge-served" chip on the summary makes.
-                    artifactKind={!config.options.hasServer && !isServiceDeployment ? "files" : "image"}
+                    // edge-served" chip on the summary makes. A worker builds and
+                    // retains an image like any running workload.
+                    artifactKind={workloadOf(config.options) === "static" && !isServiceDeployment ? "files" : "image"}
                   />
 
                   {/* Clone location — docker/compose server deploys (sandboxed). */}

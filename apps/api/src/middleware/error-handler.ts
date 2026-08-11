@@ -34,7 +34,11 @@ export function handleApiError(err: unknown, c: Context) {
     const { message, code, statusCode } = err;
     return c.json(
       { error: message, code },
-      statusCode as 400 | 401 | 403 | 404 | 409 | 500,
+      // 502/503 included: an AppError can legitimately mean "an upstream we
+      // depend on failed" (HostUnreachableError, ManagedEdgeError), and casting
+      // those away made this the one place that couldn't express the status the
+      // error itself already carried.
+      statusCode as 400 | 401 | 403 | 404 | 409 | 500 | 502 | 503,
     );
   }
 

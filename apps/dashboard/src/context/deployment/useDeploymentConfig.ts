@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { FrameworkId } from "@/components/import-project/types";
+import type { EnvironmentVariable, FrameworkId } from "@/components/import-project/types";
 import { deployApi, projectsApi, servicesApi, serviceKind } from "@/lib/api";
 import { folderApi } from "@/lib/api/folder";
 import type { PrepareProjectResponse, PrepareComposeService, PrepareMonorepoApp } from "@/lib/api/deploy";
@@ -9,7 +9,7 @@ import type { Service } from "@/lib/api/services";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
 import type { BuildMode } from "@/lib/api/settings";
-import { STACKS, getBuildImage, type StackDefinition, type StackId } from "@repo/core";
+import { STACKS, getBuildImage, toWorkloadType, type DeployTarget, type StackDefinition, type StackId, type WorkloadType } from "@repo/core";
 import type { BuildStrategy, DeploymentConfig, DeploymentModeSnapshot, MonorepoAppConfig, MonorepoWorkspaceConfig, PublicEndpoint } from "./types";
 import {
   DEFAULT_CONFIG,
@@ -140,6 +140,24 @@ function scanComposePath(
   return trimmed ? { composePath: trimmed } : {};
 }
 
+/**
+ * The env the scan should interpolate the compose file against (#383). A compose
+ * file declaring `${VAR:?...}` is unparseable until VAR has a value, so a re-scan
+ * has to carry what the user already entered — otherwise the wizard reports the
+ * file as broken even though the deploy itself would resolve the same variable.
+ *
+ * Returns an `{ env }` fragment to spread into the prepare body, empty when
+ * nothing is set so a blank map never reaches the API.
+ */
+function scanEnv(envVars: EnvironmentVariable[]): { env?: Record<string, string> } {
+  const env: Record<string, string> = {};
+  for (const { key, value } of envVars) {
+    const name = key.trim();
+    if (name) env[name] = value;
+  }
+  return Object.keys(env).length > 0 ? { env } : {};
+}
+
 function hasSavedProjectPort(project: PersistedProject) {
   if (!project) return false;
 
@@ -205,11 +223,20 @@ function buildSingleAppEndpoints(
 }
 
 function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfig["options"] {
-  // Declared productionMode wins: "static" is serverless; "host"/"standalone"
-  // always run a server. Absent → derive from the detected start command.
-  const hasServer = response.productionMode
-    ? response.productionMode !== "static"
-    : !!response.startCommand;
+  // An explicit declared workload (openship.json `workload`, #538) wins over
+  // everything and is the ONLY way to reach a worker. Otherwise fall back to the
+  // legacy collapse: productionMode "static" is serverless, "host"/"standalone"
+  // run a server, and an absent mode derives from the detected start command.
+  const declaredWorkload = toWorkloadType(response.workloadType);
+  const hasServer = declaredWorkload
+    ? declaredWorkload === "web"
+    : response.productionMode
+      ? response.productionMode !== "static"
+      : !!response.startCommand;
+  // A worker keeps its explicit type; web/static are equally described by
+  // hasServer, so derive (null) rather than pin a redundant value.
+  const workloadType: WorkloadType | undefined =
+    declaredWorkload && declaredWorkload !== "web" ? declaredWorkload : undefined;
   const hasBuild = !!response.buildCommand;
 
   return {
@@ -218,10 +245,12 @@ function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfi
     outputDirectory: response.outputDirectory ?? "",
     productionPaths: response.productionPaths.join(", "),
     startCommand: response.startCommand ?? "",
+    // A worker runs a process but binds no port — no productionPort.
     productionPort: hasServer ? String(response.port ?? "") : "",
     rootDirectory: response.rootDirectory || "./",
     hasServer,
     hasBuild,
+    workloadType,
   };
 }
 
@@ -688,7 +717,13 @@ export function useDeploymentConfig() {
         singleAppCandidate: preparedContext.singleAppCandidate,
         monorepoApps: preparedContext.monorepoApps,
         monorepoWorkspace: preparedContext.monorepoWorkspace,
-        routingConfig: response.routing ?? undefined,
+        // Same hydration rule as readiness/framework below: an EXISTING project keeps its
+        // SAVED rules, so re-opening "Edit build config" and saving cannot silently replace
+        // an operator's redirects/headers with whatever the repo's vercel.json happens to
+        // say. A brand-new deploy honours the fresh scan, which is the seeding case.
+        routingConfig: projectId
+          ? (project?.routingConfig ?? response.routing ?? undefined)
+          : (response.routing ?? undefined),
         // Readiness gate. Same hydration rule as framework/runtimeMode: an
         // EXISTING project keeps its SAVED value so a config-save can't silently
         // clear a gate the operator turned on; a brand-new deploy honours what
@@ -757,7 +792,12 @@ export function useDeploymentConfig() {
       owner: string,
       repo: string,
       force?: string,
-      context?: { branch?: string; projectId?: string; composePath?: string },
+      context?: {
+        branch?: string;
+        projectId?: string;
+        composePath?: string;
+        env?: Record<string, string>;
+      },
     ): Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }> => {
       try {
         let project: PersistedProject = null;
@@ -786,6 +826,7 @@ export function useDeploymentConfig() {
           branch: requestedBranch,
           force,
           ...scanComposePath(context?.composePath, project),
+          ...(context?.env ? { env: context.env } : {}),
         });
 
         if (response?.error) {
@@ -835,7 +876,7 @@ export function useDeploymentConfig() {
   const initializeFromLocal = useCallback(
     async (
       path: string,
-      context?: { projectId?: string; composePath?: string },
+      context?: { projectId?: string; composePath?: string; env?: Record<string, string> },
     ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
       try {
         let project: PersistedProject = null;
@@ -849,6 +890,7 @@ export function useDeploymentConfig() {
           source: "local",
           path,
           ...scanComposePath(context?.composePath, project),
+          ...(context?.env ? { env: context.env } : {}),
         });
 
         if (response?.error) {
@@ -891,11 +933,15 @@ export function useDeploymentConfig() {
       // "" clears the pin: the initialize* paths drop a blank value, so the scan
       // falls back to ordinary root detection.
       const trimmed = composePath.trim();
+      // Carry the env the user has already entered so a compose file with
+      // required variables re-scans instead of erroring as unparseable (#383).
+      const env = scanEnv(config.envVars);
 
       if (config.localPath) {
         return initializeFromLocal(config.localPath, {
           projectId: config.projectId,
           composePath: trimmed,
+          ...env,
         });
       }
       if (!config.owner || !config.repo) {
@@ -909,6 +955,7 @@ export function useDeploymentConfig() {
         branch: config.branch,
         projectId: config.projectId,
         composePath: trimmed,
+        ...env,
       });
       return { success: result.success, error: result.error, errorType: result.errorType };
     },
@@ -918,6 +965,7 @@ export function useDeploymentConfig() {
       config.repo,
       config.branch,
       config.projectId,
+      config.envVars,
       initializeFromLocal,
       initializeFromRepo,
     ],
@@ -1043,7 +1091,14 @@ export function useDeploymentConfig() {
     async (
       projectId: string,
       context?: { branch?: string },
-    ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
+    ): Promise<{
+      success: boolean;
+      error?: string;
+      errorType?: string;
+      /** The target this project already had, or `null` if it has none yet. The page
+       *  gates its target seeders on this: pinned when saved, seeded when not. */
+      savedTarget?: DeployTarget | null;
+    }> => {
       try {
         const res = await projectsApi.getInfo(projectId);
         const project: PersistedProject = res?.data?.project ?? res?.project ?? null;
@@ -1070,6 +1125,16 @@ export function useDeploymentConfig() {
         const branch =
           typeof project.gitBranch === "string" ? project.gitBranch : (context?.branch ?? "");
 
+        // Re-validated rather than trusted: an older API build omits the field entirely,
+        // and anything but the three members means "no saved target", which is the same
+        // answer the server sends for a project bound to nothing that never deployed.
+        const rawTarget = project.deployTarget;
+        const savedTarget: DeployTarget | null =
+          rawTarget === "cloud" || rawTarget === "server" || rawTarget === "local"
+            ? rawTarget
+            : null;
+        const savedServerId = typeof project.serverId === "string" ? project.serverId : null;
+
         setConfig((prev) => {
           // Guard: don't let an EMPTY service-row fetch collapse an already-loaded
           // multi-service config to single-app. The DeploymentProvider is shared
@@ -1082,7 +1147,17 @@ export function useDeploymentConfig() {
             (prev.projectType === "services" || prev.projectType === "monorepo") &&
             ((prev.services?.length ?? 0) > 0 || (prev.monorepoApps?.length ?? 0) > 0);
           if (serviceRows.length === 0 && prevHoldsThisMultiProject) {
-            return { ...prev, projectId, envVars: envVars.length ? envVars : prev.envVars };
+            return {
+              ...prev,
+              projectId,
+              envVars: envVars.length ? envVars : prev.envVars,
+              ...(savedTarget
+                ? {
+                    deployTarget: savedTarget,
+                    serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
+                  }
+                : null),
+            };
           }
 
           return {
@@ -1105,10 +1180,22 @@ export function useDeploymentConfig() {
             // git source (the deploy guards treat this like local/upload).
             isApp: Boolean((project as { isApp?: boolean }).isApp),
             appTemplateId: (project as { appTemplateId?: string }).appTemplateId,
+            // Where this project already runs. Server-resolved (one rule, shared with
+            // the project cards) and applied AFTER the buildPreparedConfig spread so it
+            // wins — that core reseeds stack defaults and would otherwise leave
+            // DEFAULT_CONFIG's "cloud" standing. The page's target seeders are gated on
+            // this having landed; before it existed they were gated on a comment that
+            // claimed it, and a saved project's deploy went out addressed to "cloud".
+            ...(savedTarget
+              ? {
+                  deployTarget: savedTarget,
+                  serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
+                }
+              : null),
           };
         });
 
-        return { success: true };
+        return { success: true, savedTarget };
       } catch (err) {
         return {
           success: false,

@@ -13,7 +13,6 @@ import {
   Plus,
   Mail,
   Database,
-  Workflow,
   FileText,
   Activity,
   KeyRound,
@@ -41,13 +40,13 @@ interface FeaturedApp {
   icon: LucideIcon;
 }
 
-// Enabled apps (mail / n8n / convex) lead; the rest render dimmed "coming soon"
+// Enabled apps (mail / neon / convex) lead; the rest render dimmed "coming soon"
 // (single source: AVAILABLE_APP_IDS in @repo/core).
 const FEATURED_APPS: FeaturedApp[] = [
   { id: "supabase", name: "Supabase", desc: "Postgres backend + Studio", icon: Database },
   { id: "convex", name: "Convex", desc: "Reactive backend & database", icon: Database },
   { id: "mongodb", name: "MongoDB", desc: "Document database + Mongo Express", icon: Database },
-  { id: "n8n", name: "n8n", desc: "Workflow automation", icon: Workflow },
+  { id: "neon", name: "Neon", desc: "Serverless Postgres engine", icon: Database },
   { id: "mail", name: "Openship Mail", desc: "Self-hosted mail server + webmail", icon: Mail },
   { id: "ghost", name: "Ghost", desc: "Publishing & newsletters", icon: FileText },
   { id: "uptime-kuma", name: "Uptime Kuma", desc: "Uptime monitoring", icon: Activity },

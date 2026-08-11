@@ -72,7 +72,7 @@
       "serverLabel": "Servidor",
       "loadingServers": "Carregando servidores…",
       "noServerConnected": "Nenhum servidor conectado",
-      "connectServerFirst": "Conecte um servidor primeiro e depois volte para continuar a configuração.",
+      "connectServerFirst": "Adicione um agora sem sair desta página.",
       "addServer": "Adicionar servidor",
       "selectServer": "Selecione um servidor…",
       "addNewServer": "Adicionar novo servidor…"
@@ -209,7 +209,8 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "Não configurado",
-      "selectDomain": "Selecionar domínio"
+      "selectDomain": "Selecionar domínio",
+      "allDomains": "Todos os domínios"
     },
     "publicEndpoints": {
       "mappedToPort": "Mapeado para a porta {port}.",
@@ -240,7 +241,39 @@
       "permanent": "permanente",
       "cleanUrls": "URLs limpas",
       "cleanUrlsHint": "(remover .html)",
-      "trailingSlash": "Barra final"
+      "trailingSlash": "Barra final",
+      "proxyLimits": "Limites de requisição",
+      "proxyLimitsHint": "Tamanho de upload e tempos limite. Se deixados vazios, valem os padrões do proxy — uploads de 1 MB e tempos limite de 60s.",
+      "maxBodySize": "Tamanho máximo de upload",
+      "maxBodySizeHint": "ex.: 25m. Requisições maiores são rejeitadas com 413. Padrão 1m.",
+      "readTimeout": "Tempo limite de leitura",
+      "readTimeoutHint": "ex.: 300s. Quanto tempo esperar pela resposta do app. Padrão 60s.",
+      "sendTimeout": "Tempo limite de envio",
+      "sendTimeoutHint": "ex.: 300s. Quanto tempo esperar ao enviar para o app. Padrão 60s.",
+      "bodyTimeout": "Tempo limite de upload",
+      "bodyTimeoutHint": "ex.: 300s. Aumente também para uploads grandes, ou eles param no meio da transferência. Padrão 60s.",
+      "proxyBuffering": "Armazenar respostas em buffer",
+      "proxyBufferingHint": "(desative para streaming / SSE)",
+      "gzip": "Comprimir respostas",
+      "gzipHint": "(gzip para texto, JSON, JS, CSS)",
+      "proxyGroups": {
+        "body": "Corpo da requisição",
+        "timeouts": "Tempos limite do upstream",
+        "buffering": "Buffer de respostas",
+        "compression": "Compressão",
+        "headers": "Cabeçalhos e protocolo",
+        "upstreamTls": "TLS para a app"
+      },
+      "proxyInherit": "padrão do nginx",
+      "proxyNotSet": "não definido",
+      "proxyLiveLabel": "Servindo:",
+      "proxyLiveVaries": "varia por host",
+      "proxyDrift": "difere do salvo",
+      "proxyDriftSummary": "O edge está servindo valores diferentes para:",
+      "proxyAdoptLive": "Adotar os valores ativos",
+      "proxyLiveUnavailable": "Não foi possível ler a configuração ativa do servidor deste projeto.",
+      "proxyLiveSource": "Lido de:",
+      "proxyRefreshLive": "Reler a configuração ativa"
     },
     "settingsCard": {
       "recordLabels": {

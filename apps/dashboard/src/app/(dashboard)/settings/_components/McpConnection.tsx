@@ -8,10 +8,11 @@
 
 import { useEffect, useState, type ComponentType } from "react";
 import Link from "next/link";
-import { Boxes, Copy, Check, ShieldCheck, Unplug, Loader2, ChevronDown, ExternalLink, KeyRound } from "lucide-react";
+import { Boxes, Copy, Check, ShieldCheck, Unplug, Loader2, ChevronDown, ExternalLink, KeyRound, SlidersHorizontal } from "lucide-react";
 import { SettingsSection } from "./SettingsSection";
+import { McpAccessEditor } from "./McpAccessEditor";
 import { getRestApiBaseUrl } from "@/lib/api/urls";
-import { tokensApi, getApiErrorMessage, type McpClient } from "@/lib/api";
+import { tokensApi, getApiErrorMessage, type McpClient, type McpClientDetail } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -326,6 +327,9 @@ export function McpConnection() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  /** Which row is loading its scope, and the loaded detail once it arrives. */
+  const [loadingScope, setLoadingScope] = useState<string | null>(null);
+  const [editing, setEditing] = useState<McpClientDetail | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -337,6 +341,36 @@ export function McpConnection() {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * FETCH BEFORE OPEN. The editor is only mounted once the current scope is in hand,
+   * because saving replaces grants wholesale — a panel that opened un-prefilled and
+   * was saved would overwrite whatever the user had. On failure we toast and open
+   * NOTHING, so the failure is visible instead of silently destructive.
+   */
+  const openEditor = async (clientId: string) => {
+    setLoadingScope(clientId);
+    try {
+      const res = await tokensApi.getMcpClient(clientId);
+      if (!res.data) throw new Error("empty response");
+      setEditing(res.data);
+    } catch (err) {
+      showToast(getApiErrorMessage(err, t.settings.mcp.loadScopeFailed), "error");
+    } finally {
+      setLoadingScope(null);
+    }
+  };
+
+  /** Refetch the row so its grantCount pill can't drift from what was just saved. */
+  const afterSave = async () => {
+    setEditing(null);
+    try {
+      const res = await tokensApi.listMcpClients();
+      setClients(res.data ?? []);
+    } catch {
+      /* the save succeeded; a stale count is cosmetic and self-heals on reload */
+    }
+  };
 
   const disconnect = async (clientId: string) => {
     setDisconnecting(clientId);
@@ -378,6 +412,12 @@ export function McpConnection() {
           <div className="flex items-center gap-2 rounded-xl border border-border/50 px-4 py-3 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" /> {t.settings.mcp.loading}
           </div>
+        ) : editing ? (
+          <McpAccessEditor
+            detail={editing}
+            onClose={() => setEditing(null)}
+            onSaved={() => void afterSave()}
+          />
         ) : hasClients ? (
           <>
             <ClientsList
@@ -385,6 +425,8 @@ export function McpConnection() {
               confirmId={confirmId}
               setConfirmId={setConfirmId}
               disconnecting={disconnecting}
+              loadingScope={loadingScope}
+              onEdit={(id) => void openEditor(id)}
               onDisconnect={disconnect}
             />
 
@@ -536,12 +578,16 @@ function ClientsList({
   confirmId,
   setConfirmId,
   disconnecting,
+  loadingScope,
+  onEdit,
   onDisconnect,
 }: {
   clients: McpClient[];
   confirmId: string | null;
   setConfirmId: (id: string | null) => void;
   disconnecting: string | null;
+  loadingScope: string | null;
+  onEdit: (clientId: string) => void;
   onDisconnect: (clientId: string) => void;
 }) {
   const { t } = useI18n();
@@ -601,14 +647,30 @@ function ClientsList({
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => setConfirmId(id)}
-                  disabled={!id}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
-                >
-                  <Unplug className="size-3.5" />
-                  {t.settings.common.disconnect}
-                </button>
+                // Edit leads; Disconnect keeps its danger hover. Both are hidden while
+                // the row is confirming a disconnect — that interaction owns the row.
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    onClick={() => onEdit(id)}
+                    disabled={!id || loadingScope === id}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-50"
+                  >
+                    {loadingScope === id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <SlidersHorizontal className="size-3.5" />
+                    )}
+                    {t.settings.mcp.editAccess}
+                  </button>
+                  <button
+                    onClick={() => setConfirmId(id)}
+                    disabled={!id}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
+                  >
+                    <Unplug className="size-3.5" />
+                    {t.settings.common.disconnect}
+                  </button>
+                </div>
               )}
             </div>
           );

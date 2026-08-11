@@ -27,7 +27,7 @@
 
 import crypto from "node:crypto";
 import { repos } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, sanitizeProxySettings } from "@repo/core";
 import {
   resolveExecutor,
   transferVolume,
@@ -56,7 +56,7 @@ import { describeLiveState, resolveLiveServiceState } from "../services/live-sta
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { resolveProjectRouteState, reapplyProjectLiveRoutes } from "../domains/project-route.service";
 import { linkProjectRepo } from "../projects/project-crud.service";
-import type { ProjectCompositeRoute } from "@repo/core";
+import type { ProjectCompositeRoute, ProxySettings } from "@repo/core";
 import { teardownProject } from "../projects/project-teardown";
 import { discoverServerStack } from "./docker-inspect.service";
 import { adoptServerStack, attachLiveRuntime, joinReusedContainersToGroup, parseRepoCompose } from "./migrate.service";
@@ -537,6 +537,26 @@ class MigrationOrchestratorImpl {
       // proceed to `succeeded`. (Same-server has no killable transfer process.)
       this.throwIfCancelled(id);
 
+      // Unify with a native deploy: join the reused (attach-live) containers to
+      // the project network (row name + custom alias) so east-west resolution
+      // works exactly as it does for a deployed service. Runs for EVERY attach
+      // run, not just ones that also deploy — a pure-reuse project used to end up
+      // with no `openship-<slug>` network at all, so a service added later
+      // couldn't resolve the reused ones by name. Must precede the build below, so
+      // a freshly-built service resolves them from its first start (web →
+      // postgres:5432); the deploy's ensureServiceGroup reuses this network.
+      // Best-effort — a join failure must never block the migration.
+      if (attachRows.length > 0) {
+        await joinReusedContainersToGroup({
+          serverId: targetServerId,
+          organizationId,
+          slug: adopt.slug,
+          attach: attachChosen,
+          serviceRows: attachRows,
+          renames: adopt.renames,
+        }).catch((err) => log(`network join skipped: ${safeErrorMessage(err)}`));
+      }
+
       // Run the native deploy when there are containers to move (cross-server /
       // copy) OR new repo services to build/pull. Attach-live services are
       // disabled during the build (below) so they stay zero-downtime; the deploy
@@ -656,21 +676,6 @@ class MigrationOrchestratorImpl {
         for (const r of attachRows) {
           await repos.service.update(r.id, { enabled: false });
         }
-        // Unify with a native deploy: join the reused (attach-live) containers to
-        // the project network (alias = row name) BEFORE the build, so a freshly-
-        // built service resolves them by name from its first start (web →
-        // postgres:5432). The deploy's ensureServiceGroup reuses this network.
-        // Best-effort — a join failure must never block the migration.
-        if (attachRows.length > 0) {
-          await joinReusedContainersToGroup({
-            serverId: targetServerId,
-            organizationId,
-            slug: adopt.slug,
-            attach: attachChosen,
-            serviceRows: attachRows,
-            renames: adopt.renames,
-          }).catch((err) => log(`network join skipped: ${safeErrorMessage(err)}`));
-        }
         log(`deploying to target server…`);
         try {
           const dep = await requestBuildAccess(ctx, {
@@ -739,6 +744,14 @@ class MigrationOrchestratorImpl {
           renames: adopt.renames,
         });
       }
+
+      // Carry the source vhosts' proxy tunables onto the project BEFORE the
+      // publish below renders any vhost, so a migrated site keeps its upload
+      // limit / upstream timeouts instead of silently reverting to nginx's
+      // 1 MB / 60 s defaults.
+      await this.adoptSourceProxySettings(projectId, chosen, log).catch((err) =>
+        log(`proxy tunables not adopted: ${safeErrorMessage(err)}`),
+      );
 
       // Publish the chosen domains/routes SERVER-SIDE now the target is verified
       // (was client-only → lost when the wizard unmounted or a run was opened
@@ -1535,6 +1548,56 @@ class MigrationOrchestratorImpl {
         log(`edge reconcile skipped: ${safeErrorMessage(err)}`),
       );
     }
+  }
+
+  /**
+   * Carry the source vhosts' reverse-proxy tunables onto the migrated project.
+   *
+   * A foreign nginx that allowed 200 MB uploads and 10-minute upstream reads is
+   * REPLACED by our edge at cutover, and our edge starts from nginx's defaults —
+   * 1 MB and 60 s. Nothing in the wizard mentioned it, so the first big upload
+   * after a migration 413'd and the operator had no way to connect that to the
+   * move. The scan already parsed these values (`ImportedSite.proxy`, carried
+   * through the by-port index onto each discovered route), so adopting them is
+   * just persistence.
+   *
+   * Union across the kept services, and only ever ADDITIVE over what the project
+   * already has: an operator who set a limit by hand outranks a value we inferred
+   * from the box. Values arrive pre-validated (`sanitizeProxySettings` inside the
+   * parser) and are re-validated on write; anything unrepresentable was already
+   * dropped and stays visible in the drift view instead.
+   *
+   * Best-effort — a tunable never fails a migration.
+   */
+  private async adoptSourceProxySettings(
+    projectId: string,
+    chosen: Array<{ existingRoute?: Array<{ proxy?: ProxySettings }> }>,
+    log: (m: string) => void,
+  ): Promise<void> {
+    const merged: Record<string, unknown> = {};
+    for (const s of chosen) {
+      for (const r of s.existingRoute ?? []) {
+        for (const [k, v] of Object.entries(r.proxy ?? {})) {
+          if (!(k in merged)) merged[k] = v;
+        }
+      }
+    }
+    const adopted = sanitizeProxySettings(merged);
+    if (!adopted) return;
+
+    const project = await repos.project.findById(projectId).catch(() => null);
+    if (!project) return;
+    const routingConfig = (project.routingConfig ?? {}) as Record<string, unknown>;
+    const existing = (routingConfig.proxy ?? {}) as Record<string, unknown>;
+    // The project's own values win key-by-key; we only fill what it hasn't set.
+    const next = { ...adopted, ...existing };
+    const added = Object.keys(adopted).filter((k) => !(k in existing));
+    if (added.length === 0) return;
+
+    await repos.project.update(projectId, {
+      routingConfig: { ...routingConfig, proxy: next },
+    } as never);
+    log(`adopted proxy tunables from the source proxy: ${added.join(", ")}`);
   }
 
   private async carrySourceCerts(

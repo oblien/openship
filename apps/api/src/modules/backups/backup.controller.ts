@@ -49,8 +49,9 @@ export async function createProjectPolicy(c: Context) {
     destinationId: string;
     cronExpression?: string;
     triggerOnPreDeploy?: boolean;
-    retainCount?: number;
-    retainDays?: number;
+    /** Omitted = the instance default. Explicit null = keep every run. */
+    retainCount?: number | null;
+    retainDays?: number | null;
     payloadKind?: string;
     payloadConfig?: Record<string, unknown>;
     preHook?: string;
@@ -342,8 +343,11 @@ export async function cancelRestore(c: Context) {
   const restoreId = param(c, "restoreId");
   await permission.assert(getRequestContext(c), { resourceType: "backup_restore", resourceId: restoreId, action: "admin" });
   try {
-    await restoreOrchestrator.cancel(ctx, restoreId);
-    return c.json({ data: { ok: true } });
+    // Relayed rather than flattened to {ok:true}: a cancel during `applying` is
+    // a REQUEST the running phase honors at its next checkpoint, and the caller
+    // has to be able to tell that from a cancel that already took effect.
+    const result = await restoreOrchestrator.cancel(ctx, restoreId);
+    return c.json({ data: { ok: true, ...result } });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 400);
   }

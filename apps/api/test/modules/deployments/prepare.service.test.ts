@@ -12,7 +12,7 @@ describe("resolveProjectInfo", () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
-  it("reports missing required Compose variables instead of returning no services", async () => {
+  it("reports a required Compose variable as a value to collect, not a load failure", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
     tempDirs.push(tempDir);
 
@@ -27,9 +27,74 @@ describe("resolveProjectInfo", () => {
       ].join("\n"),
     );
 
-    await expect(resolveProjectInfo({ source: "local", path: tempDir })).rejects.toThrow(
-      "Could not parse the Docker Compose file: Set API_PASSWORD",
+    // #472: this used to throw, so the wizard showed "Failed to Load Repository"
+    // and the project could never be imported at all — for a file whose only
+    // problem is a value the wizard exists to ask for.
+    const info = await resolveProjectInfo({ source: "local", path: tempDir });
+
+    expect(info.services?.map((s) => s.name)).toEqual(["web"]);
+    expect(info.services?.[0]?.environmentMeta?.API_PASSWORD).toMatchObject({
+      source: "missing",
+      required: true,
+    });
+    expect(info.missingRequiredEnv).toEqual([
+      { variable: "API_PASSWORD", message: "Set API_PASSWORD" },
+    ]);
+  });
+
+  it("interpolates required Compose variables from the configured deploy env", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
+    tempDirs.push(tempDir);
+
+    // #383: compose lives outside the repo root (#330) and declares a required
+    // variable. The user supplied it in the Openship deploy configuration, so
+    // the scan must interpolate it instead of reporting the file as unparseable.
+    await mkdir(join(tempDir, "deploy", "docker-compose"), { recursive: true });
+    await writeFile(
+      join(tempDir, "deploy", "docker-compose", "docker-compose.yaml"),
+      [
+        "services:",
+        "  db:",
+        "    image: postgres:16-alpine",
+        "    environment:",
+        "      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}",
+      ].join("\n"),
     );
+
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      composePath: "deploy/docker-compose",
+      env: { POSTGRES_PASSWORD: "s3cret" },
+    });
+
+    expect(info.services?.find((s) => s.name === "db")?.environment).toMatchObject({
+      POSTGRES_PASSWORD: "s3cret",
+    });
+  });
+
+  it("normalizes an undetected package manager to \"npm\" instead of the internal \"unknown\" sentinel (#415)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
+    tempDirs.push(tempDir);
+
+    // A compose-only subfolder with no manifest anywhere (package.json, go.mod,
+    // requirements.txt, ...) — detectPackageManager() legitimately falls back to
+    // "unknown" here, but that's an internal sentinel PackageManagerEnum never
+    // accepted. Echoing it back verbatim let the dashboard round-trip it
+    // straight into project creation and 400 with "Expected union value".
+    await mkdir(join(tempDir, "infra", "9router"), { recursive: true });
+    await writeFile(
+      join(tempDir, "infra", "9router", "docker-compose.yml"),
+      ["services:", "  9router:", "    image: decolua/9router:latest"].join("\n"),
+    );
+
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      composePath: "infra/9router",
+    });
+
+    expect(info.packageManager).toBe("npm");
   });
 
   it("reports invalid Compose YAML instead of returning no services", async () => {

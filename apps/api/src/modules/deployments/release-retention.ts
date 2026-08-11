@@ -83,6 +83,16 @@ export async function resolveRollbackWindow(project: RollbackWindowProject): Pro
  * for "one more retained release": Docker's per-image sizes double-count shared
  * layers, so summing them would badly over-estimate, and the largest single
  * image would too.
+ *
+ * D9: a FAILED disk probe must not persist a window. `computeAutoRollbackWindow`
+ * returns the instance default when it can't measure, and writing that into
+ * `rollbackWindowComputed` — documented as "null = never measured" — makes
+ * `resolveRollbackWindowDetail` report `source: "auto"` forever. The
+ * `instance-default` branch then becomes permanently unreachable for that
+ * project, so a later change to `instance_settings.default_rollback_window`
+ * silently stops applying to it. The measured snapshot size is still worth
+ * keeping: it's real, and it's what makes the NEXT successful probe able to size
+ * anything at all.
  */
 export async function refreshRollbackCapacity(opts: {
   projectId: string;
@@ -94,18 +104,26 @@ export async function refreshRollbackCapacity(opts: {
   if (sizes.length === 0) return;
 
   const snapshotSizeBytes = Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length);
-  const rollbackWindowComputed = computeAutoRollbackWindow({
-    diskFreeBytes: opts.diskFreeBytes,
-    snapshotSizeBytes,
-    fallback: opts.instanceDefault,
-  });
+  const measuredDisk =
+    typeof opts.diskFreeBytes === "number" &&
+    Number.isFinite(opts.diskFreeBytes) &&
+    opts.diskFreeBytes > 0;
 
   await repos.project
-    .update(opts.projectId, {
-      snapshotSizeBytes,
-      rollbackWindowComputed,
-      capacityMeasuredAt: new Date(),
-    })
+    .update(
+      opts.projectId,
+      measuredDisk
+        ? {
+            snapshotSizeBytes,
+            rollbackWindowComputed: computeAutoRollbackWindow({
+              diskFreeBytes: opts.diskFreeBytes,
+              snapshotSizeBytes,
+              fallback: opts.instanceDefault,
+            }),
+            capacityMeasuredAt: new Date(),
+          }
+        : { snapshotSizeBytes },
+    )
     .catch(() => {
       /* best-effort: retention still resolves via the instance default */
     });

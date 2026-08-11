@@ -35,6 +35,10 @@ export interface Project {
   port?: number | null;
   hasServer?: boolean;
   hasBuild?: boolean;
+  /** Resolved runtime workload ("web" | "worker" | "static", #538). A worker
+   *  shares `hasServer=false` with a static site, so it's the only field that
+   *  tells them apart on read-only surfaces (cards, chips). */
+  workloadType?: string | null;
 
   /* ── State ──────────────────────────────────────────────── */
   activeDeploymentId?: string | null;

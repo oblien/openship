@@ -14,6 +14,7 @@ describe("#336 env reveal is write-gated; masked reads need only read", () => {
       import("../../src/modules/services/service.routes"),
       import("../../src/modules/projects/project.routes"),
       import("../../src/modules/deployments/deployment.routes"),
+      import("../../src/modules/migration/migration.routes"),
     ]);
 
     const reg = getRouteRegistry();
@@ -38,6 +39,14 @@ describe("#336 env reveal is write-gated; masked reads need only read", () => {
         "folder-scan env-reveal",
       ),
     ).toBe("project:write");
+
+    // Migration container reveal — write-gated, same bar as the service reveal.
+    expect(
+      tagOf(
+        (r) => r.method === "POST" && r.path.endsWith("/migration/reveal-env"),
+        "migration reveal-env",
+      ),
+    ).toBe("server:write");
 
     // Masked reads — only `:read` (proving reveal is the higher bar).
     expect(

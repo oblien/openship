@@ -4,7 +4,8 @@
  * Data flow:
  *   - OpenResty shared-dict accumulates counters in real-time (log_by_lua)
  *   - Scraper (analytics-scraper.ts) flushes completed minutes from OpenResty → DB
- *     via POST /analytics/flush (read + delete), every 5 min
+ *     via POST /analytics/collect (read + delete, one call for the whole box),
+ *     driven by the `analytics:scrape` system job and by analytics reads
  *   - DB has all flushed history, OpenResty has only unflushed recent data
  *   - Reading always combines both: DB (flushed archive) + live (unflushed tail)
  *   - No overlap, no duplication, no data loss on OpenResty restart
@@ -17,7 +18,7 @@
 import { repos } from "@repo/db";
 import { NotFoundError, AppError, safeErrorMessage } from "@repo/core";
 import type { ResourceUsage } from "@repo/adapters";
-import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { resolveDeploymentRuntimeForRead } from "../../lib/deployment-runtime";
 import {
   resolveProjectTrafficSources,
   fetchMgmt,
@@ -130,7 +131,8 @@ export function summariseBuckets(
   const weightedRt = buckets.reduce((s, b) => s + b.response_time * b.requests, 0);
   return {
     totalRequests: totalReqs,
-    uniqueVisitors: totalUnique,
+    pageRequests: totalUnique,
+    uniqueVisitors: null,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
     avgResponseTimeMs: totalReqs > 0 ? Math.round((weightedRt / totalReqs) * 1000) : 0,
@@ -150,6 +152,9 @@ function summariseCloudBuckets(
 
   return {
     totalRequests: totalReqs,
+    // Oblien exposes distinct visitors but not a non-static request count, so this
+    // is the closest honest mapping: page requests are unknown here.
+    pageRequests: 0,
     uniqueVisitors: totalUnique,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
@@ -268,6 +273,10 @@ function buildCloudHourlyPeriods(
 
 const EMPTY_SUMMARY: AnalyticsSummary = {
   totalRequests: 0,
+  pageRequests: 0,
+  // 0, not null: this is the summary for a project with a resolvable traffic
+  // source that genuinely reported nothing, so "zero visitors" is the true answer
+  // rather than "look elsewhere".
   uniqueVisitors: 0,
   bandwidthIn: 0,
   bandwidthOut: 0,
@@ -343,8 +352,25 @@ async function fetchCloudTimeseries(
 export interface AnalyticsSummary {
   /** Total requests (all time) */
   totalRequests: number;
-  /** Total unique visitors */
-  uniqueVisitors: number;
+  /**
+   * Non-static ("page") requests — NOT people. Five page views from one browser
+   * count five.
+   *
+   * This is what the self-hosted edge's `:u` counter has always measured, and it
+   * was reported as `uniqueVisitors` and then relabelled "Unique IPs" in the
+   * dashboard, which it never was. Named for what it is.
+   */
+  pageRequests: number;
+  /**
+   * Genuinely distinct visitors, or null when this source can't tell.
+   *
+   * Non-null only where the SOURCE does the dedup: Oblien reports
+   * `unique_visitors` per bucket. The self-hosted edge dedups per DAY (a salted
+   * hash set in shared memory), which doesn't decompose into the minute buckets
+   * this summary is built from — so it is null here and the real number comes from
+   * `GET /analytics/geo`. Null means "ask elsewhere", never "zero visitors".
+   */
+  uniqueVisitors: number | null;
   /** Bandwidth in bytes */
   bandwidthIn: number;
   bandwidthOut: number;
@@ -364,6 +390,17 @@ export interface AnalyticsPeriod {
   bandwidthIn: number;
   bandwidthOut: number;
   avgResponseTimeMs: number;
+  /**
+   * ALWAYS EMPTY, and structurally so — not a stub waiting to be filled.
+   *
+   * Path counters are aggregated per DAY at the edge, deliberately: per-minute path
+   * keys would multiply the analytics zone's cardinality by ~1440 and evict the
+   * request counters they annotate. A per-hour period therefore has no path data to
+   * carry. Window-level top paths come from `GET /analytics/geo`, which reads the
+   * daily rollup; the dashboard reads them from there.
+   *
+   * Kept on the type so the wire shape is stable for existing consumers.
+   */
   topPaths: { path: string; count: number }[];
   trafficByHour: Record<string, number>;
 }
@@ -549,31 +586,23 @@ export async function getDeploymentStats(
 }
 
 // ─── Resource usage (live) ───────────────────────────────────────────────────
+//
+// `getContainerUsage` used to live here and is GONE, not moved: it read
+// `deployment.containerId` alone, which on a compose project is the primary
+// service's container, and reported it as the project's usage. Its replacement is
+// `modules/monitoring/project-usage.ts`, which covers every service and is the one
+// implementation both /analytics/usage and /analytics/resources now share.
 
 /**
- * Get current resource usage for a project's active container.
- * Returns null if no active deployment.
- */
-export async function getContainerUsage(
-  ctx: RequestContext,
-  projectId: string,
-): Promise<ResourceUsage | null> {
-  const project = await repos.project.findById(projectId);
-  if (!project || project.organizationId !== ctx.organizationId) {
-    throw new NotFoundError("Project", projectId);
-  }
-
-  if (!project.activeDeploymentId) return null;
-
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
-  if (!dep?.containerId) return null;
-
-  const { runtime } = await resolveDeploymentRuntime(dep);
-  return runtime.getUsage(dep.containerId);
-}
-
-/**
- * Get container info (status, IP, uptime, current usage).
+ * Container info (status, IP, uptime) for a project's primary container.
+ *
+ * Genuinely single-container by nature — this describes the deployment's own
+ * container, not the stack — so it is not duplicating the usage collector.
+ *
+ * Uses the READ-ONLY resolver: building a full platform here runs
+ * `detectOpenRestyPaths` plus the edge-Lua self-heal inside the provision lock,
+ * which is the documented cause of polled reads timing out while containers were
+ * up. Caller-facing behaviour is unchanged; only the resolution cost is.
  */
 export async function getContainerInfo(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
@@ -586,8 +615,12 @@ export async function getContainerInfo(ctx: RequestContext, projectId: string) {
   const dep = await repos.deployment.findById(project.activeDeploymentId);
   if (!dep?.containerId) return null;
 
-  const { runtime } = await resolveDeploymentRuntime(dep);
-  return runtime.getContainerInfo(dep.containerId);
+  const { runtime } = await resolveDeploymentRuntimeForRead(dep);
+  try {
+    return await runtime.getContainerInfo(dep.containerId);
+  } finally {
+    void Promise.resolve(runtime.dispose?.()).catch(() => {});
+  }
 }
 
 // ─── Dashboard home stats ────────────────────────────────────────────────────

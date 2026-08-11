@@ -53,6 +53,7 @@
       "notifications": "Notifications",
       "audit": "Journal d'audit",
       "cloud": "Cloud",
+      "infrastructure": "Infrastructure",
       "instance": "Instance"
     }
   },
@@ -112,10 +113,6 @@
     "noServers": "Aucun serveur configuré pour l'instant - ajoutez-en un depuis le sélecteur de déploiement.",
     "clearDefault": "Effacer la valeur par défaut (demander à chaque fois)",
     "targets": {
-      "local": {
-        "label": "Cette machine",
-        "desc": "Docker / runtime local"
-      },
       "server": {
         "label": "Mon serveur",
         "desc": "Un serveur SSH configuré"
@@ -127,8 +124,7 @@
     },
     "labelFor": {
       "yourServer": "votre serveur",
-      "cloud": "Openship Cloud",
-      "local": "Cette machine"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Choisissez d'abord un serveur",
@@ -478,6 +474,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "Dans l'application"
     },
     "form": {
@@ -487,6 +484,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Jeton du bot fourni par @BotFather",
+      "telegramChatPlaceholder": "ID du chat (ex. -1001234567890)",
+      "telegramHint": "Créez un bot avec @BotFather, puis envoyez-lui un message (ou ajoutez-le à votre groupe) pour qu'il soit autorisé à répondre.",
       "adding": "Ajout…",
       "addChannel": "Ajouter un canal",
       "labelRequired": "Le libellé est requis"
@@ -495,6 +495,7 @@
       "title": "Ce dont vous voulez être notifié",
       "description": "Choisissez quels événements vont vers quel canal. Chaque cellule est un abonnement.",
       "empty": "Ajoutez d'abord un canal pour vous abonner aux événements.",
+      "allTab": "Tous",
       "eventHeader": "Événement",
       "cellAria": "{category} via {channel}",
       "notifyMe": "Me notifier"
@@ -508,11 +509,11 @@
   },
   "audit": {
     "heading": "Journal d'audit",
-    "subtitle": "Chaque changement dans cette organisation, qui l'a effectué et quand.",
-    "searchPlaceholder": "Rechercher des événements, acteurs, ressources...",
-    "allEvents": "Tous les événements",
-    "noMatch": "Aucun événement ne correspond à votre recherche.",
-    "noEvents": "Aucun événement pour l'instant.",
+    "subtitle": "Tout ce qui s'est passé dans cette organisation, par qui et quand.",
+    "searchPlaceholder": "Rechercher des apps, serveurs, domaines, personnes…",
+    "noMatch": "Rien ne correspond à ces filtres.",
+    "noEvents": "Rien n'a encore été enregistré.",
+    "clearFilters": "Effacer les filtres",
     "showing": "Affichage de {from}-{to} sur {total}",
     "actor": "Acteur",
     "name": "Nom",
@@ -528,7 +529,50 @@
     "after": "Après",
     "removed": "Supprimé",
     "system": "Système",
-    "actorPrefix": "Acteur {id}"
+    "actorPrefix": "Acteur {id}",
+    "recording": {
+      "title": "Enregistrer l'activité",
+      "description": "Conserver une trace de chaque changement effectué dans cette organisation. Activé par défaut.",
+      "paused": "L'enregistrement est désactivé. Rien de nouveau n'est ajouté — les entrées ci-dessous sont celles capturées avant sa désactivation.",
+      "retention": "Conserver les entrées pendant",
+      "retentionOption": "{days} jours",
+      "retentionHint": "Les entrées plus anciennes sont supprimées automatiquement.",
+      "adminOnly": "Seuls les propriétaires et les administrateurs peuvent modifier ceci.",
+      "saveFailed": "Impossible d'enregistrer les paramètres d'activité."
+    },
+    "filters": {
+      "anyone": "N'importe qui",
+      "period": "Période",
+      "allTime": "Tout",
+      "today": "Aujourd'hui",
+      "last7": "7 derniers jours",
+      "last30": "30 derniers jours",
+      "last90": "90 derniers jours"
+    },
+    "tabs": {
+      "all": "Tout"
+    },
+    "sources": {
+      "all": "Tout",
+      "dashboard": "Tableau de bord",
+      "mcp": "Assistant IA",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "Système",
+      "unknown": "Inconnu"
+    },
+    "day": {
+      "today": "Aujourd'hui",
+      "yesterday": "Hier"
+    },
+    "details": {
+      "who": "Qui",
+      "when": "Quand",
+      "cameFrom": "Provenance",
+      "technical": "Détails techniques",
+      "eventType": "Type d'événement"
+    }
   },
   "updates": {
     "title": "Mises à jour",
@@ -553,6 +597,20 @@
     "security3": "). Il ne fait que",
     "securityPulls": "récupérer",
     "security4": "ces données — aucun service tiers ni serveur exploité par Openship ne peut pousser de mises à jour ou de signaux vers votre installation. Les avis sont épinglés à chaque version, de sorte que les changements non publiés ne vous parviennent jamais. Les avis de sécurité critiques sont toujours affichés une fois ; tout le reste respecte le paramètre ci-dessus."
+  },
+  "infrastructure": {
+    "title": "Composants de la plateforme",
+    "description": "Comment les conteneurs edge et messagerie de vos serveurs sont maintenus à jour",
+    "autoUpdateLabel": "Mettre à jour automatiquement l'infrastructure serveur",
+    "autoUpdateDesc": "Lorsque ce plan de contrôle est mis à jour, met à jour automatiquement les conteneurs edge et mail sur vos serveurs connectés. Désactivé par défaut — sinon, les mises à jour sont signalées pour être appliquées en un clic sur chaque serveur.",
+    "autoScanLabel": "Analyser automatiquement l'infrastructure des serveurs",
+    "autoScanDesc": "Revérifie discrètement vos serveurs lorsque vous ouvrez la page Serveurs ou la page d'accueil, afin qu'un edge arrêté ou manquant soit signalé sans analyse manuelle. Activé par défaut : détection seule, rien n'est modifié.",
+    "attentionOne": "1 composant à surveiller",
+    "attentionMany": "{n} composants à surveiller",
+    "updatesOne": "1 mise à jour disponible",
+    "updatesMany": "{n} mises à jour disponibles",
+    "allHealthy": "Tous les composants de la plateforme sont à jour",
+    "manageLink": "Gérer dans Serveurs"
   },
   "dataTransfer": {
     "export": {

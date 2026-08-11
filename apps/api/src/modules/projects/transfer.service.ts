@@ -136,9 +136,12 @@ export async function transferProjectToCloud(
   // 2) Dump the project subgraph from local. stripEncrypted: true — the
   //    SaaS can't decrypt local-host blobs; re-link is the operator's
   //    job on the cloud side.
+  //    stripInstanceRefs: true — project.serverId points at a `servers` row that
+  //    does not travel (instance-scope) and cannot exist on the SaaS, and the FK is
+  //    not DEFERRABLE, so shipping it takes a raw FK violation at insert.
   const dump = await dumpSubgraph(
     { kind: "project", projectId: input.projectId },
-    { stripEncrypted: true },
+    { stripEncrypted: true, stripInstanceRefs: true },
   );
 
   // 3) Push to cloud. The SaaS derives merge mode from dump.scope and

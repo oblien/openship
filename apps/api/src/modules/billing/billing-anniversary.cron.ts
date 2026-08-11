@@ -234,6 +234,7 @@ export async function runAnniversaryReset(): Promise<ResetStats> {
           eventType: "billing.anniversary_reset",
           resourceType: "organization",
           resourceId: org.id,
+          source: "system",
           ipAddress: null,
           userAgent: null,
           before: {

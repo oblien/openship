@@ -212,9 +212,12 @@ export async function reapProjectImages(project: Project): Promise<ReapResult> {
 /**
  * Best-effort image reclaim for the deploy HOT PATHS — NEVER throws, so a GC
  * hiccup can't fail a deploy. Accepts a Project or a projectId (loaded here) and
- * routes warnings to `onWarn` (e.g. the BuildLogger) or console by default. Both
- * the redeploy hook (onDeploymentReady) and the git-strategy path call this, so
- * the "reclaim + swallow + log" guarantee lives in exactly one place.
+ * routes warnings to `onWarn` (e.g. the BuildLogger) or console by default.
+ *
+ * One caller today: `onDeploymentReady` (rollback-orchestrator), which runs after
+ * every successful deploy regardless of rollback strategy — the strategy decides
+ * how many releases `computeKeepSet` protects, not whether the reclaim happens.
+ * The daily `images:gc` job is the backstop for anything this misses.
  */
 export async function reapProjectImagesSafe(
   projectOrId: Project | string,

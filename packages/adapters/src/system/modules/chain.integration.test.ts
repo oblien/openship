@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import type { CommandExecutor } from "../../types";
 import type { EnvironmentProfile } from "../environment";
+import { profileFixture } from "../environment.fixtures";
 import { verifyAndBuild } from "./catalog-source";
 import { reconcileServerModule } from "./reconcile";
 import { readManifest } from "./on-box-manifest";
@@ -20,10 +21,7 @@ import { readManifest } from "./on-box-manifest";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OR_DIR = join(HERE, "catalog", "openresty");
 
-const PROFILE: EnvironmentProfile = {
-  os: "linux", arch: "amd64", distro: "ubuntu",
-  packageManager: "apt", serviceManager: "systemd", isRoot: true, canSudo: false,
-};
+const PROFILE: EnvironmentProfile = profileFixture();
 
 function fakeExecutor(seed: Record<string, string>) {
   const files = new Map<string, string>(Object.entries(seed));

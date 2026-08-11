@@ -29,7 +29,8 @@ export const APP_LOGO: Record<
   "uptime-kuma": { slug: "uptimekuma" },
   vaultwarden: { slug: "vaultwarden" },
   metabase: { slug: "metabase" },
-  directus: { slug: "directus" },
+  // Directus' rabbit is near-black (#263238) → invert it on the dark themes.
+  directus: { slug: "directus", darkInvert: true },
   nocodb: { slug: "nocodb" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
@@ -38,6 +39,17 @@ export const APP_LOGO: Record<
   freshrss: { slug: "freshrss" },
   excalidraw: { slug: "excalidraw" },
   qdrant: { slug: "qdrant" },
+  // Neon's mark is brand green (#34D59A) — colored, stays visible everywhere.
+  neon: { slug: "neon" },
+  // PostHog + Umami marks are near-black (#000000) → darkInvert flips them to
+  // white on the dark/dim tiles so they don't vanish. Meilisearch is brand pink.
+  posthog: { slug: "posthog", darkInvert: true },
+  meilisearch: { slug: "meilisearch" },
+  umami: { slug: "umami", darkInvert: true },
+  // Valkey (catalog id "redis") has no simpleicons mark → use its official
+  // favicon like convex/slack above. Aliased under "valkey" too for slug callers.
+  redis: { src: "https://www.google.com/s2/favicons?domain=valkey.io&sz=128" },
+  valkey: { src: "https://www.google.com/s2/favicons?domain=valkey.io&sz=128" },
   // Kafka's catalog id is "kafka"; its simpleicons brand slug is "apachekafka".
   // The mark is near-black (brand color #231F20), so it vanishes on the dark/dim
   // tiles — darkInvert flips it to near-white there (dark on light themes as-is).
@@ -48,8 +60,11 @@ export const APP_LOGO: Record<
   // code-server / IT-Tools / Stirling-PDF have no reliable simpleicons mark →
   // they fall back to the monochrome Boxes glyph.
   // openship-native mail stack — its own brand mark, a full-bleed square icon.
-  // Both the catalog id ("mail") and the installed-app id ("mail-webmail").
+  // "mail" is the engine flow; "webmail" the catalog app that installs the client.
+  // "mail-webmail" is the retired template id still stored on pre-catalog webmail
+  // project rows — keep it so those rows keep their logo.
   "mail-webmail": { src: "/apple-touch-icon.png", fill: true },
+  webmail: { src: "/apple-touch-icon.png", fill: true },
   mail: { src: "/apple-touch-icon.png", fill: true },
   // The control plane self-registered as an app (CLI self-deploy) — Openship's
   // own brand mark, a full-bleed square icon.

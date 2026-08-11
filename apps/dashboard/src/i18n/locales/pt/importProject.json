@@ -101,6 +101,10 @@
     "serverOnPort": "Servidor na porta {port}",
     "serverPortNotSet": "Porta do servidor não definida",
     "staticFromEdge": "Estático a partir da edge",
+    "modeServer": "Servidor",
+    "modeWorker": "Worker",
+    "modeStatic": "Estático",
+    "workerModeDesc": "Executa continuamente sem porta nem URL pública — um consumidor de fila, cron ou bot.",
     "buildSettingsTitle": "Configurações de Build"
   },
   "projectSettings": {

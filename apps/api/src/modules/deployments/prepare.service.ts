@@ -8,7 +8,15 @@
 import * as githubService from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
-import { parseComposeEnvFile, parseComposeFile, type ComposeService } from "../../lib/compose-parser";
+import {
+  blockingComposeFields,
+  describeBlockingComposeFields,
+  parseComposeEnvFile,
+  parseComposeFile,
+  type ComposeMissingVariable,
+  type ComposeService,
+  type ComposeUnsupportedField,
+} from "../../lib/compose-parser";
 import { maskEnv, maskScanService } from "../../lib/secret-env";
 import {
   applyWorkspaceContext,
@@ -37,6 +45,7 @@ import {
   type OpenshipReadiness,
   type OpenshipMonorepoApp,
   type ComposeAdvanced,
+  type WorkloadType,
   resolveTierResources,
 } from "@repo/core";
 import { env } from "../../config";
@@ -68,8 +77,16 @@ export type Source =
       ctx?: RequestContext;
       /** See {@link ResolveOptions.composePath}. */
       composePath?: string;
+      /** See {@link ResolveOptions.env}. */
+      env?: Record<string, string>;
     }
-  | { source: "local"; path: string; composePath?: string };
+  | {
+      source: "local";
+      path: string;
+      composePath?: string;
+      /** See {@link ResolveOptions.env}. */
+      env?: Record<string, string>;
+    };
 
 export interface ResolveOptions {
   /**
@@ -84,6 +101,14 @@ export interface ResolveOptions {
    * buildpack build (the confusing behaviour this option exists to replace).
    */
   composePath?: string;
+  /**
+   * Env the caller already holds for this deploy (the values configured on the
+   * project / entered in the wizard). Compose interpolation resolves against
+   * these on top of the repo `.env`, so a file declaring `${VAR:?...}` scans
+   * cleanly once the user has supplied VAR — without it the scan reports the
+   * file as unparseable even though the deploy would have succeeded (#383).
+   */
+  env?: Record<string, string>;
 }
 
 /** Thrown when a declared `composePath` has no compose file behind it. */
@@ -187,6 +212,13 @@ export interface ProjectInfo {
   volumes?: string[];
   port: number;
   services?: ComposeService[];
+  /** Compose variables the file marks mandatory that no `.env`/caller value
+   *  satisfied — the wizard's list to prompt for. Absent when there are none. */
+  missingRequiredEnv?: ComposeMissingVariable[];
+  /** Compose keys the file declares that Openship doesn't model — shown so the
+   *  user knows what won't carry over. Blocking ones never reach here: they
+   *  refuse the scan instead. Absent when there are none. */
+  unsupportedCompose?: ComposeUnsupportedField[];
   monorepoApps?: MonorepoApp[];
   monorepoWorkspace?: MonorepoWorkspace;
   rootEnv?: Record<string, string>;
@@ -200,6 +232,10 @@ export interface ProjectInfo {
   // output/routing) fold in through the metadata parser and appear above.
   /** How the app is served: "host"/"static"/"standalone" (seeds hasServer). */
   productionMode?: "host" | "static" | "standalone";
+  /** The runtime workload (web | worker | static) declared via openship.json's
+   *  `workload`. Authoritative over `productionMode` when both are present — it's
+   *  the only way to declare a `worker`, which no legacy field can express (#538). */
+  workloadType?: WorkloadType;
   /** Bare-metal vs Docker runtime, declared intent (git apps pick at deploy). */
   runtimeMode?: "bare" | "docker";
   /** Declared public endpoints (from `domains`), normalized to the create shape. */
@@ -387,6 +423,10 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
   if (config.volumes) info.volumes = config.volumes;
   if (config.port !== undefined) info.port = config.port;
   if (config.productionMode) info.productionMode = config.productionMode;
+  // `workload` is the modern runtime axis and wins over `productionMode` (#538) —
+  // the write path treats an explicit workloadType as authoritative and re-syncs
+  // the legacy productionMode/hasServer from it.
+  if (config.workload) info.workloadType = config.workload;
   if (config.runtime) info.runtimeMode = config.runtime;
   if (config.domains?.length) info.publicEndpoints = domainsToPublicEndpoints(config.domains);
   if (config.env && Object.keys(config.env).length > 0) {
@@ -449,9 +489,12 @@ export function projectInfoToScanResponse(result: ProjectInfo) {
     // deploy pipeline recovers the real values by re-parsing the source, and the
     // wizard reveals them on demand via the write-gated reveal endpoint.
     services: (result.services ?? []).map(maskScanService),
+    ...(result.missingRequiredEnv && { missingRequiredEnv: result.missingRequiredEnv }),
+    ...(result.unsupportedCompose && { unsupportedCompose: result.unsupportedCompose }),
     // Declared-overlay fields (openship.json) — omitted from the response when
     // absent so a repo without the file yields the exact same payload as before.
     ...(result.productionMode && { productionMode: result.productionMode }),
+    ...(result.workloadType && { workloadType: result.workloadType }),
     ...(result.volumes && { volumes: result.volumes }),
     ...(result.runtimeMode && { runtimeMode: result.runtimeMode }),
     ...(result.publicEndpoints && { publicEndpoints: result.publicEndpoints }),
@@ -602,6 +645,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     }
     return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
       composePath: input.composePath,
+      env: input.env,
     });
   }
 
@@ -611,7 +655,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
 
   // Dynamic import keeps local-source (node:fs) out of the cloud module graph.
   const { resolveFromLocal } = await import("./local-source");
-  return resolveFromLocal(input.path, { composePath: input.composePath });
+  return resolveFromLocal(input.path, { composePath: input.composePath, env: input.env });
 }
 
 type RepoMeta = Parameters<typeof toProjectInfo>[0];
@@ -704,7 +748,7 @@ export async function resolveFromReader(
     composeEnvContent,
     root.monorepo,
     routing,
-    { declaredCompose: !!root.declaredComposePath },
+    { declaredCompose: !!root.declaredComposePath, env: opts.env },
   );
   const overlaid = applyOpenshipOverlay(info, openshipConfig);
 
@@ -769,24 +813,55 @@ function toProjectInfo(
      *  services project even when stack detection wouldn't say so on its own
      *  (a non-standard filename like `stack.yml` matches no root marker). */
     declaredCompose?: boolean;
+    /** See {@link ResolveOptions.env}. */
+    env?: Record<string, string>;
   },
 ): ProjectInfo {
   const stack = projectRoot.stack;
   const rootEnv = composeEnvContent ? parseComposeEnvFile(composeEnvContent) : {};
 
   let services: ComposeService[] | undefined;
+  let missingRequiredEnv: ComposeMissingVariable[] | undefined;
+  let unsupportedCompose: ComposeUnsupportedField[] | undefined;
   if (composeContent && (opts?.declaredCompose || stack.projectType === "services")) {
     try {
-      const parsed = parseComposeFile(composeContent, { envFileContent: composeEnvContent });
+      const parsed = parseComposeFile(composeContent, {
+        envFileContent: composeEnvContent,
+        env: opts?.env,
+      });
       services = parsed.services;
+      // Values the file demands (`${VAR:?…}`) that nothing here supplied. NOT an
+      // error: the scan runs before the user has filled the wizard's env form, so
+      // this is the list to prompt for, not a reason to refuse the repo (#472).
+      if (parsed.missingRequired.length > 0) missingRequiredEnv = parsed.missingRequired;
+      // Keys we can't honor, so the wizard can show what won't carry over instead
+      // of the file quietly deploying as something else (#533).
+      if (parsed.unsupported.length > 0) unsupportedCompose = parsed.unsupported;
     } catch (err) {
-      // Surface the broken file. Swallowing it returns a services project with
+      // Surface the broken file — an unusable file (invalid YAML), which is all
+      // the parser throws for now. Swallowing it returns a services project with
       // ZERO services — the wizard then shows nothing to deploy and no reason
       // why (issue #339). True whether the path was declared or detected: we
       // only parse when compose IS this root's stack.
       const detail = err instanceof Error && err.message ? err.message : "Unknown parser error";
       const where = opts?.declaredCompose ? ` at "${projectRoot.rootDirectory || "."}"` : "";
       throw new Error(`Could not parse the Docker Compose file${where}: ${detail}`, { cause: err });
+    }
+
+    // A BLOCKING key refuses the import, outside the parse try/catch so it never
+    // reads as "could not parse" — the file is valid, it just asks for something
+    // that cannot be deployed faithfully. Unlike a missing env value (#472) there
+    // is nothing the wizard could collect to resolve it: the file has to change.
+    // Proceeding is the #533 failure mode — a service the author pinned to a VPN
+    // sidecar's namespace comes up with its own interface, egressing in the clear
+    // and looking healthy throughout.
+    const blocking = blockingComposeFields(unsupportedCompose ?? []);
+    if (blocking.length > 0) {
+      const where = opts?.declaredCompose ? ` at "${projectRoot.rootDirectory || "."}"` : "";
+      throw new Error(
+        `The Docker Compose file${where} declares options Openship can't deploy faithfully:\n` +
+          describeBlockingComposeFields(blocking),
+      );
     }
   }
 
@@ -816,7 +891,14 @@ function toProjectInfo(
     stack: stack.stack,
     projectType,
     category: stack.category,
-    packageManager: stack.packageManager,
+    // detectPackageManager()'s "unknown" fallback (no manifest anywhere in this
+    // root) is an internal sentinel, not a real package manager — PackageManagerEnum
+    // (project.schema.ts) never included it, so echoing it back verbatim here let
+    // the client round-trip it straight into project creation and 400 with
+    // "Expected union value" (issue #415). "npm" mirrors the client's own
+    // `|| "npm"` fallback default (DEFAULT_DEPLOYMENT_CONFIG) — same reasonable
+    // default, now applied where the value is actually produced.
+    packageManager: stack.packageManager === "unknown" ? "npm" : stack.packageManager,
     buildCommand: stack.buildCommand,
     installCommand: stack.installCommand,
     startCommand: stack.startCommand,
@@ -826,6 +908,8 @@ function toProjectInfo(
     productionPaths: stack.productionPaths,
     port: stack.port,
     ...(services && { services }),
+    ...(missingRequiredEnv && { missingRequiredEnv }),
+    ...(unsupportedCompose && { unsupportedCompose }),
     ...(isMonorepo && monorepo
       ? { monorepoApps: monorepo.apps, monorepoWorkspace: monorepo.workspace }
       : {}),

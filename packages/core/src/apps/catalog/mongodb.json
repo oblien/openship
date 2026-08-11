@@ -65,12 +65,8 @@
       },
       "healthcheck": {
         "test": [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8081/"
+          "CMD-SHELL",
+          "wget -q -S --spider http://127.0.0.1:8081/ 2>&1 | grep -q \"HTTP/\""
         ],
         "interval": "10s",
         "timeout": "5s",
@@ -114,6 +110,7 @@
         "id": "admin",
         "label": "Mongo Express",
         "source": "publicUrl:mongo-express",
+        "kind": "url",
         "envKey": "MONGO_EXPRESS_URL",
         "help": "Sign in with the username + password below."
       },

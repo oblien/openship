@@ -119,8 +119,11 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
 }) => {
   const { t } = useI18n();
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [faviconError, setFaviconError] = useState(false);
   const statusConfig = getStatusConfig(deployment.status);
   const frameworkConfig = getFrameworkConfig(deployment.framework);
+  const hasFavicon = !!deployment.favicon && !faviconError;
 
   const statusLabelMap: Record<string, string> = {
     success: t.deployments.status.deployed,
@@ -147,12 +150,19 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
         aria-label={deployment.projectName || t.deployments.card.unknownProject}
         className="absolute inset-0 z-0"
       />
-      {/* App logo (catalog apps) → else framework icon → else initials */}
+      {/* App logo (catalog apps) → project favicon → framework icon → initials */}
       <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
         {appTemplateId ? (
           <AppLogo appId={appTemplateId} className="size-5 object-contain" />
+        ) : hasFavicon ? (
+          <img
+            src={deployment.favicon!}
+            alt=""
+            className="size-5 object-contain"
+            onError={() => setFaviconError(true)}
+          />
         ) : frameworkConfig.icon ? (
-          frameworkConfig.icon("hsl(var(--foreground))")
+          frameworkConfig.icon("var(--foreground)")
         ) : (
           <span className="text-xs font-mono font-bold text-muted-foreground">
             {(deployment.framework || "?").slice(0, 2).toUpperCase()}
@@ -276,8 +286,15 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
         </div>
       </div>
 
-      {/* Right side - commit hash + actions */}
-      <div className="relative z-10 flex items-center gap-2 shrink-0">
+      {/* Right side - commit hash + actions.
+          `z-10` makes this a stacking context, which caps the dropdown inside
+          it — every row's actions block sat at the same z-10, so later rows
+          painted their commit hash and trigger over an open menu. Lifting the
+          whole block while the menu is open is what puts it above the siblings;
+          the dropdown's own z-50 only orders it within this block. */}
+      <div
+        className={`relative flex items-center gap-2 shrink-0 ${isMenuOpen ? "z-30" : "z-10"}`}
+      >
         {hasCommitData && (
           <button
             onClick={(e) => {
@@ -302,6 +319,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           deployment={deployment}
           triggerClassName="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground"
           onStatusChange={onStatusChange}
+          onOpenChange={setIsMenuOpen}
         />
       </div>
 

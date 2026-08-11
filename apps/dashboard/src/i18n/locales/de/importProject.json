@@ -101,6 +101,10 @@
     "serverOnPort": "Server auf Port {port}",
     "serverPortNotSet": "Server-Port nicht festgelegt",
     "staticFromEdge": "Statisch vom Edge",
+    "modeServer": "Server",
+    "modeWorker": "Worker",
+    "modeStatic": "Statisch",
+    "workerModeDesc": "Läuft kontinuierlich ohne Port oder öffentliche URL – ein Queue-Consumer, Cronjob oder Bot.",
     "buildSettingsTitle": "Build-Einstellungen"
   },
   "projectSettings": {

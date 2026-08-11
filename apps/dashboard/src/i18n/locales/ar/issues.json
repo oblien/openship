@@ -1,0 +1,92 @@
+{
+  "title": "المشكلات",
+  "subtitle": "كل ما وجده Openship من خلل في مشاريعك وخوادمك ونطاقاتك.",
+  "tabs": {
+    "open": "مفتوحة",
+    "resolved": "محلولة"
+  },
+  "resolvedNote": "يغطي السجل حوادث الحاويات والخوادم فقط — أما بقية الفحوصات فتُبلّغ عن الحالة الحالية، لذا يتوقف ظهور الشهادة أو النشر هنا بمجرد إصلاحه.",
+  "rescan": "إعادة الفحص",
+  "rescanning": "جارٍ الفحص",
+  "filters": {
+    "searchPlaceholder": "ابحث في المشكلات",
+    "all": "الكل",
+    "outage": "توقف الخدمة",
+    "action_required": "يتطلب إجراءً",
+    "advisory": "تنبيه",
+    "clear": "مسح الفلاتر"
+  },
+  "scopes": {
+    "platform": "Openship",
+    "server": "الخوادم",
+    "project": "المشاريع",
+    "domain": "النطاقات"
+  },
+  "scopeSubtitles": {
+    "platform": "هذا التثبيت نفسه",
+    "server": "الأجهزة التي تعمل عليها أحمالك",
+    "project": "المشاريع المنشورة وحاوياتها",
+    "domain": "أسماء المضيف المخصّصة والشهادات"
+  },
+  "kinds": {
+    "deploy_blocked": "النشر محجوب",
+    "prompt": "في انتظار قرار",
+    "partial_decision": "إصدار جزئي",
+    "routing_unsynced": "التوجيه غير متزامن",
+    "domain_unverified": "النطاق غير موثَّق",
+    "ssl_error": "مشكلة في الشهادة",
+    "port_advisory": "تنبيه بشأن منفذ",
+    "workload_unhealthy": "فحوصات السلامة تفشل",
+    "workload_crash_loop": "يتعطل بشكل متكرر",
+    "workload_down": "الحاوية متوقفة",
+    "server_unreachable": "لا يمكن الوصول إلى الخادم",
+    "edge_down": "الحافة متوقفة",
+    "edge_absent": "الحافة غير مثبَّتة",
+    "mail_down": "محرّك البريد متوقف",
+    "update_available": "يتوفر تحديث",
+    "component_behind": "يتوفر تحديث للمكوّن"
+  },
+  "since": "بدأت {when}",
+  "resolvedWhen": "حُلّت {when}",
+  "expiresIn": "سيُلغى بعد {n} دقيقة",
+  "view": "عرض",
+  "fix": "إصلاح",
+  "install": "تثبيت",
+  "update": "تحديث",
+  "mailSetup": "إعداد البريد",
+  "selfUpdateNote": "يُحدّث هذا التثبيت نفسه من سطر الأوامر.",
+  "empty": {
+    "openTitle": "لا شيء يحتاج انتباهك",
+    "openBody": "لا عمليات نشر محجوبة أو معلّقة، ولا مشكلات في الشهادات أو النطاقات، ولا شيء متأخر، ولا شيء على منفذ خاطئ. تستمر الفحوصات في الخلفية.",
+    "resolvedTitle": "لا حوادث محلولة",
+    "resolvedBody": "تظهر حوادث الحاويات والخوادم هنا بعد تعافيها، ويُحفظ سجلها 30 يومًا.",
+    "filteredTitle": "لا نتائج",
+    "filteredBody": "هناك مشكلات مفتوحة، لكن لا شيء منها يطابق هذا الفلتر."
+  },
+  "summary": {
+    "title": "نظرة عامة",
+    "subtitle": "الحالة في لمحة",
+    "totalOpen": "مفتوحة",
+    "totalResolved": "تم حلها",
+    "bySeverity": "حسب الخطورة",
+    "byArea": "حسب المجال"
+  },
+  "home": {
+    "attentionTitle": "يحتاج انتباهك",
+    "attentionSubtitle": "هناك خلل أو أمر ينتظر قرارك",
+    "updatesTitle": "تحديثات متوفرة",
+    "updatesSubtitle": "إصدارات جديدة جاهزة للتطبيق",
+    "more": "و{n} أخرى",
+    "hide": "إخفاء حتى يتغيّر شيء"
+  },
+  "loadFailed": "تعذّر تحميل المشكلات",
+  "toast": {
+    "title": "المشكلات",
+    "rescanned": "انتهى الفحص",
+    "rescanPartial": "انتهى الفحص، وفشل {n} فحص",
+    "rescanFailed": "فشل الفحص",
+    "resolved": "تم",
+    "resolveFailed": "تعذّر تطبيق هذا الإصلاح",
+    "confirmDestructive": "لهذا الإجراء أثر جانبي لا يمكن التراجع عنه. أتريد المتابعة؟"
+  }
+}

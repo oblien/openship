@@ -21,6 +21,8 @@
  * that's easy to forget — so a new routing field is added in ONE place.
  */
 
+import { normalizeCustomHostname } from "@repo/core";
+
 import type { PublicEndpoint } from "@/context/deployment/types";
 
 /**
@@ -85,7 +87,9 @@ export function validatedPublicEndpointPayload(
 ): ValidatedPublicEndpointPayload | null {
   const domainType: "free" | "custom" = endpoint.domainType === "custom" ? "custom" : "free";
   const freeDomain = endpoint.domain.trim().toLowerCase();
-  const customDomain = endpoint.customDomain.trim().toLowerCase();
+  // The SAME normalizer the API stores with, so a pasted `https://example.com/`
+  // saves as `example.com` instead of being rejected as a bogus hostname.
+  const customDomain = normalizeCustomHostname(endpoint.customDomain);
 
   if (domainType === "custom" && !customDomain) return null;
   if (domainType === "free" && !freeDomain) return null;

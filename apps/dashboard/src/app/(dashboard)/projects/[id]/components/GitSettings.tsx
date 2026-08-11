@@ -25,6 +25,7 @@ import { Modal } from "@/components/ui/Modal";
 import { RepositoryList } from "../../../library/components/RepositoryList";
 import { InfoCard } from "@/components/settings/InfoCard";
 import { AppSource } from "./AppSource";
+import { GitSettingsSkeleton } from "./GitSettingsSkeleton";
 
 export const GitSettings = () => {
   const { gitData, refreshGit, id, projectData, updateProjectData } = useProjectSettings();
@@ -124,53 +125,7 @@ export const GitSettings = () => {
     // Mirror the real SectionCard layout below (header → repository sub-card with
     // its inline auto-deploy toggle → rollback grid → recent commits) so the page
     // doesn't reflow when data lands.
-    // Discrete block placeholders inside a transparent outline — NOT a solid
-    // full-card fill — so the tab reads as "content loading in blocks" and
-    // roughly reserves the real layout (header → repository row → rollback pair
-    // → recent commits) to avoid a reflow when data lands.
-    return (
-      <div className="animate-pulse space-y-4 rounded-2xl border border-border/50 p-5">
-        {/* header (icon + title + subtitle) */}
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 shrink-0 rounded-xl bg-muted/50" />
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-3.5 w-40 rounded bg-muted/50" />
-            <div className="h-3 w-64 max-w-full rounded bg-muted/30" />
-          </div>
-        </div>
-        {/* repository row + inline auto-deploy toggle */}
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 px-4 py-3.5">
-          <div className="min-w-0 space-y-2">
-            <div className="h-2.5 w-24 rounded bg-muted/30" />
-            <div className="h-4 w-44 rounded bg-muted/50" />
-            <div className="h-3 w-32 rounded bg-muted/30" />
-          </div>
-          <div className="h-6 w-11 shrink-0 rounded-full bg-muted/50" />
-        </div>
-        {/* rollback strategy + history pair */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {[0, 1].map((i) => (
-            <div key={i} className="space-y-2 rounded-xl border border-border/50 p-3">
-              <div className="h-3 w-20 rounded bg-muted/50" />
-              <div className="h-2.5 w-28 rounded bg-muted/30" />
-            </div>
-          ))}
-        </div>
-        {/* recent commits */}
-        <div className="space-y-2 pt-1">
-          <div className="h-3 w-28 rounded bg-muted/30" />
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 rounded-lg border border-border/40 px-3 py-2"
-            >
-              <div className="h-6 w-6 shrink-0 rounded-full bg-muted/40" />
-              <div className="h-3 w-40 max-w-full rounded bg-muted/40" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <GitSettingsSkeleton />;
   }
 
   // Release/image apps (n8n, Convex, webmail…) deploy from a release or registry

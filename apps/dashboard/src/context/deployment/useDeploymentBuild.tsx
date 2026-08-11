@@ -27,9 +27,14 @@ import {
   resolveBuildElapsedMs,
   syncPublicEndpointState,
   usesServiceDeployment,
+  workloadOf,
 } from "./types";
 import type { RawComposeService } from "./types";
-import { parseCloudRequiredCode } from "@repo/core";
+import type { WorkloadType } from "@repo/core";
+import {
+  deployErrorCloudCapability,
+  shouldPromptCloudConnect,
+} from "@/lib/deploy-error-routing";
 
 const ERROR_DEBOUNCE_MS = 1000;
 const MAX_RENDERED_BUILD_LOGS = 2000;
@@ -206,7 +211,10 @@ export function useDeploymentBuild(
   setConfig: React.Dispatch<React.SetStateAction<DeploymentConfig>>,
 ) {
   const { showToast } = useToast();
-  const { requireCloud } = useCloud();
+  // `connected` is read, not just `requireCloud`: the catch below has to tell
+  // "connecting is the missing step" from "we already think we're connected and the
+  // server still said no" — the two cases requireCloud's return value conflates.
+  const { requireCloud, connected: cloudConnected } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
   const { showModal, hideModal } = useModal();
   const openGithubConnect = useServerGitHubConnectModal();
@@ -484,7 +492,9 @@ export function useDeploymentBuild(
       onProgress: handleProgressUpdate,
       onSuccess: (data) => {
         handleSuccessMessage(data);
-        if (config.options.hasServer) {
+        // A worker runs a container and streams logs like a web app; only a
+        // static (edge-served files) deploy has no container to stream (#538).
+        if (workloadOf(config.options) !== "static") {
           canStreamContainer.current = true;
         }
         buildStream.disconnect();
@@ -707,6 +717,9 @@ export function useDeploymentBuild(
                 : undefined,
             hasServer: config.options.hasServer,
             hasBuild: config.options.hasBuild,
+            // Runtime workload (#538). A worker is only expressible here — the
+            // backend re-syncs hasServer/productionMode from it.
+            workloadType: workloadOf(config.options),
             ...(config.runtimeMode === "bare" || config.runtimeMode === "docker"
               ? { runtimeMode: config.runtimeMode }
               : {}),
@@ -738,7 +751,10 @@ export function useDeploymentBuild(
         packageManager: config.packageManager,
         buildImage: config.buildImage,
         buildCommand: config.options.buildCommand,
-        outputDirectory: config.options.outputDirectory,
+        // Blank default must be OMITTED, not sent as "": the ensure schema's
+        // outputDirectory pattern rejects an empty string → 400 before the
+        // handler (#427). Mirror productionPaths' `|| undefined` on the line below.
+        outputDirectory: config.options.outputDirectory || undefined,
         productionPaths: config.options.productionPaths || undefined,
         installCommand: config.options.installCommand,
         startCommand: config.options.startCommand,
@@ -762,6 +778,8 @@ export function useDeploymentBuild(
           : undefined,
         hasServer: config.options.hasServer,
         hasBuild: config.options.hasBuild,
+        // Runtime workload (#538): the only way to create a portless worker.
+        workloadType: workloadOf(config.options),
         // Rollback retention chosen in the target panel. Only meaningful on a
         // FIRST deploy — for an existing project the panel already persisted it.
         ...(config.rollbackWindow !== undefined ? { rollbackWindow: config.rollbackWindow } : {}),
@@ -865,15 +883,17 @@ export function useDeploymentBuild(
           config.projectType === "services" || config.projectType === "monorepo"
             ? config.serviceDeploymentMode
             : undefined,
-        // Cloud resource tier only matters for a server-backed Oblien deploy.
-        // Static (Pages) deploys and non-cloud targets ignore it.
+        // Cloud resource tier sizes a long-lived container — a web app OR a
+        // worker (#538). Only a static (Pages) deploy has no workspace to size,
+        // so gate on the workload, not the legacy hasServer boolean (a worker
+        // shares hasServer=false with a static site).
         cloudResourceTier:
-          config.deployTarget === "cloud" && config.options.hasServer
+          config.deployTarget === "cloud" && workloadOf(config.options) !== "static"
             ? config.cloudResourceTier
             : undefined,
         cloudResourceCustom:
           config.deployTarget === "cloud" &&
-          config.options.hasServer &&
+          workloadOf(config.options) !== "static" &&
           config.cloudResourceTier === "custom"
             ? config.cloudResourceCustom
             : undefined,
@@ -929,8 +949,15 @@ export function useDeploymentBuild(
       // (copy from the shared registry — no hardcoded strings). The up-front
       // Sidebar gate handles the happy path; this is the fallback. On dismiss,
       // surface the original error; on connect, the user re-deploys.
-      const cloudCapability = parseCloudRequiredCode(errorCode);
-      if (cloudCapability && canConnectCloud) {
+      //
+      // Gated on `!cloudConnected` (see shouldPromptCloudConnect): `requireCloud`
+      // resolves TRUE immediately when the dashboard already believes it is
+      // connected, opening no modal and asking nothing — and `if (!connected)` then
+      // skipped the toast, so a 403 the server was perfectly clear about
+      // ("Free subdomain … requires Openship Cloud") reached the user as nothing at
+      // all, visible only in the network tab.
+      const cloudCapability = deployErrorCloudCapability(errorCode);
+      if (shouldPromptCloudConnect({ errorCode, canConnectCloud, cloudConnected }) && cloudCapability) {
         const connected = await requireCloud(cloudCapability, { domain: baseDomain });
         if (!connected) showToast(message, "error", "Error");
       } else if (!maybeOpenCredentialModal(errorCode)) {
@@ -941,7 +968,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
+  }, [baseDomain, cloudConnected, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only
@@ -1076,6 +1103,16 @@ export function useDeploymentBuild(
           const apiHasServer = apiConfig.hasServer !== undefined
             ? apiConfig.hasServer
             : config.options.hasServer;
+          // The frozen deployment's resolved workload (#538): a worker and a
+          // static site both carry hasServer=false, so this is what tells "Edit
+          // Configuration" to reopen a worker as a worker. Absent (older status
+          // payload) → undefined, i.e. derive from hasServer as before.
+          const apiWorkloadType: WorkloadType | undefined =
+            apiConfig.workloadType === "web" ||
+            apiConfig.workloadType === "worker" ||
+            apiConfig.workloadType === "static"
+              ? apiConfig.workloadType
+              : undefined;
           const normalizedEndpoints = ensurePublicEndpoints(
             apiConfig.publicEndpoints?.map((endpoint: {
               port?: string;
@@ -1158,6 +1195,7 @@ export function useDeploymentBuild(
               rootDirectory: apiConfig.rootDirectory || prev.options.rootDirectory,
               hasServer: apiHasServer,
               hasBuild: apiConfig.hasBuild !== undefined ? apiConfig.hasBuild : prev.options.hasBuild,
+              workloadType: apiWorkloadType,
             },
           })));
         }

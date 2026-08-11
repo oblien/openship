@@ -483,6 +483,11 @@ const Thread = memo(
                       </p>
                     ) : null}
                   </div>
+                  {!isFolderSent && (
+                    <p className="line-clamp-1 overflow-hidden text-sm text-foreground">
+                      {highlightText(latestMessage.subject, searchValue.highlight)}
+                    </p>
+                  )}
                   <div className="flex justify-between">
                     {isFolderSent ? (
                       <p
@@ -498,7 +503,9 @@ const Thread = memo(
                           'mt-1 line-clamp-1 w-[95%] min-w-0 overflow-hidden text-sm text-[#8C8C8C]',
                         )}
                       >
-                        {highlightText(latestMessage.subject, searchValue.highlight)}
+                        {latestMessage.snippet
+                          ? highlightText(latestMessage.snippet, searchValue.highlight)
+                          : null}
                       </p>
                     )}
                     {/* <div className="hidden md:flex">

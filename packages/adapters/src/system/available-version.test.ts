@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CommandExecutor } from "../types";
 import type { EnvironmentProfile } from "./environment";
+import { profileFixture } from "./environment.fixtures";
 import type { ComponentStatus } from "./types";
 import { normalizePkgVersion, enrichAvailableVersions } from "./available-version";
 
@@ -13,16 +14,15 @@ describe("normalizePkgVersion", () => {
   });
 });
 
-const APT: EnvironmentProfile = {
-  os: "linux", arch: "amd64", distro: "ubuntu",
-  packageManager: "apt", serviceManager: "systemd", isRoot: true, canSudo: false,
-};
+const APT: EnvironmentProfile = profileFixture();
 
 function fakeExecutor(candidates: Record<string, string>): CommandExecutor {
   return {
     exec: async (cmd: string) => {
-      // apt-cache policy '<pkg>' … → we key on the quoted pkg name in the cmd
-      const m = cmd.match(/apt-cache policy '([^']+)'/);
+      // `apt-cache policy <pkg> …` — the name is bare because `envOps` VALIDATES
+      // package names against a strict pattern rather than quoting them, so there
+      // are no quotes here to key on.
+      const m = cmd.match(/apt-cache policy (\S+)/);
       if (m) {
         const cand = candidates[m[1]!];
         if (cand === undefined) throw new Error("no such package");
@@ -33,10 +33,11 @@ function fakeExecutor(candidates: Record<string, string>): CommandExecutor {
   } as unknown as CommandExecutor;
 }
 
-const APK: EnvironmentProfile = {
-  os: "linux", arch: "amd64", distro: "alpine",
-  packageManager: "apk", serviceManager: "none", isRoot: true, canSudo: false,
-};
+const APK: EnvironmentProfile = profileFixture({
+  distro: "alpine", distroFamily: "alpine", distroId: "alpine", versionId: "3.20.3",
+  prettyName: "Alpine Linux v3.20", packageManager: "apk", serviceManager: "openrc",
+  libc: "musl",
+});
 
 /** Fake `apk policy <pkg>` output: version lines end in `:`, each followed by
  *  indented source lines including an HTTPS repo URL (whose own `:` must not be
@@ -44,7 +45,7 @@ const APK: EnvironmentProfile = {
 function fakeApkExecutor(policies: Record<string, string>): CommandExecutor {
   return {
     exec: async (cmd: string) => {
-      const m = cmd.match(/apk policy '([^']+)'/);
+      const m = cmd.match(/apk policy (\S+)/);
       if (m) {
         const out = policies[m[1]!];
         if (out === undefined) throw new Error("no such package");
@@ -54,6 +55,9 @@ function fakeApkExecutor(policies: Record<string, string>): CommandExecutor {
     },
   } as unknown as CommandExecutor;
 }
+
+/** A host where no package manager was found — nothing to ask, and it says so. */
+const NO_PM: EnvironmentProfile = profileFixture({ packageManager: "none" });
 
 const status = (name: string, version: string): ComponentStatus => ({
   name, label: name, description: "", installable: true, installed: true, version, healthy: true, message: "",
@@ -113,6 +117,18 @@ describe("enrichAvailableVersions", () => {
     await enrichAvailableVersions(fakeApkExecutor({ git: policy }), APK, s);
     expect(s[0]!.availableVersion).toBe("2.43.0");
     expect(s[0]!.updateAvailable).toBe(true);
+  });
+
+  // The point of asking `envOps` before the executor: on a host with nothing to ask,
+  // we don't shell out to discover that. A badge nobody can compute is not a probe.
+  it("makes no probe at all on a host with no package manager", async () => {
+    const exec = vi.fn(async () => "");
+    const s = [status("git", "2.43.0")];
+
+    await enrichAvailableVersions({ exec } as unknown as CommandExecutor, NO_PM, s);
+
+    expect(exec).not.toHaveBeenCalled();
+    expect(s[0]!.updateAvailable).toBeUndefined();
   });
 
   it("apk: does NOT flag when the only available version equals installed", async () => {

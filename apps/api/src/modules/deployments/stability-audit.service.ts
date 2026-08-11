@@ -60,8 +60,12 @@ function shorten(line: string): string {
 /**
  * Last log lines from a container, newest last. Best-effort: an unreadable log
  * stream must not change the verdict, so it degrades to an empty tail.
+ *
+ * Exported for the steady-state health watch, which needs the identical excerpt
+ * for its incident alerts — the log tail an operator reads at 3am should be the
+ * same shape as the one attached to a failed deploy.
  */
-async function readLogTail(
+export async function readLogTail(
   runtime: RuntimeAdapter,
   containerId: string,
   lines: number,

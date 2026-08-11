@@ -9,9 +9,10 @@
  *      (email, webhook, slack, in-app). Channel configs are surfaced
  *      via a small inline form that switches shape per kind.
  *
- *   2. Subscriptions — a category × channel matrix. Each row is a
- *      stable category; each column is one of the user's channels.
- *      Cells are checkboxes that upsert/disable subscriptions.
+ *   2. Subscriptions — one row per stable category, tabbed by the
+ *      category groups the backend hands back (plus an "All" tab, which
+ *      lists the same rows under one heading per group). Each row carries
+ *      the org default and the caller's own "Notify me".
  *
  *   3. Org defaults — admin-only section to set per-category
  *      defaults that apply when a NEW member joins this org.
@@ -22,6 +23,7 @@ import Link from "next/link";
 import { Bell, Mail, Webhook, MessageSquare, MessageCircle, MessagesSquare, Smartphone, Plus, Trash2, Loader2, AlertTriangle, Send, Check, ChevronDown, type LucideIcon } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
 import { PillSwitcher } from "@/components/ui/PillSwitcher";
+import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { systemApi } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
@@ -29,6 +31,7 @@ import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import {
   notificationsApi,
   type NotificationCategory,
+  type NotificationCategoryGroup,
   type NotificationChannel,
   type NotificationSubscription,
   type NotificationDefault,
@@ -44,6 +47,7 @@ const CHANNEL_ICONS: Record<ChannelKind, LucideIcon> = {
   slack: MessageSquare,
   discord: MessageCircle,
   msteams: MessagesSquare,
+  telegram: Send,
   in_app: Smartphone,
 };
 
@@ -53,6 +57,7 @@ const CHANNEL_LOGOS: Partial<Record<ChannelKind, string>> = {
   slack: "slack",
   discord: "discord",
   msteams: "microsoftteams",
+  telegram: "telegram",
 };
 
 const CHANNEL_LABELS: Record<ChannelKind, string> = {
@@ -61,6 +66,7 @@ const CHANNEL_LABELS: Record<ChannelKind, string> = {
   slack: "Slack",
   discord: "Discord",
   msteams: "Microsoft Teams",
+  telegram: "Telegram",
   in_app: "In-app",
 };
 
@@ -76,7 +82,14 @@ function ChannelLogo({ kind, className = "size-4" }: { kind: ChannelKind; classN
 
 /** Channel kinds selectable as org-default destinations (in_app excluded — it's
  *  implicit, not a chosen destination). */
-const DEFAULT_KIND_CHOICES: ChannelKind[] = ["email", "webhook", "slack", "discord", "msteams"];
+const DEFAULT_KIND_CHOICES: ChannelKind[] = [
+  "email",
+  "webhook",
+  "slack",
+  "discord",
+  "msteams",
+  "telegram",
+];
 
 /** Compact multi-select: pick one OR MORE channel kinds an event fans out to.
  *  Trigger shows the selected marks + count; a checklist popover toggles kinds.
@@ -179,6 +192,7 @@ export function NotificationsTab() {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<NotificationCategory[]>([]);
+  const [categoryGroups, setCategoryGroups] = useState<NotificationCategoryGroup[]>([]);
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [subscriptions, setSubscriptions] = useState<NotificationSubscription[]>([]);
   const [defaults, setDefaults] = useState<NotificationDefault[]>([]);
@@ -202,6 +216,7 @@ export function NotificationsTab() {
           notificationsApi.listDefaults().catch(() => ({ defaults: [] })),
         ]);
         setCategories(cats.categories);
+        setCategoryGroups(cats.groups);
         setChannels(ch.channels);
         setSubscriptions(subs.subscriptions);
         setDefaults(defs.defaults);
@@ -254,6 +269,7 @@ export function NotificationsTab() {
       <ChannelsCard channels={channels} onChange={() => refresh({ silent: true })} />
       <EventNotificationsCard
         categories={categories}
+        groups={categoryGroups}
         channels={channels}
         subscriptions={subscriptions}
         defaults={defaults}
@@ -314,7 +330,35 @@ function ChannelsCard({
       icon={Bell}
       title={t.settings.notifications.channels.title}
       description={t.settings.notifications.channels.description}
+      /* In the header, not under the list: the list grows, so a button below it
+         walks further from the heading with every channel added, and the form it
+         opens is what should hold the reader's attention once it is open — hence
+         no second trigger while the form is up (it carries its own Cancel). */
+      action={
+        showForm ? null : (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/50 text-sm hover:bg-foreground/[0.04] transition"
+          >
+            <Plus className="size-4" strokeWidth={1.7} />
+            {t.settings.notifications.channels.addChannel}
+          </button>
+        )
+      }
     >
+      {showForm && (
+        <div className="mb-4">
+          <NewChannelForm
+            onCancel={() => setShowForm(false)}
+            onSaved={async () => {
+              setShowForm(false);
+              await onChange();
+            }}
+          />
+        </div>
+      )}
+
       {channels.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t.settings.notifications.channels.empty}</p>
       ) : (
@@ -364,27 +408,6 @@ function ChannelsCard({
           ))}
         </ul>
       )}
-
-      <div className="mt-4">
-        {showForm ? (
-          <NewChannelForm
-            onCancel={() => setShowForm(false)}
-            onSaved={async () => {
-              setShowForm(false);
-              await onChange();
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/50 text-sm hover:bg-foreground/[0.04] transition"
-          >
-            <Plus className="size-4" strokeWidth={1.7} />
-            {t.settings.notifications.channels.addChannel}
-          </button>
-        )}
-      </div>
     </SettingsSection>
   );
 }
@@ -406,6 +429,12 @@ function describeChannel(
       return labels.discordWebhook;
     case "msteams":
       return labels.msteamsWebhook;
+    case "telegram": {
+      // Chat id (and topic) are the useful discriminator and aren't secret —
+      // the bot token is what's masked. No label needed, they're raw ids.
+      const cfg = ch.config as { chatId?: string; messageThreadId?: string | null };
+      return cfg.messageThreadId ? `${cfg.chatId ?? ""} · #${cfg.messageThreadId}` : String(cfg.chatId ?? "");
+    }
     case "in_app":
       return labels.inApp;
     default:
@@ -427,6 +456,8 @@ function NewChannelForm({
   const [address, setAddress] = useState("");
   const [url, setUrl] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [chatId, setChatId] = useState("");
   const [busy, setBusy] = useState(false);
   // Whether the instance can send email at all (instance SMTP / mail server /
   // env). null = unknown (not yet loaded, or no permission to read). When false
@@ -462,6 +493,8 @@ function NewChannelForm({
     else if (kind === "webhook") config = { url: url.trim() };
     else if (kind === "slack" || kind === "discord" || kind === "msteams")
       config = { webhookUrl: webhookUrl.trim() };
+    else if (kind === "telegram")
+      config = { botToken: botToken.trim(), chatId: chatId.trim() };
 
     setBusy(true);
     try {
@@ -484,7 +517,9 @@ function NewChannelForm({
       {/* Kind picker — one reusable switcher (real brand logos; scrolls with
           edge-fade + chevrons once the kinds outgrow the width). */}
       <PillSwitcher
-        options={(["email", "webhook", "slack", "discord", "msteams"] as ChannelKind[]).map((k) => ({
+        options={(
+          ["email", "webhook", "slack", "discord", "msteams", "telegram"] as ChannelKind[]
+        ).map((k) => ({
           value: k,
           label: t.settings.notifications.kinds[k],
           logo: CHANNEL_LOGOS[k],
@@ -560,6 +595,29 @@ function NewChannelForm({
           className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
         />
       )}
+      {/* The only kind needing two inputs: a bot identity plus a destination. */}
+      {kind === "telegram" && (
+        <>
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder={t.settings.notifications.form.telegramTokenPlaceholder}
+            value={botToken}
+            onChange={(e) => setBotToken(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <input
+            type="text"
+            placeholder={t.settings.notifications.form.telegramChatPlaceholder}
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t.settings.notifications.form.telegramHint}
+          </p>
+        </>
+      )}
 
       <div className="flex items-center gap-2">
         <button
@@ -582,10 +640,13 @@ function NewChannelForm({
   );
 }
 
-/* ─── Event notifications card (org defaults + per-user opt-in, one list) ─── */
+/* ─── Event notifications card (org defaults + per-user opt-in, tabbed) ─── */
+
+const ALL_TAB = "all";
 
 function EventNotificationsCard({
   categories,
+  groups,
   channels,
   subscriptions,
   defaults,
@@ -593,6 +654,7 @@ function EventNotificationsCard({
   onChange,
 }: {
   categories: NotificationCategory[];
+  groups: NotificationCategoryGroup[];
   channels: NotificationChannel[];
   subscriptions: NotificationSubscription[];
   defaults: NotificationDefault[];
@@ -602,6 +664,61 @@ function EventNotificationsCard({
   const { showToast } = useToast();
   const { t } = useI18n();
   const [busyCat, setBusyCat] = useState<string | null>(null);
+  const [tab, setTab] = useState<string>(ALL_TAB);
+
+  // Counts are how many events live in the tab, NOT how many you're subscribed
+  // to — they're a table of contents, so they stay put while you toggle rows.
+  // A group with nothing in it is hidden rather than shown as "0": the server
+  // omits whole groups it can't deliver (billing outside cloud), and an empty
+  // tab reads like a bug.
+  const tabs = useMemo<TabDef[]>(() => {
+    const byGroup = new Map<string, number>();
+    for (const cat of categories) byGroup.set(cat.group, (byGroup.get(cat.group) ?? 0) + 1);
+    return [
+      {
+        key: ALL_TAB,
+        label: t.settings.notifications.subscriptions.allTab,
+        count: categories.length,
+      },
+      ...groups.map((g) => ({
+        key: g.id,
+        label: g.label,
+        count: byGroup.get(g.id) ?? 0,
+        hidden: !byGroup.has(g.id),
+      })),
+    ];
+  }, [categories, groups, t]);
+
+  /**
+   * The rows, in the order they render, cut into sections.
+   *
+   * On "All" each group gets ONE heading with its events under it, rather than every
+   * row repeating its group as a chip — 19 chips is 19 things to read to learn the
+   * same 7 facts. On a group tab the heading would just repeat the tab you're standing
+   * on, so that's a single unlabelled section.
+   *
+   * A category whose group the backend didn't send still renders, in a trailing
+   * unlabelled section: dropping the row would hide a subscription the dispatcher
+   * delivers on regardless.
+   */
+  const sections = useMemo<
+    { id: string; label: string | null; cats: NotificationCategory[] }[]
+  >(() => {
+    if (tab !== ALL_TAB) {
+      return [{ id: tab, label: null, cats: categories.filter((cat) => cat.group === tab) }];
+    }
+    const out = groups
+      .map((g) => ({
+        id: g.id,
+        label: g.label as string | null,
+        cats: categories.filter((cat) => cat.group === g.id),
+      }))
+      .filter((s) => s.cats.length > 0);
+    const known = new Set(groups.map((g) => g.id));
+    const rest = categories.filter((cat) => !known.has(cat.group));
+    if (rest.length > 0) out.push({ id: "__ungrouped__", label: null, cats: rest });
+    return out;
+  }, [categories, groups, tab]);
 
   const defIndex = useMemo(() => {
     const m = new Map<string, NotificationDefault>();
@@ -673,13 +790,24 @@ function EventNotificationsCard({
       title={t.settings.notifications.subscriptions.title}
       description={t.settings.notifications.subscriptions.description}
     >
+      {/* Full-bleed and flush under the section header, so its rule lines up with
+          the header's and the strip reads as a band rather than a floating row.
+          `px-1` is the strip's gutter: each tab carries its own `px-4`, so 1+4
+          puts the first label — and, since the underline is inset by that same
+          `px-4`, the underline too — on the card's 20px content edge, level with
+          the header icon, the EVENT column and every row beneath. */}
+      <Tabs tabs={tabs} value={tab} onChange={setTab} className="-mx-5 -mt-5 mb-1 px-1" />
       <div className="overflow-x-auto -mx-5">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-start text-xs uppercase tracking-wide text-muted-foreground">
               {/* EVENT takes all the free width (`w-full`); `pe-8` keeps the
-                  description text off the controls so it reads full-bleed. */}
-              <th className="w-full px-5 py-2.5 pe-8 font-medium">
+                  description text off the controls so it reads full-bleed.
+                  `text-start` is not redundant with the row's: a `th` carries its
+                  own UA `text-align: center`, which beats the inherited value, so
+                  without it this one header floats centred over its column while
+                  every event name under it is flush left. */}
+              <th className="w-full px-5 py-2.5 pe-8 font-medium text-start">
                 {t.settings.notifications.subscriptions.eventHeader}
               </th>
               <th className="px-4 py-2.5 font-medium text-start min-w-[160px]">
@@ -693,62 +821,79 @@ function EventNotificationsCard({
               </th>
             </tr>
           </thead>
-          <tbody>
-            {categories.map((cat) => {
-              const def = defIndex.get(cat.id);
-              const enabled = def?.defaultEnabled ?? cat.defaultEnabled;
-              const kinds = (def?.defaultChannelKinds?.length
-                ? def.defaultChannelKinds
-                : ["email"]) as ChannelKind[];
-              const isBusy = busyCat === cat.id;
-              // Checked when the user explicitly opted in, OR when they've made
-              // no explicit choice and the category is default-enabled (the
-              // dispatcher delivers to them in that case too).
-              const notifyMe = enabledCats.has(cat.id) || (!rowCats.has(cat.id) && enabled);
-              return (
-                <tr
-                  key={cat.id}
-                  className={`border-t border-border/30 transition-opacity ${isBusy ? "opacity-50" : ""}`}
-                >
-                  <td className="px-5 py-3.5 pe-8 align-top">
-                    <p className="font-medium text-foreground">{cat.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{cat.description}</p>
-                  </td>
-                  {/* Org default (admin-only): which channel kinds + on/off for new members. */}
-                  <td className="px-4 py-3.5 align-top">
-                    <ChannelMultiSelect
-                      value={kinds}
-                      disabled={isBusy || !isAdmin}
-                      onChange={(next) => setDefault(cat.id, enabled, next)}
-                    />
-                  </td>
-                  <td className="px-5 py-3.5 align-middle text-center">
-                    <Toggle
-                      checked={enabled}
-                      disabled={isBusy || !isAdmin}
-                      onChange={(v: boolean) => setDefault(cat.id, v, kinds)}
-                      aria-label={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
-                        category: cat.label,
-                      })}
-                    />
-                  </td>
-                  {/* Per-user opt-in — anyone can set their own, across their channels. */}
-                  <td className="px-5 pe-6 py-3.5 align-middle text-center">
-                    <input
-                      type="checkbox"
-                      disabled={isBusy || noChannels}
-                      checked={notifyMe}
-                      onChange={(e) => setNotifyMe(cat.id, e.target.checked)}
-                      className="size-4 rounded border-border/50 cursor-pointer accent-foreground disabled:opacity-40 disabled:cursor-not-allowed"
-                      aria-label={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
-                        category: cat.label,
-                      })}
-                    />
-                  </td>
+          {/* One tbody per section, so the group heading is a rowgroup header rather
+              than a row pretending to be one. */}
+          {sections.map((section) => (
+            <tbody key={section.id}>
+              {section.label && (
+                <tr>
+                  <th
+                    scope="rowgroup"
+                    colSpan={4}
+                    className="border-t border-border/30 bg-muted/20 px-5 py-2 text-start text-xs font-semibold text-foreground/70"
+                  >
+                    {section.label}
+                  </th>
                 </tr>
-              );
-            })}
-          </tbody>
+              )}
+              {section.cats.map((cat) => {
+                const def = defIndex.get(cat.id);
+                const enabled = def?.defaultEnabled ?? cat.defaultEnabled;
+                const kinds = (def?.defaultChannelKinds?.length
+                  ? def.defaultChannelKinds
+                  : ["email"]) as ChannelKind[];
+                const isBusy = busyCat === cat.id;
+                // Checked when the user explicitly opted in, OR when they've made
+                // no explicit choice and the category is default-enabled (the
+                // dispatcher delivers to them in that case too).
+                const notifyMe = enabledCats.has(cat.id) || (!rowCats.has(cat.id) && enabled);
+                return (
+                  <tr
+                    key={cat.id}
+                    className={`border-t border-border/30 transition-opacity ${isBusy ? "opacity-50" : ""}`}
+                  >
+                    <td className="px-5 py-3.5 pe-8 align-top">
+                      <p className="font-medium text-foreground">{cat.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                        {cat.description}
+                      </p>
+                    </td>
+                    {/* Org default (admin-only): which channel kinds + on/off for new members. */}
+                    <td className="px-4 py-3.5 align-top">
+                      <ChannelMultiSelect
+                        value={kinds}
+                        disabled={isBusy || !isAdmin}
+                        onChange={(next) => setDefault(cat.id, enabled, next)}
+                      />
+                    </td>
+                    <td className="px-5 py-3.5 align-middle text-center">
+                      <Toggle
+                        checked={enabled}
+                        disabled={isBusy || !isAdmin}
+                        onChange={(v: boolean) => setDefault(cat.id, v, kinds)}
+                        aria-label={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
+                          category: cat.label,
+                        })}
+                      />
+                    </td>
+                    {/* Per-user opt-in — anyone can set their own, across their channels. */}
+                    <td className="px-5 pe-6 py-3.5 align-middle text-center">
+                      <input
+                        type="checkbox"
+                        disabled={isBusy || noChannels}
+                        checked={notifyMe}
+                        onChange={(e) => setNotifyMe(cat.id, e.target.checked)}
+                        className="size-4 rounded border-border/50 cursor-pointer accent-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
+                          category: cat.label,
+                        })}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          ))}
         </table>
         {noChannels && (
           <p className="px-5 pt-3 text-sm text-muted-foreground">

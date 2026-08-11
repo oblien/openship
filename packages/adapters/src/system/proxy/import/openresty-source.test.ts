@@ -50,6 +50,19 @@ describe("openresty as an importable proxy", () => {
     expect(res.warnings.join(" ")).not.toMatch(/not supported/);
   });
 
+  it("surfaces a running legacy edge's sites via `openresty -T` so migrate is offered", async () => {
+    // The end-to-end regression: the consent gate and the migration feature both scan
+    // through here. A legacy bare edge serving one site returned zero (its vhost wasn't
+    // in a known glob), so the operator only ever saw "takeover only" — i.e. drop it.
+    const exec = async (cmd: string) =>
+      cmd.startsWith("openresty -T")
+        ? "http {\n  server {\n    server_name legacy.example.com;\n    location / { proxy_pass http://127.0.0.1:9000; }\n  }\n}\n"
+        : "";
+    const res = await scanImportableSites({ exec } as unknown as CommandExecutor, "openresty");
+
+    expect(res.sites.map((s) => s.serverNames).flat()).toContain("legacy.example.com");
+  });
+
   it("haproxy still reports takeover-only", async () => {
     const res = await scanImportableSites(fakeExecutor({}), "haproxy");
     expect(res.warnings.join(" ")).toMatch(/takeover only/);

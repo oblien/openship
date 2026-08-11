@@ -74,17 +74,21 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
-      <div className="flex items-center gap-2 px-5 py-4 border-b border-border/30">
-        <PlugZap className="size-4 text-primary shrink-0" />
-        <h3 className="text-sm font-semibold text-foreground">
-          {interpolate(byApp.size === 1 ? c.linkedCountOne : c.linkedCountOther, {
-            count: String(byApp.size),
-          })}
-        </h3>
-        <span className="text-xs text-muted-foreground">{c.linkedHint}</span>
+      <div className="flex items-center gap-3 border-b border-border/40 px-5 py-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+          <PlugZap className="size-4 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">
+            {interpolate(byApp.size === 1 ? c.linkedCountOne : c.linkedCountOther, {
+              count: String(byApp.size),
+            })}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">{c.linkedHint}</p>
+        </div>
       </div>
 
-      <div className="divide-y divide-border/30">
+      <div className="divide-y divide-border/40">
         {[...byApp].map(([sourceId, group]) => (
           <div key={sourceId} className="flex items-center gap-4 px-5 py-4">
             <div className="w-10 h-10 rounded-xl bg-muted/50 flex items-center justify-center shrink-0 overflow-hidden">
@@ -96,7 +100,7 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                 <span className="text-[14px] font-semibold text-foreground truncate">
                   {group.name}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
                   <PlugZap className="size-2.5" />
                   {c.linkedBadge}
                 </span>
@@ -137,7 +141,7 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                 href={`/projects/${sourceId}`}
                 aria-label={c.openApp}
                 title={c.openApp}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-foreground/[0.1] hover:text-foreground"
               >
                 <ArrowUpRight className="size-3.5" />
               </Link>

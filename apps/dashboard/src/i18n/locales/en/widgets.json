@@ -72,7 +72,7 @@
       "serverLabel": "Server",
       "loadingServers": "Loading servers…",
       "noServerConnected": "No server connected",
-      "connectServerFirst": "Connect a server first, then come back to continue setup.",
+      "connectServerFirst": "Add one now without leaving this page.",
       "addServer": "Add Server",
       "selectServer": "Select a server…",
       "addNewServer": "Add new server…"
@@ -279,7 +279,8 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "Not configured",
-      "selectDomain": "Select domain"
+      "selectDomain": "Select domain",
+      "allDomains": "All domains"
     },
     "publicEndpoints": {
       "mappedToPort": "Mapped to port {port}.",
@@ -310,7 +311,39 @@
       "permanent": "permanent",
       "cleanUrls": "Clean URLs",
       "cleanUrlsHint": "(strip .html)",
-      "trailingSlash": "Trailing slash"
+      "trailingSlash": "Trailing slash",
+      "proxyLimits": "Request limits",
+      "proxyLimitsHint": "Upload size and timeouts. Left empty, the proxy defaults apply — 1 MB uploads and 60s timeouts.",
+      "maxBodySize": "Max upload size",
+      "maxBodySizeHint": "e.g. 25m. Larger requests are rejected with 413. Default 1m.",
+      "readTimeout": "Read timeout",
+      "readTimeoutHint": "e.g. 300s. How long to wait for the app to respond. Default 60s.",
+      "sendTimeout": "Send timeout",
+      "sendTimeoutHint": "e.g. 300s. How long to wait while sending to the app. Default 60s.",
+      "bodyTimeout": "Upload timeout",
+      "bodyTimeoutHint": "e.g. 300s. Raise this too for large uploads, or they stop mid-transfer. Default 60s.",
+      "proxyBuffering": "Buffer responses",
+      "proxyBufferingHint": "(turn off for streaming / SSE)",
+      "gzip": "Compress responses",
+      "gzipHint": "(gzip text, JSON, JS, CSS)",
+      "proxyGroups": {
+        "body": "Request body",
+        "timeouts": "Upstream timeouts",
+        "buffering": "Response buffering",
+        "compression": "Compression",
+        "headers": "Headers & protocol",
+        "upstreamTls": "TLS to the app"
+      },
+      "proxyInherit": "nginx default",
+      "proxyNotSet": "not set",
+      "proxyLiveLabel": "Serving:",
+      "proxyLiveVaries": "varies by host",
+      "proxyDrift": "differs from saved",
+      "proxyDriftSummary": "The edge is serving different values for:",
+      "proxyAdoptLive": "Adopt live values",
+      "proxyLiveUnavailable": "Couldn't read the live config from this project's server.",
+      "proxyLiveSource": "Read from:",
+      "proxyRefreshLive": "Re-read the live config"
     },
     "settingsCard": {
       "recordLabels": {

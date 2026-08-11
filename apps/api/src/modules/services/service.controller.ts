@@ -13,6 +13,7 @@ import { AppError } from "@repo/core";
 import { streamSSE } from "../../lib/sse";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
+import { audit, auditContextFrom } from "../../lib/audit";
 import { sshManager } from "../../lib/ssh-manager";
 import * as serviceService from "./service.service";
 import type {
@@ -308,6 +309,61 @@ export async function runtimeLogs(c: Context) {
     return c.json({ data: entries });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get logs";
+    return c.json({ error: message }, 400);
+  }
+}
+
+/**
+ * POST /api/projects/:id/services/:serviceId/exec — run a command inside the
+ * service's running container.
+ *
+ * Scoped by the route's `project:service:write` tag, so a project grant confines an
+ * agent to that project's services. See `execInServiceContainer` for why `write` is
+ * the right tier.
+ */
+export async function execInService(c: Context) {
+  const ctx = getRequestContext(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+
+  const body = await c.req.json<{
+    command?: string;
+    cwd?: string;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+  }>();
+  const command = body.command?.trim();
+  if (!command) return c.json({ error: "command required", code: "COMMAND_REQUIRED" }, 400);
+
+  try {
+    const result = await serviceService.execInServiceContainer(ctx, projectId, serviceId, {
+      command,
+      cwd: body.cwd,
+      timeoutMs: body.timeoutMs,
+      maxOutputBytes: body.maxOutputBytes,
+    });
+
+    // The command is recorded, the output is not: output is unbounded and may carry
+    // secrets the command read. Same rule as the host exec audit.
+    audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+      eventType: "service.exec",
+      resourceType: "service",
+      resourceId: serviceId,
+      after: {
+        projectId,
+        command,
+        cwd: body.cwd ?? null,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+        durationMs: result.durationMs,
+        outputBytes: result.output.length,
+      },
+    });
+
+    return c.json({ data: result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to run the command";
     return c.json({ error: message }, 400);
   }
 }

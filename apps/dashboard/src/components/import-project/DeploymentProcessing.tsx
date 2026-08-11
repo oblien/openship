@@ -23,7 +23,7 @@ import { generateIcon } from "@/utils/icons";
 import { useRouter } from "next/navigation";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
-import { getPublicEndpointHosts } from "@/context/deployment/types";
+import { getPublicEndpointHosts, workloadOf } from "@/context/deployment/types";
 import { resolveBuildElapsedMs } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
@@ -163,10 +163,9 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
     });
   }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
 
-  // Build domain for display
-  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName);
-  const domain = endpointHosts[0] ?? "";
-  const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
+  // The host to OPEN, or none. Never composed from the project name — that host
+  // doesn't exist, and this one is behind the primary "Visit Site" button.
+  const domain = getPublicEndpointHosts(config.publicEndpoints, baseDomain)[0] ?? "";
 
   const handleTerminalReady = useCallback((terminal: Terminal) => {
     if (terminalRef) {
@@ -217,7 +216,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
             {/* Visit Site only. "View dashboard" used to sit here too, duplicating
                 the primary "Open Dashboard" button in the details column below —
                 same handler, same destination, two buttons one screen apart. */}
-            {deploymentStatus === "ready" && (
+            {deploymentStatus === "ready" && !!domain && (
               <button
                 onClick={() => window.open(`https://${domain}`, "_blank", "noopener,noreferrer")}
                 className="flex items-center gap-2 text-primary-foreground font-medium transition-all duration-300 bg-primary rounded-xl px-4 py-2 text-sm hover:bg-primary/90 shadow-md hover:shadow-lg"
@@ -333,7 +332,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                 <div className="flex items-center gap-2">
                   {generateIcon('terminal-58-1658431404.png', 24, 'currentColor')}
                   <h2 className="text-base font-normal text-foreground">
-                    {state.deploymentSuccess && config.options.hasServer ? dp.productionLogs : dp.buildTerminal}
+                    {state.deploymentSuccess && workloadOf(config.options) !== "static" ? dp.productionLogs : dp.buildTerminal}
                   </h2>
                 </div>
                 {deploymentStatus === "failed" && (
@@ -453,7 +452,7 @@ const DeploymentDetails = memo(() => {
   const dp = t.importProject.deploymentProcessing;
   const router = useRouter();
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
-  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName);
+  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain);
   const domain = endpointHosts[0] ?? "";
   const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
 

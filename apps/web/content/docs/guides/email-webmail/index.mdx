@@ -220,6 +220,13 @@ When it's done, the Overview card's button changes to **Open webmail**, which op
 
 </Steps>
 
+<Callout title="Upgrading a webmail from Openship 0.6.1 or earlier" type="warn">
+Webmail used to ship as a prebuilt bundle instead of an app, and those older installs can't be redeployed —
+they're replaced. The Overview card shows a **Replace webmail** link, and the deploy screen explains what goes
+before the button does anything: the old webmail's project, container and sign-in sessions. Your mailboxes,
+domains and every message stay on the mail server, untouched — everyone just signs in to the new inbox again.
+</Callout>
+
 ## Prefer the terminal?
 
 The provisioning flow works from the CLI too (webmail deploy is dashboard-only for now). Every `mail` command

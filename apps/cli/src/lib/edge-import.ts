@@ -14,6 +14,7 @@ import ora from "ora";
 import { EDGE_CONTAINER_NAME, edgeCrashReason, type ImportedSite } from "@repo/adapters/proxy";
 import { LocalExecutor } from "@repo/adapters";
 import { composeInternalToken } from "./compose";
+import { startUnitHint } from "./this-host";
 
 /** Wait for the compose api container to answer its health stub. */
 export async function waitForApiHealth(port: string, tries: number): Promise<boolean> {
@@ -68,6 +69,7 @@ export async function importMigratedSites(
   apiPort: string,
   sites: ImportedSite[],
   certPems?: Record<string, { certPem: string; keyPem: string }>,
+  staticRootOverrides?: Record<string, string>,
 ): Promise<EdgeImportOutcome> {
   const token = composeInternalToken();
   if (!token) {
@@ -95,7 +97,7 @@ export async function importMigratedSites(
     const r = await fetch(`http://127.0.0.1:${apiPort}/api/system/edge/import-sites`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Internal-Token": token },
-      body: JSON.stringify({ sites, certPems }),
+      body: JSON.stringify({ sites, certPems, staticRootOverrides }),
       signal: AbortSignal.timeout(120000),
     });
     const data = (await r.json().catch(() => ({}))) as {
@@ -131,10 +133,17 @@ export async function importMigratedSites(
         console.log(chalk.red(`\n  The edge container is not running. Its log says:`));
         console.log(chalk.red(`    ${edgeLog}`));
       }
+      // This box's own service manager, not systemd's: an Alpine host reading
+      // `systemctl enable --now nginx` is being handed a command it has no binary for,
+      // in the message that tells it how to get serving again.
+      const back = startUnitHint("nginx");
       console.log(
         chalk.yellow(
           `\n  Retry the import with \`openship up\` once the cause above is fixed, or put your\n` +
-            `  previous proxy back:  docker stop ${EDGE_CONTAINER_NAME} && sudo systemctl enable --now nginx\n`,
+            (back
+              ? `  previous proxy back:  docker stop ${EDGE_CONTAINER_NAME} && ${back}\n`
+              : `  previous proxy back by stopping ${EDGE_CONTAINER_NAME} and starting it the way\n` +
+                `  this host starts services.\n`),
         ),
       );
       return { ok: false, registered, error: warnings[0] ?? "no sites were registered" };

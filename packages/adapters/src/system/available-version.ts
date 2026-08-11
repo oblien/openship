@@ -10,9 +10,11 @@
  * apt is first-class (the common case); dnf/yum/apk are best-effort.
  */
 
-import { compareSemver } from "@repo/core";
+import { compareSemver, type SystemPackageManager } from "@repo/core";
 import type { CommandExecutor } from "../types";
 import type { EnvironmentProfile } from "./environment";
+import { envOps, opScript } from "./environment-ops";
+import { tryExec } from "./probe-exec";
 import type { ComponentStatus } from "./types";
 
 /** Component name → OS package name. null = not a tracked package (e.g. docker
@@ -40,44 +42,50 @@ export function normalizePkgVersion(raw: string): string {
   return v.trim();
 }
 
-async function tryExec(executor: CommandExecutor, cmd: string): Promise<string | null> {
-  try {
-    return await executor.exec(cmd);
-  } catch {
-    return null;
-  }
-}
+/**
+ * How to read a candidate version out of each manager's own output.
+ *
+ * The COMMAND comes from `envOps`; only the parse stays here, because it is a fact
+ * about the tool's output format rather than about the host. Total on purpose: a
+ * manager added to the union has to state its parse or state that it has none.
+ */
+const READ_CANDIDATE: Readonly<Record<SystemPackageManager, ((out: string) => string | null) | null>> =
+  {
+    // `apt-cache policy` prints "  Candidate: <version>".
+    apt: (out) => out.match(/Candidate:\s*(\S+)/)?.[1]?.trim() ?? null,
+    // Cached list; the last "pkg.arch  version  repo" row carries the newest avail.
+    dnf: (out) => out.trim().split(/\s+/)[1]?.trim() ?? null,
+    yum: (out) => out.trim().split(/\s+/)[1]?.trim() ?? null,
+    // `apk policy` prints one `  <version>:` line per available version (colon at end
+    // of line), each followed by indented source lines (installed marker, repo URLs);
+    // the last version line is newest.
+    apk: (out) => {
+      const versions = [...out.matchAll(/^\s+([\w.+~-]+):\s*$/gm)].map((m) => m[1]!);
+      return versions.length ? versions[versions.length - 1]! : null;
+    },
+    // Both refuse the probe itself, so there is no output to read. Stated rather than
+    // omitted — `null` here is paired with a refusal, not with a missing branch.
+    brew: null,
+    none: null,
+  };
 
-/** Resolve the candidate (installable) version of `pkg`, or null. */
+/**
+ * Resolve the candidate (installable) version of `pkg`, or null.
+ *
+ * A refused probe is swallowed deliberately: this whole surface decorates a health
+ * check with an "update available" badge. A host we cannot query shows no badge,
+ * which is the same thing a stale index shows. Nothing is provisioned from here.
+ */
 async function probeCandidate(
   executor: CommandExecutor,
-  pm: EnvironmentProfile["packageManager"],
+  profile: EnvironmentProfile,
   pkg: string,
 ): Promise<string | null> {
-  const q = `'${pkg.replace(/'/g, "'\\''")}'`; // sq — pkg is a fixed catalog name, quoted anyway
-  if (pm === "apt") {
-    // `apt-cache policy` reads the local cache (no root, no network) and prints
-    // "  Candidate: <version>".
-    const out = await tryExec(executor, `apt-cache policy ${q} 2>/dev/null`);
-    return out?.match(/Candidate:\s*(\S+)/)?.[1]?.trim() ?? null;
-  }
-  if (pm === "dnf" || pm === "yum") {
-    // Cached list; last "pkg.arch  version  repo" row carries the newest avail.
-    const out = await tryExec(
-      executor,
-      `${pm} -q --cacheonly list available ${q} 2>/dev/null | tail -n1`,
-    );
-    return out?.trim().split(/\s+/)[1]?.trim() ?? null;
-  }
-  if (pm === "apk") {
-    // `apk policy` prints one `  <version>:` line per available version (colon at
-    // end of line), each followed by indented source lines (installed marker, repo
-    // URLs); the last version line is newest.
-    const out = await tryExec(executor, `apk policy ${q} 2>/dev/null`);
-    const versions = [...(out?.matchAll(/^\s+([\w.+~-]+):\s*$/gm) ?? [])].map((m) => m[1]!);
-    return versions.length ? versions[versions.length - 1]! : null;
-  }
-  return null;
+  const read = READ_CANDIDATE[profile.packageManager];
+  const probe = envOps(profile).pkgAvailableVersion(pkg);
+  if (!read || !probe.supported) return null;
+  const out = await tryExec(executor, opScript(probe.value));
+  return out ? read(out) : null;
 }
 
 /**
@@ -97,7 +105,7 @@ export async function enrichAvailableVersions(
     targets.map(async (s) => {
       try {
         const pkg = PACKAGE_NAMES[s.name]!;
-        const candidate = await probeCandidate(executor, profile.packageManager, pkg);
+        const candidate = await probeCandidate(executor, profile, pkg);
         if (!candidate) return;
         const avail = normalizePkgVersion(candidate);
         const installed = normalizePkgVersion(s.version!);

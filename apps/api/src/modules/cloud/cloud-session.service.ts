@@ -42,6 +42,7 @@ export async function revokeCloudSession(input: {
         eventType: "cloud.disconnect",
         resourceType: "cloud",
         resourceId: sessionId,
+        source: "dashboard",
         ipAddress: clientIp,
         userAgent: userAgent,
         before: null,

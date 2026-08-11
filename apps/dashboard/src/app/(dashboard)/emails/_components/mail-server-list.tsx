@@ -10,6 +10,9 @@ export interface MailServerListItem {
   domain: string | null;
   completed: boolean;
   active: boolean;
+  /** Step an incomplete install paused at + its label, for the status line. */
+  resumeStep?: number | null;
+  resumeStepLabel?: string | null;
 }
 
 /**
@@ -72,6 +75,22 @@ export function MailServerList({
                   <span className="truncate">{s.host}</span>
                 </div>
               </div>
+
+              {/* Where an incomplete install stopped — the "why" behind the
+                  Incomplete pill. Hidden on the narrowest screens (the pill
+                  still conveys state there). */}
+              {!s.completed && !s.active && s.resumeStep ? (
+                <div className="hidden min-w-0 max-w-[42%] flex-col items-end text-end sm:flex">
+                  <span className="text-xs font-medium text-warning">
+                    {interpolate(t.emails.serverList.stoppedAt, { step: String(s.resumeStep) })}
+                  </span>
+                  {s.resumeStepLabel && (
+                    <span className="truncate text-xs text-muted-foreground/70">
+                      {s.resumeStepLabel}
+                    </span>
+                  )}
+                </div>
+              ) : null}
 
               <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
             </button>

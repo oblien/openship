@@ -40,7 +40,7 @@ export {
   type StoredPorts,
 } from "@repo/core/ports";
 
-const PORTS_FILE = join(OS_DIR, "ports.json");
+export const PORTS_FILE = join(OS_DIR, "ports.json");
 const INSTANCE_FILE = join(OS_DIR, "instance.json");
 
 // NOTE: stale PGlite-lock recovery is NOT the CLI's job. The API server reclaims
@@ -174,13 +174,21 @@ export type PortPrefs = Omit<CorePortPrefs, "stored" | "defaults">;
  * taken. API and dashboard are guaranteed distinct. The result is persisted to
  * ports.json for every install mode, since that is what `openship doctor`,
  * `reset-admin` and the control panel read to find the running instance.
+ *
+ * `persist: false` resolves WITHOUT writing ports.json — for `--dry-run`, which
+ * must report the ports a real run would take without becoming the run that
+ * claims them (a preview that rewrote ports.json would repoint `openship
+ * status`/`doctor` at a port nothing is listening on).
  */
-export async function resolvePorts(prefs: PortPrefs): Promise<ResolvedPorts> {
+export async function resolvePorts(
+  prefs: PortPrefs,
+  opts: { persist?: boolean } = {},
+): Promise<ResolvedPorts> {
   const resolved = await resolvePortPair({
     ...prefs,
     stored: readStoredPorts(),
     defaults: { api: DEFAULT_API_PORT, dashboard: DEFAULT_DASHBOARD_PORT },
   });
-  saveStoredPorts(resolved.api, resolved.dashboard);
+  if (opts.persist !== false) saveStoredPorts(resolved.api, resolved.dashboard);
   return resolved;
 }

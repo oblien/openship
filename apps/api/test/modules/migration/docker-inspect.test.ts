@@ -72,6 +72,28 @@ const REDIS: DockerContainerDetail = {
   composeService: undefined,
 };
 
+/** A Coolify-managed app. Coolify injects EVERY variable explicitly at run time
+ *  and its Nixpacks builds bake the same values into the image, so the runtime
+ *  env and the image defaults overlap almost completely (#394). */
+const COOLIFY_APP: DockerContainerDetail = {
+  id: "c4",
+  name: "app-kso4gc8",
+  image: "app-kso4gc8:latest",
+  imageId: "sha256:coolify",
+  state: "running",
+  env: ["PATH=/usr/bin", "NODE_ENV=production", "DATABASE_URL=postgres://db:5432/app"],
+  labels: {
+    "coolify.managed": "true",
+    "coolify.type": "application",
+    "coolify.applicationId": "7",
+  },
+  networks: ["coolify"],
+  mounts: [],
+  ports: [{ privatePort: 3000, publicPort: 8081, type: "tcp" }],
+  composeProject: undefined,
+  composeService: undefined,
+};
+
 const VOLUMES: DockerVolumeInfo[] = [
   { name: "myapp_pgdata", driver: "local", labels: {} },
   { name: "unused_vol", driver: "local", labels: {} },
@@ -147,18 +169,75 @@ describe("reconcileStack", () => {
     expect(netWarning).not.toContain("myapp_default");
   });
 
-  it("subtracts image-default env, keeping user-set vars", () => {
-    const withDefaults = reconcileStack({
+  const withDefaults = reconcileStack({
+    serverId: "srv-1",
+    details: [DB],
+    volumes: VOLUMES,
+    networks: NETWORKS,
+    declared: declaredMap(COMPOSE),
+    alreadyManaged: 0,
+    // Keyed by image ID, not tag — a moved tag must not lend its defaults.
+    imageEnv: new Map([["sha256:db", ["PATH=/usr/bin", "LANG=C.UTF-8"]]]),
+  });
+
+  it("imports the operator's env and leaves the image's out", () => {
+    const db = withDefaults.services.find((s) => s.name === "db")!;
+    // LANG is image-supplied, PATH is denylisted, POSTGRES_PASSWORD survives.
+    expect(db.env).toEqual({ POSTGRES_PASSWORD: "secret" });
+  });
+
+  it("reports what the image supplies, with values, instead of omitting it silently", () => {
+    const db = withDefaults.services.find((s) => s.name === "db")!;
+    // LANG is what the image supplies; PATH is denylisted noise and was never config.
+    expect(db.envImageDefaults).toEqual({ LANG: "C.UTF-8" });
+  });
+
+  it("ignores image env fetched under a stale tag key", () => {
+    // Same defaults keyed by TAG: the container's imageId no longer matches, so
+    // nothing is attributed to the image and every var is imported as config.
+    const stale = reconcileStack({
       serverId: "srv-1",
       details: [DB],
       volumes: VOLUMES,
       networks: NETWORKS,
       declared: declaredMap(COMPOSE),
       alreadyManaged: 0,
-      imageDefaults: new Map([["postgres:16", new Set(["PATH=/usr/bin", "LANG=C.UTF-8"])]]),
+      imageEnv: new Map([["postgres:16", ["PATH=/usr/bin", "LANG=C.UTF-8"]]]),
     });
-    const db = withDefaults.services.find((s) => s.name === "db")!;
-    // LANG is an image default (dropped), PATH is denylisted, POSTGRES_PASSWORD survives.
-    expect(db.env).toEqual({ POSTGRES_PASSWORD: "secret" });
+    const db = stale.services.find((s) => s.name === "db")!;
+    expect(db.env).toEqual({ POSTGRES_PASSWORD: "secret", LANG: "C.UTF-8" });
+    expect(db.envImageDefaults).toBeUndefined();
+  });
+
+  const coolify = reconcileStack({
+    serverId: "srv-1",
+    details: [COOLIFY_APP],
+    volumes: VOLUMES,
+    networks: NETWORKS,
+    declared: new Map(),
+    alreadyManaged: 0,
+    imageEnv: new Map([["sha256:coolify", [...COOLIFY_APP.env]]]),
+  });
+
+  it("keeps a Coolify container's env even when it matches the image default", () => {
+    const app = coolify.services.find((s) => s.name === "app-kso4gc8")!;
+    // NODE_ENV and DATABASE_URL match the image default but are real config; PATH is denylisted.
+    expect(app.env).toEqual({
+      NODE_ENV: "production",
+      DATABASE_URL: "postgres://db:5432/app",
+    });
+  });
+
+  it("has nothing to report as image-supplied on a Coolify container", () => {
+    // The two halves of the #394 fix meet here: Coolify re-sends the image's env
+    // verbatim (the one shape provenance can't resolve), so the label short-circuits
+    // the split rather than attributing every Nixpacks-baked variable to the image.
+    const app = coolify.services.find((s) => s.name === "app-kso4gc8")!;
+    expect(app.envImageDefaults).toBeUndefined();
+  });
+
+  it("reports the Coolify variables Docker cannot expose", () => {
+    const app = coolify.services.find((s) => s.name === "app-kso4gc8")!;
+    expect(app.warnings.some((w) => w.includes("build-time"))).toBe(true);
   });
 });

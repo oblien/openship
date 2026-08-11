@@ -22,6 +22,11 @@
     "backToSetup": "Retour à la configuration",
     "personal": "Personnel"
   },
+  "mailRail": {
+    "selectServer": "Sélectionnez un serveur de messagerie",
+    "switchServer": "Changer de serveur de messagerie",
+    "setupIncomplete": "Configuration incomplète"
+  },
   "migration": {
     "inProgressTitle": "Migration en cours",
     "inProgressBody": "Vos données sont en cours de transfert. Cette page s'actualisera une fois la bascule terminée — généralement en 30 à 90 secondes.",

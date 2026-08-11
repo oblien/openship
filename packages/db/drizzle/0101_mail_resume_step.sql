@@ -1,0 +1,12 @@
+-- The setup step an incomplete mail install is paused at, mirrored from the
+-- on-host state file's `resumeStep` whenever the wizard halts (a failed step,
+-- or a DNS/PTR hold). NULL once the install completes or before it ever halts.
+--
+-- Lets the /emails server list surface WHERE an incomplete install stopped
+-- ("Stopped · step 6: Retrieve DKIM Keys") without the per-server SSH probe
+-- this table exists to avoid — only the step id is stored; the human label is
+-- derived from it against MAIL_SETUP_STEPS.
+--
+-- Nullable, no default, no backfill: a pre-existing incomplete install gets its
+-- step stamped the next time the wizard halts (or cleared on completion).
+ALTER TABLE "mail_servers" ADD COLUMN IF NOT EXISTS "resume_step" integer;

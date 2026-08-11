@@ -35,15 +35,24 @@
  *     three named levels below a lossless view of the underlying arrays.
  *   - GitHub is default-deny; the grant's resourceId is the account LOGIN, not an
  *     installation id (github-access.ts:113), and ["read"] is enough to deploy.
- *   - billing and audit grants authorize NOTHING for a scoped principal in any
- *     form: every billing/audit route is an org-singleton asserting resourceId
- *     "*", which the restricted arm always denies. They're offered by the generic
- *     picker but deliberately not here.
+ *   - A PLATFORM grant (job, notifications, analytics, settings, updates, cloud,
+ *     audit, billing) names a whole feature and is only valid at resourceId "*".
+ *     The wildcard arm of `checkPermission` authorizes it there, cumulatively by
+ *     verb. This file previously claimed billing/audit "authorize NOTHING for a
+ *     scoped principal in any form" and withheld them from this screen on that
+ *     basis — the claim was false (see permission-grant-satisfiability.test.ts,
+ *     "the billing/audit fix"), so they are offered here now, flagged sensitive.
  *   - Every grant is re-validated ⊆ the consenting user's own access; the first
  *     one that isn't returns 403 GRANT_EXCEEDS_ACCESS naming it, which is what
  *     `dropRejectedGrant` parses.
  */
 
+import {
+  GRANTABLE_RESOURCE_TYPES,
+  INFRASTRUCTURE_GRANT_TYPES,
+  grantableTypesForMode,
+  isSensitiveGrantType,
+} from "@repo/core";
 import type { Permission, PickerGrant, ResourceType } from "@/lib/api";
 
 /**
@@ -63,21 +72,32 @@ export function isUnscopedTemplate(id: AccessTemplateId): boolean {
   return UNSCOPED_TEMPLATES.has(id);
 }
 
-/** Resource types this screen offers. `billing`/`audit` are excluded because a
- *  scoped grant on them is dead weight (see the header note). */
+/**
+ * Resource types this screen offers, in canonical order, mode-filtered.
+ *
+ * Now the same set every other access surface offers. `billing`/`audit` used to be
+ * withheld here on the stated grounds that a scoped grant on them "authorizes
+ * NOTHING in any form" — that was false: the wildcard arm of `checkPermission`
+ * authorizes them at "*", and `permission-grant-satisfiability.test.ts` proves it.
+ * They are flagged sensitive in the UI instead, which is the honest control. An
+ * agent that can read the audit log can review its own actions, which is the point.
+ */
 export function grantableTypes(selfHosted: boolean): ResourceType[] {
-  return selfHosted
-    ? ["project", "github_installation", "github_repository", "server", "mail_server", "backup_destination"]
-    : ["project", "github_installation", "github_repository", "backup_destination"];
+  return grantableTypesForMode(selfHosted);
 }
 
-/** Types kept out of the primary tab strip — they unlock no MCP tool, but the
- *  same bearer can still reach per-id REST routes, so they stay available. */
-export const ADVANCED_TYPES: ReadonlySet<ResourceType> = new Set([
-  "server",
-  "mail_server",
-  "backup_destination",
-]);
+/**
+ * Types kept out of the primary tab strip: infrastructure, not a project or its
+ * repo. Granting one is a broader decision than scoping an agent to a project.
+ *
+ * These unlock FEWER MCP tools than their breadth suggests, because tool coverage
+ * is a per-route opt-in and the infrastructure modules are still being annotated:
+ * today `backup_destination` reaches two read tools and `server`/`mail_server`
+ * reach none. The grant is still meaningful — the same bearer authorizes the
+ * corresponding REST routes — so they stay available, and each new annotated
+ * route widens what they reach without any change here.
+ */
+export const ADVANCED_TYPES: ReadonlySet<ResourceType> = new Set(INFRASTRUCTURE_GRANT_TYPES);
 
 // ── Named access levels ─────────────────────────────────────────────────────
 
@@ -522,17 +542,8 @@ export interface SummaryRow {
   wildcard: boolean;
 }
 
-/** Stable display order. */
-const TYPE_ORDER: readonly ResourceType[] = [
-  "project",
-  "github_installation",
-  "github_repository",
-  "server",
-  "mail_server",
-  "backup_destination",
-  "billing",
-  "audit",
-];
+/** Stable display order — canonical, shared with the picker's tab strip. */
+const TYPE_ORDER: readonly ResourceType[] = GRANTABLE_RESOURCE_TYPES;
 
 /**
  * Group the raw grants into the rows the review panel renders. `labels` maps

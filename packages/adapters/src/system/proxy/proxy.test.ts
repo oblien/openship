@@ -74,10 +74,27 @@ describe("foreignProxyOnEdge", () => {
     expect(r.owner).toContain("nginx");
   });
 
-  test("our own OpenResty on the edge → NOT blocked (it's ours)", async () => {
+  test("a bare HOST OpenResty → blocked (deprecated: it's a migration source, not our edge)", async () => {
+    // Our edge is the openship-edge CONTAINER. A host OpenResty is a foreign proxy
+    // we migrate off, even with our Lua on disk from an older install — otherwise
+    // preflight waves the box through and the edge container can never bind :80.
     const r = await foreignProxyOnEdge(
       makeExecutor([
-        ["site_logger.lua", "ok"], // our Lua is deployed
+        ["site_logger.lua", "ok"], // legacy artifact, not ownership
+        ["sport = :80", 'LISTEN 0 511 *:80 *:* users:(("nginx",pid=555,fd=6))'],
+        ["-p 555 -o args=", "nginx: master process /usr/local/openresty/nginx/sbin/nginx"],
+        ["/proc/555/cgroup", "0::/system.slice/openresty.service"],
+      ]),
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.status.classification).toBe("known"); // recognized AND importable
+    expect(r.owner).toContain("openresty");
+  });
+
+  test("our own edge CONTAINER on the edge → NOT blocked (it's ours)", async () => {
+    const r = await foreignProxyOnEdge(
+      makeExecutor([
+        ["docker ps --filter name=openship-edge", "openship-edge"],
         ["sport = :80", 'LISTEN 0 511 *:80 *:* users:(("nginx",pid=555,fd=6))'],
         ["-p 555 -o args=", "nginx: master process /usr/local/openresty/nginx/sbin/nginx"],
       ]),

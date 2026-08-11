@@ -96,14 +96,31 @@ describe("templateGrants", () => {
 });
 
 describe("grantableTypes", () => {
-  it("omits billing and audit — a scoped grant on them authorizes nothing", () => {
+  it("offers the platform features, including audit", () => {
+    // This used to assert billing/audit were OMITTED, on the stated grounds that a
+    // scoped grant on them "authorizes nothing". That was false — the wildcard arm of
+    // checkPermission authorizes them at "*", and the API's own
+    // permission-grant-satisfiability test proves it in a case literally named "the
+    // billing/audit fix". They are flagged sensitive in the UI instead, which is the
+    // honest control; an agent that can read the audit log can review its own actions.
     for (const selfHosted of [true, false]) {
       const types = grantableTypes(selfHosted);
-      expect(types).not.toContain("billing");
-      expect(types).not.toContain("audit");
+      expect(types).toContain("audit");
+      expect(types).toContain("notifications");
+      expect(types).toContain("analytics");
+      expect(types).toContain("settings");
+      expect(types).toContain("updates");
       expect(types).toContain("project");
       expect(types).toContain("github_installation");
     }
+  });
+
+  it("mode-gates the platform features that only exist in one mode", () => {
+    // The jobs router is localOnly; billing exists only on the hosted control plane.
+    expect(grantableTypes(true)).toContain("job");
+    expect(grantableTypes(true)).not.toContain("billing");
+    expect(grantableTypes(false)).toContain("billing");
+    expect(grantableTypes(false)).not.toContain("job");
   });
 
   it("offers servers and mail servers only self-hosted", () => {
