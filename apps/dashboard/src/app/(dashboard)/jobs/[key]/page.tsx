@@ -185,7 +185,7 @@ export default function JobDetailPage() {
       ) : (
         <div className="max-w-3xl space-y-2">
           {runs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/60 py-12 text-center text-sm text-muted-foreground/70">{j.detail.noRuns}</div>
+            <div className="rounded-2xl border border-dashed border-border/60 py-12 text-center text-sm text-muted-foreground">{j.detail.noRuns}</div>
           ) : (
             runs.map((run) => <RunRow key={run.id} run={run} onOpen={() => setLogRunId(run.id)} />)
           )}
@@ -216,7 +216,7 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
   return (
     <div className="flex items-start gap-3 rounded-xl border border-border/50 bg-card px-4 py-3">
       <Icon className="mt-0.5 size-4 text-muted-foreground/60" />
-      <span className="w-28 shrink-0 text-[12px] text-muted-foreground/70">{label}</span>
+      <span className="w-28 shrink-0 text-[12px] text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 break-words text-[13px] text-foreground">{value}</span>
     </div>
   );
@@ -229,8 +229,8 @@ function RunRow({ run, onOpen }: { run: JobRunSummary; onOpen: () => void }) {
     <button onClick={onOpen} className="flex w-full items-center gap-3 rounded-xl border border-border/50 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40">
       <Icon className={`size-4 shrink-0 ${tone} ${run.status === "running" ? "animate-spin" : ""}`} />
       <span className="w-40 shrink-0 text-[13px] text-foreground">{fmtTime(run.startedAt)}</span>
-      <span className="w-16 shrink-0 text-[12px] text-muted-foreground/70">{fmtDur(run.durationMs)}</span>
-      <span className="w-24 shrink-0 text-[12px] text-muted-foreground/70">{run.trigger}{run.attempt > 1 ? ` #${run.attempt}` : ""}</span>
+      <span className="w-16 shrink-0 text-[12px] text-muted-foreground">{fmtDur(run.durationMs)}</span>
+      <span className="w-24 shrink-0 text-[12px] text-muted-foreground">{run.trigger}{run.attempt > 1 ? ` #${run.attempt}` : ""}</span>
       {run.serverId && <span className="truncate text-[12px] text-muted-foreground/60">{run.serverId}</span>}
       <ScrollText className="ml-auto size-3.5 shrink-0 text-muted-foreground/50" />
     </button>

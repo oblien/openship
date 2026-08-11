@@ -412,7 +412,7 @@ function PermissionChips({
             className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider transition-colors ${
               active
                 ? "bg-primary/20 text-foreground ring-1 ring-inset ring-primary/40"
-                : "bg-muted/40 text-muted-foreground/70 hover:text-foreground"
+                : "bg-muted/40 text-muted-foreground hover:text-foreground"
             }`}
           >
             {p}

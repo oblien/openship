@@ -263,7 +263,7 @@ export function EmailSettings() {
               onChange={(ev) => setFrom(ev.target.value)}
               placeholder={e.fromPlaceholder}
             />
-            <p className="mt-1 text-xs text-muted-foreground/70">
+            <p className="mt-1 text-xs text-muted-foreground">
               {EMAIL_RE.test(user.trim()) ? e.fromHint : e.fromHintRequired}
             </p>
           </div>

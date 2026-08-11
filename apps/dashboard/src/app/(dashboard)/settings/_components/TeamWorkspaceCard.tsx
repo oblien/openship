@@ -53,7 +53,7 @@ export function TeamWorkspaceCard({ canMigrate }: { canMigrate: boolean }) {
           </button>
         </div>
 
-        <p className="text-xs text-muted-foreground/70">{t.settings.teamWorkspace.comingSoon}</p>
+        <p className="text-xs text-muted-foreground">{t.settings.teamWorkspace.comingSoon}</p>
       </div>
 
       <MigrateModal

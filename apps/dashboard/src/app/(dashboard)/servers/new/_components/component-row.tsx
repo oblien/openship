@@ -51,7 +51,7 @@ export function ComponentRow({
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground">{roleName}</p>
           {showTech && (
-            <span className="text-xs font-medium text-muted-foreground/70">{techName}</span>
+            <span className="text-xs font-medium text-muted-foreground">{techName}</span>
           )}
           {component.status?.version && (
             <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">

@@ -332,12 +332,12 @@ function KindPicker({ onPick }: { onPick: (kind: Kind) => void }) {
                       className="size-4 opacity-90"
                     />
                   ))}
-                  <span className="text-xs text-muted-foreground/70 font-medium">
+                  <span className="text-xs text-muted-foreground font-medium">
                     {m.s3Examples}
                   </span>
                 </div>
               ) : (
-                <p className="mt-3 text-xs text-muted-foreground/70 uppercase tracking-wider font-medium">
+                <p className="mt-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">
                   {meta.examples}
                 </p>
               )}

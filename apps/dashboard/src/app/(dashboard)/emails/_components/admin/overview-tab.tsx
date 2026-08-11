@@ -170,7 +170,7 @@ function MailServerCard({
               {mailHost || "-"}
             </span>
             {mailHost && (
-              <span className="text-muted-foreground/70 group-hover:text-foreground transition-colors shrink-0">
+              <span className="text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
                 {copied ? (
                   <Check className="size-3.5 text-success" />
                 ) : (
@@ -455,7 +455,7 @@ function StatRow({
           {stringValue}
         </p>
         {sub && (
-          <p className="text-[10.5px] text-muted-foreground/70 mt-0.5 leading-none">
+          <p className="text-[10.5px] text-muted-foreground mt-0.5 leading-none">
             {sub}
           </p>
         )}

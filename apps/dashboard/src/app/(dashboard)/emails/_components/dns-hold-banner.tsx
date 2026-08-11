@@ -201,7 +201,7 @@ function AutoConfigureModal({ onClose }: { onClose: () => void }) {
             <div className="text-sm font-medium text-foreground">
               {t.emails.dns.otherManual}
             </div>
-            <div className="text-xs text-muted-foreground/70 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               {t.emails.dns.otherManualDesc}
             </div>
           </div>
@@ -231,7 +231,7 @@ function ProviderRow({
           <div className="text-sm font-medium text-foreground">
             {provider.label}
           </div>
-          <div className="text-xs text-muted-foreground/70 mt-0.5">
+          <div className="text-xs text-muted-foreground mt-0.5">
             {description}
           </div>
         </div>
@@ -276,7 +276,7 @@ function ProviderComingSoon({
       <div className="mb-5">
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-foreground transition-colors mb-3"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
         >
           <ArrowLeft className="size-3.5 rtl:rotate-180" />
           {t.emails.dns.pickAnother}

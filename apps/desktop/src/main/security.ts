@@ -82,6 +82,7 @@ export const RENDERER_CONFIG_KEYS = [
   "autoUpdate",
   "updateNotifications",
   "dismissedAdvisoryIds",
+  "dismissedCriticalAdvisoryKeys",
   "lastSeenVersion",
 ] as const;
 

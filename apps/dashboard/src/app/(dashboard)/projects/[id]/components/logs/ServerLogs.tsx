@@ -233,7 +233,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <Server className="w-10 h-10 text-muted-foreground/30" />
           <p className="text-sm text-muted-foreground">{t.projectDetail.logs.server.noDomain}</p>
-          <p className="text-xs text-muted-foreground/70">{t.projectDetail.logs.server.noDomainHint}</p>
+          <p className="text-xs text-muted-foreground">{t.projectDetail.logs.server.noDomainHint}</p>
         </div>
       );
     }
@@ -300,7 +300,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
                   <span className={`w-10 shrink-0 text-center px-1.5 py-0.5 rounded-md text-[11px] font-bold tabular-nums ${getStatusColor(log.statusCode)}`}>
                     {log.statusCode}
                   </span>
-                  <span className="w-16 shrink-0 text-end text-[11px] text-muted-foreground/70 font-mono tabular-nums">
+                  <span className="w-16 shrink-0 text-end text-[11px] text-muted-foreground font-mono tabular-nums">
                     {log.responseTime}ms
                   </span>
                 </div>

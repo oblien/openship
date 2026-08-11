@@ -151,13 +151,13 @@ export default function BackupDestinationDetailPage() {
                     <AlertCircle className="size-3" /> {m.failedBadge}
                   </span>
                 ) : (
-                  <span className="rounded-full bg-foreground/[0.04] px-2 py-0.5 text-[11px] font-medium text-muted-foreground/70">
+                  <span className="rounded-full bg-foreground/[0.04] px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                     {m.notVerifiedBadge}
                   </span>
                 )}
               </div>
               <p className="mt-1.5 truncate font-mono text-xs text-muted-foreground/80">{describeDestination(dest, m)}</p>
-              <p className="mt-1 truncate text-xs text-muted-foreground/70">{describeCredentials(dest, m)}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{describeCredentials(dest, m)}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -185,7 +185,7 @@ export default function BackupDestinationDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
         <div className="min-w-0">
           <div className="mb-3">
-            <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground/70">{m.usedBy}</h2>
+            <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">{m.usedBy}</h2>
             <p className="mt-1 text-[12px] text-muted-foreground/60">{m.usedByDesc}</p>
           </div>
           {policies.length === 0 ? (
@@ -217,7 +217,7 @@ export default function BackupDestinationDetailPage() {
                 </svg>
               </div>
               <p className="text-[15px] font-medium text-foreground/90">{m.noUsageTitle}</p>
-              <p className="mt-1.5 mx-auto max-w-sm text-[13px] leading-relaxed text-muted-foreground/70">{m.noUsageDesc}</p>
+              <p className="mt-1.5 mx-auto max-w-sm text-[13px] leading-relaxed text-muted-foreground">{m.noUsageDesc}</p>
             </div>
           ) : (
             <div className="rounded-2xl border border-border/50 bg-card">
@@ -311,7 +311,7 @@ function PolicyRow({ p, m }: { p: DestinationUsagePolicy; m: Record<string, stri
             </span>
           )}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground/70">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
           <code className="font-mono text-muted-foreground/80">{schedule}</code>
           {run && RunIcon ? (
             <span className={`inline-flex items-center gap-1 ${tone}`}>

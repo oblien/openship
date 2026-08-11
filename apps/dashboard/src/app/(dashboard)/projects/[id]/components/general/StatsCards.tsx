@@ -26,7 +26,7 @@ export const StatsCards: React.FC<Props> = ({ stats }) => {
                 {stat.value}
               </p>
               {stat.subtext && (
-                <p className="text-xs text-muted-foreground/70 font-normal">
+                <p className="text-xs text-muted-foreground font-normal">
                   {stat.subtext}
                 </p>
               )}

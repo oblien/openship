@@ -85,6 +85,10 @@ interface AppConfig {
   lastSeenVersion?: string;
   /** Advisory ids the user dismissed (non-critical only). */
   dismissedAdvisoryIds?: string[];
+  /** Critical advisories the user dismissed, keyed `id@version` rather than by
+   *  id alone so dismissing one release's critical advisory doesn't suppress
+   *  the next release's. Separate from the list above, which is non-critical. */
+  dismissedCriticalAdvisoryKeys?: string[];
 }
 
 const defaults: AppConfig = {

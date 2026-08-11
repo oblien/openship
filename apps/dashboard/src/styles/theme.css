@@ -66,7 +66,10 @@
   --th-text-strong:    rgba(0,0,0,.82);
   --th-text-body:      rgba(0,0,0,.66);
   --th-text-secondary: rgba(0,0,0,.58);
-  --th-text-muted:     rgba(0,0,0,.52);
+  /* Raised from .52 - measured ~4.2:1 against the page/card background,
+     under the 4.5:1 text minimum. .58 clears it with margin (~5.3:1)
+     without reading as a heavier weight than --th-text-secondary above. */
+  --th-text-muted:     rgba(0,0,0,.58);
   --th-text-label:     rgba(0,0,0,.52);
   --th-text-hint:      rgba(0,0,0,.46);
   --th-text-ghost:     rgba(0,0,0,.22);
@@ -149,7 +152,12 @@
      with dark), text-X-600 on light. */
   --st-success-fg: #059669;  --st-success-bg: rgba(16,185,129,.10);  --st-success-bd: rgba(16,185,129,.20);
   --st-danger-fg:  #dc2626;  --st-danger-bg:  rgba(239,68,68,.10);   --st-danger-bd:  rgba(239,68,68,.20);
-  --st-warning-fg: #d97706;  --st-warning-bg: rgba(245,158,11,.10);  --st-warning-bd: rgba(245,158,11,.20);
+  /* fg darkened from #d97706 (amber-600, ~2.8:1 on the tinted bg below - fails
+     4.5:1) to amber-800. Dark/dim's warning-fg already clear the minimum by a
+     wide margin (bright amber on a near-black tint) - light was the only one
+     that needed it, since a page-white background makes the tint itself very
+     light too, leaving little room for a mid-tone amber to read against it. */
+  --st-warning-fg: #92400e;  --st-warning-bg: rgba(245,158,11,.10);  --st-warning-bd: rgba(245,158,11,.20);
   --st-info-fg:    #2563eb;  --st-info-bg:    rgba(59,130,246,.10);  --st-info-bd:    rgba(59,130,246,.20);
   --st-neutral-fg: #52525b;  --st-neutral-bg: #f4f4f5;  --st-neutral-bd: #e4e4e7;
 
@@ -197,7 +205,11 @@
   --th-text-strong:    rgba(255,255,255,.85);
   --th-text-body:      rgba(255,255,255,.66);
   --th-text-secondary: rgba(255,255,255,.58);
-  --th-text-muted:     rgba(255,255,255,.50);
+  /* Raised from .50 - flagged failing 4.5:1 against dark surfaces (the
+     opaque card composite is much closer to page-black than the flat
+     translucent fill suggests). .58 matches the other two themes and
+     clears the minimum with margin. */
+  --th-text-muted:     rgba(255,255,255,.58);
   --th-text-label:     rgba(255,255,255,.50);
   --th-text-hint:      rgba(255,255,255,.36);
   --th-text-ghost:     rgba(255,255,255,.22);

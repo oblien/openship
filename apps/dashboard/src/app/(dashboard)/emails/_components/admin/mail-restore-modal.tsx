@@ -311,7 +311,7 @@ function ProgressStep({
               : r.subRunning}
         </p>
       </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <ServerIcon className="size-3" />
         {domain}
       </div>

@@ -3,6 +3,7 @@ declare global {
     | "autoUpdate"
     | "updateNotifications"
     | "dismissedAdvisoryIds"
+    | "dismissedCriticalAdvisoryKeys"
     | "lastSeenVersion";
 
   type DesktopCloudAuthResult = {

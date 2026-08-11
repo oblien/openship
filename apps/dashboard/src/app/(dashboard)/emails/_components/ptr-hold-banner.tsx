@@ -127,7 +127,7 @@ function PtrCard({
           {label}
         </span>
         {!required && (
-          <span className="text-[11px] text-muted-foreground/70 ms-auto">
+          <span className="text-[11px] text-muted-foreground ms-auto">
             {t.emails.ptr.recommended}
           </span>
         )}
@@ -164,7 +164,7 @@ function PtrField({
   const { t } = useI18n();
   return (
     <div className="flex items-start gap-2">
-      <span className="text-xs text-muted-foreground/70 font-sans w-12 shrink-0 mt-0.5">
+      <span className="text-xs text-muted-foreground font-sans w-12 shrink-0 mt-0.5">
         {fieldLabel}
       </span>
       <div className="flex-1 min-w-0 bg-muted/40 rounded-md px-2 py-1.5 text-foreground/90 break-all">
@@ -172,7 +172,7 @@ function PtrField({
       </div>
       <button
         onClick={onCopy}
-        className="text-muted-foreground/70 hover:text-foreground transition-colors p-1.5"
+        className="text-muted-foreground hover:text-foreground transition-colors p-1.5"
         title={t.emails.ptr.copy}
       >
         {copied ? (

@@ -383,7 +383,7 @@ export default function AddServerPage() {
             >
               {hasExistingServer ? t.servers.setup.editServer : t.servers.setup.addServer}
             </h1>
-            <p className="text-sm text-muted-foreground/70 mt-0.5">
+            <p className="text-sm text-muted-foreground mt-0.5">
               {t.servers.setup.enterDetails}
             </p>
           </div>

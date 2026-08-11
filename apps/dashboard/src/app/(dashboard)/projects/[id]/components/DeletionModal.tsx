@@ -265,22 +265,22 @@ export const DeletionModal = ({
                 <ul className="border-t border-border/40 divide-y divide-border/30">
                   {servicesWithVolumes.map((s) => (
                     <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
-                      <Database className="size-3.5 text-muted-foreground/70 shrink-0" />
+                      <Database className="size-3.5 text-muted-foreground shrink-0" />
                       <span className="text-[13px] font-medium text-foreground truncate flex-1">
                         {s.name}
                       </span>
-                      <span className="text-[11px] tabular-nums text-muted-foreground/70 shrink-0">
+                      <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">
                         {interpolate(s.volumes.length === 1 ? t.projectSettings.deletion.volOne : t.projectSettings.deletion.volOther, { count: String(s.volumes.length) })}
                       </span>
                     </li>
                   ))}
                   {preview!.deploymentVolumes.length > 0 && (
                     <li className="flex items-center gap-3 px-3 py-2.5">
-                      <Database className="size-3.5 text-muted-foreground/70 shrink-0" />
+                      <Database className="size-3.5 text-muted-foreground shrink-0" />
                       <span className="text-[13px] font-medium text-foreground truncate flex-1">
                         {t.projectSettings.deletion.appData}
                       </span>
-                      <span className="text-[11px] tabular-nums text-muted-foreground/70 shrink-0">
+                      <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">
                         {interpolate(preview!.deploymentVolumes.length === 1 ? t.projectSettings.deletion.volOne : t.projectSettings.deletion.volOther, { count: String(preview!.deploymentVolumes.length) })}
                       </span>
                     </li>
@@ -336,7 +336,7 @@ export const DeletionModal = ({
             disabled={isConfirmDisabled}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
               isConfirmDisabled
-                ? "bg-muted text-muted-foreground/70 cursor-not-allowed"
+                ? "bg-muted text-muted-foreground cursor-not-allowed"
                 : recordOnly
                   ? "bg-primary text-primary-foreground hover:bg-primary/90"
                   : "bg-danger-solid text-white hover:bg-danger-solid/90"

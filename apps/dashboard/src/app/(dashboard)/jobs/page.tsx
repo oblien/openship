@@ -184,7 +184,7 @@ export default function JobsPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Clock className="size-4 text-muted-foreground/70" />
+              <Clock className="size-4 text-muted-foreground" />
               <Link href={`/jobs/${encodeURIComponent(job.key)}`} className="text-[14px] font-medium text-foreground hover:text-primary">
                 {job.label}
               </Link>
@@ -234,7 +234,7 @@ export default function JobsPage() {
 
         <div className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 border-t border-border/40 pt-3 sm:grid-cols-2">
           <div className="flex items-center gap-2">
-            <span className="text-[12px] text-muted-foreground/70 w-20 shrink-0">{j.fields.schedule}</span>
+            <span className="text-[12px] text-muted-foreground w-20 shrink-0">{j.fields.schedule}</span>
             {editing ? (
               <div className="flex items-center gap-1.5">
                 <input value={cronDraft} onChange={(e) => setCronDraft(e.target.value)} spellCheck={false}
@@ -252,7 +252,7 @@ export default function JobsPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[12px] text-muted-foreground/70 w-20 shrink-0">{j.fields.nextRun}</span>
+            <span className="text-[12px] text-muted-foreground w-20 shrink-0">{j.fields.nextRun}</span>
             <span className="text-[12px] text-foreground">{job.enabled ? formatTime(job.nextRunAt) : j.fields.notScheduled}</span>
           </div>
         </div>
@@ -269,7 +269,7 @@ export default function JobsPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{j.title}</h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">{j.subtitle}</p>
+          <p className="text-sm text-muted-foreground mt-1">{j.subtitle}</p>
         </div>
         {selfHosted && (
           <button onClick={() => router.push("/jobs/new")}
@@ -303,19 +303,19 @@ export default function JobsPage() {
             <div className="min-w-0 space-y-8">
               {showCustomEmpty ? (
                 <section className="space-y-3">
-                  <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground/70">{j.sections.custom}</h2>
+                  <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">{j.sections.custom}</h2>
                   <JobsEmptyState onCreate={() => router.push("/jobs/new")} />
                 </section>
               ) : filteredCustom.length > 0 ? (
                 <section className="space-y-3">
-                  <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground/70">{j.sections.custom}</h2>
+                  <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">{j.sections.custom}</h2>
                   <div className="space-y-3">{filteredCustom.map(renderCard)}</div>
                 </section>
               ) : null}
 
               {filteredSystem.length > 0 && (
                 <section className="space-y-3">
-                  <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground/70">{j.sections.system}</h2>
+                  <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">{j.sections.system}</h2>
                   <div className="space-y-3">{filteredSystem.map(renderCard)}</div>
                 </section>
               )}
@@ -323,7 +323,7 @@ export default function JobsPage() {
               {filteredBackups.length > 0 && (
                 <section className="space-y-3">
                   <div>
-                    <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground/70">{j.backups.section}</h2>
+                    <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">{j.backups.section}</h2>
                     <p className="mt-1 text-[12px] text-muted-foreground/60">{j.backups.sectionDesc}</p>
                   </div>
                   <div className="space-y-3">
@@ -419,7 +419,7 @@ function StatusPill({ job }: { job: JobView }) {
   const { t } = useI18n();
   const j = t.jobs;
   const run = job.lastRun;
-  if (!run) return <span className="text-[12px] text-muted-foreground/70">{j.fields.never}</span>;
+  if (!run) return <span className="text-[12px] text-muted-foreground">{j.fields.never}</span>;
   const tone = statusTone(run.status);
   const Icon = statusIcon(run.status);
   const label = run.status === "success" ? j.status.success : run.status === "failed" ? j.status.failed : j.status.running;
@@ -479,7 +479,7 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <DatabaseBackup className="size-4 shrink-0 text-muted-foreground/70" />
+            <DatabaseBackup className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate text-[14px] font-medium text-foreground">{title}</span>
             <span className="rounded-md bg-info-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-info">{j.backups.badge}</span>
             {!isMail && !s.serviceName && (
@@ -495,7 +495,7 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
                 <span className="font-normal text-muted-foreground/60">· {formatTime(run.startedAt)}</span>
               </span>
             ) : (
-              <span className="text-[12px] text-muted-foreground/70">{j.backups.never}</span>
+              <span className="text-[12px] text-muted-foreground">{j.backups.never}</span>
             )}
           </div>
         </div>
@@ -511,11 +511,11 @@ function BackupScheduleCard({ s }: { s: BackupScheduleView }) {
 
       <div className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 border-t border-border/40 pt-3 sm:grid-cols-2">
         <div className="flex items-center gap-2">
-          <span className="w-20 shrink-0 text-[12px] text-muted-foreground/70">{j.fields.schedule}</span>
+          <span className="w-20 shrink-0 text-[12px] text-muted-foreground">{j.fields.schedule}</span>
           <code className="font-mono text-[12px] text-foreground">{s.cronExpression}</code>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-20 shrink-0 text-[12px] text-muted-foreground/70">{j.fields.nextRun}</span>
+          <span className="w-20 shrink-0 text-[12px] text-muted-foreground">{j.fields.nextRun}</span>
           <span className="text-[12px] text-foreground">{s.enabled ? formatTime(s.nextRunAt) : j.fields.notScheduled}</span>
         </div>
       </div>

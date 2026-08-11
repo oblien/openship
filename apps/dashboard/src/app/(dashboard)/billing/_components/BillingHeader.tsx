@@ -104,7 +104,7 @@ export function BillingHeader({ state }: { state?: BillingState | null }) {
       >
         {t.billing.layout.title}
       </h1>
-      <p className="mt-1 text-sm text-muted-foreground/70">{t.billing.layout.subtitle}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{t.billing.layout.subtitle}</p>
 
       {state && (
         <>
@@ -147,7 +147,7 @@ export function BillingHeader({ state }: { state?: BillingState | null }) {
             />
           </div>
           {limits && (
-            <p className="mt-2 text-[11px] text-muted-foreground/70">
+            <p className="mt-2 text-[11px] text-muted-foreground">
               {h.capacity}: {limits.max_workspaces} {h.workspaces} · {limits.max_vcpus}{" "}
               {h.vcpus} · {Math.round(limits.max_ram_mb / 1024)} GB {h.ram} ·{" "}
               {limits.max_disk_gb} GB {h.diskCap}

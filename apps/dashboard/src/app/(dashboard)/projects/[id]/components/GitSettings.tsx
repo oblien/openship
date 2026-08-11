@@ -285,7 +285,7 @@ export const GitSettings = () => {
           <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3.5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">{t.projectSettings.git.source.repository}</div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{t.projectSettings.git.source.repository}</div>
                 {/* owner/repo as the prominent, clickable identity (opens on GitHub). */}
                 <a
                   href={gitData.repository.url}
@@ -355,7 +355,7 @@ export const GitSettings = () => {
                     {/* When there's no public endpoint the toggle is disabled — show WHY
                         inline (was hover-tooltip-only), using the space under the switch. */}
                     {cannotReceive && (
-                      <p className="max-w-[220px] text-end text-[11px] leading-snug text-muted-foreground/70">
+                      <p className="max-w-[220px] text-end text-[11px] leading-snug text-muted-foreground">
                         {t.projectSettings.git.webhookBanner.description}
                       </p>
                     )}

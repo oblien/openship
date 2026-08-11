@@ -28,7 +28,7 @@ export default function NewJobPage() {
         </button>
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{j.create.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground/70">{j.customEmpty.desc}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{j.customEmpty.desc}</p>
         </div>
       </div>
 

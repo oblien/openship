@@ -219,7 +219,7 @@ export const Deployments = () => {
                   }
                 >
                   <div className="mt-3 rounded-xl border border-border/50 bg-background/40 p-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       {t.projects.redeploy.suggestedFix}
                     </p>
                     <ul className="mt-1.5 list-disc space-y-1 ps-5 text-[12px] text-muted-foreground">

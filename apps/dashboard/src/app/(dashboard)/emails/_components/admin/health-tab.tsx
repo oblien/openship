@@ -392,7 +392,7 @@ function DaemonRow({
             {component.description}
           </p>
           {component.activeSince && component.status === "active" && (
-            <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               {interpolate(h.up, { time: timeAgo(new Date(component.activeSince).getTime(), h.time) })}
             </p>
           )}
@@ -713,7 +713,7 @@ function RowKV({
       </p>
       <p
         className={`font-mono break-all ${
-          muted ? "text-muted-foreground/70 italic" : "text-foreground"
+          muted ? "text-muted-foreground italic" : "text-foreground"
         }`}
       >
         {value}
