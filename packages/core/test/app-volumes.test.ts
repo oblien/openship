@@ -41,6 +41,19 @@ describe("normalizeAppVolume", () => {
     expect(normalizeAppVolume("   ")).toBeNull();
     expect(normalizeAppVolume("./")).toBeNull();
   });
+
+  it("refuses a `..` traversal path instead of mounting outside the app dir", () => {
+    // `/app/../secret` resolves to `/secret`; the doc-comment says such a path
+    // returns null, and normalizeRepoPath (source-access.ts) refuses `..` too.
+    expect(normalizeAppVolume("../secret")).toBeNull();
+    expect(normalizeAppVolume("..")).toBeNull();
+    expect(normalizeAppVolume("/app/../secret")).toBeNull();
+    expect(normalizeAppVolume("storage/../secret")).toBeNull();
+    // The dropped entry doesn't take down the rest of the list.
+    expect(normalizeAppVolumes(["../secret", "storage"])).toEqual([
+      `storage:${APP_DIR}/storage`,
+    ]);
+  });
 });
 
 describe("volumeAutoName", () => {
