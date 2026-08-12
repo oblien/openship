@@ -1,5 +1,4 @@
 import { SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './sidebar';
-import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useCommandPalette } from '../context/command-palette-context.js';
 import { LabelDialog } from '@/components/labels/label-dialog';
 import { useActiveConnection } from '@/hooks/use-connections';
@@ -174,73 +173,74 @@ export function NavMain({ items }: NavMainProps) {
     <SidebarGroup className={`${state !== 'collapsed' ? '' : 'mt-1'} space-y-2.5 py-0 md:px-0`}>
       <SidebarMenu>
         {isBottomNav ? (
-          <NavItem
-            key={'feedback'}
-            isActive={isUrlActive('https://github.com/oblien/openship/issues')}
-            href={'https://github.com/oblien/openship/issues'}
-            url={'https://github.com/oblien/openship/issues'}
-            icon={MessageSquare}
-            target={'_blank'}
-            title={m['navigation.sidebar.feedback']()}
-          />
+          <SidebarMenuItem key={'feedback'}>
+            <NavItem
+              isActive={isUrlActive('https://github.com/oblien/openship/issues')}
+              href={'https://github.com/oblien/openship/issues'}
+              url={'https://github.com/oblien/openship/issues'}
+              icon={MessageSquare}
+              target={'_blank'}
+              title={m['navigation.sidebar.feedback']()}
+            />
+          </SidebarMenuItem>
         ) : null}
         {items.map((section) => (
-          <Collapsible
-            key={section.title}
-            defaultOpen={section.isActive}
-            className="group/collapsible"
-          >
-            <SidebarMenuItem>
-              {state !== 'collapsed' ? (
-                section.title ? (
-                  <p className="text-muted-foreground mx-2 mb-2 text-[13px] dark:text-[#898989]">
-                    {section.title}
-                  </p>
-                ) : null
-              ) : (
-                <div className="bg-muted-foreground/50 mx-2 mb-4 mt-2 h-[0.5px] dark:bg-[#262626]" />
-              )}
-              <div className="z-20 space-y-1 pb-2">
-                {section.items.map((item) => (
-                  <NavItem
-                    key={item.url}
-                    {...item}
-                    isActive={isUrlActive(item.url)}
-                    href={getHref(item)}
-                    target={item.target}
-                    title={item.title}
-                  />
-                ))}
-              </div>
-            </SidebarMenuItem>
-          </Collapsible>
+          <SidebarMenuItem key={section.title}>
+            {state !== 'collapsed' ? (
+              section.title ? (
+                <p className="text-muted-foreground mx-2 mb-2 text-[13px] dark:text-[#898989]">
+                  {section.title}
+                </p>
+              ) : null
+            ) : (
+              <div className="bg-muted-foreground/50 mx-2 mb-4 mt-2 h-[0.5px] dark:bg-[#262626]" />
+            )}
+            <div className="z-20 space-y-1 pb-2">
+              {section.items.map((item) => (
+                <NavItem
+                  key={item.url}
+                  {...item}
+                  isActive={isUrlActive(item.url)}
+                  href={getHref(item)}
+                  target={item.target}
+                  title={item.title}
+                />
+              ))}
+            </div>
+          </SidebarMenuItem>
         ))}
-        {!pathname.includes('/settings') && !isBottomNav && state !== 'collapsed' && (
-          <Collapsible defaultOpen={true} className="group/collapsible flex-col">
-            <SidebarMenuItem className="mb-4" style={{ height: 'auto' }}>
-              <div className="mx-2 mb-4 flex items-center justify-between">
-                <span className="text-muted-foreground text-[13px] dark:text-[#898989]">
-                  {activeAccount?.providerId === 'google' ? 'Labels' : 'Folders'}
-                </span>
-                {activeAccount?.providerId === 'google' ? (
-                  <LabelDialog
-                    trigger={
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="mr-1 h-4 w-4 p-0 hover:bg-transparent"
-                      >
-                        <Plus className="text-muted-foreground h-3 w-3 dark:text-[#898989]" />
-                      </Button>
-                    }
-                    onSubmit={onSubmit}
-                  />
-                ) : activeAccount?.providerId === 'microsoft' ? null : null}
-              </div>
+        {!pathname.includes('/settings') &&
+          !isBottomNav &&
+          state !== 'collapsed' &&
+          // Google always gets the section (it has an inline "add label"
+          // action even at zero); everyone else only gets it once there's
+          // something to show - otherwise this was rendering a "Folders"
+          // header over a permanently empty body.
+          (userLabels.length > 0 || activeAccount?.providerId === 'google') && (
+          <SidebarMenuItem className="mb-4 flex-col" style={{ height: 'auto' }}>
+            <div className="mx-2 mb-4 flex items-center justify-between">
+              <span className="text-muted-foreground text-[13px] dark:text-[#898989]">
+                {activeAccount?.providerId === 'google' ? 'Labels' : 'Folders'}
+              </span>
+              {activeAccount?.providerId === 'google' ? (
+                <LabelDialog
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={m['common.threadDisplay.addLabel']()}
+                      className="mr-1 h-4 w-4 p-0 hover:bg-transparent"
+                    >
+                      <Plus className="text-muted-foreground h-3 w-3 dark:text-[#898989]" />
+                    </Button>
+                  }
+                  onSubmit={onSubmit}
+                />
+              ) : activeAccount?.providerId === 'microsoft' ? null : null}
+            </div>
 
-              {activeAccount ? <SidebarLabels data={userLabels ?? []} /> : null}
-            </SidebarMenuItem>
-          </Collapsible>
+            {activeAccount ? <SidebarLabels data={userLabels ?? []} /> : null}
+          </SidebarMenuItem>
         )}
       </SidebarMenu>
     </SidebarGroup>
@@ -275,33 +275,29 @@ function NavItem(item: NavItemProps & { href: string }) {
   };
 
   return (
-    <Collapsible defaultOpen={item.isActive}>
-      <CollapsibleTrigger asChild>
-        <SidebarMenuButton
-          asChild
-          tooltip={state === 'collapsed' ? item.title : undefined}
-          className={cn(
-            'hover:bg-subtleWhite flex items-center dark:hover:bg-[#202020]',
-            item.isActive && 'bg-subtleWhite text-accent-foreground dark:bg-[#202020]',
+    <SidebarMenuButton
+      asChild
+      tooltip={state === 'collapsed' ? item.title : undefined}
+      className={cn(
+        'hover:bg-subtleWhite flex items-center dark:hover:bg-[#202020]',
+        item.isActive && 'bg-subtleWhite text-accent-foreground dark:bg-[#202020]',
+      )}
+      onClick={handleClick}
+    >
+      <Link target={item.target} to={item.href}>
+        {item.icon && <item.icon ref={iconRef} className="mr-2 shrink-0" />}
+        <p className="relative bottom-px mt-0.5 min-w-0 flex-1 truncate text-[13px]">
+          {item.title}
+        </p>
+        {stats &&
+          stats.some((stat) => stat.label?.toLowerCase() === item.id?.toLowerCase()) && (
+            <Badge className="text-muted-foreground ml-auto shrink-0 rounded-full border-none bg-transparent">
+              {stats
+                .find((stat) => stat.label?.toLowerCase() === item.id?.toLowerCase())
+                ?.count?.toLocaleString() || '0'}
+            </Badge>
           )}
-          onClick={handleClick}
-        >
-          <Link target={item.target} to={item.href}>
-            {item.icon && <item.icon ref={iconRef} className="mr-2 shrink-0" />}
-            <p className="relative bottom-px mt-0.5 min-w-0 flex-1 truncate text-[13px]">
-              {item.title}
-            </p>
-            {stats &&
-              stats.some((stat) => stat.label?.toLowerCase() === item.id?.toLowerCase()) && (
-                <Badge className="text-muted-foreground ml-auto shrink-0 rounded-full border-none bg-transparent">
-                  {stats
-                    .find((stat) => stat.label?.toLowerCase() === item.id?.toLowerCase())
-                    ?.count?.toLocaleString() || '0'}
-                </Badge>
-              )}
-          </Link>
-        </SidebarMenuButton>
-      </CollapsibleTrigger>
-    </Collapsible>
+      </Link>
+    </SidebarMenuButton>
   );
 }

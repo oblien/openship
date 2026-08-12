@@ -42,6 +42,26 @@ export function getTrpcUrl(): string {
 }
 
 /**
+ * Origin to redirect TO (login, inbox, compose, etc.) from a clientLoader.
+ * These loaders only ever run in the browser (this app is SPA-mode, no
+ * SSR), so `window` is always available here - no build-time env needed,
+ * no risk of baking in a dev default. Same reasoning as getBackendUrl,
+ * just for outbound navigation instead of API calls.
+ *
+ * `VITE_PUBLIC_APP_URL` used to be read directly at each redirect call
+ * site. When unset it silently became the literal string "undefined" in
+ * the built bundle (a relative-looking path that happened to still land
+ * on the right origin); when a dev default WAS present at build time
+ * (`.env.development`'s `http://localhost:3000`), a self-hosted release
+ * build baked that in as an absolute URL and redirected real users to
+ * localhost. This sidesteps the env dependency entirely.
+ */
+export function getAppUrl(): string {
+  if (isBrowser()) return window.location.origin;
+  return '';
+}
+
+/**
  * Legacy const exports - module-load-time values. Browser builds get the
  * runtime origin; SSR/Node builds get '' (or the dev override). New code
  * should call the getter functions above so a same-page navigation can't

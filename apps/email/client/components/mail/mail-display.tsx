@@ -1168,8 +1168,10 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
     (person: Sender) => (
       <Popover key={person.email}>
         <PopoverTrigger asChild>
-          <div
+          <button
             key={person.email}
+            type="button"
+            aria-label={person.name || person.email}
             className="dark:bg-panelDark inline-flex items-center justify-start gap-1.5 overflow-hidden rounded-full border bg-white p-1 pr-2"
           >
             <BimiAvatar
@@ -1180,7 +1182,7 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
             <div className="text-panelDark justify-start text-sm font-medium leading-none dark:text-white">
               {person.name || person.email}
             </div>
-          </div>
+          </button>
         </PopoverTrigger>
         <PopoverContent className="min-w-fit text-sm">
           <div className="flex items-center gap-2">
@@ -1259,7 +1261,11 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
                   <span>
                     {emailData.subject}{' '}
                     <span className="text-muted-foreground dark:text-[#8C8C8C]">
-                      {totalEmails && totalEmails > 1 && `[${totalEmails}]`}
+                      {/* `totalEmails && totalEmails > 1 && ...` renders a bare "0"
+                          for a single-message thread - `0 && x` evaluates to `0`,
+                          and unlike false/null/undefined, React renders a numeric
+                          0 as text. Ternary avoids that. */}
+                      {totalEmails != null && totalEmails > 1 ? `[${totalEmails}]` : null}
                     </span>
                   </span>
                 </span>
@@ -1497,6 +1503,7 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
                                   e.stopPropagation();
                                   e.preventDefault();
                                 }}
+                                aria-label={m['common.threadDisplay.moreOptions']()}
                                 className="inline-flex h-7 w-7 items-center justify-center gap-1 overflow-hidden rounded-md bg-white hover:bg-gray-100 focus:outline-none focus:ring-0 dark:bg-[#313131] dark:hover:bg-[#3d3d3d] cursor-pointer transition-colors"
                               >
                                 <ThreeDots className="fill-iconLight dark:fill-iconDark" />
@@ -1680,6 +1687,7 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
                         </button>
                         <button
                           onClick={() => downloadAttachment(attachment)}
+                          aria-label="Download attachment"
                           className="flex cursor-pointer items-center gap-1 rounded-[5px] px-1.5 py-1 text-sm"
                         >
                           <HardDriveDownload className="text-muted-foreground dark:text-muted-foreground h-4 w-4 fill-[#FAFAFA] dark:fill-[#262626]" />

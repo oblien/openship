@@ -44,6 +44,7 @@ import { Button } from '../ui/button';
 import { Avatar } from '../ui/avatar';
 import { useQueryState } from 'nuqs';
 import { useAtom } from 'jotai';
+import { CreateEmail } from '../create/create-email';
 
 const Thread = memo(
   function Thread({
@@ -260,6 +261,11 @@ const Thread = memo(
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label={
+                      displayStarred
+                        ? m['common.threadDisplay.unstar']()
+                        : m['common.threadDisplay.star']()
+                    }
                     className="h-6 w-6 overflow-visible [&_svg]:size-3.5"
                     onClick={handleToggleStar}
                   >
@@ -287,6 +293,7 @@ const Thread = memo(
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label={m['common.mail.toggleImportant']()}
                     className={cn(
                       'h-6 w-6 [&_svg]:size-3.5',
                       displayImportant ? 'hover:bg-orange-200/70 dark:hover:bg-orange-800/40' : '',
@@ -310,6 +317,7 @@ const Thread = memo(
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label={m['common.threadDisplay.archive']()}
                     className="h-6 w-6 [&_svg]:size-3.5"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -332,6 +340,7 @@ const Thread = memo(
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={m['common.actions.Bin']()}
                       className="h-6 w-6 hover:bg-[#FDE4E9] dark:hover:bg-[#411D23] [&_svg]:size-3.5"
                       onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
@@ -475,7 +484,11 @@ const Thread = memo(
                     {latestMessage.receivedOn ? (
                       <p
                         className={cn(
-                          'text-muted-foreground text-nowrap text-xs font-normal opacity-70 transition-opacity group-hover:opacity-100 dark:text-[#8C8C8C]',
+                          // opacity-70 dropped: at rest (not hovered/selected) it dimmed
+                          // text-muted-foreground below 4.5:1 against both panel
+                          // backgrounds (~2.7:1 light, ~4.0:1 dark) - the base
+                          // token alone already clears 4.5:1 in both themes.
+                          'text-muted-foreground text-nowrap text-xs font-normal dark:text-[#8C8C8C]',
                           isMailSelected && 'opacity-100',
                         )}
                       >
@@ -492,7 +505,7 @@ const Thread = memo(
                     {isFolderSent ? (
                       <p
                         className={cn(
-                          'mt-1 line-clamp-1 max-w-[50ch] overflow-hidden text-sm text-[#8C8C8C] md:max-w-[25ch]',
+                          'mt-1 line-clamp-1 max-w-[50ch] overflow-hidden text-sm text-muted-foreground dark:text-[#8C8C8C] md:max-w-[25ch]',
                         )}
                       >
                         {latestMessage.to.map((e) => e.email).join(', ')}
@@ -500,7 +513,7 @@ const Thread = memo(
                     ) : (
                       <p
                         className={cn(
-                          'mt-1 line-clamp-1 w-[95%] min-w-0 overflow-hidden text-sm text-[#8C8C8C]',
+                          'mt-1 line-clamp-1 w-[95%] min-w-0 overflow-hidden text-sm text-muted-foreground dark:text-[#8C8C8C]',
                         )}
                       >
                         {latestMessage.snippet
@@ -687,7 +700,11 @@ const Draft = memo(({ message, index }: { message: DraftListRow; index: number }
                 {dateMs != null && (
                   <p
                     className={cn(
-                      'text-muted-foreground text-nowrap text-xs font-normal opacity-70 transition-opacity group-hover:opacity-100 dark:text-[#8C8C8C]',
+                      // opacity-70 dropped: at rest (not hovered/selected) it dimmed
+                      // text-muted-foreground below 4.5:1 against both panel
+                      // backgrounds (~2.7:1 light, ~4.0:1 dark) - the base
+                      // token alone already clears 4.5:1 in both themes.
+                      'text-muted-foreground text-nowrap text-xs font-normal dark:text-[#8C8C8C]',
                     )}
                   >
                     {formatDate(dateMs)}
@@ -697,7 +714,7 @@ const Draft = memo(({ message, index }: { message: DraftListRow; index: number }
               <div className="flex justify-between">
                 <p
                   className={cn(
-                    'mt-1 line-clamp-1 max-w-[50ch] text-sm text-[#8C8C8C] md:max-w-[30ch]',
+                    'mt-1 line-clamp-1 max-w-[50ch] text-sm text-muted-foreground dark:text-[#8C8C8C] md:max-w-[30ch]',
                   )}
                 >
                   {message.subject}
@@ -721,6 +738,23 @@ export const MailList = memo(
     const [, setDraftId] = useQueryState('draftId');
     const [searchValue, setSearchValue] = useSearchValue();
     const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
+
+    // Mobile compose FAB - the "New email" trigger otherwise lives inside the
+    // sidebar, which on mobile is a Sheet that's unmounted (not just hidden)
+    // while closed. That was 2 taps to compose (open drawer, then New email).
+    // Query-state is shared/URL-synced (nuqs) with the sidebar's own trigger,
+    // so setting it here opens the exact same compose dialog.
+    const [isComposeOpen, setComposeOpen] = useQueryState('isComposeOpen');
+    const [, setComposeTo] = useQueryState('to');
+    const [, setComposeReplyId] = useQueryState('activeReplyId');
+    const [, setComposeMode] = useQueryState('mode');
+    const openCompose = useCallback(() => {
+      setComposeOpen('true');
+      setDraftId(null);
+      setComposeTo(null);
+      setComposeReplyId(null);
+      setComposeMode(null);
+    }, [setComposeOpen, setDraftId, setComposeTo, setComposeReplyId, setComposeMode]);
 
     useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
@@ -1023,6 +1057,21 @@ export const MailList = memo(
             <div className="h-2" />
           )}
         </div>
+
+        {/* Mobile compose FAB - see the hook comment above for why this
+            can't just reuse the sidebar's trigger. CreateEmail wraps its own
+            Dialog keyed off the same isComposeOpen query state, so mounting
+            it here is enough for the dialog to actually open - no separate
+            Dialog/DialogTrigger needed on this end. */}
+        <button
+          type="button"
+          onClick={openCompose}
+          aria-label={m['common.commandPalette.commands.newEmail']()}
+          className="fixed bottom-6 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[#006FFE] text-white shadow-lg transition-colors hover:bg-[#0056CC] lg:hidden"
+        >
+          <PencilCompose className="h-5 w-5 fill-white" />
+        </button>
+        {isComposeOpen === 'true' && <CreateEmail />}
       </>
     );
   },
