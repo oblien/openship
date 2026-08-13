@@ -2923,6 +2923,159 @@
           ]
         }
       ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "id": "louez",
+      "name": "Louez",
+      "description": "Equipment rental platform: a booking storefront with live availability, and a back office for reservations, customers and PDF contracts.",
+      "kind": "template",
+      "logo": "louez",
+      "category": "other",
+      "tags": [
+        "rental",
+        "booking",
+        "reservations",
+        "inventory",
+        "ecommerce"
+      ],
+      "framework": "docker-compose",
+      "repository": "https://github.com/Synapsr/Louez",
+      "services": [
+        {
+          "name": "louez-db",
+          "image": "mysql:8.4",
+          "environment": {
+            "MYSQL_DATABASE": "louez",
+            "MYSQL_USER": "louez"
+          },
+          "secretEnv": [
+            "MYSQL_PASSWORD",
+            "MYSQL_ROOT_PASSWORD"
+          ],
+          "volumes": [
+            "louez_db:/var/lib/mysql"
+          ],
+          "healthcheck": {
+            "test": "mysqladmin ping -h 127.0.0.1",
+            "interval": "5s",
+            "retries": 20
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "louez-storage",
+          "image": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
+          "command": "server /data",
+          "environment": {
+            "MINIO_ROOT_USER": "louez"
+          },
+          "secretEnv": [
+            "MINIO_ROOT_PASSWORD"
+          ],
+          "volumes": [
+            "louez_storage:/data"
+          ],
+          "healthcheck": {
+            "test": "curl -sf http://127.0.0.1:9000/minio/health/live",
+            "interval": "5s",
+            "retries": 20
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "louez",
+          "image": "synapsr/louez:2.1.0",
+          "ports": [
+            "3000:3000"
+          ],
+          "exposedPort": 3000,
+          "exposed": true,
+          "dependsOn": [
+            "louez-db",
+            "louez-storage"
+          ],
+          "environment": {
+            "LOUEZ_MODE": "standalone",
+            "AUTH_URL": "{{publicUrl:louez}}",
+            "NEXT_PUBLIC_APP_URL": "{{publicUrl:louez}}",
+            "AUTH_TRUST_HOST": "true",
+            "DATABASE_URL": "mysql://louez:{{config:MYSQL_PASSWORD}}@louez-db:3306/louez",
+            "S3_ENDPOINT": "http://louez-storage:9000",
+            "S3_REGION": "us-east-1",
+            "S3_BUCKET": "louez",
+            "S3_ACCESS_KEY_ID": "louez",
+            "S3_SECRET_ACCESS_KEY": "{{config:MINIO_ROOT_PASSWORD}}",
+            "S3_PUBLIC_URL": "/files"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "S3_SECRET_ACCESS_KEY",
+            "AUTH_SECRET"
+          ],
+          "volumes": [
+            "louez_data:/app/data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "louez",
+          "port": 3000,
+          "label": "Storefront and dashboard",
+          "kind": "http"
+        }
+      ],
+      "prepare": [
+        {
+          "service": "louez-storage",
+          "phase": "post-ready",
+          "readiness": {
+            "test": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\"",
+            "interval": 2000,
+            "retries": 30
+          },
+          "command": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" && mc mb --ignore-existing local/louez",
+          "capture": "bucket",
+          "mustSucceed": true,
+          "title": "Creating the product image bucket",
+          "description": "Louez stores product photos in MinIO and streams them back through the app, so the bucket stays private."
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MYSQL_PASSWORD",
+          "service": "louez-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "MYSQL_ROOT_PASSWORD",
+          "service": "louez-db",
+          "label": "Database root password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "MINIO_ROOT_PASSWORD",
+          "service": "louez-storage",
+          "label": "Image store password",
+          "help": "Credentials Louez uses to read and write product photos.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "AUTH_SECRET",
+          "service": "louez",
+          "label": "Auth secret",
+          "help": "Signs sessions. Auto-generated.",
+          "generate": "secret",
+          "secret": true
+        }
+      ]
     }
   ]
 }
