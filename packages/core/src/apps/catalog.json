@@ -1267,7 +1267,8 @@
       ]
     },
     {
-      "available": false,
+      "available": true,
+      "verified": true,
       "id": "uptime-kuma",
       "name": "Uptime Kuma",
       "description": "Self-hosted uptime monitoring with status pages and alerts.",
@@ -1283,7 +1284,7 @@
       "services": [
         {
           "name": "uptime-kuma",
-          "image": "louislam/uptime-kuma:1",
+          "image": "louislam/uptime-kuma:2",
           "ports": [
             "3001:3001"
           ],
@@ -1294,7 +1295,21 @@
           ],
           "restart": "unless-stopped"
         }
-      ]
+      ],
+      "connection": {
+        "title": "Open Uptime Kuma",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "URL",
+            "source": "publicUrl:uptime-kuma",
+            "kind": "url"
+          }
+        ],
+        "firstLogin": {
+          "note": "First run asks you to pick a database. Choose \"embedded\": this template only provisions Uptime Kuma's own SQLite volume, not an external MariaDB. Then create the admin user. There is no default account."
+        }
+      }
     },
     {
       "available": false,
