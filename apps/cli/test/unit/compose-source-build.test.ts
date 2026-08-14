@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * A from-source ("dev") install must BUILD the images we own from its checkout,
@@ -32,6 +34,7 @@ vi.mock("node:child_process", () => ({
 
 vi.mock("node:fs", () => ({
   existsSync: (p: string) => h.existing.has(String(p)),
+  statSync: (p: string) => ({ isFile: () => h.existing.has(String(p)) }),
   mkdirSync: () => undefined,
   readFileSync: (p: string) => h.written.get(String(p)) ?? "",
   writeFileSync: (p: string, data: string) => {
@@ -49,6 +52,10 @@ vi.mock("node:fs", () => ({
 vi.mock("../../src/lib/source-install", () => ({
   readSourceInstall: () => h.sourceInstall,
 }));
+
+vi.mock("@repo/core", () =>
+  import("../../../../packages/core/src/index"),
+);
 
 // Keep the heavy adapters barrel out of this unit test — but reach through to the
 // REAL mount list, because one of the tests below asserts the compose YAML is
@@ -99,13 +106,22 @@ const verbs = () =>
     return out;
   });
 
+let previousDockerConfig: string | undefined;
+
 beforeEach(() => {
+  previousDockerConfig = process.env.DOCKER_CONFIG;
+  delete process.env.DOCKER_CONFIG;
   h.sourceInstall = null;
   // An ordinary rootful box: the daemon socket is where the mount defaults to, so the
   // #482 detection has nothing to report here.
   h.existing = new Set(["/var/run/docker.sock"]);
   h.written = new Map();
   h.composeCalls = [];
+});
+
+afterEach(() => {
+  if (previousDockerConfig === undefined) delete process.env.DOCKER_CONFIG;
+  else process.env.DOCKER_CONFIG = previousDockerConfig;
 });
 
 describe("composeUp — from-source install", () => {
@@ -167,6 +183,46 @@ describe("composeUp — from-source install", () => {
 describe("composeUp — edge bind mounts", () => {
   const composeYaml = () =>
     [...h.written.entries()].find(([p]) => p.endsWith("docker-compose.yml"))?.[1] ?? "";
+
+  it("omits the Docker config mount when the host config is absent", async () => {
+    await composeUp({ version: "0.3.0" });
+
+    expect(composeYaml()).not.toContain(":/root/.docker/config.json:ro");
+  });
+
+  it("mounts the default host Docker config read-only into only the api", async () => {
+    const configPath = join(homedir(), ".docker", "config.json");
+    h.existing.add(configPath);
+
+    await composeUp({ version: "0.3.0" });
+
+    expect(composeYaml().split(`        source: ${JSON.stringify(configPath)}`).length - 1).toBe(1);
+  });
+
+  it("mounts an existing DOCKER_CONFIG file instead of the default config", async () => {
+    process.env.DOCKER_CONFIG = "/opt/openship/docker-config";
+    const configPath = join(process.env.DOCKER_CONFIG, "config.json");
+    h.existing.add(configPath);
+
+    await composeUp({ version: "0.3.0" });
+
+    expect(composeYaml()).toContain(`        source: ${JSON.stringify(configPath)}`);
+    expect(composeYaml()).not.toContain(`${homedir()}/.docker/config.json`);
+  });
+
+  it("resolves relative DOCKER_CONFIG paths and renders special characters safely", async () => {
+    process.env.DOCKER_CONFIG = "docker config: private";
+    const configPath = join(process.cwd(), process.env.DOCKER_CONFIG, "config.json");
+    h.existing.add(configPath);
+
+    await composeUp({ version: "0.3.0" });
+
+    expect(composeYaml()).toContain("      - type: bind");
+    expect(composeYaml()).toContain(`        source: ${JSON.stringify(configPath)}`);
+    expect(composeYaml()).toContain("        target: /root/.docker/config.json");
+    expect(composeYaml()).toContain("        read_only: true");
+    expect(composeYaml()).not.toContain("docker config: private:/root/.docker/config.json");
+  });
 
   it("gives BOTH api and edge every mount in EDGE_CONTAINER_MOUNTS", async () => {
     await composeUp({ version: "0.3.0" });

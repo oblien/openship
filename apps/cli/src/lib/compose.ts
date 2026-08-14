@@ -20,10 +20,11 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import {
   LocalExecutor,
@@ -454,6 +455,9 @@ services:
       # the transport, naming neither the path nor the cause (#482). \`openship up\`
       # writes OPENSHIP_DOCKER_SOCKET when the detected path isn't this default.
       - \${OPENSHIP_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      # Registry credentials are resolved at pull time by the API. When the host
+      # config exists, it is mounted read-only and scoped to this service only.
+__OPENSHIP_DOCKER_CONFIG_VOLUME__
       # Routing state shared with the edge, as HOST BIND MOUNTS (generated from
       # EDGE_CONTAINER_MOUNTS): the vhost tree, /etc/letsencrypt, the ACME webroot
       # and the static doc-roots the API writes and the edge serves. Named volumes
@@ -2399,7 +2403,26 @@ function materialize(opts: ComposeUpOpts): {
     /* first install — no previous env, so everything is "changed" */
   }
   const { text: rendered, carried } = renderEnvAndCarried(opts, host, cfg, prev);
-  writeFileSync(COMPOSE_FILE, COMPOSE_YAML);
+  const dockerConfigPath = resolve(
+    process.env.DOCKER_CONFIG || join(homedir(), ".docker"),
+    "config.json",
+  );
+  let dockerConfigVolume = "";
+  try {
+    if (statSync(dockerConfigPath).isFile()) {
+      dockerConfigVolume = `      - type: bind
+        source: ${JSON.stringify(dockerConfigPath)}
+        target: /root/.docker/config.json
+        read_only: true`;
+    }
+  } catch {
+    /* no usable Docker config — leave the API mount absent */
+  }
+  const composeYaml = COMPOSE_YAML.replace(
+    "__OPENSHIP_DOCKER_CONFIG_VOLUME__",
+    dockerConfigVolume,
+  );
+  writeFileSync(COMPOSE_FILE, composeYaml);
   writeEnvFile(rendered, before);
   // #485: the old rewrite silently DROPPED operator-set keys. Now they survive — say so,
   // so a run that kept them doesn't look like it might have discarded them.

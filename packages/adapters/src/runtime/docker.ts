@@ -101,6 +101,7 @@ function clampShellWindow(
 import type { Feature, SystemLog } from "../system/types";
 import { isRuntimeNotFoundError } from "../system/errors";
 import { dirOf, ensureOwnedDir } from "../system/elevated-executor";
+import { registryForImage, resolveDockerAuth } from "./docker-auth";
 
 import type {
   RuntimeAdapter,
@@ -3001,10 +3002,15 @@ export class DockerRuntime implements RuntimeAdapter {
       await executor.exec(`docker pull ${sq(ref)}`, { timeout: 10 * 60_000 });
       return;
     }
-    const stream = await this.docker.pull(ref);
-    await new Promise<void>((resolve, reject) => {
-      this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
-    });
+    const authconfig = await resolveDockerAuth(ref);
+    try {
+      const stream = await this.docker.pull(ref, authconfig ? { authconfig } : {});
+      await new Promise<void>((resolve, reject) => {
+        this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+      });
+    } catch {
+      throw new Error(`Failed to pull image from ${registryForImage(ref)}`);
+    }
   }
 
   /** Is this image tag present on THIS daemon? Distinguishes a locally-built
