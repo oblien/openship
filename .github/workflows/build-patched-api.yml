@@ -1,6 +1,9 @@
 name: Build patched API image
 
 on:
+  push:
+    branches:
+      - fix/docker-pull-registry-auth
   workflow_dispatch:
 
 permissions:
