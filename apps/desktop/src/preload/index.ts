@@ -95,6 +95,17 @@ contextBridge.exposeInMainWorld("desktop", {
     connectPoll: (nonce: string) => ipcRenderer.invoke("cloud:connect-poll", nonce),
   },
 
+  /** Named local session profiles. Infrastructure data stays shared. */
+  profiles: {
+    list: () => ipcRenderer.invoke("profiles:list"),
+    create: (name: string) => ipcRenderer.invoke("profiles:create", name),
+    rename: (id: string, name: string) => ipcRenderer.invoke("profiles:rename", id, name),
+    switch: (id: string) => ipcRenderer.invoke("profiles:switch", id),
+    remove: (id: string) => ipcRenderer.invoke("profiles:remove", id),
+    signOut: () => ipcRenderer.invoke("profiles:sign-out"),
+    useLocal: () => ipcRenderer.invoke("profiles:use-local"),
+  },
+
   /** Reset config and return to onboarding */
   reset: () => ipcRenderer.invoke("app:reset"),
 

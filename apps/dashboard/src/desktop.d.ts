@@ -15,6 +15,19 @@ declare global {
     status: "pending" | "resolved" | "expired" | "error";
   };
 
+  type DesktopProfile = {
+    id: string;
+    name: string;
+    needsSignIn: boolean;
+    createdAt: string;
+    lastUsedAt: string;
+  };
+
+  type DesktopProfilesState = {
+    activeProfileId: string;
+    profiles: DesktopProfile[];
+  };
+
   interface DesktopBridge {
     isDesktop?: boolean;
     reset?: () => Promise<unknown>;
@@ -41,6 +54,15 @@ declare global {
     onboarding: {
       cloudAuth: () => Promise<DesktopCloudAuthResult>;
       cloudAuthPoll: (nonce: string) => Promise<DesktopCloudPollResult>;
+    };
+    profiles?: {
+      list: () => Promise<DesktopProfilesState>;
+      create: (name: string) => Promise<DesktopProfile>;
+      rename: (id: string, name: string) => Promise<DesktopProfile>;
+      switch: (id: string) => Promise<boolean>;
+      remove: (id: string) => Promise<boolean>;
+      signOut: () => Promise<boolean>;
+      useLocal: () => Promise<boolean>;
     };
   }
 

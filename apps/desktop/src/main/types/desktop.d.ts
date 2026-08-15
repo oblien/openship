@@ -25,7 +25,30 @@ export interface DesktopBridge {
     browseFolder: () => Promise<string | null>;
     browseFile: () => Promise<string | null>;
   };
+  profiles: {
+    list: () => Promise<DesktopProfilesState>;
+    create: (name: string) => Promise<DesktopProfile>;
+    rename: (id: string, name: string) => Promise<DesktopProfile>;
+    switch: (id: string) => Promise<boolean>;
+    remove: (id: string) => Promise<boolean>;
+    signOut: () => Promise<boolean>;
+    useLocal: () => Promise<boolean>;
+  };
   reset: () => Promise<boolean>;
+}
+
+export interface DesktopProfile {
+  id: string;
+  name: string;
+  partition: string | null;
+  needsSignIn: boolean;
+  createdAt: string;
+  lastUsedAt: string;
+}
+
+export interface DesktopProfilesState {
+  activeProfileId: string;
+  profiles: DesktopProfile[];
 }
 
 declare global {

@@ -25,6 +25,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { MailServerSwitcher } from "@/components/mail-server-switcher";
+import { DesktopProfileMenu } from "@/components/desktop-profile-menu";
 import { useMailScope } from "@/context/MailScopeContext";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import { projectsApi } from "@/lib/api";
@@ -120,6 +121,7 @@ export function Sidebar() {
   const router = useRouter();
   const { resolvedTheme, toggle } = useTheme();
   const { t } = useI18n();
+  const logoutLabel = isDesktop ? "Sign out" : t.dashboard.user.logout;
   const brand = useBrandName();
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -258,6 +260,10 @@ export function Sidebar() {
   async function handleLogout() {
     setLoggingOut(true);
     try {
+      if (isDesktop && window.desktop?.profiles) {
+        await window.desktop.profiles.signOut();
+        return;
+      }
       if (isDesktop && (window as any).desktop?.reset) {
         // Desktop: reset config and return to Electron onboarding
         await (window as any).desktop.reset();
@@ -432,6 +438,8 @@ export function Sidebar() {
           </p>
         )}
 
+        {isDesktop && <DesktopProfileMenu collapsed={collapsed} />}
+
         {showOrgSwitcher ? (
           <DismissiblePopover
             open={orgsOpen}
@@ -565,7 +573,7 @@ export function Sidebar() {
                     ) : (
                       <LogOut className="size-4" />
                     )}
-                    {isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
+                    {logoutLabel}
                   </button>
                 </div>
               </div>
@@ -606,8 +614,8 @@ export function Sidebar() {
                     onClick={handleLogout}
                     disabled={loggingOut}
                     className="flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-                    aria-label={isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
-                    title={isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
+                    aria-label={logoutLabel}
+                    title={logoutLabel}
                   >
                     {loggingOut ? (
                       <Loader2 className="size-4 animate-spin" />
@@ -624,7 +632,7 @@ export function Sidebar() {
                 onClick={handleLogout}
                 disabled={loggingOut}
                 className="mt-2 flex w-full items-center justify-center rounded-xl py-2.5 text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-                title={isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
+                title={logoutLabel}
               >
                 {loggingOut ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -644,7 +652,7 @@ export function Sidebar() {
             onClick={handleLogout}
             disabled={loggingOut}
             className="mt-2 flex w-full items-center justify-center rounded-xl py-2.5 text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-            title={isDesktop ? t.chrome.sidebar.backToSetup : t.dashboard.user.logout}
+            title={logoutLabel}
           >
             {loggingOut ? (
               <Loader2 className="size-4 animate-spin" />
@@ -657,4 +665,3 @@ export function Sidebar() {
     </aside>
   );
 }
-

@@ -14,7 +14,7 @@
  *         └─ API (remote server, reached via HTTP)
  */
 
-import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme } from "electron";
+import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme, session } from "electron";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
@@ -49,6 +49,7 @@ import {
   isSafeExternalUrl,
   type RendererConfigKey,
 } from "./security";
+import { DesktopProfileStore, type DesktopProfile } from "./profile-store";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ class ConfigStore {
 }
 
 const store = new ConfigStore();
+const profiles = new DesktopProfileStore(app.getPath("userData"));
 
 // ─── Internal token (ephemeral, per-session) ─────────────────────────────────
 
@@ -219,6 +221,7 @@ async function waitForApi(apiUrl: string, maxAttempts = 30, intervalMs = 1000): 
 // ─── Window management ───────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow | null = null;
+let switchingProfiles = false;
 
 /** The update found by the launch check, pending user action in the update window. */
 let pendingUpdate: UpdateInfo | null = null;
@@ -228,6 +231,7 @@ let pendingUpdate: UpdateInfo | null = null;
 let updateInFlight: Promise<boolean> | null = null;
 
 function createWindow() {
+  const activeProfile = profiles.active();
   const bounds = store.get("windowBounds");
   // Never open larger than the display (a previously-stored oversized bound, or
   // a small screen, would otherwise make the window bigger than the desktop).
@@ -242,7 +246,7 @@ function createWindow() {
   // the top-left corner.
   const hasStoredPosition = typeof bounds?.x === "number" && typeof bounds?.y === "number";
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width,
     height,
     ...(hasStoredPosition ? { x: bounds?.x, y: bounds?.y } : { center: true }),
@@ -274,6 +278,7 @@ function createWindow() {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      ...(activeProfile.partition ? { partition: activeProfile.partition } : {}),
       // Still off because the preload does `require("@repo/onboarding")`, which a
       // sandboxed preload can't resolve — it would silently hit the fallback path
       // and degrade onboarding's SSH validation to no-ops. Turning this on means
@@ -282,39 +287,40 @@ function createWindow() {
       sandbox: false,
     },
   });
+  mainWindow = window;
 
   // Restore a maximized window only if the user actually left it maximized. This
   // was `!== false`, i.e. undefined counted as "maximize" — so every first launch
   // (and any launch after a config reset) opened fullscreen-wide regardless of the
   // sizing above.
   if (store.get("windowMaximized") === true) {
-    mainWindow.maximize();
+    window.maximize();
   }
 
   // Keep the renderer's restore icon honest: the window can be maximized by the
   // OS, a keyboard shortcut, or a double-click, none of which go through our IPC.
   const emitMaximized = (maximized: boolean) =>
-    mainWindow?.webContents.send("window:maximized-change", maximized);
-  mainWindow.on("maximize", () => emitMaximized(true));
-  mainWindow.on("unmaximize", () => emitMaximized(false));
+    window.webContents.send("window:maximized-change", maximized);
+  window.on("maximize", () => emitMaximized(true));
+  window.on("unmaximize", () => emitMaximized(false));
 
   // Same idea for the titlebar's back/forward arrows: most navigation happens
   // through links and the Next router, not our IPC, so push the real state after
   // every navigation instead of letting the renderer guess. `did-navigate-in-page`
   // is the one that fires for Next's client-side pushState routing.
   const emitNav = () => {
-    const h = mainWindow?.webContents.navigationHistory;
-    mainWindow?.webContents.send("window:nav-state-change", {
+    const h = window.webContents.navigationHistory;
+    window.webContents.send("window:nav-state-change", {
       canGoBack: h?.canGoBack() ?? false,
       canGoForward: h?.canGoForward() ?? false,
     });
   };
-  mainWindow.webContents.on("did-navigate", emitNav);
-  mainWindow.webContents.on("did-navigate-in-page", emitNav);
+  window.webContents.on("did-navigate", emitNav);
+  window.webContents.on("did-navigate-in-page", emitNav);
 
   // Show the window once content is painted (avoids white flash)
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+  window.once("ready-to-show", () => {
+    window.show();
   });
 
   // Paint a loading splash immediately. The real view (onboarding/dashboard)
@@ -322,7 +328,7 @@ function createWindow() {
   showLoading();
 
   // Open external links in the system browser
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) {
       shell.openExternal(url);
     }
@@ -353,11 +359,11 @@ function createWindow() {
     if (verdict === "external") shell.openExternal(url);
     else console.warn(`[security] blocked main-frame navigation to ${url}`);
   };
-  mainWindow.webContents.on("will-navigate", containNavigation);
-  mainWindow.webContents.on("will-redirect", containNavigation);
+  window.webContents.on("will-navigate", containNavigation);
+  window.webContents.on("will-redirect", containNavigation);
 
   // Detect when onboarding completes via dashboard desktop-login redirect
-  mainWindow.webContents.on("did-navigate", (_e, url) => {
+  window.webContents.on("did-navigate", (_e, url) => {
     const u = new URL(url);
     // desktop-login redirects to dashboard root - mark onboarding complete
     if (!store.get("onboardingComplete") && u.pathname === "/" && u.origin === getLocalDashboardUrl()) {
@@ -369,15 +375,13 @@ function createWindow() {
 
   // Save window state on close. Store the NORMAL (un-maximized) bounds so a
   // maximized session doesn't persist a full-screen-sized "normal" window.
-  mainWindow.on("close", () => {
-    if (mainWindow) {
-      store.set("windowMaximized", mainWindow.isMaximized());
-      store.set("windowBounds", mainWindow.getNormalBounds());
-    }
+  window.on("close", () => {
+    store.set("windowMaximized", window.isMaximized());
+    store.set("windowBounds", window.getNormalBounds());
   });
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
   });
 }
 
@@ -593,11 +597,20 @@ const ONBOARDING_ENABLED =
 
 /** Decide the first real view once services are up: onboarding vs dashboard. */
 function routeInitialView() {
+  if (profiles.active().needsSignIn) {
+    loadProfileSignIn();
+    return;
+  }
   if (!ONBOARDING_ENABLED || store.get("onboardingComplete")) {
     loadDashboard();
   } else {
     loadOnboarding();
   }
+}
+
+function loadProfileSignIn() {
+  if (!mainWindow) return;
+  mainWindow.loadURL(`${getLocalDashboardUrl()}/desktop-profile`);
 }
 
 function loadOnboarding() {
@@ -620,6 +633,25 @@ function loadDashboard() {
       console.error("[openship] Dashboard failed to load:", err);
     }
   });
+}
+
+function electronSessionFor(profile: DesktopProfile) {
+  return profile.partition ? session.fromPartition(profile.partition) : session.defaultSession;
+}
+
+async function clearProfileSession(profile: DesktopProfile): Promise<void> {
+  const profileSession = electronSessionFor(profile);
+  await profileSession.clearStorageData({ storages: ["cookies", "localstorage", "indexdb"] });
+  await profileSession.cookies.flushStore();
+}
+
+function reopenForActiveProfile(): void {
+  const previous = mainWindow;
+  switchingProfiles = true;
+  createWindow();
+  routeInitialView();
+  previous?.destroy();
+  switchingProfiles = false;
 }
 
 // ─── App lifecycle ───────────────────────────────────────────────────────────
@@ -701,6 +733,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  if (switchingProfiles) return;
   globalShortcut.unregisterAll();
   if (process.platform !== "darwin") {
     app.quit();
@@ -917,6 +950,54 @@ ipcMain.handle("app:local-urls", () => {
   return { api: getLocalApiUrl(), dashboard: getLocalDashboardUrl() };
 });
 
+// ─── IPC: Named desktop profiles ────────────────────────────────────────────
+
+ipcMain.handle("profiles:list", () => ({
+  activeProfileId: profiles.active().id,
+  profiles: profiles.list(),
+}));
+
+ipcMain.handle("profiles:create", (_event, name: unknown) => {
+  if (typeof name !== "string") throw new Error("Profile name is required");
+  return profiles.create(name);
+});
+
+ipcMain.handle("profiles:rename", (_event, id: unknown, name: unknown) => {
+  if (typeof id !== "string" || typeof name !== "string") {
+    throw new Error("Profile and name are required");
+  }
+  return profiles.rename(id, name);
+});
+
+ipcMain.handle("profiles:switch", (_event, id: unknown) => {
+  if (typeof id !== "string") throw new Error("Profile is required");
+  profiles.setActive(id);
+  setImmediate(reopenForActiveProfile);
+  return true;
+});
+
+ipcMain.handle("profiles:remove", async (_event, id: unknown) => {
+  if (typeof id !== "string") throw new Error("Profile is required");
+  const removed = profiles.remove(id);
+  await clearProfileSession(removed);
+  return true;
+});
+
+ipcMain.handle("profiles:sign-out", async () => {
+  const active = profiles.active();
+  await clearProfileSession(active);
+  profiles.setNeedsSignIn(active.id, true);
+  loadProfileSignIn();
+  return true;
+});
+
+ipcMain.handle("profiles:use-local", () => {
+  const active = profiles.active();
+  profiles.setNeedsSignIn(active.id, false);
+  mainWindow?.loadURL(`${getLocalApiUrl()}/api/auth/desktop-login`);
+  return true;
+});
+
 // No renderer-driven navigation channel: `loadURL` from main bypasses the
 // `will-navigate` allowlist in createWindow(), so exposing one would have handed
 // the frame (and with it the native bridge) to any caller-supplied URL. Every
@@ -1048,6 +1129,7 @@ ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
       // Listen for dashboard load to mark onboarding complete
       const onNavigate = (_e: unknown, url: string) => {
         if (url.startsWith(getLocalDashboardUrl())) {
+          profiles.setNeedsSignIn(profiles.active().id, false);
           store.set("apiUrl", getLocalApiUrl());
           store.set("dashboardUrl", getLocalDashboardUrl());
           store.set("onboardingComplete", true);
