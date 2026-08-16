@@ -86,7 +86,9 @@
   },
   "sidebar": {
     "expand": "Développer la barre latérale",
-    "collapse": "Réduire la barre latérale"
+    "collapse": "Réduire la barre latérale",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu"
   },
   "user": {
     "logout": "Se déconnecter",

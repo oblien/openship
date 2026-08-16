@@ -250,33 +250,39 @@ function TabBar({
 }) {
   const { t } = useI18n();
   return (
-    <nav
-      className="flex items-center gap-1 border-b border-border/50 overflow-x-auto"
-      aria-label={t.emailsAdmin.panel.ariaLabel}
-    >
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = active === tab.key;
-        return (
-          <button
-            key={tab.key}
-            onClick={() => onChange(tab.key)}
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              "inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap",
-              isActive
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground/70",
-            )}
-          >
-            <Icon className="size-4" strokeWidth={2} />
-            {t.emailsAdmin.panel.tabs[tab.key]}
-            {isActive && (
-              <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />
-            )}
-          </button>
-        );
-      })}
-    </nav>
+    <div className="relative">
+      <nav
+        className="flex items-center gap-1 border-b border-border/50 overflow-x-auto scrollbar-hide"
+        aria-label={t.emailsAdmin.panel.ariaLabel}
+      >
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = active === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => onChange(tab.key)}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap",
+                isActive
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground/70",
+              )}
+            >
+              <Icon className="size-4" strokeWidth={2} />
+              {t.emailsAdmin.panel.tabs[tab.key]}
+              {isActive && (
+                <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />
+              )}
+            </button>
+          );
+        })}
+      </nav>
+      {/* Fade edges hint that the strip scrolls, same treatment as the
+          project detail mobile tab bar. */}
+      <div className="pointer-events-none absolute inset-y-0 start-0 w-6 bg-gradient-to-r from-background to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 end-0 w-6 bg-gradient-to-l from-background to-transparent" />
+    </div>
   );
 }

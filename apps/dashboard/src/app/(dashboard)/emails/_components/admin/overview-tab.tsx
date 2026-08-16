@@ -157,7 +157,12 @@ function MailServerCard({
         </Link>
       </div>
 
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      {/* Stacks below sm - the CTA used to share the row with the hostname
+          via flex-wrap, which put it uncomfortably close to (and on some
+          hostname lengths, overlapping) the break-all'd hostname text once
+          it wrapped to two lines. Now it's an explicit second row on mobile
+          instead of an implicit wrap. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground mb-1.5">
             {t.emailsAdmin.overview.hostname}

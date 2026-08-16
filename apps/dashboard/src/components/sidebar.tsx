@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  X,
   Building2,
   ChevronsUpDown,
   Check,
@@ -38,6 +39,7 @@ import {
   isNavItemActive,
   mailTabHref,
 } from "@/lib/sidebar-nav";
+import { useMobileSidebar } from "@/context/MobileSidebarContext";
 
 /**
  * Org list / member shapes from Better Auth's organization plugin.
@@ -121,6 +123,7 @@ export function Sidebar() {
   const { resolvedTheme, toggle } = useTheme();
   const { t } = useI18n();
   const brand = useBrandName();
+  const { open: mobileOpen, setOpen: setMobileOpen } = useMobileSidebar();
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [navCounts, setNavCounts] = useState<{ projects: number; apps: number } | null>(null);
@@ -296,26 +299,39 @@ export function Sidebar() {
     : { href: "/library", labelKey: "new-project" };
 
   return (
-    <aside
-      className={`my-3 ms-3 flex shrink-0 flex-col rounded-2xl border border-border/50 bg-card transition-[width] duration-200 overflow-hidden ${collapsed ? "w-[72px]" : "w-[260px]"
-        }`}
-    >
+    <>
+      {/* Mobile-only scrim behind the drawer. Sits above page content, below
+          the drawer itself; tapping it closes the drawer. Irrelevant on
+          desktop (drawer never opens there), so hidden at lg. */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 start-0 z-50 flex w-[280px] max-w-[85vw] shrink-0 flex-col overflow-hidden rounded-none border border-border/50 bg-card transition-transform duration-200 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
+          } lg:static lg:my-3 lg:ms-3 lg:max-w-none lg:translate-x-0 lg:rounded-2xl lg:transition-[width] lg:duration-200 ${collapsed ? "lg:w-[72px]" : "lg:w-[260px]"
+          }`}
+      >
       {/* ── Header ───────────────────────────────────────────── */}
-      <div className={`app-sidebar-header flex items-center px-5 py-6 ${collapsed ? "flex-col gap-3 pb-3" : "justify-between"}`}>
+      <div className={`app-sidebar-header flex items-center px-5 py-6 ${collapsed ? "lg:flex-col lg:gap-3 lg:pb-3 justify-between" : "justify-between"}`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <Logo size={26} className="shrink-0" />
-          {!collapsed && (
-            <span className="text-base font-semibold tracking-tight text-foreground truncate">
-              {brand}
-            </span>
-          )}
+          {/* `collapsed` is a desktop-only state, but this is the same element as
+              the mobile drawer — hiding it outright would blank the drawer's
+              header on phones, so collapse it at lg and up only. */}
+          <span className={`text-base font-semibold tracking-tight text-foreground truncate ${collapsed ? "lg:hidden" : ""}`}>
+            {brand}
+          </span>
         </div>
 
         {/* Controls */}
-        <div className={`flex items-center ${collapsed ? "flex-col gap-1" : "gap-1"}`}>
+        <div className={`flex items-center ${collapsed ? "lg:flex-col lg:gap-1 gap-1" : "gap-1"}`}>
           <button
             onClick={toggle}
-            className="flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+            className="hidden lg:flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
             aria-label={t.auth.toggleTheme}
             title={t.auth.toggleTheme}
           >
@@ -328,17 +344,29 @@ export function Sidebar() {
               <Moon className="size-4" />
             )}
           </button>
+          {/* Collapse toggle - desktop only. An icon-rail overlay drawer on
+              mobile has no use for a collapsed state. */}
           <button
             type="button"
             onClick={() => setCollapsed((v) => !v)}
             aria-label={collapsed ? t.dashboard.sidebar.expand : t.dashboard.sidebar.collapse}
-            className="flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+            className="hidden lg:flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
           >
             {collapsed ? (
               <PanelLeftOpen className="size-4 rtl:rotate-180" />
             ) : (
               <PanelLeftClose className="size-4 rtl:rotate-180" />
             )}
+          </button>
+          {/* Close - mobile only. Redundant with the scrim/nav-tap auto-close,
+              but a drawer needs an explicit close affordance of its own. */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label={t.dashboard.sidebar.closeMenu}
+            className="flex lg:hidden size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+          >
+            <X className="size-4" />
           </button>
         </div>
       </div>
@@ -654,7 +682,8 @@ export function Sidebar() {
           </button>
         )}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
