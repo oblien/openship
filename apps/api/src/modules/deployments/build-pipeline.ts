@@ -893,6 +893,18 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     }
 
     if (useServicePipeline && isMultiServiceRuntime(runtime)) {
+      let composeBuildRuntime = runtime;
+      if (
+        buildStrategy === "local" &&
+        resolved.effectiveTarget === "server" &&
+        runtime instanceof DockerRuntime
+      ) {
+        composeBuildRuntime = await DockerRuntime.create({ transport: "socket" });
+        transports.add(composeBuildRuntime);
+        logger.log(
+          "→ Build location: this machine; completed images will be streamed to the deploy server.\n",
+        );
+      }
       // snapshot.composeServices is a DeployableService[] - mixed compose +
       // monorepo. syncFromCompose strictly owns compose rows; passing a
       // monorepo entry in causes a ghost compose-kind row to be inserted
@@ -921,6 +933,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           project,
           dep,
           runtime,
+          buildRuntime: composeBuildRuntime,
           routing,
           ssl,
           system,
