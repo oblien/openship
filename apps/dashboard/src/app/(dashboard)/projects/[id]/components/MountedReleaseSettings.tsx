@@ -202,7 +202,7 @@ export function MountedReleaseSettings() {
             </Field>
             <Field
               label="Prepare release"
-              hint="Optional. Runs in the staged release before it becomes current."
+              hint="Optional. Runs in the staged release before it becomes current. Builders can persist dependencies and compiler output under /cache."
             >
               <Input
                 value={draft.prepareCommand ?? ""}

@@ -65,7 +65,12 @@ function dockerExec(containerId: string, workdir: string | null, command: string
   return `docker exec${cwd} ${shellQuote(containerId)} sh -lc ${shellQuote(command)}`;
 }
 
-function builderRun(releaseDir: string, deploymentId: string, config: MountedReleaseConfig): string {
+function builderRun(
+  hostRoot: string,
+  releaseDir: string,
+  deploymentId: string,
+  config: MountedReleaseConfig,
+): string {
   const image = config.builderImage?.trim();
   if (!image || !config.prepareCommand?.trim()) {
     throw new AppError("A builder image and prepare command are required.", 400, RELEASE_ERROR);
@@ -77,6 +82,7 @@ function builderRun(releaseDir: string, deploymentId: string, config: MountedRel
     `docker run --rm --name ${shellQuote(name)} ` +
     `--memory ${shellQuote(`${memory}m`)} --cpus ${shellQuote(String(cpus))} ` +
     `-v ${shellQuote(`${releaseDir}:/workspace`)} -w /workspace ` +
+    `-v ${shellQuote(`${hostRoot}/builder-cache:/cache`)} ` +
     `${shellQuote(image)} sh -lc ${shellQuote(config.prepareCommand)}`
   );
 }
@@ -237,7 +243,7 @@ async function runMountedRelease(
     });
 
     await executor.exec(
-      `mkdir -p ${shellQuote(`${hostRoot}/releases`)} ${shellQuote(`${hostRoot}/shared`)}; ` +
+      `mkdir -p ${shellQuote(`${hostRoot}/releases`)} ${shellQuote(`${hostRoot}/shared`)} ${shellQuote(`${hostRoot}/builder-cache`)}; ` +
         `rm -rf ${shellQuote(incoming)} ${shellQuote(releaseDir)}; ` +
         `git init --bare ${shellQuote(`${hostRoot}/source.git`)} >/dev/null 2>&1 || true`,
     );
@@ -277,7 +283,7 @@ async function runMountedRelease(
     if (config.prepareCommand?.trim()) {
       if (config.builderImage?.trim()) {
         log(dep.id, `Building release with ${config.builderImage}`);
-        await executor.exec(builderRun(releaseDir, dep.id, config), { timeout: 900_000 });
+        await executor.exec(builderRun(hostRoot, releaseDir, dep.id, config), { timeout: 900_000 });
       } else {
         log(dep.id, "Preparing release in the app container");
         await executor.exec(

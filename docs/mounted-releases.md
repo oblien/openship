@@ -51,8 +51,10 @@ Prepare release: npm ci --no-audit --no-fund && npm run build:static
 ```
 
 Builder memory and CPU default to 1024 MB and 1 core and can be adjusted per
-project. Leaving Builder image blank preserves the original behavior: the
-prepare command runs inside the staged release in the live app container.
+project. A persistent project-local builder cache is mounted at `/cache`; use it
+for package-manager downloads, lockfile-keyed dependencies, and compiler caches.
+Leaving Builder image blank preserves the original behavior: the prepare
+command runs inside the staged release in the live app container.
 
 The first code deploy refuses with a clear error if the running container does
 not have the mount. It never silently switches a host directory the container
