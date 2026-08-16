@@ -1332,9 +1332,14 @@ export class DockerRuntime implements RuntimeAdapter {
     args.push("--force-rm", ".");
 
     log.log(`Running local Docker Desktop BuildKit build for ${tag}...\n`);
+    const dockerCliDirectory = "C:\\Program Files\\Docker\\Docker\\resources\\bin";
     const child = spawn(dockerCli, args, {
       cwd: contextDir,
-      env: { ...process.env, DOCKER_BUILDKIT: "1" },
+      env: {
+        ...process.env,
+        DOCKER_BUILDKIT: "1",
+        PATH: `${dockerCliDirectory};${process.env.PATH ?? ""}`,
+      },
       windowsHide: true,
       signal,
     });
