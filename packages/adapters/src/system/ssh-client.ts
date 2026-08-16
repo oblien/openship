@@ -43,11 +43,13 @@ function toConnectConfig(config: SshConfig): ConnectConfig {
     // stall every host operation for 20s apiece with no output.
     readyTimeout: config.readyTimeoutMs ?? 20_000,
     keepaliveInterval: 15_000,
-    // 10 (~150s) rather than 3 (45s): a small server pegged by a heavy
+    // 40 (~10m) rather than 3 (45s): a small server pegged by a heavy
     // `docker build` / `bun install` can briefly starve sshd of keepalive
     // replies, and 45s was dropping the SSH channel mid-build (build failed with
-    // a bare "exited with code 1"). Still detects a truly-dead link within ~2.5m.
-    keepaliveCountMax: 10,
+    // a bare "exited with code 1"). Build output can legitimately pause for
+    // several minutes during static generation; the deployment cancellation
+    // signal remains the immediate path for an intentionally stopped build.
+    keepaliveCountMax: 40,
   };
 }
 
