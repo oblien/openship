@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Code2, ChevronDown, Save } from "lucide-react";
+import { Code2, ChevronDown, PackageCheck, Save, ServerCog } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 
 export interface MountedReleaseConfigUI {
   enabled: boolean;
+  buildMode?: "prebuilt" | "server";
   serviceName?: string;
   sourcePath?: string;
   containerPath: string;
@@ -27,6 +28,7 @@ export interface MountedReleaseConfigUI {
 
 const emptyConfig: MountedReleaseConfigUI = {
   enabled: true,
+  buildMode: "prebuilt",
   sourcePath: "",
   containerPath: "/srv/openship-app",
   sharedPaths: [],
@@ -61,6 +63,7 @@ export function MountedReleaseSettings() {
   const [open, setOpen] = React.useState(Boolean(saved));
   const [draft, setDraft] = React.useState<MountedReleaseConfigUI>(saved ?? emptyConfig);
   const [saving, setSaving] = React.useState(false);
+  const buildMode = draft.buildMode ?? (draft.prepareCommand?.trim() ? "server" : "prebuilt");
 
   React.useEffect(() => {
     setDraft(saved ?? emptyConfig);
@@ -74,11 +77,14 @@ export function MountedReleaseSettings() {
     try {
       const mountedRelease = {
         ...draft,
+        buildMode,
         sourcePath: draft.sourcePath?.trim() || undefined,
         sharedPaths: draft.sharedPaths?.filter(Boolean) ?? [],
-        prepareCommand: draft.prepareCommand?.trim() || undefined,
-        builderImage: draft.builderImage?.trim() || undefined,
-        builderCachePaths: draft.builderCachePaths?.filter(Boolean) ?? [],
+        prepareCommand:
+          buildMode === "server" ? draft.prepareCommand?.trim() || undefined : undefined,
+        builderImage: buildMode === "server" ? draft.builderImage?.trim() || undefined : undefined,
+        builderCachePaths:
+          buildMode === "server" ? (draft.builderCachePaths?.filter(Boolean) ?? []) : [],
         reloadCommand: draft.reloadCommand?.trim() || undefined,
         healthPath: draft.healthPath?.trim() || undefined,
       };
@@ -148,6 +154,60 @@ export function MountedReleaseSettings() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <p className="text-[12px] font-medium text-foreground">Release files</p>
+              <div
+                className="grid gap-2 sm:grid-cols-2"
+                role="radiogroup"
+                aria-label="Release files"
+              >
+                {[
+                  {
+                    value: "prebuilt" as const,
+                    icon: PackageCheck,
+                    title: "Prebuilt in Git",
+                    copy: "Deploy exactly what was committed. No install or build runs on the server.",
+                  },
+                  {
+                    value: "server" as const,
+                    icon: ServerCog,
+                    title: "Prepare on server",
+                    copy: "Run a release command in the app or a disposable builder before activation.",
+                  },
+                ].map((option) => {
+                  const Icon = option.icon;
+                  const selected = buildMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => set("buildMode", option.value)}
+                      className={`flex min-h-20 items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-ring/40 ${
+                        selected
+                          ? "border-emerald-500/60 bg-emerald-500/10"
+                          : "border-border/50 bg-background hover:border-border"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${selected ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}
+                      >
+                        <Icon className="size-4" />
+                      </span>
+                      <span>
+                        <span className="block text-[13px] font-semibold text-foreground">
+                          {option.title}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
+                          {option.copy}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             {servicesData.services.length > 0 ? (
               <Field label="App service" hint="Only this container receives the code mount.">
                 <select
@@ -202,70 +262,74 @@ export function MountedReleaseSettings() {
                 placeholder="storage=/var/www/html/storage, database"
               />
             </Field>
-            <Field
-              label="Prepare release"
-              hint="Optional. Runs in the staged release before it becomes current. Builders can persist dependencies and compiler output under /cache."
-            >
-              <Input
-                value={draft.prepareCommand ?? ""}
-                onChange={(event) => set("prepareCommand", event.target.value)}
-                placeholder="composer install --no-dev && php artisan optimize"
-              />
-            </Field>
-            <Field
-              label="Builder image"
-              hint="Optional. Uses a disposable server-side builder instead of adding build tools to the live app."
-            >
-              <Input
-                value={draft.builderImage ?? ""}
-                onChange={(event) => set("builderImage", event.target.value)}
-                placeholder="node:20-alpine"
-              />
-            </Field>
-            {draft.builderImage ? (
+            {buildMode === "server" ? (
               <>
                 <Field
-                  label="Builder limits"
-                  hint="Memory in MB and CPU cores. The builder is removed automatically."
-                >
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      min={128}
-                      max={32768}
-                      value={draft.builderMemoryMb ?? 1024}
-                      onChange={(event) => set("builderMemoryMb", Number(event.target.value))}
-                      placeholder="Memory MB"
-                    />
-                    <Input
-                      type="number"
-                      min={0.1}
-                      max={32}
-                      step={0.1}
-                      value={draft.builderCpus ?? 1}
-                      onChange={(event) => set("builderCpus", Number(event.target.value))}
-                      placeholder="CPU cores"
-                    />
-                  </div>
-                </Field>
-                <Field
-                  label="Builder cache paths"
-                  hint="Comma separated repo paths mounted from persistent cache, such as node_modules and .next/cache."
+                  label="Prepare release"
+                  hint="Runs in the staged release before it becomes current."
                 >
                   <Input
-                    value={(draft.builderCachePaths ?? []).join(", ")}
-                    onChange={(event) =>
-                      set(
-                        "builderCachePaths",
-                        event.target.value
-                          .split(",")
-                          .map((part) => part.trim())
-                          .filter(Boolean),
-                      )
-                    }
-                    placeholder="node_modules, .next/cache, .npm"
+                    value={draft.prepareCommand ?? ""}
+                    onChange={(event) => set("prepareCommand", event.target.value)}
+                    placeholder="composer install --no-dev && php artisan optimize"
                   />
                 </Field>
+                <Field
+                  label="Builder image"
+                  hint="Optional. Leave blank to run the command inside the live app container."
+                >
+                  <Input
+                    value={draft.builderImage ?? ""}
+                    onChange={(event) => set("builderImage", event.target.value)}
+                    placeholder="node:20-alpine"
+                  />
+                </Field>
+                {draft.builderImage ? (
+                  <>
+                    <Field
+                      label="Builder limits"
+                      hint="Memory in MB and CPU cores. The builder is removed automatically."
+                    >
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          type="number"
+                          min={128}
+                          max={32768}
+                          value={draft.builderMemoryMb ?? 1024}
+                          onChange={(event) => set("builderMemoryMb", Number(event.target.value))}
+                          placeholder="Memory MB"
+                        />
+                        <Input
+                          type="number"
+                          min={0.1}
+                          max={32}
+                          step={0.1}
+                          value={draft.builderCpus ?? 1}
+                          onChange={(event) => set("builderCpus", Number(event.target.value))}
+                          placeholder="CPU cores"
+                        />
+                      </div>
+                    </Field>
+                    <Field
+                      label="Builder cache paths"
+                      hint="Comma separated repo paths mounted from persistent cache, such as node_modules and .next/cache."
+                    >
+                      <Input
+                        value={(draft.builderCachePaths ?? []).join(", ")}
+                        onChange={(event) =>
+                          set(
+                            "builderCachePaths",
+                            event.target.value
+                              .split(",")
+                              .map((part) => part.trim())
+                              .filter(Boolean),
+                          )
+                        }
+                        placeholder="node_modules, .next/cache, .npm"
+                      />
+                    </Field>
+                  </>
+                ) : null}
               </>
             ) : null}
             <Field
@@ -316,8 +380,8 @@ export function MountedReleaseSettings() {
 
           <div className="mt-5 flex items-center justify-between gap-4 border-t border-border/40 pt-4">
             <p className="max-w-xl text-[11px] leading-4 text-muted-foreground">
-              The first runtime rebuild attaches the stable mount. After that, Deploy code only
-              fetches source, prepares a release, flips current, reloads, and checks health.
+              The first runtime rebuild attaches the stable mount. After that, Deploy code fetches
+              the selected commit, switches current, reloads, and checks health.
             </p>
             <button
               type="button"

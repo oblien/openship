@@ -30,7 +30,11 @@ import {
 } from "@repo/core";
 import type { ResourceConfig } from "@repo/adapters";
 import { encodeResources } from "../../lib/resources";
-import { resolveLatestVersion, resolveLatestReleaseTag, readApiVersion } from "../../lib/release-resolver";
+import {
+  resolveLatestVersion,
+  resolveLatestReleaseTag,
+  readApiVersion,
+} from "../../lib/release-resolver";
 import { resolveLatestImageDigest } from "../../lib/image-registry";
 import { env } from "../../config";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
@@ -87,12 +91,7 @@ const PROJECT_UPDATE_KEYS = Object.keys(UpdateProjectBody.properties);
  * intentionally excluded (stays editable, parity with setBranch); gitUrl is
  * derived by the linker and never set via PATCH.
  */
-const GIT_SOURCE_IDENTITY_KEYS = new Set([
-  "gitProvider",
-  "gitOwner",
-  "gitRepo",
-  "installationId",
-]);
+const GIT_SOURCE_IDENTITY_KEYS = new Set(["gitProvider", "gitOwner", "gitRepo", "installationId"]);
 
 /**
  * The project's INFRASTRUCTURE identity — settable at creation, immutable after.
@@ -148,7 +147,10 @@ function readDeployMeta(
   if (!p.cloudWorkspaceId && !serverId && !p.activeDeploymentId) {
     return { deployTarget: null, serverId: null };
   }
-  const deployTarget = deriveProjectDeployTarget({ cloudWorkspaceId: p.cloudWorkspaceId, serverId });
+  const deployTarget = deriveProjectDeployTarget({
+    cloudWorkspaceId: p.cloudWorkspaceId,
+    serverId,
+  });
   // The pair must agree. A cloud-bound project can still carry a server id — from the
   // column it was bound to before it moved, or from the snapshot of that last deploy —
   // and emitting both is how a card ends up labelled "Cloud" while holding a server's
@@ -338,7 +340,8 @@ function resolveProjectSource(data: TCreateProjectBody) {
   if (isRelease && env.CLOUD_MODE) {
     throw new ForbiddenError("Release/dist source projects are not available in cloud mode");
   }
-  const safeLocalPath = !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
+  const safeLocalPath =
+    !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
 
@@ -377,11 +380,7 @@ function environmentNameFromSlug(slug: string) {
   );
 }
 
-async function ensureProjectApp(
-  data: TCreateProjectBody,
-  slug: string,
-  organizationId: string,
-) {
+async function ensureProjectApp(data: TCreateProjectBody, slug: string, organizationId: string) {
   let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
   if (app) return { app, created: false };
 
@@ -465,7 +464,11 @@ function buildProductionProjectInput(
     workloadType: data.workloadType,
     hasServer: data.hasServer,
     productionMode: data.productionMode,
-  }) ?? { workloadType: "web" as WorkloadType, hasServer: true, productionMode: "host" as ProductionMode };
+  }) ?? {
+    workloadType: "web" as WorkloadType,
+    hasServer: true,
+    productionMode: "host" as ProductionMode,
+  };
 
   return {
     organizationId,
@@ -508,9 +511,7 @@ function buildProductionProjectInput(
     sourceKind: data.sourceKind ?? null,
     buildKind: data.buildKind ?? null,
     workspacePrepareCommand:
-      data.projectType === "monorepo"
-        ? data.monorepoWorkspace?.prepareCommand ?? null
-        : null,
+      data.projectType === "monorepo" ? (data.monorepoWorkspace?.prepareCommand ?? null) : null,
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
       data.rollbackWindow !== undefined ? normalizeRollbackWindow(data.rollbackWindow) : null,
@@ -531,15 +532,11 @@ function buildProductionProjectInput(
     // deploy resolves to "bare", and a compose deploy fails with "services are
     // not supported on the bare runtime". Git apps/monorepos stay null (chosen at
     // deploy time).
-    runtimeMode:
-      data.projectType === "services" || data.projectType === "docker" ? "docker" : null,
+    runtimeMode: data.projectType === "services" || data.projectType === "docker" ? "docker" : null,
   };
 }
 
-async function persistMonorepoApps(
-  projectId: string,
-  data: TCreateProjectBody,
-): Promise<void> {
+async function persistMonorepoApps(projectId: string, data: TCreateProjectBody): Promise<void> {
   if (data.projectType !== "monorepo" || !data.monorepoApps?.length) return;
 
   // #336: monorepo rows are masked on read too (withDrift has no kind filter),
@@ -582,7 +579,7 @@ async function persistMonorepoApps(
       domainType: app.domainType ?? "free",
       environment: hasMaskedValue(app.environment)
         ? unmaskEnv(app.environment, storedEnvByName.get(app.name) ?? null)
-        : app.environment ?? {},
+        : (app.environment ?? {}),
     })),
   );
 }
@@ -707,12 +704,15 @@ async function createProductionProject(
     ...((data as Partial<EnsureProjectBody>).services ?? []),
   ]);
   const { app, created: appCreated } = await ensureProjectApp(data, slug, organizationId);
-  const routing = deriveNextProjectRouteState({
-    slug,
-  }, {
-    nextPublicEndpoints: data.publicEndpoints,
-    slug,
-  });
+  const routing = deriveNextProjectRouteState(
+    {
+      slug,
+    },
+    {
+      nextPublicEndpoints: data.publicEndpoints,
+      slug,
+    },
+  );
 
   try {
     const created = await repos.project.create(
@@ -826,7 +826,8 @@ export async function linkProjectRepo(
   const { organizationId } = ctx;
   const owner = input.owner?.trim();
   const repo = input.repo?.trim();
-  if (!owner || !repo) return { ok: false, code: "invalid", message: "owner and repo are required" };
+  if (!owner || !repo)
+    return { ok: false, code: "invalid", message: "owner and repo are required" };
 
   const project = await repos.project.findById(projectId);
   try {
@@ -897,7 +898,14 @@ export async function linkProjectRepo(
     );
   }
 
-  return { ok: true, owner, repo, branch: defaultBranch, strategy, autoDeploy: !!gitFields.autoDeploy };
+  return {
+    ok: true,
+    owner,
+    repo,
+    branch: defaultBranch,
+    strategy,
+    autoDeploy: !!gitFields.autoDeploy,
+  };
 }
 
 async function uniqueProjectSlug(organizationId: string, baseSlug: string) {
@@ -996,9 +1004,7 @@ async function findProjectByAppSlug(
  * can't bypass it.
  */
 async function assertProjectQuota(organizationId: string): Promise<void> {
-  const cap = env.CLOUD_MODE
-    ? env.CLOUD_MAX_PROJECTS_PER_USER
-    : SYSTEM.PROJECTS.MAX_PER_USER;
+  const cap = env.CLOUD_MODE ? env.CLOUD_MAX_PROJECTS_PER_USER : SYSTEM.PROJECTS.MAX_PER_USER;
   const { total } = await repos.projectGroup.listByOrganization(organizationId, {
     page: 1,
     perPage: 1,
@@ -1008,10 +1014,7 @@ async function assertProjectQuota(organizationId: string): Promise<void> {
   }
 }
 
-export async function ensureProject(
-  data: EnsureProjectBody,
-  organizationId: string,
-) {
+export async function ensureProject(data: EnsureProjectBody, organizationId: string) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
 
@@ -1033,11 +1036,7 @@ export async function ensureProject(
     // No existing match → this ensure will create. Enforce the cap here too
     // (the folder-upload deploy flow reaches creation only through ensure).
     await assertProjectQuota(organizationId);
-    project = await createProductionProject(
-      data,
-      desiredSlug,
-      organizationId,
-    );
+    project = await createProductionProject(data, desiredSlug, organizationId);
     created = true;
   } else {
     // Defensive: if we matched an existing project but its org_id doesn't
@@ -1173,10 +1172,10 @@ export async function listProjects(
 
   // organizationId is required across the codebase — the route-level
   // requirePermission middleware ensures it's set before the controller runs.
-  const { rows: projects } = await repos.project.listByOrganization(
-    organizationId,
-    { page: 1, perPage: 1000 },
-  );
+  const { rows: projects } = await repos.project.listByOrganization(organizationId, {
+    page: 1,
+    perPage: 1000,
+  });
 
   const byGroup = new Map<string, Project[]>();
   for (const p of projects) {
@@ -1207,10 +1206,7 @@ export async function getProject(projectId: string, organizationId: string) {
 // ─── Create project ──────────────────────────────────────────────────────────
 
 /** @scope org — only reads organizationId as a DB key. */
-export async function createProject(
-  data: TCreateProjectBody,
-  organizationId: string,
-) {
+export async function createProject(data: TCreateProjectBody, organizationId: string) {
   const slug = slugify(data.name);
 
   await assertProjectQuota(organizationId);
@@ -1296,9 +1292,7 @@ export async function updateProject(
     update.routeStrategy !== undefined &&
     !["auto", "loopback-port", "container-ip"].includes(update.routeStrategy as string)
   ) {
-    throw new ValidationError(
-      "routeStrategy must be 'auto', 'loopback-port', or 'container-ip'",
-    );
+    throw new ValidationError("routeStrategy must be 'auto', 'loopback-port', or 'container-ip'");
   }
 
   // ── monorepoSharedPaths validation ──────────────────────────────────
@@ -1307,11 +1301,8 @@ export async function updateProject(
   // deployable service would force-rebuild every service on every push
   // to web (defeating the point of smart per-service deploys).
   if (data.monorepoSharedPaths !== undefined && data.monorepoSharedPaths !== null) {
-    const normalize = (s: string) =>
-      s.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
-    const prefixes = data.monorepoSharedPaths
-      .map(normalize)
-      .filter((s) => s.length > 0);
+    const normalize = (s: string) => s.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
+    const prefixes = data.monorepoSharedPaths.map(normalize).filter((s) => s.length > 0);
     if (prefixes.length > 0) {
       const services = await repos.service.listByProject(projectId).catch(() => []);
       const serviceRoots = services
@@ -1319,7 +1310,8 @@ export async function updateProject(
         .filter((s) => s.length > 0);
       const overlap = prefixes.find((prefix) =>
         serviceRoots.some(
-          (root) => root === prefix || root.startsWith(`${prefix}/`) || prefix.startsWith(`${root}/`),
+          (root) =>
+            root === prefix || root.startsWith(`${prefix}/`) || prefix.startsWith(`${root}/`),
         ),
       );
       if (overlap) {
@@ -1335,9 +1327,7 @@ export async function updateProject(
   // ── defaultRollbackStrategy ────────────────────────────────────────
   if (data.defaultRollbackStrategy !== undefined) {
     if (data.defaultRollbackStrategy !== "git" && data.defaultRollbackStrategy !== "snapshot") {
-      throw new ValidationError(
-        `defaultRollbackStrategy must be "git" or "snapshot"`,
-      );
+      throw new ValidationError(`defaultRollbackStrategy must be "git" or "snapshot"`);
     }
     update.defaultRollbackStrategy = data.defaultRollbackStrategy;
   }
@@ -1353,20 +1343,33 @@ export async function updateProject(
       if (services.length > 0 && !release.serviceName) {
         throw new ValidationError("Choose the service that should receive the mounted release.");
       }
-      if (release.serviceName && !services.some((service) => service.name === release.serviceName)) {
-        throw new ValidationError(`Mounted release service "${release.serviceName}" does not exist.`);
+      if (
+        release.serviceName &&
+        !services.some((service) => service.name === release.serviceName)
+      ) {
+        throw new ValidationError(
+          `Mounted release service "${release.serviceName}" does not exist.`,
+        );
       }
       const relative = (value: string) => value.trim().replace(/^\/+|\/+$/g, "");
+      const buildMode =
+        release.buildMode ?? (release.prepareCommand?.trim() ? "server" : "prebuilt");
       update.mountedRelease = {
         ...release,
+        buildMode,
         sourcePath: release.sourcePath ? relative(release.sourcePath) : undefined,
         sharedPaths: [...new Set((release.sharedPaths ?? []).map(relative).filter(Boolean))],
         containerPath: release.containerPath.trim().replace(/\/+$/, ""),
-        prepareCommand: release.prepareCommand?.trim() || undefined,
-        builderImage: release.builderImage?.trim() || undefined,
+        prepareCommand:
+          buildMode === "server" ? release.prepareCommand?.trim() || undefined : undefined,
+        builderImage:
+          buildMode === "server" ? release.builderImage?.trim() || undefined : undefined,
         builderMemoryMb: release.builderMemoryMb ?? 1024,
         builderCpus: release.builderCpus ?? 1,
-        builderCachePaths: [...new Set((release.builderCachePaths ?? []).map(relative).filter(Boolean))],
+        builderCachePaths:
+          buildMode === "server"
+            ? [...new Set((release.builderCachePaths ?? []).map(relative).filter(Boolean))]
+            : [],
         reloadCommand: release.reloadCommand?.trim() || undefined,
         healthPath: release.healthPath?.trim() || undefined,
         retain: release.retain ?? 5,
@@ -1384,9 +1387,7 @@ export async function updateProject(
     } else {
       const alias = normalizeAliasStrict(String(data.internalAlias));
       if (!alias) {
-        throw new ValidationError(
-          "internalAlias must contain at least one letter or digit",
-        );
+        throw new ValidationError("internalAlias must contain at least one letter or digit");
       }
       // Reject an internalAlias that collides with a sidecar service's name or
       // custom alias on this project's network (embedded DNS is first-match).
@@ -1415,8 +1416,7 @@ export async function updateProject(
   // which must not add a SECOND concurrent writer to the same vhost.
   // No slug term: the slug is immutable here (PROJECT_IDENTITY_KEYS), so a rename
   // never re-syncs routes — which is the point. Its hostname is edited as a domain.
-  const routesReapplied =
-    data.publicEndpoints !== undefined || update.port !== undefined;
+  const routesReapplied = data.publicEndpoints !== undefined || update.port !== undefined;
   if (routesReapplied) {
     // Snapshot the live hostnames before the sync so re-application can tear
     // down any the edit drops — AND so the free-cloud gate only fires for
@@ -1436,10 +1436,7 @@ export async function updateProject(
       // (the latter also covers a PENDING route that has no domain row yet), so a
       // remaining pending route is never mistaken for net-new.
       const priorHosts = new Set(
-        [
-          ...previousHostnames,
-          ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname),
-        ]
+        [...previousHostnames, ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname)]
           .filter((h): h is string => typeof h === "string" && h.length > 0)
           .map((h) => h.trim().toLowerCase()),
       );
@@ -1552,10 +1549,7 @@ export async function updateProject(
 
 // ─── Project environments ───────────────────────────────────────────────────
 
-export async function listProjectEnvironments(
-  projectId: string,
-  organizationId: string,
-) {
+export async function listProjectEnvironments(projectId: string, organizationId: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -1623,7 +1617,9 @@ export async function createProjectEnvironment(
     const branches = await listGitHubBranches(ctx, base.gitOwner, base.gitRepo);
     const exists = branches.some((branch) => branch.name === gitBranch);
     if (!exists) {
-      throw new ValidationError(`Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`);
+      throw new ValidationError(
+        `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
+      );
     }
   }
 
@@ -1967,7 +1963,9 @@ export async function evaluateDrift(p: Project, upstream: UpstreamDrift) {
     // pressing Update quiets every surface immediately.
     const latestInProgress =
       behind && latestSha
-        ? Boolean(await repos.deployment.findInProgressByCommit(p.id, latestSha).catch(() => undefined))
+        ? Boolean(
+            await repos.deployment.findInProgressByCommit(p.id, latestSha).catch(() => undefined),
+          )
         : false;
     return {
       supported: true as const,
@@ -2079,11 +2077,7 @@ export async function getGitInfo(projectId: string, organizationId: string) {
   };
 }
 
-export async function setBranch(
-  projectId: string,
-  branch: string,
-  organizationId: string,
-) {
+export async function setBranch(projectId: string, branch: string, organizationId: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -2194,10 +2188,7 @@ export async function listProjectDeployments(
 
 // ─── Deployment session ──────────────────────────────────────────────────────
 
-export async function getLatestDeploymentSession(
-  projectId: string,
-  organizationId: string,
-) {
+export async function getLatestDeploymentSession(projectId: string, organizationId: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 

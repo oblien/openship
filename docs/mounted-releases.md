@@ -32,13 +32,22 @@ root. The application must serve or start from `<container root>/current`.
 1. Open **Runtime → Mounted releases**.
 2. Choose the app service for a compose project.
 3. Set the repo source directory and container release root.
-4. Save, then run **Rebuild runtime** once to attach the stable mount.
-5. Use **Deploy code** for normal source changes.
+4. Choose **Prebuilt in Git** when generated assets are committed, or **Prepare
+   on server** when the release still needs an install or build command.
+5. Save, then run **Rebuild runtime** once to attach the stable mount.
+6. Use **Deploy code** for normal source changes.
+
+## Prebuilt repositories
+
+Use **Prebuilt in Git** when the selected commit already contains everything
+the running application needs. OpenShip fetches and extracts the commit, flips
+`current`, reloads the application, and checks health. It does not start a
+builder or run package-manager commands on the server.
 
 ## Compiled applications
 
-If the production image is intentionally small, set a **Builder image** with
-the prepare command. OpenShip then mounts the staged checkout at `/workspace`
+Choose **Prepare on server** when the production image is intentionally small,
+then set a **Builder image** with the prepare command. OpenShip mounts the staged checkout at `/workspace`
 inside a disposable builder on the target server, runs the build, and removes
 the builder before activation. The live container never needs compilers or
 development dependencies.

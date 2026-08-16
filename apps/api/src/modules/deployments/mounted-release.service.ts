@@ -10,6 +10,7 @@ import { assertGitHubRepoAccess } from "../github/github-access";
 import { createQueuedDeployment, buildConfigSnapshot, checkNoActiveBuild } from "./build.service";
 import * as sessionManager from "./session-manager";
 import {
+  mountedReleaseBuildMode,
   mountedReleaseConfig,
   mountedReleaseHostRoot,
   type MountedReleaseConfig,
@@ -301,7 +302,7 @@ async function runMountedRelease(
         );
       });
 
-    if (config.prepareCommand?.trim()) {
+    if (mountedReleaseBuildMode(config) === "server" && config.prepareCommand?.trim()) {
       if (config.builderImage?.trim()) {
         log(dep.id, `Building release with ${config.builderImage}`);
         await prepareBuilderCachePaths(executor, hostRoot, config.builderCachePaths ?? []);
@@ -313,6 +314,8 @@ async function runMountedRelease(
           { timeout: 300_000 },
         );
       }
+    } else {
+      log(dep.id, "Using deployable files committed to Git");
     }
 
     await repos.deployment.updateStatus(dep.id, "deploying");

@@ -327,9 +327,7 @@ export const project = pgTable(
      * is available either way — images are retained by the rollback-window keep
      * set regardless of this setting.
      */
-    defaultRollbackStrategy: text("default_rollback_strategy")
-      .notNull()
-      .default("git"),
+    defaultRollbackStrategy: text("default_rollback_strategy").notNull().default("git"),
     /**
      * One-shot "rebuild every service on the next deploy regardless of
      * what changed" flag. Used by the dashboard's force-deploy toggle.
@@ -445,6 +443,7 @@ export const project = pgTable(
     activeReleaseDeploymentId: text("active_release_deployment_id"),
     mountedRelease: jsonb("mounted_release").$type<{
       enabled: boolean;
+      buildMode?: "prebuilt" | "server";
       serviceName?: string;
       sourcePath?: string;
       containerPath: string;
@@ -536,30 +535,34 @@ export const project = pgTable(
  * Values are encrypted at rest (application-level encryption).
  * Each var can be scoped to specific environments.
  */
-export const envVar = pgTable("env_var", {
-  id: text("id").primaryKey(), // "env_..."
-  projectId: text("project_id")
-    .notNull()
-    .references(() => project.id, { onDelete: "cascade" }),
-  /** Service ID for service-scoped env vars (null = project-level / all services) */
-  serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
+export const envVar = pgTable(
+  "env_var",
+  {
+    id: text("id").primaryKey(), // "env_..."
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    /** Service ID for service-scoped env vars (null = project-level / all services) */
+    serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
 
-  /** Variable key (e.g. "DATABASE_URL") */
-  key: text("key").notNull(),
-  /** Encrypted value */
-  value: text("value").notNull(),
-  /** Environments where this var is active */
-  environment: text("environment").notNull().default("production"), // production | preview | development
+    /** Variable key (e.g. "DATABASE_URL") */
+    key: text("key").notNull(),
+    /** Encrypted value */
+    value: text("value").notNull(),
+    /** Environments where this var is active */
+    environment: text("environment").notNull().default("production"), // production | preview | development
 
-  /** Preview-only: don't include in production builds */
-  isSecret: boolean("is_secret").notNull().default(false),
+    /** Preview-only: don't include in production builds */
+    isSecret: boolean("is_secret").notNull().default(false),
 
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (t) => [
-  // Env resolution runs on every build — covers project + service +
-  // environment filtering used by buildPipelineEnv.
-  index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
-  // Backup / restore reads all vars for a project.
-  index("idx_env_var_project").on(t.projectId),
-]);
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Env resolution runs on every build — covers project + service +
+    // environment filtering used by buildPipelineEnv.
+    index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
+    // Backup / restore reads all vars for a project.
+    index("idx_env_var_project").on(t.projectId),
+  ],
+);

@@ -3,6 +3,7 @@ import type { DeployableService } from "../../lib/deployable-service";
 
 export interface MountedReleaseConfig {
   enabled: boolean;
+  buildMode?: "prebuilt" | "server";
   serviceName?: string;
   sourcePath?: string;
   containerPath: string;
@@ -16,6 +17,10 @@ export interface MountedReleaseConfig {
   healthPath?: string;
   healthPort?: number;
   retain?: number;
+}
+
+export function mountedReleaseBuildMode(config: MountedReleaseConfig): "prebuilt" | "server" {
+  return config.buildMode ?? (config.prepareCommand?.trim() ? "server" : "prebuilt");
 }
 
 export function mountedReleaseConfig(
