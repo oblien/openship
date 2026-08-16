@@ -602,9 +602,11 @@ function loadOnboarding() {
 
 function loadDashboard() {
   if (!mainWindow) return;
-  // Always use the LIVE dashboard origin — the port is dynamic per launch, so
-  // any persisted dashboardUrl is stale. onboardingComplete is the real state.
-  mainWindow.loadURL(getLocalDashboardUrl()).catch((err) => {
+  // Re-mint the canonical local session on every launch/profile switch. Older
+  // builds stored account cookies per partition, so loading the dashboard
+  // directly can resurrect an empty Cloud/synthetic workspace even though all
+  // profiles now intentionally share the same local data.
+  mainWindow.loadURL(`${getLocalApiUrl()}/api/auth/desktop-login`).catch((err) => {
     // Fall back to onboarding on a dashboard-load failure only when onboarding
     // is enabled; otherwise it's just a transient dashboard error to surface.
     if (ONBOARDING_ENABLED) {

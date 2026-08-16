@@ -57,11 +57,20 @@ function desktopResultPage(title: string, message: string, success = false): str
  * authenticate the next request.
  */
 export async function getSession(c: Context) {
+  const { ensureLocalUser } = await import("../../lib/local-user");
+  const localUser = await ensureLocalUser();
+
   try {
     const realSession = await auth.api.getSession({
       headers: c.req.raw.headers,
     });
-    if (realSession) {
+    // Desktop profiles are named views over one local workspace, not account
+    // containers. Replace any cookie left behind by the old Cloud/local profile
+    // flow instead of allowing it to select an empty synthetic organization.
+    if (
+      realSession?.user.id === localUser.id &&
+      realSession.session.activeOrganizationId === `org_${localUser.id}`
+    ) {
       // activeOrganizationId is NOT NULL at the schema level — set by
       // the session.create.before hook in lib/auth.ts and by the
       // local-cookie mintSession path's explicit insert. No reactive
@@ -82,12 +91,10 @@ export async function getSession(c: Context) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const { ensureLocalUser } = await import("../../lib/local-user");
   const { mintSession } = await import("../../lib/cloud-auth-proxy");
-  const user = await ensureLocalUser();
   const session = await mintSession({
     purpose: "local-cookie",
-    userId: user.id,
+    userId: localUser.id,
     ipAddress: "127.0.0.1",
     userAgent: "desktop",
   });
@@ -98,14 +105,14 @@ export async function getSession(c: Context) {
   return c.json({
     session: {
       id: session.id,
-      userId: user.id,
+      userId: localUser.id,
       token: session.token,
       expiresAt: session.expiresAt.toISOString(),
       createdAt: now,
       updatedAt: now,
     },
     user: {
-      ...user,
+      ...localUser,
       image: null,
       createdAt: now,
       updatedAt: now,
