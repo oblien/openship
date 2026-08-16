@@ -65,6 +65,22 @@ function dockerExec(containerId: string, workdir: string | null, command: string
   return `docker exec${cwd} ${shellQuote(containerId)} sh -lc ${shellQuote(command)}`;
 }
 
+function builderRun(releaseDir: string, deploymentId: string, config: MountedReleaseConfig): string {
+  const image = config.builderImage?.trim();
+  if (!image || !config.prepareCommand?.trim()) {
+    throw new AppError("A builder image and prepare command are required.", 400, RELEASE_ERROR);
+  }
+  const name = `openship-release-${deploymentId.replace(/[^A-Za-z0-9_.-]/g, "-")}`;
+  const memory = config.builderMemoryMb ?? 1024;
+  const cpus = config.builderCpus ?? 1;
+  return (
+    `docker run --rm --name ${shellQuote(name)} ` +
+    `--memory ${shellQuote(`${memory}m`)} --cpus ${shellQuote(String(cpus))} ` +
+    `-v ${shellQuote(`${releaseDir}:/workspace`)} -w /workspace ` +
+    `${shellQuote(image)} sh -lc ${shellQuote(config.prepareCommand)}`
+  );
+}
+
 async function runReload(
   executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
   containerId: string,
@@ -259,11 +275,16 @@ async function runMountedRelease(
       });
 
     if (config.prepareCommand?.trim()) {
-      log(dep.id, "Running release preparation");
-      await executor.exec(
-        dockerExec(runtime.containerId, containerRelease, config.prepareCommand),
-        { timeout: 300_000 },
-      );
+      if (config.builderImage?.trim()) {
+        log(dep.id, `Building release with ${config.builderImage}`);
+        await executor.exec(builderRun(releaseDir, dep.id, config), { timeout: 900_000 });
+      } else {
+        log(dep.id, "Preparing release in the app container");
+        await executor.exec(
+          dockerExec(runtime.containerId, containerRelease, config.prepareCommand),
+          { timeout: 300_000 },
+        );
+      }
     }
 
     await repos.deployment.updateStatus(dep.id, "deploying");

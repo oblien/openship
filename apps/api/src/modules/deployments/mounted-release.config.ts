@@ -8,6 +8,9 @@ export interface MountedReleaseConfig {
   containerPath: string;
   sharedPaths?: string[];
   prepareCommand?: string;
+  builderImage?: string;
+  builderMemoryMb?: number;
+  builderCpus?: number;
   reloadCommand?: string;
   healthPath?: string;
   healthPort?: number;

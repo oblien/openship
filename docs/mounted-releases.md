@@ -35,6 +35,25 @@ root. The application must serve or start from `<container root>/current`.
 4. Save, then run **Rebuild runtime** once to attach the stable mount.
 5. Use **Deploy code** for normal source changes.
 
+## Compiled applications
+
+If the production image is intentionally small, set a **Builder image** with
+the prepare command. OpenShip then mounts the staged checkout at `/workspace`
+inside a disposable builder on the target server, runs the build, and removes
+the builder before activation. The live container never needs compilers or
+development dependencies.
+
+For example, a static Node application can use:
+
+```text
+Builder image: node:20-alpine
+Prepare release: npm ci --no-audit --no-fund && npm run build:static
+```
+
+Builder memory and CPU default to 1024 MB and 1 core and can be adjusted per
+project. Leaving Builder image blank preserves the original behavior: the
+prepare command runs inside the staged release in the live app container.
+
 The first code deploy refuses with a clear error if the running container does
 not have the mount. It never silently switches a host directory the container
 cannot see.

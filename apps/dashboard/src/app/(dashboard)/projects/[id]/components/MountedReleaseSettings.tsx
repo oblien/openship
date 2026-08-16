@@ -15,6 +15,9 @@ export interface MountedReleaseConfigUI {
   containerPath: string;
   sharedPaths?: string[];
   prepareCommand?: string;
+  builderImage?: string;
+  builderMemoryMb?: number;
+  builderCpus?: number;
   reloadCommand?: string;
   healthPath?: string;
   healthPort?: number;
@@ -73,6 +76,7 @@ export function MountedReleaseSettings() {
         sourcePath: draft.sourcePath?.trim() || undefined,
         sharedPaths: draft.sharedPaths?.filter(Boolean) ?? [],
         prepareCommand: draft.prepareCommand?.trim() || undefined,
+        builderImage: draft.builderImage?.trim() || undefined,
         reloadCommand: draft.reloadCommand?.trim() || undefined,
         healthPath: draft.healthPath?.trim() || undefined,
       };
@@ -206,6 +210,42 @@ export function MountedReleaseSettings() {
                 placeholder="composer install --no-dev && php artisan optimize"
               />
             </Field>
+            <Field
+              label="Builder image"
+              hint="Optional. Uses a disposable server-side builder instead of adding build tools to the live app."
+            >
+              <Input
+                value={draft.builderImage ?? ""}
+                onChange={(event) => set("builderImage", event.target.value)}
+                placeholder="node:20-alpine"
+              />
+            </Field>
+            {draft.builderImage ? (
+              <Field
+                label="Builder limits"
+                hint="Memory in MB and CPU cores. The builder is removed automatically."
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="number"
+                    min={128}
+                    max={32768}
+                    value={draft.builderMemoryMb ?? 1024}
+                    onChange={(event) => set("builderMemoryMb", Number(event.target.value))}
+                    placeholder="Memory MB"
+                  />
+                  <Input
+                    type="number"
+                    min={0.1}
+                    max={32}
+                    step={0.1}
+                    value={draft.builderCpus ?? 1}
+                    onChange={(event) => set("builderCpus", Number(event.target.value))}
+                    placeholder="CPU cores"
+                  />
+                </div>
+              </Field>
+            ) : null}
             <Field
               label="Reload app"
               hint="Optional. Runs in the container after the atomic switch; blank restarts the container."
