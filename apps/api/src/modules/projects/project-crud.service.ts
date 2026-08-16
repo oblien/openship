@@ -1366,6 +1366,7 @@ export async function updateProject(
         builderImage: release.builderImage?.trim() || undefined,
         builderMemoryMb: release.builderMemoryMb ?? 1024,
         builderCpus: release.builderCpus ?? 1,
+        builderCachePaths: [...new Set((release.builderCachePaths ?? []).map(relative).filter(Boolean))],
         reloadCommand: release.reloadCommand?.trim() || undefined,
         healthPath: release.healthPath?.trim() || undefined,
         retain: release.retain ?? 5,

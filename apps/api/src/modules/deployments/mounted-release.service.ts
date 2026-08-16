@@ -78,13 +78,34 @@ function builderRun(
   const name = `openship-release-${deploymentId.replace(/[^A-Za-z0-9_.-]/g, "-")}`;
   const memory = config.builderMemoryMb ?? 1024;
   const cpus = config.builderCpus ?? 1;
+  const cacheVolumes = (config.builderCachePaths ?? [])
+    .map((path) => {
+      const relative = path.replace(/^\/+|\/+$/g, "");
+      return `-v ${shellQuote(`${hostRoot}/builder-cache/paths/${relative}:/workspace/${relative}`)} `;
+    })
+    .join("");
   return (
     `docker run --rm --name ${shellQuote(name)} ` +
     `--memory ${shellQuote(`${memory}m`)} --cpus ${shellQuote(String(cpus))} ` +
     `-v ${shellQuote(`${releaseDir}:/workspace`)} -w /workspace ` +
     `-v ${shellQuote(`${hostRoot}/builder-cache:/cache`)} ` +
+    cacheVolumes +
     `${shellQuote(image)} sh -lc ${shellQuote(config.prepareCommand)}`
   );
+}
+
+async function prepareBuilderCachePaths(
+  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  hostRoot: string,
+  paths: string[],
+): Promise<void> {
+  const directories = paths
+    .map((path) => path.replace(/^\/+|\/+$/g, ""))
+    .filter((path) => path && !path.split("/").includes(".."))
+    .map((path) => `${hostRoot}/builder-cache/paths/${path}`);
+  if (directories.length > 0) {
+    await executor.exec(`mkdir -p ${directories.map(shellQuote).join(" ")}`);
+  }
 }
 
 async function runReload(
@@ -283,6 +304,7 @@ async function runMountedRelease(
     if (config.prepareCommand?.trim()) {
       if (config.builderImage?.trim()) {
         log(dep.id, `Building release with ${config.builderImage}`);
+        await prepareBuilderCachePaths(executor, hostRoot, config.builderCachePaths ?? []);
         await executor.exec(builderRun(hostRoot, releaseDir, dep.id, config), { timeout: 900_000 });
       } else {
         log(dep.id, "Preparing release in the app container");

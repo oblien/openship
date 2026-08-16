@@ -339,6 +339,10 @@ const MountedReleaseSchema = Type.Object({
   builderImage: Type.Optional(Type.String({ minLength: 1, maxLength: 300 })),
   builderMemoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 32768 })),
   builderCpus: Type.Optional(Type.Number({ minimum: 0.1, maximum: 32 })),
+  builderCachePaths: Type.Optional(Type.Array(
+    Type.String({ minLength: 1, maxLength: 300, pattern: NO_TRAVERSAL_PATTERN }),
+    { maxItems: 20 },
+  )),
   reloadCommand: Type.Optional(Type.String({ maxLength: 4000 })),
   healthPath: Type.Optional(Type.String({ minLength: 1, maxLength: 500, pattern: "^/" })),
   healthPort: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),

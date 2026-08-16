@@ -53,6 +53,9 @@ Prepare release: npm ci --no-audit --no-fund && npm run build:static
 Builder memory and CPU default to 1024 MB and 1 core and can be adjusted per
 project. A persistent project-local builder cache is mounted at `/cache`; use it
 for package-manager downloads, lockfile-keyed dependencies, and compiler caches.
+Builder cache paths can also mount repo-relative directories directly into the
+checkout. For Node projects, `node_modules, .next/cache, .npm` supports a
+lockfile marker in the prepare command without copying dependencies per release.
 Leaving Builder image blank preserves the original behavior: the prepare
 command runs inside the staged release in the live app container.
 

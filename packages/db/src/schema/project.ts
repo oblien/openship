@@ -453,6 +453,7 @@ export const project = pgTable(
       builderImage?: string;
       builderMemoryMb?: number;
       builderCpus?: number;
+      builderCachePaths?: string[];
       reloadCommand?: string;
       healthPath?: string;
       healthPort?: number;

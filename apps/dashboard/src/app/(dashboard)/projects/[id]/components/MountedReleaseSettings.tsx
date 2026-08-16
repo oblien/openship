@@ -18,6 +18,7 @@ export interface MountedReleaseConfigUI {
   builderImage?: string;
   builderMemoryMb?: number;
   builderCpus?: number;
+  builderCachePaths?: string[];
   reloadCommand?: string;
   healthPath?: string;
   healthPort?: number;
@@ -77,6 +78,7 @@ export function MountedReleaseSettings() {
         sharedPaths: draft.sharedPaths?.filter(Boolean) ?? [],
         prepareCommand: draft.prepareCommand?.trim() || undefined,
         builderImage: draft.builderImage?.trim() || undefined,
+        builderCachePaths: draft.builderCachePaths?.filter(Boolean) ?? [],
         reloadCommand: draft.reloadCommand?.trim() || undefined,
         healthPath: draft.healthPath?.trim() || undefined,
       };
@@ -221,30 +223,50 @@ export function MountedReleaseSettings() {
               />
             </Field>
             {draft.builderImage ? (
-              <Field
-                label="Builder limits"
-                hint="Memory in MB and CPU cores. The builder is removed automatically."
-              >
-                <div className="grid grid-cols-2 gap-2">
+              <>
+                <Field
+                  label="Builder limits"
+                  hint="Memory in MB and CPU cores. The builder is removed automatically."
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      type="number"
+                      min={128}
+                      max={32768}
+                      value={draft.builderMemoryMb ?? 1024}
+                      onChange={(event) => set("builderMemoryMb", Number(event.target.value))}
+                      placeholder="Memory MB"
+                    />
+                    <Input
+                      type="number"
+                      min={0.1}
+                      max={32}
+                      step={0.1}
+                      value={draft.builderCpus ?? 1}
+                      onChange={(event) => set("builderCpus", Number(event.target.value))}
+                      placeholder="CPU cores"
+                    />
+                  </div>
+                </Field>
+                <Field
+                  label="Builder cache paths"
+                  hint="Comma separated repo paths mounted from persistent cache, such as node_modules and .next/cache."
+                >
                   <Input
-                    type="number"
-                    min={128}
-                    max={32768}
-                    value={draft.builderMemoryMb ?? 1024}
-                    onChange={(event) => set("builderMemoryMb", Number(event.target.value))}
-                    placeholder="Memory MB"
+                    value={(draft.builderCachePaths ?? []).join(", ")}
+                    onChange={(event) =>
+                      set(
+                        "builderCachePaths",
+                        event.target.value
+                          .split(",")
+                          .map((part) => part.trim())
+                          .filter(Boolean),
+                      )
+                    }
+                    placeholder="node_modules, .next/cache, .npm"
                   />
-                  <Input
-                    type="number"
-                    min={0.1}
-                    max={32}
-                    step={0.1}
-                    value={draft.builderCpus ?? 1}
-                    onChange={(event) => set("builderCpus", Number(event.target.value))}
-                    placeholder="CPU cores"
-                  />
-                </div>
-              </Field>
+                </Field>
+              </>
             ) : null}
             <Field
               label="Reload app"
