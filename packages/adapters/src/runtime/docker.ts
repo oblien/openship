@@ -1509,6 +1509,7 @@ export class DockerRuntime implements RuntimeAdapter {
 
     try {
       const stream = await this.docker.buildImage(body, {
+        version: "2",
         t: tag,
         dockerfile: buildContext.dockerfileName,
         labels: this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
@@ -2343,6 +2344,7 @@ export class DockerRuntime implements RuntimeAdapter {
             );
             try {
               const stream = await this.docker.buildImage(body, {
+                version: "2",
                 t: tag,
                 dockerfile: dockerfileName,
                 labels: this.labels({
