@@ -31,7 +31,6 @@
 /// <reference path="./tar-fs.d.ts" />
 import Dockerode from "dockerode";
 import * as tarFs from "tar-fs";
-import { createGzip } from "node:zlib";
 
 import type {
   BuildConfig,
@@ -507,8 +506,7 @@ export function parsePortBindings(portSpecs: string[]): {
 }
 
 /**
- * Build the Docker build-context tar stream OURSELVES, mirroring dockerode's own
- * `prepareBuildContext` (tar-fs pack → gzip) but with an `'error'` handler
+ * Build the Docker build-context tar stream OURSELVES, with an `'error'` handler
  * dockerode never attaches.
  *
  * When you pass `{ context, src }`, dockerode builds this pack internally and
@@ -520,9 +518,10 @@ export function parsePortBindings(portSpecs: string[]): {
  * ENTIRE API process. Owning the pack lets us capture that, abort the in-flight
  * build request so it can't hang on a truncated body, and fail only the deploy.
  *
- * Passing the resulting STREAM (not `{ context }`) to buildImage routes through
- * dockerode's pass-through branch, so the bytes on the wire are identical to
- * what it would have produced.
+ * Passing a plain tar matters for the BuildKit v2 endpoint on Docker Desktop:
+ * its legacy API proxy can corrupt a chunked gzip body before BuildKit reads the
+ * Dockerfile. This stream only travels to the local daemon, so compressing it
+ * saves no network bandwidth anyway.
  */
 export function packBuildContext(
   contextDir: string,
@@ -531,7 +530,7 @@ export function packBuildContext(
 ): { body: NodeJS.ReadableStream; abortSignal: AbortSignal; takeError: () => Error | null } {
   const controller = new AbortController();
   const pack = tarFs.pack(contextDir, { entries });
-  const body = pack.pipe(createGzip());
+  const body = pack;
   let contextError: Error | null = null;
   const capture = (err: unknown) => {
     contextError ??= err instanceof Error ? err : new Error(String(err));
@@ -544,11 +543,9 @@ export function packBuildContext(
     if (cancelSignal.aborted) controller.abort();
     else cancelSignal.addEventListener("abort", () => controller.abort(), { once: true });
   }
-  // pipe() does NOT forward source errors, so a tar-fs walk failure is only
-  // observable on the pack itself — this listener is what keeps it from killing
-  // the process. Guard the gzip side too for completeness.
+  // A tar-fs walk failure is observable on the pack itself — this listener is
+  // what keeps it from killing the process.
   pack.once("error", capture);
-  body.once("error", capture);
   return { body, abortSignal: controller.signal, takeError: () => contextError };
 }
 
