@@ -31,6 +31,8 @@
 /// <reference path="./tar-fs.d.ts" />
 import Dockerode from "dockerode";
 import * as tarFs from "tar-fs";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 import type {
   BuildConfig,
@@ -1301,6 +1303,60 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   /**
+   * Docker Desktop's Windows named-pipe API corrupts streamed build contexts
+   * on the BuildKit v2 endpoint. The native CLI uses Docker Desktop's supported
+   * BuildKit transport, while still building against the exact prepared tree.
+   */
+  private async buildImageWithWindowsCli(
+    config: BuildConfig,
+    contextDir: string,
+    dockerfileName: string,
+    tag: string,
+    log: BuildLogger,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const installedCli = "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe";
+    const dockerCli = existsSync(installedCli) ? installedCli : "docker.exe";
+    const args = ["build", "--progress=plain", "-t", tag, "-f", dockerfileName];
+    for (const [key, value] of Object.entries(
+      this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
+    )) {
+      args.push("--label", `${key}=${value}`);
+    }
+    for (const [key, value] of Object.entries({
+      ...config.envVars,
+      NODE_ENV: "production",
+    })) {
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) args.push("--build-arg", `${key}=${value}`);
+    }
+    args.push("--force-rm", ".");
+
+    log.log(`Running local Docker Desktop BuildKit build for ${tag}...\n`);
+    const child = spawn(dockerCli, args, {
+      cwd: contextDir,
+      env: { ...process.env, DOCKER_BUILDKIT: "1" },
+      windowsHide: true,
+      signal,
+    });
+    child.stdout.on("data", (chunk: Buffer) => log.log(chunk.toString(), "info"));
+    child.stderr.on("data", (chunk: Buffer) => {
+      const message = chunk.toString();
+      log.log(message, parseLogLevel(message));
+    });
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", (err) => {
+        if (signal?.aborted) reject(new BuildCancelledError());
+        else reject(err);
+      });
+      child.once("close", (code) => {
+        if (signal?.aborted) reject(new BuildCancelledError());
+        else if (code === 0) resolve();
+        else reject(new Error(`docker build exited with code ${code ?? "unknown"}`));
+      });
+    });
+  }
+
+  /**
    * Clone the repo directly ON the remote host into `remoteContextDir` — the
    * clone-on-server alternative to transferBuildContext (which clones on the
    * orchestrator and rsyncs the tree). Runs `git clone` in a remote host shell,
@@ -1496,6 +1552,17 @@ export class DockerRuntime implements RuntimeAdapter {
     log: BuildLogger,
     cancelSignal?: AbortSignal,
   ): Promise<void> {
+    if (process.platform === "win32" && this.transport.kind === "socket") {
+      await this.buildImageWithWindowsCli(
+        config,
+        buildContext.contextDir,
+        buildContext.dockerfileName,
+        tag,
+        log,
+        cancelSignal,
+      );
+      return;
+    }
     log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
 
     const { body, abortSignal, takeError } = packBuildContext(
@@ -2324,6 +2391,15 @@ export class DockerRuntime implements RuntimeAdapter {
             await this.buildImageOnRemote(
               spec.config,
               remoteContextDir,
+              dockerfileName,
+              tag,
+              spec.logger,
+              signal,
+            );
+          } else if (process.platform === "win32" && this.transport.kind === "socket") {
+            await this.buildImageWithWindowsCli(
+              spec.config,
+              tree!.contextDir,
               dockerfileName,
               tag,
               spec.logger,
