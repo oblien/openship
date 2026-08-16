@@ -22,7 +22,6 @@ import { useBrandName, useI18n, interpolate } from "@/components/i18n-provider";
 import { Logo } from "@/components/logo";
 import { useAuth } from "@/context/AuthContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { useCloud } from "@/context/CloudContext";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { MailServerSwitcher } from "@/components/mail-server-switcher";
 import { DesktopProfileMenu } from "@/components/desktop-profile-menu";
@@ -75,7 +74,6 @@ const sidebarOrgClient = (authClient as unknown as {
 export function Sidebar() {
   const { user } = useAuth();
   const { selfHosted, deployMode, authMode, machineName, productView } = usePlatform();
-  const { connected: cloudConnected, cloudUser } = useCloud();
   const isDesktop = deployMode === "desktop";
 
   // The primary identity in the sidebar header is ALWAYS the local Better
@@ -102,9 +100,8 @@ export function Sidebar() {
   const displayEmail =
     user?.email ||
     (isDesktop ? "Desktop" : "");
-  const cloudBadge = cloudConnected ? cloudUser : null;
   const displayInitial = displayName?.[0] ?? displayEmail?.[0] ?? "?";
-  const isSaaS = !selfHosted || cloudConnected;
+  const isSaaS = !selfHosted;
   const mailView = productView === "mail";
   const mailScope = useMailScope();
   const navSections = mailView
@@ -121,7 +118,7 @@ export function Sidebar() {
   const router = useRouter();
   const { resolvedTheme, toggle } = useTheme();
   const { t } = useI18n();
-  const logoutLabel = isDesktop ? "Sign out" : t.dashboard.user.logout;
+  const logoutLabel = t.dashboard.user.logout;
   const brand = useBrandName();
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -260,15 +257,6 @@ export function Sidebar() {
   async function handleLogout() {
     setLoggingOut(true);
     try {
-      if (isDesktop && window.desktop?.profiles) {
-        await window.desktop.profiles.signOut();
-        return;
-      }
-      if (isDesktop && (window as any).desktop?.reset) {
-        // Desktop: reset config and return to Electron onboarding
-        await (window as any).desktop.reset();
-        return;
-      }
       await signOut();
       router.push("/login");
     } catch {
@@ -552,29 +540,19 @@ export function Sidebar() {
                       <p className="truncate text-[11px] leading-tight text-muted-foreground">
                         {displayEmail}
                       </p>
-                      {cloudBadge?.email && (
-                        <p
-                          className="truncate text-[10px] leading-tight text-muted-foreground/70"
-                          title={interpolate(t.chrome.sidebar.linkedToCloud, { email: cloudBadge.email })}
-                        >
-                          {interpolate(t.chrome.sidebar.cloudLabel, { email: cloudBadge.email })}
-                        </p>
-                      )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    disabled={loggingOut}
-                    className="mt-1 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-                  >
-                    {loggingOut ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <LogOut className="size-4" />
-                    )}
-                    {logoutLabel}
-                  </button>
+                  {!isDesktop && (
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      disabled={loggingOut}
+                      className="mt-1 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
+                    >
+                      {loggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+                      {logoutLabel}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -601,33 +579,23 @@ export function Sidebar() {
                     <p className="truncate text-[12px] leading-tight text-muted-foreground">
                       {displayEmail}
                     </p>
-                    {cloudBadge?.email && (
-                      <p
-                        className="truncate text-[11px] leading-tight text-muted-foreground/70"
-                        title={interpolate(t.chrome.sidebar.linkedToCloud, { email: cloudBadge.email })}
-                      >
-                        {interpolate(t.chrome.sidebar.cloudLabel, { email: cloudBadge.email })}
-                      </p>
-                    )}
                   </div>
-                  <button
-                    onClick={handleLogout}
-                    disabled={loggingOut}
-                    className="flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-                    aria-label={logoutLabel}
-                    title={logoutLabel}
-                  >
-                    {loggingOut ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <LogOut className="size-4" />
-                    )}
-                  </button>
+                  {!isDesktop && (
+                    <button
+                      onClick={handleLogout}
+                      disabled={loggingOut}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
+                      aria-label={logoutLabel}
+                      title={logoutLabel}
+                    >
+                      {loggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+                    </button>
+                  )}
                 </>
               )}
             </div>
 
-            {collapsed && (
+            {collapsed && !isDesktop && (
               <button
                 onClick={handleLogout}
                 disabled={loggingOut}
@@ -647,7 +615,7 @@ export function Sidebar() {
         {/* Collapsed: surface logout when switcher is shown but popover
             closed, so users without a pointer-friendly path still have a
             shortcut. The switcher itself handles the trigger spot. */}
-        {collapsed && showOrgSwitcher && !orgsOpen && (
+        {collapsed && showOrgSwitcher && !orgsOpen && !isDesktop && (
           <button
             onClick={handleLogout}
             disabled={loggingOut}

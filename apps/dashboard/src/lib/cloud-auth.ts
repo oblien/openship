@@ -3,13 +3,11 @@ import { sha256 } from "@noble/hashes/sha2.js";
 
 export const DESKTOP_CLOUD_FLOW = "desktop-cloud";
 const DEFAULT_APP_NAME = "Openship Desktop";
-const DEFAULT_POLL_INTERVAL_MS = 2000;
 
 type SearchParamsLike = {
   get(name: string): string | null;
 };
 
-type DesktopCloudAuthFailure = "start_failed" | "expired" | "error" | "cancelled";
 
 export function buildDesktopAuthorizeUrl(options: {
   cloudAuthUrl?: string;
@@ -211,37 +209,4 @@ export function validateReturnTo(input: string | null): string | null {
   });
   if (!isAllowed) return null;
   return input;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export async function startDesktopCloudAuth(options: {
-  desktop: DesktopBridge;
-  isCancelled?: () => boolean;
-  pollIntervalMs?: number;
-}) {
-  const result = await options.desktop.onboarding.cloudAuth();
-  if (!result?.ok || !result.nonce) {
-    return { ok: false as const, reason: "start_failed" as DesktopCloudAuthFailure };
-  }
-
-  const isCancelled = options.isCancelled ?? (() => false);
-  const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-
-  while (!isCancelled()) {
-    await sleep(pollIntervalMs);
-    const poll = await options.desktop.onboarding.cloudAuthPoll(result.nonce);
-
-    if (poll.status === "resolved") {
-      return { ok: true as const };
-    }
-
-    if (poll.status === "expired" || poll.status === "error") {
-      return { ok: false as const, reason: poll.status };
-    }
-  }
-
-  return { ok: false as const, reason: "cancelled" as DesktopCloudAuthFailure };
 }

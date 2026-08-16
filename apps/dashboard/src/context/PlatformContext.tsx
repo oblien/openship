@@ -16,6 +16,8 @@ const DEFAULT_CLOUD_DOMAIN = "opsh.io";
 interface PlatformContextValue {
   selfHosted: boolean;
   deployMode: string;
+  /** Desktop fork boundary: one local operator/workspace, no hosted account. */
+  localOnly: boolean;
   /** OpenShip runs ON a server (self-hosted, non-desktop): the host is itself a
    *  deployable target, auto-registered as the isLocal "This Server". */
   isServerHost: boolean;
@@ -54,7 +56,7 @@ export function canUseCloudConnection({
   selfHosted,
   deployMode,
 }: CloudConnectionPlatformState) {
-  return selfHosted || deployMode === "desktop";
+  return selfHosted && deployMode !== "desktop";
 }
 
 export function usePlatform() {
@@ -103,6 +105,7 @@ export function PlatformProvider({
   hostDomain,
 }: PlatformProviderProps) {
   const [selfHosted, setSelfHostedState] = useState(initialSelfHosted);
+  const localOnly = deployMode === "desktop";
   const baseDomain = hostDomain || DEFAULT_CLOUD_DOMAIN;
   const setSelfHosted = useCallback((v: boolean) => setSelfHostedState(v), []);
 
@@ -131,6 +134,7 @@ export function PlatformProvider({
       value={{
         selfHosted,
         deployMode,
+        localOnly,
         isServerHost,
         hostControlEnabled,
         authMode,

@@ -14,7 +14,6 @@ const PUBLIC_ROUTES = [
   "/verify-email",
   "/authorize",
   "/onboarding",
-  "/desktop-profile",
   // The MCP OAuth consent page. It must reach its own render even without a
   // session cookie, because it sends the user to /login with a `returnTo` that
   // comes BACK here and resumes the client's authorize. This middleware's

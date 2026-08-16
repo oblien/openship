@@ -39,7 +39,6 @@ contextBridge.exposeInMainWorld("desktop", {
   app: {
     version: () => ipcRenderer.invoke("app:version"),
     platform: process.platform,
-    cloudUrls: () => ipcRenderer.invoke("app:cloud-urls"),
     localUrls: () => ipcRenderer.invoke("app:local-urls"),
   },
 
@@ -64,13 +63,6 @@ contextBridge.exposeInMainWorld("desktop", {
     openExternal: (url: string) =>
       ipcRenderer.invoke("onboarding:open-external", url),
 
-    /** Start cloud authentication flow (opens system browser) */
-    cloudAuth: () => ipcRenderer.invoke("onboarding:cloud-auth"),
-
-    /** Poll for cloud auth completion - returns { status: "pending" | "resolved" | "expired" } */
-    cloudAuthPoll: (nonce: string) =>
-      ipcRenderer.invoke("onboarding:cloud-auth-poll", nonce),
-
     /** Browse for a file (e.g. SSH key) */
     browseFile: () => ipcRenderer.invoke("onboarding:browse-file"),
   },
@@ -87,23 +79,13 @@ contextBridge.exposeInMainWorld("desktop", {
     browseFile: () => ipcRenderer.invoke("system:browse-file"),
   },
 
-  /** Cloud connection from settings (reconnect without onboarding side-effects) */
-  cloud: {
-    /** Start cloud connect flow - opens system browser with PKCE */
-    connect: () => ipcRenderer.invoke("cloud:connect"),
-    /** Poll for connect completion */
-    connectPoll: (nonce: string) => ipcRenderer.invoke("cloud:connect-poll", nonce),
-  },
-
-  /** Named local session profiles. Infrastructure data stays shared. */
+  /** Named desktop views. Identity and infrastructure stay local and shared. */
   profiles: {
     list: () => ipcRenderer.invoke("profiles:list"),
     create: (name: string) => ipcRenderer.invoke("profiles:create", name),
     rename: (id: string, name: string) => ipcRenderer.invoke("profiles:rename", id, name),
     switch: (id: string) => ipcRenderer.invoke("profiles:switch", id),
     remove: (id: string) => ipcRenderer.invoke("profiles:remove", id),
-    signOut: () => ipcRenderer.invoke("profiles:sign-out"),
-    useLocal: () => ipcRenderer.invoke("profiles:use-local"),
   },
 
   /** Reset config and return to onboarding */

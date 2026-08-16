@@ -29,7 +29,7 @@ describe("DesktopProfileStore", () => {
     const backup = profiles.create(" Main_Backup ");
     expect(backup.name).toBe("Main_Backup");
     expect(backup.partition).toBe(`persist:openship-profile-${backup.id}`);
-    expect(backup.needsSignIn).toBe(true);
+    expect(backup).not.toHaveProperty("needsSignIn");
   });
 
   it("rejects ambiguous duplicate labels and protects the active profile", () => {

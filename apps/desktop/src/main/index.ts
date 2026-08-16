@@ -17,12 +17,7 @@
 import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme, session } from "electron";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { randomBytes, createHash } from "node:crypto";
-import { hostname } from "node:os";
-import {
-  CLOUD_API_URL as DEFAULT_CLOUD_API_URL,
-  CLOUD_DASHBOARD_URL as DEFAULT_CLOUD_DASHBOARD_URL,
-} from "@repo/core";
+import { randomBytes } from "node:crypto";
 import {
   type SystemSettings,
   type TunnelConfig,
@@ -187,11 +182,6 @@ async function pushInstanceSettings(
     console.error("[openship] Failed to push instance settings:", err);
   }
 }
-
-// ─── URL constants ───────────────────────────────────────────────────────────
-
-const CLOUD_API_URL = DEFAULT_CLOUD_API_URL;
-const CLOUD_DASHBOARD_URL = DEFAULT_CLOUD_DASHBOARD_URL;
 
 // Local API/dashboard origins are DYNAMIC (chosen at launch by services.ts).
 // Always read them live via getLocalApiUrl()/getLocalDashboardUrl() — never
@@ -597,20 +587,11 @@ const ONBOARDING_ENABLED =
 
 /** Decide the first real view once services are up: onboarding vs dashboard. */
 function routeInitialView() {
-  if (profiles.active().needsSignIn) {
-    loadProfileSignIn();
-    return;
-  }
   if (!ONBOARDING_ENABLED || store.get("onboardingComplete")) {
     loadDashboard();
   } else {
     loadOnboarding();
   }
-}
-
-function loadProfileSignIn() {
-  if (!mainWindow) return;
-  mainWindow.loadURL(`${getLocalDashboardUrl()}/desktop-profile`);
 }
 
 function loadOnboarding() {
@@ -942,10 +923,6 @@ ipcMain.handle("app:version", () => {
   return app.getVersion();
 });
 
-ipcMain.handle("app:cloud-urls", () => {
-  return { api: CLOUD_API_URL, dashboard: CLOUD_DASHBOARD_URL };
-});
-
 ipcMain.handle("app:local-urls", () => {
   return { api: getLocalApiUrl(), dashboard: getLocalDashboardUrl() };
 });
@@ -980,21 +957,6 @@ ipcMain.handle("profiles:remove", async (_event, id: unknown) => {
   if (typeof id !== "string") throw new Error("Profile is required");
   const removed = profiles.remove(id);
   await clearProfileSession(removed);
-  return true;
-});
-
-ipcMain.handle("profiles:sign-out", async () => {
-  const active = profiles.active();
-  await clearProfileSession(active);
-  profiles.setNeedsSignIn(active.id, true);
-  loadProfileSignIn();
-  return true;
-});
-
-ipcMain.handle("profiles:use-local", () => {
-  const active = profiles.active();
-  profiles.setNeedsSignIn(active.id, false);
-  mainWindow?.loadURL(`${getLocalApiUrl()}/api/auth/desktop-login`);
   return true;
 });
 
@@ -1046,202 +1008,6 @@ ipcMain.handle(
     return true;
   }
 );
-
-/**
- * Cloud auth flow - "Continue with Cloud" in onboarding.
- *
- * 1. Wait for local API to be available
- * 2. Push authMode="cloud" to the local API
- * 3. Generate a random nonce and register it with the API
- * 4. Open cloud auth URL in the system browser
- * 5. Return immediately so the renderer can show polling UX
- * 6. Renderer polls via cloud-auth-poll until session is obtained
- */
-ipcMain.handle("onboarding:cloud-auth", async () => {
-  if (!mainWindow) return { ok: false, error: "No window" };
-
-  // Wait for API to be available
-  const apiReady = await waitForApi(getLocalApiUrl());
-  if (!apiReady) {
-    return { ok: false, error: "api_unavailable" };
-  }
-
-  // Push authMode before auth so env returns "cloud"
-  await pushInstanceSettings(getLocalApiUrl(), {
-    authMode: "cloud",
-    buildMode: "auto",
-  });
-
-  // Generate nonce, state (CSRF), and PKCE pair
-  const nonce = randomBytes(16).toString("hex");
-  const state = randomBytes(16).toString("hex");
-  const codeVerifier = randomBytes(32).toString("base64url");
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-
-  // Register with API (authenticated with internal token)
-  try {
-    const res = await net.fetch(`${getLocalApiUrl()}/api/auth/desktop-auth-start`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Token": internalToken,
-      },
-      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
-    return { ok: false, error: "nonce_registration_failed" };
-  }
-
-  // Open the authorize page in the system browser - if not logged in,
-  // it redirects to login first, then back to authorize after auth.
-  const callbackUrl = `${getLocalApiUrl()}/api/auth/cloud-callback`;
-  const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
-  shell.openExternal(cloudAuthUrl);
-
-  return { ok: true, cloudAuthUrl, nonce };
-});
-
-/**
- * Poll for cloud auth completion.
- *
- * Electron calls this every ~2 s after cloud-auth returns.
- * When the API reports "resolved", we navigate to the claim URL
- * which sets the cookie via HTTP Set-Cookie and redirects to the dashboard.
- */
-ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
-  if (!mainWindow) return { status: "expired" };
-
-  try {
-    const res = await net.fetch(
-      `${getLocalApiUrl()}/api/auth/desktop-auth-poll?nonce=${encodeURIComponent(nonce)}`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    const data = (await res.json()) as { status: string; claimCode?: string };
-
-    if (data.status === "resolved" && data.claimCode) {
-      // Navigate to the claim endpoint - it sets the cookie via HTTP
-      // Set-Cookie header and redirects to the dashboard.
-      const claimUrl = `${getLocalApiUrl()}/api/auth/desktop-claim?code=${encodeURIComponent(data.claimCode)}`;
-
-      // Listen for dashboard load to mark onboarding complete
-      const onNavigate = (_e: unknown, url: string) => {
-        if (url.startsWith(getLocalDashboardUrl())) {
-          profiles.setNeedsSignIn(profiles.active().id, false);
-          store.set("apiUrl", getLocalApiUrl());
-          store.set("dashboardUrl", getLocalDashboardUrl());
-          store.set("onboardingComplete", true);
-          mainWindow?.webContents.removeListener("did-navigate", onNavigate);
-        }
-      };
-      mainWindow.webContents.on("did-navigate", onNavigate);
-      mainWindow.loadURL(claimUrl);
-
-      // Bring the desktop app back to the front (the browser had focus for the
-      // cloud sign-in) — like VS Code re-focusing after an external auth.
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-      app.focus({ steal: true });
-
-      return { status: "resolved" };
-    }
-
-    return { status: data.status };
-  } catch {
-    // Network error during poll - report as error so UI can show feedback
-    return { status: "error" };
-  }
-});
-
-// ─── Cloud reconnect from settings (no onboarding side-effects) ──────────────
-
-/**
- * Start cloud connect flow from the settings page.
- *
- * Same PKCE + nonce mechanism as onboarding, but does NOT:
- *   - push authMode / buildMode changes
- *   - navigate the main window away
- *   - mark onboarding complete
- *
- * The cloud-callback endpoint stores the cloud session token server-side.
- * After polling resolves, the renderer just refreshes cloudApi.status().
- */
-ipcMain.handle("cloud:connect", async () => {
-  if (!mainWindow) return { ok: false, error: "No window" };
-
-  const apiReady = await waitForApi(getLocalApiUrl());
-  if (!apiReady) {
-    return { ok: false, error: "api_unavailable" };
-  }
-
-  // Generate nonce, state (CSRF), and PKCE pair
-  const nonce = randomBytes(16).toString("hex");
-  const state = randomBytes(16).toString("hex");
-  const codeVerifier = randomBytes(32).toString("base64url");
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-
-  // Register with API
-  try {
-    const res = await net.fetch(`${getLocalApiUrl()}/api/auth/desktop-auth-start`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Token": internalToken,
-      },
-      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
-    return { ok: false, error: "nonce_registration_failed" };
-  }
-
-  const callbackUrl = `${getLocalApiUrl()}/api/auth/cloud-callback`;
-  const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
-  shell.openExternal(cloudAuthUrl);
-
-  return { ok: true, cloudAuthUrl, nonce };
-});
-
-/**
- * Poll cloud connect from settings.
- *
- * Unlike onboarding poll, when resolved this does NOT navigate the window.
- * The cloud-callback has already stored the session token server-side.
- * The renderer should call cloudApi.status() to pick up the new state.
- */
-ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
-  if (!mainWindow) return { status: "expired" };
-
-  try {
-    const res = await net.fetch(
-      `${getLocalApiUrl()}/api/auth/desktop-auth-poll?nonce=${encodeURIComponent(nonce)}`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    const data = (await res.json()) as { status: string; claimCode?: string };
-
-    if (data.status === "resolved") {
-      // Cloud session token is already stored server-side by cloud-callback.
-      // No need to navigate or claim - just tell the renderer to refresh status.
-      // Re-focus the desktop app (the browser had focus during sign-in).
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-      }
-      app.focus({ steal: true });
-      return { status: "resolved" };
-    }
-
-    return { status: data.status };
-  } catch {
-    return { status: "error" };
-  }
-});
 
 // http/https only. `shell.openExternal` hands the string to the OS dispatcher,
 // so an unvalidated scheme could launch a local handler or, on Windows, resolve a

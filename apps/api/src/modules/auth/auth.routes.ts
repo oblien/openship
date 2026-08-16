@@ -16,7 +16,6 @@ import { db, eq, repos, schema } from "@repo/db";
 import { env } from "../../config/env";
 import { auth, isSaasDeployment } from "../../lib/auth";
 import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
-import { internalAuth } from "../../middleware/internal-auth";
 import { isLoopbackRequest } from "../../middleware/loopback-peer";
 import * as ctrl from "./auth.controller";
 import { handleMcpTokenRequest } from "./mcp-token.handler";
@@ -26,10 +25,6 @@ export const authRoutes = new Hono();
 if (env.DEPLOY_MODE === "desktop") {
   authRoutes.get("/get-session", ctrl.getSession);
   authRoutes.get("/desktop-login", ctrl.desktopLogin);
-  authRoutes.get("/cloud-callback", ctrl.cloudCallback);
-  authRoutes.post("/desktop-auth-start", internalAuth, ctrl.desktopAuthStart);
-  authRoutes.get("/desktop-auth-poll", ctrl.desktopAuthPoll);
-  authRoutes.get("/desktop-claim", ctrl.desktopClaim);
 }
 
 // Invite-only sign-up guard (runs BEFORE the Better Auth catch-all). SaaS keeps

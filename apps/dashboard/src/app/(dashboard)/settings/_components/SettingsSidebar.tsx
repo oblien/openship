@@ -66,14 +66,13 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
-  const allowedTabs: SettingsTabId[] = ["general", "tokens", "mcp", "team", "notifications", "email", "dns", "audit", "cloud", "infrastructure", "instance"];
-  const activeTab: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
+  const localOnly = deployMode === "desktop";
 
   const tabs: SettingsTab[] = [
     { id: "general", label: t.settings.sidebar.tabs.general, icon: SettingsIcon, visible: true },
     { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: KeyRound, visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },
-    { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: true },
+    { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: !localOnly },
     { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: Bell, visible: true },
     // Instance SMTP transport — self-hosted only (the SaaS uses its own mailer).
     // In Openship Mail it sits next to a whole rail of mail-server surfaces, where
@@ -93,7 +92,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     // exactly like a self-hosted box automates its A record.
     { id: "dns", label: t.settings.sidebar.tabs.dns, icon: Globe, visible: true, requiresRole: "admin" },
     { id: "audit", label: t.settings.sidebar.tabs.audit, icon: ClipboardList, visible: true, requiresRole: "admin" },
-    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted },
+    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted && !localOnly },
     // The servers this install runs — edge/mail container versions + global scan
     // + untracked edge routes. Self-hosted/desktop only (the SaaS has no
     // operator-managed infra). See settings/page.tsx.
@@ -101,7 +100,9 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     { id: "instance", label: t.settings.sidebar.tabs.instance, icon: Server, visible: true },
   ];
 
-  return { tabs: tabs.filter((t) => t.visible), activeTab };
+  const visibleTabs = tabs.filter((tab) => tab.visible);
+  const activeTab = visibleTabs.some((tab) => tab.id === raw) ? raw : "general";
+  return { tabs: visibleTabs, activeTab };
 }
 
 export function SettingsSidebar() {

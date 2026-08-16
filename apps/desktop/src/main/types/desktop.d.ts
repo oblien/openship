@@ -14,7 +14,7 @@ export interface DesktopBridge {
   app: {
     version: () => Promise<string>;
     platform: string;
-    cloudUrls: () => Promise<{ api: string; dashboard: string }>;
+    localUrls: () => Promise<{ api: string; dashboard: string }>;
   };
   onboarding: {
     complete: (apiUrl: string, dashboardUrl: string) => Promise<boolean>;
@@ -31,8 +31,6 @@ export interface DesktopBridge {
     rename: (id: string, name: string) => Promise<DesktopProfile>;
     switch: (id: string) => Promise<boolean>;
     remove: (id: string) => Promise<boolean>;
-    signOut: () => Promise<boolean>;
-    useLocal: () => Promise<boolean>;
   };
   reset: () => Promise<boolean>;
 }
@@ -41,7 +39,6 @@ export interface DesktopProfile {
   id: string;
   name: string;
   partition: string | null;
-  needsSignIn: boolean;
   createdAt: string;
   lastUsedAt: string;
 }

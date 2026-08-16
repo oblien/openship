@@ -7,7 +7,6 @@ export interface DesktopProfile {
   name: string;
   /** Null keeps the legacy/default Electron cookie jar for the first profile. */
   partition: string | null;
-  needsSignIn: boolean;
   createdAt: string;
   lastUsedAt: string;
 }
@@ -35,7 +34,6 @@ function initialFile(): ProfileFile {
         id: MAIN_PROFILE_ID,
         name: "Main",
         partition: null,
-        needsSignIn: false,
         createdAt,
         lastUsedAt: createdAt,
       },
@@ -80,7 +78,6 @@ export class DesktopProfileStore {
       id,
       name,
       partition: `persist:openship-profile-${id}`,
-      needsSignIn: true,
       createdAt,
       lastUsedAt: createdAt,
     };
@@ -102,13 +99,6 @@ export class DesktopProfileStore {
     const profile = this.find(id);
     profile.lastUsedAt = now();
     this.data.activeProfileId = id;
-    this.save();
-    return { ...profile };
-  }
-
-  setNeedsSignIn(id: string, needsSignIn: boolean): DesktopProfile {
-    const profile = this.find(id);
-    profile.needsSignIn = needsSignIn;
     this.save();
     return { ...profile };
   }

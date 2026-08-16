@@ -5,20 +5,9 @@ declare global {
     | "dismissedAdvisoryIds"
     | "lastSeenVersion";
 
-  type DesktopCloudAuthResult = {
-    ok?: boolean;
-    nonce?: string;
-    error?: string;
-  };
-
-  type DesktopCloudPollResult = {
-    status: "pending" | "resolved" | "expired" | "error";
-  };
-
   type DesktopProfile = {
     id: string;
     name: string;
-    needsSignIn: boolean;
     createdAt: string;
     lastUsedAt: string;
   };
@@ -51,18 +40,12 @@ declare global {
       onDone: (cb: () => void) => () => void;
       onError: (cb: (message: string) => void) => () => void;
     };
-    onboarding: {
-      cloudAuth: () => Promise<DesktopCloudAuthResult>;
-      cloudAuthPoll: (nonce: string) => Promise<DesktopCloudPollResult>;
-    };
     profiles?: {
       list: () => Promise<DesktopProfilesState>;
       create: (name: string) => Promise<DesktopProfile>;
       rename: (id: string, name: string) => Promise<DesktopProfile>;
       switch: (id: string) => Promise<boolean>;
       remove: (id: string) => Promise<boolean>;
-      signOut: () => Promise<boolean>;
-      useLocal: () => Promise<boolean>;
     };
   }
 

@@ -28,7 +28,6 @@ import {
   buildDesktopAuthorizeUrl,
   getPostAuthRedirect,
   preparePkceFlow,
-  startDesktopCloudAuth,
 } from "@/lib/cloud-auth";
 
 export default function LoginPage() {
@@ -121,32 +120,20 @@ function LoginPageInner() {
   }
 
   async function handleCloudSignIn(callbackUrl: string) {
-    if (!isDesktop || !window.desktop?.onboarding) {
-      // Mint + stash a fresh PKCE verifier so cloud-callback can finish
-      // a PKCE exchange instead of accepting a bearer code.
-      const { state, codeChallenge } = await preparePkceFlow();
-      const cloudLoginUrl = buildDesktopAuthorizeUrl({
-        cloudAuthUrl,
-        callbackUrl,
-        state,
-        codeChallenge,
-      });
-      window.location.href = cloudLoginUrl;
+    // Desktop is permanently local-only. This branch remains for ordinary
+    // self-hosted web instances that deliberately use cloud-backed auth.
+    if (isDesktop) {
+      toast("error", "This Desktop build uses the local workspace.");
       return;
     }
-
-    setLoading(true);
-    try {
-      const result = await startDesktopCloudAuth({ desktop: window.desktop });
-      if (!result.ok) {
-        toast("error", result.reason === "start_failed"
-          ? "Could not start cloud authentication."
-          : "Authentication failed. Please try again.");
-        return;
-      }
-    } finally {
-      setLoading(false);
-    }
+    const { state, codeChallenge } = await preparePkceFlow();
+    const cloudLoginUrl = buildDesktopAuthorizeUrl({
+      cloudAuthUrl,
+      callbackUrl,
+      state,
+      codeChallenge,
+    });
+    window.location.href = cloudLoginUrl;
   }
 
   /* ── Zero-auth mode (desktop): auto-redirect to create session ── */

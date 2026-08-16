@@ -94,7 +94,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
               Desktop profiles
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Sessions stay separate. Projects and servers stay shared.
+              Window state stays separate. Your local workspace, projects, and servers stay shared.
             </p>
           </div>
 
@@ -192,14 +192,6 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
             {error && (
               <p className="px-2 pb-1 pt-2 text-xs leading-relaxed text-destructive">{error}</p>
             )}
-
-            <button
-              type="button"
-              onClick={() => void bridge.signOut()}
-              className="mt-1 w-full rounded-xl px-2 py-2 text-start text-[12px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
-            >
-              Sign out of {active.name}
-            </button>
           </div>
         </div>
       )}

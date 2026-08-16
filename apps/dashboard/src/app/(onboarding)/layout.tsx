@@ -15,6 +15,7 @@ export default async function OnboardingLayout({ children }: { children: React.R
     <OnboardingProviders
       authMode={deploymentInfo.authMode}
       selfHosted={deploymentInfo.selfHosted}
+      deployMode={deploymentInfo.deployMode}
       cloudAuthUrl={deploymentInfo.cloudAuthUrl}
     >
       <div className="th-page">{children}</div>

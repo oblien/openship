@@ -314,13 +314,16 @@ if (env.CLOUD_MODE) {
   const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
   app.route("/api/terminal", terminalRoutes);
 
-  /** Cloud account management - connect/disconnect to Openship Cloud */
-  const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
-  app.route("/api/cloud", cloudLocalRoutes);
+  // Desktop is a local control plane, not a thin client for Openship Cloud.
+  // Self-hosted server installs may still opt into the upstream cloud bridge;
+  // the desktop build never mounts account, target, or billing proxies.
+  if (env.DEPLOY_MODE !== "desktop") {
+    const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
+    app.route("/api/cloud", cloudLocalRoutes);
 
-  /** Billing proxy - cloud-connected local instances proxy to SaaS */
-  const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
-  app.route("/api/billing", billingLocalRoutes);
+    const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
+    app.route("/api/billing", billingLocalRoutes);
+  }
 
   // Analytics is scraped on two triggers, neither wired here: the
   // `analytics:scrape` system job owns durability (the edge holds counters in RAM

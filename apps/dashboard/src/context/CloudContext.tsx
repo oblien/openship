@@ -98,9 +98,9 @@ const FEATURES = [
 ];
 
 export function CloudProvider({ children }: { children: ReactNode }) {
-  const { selfHosted, deployMode, cloudAuthUrl, cloudApiUrl } = usePlatform();
+  const { selfHosted, deployMode, localOnly, cloudApiUrl } = usePlatform();
   const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
-  const hasNativeCloudAccess = !canConnectCloud;
+  const hasNativeCloudAccess = !selfHosted && deployMode === "cloud";
   // GitHubProvider is an ancestor of CloudProvider (see providers.tsx),
   // so this consume is always safe. We use it to re-resolve GitHub state
   // whenever the cloud connection flips (below).
@@ -112,23 +112,15 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [modalFeature, setModalFeature] = useState<CloudRequirementPrompt | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Resolvers for in-flight `requireCloud(...)` promises. A batch (not a single
   // slot) because there's ONE shared modal + connect flow, so concurrent gates
   // legitimately settle together on the same outcome. Drained atomically.
   const pendingRef = useRef<Array<(v: boolean) => void>>([]);
 
-  // Clean up polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
   // Check cloud status on mount (self-hosted / desktop only)
   const checkStatus = useCallback(async () => {
     if (!canConnectCloud) {
-      setConnected(true);
+      setConnected(hasNativeCloudAccess);
       setCloudUser(null);
       setLoading(false);
       return;
@@ -144,7 +136,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [canConnectCloud]);
+  }, [canConnectCloud, hasNativeCloudAccess]);
 
   useEffect(() => {
     checkStatus();
@@ -239,6 +231,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       vars?: { domain?: string },
     ): Promise<boolean> => {
       if (isConnected) return Promise.resolve(true);
+      if (localOnly) return Promise.resolve(false);
       const prompt =
         typeof capability === "string" ? cloudCapabilityCopy(capability, vars) : capability;
       setModalFeature(prompt);
@@ -246,7 +239,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         pendingRef.current.push(resolve);
       });
     },
-    [isConnected, cloudCapabilityCopy],
+    [isConnected, localOnly, cloudCapabilityCopy],
   );
 
   // Dismissing the modal (backdrop / X / "Maybe later") resolves waiting gates
@@ -299,56 +292,6 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     });
   }, [callbackUrl, cloudApiUrl]);
 
-  /** Desktop IPC connect flow with PKCE + nonce polling */
-  const startDesktopConnect = useCallback(async () => {
-    const desktop = (window as any).desktop;
-    if (!desktop?.cloud?.connect) return;
-
-    setConnecting(true);
-    try {
-      const result = await desktop.cloud.connect();
-      if (!result?.ok) {
-        setConnecting(false);
-        return;
-      }
-
-      const nonce = result.nonce;
-      let errorCount = 0;
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const poll = await desktop.cloud.connectPoll(nonce);
-          if (poll.status === "resolved") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
-            await checkStatus();
-            setConnecting(false);
-          } else if (poll.status === "expired") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
-            setConnecting(false);
-          } else if (poll.status === "error") {
-            errorCount++;
-            if (errorCount >= 5) {
-              if (pollRef.current) clearInterval(pollRef.current);
-              pollRef.current = null;
-              setConnecting(false);
-            }
-          }
-        } catch {
-          errorCount++;
-          if (errorCount >= 5) {
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
-            setConnecting(false);
-          }
-        }
-      }, 2000);
-    } catch {
-      setConnecting(false);
-    }
-  }, [checkStatus]);
-
   /** Browser popup connect flow */
   const startBrowserConnect = useCallback(() => {
     // Open the popup synchronously from the click handler (about:blank)
@@ -368,19 +311,13 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     handle.onClose(() => checkStatus());
   }, [prepareConnectUrl, checkStatus]);
 
-  /** Start cloud connect - auto-detects desktop vs browser */
+  /** Start cloud connect on self-hosted web instances. Desktop is local-only. */
   const startConnect = useCallback(() => {
     if (!canConnectCloud) {
       return;
     }
-
-    const isDesktop = typeof window !== "undefined" && (window as any).desktop?.isDesktop;
-    if (isDesktop) {
-      startDesktopConnect();
-    } else {
-      startBrowserConnect();
-    }
-  }, [canConnectCloud, startDesktopConnect, startBrowserConnect]);
+    startBrowserConnect();
+  }, [canConnectCloud, startBrowserConnect]);
 
   return (
     <CloudContext.Provider

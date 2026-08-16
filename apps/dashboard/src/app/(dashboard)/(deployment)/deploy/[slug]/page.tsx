@@ -20,7 +20,7 @@ import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets
 import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
-import { usePlatform, canUseCloudConnection } from "@/context/PlatformContext";
+import { usePlatform } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -79,7 +79,7 @@ const DeployRepository: React.FC = () => {
     // DEFAULT_CONFIG value silently shipped ("Build Location: Openship Cloud").
     // Reuse the shared "self-managed, not SaaS" predicate instead of re-deriving
     // it inline; the picker's own auto-select already prefers "This Server". #263
-    const canPickTarget = canUseCloudConnection({ selfHosted, deployMode });
+    const canPickTarget = selfHosted || deployMode === "desktop";
 
     // Decode the slug at render time so the skeleton can name the source
     // ("Fetching owner/repo from GitHub") on the very first paint, before the
@@ -183,7 +183,7 @@ const DeployRepository: React.FC = () => {
             if (!last.serverId || !targets.servers.some((s) => s.id === last.serverId)) return;
             appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "server", serverId: last.serverId });
-        } else if (last.target === "cloud") {
+        } else if (last.target === "cloud" && targets.hasCloudOption) {
             appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         }
@@ -191,11 +191,20 @@ const DeployRepository: React.FC = () => {
         // stored one fails lastPickStore's validation — so it falls through to the
         // seeded auto-pick, which lands on this box's own server row rather than on a
         // target with no card and no address.
-    }, [canPickTarget, targets.servers, updateConfig]);
+    }, [canPickTarget, targets.servers, targets.hasCloudOption, updateConfig]);
 
     useLayoutEffect(() => {
         applyLastPick();
     }, [applyLastPick]);
+
+    // The desktop fork has no hosted runtime. Clear the upstream cloud default
+    // before first paint; target seeding will attach a real server when the list
+    // resolves, or leave the picker ready for Add server.
+    useLayoutEffect(() => {
+        if (deployMode === "desktop" && config.deployTarget === "cloud") {
+            updateConfig({ deployTarget: "server", serverId: undefined });
+        }
+    }, [deployMode, config.deployTarget, updateConfig]);
 
     // Single-server safety net. The picker's own auto-select (DeployTargetStep)
     // only runs while that step is MOUNTED — so on the auto-skip path (one
