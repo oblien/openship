@@ -441,6 +441,20 @@ export const project = pgTable(
     /* ── State ──────────────────────────────────────────────────────────── */
     /** Currently active deployment ID */
     activeDeploymentId: text("active_deployment_id"),
+    /** Active mounted-code release; separate from the runtime container/image pointer. */
+    activeReleaseDeploymentId: text("active_release_deployment_id"),
+    mountedRelease: jsonb("mounted_release").$type<{
+      enabled: boolean;
+      serviceName?: string;
+      sourcePath?: string;
+      containerPath: string;
+      sharedPaths?: string[];
+      prepareCommand?: string;
+      reloadCommand?: string;
+      healthPath?: string;
+      healthPort?: number;
+      retain?: number;
+    } | null>(),
     /** GitHub webhook ID registered on the repo */
     webhookId: integer("webhook_id"),
     /** Domain hostname used for receiving GitHub webhooks (null = edge relay or none) */

@@ -324,6 +324,24 @@ const ReleaseSourceSchema = Type.Object({
   trackReleases: Type.Optional(Type.Boolean()),
 });
 
+/** Fast code releases mounted into a long-lived runtime container. Host paths
+ * are derived by OpenShip; operators only describe the container contract. */
+const MountedReleaseSchema = Type.Object({
+  enabled: Type.Boolean(),
+  serviceName: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+  sourcePath: Type.Optional(Type.String({ maxLength: 300, pattern: NO_TRAVERSAL_PATTERN })),
+  containerPath: Type.String({ minLength: 2, maxLength: 500, pattern: "^/[^\\0]*$" }),
+  sharedPaths: Type.Optional(Type.Array(
+    Type.String({ minLength: 1, maxLength: 300, pattern: NO_TRAVERSAL_PATTERN }),
+    { maxItems: 30 },
+  )),
+  prepareCommand: Type.Optional(Type.String({ maxLength: 4000 })),
+  reloadCommand: Type.Optional(Type.String({ maxLength: 4000 })),
+  healthPath: Type.Optional(Type.String({ minLength: 1, maxLength: 500, pattern: "^/" })),
+  healthPort: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
+  retain: Type.Optional(Type.Number({ minimum: 2, maximum: 20 })),
+});
+
 export const CreateProjectBody = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 100 }),
   /** Override the auto-generated slug (used as free subdomain: slug.opsh.io) */
@@ -340,6 +358,7 @@ export const CreateProjectBody = Type.Object({
   installationId: Type.Optional(Type.Number()),
   // Release/dist source (gitProvider === "release")
   releaseSource: Type.Optional(ReleaseSourceSchema),
+  mountedRelease: Type.Optional(Type.Union([Type.Null(), MountedReleaseSchema])),
   // Build configuration
   framework: Type.Optional(FrameworkEnum),
   packageManager: Type.Optional(PackageManagerEnum),

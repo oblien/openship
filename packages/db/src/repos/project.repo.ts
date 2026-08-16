@@ -474,6 +474,14 @@ export function createProjectRepo(db: Database) {
         .where(eq(project.id, projectId));
     },
 
+    /** Advance mounted code without changing the active runtime container. */
+    async setActiveReleaseDeployment(projectId: string, deploymentId: string | null) {
+      await db
+        .update(project)
+        .set({ activeReleaseDeploymentId: deploymentId, updatedAt: new Date() })
+        .where(eq(project.id, projectId));
+    },
+
     /**
      * Bind a project to its Openship Cloud workspace. The unique
      * partial index on `(cloud_workspace_id) WHERE NOT NULL` enforces

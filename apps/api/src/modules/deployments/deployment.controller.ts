@@ -18,6 +18,7 @@ import { maskEnv, maskScanService } from "../../lib/secret-env";
 import { maybeProxyCloudProject, proxyToSaaS } from "../../lib/cloud/project-router";
 import { promoteProjectToCloud, TransferConflictError } from "../projects/transfer.service";
 import { env } from "../../config";
+import { isMountedRelease, restoreMountedRelease, triggerMountedRelease } from "./mounted-release.service";
 
 export async function list(c: Context) {
   const ctx = getRequestContext(c);
@@ -89,6 +90,14 @@ export async function create(c: Context) {
     trigger: body.trigger === "webhook" ? "webhook" : undefined,
   });
   return c.json({ data: { ...result, deployment: deploymentService.presentDeployment(result.deployment) } }, 202);
+}
+
+export async function mountedRelease(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{ projectId: string }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const dep = await triggerMountedRelease(ctx, body.projectId);
+  return c.json({ data: { deployment_id: dep.id, deployment: deploymentService.presentDeployment(dep) } }, 202);
 }
 
 export async function getById(c: Context) {
@@ -193,7 +202,10 @@ export async function rollback(c: Context) {
   if (preview.needsRepository) {
     await deploymentService.assertGitHubAccessForDeployment(ctx, id, ctx.organizationId);
   }
-  const dep = await deploymentService.rollbackDeployment(id, ctx.organizationId);
+  const target = await deploymentService.getDeployment(id, ctx.organizationId);
+  const dep = isMountedRelease(target)
+    ? await restoreMountedRelease(ctx, target)
+    : await deploymentService.rollbackDeployment(id, ctx.organizationId);
   return c.json({ data: deploymentService.presentDeployment(dep) });
 }
 

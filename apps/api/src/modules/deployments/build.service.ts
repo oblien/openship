@@ -76,6 +76,7 @@ import {
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
 import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
 import { env } from "../../config";
+import { withMountedReleaseServiceVolume, withMountedReleaseVolume } from "./mounted-release.config";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -160,6 +161,10 @@ export async function runDeploymentPreflight(
 
 /** Config snapshot stored in deployment.meta - self-contained build+deploy config. */
 export interface DeploymentConfigSnapshot {
+  /** Mounted-code releases share history without replacing the runtime lane. */
+  deploymentLane?: "runtime" | "release";
+  mountedReleaseRoot?: string;
+  runtimeDeploymentId?: string;
   /** Owning organization — required so server lookups can be org-scoped. */
   organizationId?: string;
   repoUrl: string;
@@ -366,7 +371,10 @@ export function buildConfigSnapshot(
     buildCommand: project.buildCommand!,
     outputDirectory: project.outputDirectory!,
     productionPaths: parseProductionPaths(project.productionPaths, project.framework),
-    volumes: resolveProjectVolumes(project.volumes as string[] | null, project.framework),
+    volumes: withMountedReleaseVolume(
+      project,
+      resolveProjectVolumes(project.volumes as string[] | null, project.framework),
+    ),
     rootDirectory: project.rootDirectory || "",
     port: project.port ?? 3000,
     startCommand: project.startCommand!,
@@ -1100,7 +1108,10 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     snapshot.handoverImages = handoverImages;
   }
   if (requestedServiceMode === "services" && effectiveServices?.length) {
-    snapshot.composeServices = effectiveServices;
+    // Runtime-only derived mount: snapshot it for this deploy, but do not write
+    // it back into the canonical compose service rows below. Disabling mounted
+    // releases must remove the mount on the next rebuild without stale DB state.
+    snapshot.composeServices = withMountedReleaseServiceVolume(project, effectiveServices);
     // Persist compose services to the canonical service table NOW, at
     // deploy-request time — not only deep inside the compose pipeline. A build
     // that FAILS before the pipeline's own sync (clone/prepare error, image
@@ -1504,8 +1515,9 @@ export async function redeployBuildSession(
   await reconcileComposeDrift(ctx, project, branch);
 
   const currentComposeRows = await listProjectComposeServices(project.id).catch(() => []);
-  const currentComposeServices = projectServicesToDeployableServices(
-    currentComposeRows.filter((s) => s.enabled),
+  const currentComposeServices = withMountedReleaseServiceVolume(
+    project,
+    projectServicesToDeployableServices(currentComposeRows.filter((s) => s.enabled)),
   );
   // Strip PINNED ARTIFACTS: they are inputs to one specific deploy (a migration
   // cutover, or a rollback restoring a retained release). Carrying them onto a

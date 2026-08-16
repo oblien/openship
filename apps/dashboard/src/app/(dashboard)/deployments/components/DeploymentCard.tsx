@@ -187,6 +187,9 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               v{deployment.version}
             </span>
           )}
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${deployment.deploymentLane === "release" ? "bg-primary/10 text-primary" : "bg-muted/50 text-muted-foreground"}`}>
+            {deployment.deploymentLane === "release" ? "Code" : "Runtime"}
+          </span>
           <span
             className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${statusConfig.bgColor}`}
             style={{ color: statusConfig.color }}

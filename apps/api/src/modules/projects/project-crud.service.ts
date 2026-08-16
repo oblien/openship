@@ -482,6 +482,7 @@ function buildProductionProjectInput(
     gitBranch: data.gitBranch ?? "main",
     gitUrl: source.gitUrl,
     releaseSource: source.releaseSource,
+    mountedRelease: data.mountedRelease ?? null,
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
     framework: normalizeFramework(data.framework),
@@ -1341,6 +1342,34 @@ export async function updateProject(
     update.defaultRollbackStrategy = data.defaultRollbackStrategy;
   }
 
+  // Mounted releases target one app container. Normalize relative paths once
+  // and refuse an ambiguous compose target instead of mounting every service.
+  if (data.mountedRelease !== undefined) {
+    if (data.mountedRelease === null) {
+      update.mountedRelease = null;
+    } else {
+      const release = data.mountedRelease;
+      const services = await repos.service.listByProject(projectId).catch(() => []);
+      if (services.length > 0 && !release.serviceName) {
+        throw new ValidationError("Choose the service that should receive the mounted release.");
+      }
+      if (release.serviceName && !services.some((service) => service.name === release.serviceName)) {
+        throw new ValidationError(`Mounted release service "${release.serviceName}" does not exist.`);
+      }
+      const relative = (value: string) => value.trim().replace(/^\/+|\/+$/g, "");
+      update.mountedRelease = {
+        ...release,
+        sourcePath: release.sourcePath ? relative(release.sourcePath) : undefined,
+        sharedPaths: [...new Set((release.sharedPaths ?? []).map(relative).filter(Boolean))],
+        containerPath: release.containerPath.trim().replace(/\/+$/, ""),
+        prepareCommand: release.prepareCommand?.trim() || undefined,
+        reloadCommand: release.reloadCommand?.trim() || undefined,
+        healthPath: release.healthPath?.trim() || undefined,
+        retain: release.retain ?? 5,
+      };
+    }
+  }
+
   // ── internalAlias (single-app east-west hostname) ──────────────────
   // Normalize to a DNS label; empty/null clears it back to the default
   // `<slug>` alias. Reject an entry that carries no usable characters so a
@@ -2148,7 +2177,14 @@ export async function listProjectDeployments(
   // framework/Docker glyph (twin of deploymentService.listDeployments).
   return {
     ...result,
-    rows: result.rows.map((d) => ({ ...d, favicon: p.favicon ?? null })),
+    rows: result.rows.map((d) => ({
+      ...d,
+      favicon: p.favicon ?? null,
+      isActive:
+        ((d.meta as { deploymentLane?: string } | null)?.deploymentLane === "release"
+          ? p.activeReleaseDeploymentId
+          : p.activeDeploymentId) === d.id,
+    })),
   };
 }
 
@@ -2177,4 +2213,3 @@ export async function getLatestDeploymentSession(
       : null,
   };
 }
-

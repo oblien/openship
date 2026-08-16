@@ -5,6 +5,7 @@
  */
 
 import { Hono } from "hono";
+import { Type } from "@sinclair/typebox";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudDeploymentProxy, cloudProjectProxyByQuery } from "../../lib/cloud/project-router";
 import * as ctrl from "./deployment.controller";
@@ -48,6 +49,17 @@ r.post(
     },
   },
   ctrl.create,
+);
+r.post(
+  "/mounted-release",
+  {
+    tag: "deployment:write",
+    collection: true,
+    collectionProject: true,
+    body: Type.Object({ projectId: Type.String() }),
+    mcp: { description: "Deploy Git source through a project's mounted code lane without rebuilding its runtime image." },
+  },
+  ctrl.mountedRelease,
 );
 r.post(
   "/prepare",
