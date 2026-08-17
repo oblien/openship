@@ -1,11 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeJsonAtomic } from "./atomic-json";
 
 export interface DesktopProfile {
   id: string;
   name: string;
-  /** Null keeps the legacy/default Electron cookie jar for the first profile. */
+  /**
+   * Electron session partition. Cookie jar + renderer storage only.
+   * Every session shares the one PGlite control-plane database.
+   */
   partition: string | null;
   createdAt: string;
   lastUsedAt: string;
@@ -32,7 +36,7 @@ function initialFile(): ProfileFile {
     profiles: [
       {
         id: MAIN_PROFILE_ID,
-        name: "Main",
+        name: "Default",
         partition: null,
         createdAt,
         lastUsedAt: createdAt,
@@ -43,9 +47,9 @@ function initialFile(): ProfileFile {
 
 function normalizedName(value: string): string {
   const name = value.trim().replace(/\s+/g, " ");
-  if (!name) throw new Error("Profile name is required");
+  if (!name) throw new Error("Session name is required");
   if (name.length > MAX_PROFILE_NAME) {
-    throw new Error(`Profile name must be ${MAX_PROFILE_NAME} characters or fewer`);
+    throw new Error(`Session name must be ${MAX_PROFILE_NAME} characters or fewer`);
   }
   return name;
 }
@@ -105,10 +109,10 @@ export class DesktopProfileStore {
 
   remove(id: string): DesktopProfile {
     if (this.data.profiles.length === 1) {
-      throw new Error("Keep at least one desktop profile");
+      throw new Error("Keep at least one browser session");
     }
     if (id === this.data.activeProfileId) {
-      throw new Error("Switch profiles before removing the active profile");
+      throw new Error("Switch sessions before removing the active session");
     }
     const profile = this.find(id);
     this.data.profiles = this.data.profiles.filter((entry) => entry.id !== id);
@@ -127,6 +131,11 @@ export class DesktopProfileStore {
           !!profile && typeof profile.id === "string" && typeof profile.name === "string",
       );
       if (!profiles.length) return initialFile();
+      for (const profile of profiles) {
+        if (profile.id === MAIN_PROFILE_ID && profile.name === "Main") {
+          profile.name = "Default";
+        }
+      }
       const activeProfileId = profiles.some((profile) => profile.id === parsed.activeProfileId)
         ? parsed.activeProfileId!
         : profiles[0].id;
@@ -138,7 +147,7 @@ export class DesktopProfileStore {
 
   private find(id: string): DesktopProfile {
     const profile = this.data.profiles.find((entry) => entry.id === id);
-    if (!profile) throw new Error("Desktop profile not found");
+    if (!profile) throw new Error("Browser session not found");
     return profile;
   }
 
@@ -147,10 +156,10 @@ export class DesktopProfileStore {
       (profile) =>
         profile.id !== exceptId && profile.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
     );
-    if (duplicate) throw new Error("A desktop profile with that name already exists");
+    if (duplicate) throw new Error("A browser session with that name already exists");
   }
 
   private save(): void {
-    writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+    writeJsonAtomic(this.filePath, this.data);
   }
 }

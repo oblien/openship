@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronsUpDown, Loader2, Plus, Trash2, UserRound } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Plus, Trash2, Layers } from "lucide-react";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
     void bridge
       .list()
       .then(setState)
-      .catch(() => setError("Profiles could not be loaded."));
+      .catch(() => setError("Browser sessions could not be loaded."));
   }, [bridge]);
 
   const active = useMemo(
@@ -39,7 +39,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
       const profile = await bridge!.create(nextName);
       await bridge!.switch(profile.id);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Profile could not be created.");
+      setError(reason instanceof Error ? reason.message : "Session could not be created.");
       setBusy(null);
     }
   }
@@ -51,7 +51,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
       await bridge!.remove(profile.id);
       setState(await bridge!.list());
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Profile could not be removed.");
+      setError(reason instanceof Error ? reason.message : "Session could not be removed.");
     } finally {
       setBusy(null);
     }
@@ -68,7 +68,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
         title={collapsed ? active.name : undefined}
       >
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-foreground">
-          <UserRound className="size-4" />
+          <Layers className="size-4" />
         </div>
         {!collapsed && (
           <>
@@ -77,7 +77,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
                 {active.name}
               </p>
               <p className="truncate text-[11px] leading-tight text-muted-foreground">
-                Desktop profile
+                Browser session
               </p>
             </div>
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
@@ -91,10 +91,10 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
         >
           <div className="px-3 pb-2 pt-3">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-              Desktop profiles
+              Browser sessions
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Window state stays separate. Your local workspace, projects, and servers stay shared.
+              Cookies and window state stay separate. Every session shares this control plane and its one database.
             </p>
           </div>
 
@@ -171,7 +171,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
                   </Button>
                   <Button type="submit" size="sm" disabled={!!busy || !name.trim()}>
                     {busy === "create" && <Loader2 className="size-3.5 animate-spin" />}
-                    Add profile
+                    Add session
                   </Button>
                 </div>
               </form>
@@ -185,7 +185,7 @@ export function DesktopProfileMenu({ collapsed }: { collapsed: boolean }) {
                 className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-medium text-foreground hover:bg-foreground/[0.05]"
               >
                 <Plus className="size-4 text-muted-foreground" />
-                Add profile
+                Add session
               </button>
             )}
 

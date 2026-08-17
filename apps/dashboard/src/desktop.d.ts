@@ -17,12 +17,33 @@ declare global {
     profiles: DesktopProfile[];
   };
 
+  type DesktopControlPlaneInfo = {
+    api: string;
+    dashboard: string;
+    advertisedOrigin: string;
+    previousAdvertisedOrigin: string | null;
+    switched: { api: boolean; dashboard: boolean };
+    fingerprint: string;
+    dataPath: string;
+    userDataPath: string;
+  };
+
   interface DesktopBridge {
     isDesktop?: boolean;
     reset?: () => Promise<unknown>;
     app?: {
       version: () => Promise<string>;
       platform?: string;
+      localUrls?: () => Promise<DesktopControlPlaneInfo>;
+    };
+    instance?: {
+      info: () => Promise<DesktopControlPlaneInfo>;
+      openBrowser: () => Promise<boolean>;
+      openDataFolder: () => Promise<boolean>;
+      restartEngine: () => Promise<boolean>;
+      repairEndpoint: () => Promise<boolean>;
+      backup: () => Promise<string | null>;
+      onChange: (cb: (info: DesktopControlPlaneInfo) => void) => () => void;
     };
     /** Update preferences only. The desktop config store also holds SSH
      *  credentials and tunnel tokens, which the bridge refuses to serve —

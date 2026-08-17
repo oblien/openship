@@ -1,31 +1,41 @@
 /**
- * Openship Desktop - Electron main process.
+ * Openship Desktop — background control-plane host.
  *
- * Flow:
- *   1. App starts → check if onboarding is complete
- *   2. If not → show the local onboarding UI (bundled HTML)
- *   3. User connects to a server → save config → load dashboard
- *   4. If already set up → load dashboard directly
- *
- * Architecture:
- *   Desktop (Electron)
- *     ├─ Onboarding (local HTML, first run only)
- *     └─ Dashboard (Next.js web UI, loaded in BrowserWindow)
- *         └─ API (remote server, reached via HTTP)
+ * One process owns PGlite + the bundled API/MCP. The window is a view onto
+ * that host: close hides to the tray, quit is tray/menu only, and a second
+ * launch focuses the first window instead of starting another engine.
  */
 
-import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  shell,
+  ipcMain,
+  net,
+  dialog,
+  globalShortcut,
+  screen,
+  nativeTheme,
+  session,
+  Tray,
+  Menu,
+  nativeImage,
+} from "electron";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import {
   type SystemSettings,
   type TunnelConfig,
   buildSetupPayload,
 } from "@repo/onboarding";
+import { writeJsonAtomic } from "./atomic-json";
 import {
+  getControlPlaneSnapshot,
   getLocalApiUrl,
   getLocalDashboardUrl,
+  initControlPlane,
+  restartLocalServices,
   startLocalServices,
   stopLocalServices,
   stopLocalServicesAndWait,
@@ -127,12 +137,18 @@ class ConfigStore {
   }
 
   private save() {
-    writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+    writeJsonAtomic(this.filePath, this.data);
   }
+}
+
+const isPrimaryInstance = app.requestSingleInstanceLock();
+if (!isPrimaryInstance) {
+  app.quit();
 }
 
 const store = new ConfigStore();
 const profiles = new DesktopProfileStore(app.getPath("userData"));
+initControlPlane(app.getPath("userData"));
 
 // ─── Internal token (ephemeral, per-session) ─────────────────────────────────
 
@@ -212,6 +228,9 @@ async function waitForApi(apiUrl: string, maxAttempts = 30, intervalMs = 1000): 
 
 let mainWindow: BrowserWindow | null = null;
 let switchingProfiles = false;
+/** True once the user asked to quit. Close-to-tray must not preventDefault then. */
+let isQuitting = false;
+let tray: Tray | null = null;
 
 /** The update found by the launch check, pending user action in the update window. */
 let pendingUpdate: UpdateInfo | null = null;
@@ -365,9 +384,14 @@ function createWindow() {
 
   // Save window state on close. Store the NORMAL (un-maximized) bounds so a
   // maximized session doesn't persist a full-screen-sized "normal" window.
-  window.on("close", () => {
+  // Hide to tray unless this is a real quit — the embedded API/MCP stay up.
+  window.on("close", (event) => {
     store.set("windowMaximized", window.isMaximized());
     store.set("windowBounds", window.getNormalBounds());
+    if (!isQuitting && !switchingProfiles) {
+      event.preventDefault();
+      window.hide();
+    }
   });
 
   window.on("closed", () => {
@@ -637,15 +661,137 @@ function reopenForActiveProfile(): void {
   switchingProfiles = false;
 }
 
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    routeInitialView();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function emitInstanceChanged(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("instance:changed", getControlPlaneSnapshot());
+}
+
+function openDashboardInBrowser(): void {
+  const url = getLocalDashboardUrl();
+  if (isSafeExternalUrl(url)) void shell.openExternal(url);
+}
+
+function openDataFolder(): void {
+  void shell.openPath(getControlPlaneSnapshot().dataPath);
+}
+
+async function backupControlPlane(): Promise<string | null> {
+  if (!mainWindow) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: "Back up control plane",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (canceled || !filePaths[0]) return null;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dest = join(filePaths[0], `openship-control-plane-${stamp}`);
+  mkdirSync(dest, { recursive: true });
+  cpSync(getControlPlaneSnapshot().dataPath, join(dest, "data"), { recursive: true });
+  return dest;
+}
+
+async function runEngineAction(rebind: boolean): Promise<boolean> {
+  if (!app.isPackaged) {
+    emitInstanceChanged();
+    return true;
+  }
+  showLoading();
+  setLoadingStage(rebind ? "Repairing endpoint" : "Restarting engine", 0.55);
+  try {
+    await restartLocalServices(internalToken, { rebind });
+    setLoadingStage("Opening dashboard", 1);
+    loadDashboard();
+    emitInstanceChanged();
+    return true;
+  } catch (err) {
+    dialog.showErrorBox(
+      rebind ? "Couldn't repair endpoint" : "Couldn't restart engine",
+      err instanceof Error ? err.message : String(err),
+    );
+    routeInitialView();
+    return false;
+  }
+}
+
+function resolveTrayIcon(): Electron.NativeImage {
+  const candidates = [
+    join(process.resourcesPath, "icon.png"),
+    join(__dirname, "../../assets/icon.png"),
+  ];
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    const image = nativeImage.createFromPath(path);
+    if (image.isEmpty()) continue;
+    if (process.platform === "darwin") image.setTemplateImage(true);
+    return image.resize({ width: 16, height: 16 });
+  }
+  return nativeImage.createEmpty();
+}
+
+function createTray(): void {
+  if (tray) return;
+  tray = new Tray(resolveTrayIcon());
+  tray.setToolTip("Openship");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open Openship", click: () => showMainWindow() },
+      { label: "Open in Browser", click: () => openDashboardInBrowser() },
+      { type: "separator" },
+      { label: "Restart Engine", click: () => void runEngineAction(false) },
+      { label: "Repair Endpoint", click: () => void runEngineAction(true) },
+      { label: "Back Up Control Plane…", click: () => void backupControlPlane() },
+      { label: "Open Data Folder", click: () => openDataFolder() },
+      { type: "separator" },
+      {
+        label: "Quit Openship",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on("click", () => showMainWindow());
+}
+
+function requestQuit(): void {
+  isQuitting = true;
+  app.quit();
+}
+
 // ─── App lifecycle ───────────────────────────────────────────────────────────
 
+app.on("second-instance", () => {
+  showMainWindow();
+});
+
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return;
+
   createWindow(); // shows the loading splash immediately
+  createTray();
 
   // Native menu: Reload / Developer Tools / Help. Registered on every platform —
   // Windows/Linux are frameless so no menu bar renders, but the accelerators
   // (Ctrl+R, Ctrl+Shift+I) still install, and the titlebar keeps a ⋯ there.
-  buildAppMenu(() => mainWindow);
+  buildAppMenu(() => mainWindow, {
+    openInBrowser: openDashboardInBrowser,
+    restartEngine: () => void runEngineAction(false),
+    repairEndpoint: () => void runEngineAction(true),
+    backupControlPlane: () => void backupControlPlane(),
+    openDataFolder,
+    quit: requestQuit,
+  });
 
   // In a packaged build there are no external dev servers — boot the bundled
   // API + dashboard ourselves before routing to the real view. In dev the
@@ -661,6 +807,7 @@ app.whenReady().then(async () => {
         "Openship failed to start",
         err instanceof Error ? err.message : String(err),
       );
+      isQuitting = true;
       app.quit();
       return;
     }
@@ -708,23 +855,19 @@ app.whenReady().then(async () => {
   });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-      routeInitialView();
-    }
+    showMainWindow();
   });
 });
 
 app.on("window-all-closed", () => {
   if (switchingProfiles) return;
-  globalShortcut.unregisterAll();
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // Do not quit. The control plane stays up behind the tray; quit is
+  // tray/menu only. (macOS already behaved this way.)
 });
 
 // Tear down the bundled services when the app actually quits.
 app.on("before-quit", () => {
+  isQuitting = true;
   stopLocalServices();
 });
 
@@ -925,9 +1068,25 @@ ipcMain.handle("app:version", () => {
   return app.getVersion();
 });
 
-ipcMain.handle("app:local-urls", () => {
-  return { api: getLocalApiUrl(), dashboard: getLocalDashboardUrl() };
+ipcMain.handle("app:local-urls", () => getControlPlaneSnapshot());
+
+ipcMain.handle("instance:info", () => getControlPlaneSnapshot());
+
+ipcMain.handle("instance:open-browser", () => {
+  openDashboardInBrowser();
+  return true;
 });
+
+ipcMain.handle("instance:open-data", () => {
+  openDataFolder();
+  return true;
+});
+
+ipcMain.handle("instance:restart", () => runEngineAction(false));
+
+ipcMain.handle("instance:repair", () => runEngineAction(true));
+
+ipcMain.handle("instance:backup", () => backupControlPlane());
 
 // ─── IPC: Named desktop profiles ────────────────────────────────────────────
 

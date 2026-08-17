@@ -42,6 +42,21 @@ contextBridge.exposeInMainWorld("desktop", {
     localUrls: () => ipcRenderer.invoke("app:local-urls"),
   },
 
+  /** Local control-plane host (fingerprint, ports, engine actions). */
+  instance: {
+    info: () => ipcRenderer.invoke("instance:info"),
+    openBrowser: () => ipcRenderer.invoke("instance:open-browser"),
+    openDataFolder: () => ipcRenderer.invoke("instance:open-data"),
+    restartEngine: () => ipcRenderer.invoke("instance:restart"),
+    repairEndpoint: () => ipcRenderer.invoke("instance:repair"),
+    backup: () => ipcRenderer.invoke("instance:backup"),
+    onChange: (cb: (info: unknown) => void) => {
+      const h = (_e: unknown, info: unknown) => cb(info);
+      ipcRenderer.on("instance:changed", h);
+      return () => ipcRenderer.removeListener("instance:changed", h);
+    },
+  },
+
   /** Onboarding helpers */
   onboarding: {
     /** Mark onboarding as done, push settings to API, and load the dashboard */

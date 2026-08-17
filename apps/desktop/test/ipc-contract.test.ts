@@ -27,6 +27,21 @@ const sent = new Set(matchAll(main, /\.send\(\s*["'`]([^"'`]+)["'`]/g));
 const invoked = matchAll(preload, /ipcRenderer\.invoke\(\s*["'`]([^"'`]+)["'`]/g);
 const listened = matchAll(preload, /ipcRenderer\.on\(\s*["'`]([^"'`]+)["'`]/g);
 
+describe("desktop host lifecycle (static)", () => {
+  it("takes a single-instance lock before whenReady", () => {
+    const lockAt = main.indexOf("requestSingleInstanceLock");
+    const readyAt = main.indexOf("app.whenReady");
+    expect(lockAt).toBeGreaterThan(-1);
+    expect(readyAt).toBeGreaterThan(lockAt);
+  });
+
+  it("hides the window instead of quitting on close", () => {
+    expect(main).toContain("window.hide()");
+    expect(main).toContain("isQuitting");
+    expect(main).toMatch(/window-all-closed[\s\S]*Do not quit/);
+  });
+});
+
 describe("preload ↔ main IPC contract", () => {
   it("every ipcRenderer.invoke() channel has a matching ipcMain.handle()", () => {
     const missing = invoked.filter((ch) => !handled.has(ch));
@@ -36,6 +51,23 @@ describe("preload ↔ main IPC contract", () => {
   it("every ipcRenderer.on() channel is emitted by the main process", () => {
     const missing = listened.filter((ch) => !sent.has(ch));
     expect(missing, `preload listens for channels main never sends: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("control-plane instance actions are wired end to end", () => {
+    for (const ch of [
+      "app:local-urls",
+      "instance:info",
+      "instance:open-browser",
+      "instance:open-data",
+      "instance:restart",
+      "instance:repair",
+      "instance:backup",
+    ]) {
+      expect(handled.has(ch), `missing ipcMain.handle("${ch}")`).toBe(true);
+      expect(invoked.includes(ch), `preload does not invoke "${ch}"`).toBe(true);
+    }
+    expect(sent.has("instance:changed"), `main never sends "instance:changed"`).toBe(true);
+    expect(listened.includes("instance:changed"), `preload does not listen for "instance:changed"`).toBe(true);
   });
 
   it("the updater channels are wired end to end (regression: 'Update now' no-op)", () => {
