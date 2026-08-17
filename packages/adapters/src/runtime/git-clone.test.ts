@@ -4,6 +4,9 @@ import {
   injectGitToken,
   toGitHubSshUrl,
   assembleGitClone,
+  gitCloneArgv,
+  gitTokenExtraHeader,
+  httpsUrlWithoutUserinfo,
 } from "./git-clone";
 
 describe("sq (POSIX single-quote)", () => {
@@ -56,25 +59,59 @@ describe("toGitHubSshUrl", () => {
 });
 
 describe("assembleGitClone — token / public mode", () => {
+  const token = "tok123";
   const inv = assembleGitClone({
     repoUrl: "https://github.com/owner/repo.git",
-    gitToken: "tok123",
+    gitToken: token,
   });
-  it("injects the token into the clone URL", () => {
-    expect(inv.cloneUrl).toBe(
-      "https://x-access-token:tok123@github.com/owner/repo.git",
-    );
+  it("keeps the plain URL — token is NOT in the clone URL", () => {
+    expect(inv.cloneUrl).toBe("https://github.com/owner/repo.git");
+    expect(inv.cloneUrl).not.toContain(token);
+    expect(inv.cloneUrl).not.toContain("x-access-token");
   });
-  it("fails fast instead of prompting (no interactive credential path)", () => {
-    expect(inv.gitEnv).toContain("GIT_TERMINAL_PROMPT=0");
-    expect(inv.gitEnv).toContain("GIT_ASKPASS=/bin/echo");
+  it("puts the token in extraheader env, not argv", () => {
+    expect(inv.env.GIT_CONFIG_KEY_0).toBe("http.extraHeader");
+    expect(inv.env.GIT_CONFIG_VALUE_0).toBe(gitTokenExtraHeader(token));
+    expect(inv.gitEnv).toContain("http.extraHeader");
+    expect(gitCloneArgv(inv).join(" ")).not.toContain(token);
+    expect(gitCloneArgv(inv).join(" ")).not.toContain("x-access-token");
   });
-  it("disables the host credential helper so the URL token is the only auth", () => {
+  it("disables the host credential helper so extraheader is the only auth", () => {
     expect(inv.credFlag).toBe("-c credential.helper=");
   });
   it("public repo (no token) clones the plain URL", () => {
     const pub = assembleGitClone({ repoUrl: "https://github.com/owner/repo.git" });
     expect(pub.cloneUrl).toBe("https://github.com/owner/repo.git");
+  });
+  it("strips a token already embedded in the URL so it cannot leak via argv", () => {
+    const dirty = assembleGitClone({
+      repoUrl: "https://x-access-token:preloaded@github.com/owner/repo.git",
+      gitToken: token,
+    });
+    expect(dirty.cloneUrl).toBe("https://github.com/owner/repo.git");
+    expect(gitCloneArgv(dirty).join(" ")).not.toContain("preloaded");
+    expect(httpsUrlWithoutUserinfo("https://x-access-token:preloaded@github.com/o/r.git")).toBe(
+      "https://github.com/o/r.git",
+    );
+  });
+});
+
+describe("assembleGitClone — token must not appear in process arguments", () => {
+  it("never puts the token in cloneUrl, credArgs, or credFlag", () => {
+    const token = "ghs_thisMustNotLeak";
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/owner/repo.git",
+      gitToken: token,
+    });
+    const argv = gitCloneArgv(inv);
+    expect(argv).not.toEqual(expect.arrayContaining([expect.stringContaining(token)]));
+    expect(inv.cloneUrl).not.toContain(token);
+    expect(inv.credFlag).not.toContain(token);
+    expect(inv.credArgs.join(" ")).not.toContain(token);
+    // Env is allowed — that is the extraheader contract.
+    expect(inv.env.GIT_CONFIG_VALUE_0).toContain(
+      Buffer.from(`x-access-token:${token}`, "utf8").toString("base64"),
+    );
   });
 });
 

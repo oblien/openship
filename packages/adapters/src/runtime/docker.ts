@@ -1368,7 +1368,8 @@ export class DockerRuntime implements RuntimeAdapter {
    * orchestrator and rsyncs the tree). Runs `git clone` in a remote host shell,
    * mirroring the bare runtime (build-pipeline.ts): the credential-helper relay
    * (`config.gitCredentialHelperPath` — plain URL, nothing persisted) when set,
-   * else `injectGitToken(...)`. Strips `.git` so it never ships into the image.
+   * else token extraheader env (never `x-access-token:TOKEN` in argv). Strips
+   * `.git` so it never ships into the image.
    */
   private async cloneSourceOnRemote(
     config: BuildConfig,

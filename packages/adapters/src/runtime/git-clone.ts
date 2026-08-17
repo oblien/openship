@@ -26,6 +26,9 @@ export function sq(value: string): string {
  * Inject a token into an HTTPS git URL for private repo access:
  *   https://github.com/owner/repo.git → https://x-access-token:<token>@github.com/owner/repo.git
  * Unchanged when no token or the URL isn't HTTPS.
+ *
+ * Do not use this for clone argv — `assembleGitClone` puts the token in
+ * `http.extraHeader` env instead so it never appears in process arguments.
  */
 export function injectGitToken(repoUrl: string, token?: string): string {
   if (!token) return repoUrl;
@@ -38,6 +41,32 @@ export function injectGitToken(repoUrl: string, token?: string): string {
   } catch {
     return repoUrl;
   }
+}
+
+/** Strip userinfo from an HTTPS URL so a caller-supplied token never lands in argv. */
+export function httpsUrlWithoutUserinfo(repoUrl: string): string {
+  try {
+    const url = new URL(repoUrl);
+    if (url.protocol !== "https:") return repoUrl;
+    url.username = "";
+    url.password = "";
+    return url.toString();
+  } catch {
+    return repoUrl;
+  }
+}
+
+/** `Authorization: Basic` extraheader for GitHub HTTPS (token stays in env, not argv). */
+export function gitTokenExtraHeader(token: string): string {
+  return `Authorization: Basic ${Buffer.from(`x-access-token:${token}`, "utf8").toString("base64")}`;
+}
+
+/**
+ * Argv-shaped clone preview: cred flags + clone URL. Used to assert the token
+ * is never a process argument.
+ */
+export function gitCloneArgv(inv: GitCloneInvocation): string[] {
+  return [...inv.credArgs, "clone", inv.cloneUrl];
 }
 
 /**
@@ -180,11 +209,20 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
     return invocation(auth.repoUrl, [TERMINAL_PROMPT], false);
   }
 
-  // Token / public: token (if any) in the URL; disable host credential helpers
-  // so the URL token is the only auth (GIT_ASKPASS=/bin/echo fails fast).
-  return invocation(
-    injectGitToken(auth.repoUrl, auth.gitToken),
-    [TERMINAL_PROMPT, ["GIT_ASKPASS", "/bin/echo", false]],
-    true,
-  );
+  // Token / public: plain URL. The token (if any) is an extraheader in env —
+  // never `https://x-access-token:TOKEN@` in argv (ps, logs, SSH command strings).
+  const cloneUrl = httpsUrlWithoutUserinfo(auth.repoUrl);
+  if (auth.gitToken) {
+    return invocation(
+      cloneUrl,
+      [
+        TERMINAL_PROMPT,
+        ["GIT_CONFIG_COUNT", "1", false],
+        ["GIT_CONFIG_KEY_0", "http.extraHeader", false],
+        ["GIT_CONFIG_VALUE_0", gitTokenExtraHeader(auth.gitToken), true],
+      ],
+      true,
+    );
+  }
+  return invocation(cloneUrl, [TERMINAL_PROMPT, ["GIT_ASKPASS", "/bin/echo", false]], true);
 }

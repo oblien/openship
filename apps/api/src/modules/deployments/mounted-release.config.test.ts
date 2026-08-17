@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  BindMountCollisionError,
   mountedReleaseHostRoot,
   mountedReleaseVolume,
+  volumeMountTarget,
   withMountedReleaseServiceVolume,
   withMountedReleaseVolume,
 } from "./mounted-release.config";
@@ -39,5 +41,25 @@ describe("mounted release config", () => {
   it("leaves runtime volumes unchanged while the feature is disabled", () => {
     const disabled = { ...project, mountedRelease: { ...project.mountedRelease, enabled: false } };
     expect(withMountedReleaseVolume(disabled as never, ["data:/data"])).toEqual(["data:/data"]);
+  });
+
+  it("parses the container dest out of a compose volume spec", () => {
+    expect(volumeMountTarget("data:/data")).toBe("/data");
+    expect(volumeMountTarget("/host/app:/srv/demo:ro")).toBe("/srv/demo");
+    expect(volumeMountTarget("/srv/demo")).toBe("/srv/demo");
+  });
+
+  it("refuses a second bind to the same container dest", () => {
+    expect(() =>
+      withMountedReleaseVolume(project as never, ["existing:/srv/demo:ro"]),
+    ).toThrow(BindMountCollisionError);
+    expect(() =>
+      withMountedReleaseVolume(project as never, ["existing:/srv/demo/"]),
+    ).toThrow(/already bound/);
+  });
+
+  it("still no-ops when the generated mount is already present", () => {
+    const once = withMountedReleaseVolume(project as never, ["data:/data"]);
+    expect(withMountedReleaseVolume(project as never, once)).toEqual(once);
   });
 });

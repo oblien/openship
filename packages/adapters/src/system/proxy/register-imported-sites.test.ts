@@ -357,6 +357,53 @@ describe("registerImportedSites", () => {
     });
   });
 
+  it("skips reserved operator / extraRoute hostnames and does not overwrite them", async () => {
+    const { routing, ssl } = providers();
+    const sites: ImportedSite[] = [
+      { serverNames: ["ops.example.com", "app.example.com"], ssl: false, target: { kind: "proxy", url: "http://127.0.0.1:3000" } },
+    ];
+    const o = opts();
+    const registered = await registerImportedSites(
+      routing as RoutingProvider,
+      ssl as SslProvider,
+      fakeExecutor(),
+      sites,
+      { ...o, reservedDomains: ["ops.example.com"] },
+    );
+    expect(registered).toEqual(["app.example.com"]);
+    expect(routing.registerRoute).not.toHaveBeenCalledWith(expect.objectContaining({ domain: "ops.example.com" }));
+    expect(o.warnings.some((w) => w.includes("ops.example.com") && /reserved/i.test(w))).toBe(true);
+  });
+
+  it("notifies onRegistered with cert expiry so ssl:renew can track the row", async () => {
+    const { routing, ssl } = providers();
+    ssl.installCert.mockResolvedValue({
+      domain: "a.com",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+      issuer: "Let's Encrypt",
+      verified: true,
+    });
+    const seen: Array<{ domain: string; ssl: boolean; cert?: { expiresAt: string } }> = [];
+    const sites: ImportedSite[] = [
+      { serverNames: ["a.com"], ssl: true, target: { kind: "proxy", url: "http://127.0.0.1:3000" } },
+    ];
+    await registerImportedSites(routing as RoutingProvider, ssl as SslProvider, fakeExecutor(), sites, {
+      onLog: () => {},
+      warnings: [],
+      certPems: { "a.com": { certPem: "CERT", keyPem: "KEY" } },
+      onRegistered: (info) => {
+        seen.push(info);
+      },
+    });
+    expect(seen).toEqual([
+      {
+        domain: "a.com",
+        ssl: true,
+        cert: { expiresAt: "2027-01-01T00:00:00.000Z", issuer: "Let's Encrypt", verified: true },
+      },
+    ]);
+  });
+
   it("omits `proxy` entirely when the source vhost tuned nothing", async () => {
     // `proxy: undefined` and "no proxy key" are the same thing to the renderer, but
     // only the second keeps the RouteConfig sidecar clean.

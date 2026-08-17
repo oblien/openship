@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { lstat, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { edgeFailureReason, edgeIsBroken, sanitizeEdgeVhosts } from "./detect";
 import { LocalExecutor } from "../local-executor";
-import { edgeDefaultCatchAllConf } from "../../infra/openresty-lua";
+import { EDGE_MGMT_SERVER_BLOCK, edgeDefaultCatchAllConf } from "../../infra/openresty-lua";
 import type { CommandExecutor } from "../../types";
 
 /**
@@ -97,6 +98,24 @@ describe("sanitizeEdgeVhosts (real shell, real files)", () => {
     expect(said.join("\n")).toMatch(/Dropped catch-all vhost .*_default\.conf/);
   });
 
+  it("does not drop _management.conf even though it has no server_name", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "openship-vhosts-mgmt-"));
+    const mgmt = `# Openship internal management\n${EDGE_MGMT_SERVER_BLOCK}\n`;
+    expect(mgmt).not.toMatch(/server_name/);
+    await writeFile(join(dir, "_management.conf"), mgmt);
+    await writeFile(join(dir, "_default.conf"), CATCH_ALL);
+    await writeFile(join(dir, "api-reflx.conf"), PLAIN_VHOST);
+
+    const said: string[] = [];
+    await sanitizeEdgeVhosts(new LocalExecutor(), dir, (l) => said.push(l.message));
+
+    const left = (await readdir(dir)).sort();
+    expect(left).toEqual(["_management.conf", "api-reflx.conf"]);
+    expect(await readFile(join(dir, "_management.conf"), "utf8")).toBe(mgmt);
+    expect(said.join("\n")).toMatch(/Dropped catch-all vhost .*_default\.conf/);
+    expect(said.join("\n")).not.toMatch(/_management\.conf/);
+  });
+
   it("is a no-op on an empty or missing dir", async () => {
     const dir = await mkdtemp(join(tmpdir(), "openship-vhosts-empty-"));
     const said: string[] = [];
@@ -180,5 +199,14 @@ describe("edgeFailureReason", () => {
     ].join("\n");
     expect(edgeFailureReason(accessLog)).toBeNull();
     expect(edgeFailureReason("")).toBeNull();
+  });
+});
+
+describe("edge HEALTHCHECK", () => {
+  it("probes the loopback mgmt API from the image and from compose", () => {
+    const dockerfile = readFileSync(new URL("../../../../../apps/edge/Dockerfile", import.meta.url), "utf8");
+    expect(dockerfile).toMatch(/HEALTHCHECK[\s\S]*curl -fsS http:\/\/127\.0\.0\.1:9145\/health/);
+    const compose = readFileSync(new URL("../../../../../apps/cli/src/lib/compose.ts", import.meta.url), "utf8");
+    expect(compose).toContain("http://127.0.0.1:9145/health");
   });
 });

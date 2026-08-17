@@ -13,7 +13,7 @@
 
 import type { BuildConfig, BuildStep, LogEntry, LogCallback } from "../types";
 import { safeErrorMessage, packageManagerEnsureCommand } from "@repo/core";
-import { sq, injectGitToken, assembleGitClone } from "./git-clone";
+import { sq, assembleGitClone } from "./git-clone";
 import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 
 // Re-exported for the docker adapters that import these from here.

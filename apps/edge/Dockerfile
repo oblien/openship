@@ -96,6 +96,10 @@ RUN mkdir -p /usr/local/openresty/nginx/conf/openship-default-cert && \
 RUN openresty -t
 
 EXPOSE 80 443
+# Loopback mgmt API is the honest liveness signal (returns "ok"). A crash-looping
+# OpenResty still looks "running" to Docker without this.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:9145/health
 # Graceful OpenResty stop.
 STOPSIGNAL SIGQUIT
 CMD ["openresty", "-g", "daemon off;"]
