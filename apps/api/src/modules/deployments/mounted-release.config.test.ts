@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mountedReleaseHealthPort,
   mountedReleaseHostRoot,
   mountedReleaseVolume,
   resolveMountedReleaseRuntimeTarget,
@@ -99,6 +100,19 @@ describe("mounted release config", () => {
       mode: "service",
       service: renamed,
     });
+  });
+
+  it("defaults the health probe port from the targeted service", () => {
+    expect(
+      mountedReleaseHealthPort(
+        { mode: "service", service: { exposedPort: "8080", ports: ["3000"] } },
+        3000,
+      ),
+    ).toBe(8080);
+    expect(
+      mountedReleaseHealthPort({ mode: "service", service: { ports: ["9090:9090"] } }, 3000),
+    ).toBe(9090);
+    expect(mountedReleaseHealthPort({ mode: "primary" }, 3000)).toBe(3000);
   });
 
   it("refuses a missing or disabled compose target and keeps single-app on primary", () => {

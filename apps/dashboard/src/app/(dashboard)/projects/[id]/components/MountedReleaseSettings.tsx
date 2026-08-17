@@ -37,6 +37,23 @@ const emptyConfig: MountedReleaseConfigUI = {
   retain: 5,
 };
 
+function bindDraftService(
+  draft: Pick<MountedReleaseConfigUI, "serviceId" | "serviceName">,
+  services: Array<{ id: string; name: string }>,
+): Pick<MountedReleaseConfigUI, "serviceId" | "serviceName"> {
+  if (draft.serviceId) {
+    const match = services.find((service) => service.id === draft.serviceId);
+    return match
+      ? { serviceId: match.id, serviceName: match.name }
+      : { serviceId: draft.serviceId, serviceName: draft.serviceName };
+  }
+  if (!draft.serviceName) return { serviceId: draft.serviceId, serviceName: draft.serviceName };
+  const match = services.find((service) => service.name === draft.serviceName);
+  return match
+    ? { serviceId: match.id, serviceName: match.name }
+    : { serviceName: draft.serviceName };
+}
+
 function Field({
   label,
   hint,
@@ -67,14 +84,22 @@ export function MountedReleaseSettings() {
   const buildMode = draft.buildMode ?? (draft.prepareCommand?.trim() ? "server" : "prebuilt");
 
   React.useEffect(() => {
-    const base = saved ?? emptyConfig;
-    const target =
-      servicesData.services.find((service) => service.id === base.serviceId) ??
-      servicesData.services.find((service) => service.name === base.serviceName);
-    setDraft(
-      target ? { ...base, serviceId: target.id, serviceName: target.name } : base,
-    );
-  }, [projectData.mountedRelease, servicesData.services]);
+    setDraft(saved ?? emptyConfig);
+  }, [projectData.mountedRelease]);
+
+  React.useEffect(() => {
+    if (servicesData.services.length === 0) return;
+    setDraft((current) => {
+      const next = bindDraftService(current, servicesData.services);
+      return next.serviceId === current.serviceId && next.serviceName === current.serviceName
+        ? current
+        : { ...current, serviceId: next.serviceId, serviceName: next.serviceName };
+    });
+  }, [servicesData.services]);
+
+  const selectedServiceId = servicesData.services.some((service) => service.id === draft.serviceId)
+    ? (draft.serviceId ?? "")
+    : "";
 
   const set = <K extends keyof MountedReleaseConfigUI>(key: K, value: MountedReleaseConfigUI[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -218,7 +243,7 @@ export function MountedReleaseSettings() {
             {servicesData.services.length > 0 ? (
               <Field label="App service" hint="Only this container receives the code mount.">
                 <select
-                  value={draft.serviceId ?? ""}
+                  value={selectedServiceId}
                   onChange={(event) => {
                     const serviceId = event.target.value || undefined;
                     const service = servicesData.services.find((row) => row.id === serviceId);
@@ -404,7 +429,7 @@ export function MountedReleaseSettings() {
               disabled={
                 saving ||
                 !draft.containerPath.trim() ||
-                (servicesData.services.length > 0 && !draft.serviceId)
+                (servicesData.services.length > 0 && !selectedServiceId)
               }
               className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >

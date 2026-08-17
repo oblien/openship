@@ -12,6 +12,7 @@ import * as sessionManager from "./session-manager";
 import {
   mountedReleaseBuildMode,
   mountedReleaseConfig,
+  mountedReleaseHealthPort,
   mountedReleaseHostRoot,
   resolveMountedReleaseRuntimeTarget,
   type MountedReleaseConfig,
@@ -44,7 +45,7 @@ function releaseMeta(dep: Pick<Deployment, "meta">): {
 
 async function activeRuntime(
   project: Project,
-): Promise<{ deployment: Deployment; containerId: string }> {
+): Promise<{ deployment: Deployment; containerId: string; healthPort: number }> {
   if (!project.activeDeploymentId) {
     throw new AppError(
       "Build the runtime once before deploying code so OpenShip can attach the release mount.",
@@ -56,7 +57,7 @@ async function activeRuntime(
   if (!deployment)
     throw new AppError("The active runtime deployment is missing.", 409, RELEASE_ERROR);
   const config = mountedReleaseConfig(project);
-  const services = await repos.service.listByProject(project.id).catch(() => []);
+  const services = await repos.service.listByProject(project.id);
   const target = resolveMountedReleaseRuntimeTarget(config ?? {}, services);
   if (!target.ok) {
     throw new AppError(
@@ -89,7 +90,11 @@ async function activeRuntime(
   if (!containerId) {
     throw new AppError("The active runtime container could not be resolved.", 409, RELEASE_ERROR);
   }
-  return { deployment, containerId };
+  return {
+    deployment,
+    containerId,
+    healthPort: mountedReleaseHealthPort(target, project.port ?? 3000),
+  };
 }
 
 function dockerExec(containerId: string, workdir: string | null, command: string): string {
@@ -361,7 +366,7 @@ async function runMountedRelease(
     activated = true;
     log(dep.id, "Activated release; reloading the application");
     await runReload(executor, runtime.containerId, config);
-    await checkHealth(executor, runtime.containerId, config, project.port ?? 3000);
+    await checkHealth(executor, runtime.containerId, config, runtime.healthPort);
 
     const version =
       (await repos.deployment.findReadyVersionByCommit(project.id, resolvedSha)) ??

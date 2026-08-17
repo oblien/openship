@@ -1451,7 +1451,7 @@ export async function updateProject(
       update.mountedRelease = null;
     } else {
       const release = data.mountedRelease;
-      const services = await repos.service.listByProject(projectId).catch(() => []);
+      const services = await repos.service.listByProject(projectId);
       const target = mountedReleaseTargetService(release, services);
       if (services.length > 0 && !target) {
         throw new ValidationError(

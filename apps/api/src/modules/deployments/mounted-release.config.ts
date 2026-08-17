@@ -1,12 +1,10 @@
 import type { Project } from "@repo/db";
-import type { DeployableService } from "../../lib/deployable-service";
+import { resolveServicePort, type DeployableService } from "../../lib/deployable-service";
 
 export interface MountedReleaseConfig {
   enabled: boolean;
   buildMode?: "prebuilt" | "server";
-  /** Persistent `service` row id. Preferred target for mount / reload / health. */
   serviceId?: string;
-  /** Display name, and the only key on pre-serviceId rows. */
   serviceName?: string;
   sourcePath?: string;
   containerPath: string;
@@ -26,22 +24,22 @@ export type MountedReleaseServiceRef = {
   id?: string;
   name: string;
   enabled?: boolean;
+  exposedPort?: string | null;
+  ports?: string[] | null;
 };
 
-/** True when this compose row is the configured mount target. */
+/** Id wins when both sides have one; name only for legacy config or id-less snapshots. */
 export function matchesMountedReleaseService(
   config: Pick<MountedReleaseConfig, "serviceId" | "serviceName">,
   service: MountedReleaseServiceRef,
 ): boolean {
   if (config.serviceId) {
     if (service.id) return service.id === config.serviceId;
-    // Raw compose-parse snapshots have no row id yet — name is the only key.
     return Boolean(config.serviceName && service.name === config.serviceName);
   }
   return Boolean(config.serviceName && service.name === config.serviceName);
 }
 
-/** Resolve the live service row a mounted release should target. */
 export function mountedReleaseTargetService<T extends MountedReleaseServiceRef>(
   config: Pick<MountedReleaseConfig, "serviceId" | "serviceName">,
   services: T[],
@@ -55,10 +53,7 @@ export function mountedReleaseTargetService<T extends MountedReleaseServiceRef>(
   return undefined;
 }
 
-/**
- * Reload / health must hit this service's container — never the compose
- * primary. No service rows means a single-app project (primary is correct).
- */
+/** Empty list = single-app (primary). Otherwise require an enabled target row. */
 export function resolveMountedReleaseRuntimeTarget<T extends MountedReleaseServiceRef>(
   config: Pick<MountedReleaseConfig, "serviceId" | "serviceName">,
   services: T[],
@@ -71,6 +66,16 @@ export function resolveMountedReleaseRuntimeTarget<T extends MountedReleaseServi
   if (!service) return { ok: false, reason: "missing" };
   if (service.enabled === false) return { ok: false, reason: "disabled" };
   return { ok: true, mode: "service", service };
+}
+
+export function mountedReleaseHealthPort(
+  target:
+    | { mode: "primary" }
+    | { mode: "service"; service: Pick<MountedReleaseServiceRef, "exposedPort" | "ports"> },
+  fallbackPort: number,
+): number {
+  if (target.mode !== "service") return fallbackPort;
+  return resolveServicePort(target.service, fallbackPort) ?? fallbackPort;
 }
 
 export function mountedReleaseBuildMode(config: MountedReleaseConfig): "prebuilt" | "server" {
@@ -103,10 +108,7 @@ export function withMountedReleaseVolume(
   return mount && !volumes.includes(mount) ? [...volumes, mount] : volumes;
 }
 
-/** Add the stable release-root mount only to the selected compose service. A
- * missing target is valid for single-app projects, but never sprayed over
- * every service in a compose stack. Prefer serviceId; serviceName is only
- * for legacy rows and id-less parse snapshots. */
+/** Attach the release-root mount only to the selected service. */
 export function withMountedReleaseServiceVolume(
   project: Pick<Project, "id" | "mountedRelease">,
   services: DeployableService[],
