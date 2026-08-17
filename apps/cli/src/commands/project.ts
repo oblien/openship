@@ -594,8 +594,21 @@ export const projectCommand = new Command("project")
   .alias("projects")
   .description("Manage Openship projects");
 
+// ─── export-config ───────────────────────────────────────────────────────────
+// GET /api/projects/config-export — non-secret Operator snapshot (localOnly).
+const exportConfigCmd = new Command("export-config")
+  .description("Export non-secret project, server, route, and release-recipe config as JSON")
+  .action(
+    action(async () => {
+      requireSelfHost(await fetchCaps());
+      const data = await apiRequest<Record<string, unknown>>("/projects/config-export");
+      printJson(data);
+    }),
+  );
+
 projectCommand.addCommand(listCmd);
 projectCommand.addCommand(getCmd);
+projectCommand.addCommand(exportConfigCmd);
 projectCommand.addCommand(createCmd);
 projectCommand.addCommand(deleteCmd);
 projectCommand.addCommand(envCmd);

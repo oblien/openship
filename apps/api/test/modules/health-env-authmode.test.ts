@@ -105,4 +105,16 @@ describe("GET /health/env authMode", () => {
     expect(body.migrationInProgress).toBe(false);
     expect(body.migrationTargetUrl).toBeNull();
   });
+
+  it("reports operator edition with SaaS features off when CLOUD_MODE is false", async () => {
+    const { body } = await getEnv();
+    expect(body.edition).toBe("operator");
+    expect(body.features).toEqual({
+      billing: false,
+      cloudConnect: false,
+      publicSignup: false,
+      hostedGithubApp: false,
+      cloudDeploy: false,
+    });
+  });
 });

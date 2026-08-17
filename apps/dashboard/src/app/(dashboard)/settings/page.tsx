@@ -68,7 +68,7 @@ export default function SettingsPage() {
 }
 
 function SettingsPageInner() {
-  const { selfHosted, deployMode, productView } = usePlatform();
+  const { selfHosted, deployMode, features, productView } = usePlatform();
   const { refresh } = useCloud();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -169,7 +169,7 @@ function SettingsPageInner() {
 
           {activeTab === "credentials" && <Credentials />}
 
-          {activeTab === "cloud" && selfHosted && <CloudConnection />}
+          {activeTab === "cloud" && features.cloudConnect && <CloudConnection />}
 
           {/* Infrastructure — the servers this install runs: edge/mail container
               versions across the fleet + scan + auto-update toggle, and the

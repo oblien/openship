@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
-import type { RoutingConfig, RouteRuleSpec, ProxySettings, OpenshipReadiness, WorkloadType } from "@repo/core";
+import type { ProjectConfigExport, RoutingConfig, RouteRuleSpec, ProxySettings, OpenshipReadiness, WorkloadType } from "@repo/core";
 import { endpoints } from "./endpoints";
 
 /* ------------------------------------------------------------------ */
@@ -235,6 +235,8 @@ export const projectsApi = {
     api.get<{ success: boolean; projects: any[]; numbers: Record<string, number> }>(
       endpoints.projects.home,
     ),
+
+  exportConfig: () => api.get<ProjectConfigExport>(endpoints.projects.configExport),
 
   /** Create or update a project (mandatory before build access) */
   ensure: (body: {

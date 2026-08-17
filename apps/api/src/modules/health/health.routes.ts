@@ -3,6 +3,7 @@
  */
 import { Hono } from "hono";
 import { hostname, userInfo } from "node:os";
+import { resolveEditionState } from "@repo/core";
 import { cloudRuntimeTarget, env } from "../../config/env";
 import { rateLimiterFor } from "../../middleware/rate-limiter";
 import { APP_VERSION } from "../../lib/app-version";
@@ -101,8 +102,12 @@ healthRoutes.get("/env", rateLimiterFor("default-anon"), async (c) => {
     // settings table may be unavailable mid-migration; defaults are safe.
   }
 
+  const { edition, features } = resolveEditionState({ cloudMode: env.CLOUD_MODE === true });
+
   return c.json({
     selfHosted: !env.CLOUD_MODE,
+    edition,
+    features,
     deployMode: env.DEPLOY_MODE,
     // Server-host ("VPS") mode: OpenShip is installed ON a server (docker/bare
     // self-host, not the desktop app, not cloud SaaS). In this mode the host is

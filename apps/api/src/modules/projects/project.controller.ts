@@ -31,6 +31,7 @@ import type { RequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 import { audit, auditContextFrom } from "../../lib/audit";
 import * as projectService from "./project.service";
+import { exportProjectConfig as buildProjectConfigExport } from "./project-config-export.service";
 import * as projectTeardown from "./project-teardown";
 import { getRouteStrategy } from "../settings/settings.service";
 import { checkProjectPorts } from "./port-check.service";
@@ -351,6 +352,13 @@ export async function getHome(c: Context) {
     otherOrgs,
     ...(cloudPartial ? { cloudPartial: true } : {}),
   });
+}
+
+/** GET /api/projects/config-export — non-secret Operator config snapshot. */
+export async function exportConfig(c: Context) {
+  const ctx = getRequestContext(c);
+  const data = await buildProjectConfigExport(ctx.organizationId);
+  return c.json(data);
 }
 
 export async function list(c: Context) {

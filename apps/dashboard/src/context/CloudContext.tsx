@@ -98,8 +98,8 @@ const FEATURES = [
 ];
 
 export function CloudProvider({ children }: { children: ReactNode }) {
-  const { selfHosted, deployMode, localOnly, cloudApiUrl } = usePlatform();
-  const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
+  const { selfHosted, deployMode, features, localOnly, cloudApiUrl } = usePlatform();
+  const canConnectCloud = canUseCloudConnection({ selfHosted, features });
   const hasNativeCloudAccess = !selfHosted && deployMode === "cloud";
   // GitHubProvider is an ancestor of CloudProvider (see providers.tsx),
   // so this consume is always safe. We use it to re-resolve GitHub state

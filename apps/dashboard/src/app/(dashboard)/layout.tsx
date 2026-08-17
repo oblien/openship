@@ -154,6 +154,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       initialUser={session.user}
       selfHosted={deploymentInfo.selfHosted}
       deployMode={deploymentInfo.deployMode}
+      edition={deploymentInfo.edition}
+      features={deploymentInfo.features}
       isServerHost={deploymentInfo.isServerHost}
       hostControlEnabled={deploymentInfo.hostControlEnabled}
       authMode={deploymentInfo.authMode}

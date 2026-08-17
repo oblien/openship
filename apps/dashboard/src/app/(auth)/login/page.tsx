@@ -47,7 +47,7 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
-  const { authMode, cloudAuthUrl, selfHosted } = useAuthContext();
+  const { authMode, cloudAuthUrl, features } = useAuthContext();
 
   const isDesktop = typeof window !== "undefined" && !!window.desktop?.isDesktop;
   const handleBack = isDesktop ? () => { void window.desktop?.reset?.(); } : undefined;
@@ -295,14 +295,10 @@ function LoginPageInner() {
         </Button>
       </form>
 
-      {/* OAuth only for SaaS (cloud-hosted) - hidden on self-hosted */}
-      {!selfHosted && <OAuthButtons callbackURL={postLoginUrl ?? "/"} />}
+      {/* OAuth / public sign-up are Cloud-edition surfaces. */}
+      {features.publicSignup && <OAuthButtons callbackURL={postLoginUrl ?? "/"} />}
 
-      {/* Public sign-up is a SaaS-only front door. On a self-hosted instance the
-          only account is the CLI-created admin; everyone else joins via an
-          invitation link (server also enforces invite-only signup), so there's
-          no public "create account" entry here. */}
-      {!selfHosted && (
+      {features.publicSignup && (
         <p className="mt-8 text-center text-sm text-muted-foreground">
           {t.auth.login.noAccount}{" "}
           <Link

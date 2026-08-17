@@ -25,6 +25,8 @@ export * from "./source-access";
 export * from "./edge-orphans";
 export * from "./service-status";
 export * from "./runtime-config";
+export * from "./edition";
+export * from "./project-config-export";
 export * from "./resources";
 export * from "./rollback-window";
 export * from "./secret-keys";

@@ -56,7 +56,7 @@ const ALL_TABS: readonly string[] = MAIL_TAB_KEYS;
 
 describe("getNavSections (the platform rail)", () => {
   it("is unchanged by mail mode: main + infrastructure + settings", () => {
-    const s = getNavSections(false, true);
+    const s = getNavSections(true, { billing: false });
     expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings"]);
     expect(keysOf(find(s, "main"))).toEqual([
       "home",
@@ -70,17 +70,16 @@ describe("getNavSections (the platform rail)", () => {
   });
 
   it("adds Billing on the SaaS and drops the infrastructure section there", () => {
-    const s = getNavSections(true, false);
+    const s = getNavSections(false, { billing: true });
     expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing", "audit"]);
     // Empty sections are filtered out, not rendered as a bare heading.
     expect(find(s, "infrastructure")).toBeUndefined();
   });
 
-  it("keeps Billing at the very bottom, below Servers, on a cloud-linked self-hosted box", () => {
-    // isSaaS goes true the moment a self-hosted install links a cloud account, which
-    // is the case that put Billing above Servers. The invariant is that Billing does not
-    // OUTRANK the infrastructure — every host row must precede it.
-    const s = getNavSections(true, true);
+  it("keeps Billing at the very bottom, below Servers, when billing is on a self-hosted box", () => {
+    // Billing is a feature flag, not a live Cloud-connection bit. If both
+    // infrastructure and billing are present, billing must not outrank host rows.
+    const s = getNavSections(true, { billing: true });
     const keys = s.flatMap((x) => keysOf(x));
     for (const host of ["servers", "emails", "jobs"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
@@ -95,7 +94,7 @@ describe("getNavSections (the platform rail)", () => {
   it("keeps /emails in the platform rail", () => {
     // Mail mode promotes the tabs, it doesn't move the page: an operator on the
     // full platform still reaches mail the way they always did.
-    expect(keysOf(find(getNavSections(false, true), "infrastructure"))).toContain("emails");
+    expect(keysOf(find(getNavSections(true, { billing: false }), "infrastructure"))).toContain("emails");
   });
 });
 
@@ -374,8 +373,8 @@ describe("every rail label resolves in the English dictionary", () => {
     item.labelSource === "mailTab" ? tabs[item.key] : nav[item.key];
 
   const all: NavSection[] = [
-    ...getNavSections(true, true),
-    ...getNavSections(false, false),
+    ...getNavSections(true, { billing: true }),
+    ...getNavSections(false, { billing: false }),
     ...mailAt(),
     ...mailAt({ loaded: false }),
     ...mailAt({ serverCount: 0, activeServerId: null }),

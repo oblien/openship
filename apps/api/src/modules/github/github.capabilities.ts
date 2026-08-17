@@ -22,6 +22,7 @@
  * value. Nothing secret crosses this boundary.
  */
 
+import { resolveEditionState } from "@repo/core";
 import { env } from "../../config/env";
 import type { RequestContext } from "../../lib/request-context";
 import { CHAINS, type GitHubTokenSource } from "./github.token";
@@ -87,6 +88,7 @@ export async function resolveGitHubCapabilities(
   ctx: RequestContext,
   opts: { cloudConnected: boolean },
 ): Promise<GitHubCapabilities> {
+  const { features } = resolveEditionState({ cloudMode: env.CLOUD_MODE === true });
   const platform: "saas" | "selfhosted" = env.CLOUD_MODE ? "saas" : "selfhosted";
   const desktop = env.DEPLOY_MODE === "desktop";
 
@@ -127,10 +129,13 @@ export async function resolveGitHubCapabilities(
     },
     {
       kind: "app",
-      available: chainHas(platform, "app-installation"),
-      configured: opts.cloudConnected,
+      available: features.hostedGithubApp && chainHas(platform, "app-installation"),
+      configured: features.hostedGithubApp && opts.cloudConnected,
       // Only self-hosted proxies through the cloud; on the SaaS the App is native.
-      requiresCloud: platform === "selfhosted",
+      requiresCloud: features.hostedGithubApp && platform === "selfhosted",
+      unavailableReason: features.hostedGithubApp
+        ? undefined
+        : "The hosted GitHub App is not available on Operator.",
     },
     {
       kind: "ssh-key",

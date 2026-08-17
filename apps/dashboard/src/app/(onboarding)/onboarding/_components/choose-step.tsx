@@ -27,8 +27,8 @@ const SwapIcon = () => (
 
 export function ChooseStep({ onUpdate, onNext }: StepProps) {
   const { t } = useI18n();
-  const { deployMode } = useOnboardingContext();
-  const localOnly = deployMode === "desktop";
+  const { deployMode, features } = useOnboardingContext();
+  const localOnly = deployMode === "desktop" || !features.cloudConnect;
   return (
     <div className="ob-screen ob-screen--choose">
       <div className="ob-screen-inner ob-screen-inner--wide">

@@ -73,7 +73,7 @@ const sidebarOrgClient = (authClient as unknown as {
 
 export function Sidebar() {
   const { user } = useAuth();
-  const { selfHosted, deployMode, authMode, machineName, productView } = usePlatform();
+  const { selfHosted, deployMode, features, machineName, productView } = usePlatform();
   const isDesktop = deployMode === "desktop";
 
   // The primary identity in the sidebar header is ALWAYS the local Better
@@ -101,7 +101,6 @@ export function Sidebar() {
     user?.email ||
     (isDesktop ? "Desktop" : "");
   const displayInitial = displayName?.[0] ?? displayEmail?.[0] ?? "?";
-  const isSaaS = !selfHosted;
   const mailView = productView === "mail";
   const mailScope = useMailScope();
   const navSections = mailView
@@ -112,7 +111,7 @@ export function Sidebar() {
         activeCompleted: !!mailScope.activeServer?.completed,
         selfHosted,
       })
-    : getNavSections(isSaaS, selfHosted);
+    : getNavSections(selfHosted, { billing: features.billing });
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();

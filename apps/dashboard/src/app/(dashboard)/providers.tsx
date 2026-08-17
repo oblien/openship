@@ -1,5 +1,6 @@
 "use client";
 
+import type { Edition, EditionFeatures } from "@repo/core";
 import { GitHubProvider } from "@/context/GitHubContext";
 import { CloudProvider } from "@/context/CloudContext";
 import { PlatformProvider } from "@/context/PlatformContext";
@@ -11,6 +12,8 @@ interface DashboardProvidersProps {
   children: React.ReactNode;
   selfHosted: boolean;
   deployMode: string;
+  edition?: Edition;
+  features?: EditionFeatures;
   isServerHost?: boolean;
   hostControlEnabled?: boolean;
   authMode: "cloud" | "local" | "none";
@@ -33,6 +36,8 @@ export function DashboardProviders({
   initialUser,
   selfHosted,
   deployMode,
+  edition,
+  features,
   isServerHost,
   hostControlEnabled,
   authMode,
@@ -48,6 +53,8 @@ export function DashboardProviders({
       <PlatformProvider
         selfHosted={selfHosted}
         deployMode={deployMode}
+        edition={edition}
+        features={features}
         isServerHost={isServerHost}
         hostControlEnabled={hostControlEnabled}
         authMode={authMode}

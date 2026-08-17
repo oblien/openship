@@ -13,6 +13,7 @@ export const endpoints = {
     home: "projects/home",
     item: (id: string | number) => `projects/${id}`,
     local: "projects/local",
+    configExport: "projects/config-export",
     scan: "projects/scan",
     import: "projects/import",
     info: (id: string | number) => `projects/${id}/info`,

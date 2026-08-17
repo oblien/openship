@@ -73,11 +73,11 @@ export const DASHBOARD_RUNTIME_TARGETS = {
 
 // NOTE: this table is the source of truth for WHO an instance is (identity,
 // URLs, ports) + whether it's self-hosted. It deliberately does NOT carry
-// deploy/build mode (docker | bare | cloud | desktop): that's an orthogonal
-// axis a single instance varies independently (a self-hosted box runs docker,
-// bare, or desktop), owned by the API's env (DEPLOY_MODE/CLOUD_MODE) and
-// surfaced to the dashboard via GET /health/env. Keeping a copy here only bred
-// drift (e.g. local→"docker" while DEPLOY_MODE=desktop).
+// deploy/build mode (docker | bare | cloud | desktop) or product edition
+// (operator | cloud): those are orthogonal axes owned by the API's env
+// (DEPLOY_MODE / CLOUD_MODE). Edition is CLOUD_MODE → cloud, else operator
+// (`edition.ts`) and is surfaced on GET /health/env. Keeping a copy here only
+// bred drift (e.g. local→"docker" while DEPLOY_MODE=desktop).
 
 export type DashboardRuntimeTargetId = keyof typeof DASHBOARD_RUNTIME_TARGETS;
 export type DashboardRuntimeTarget = (typeof DASHBOARD_RUNTIME_TARGETS)[DashboardRuntimeTargetId];

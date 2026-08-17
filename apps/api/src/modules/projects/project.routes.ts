@@ -55,6 +55,18 @@ const r = secureRouter(new Hono(), {
 
 /* ─── Local-only routes (hidden in cloud mode) ─────────────────────────── */
 r.get("/local", { tag: "project:list", localOnly: true }, ctrl.listLocal);
+r.get(
+  "/config-export",
+  {
+    tag: "project:list",
+    localOnly: true,
+    mcp: {
+      description:
+        "Export non-secret project, server, route, and mounted-release recipe config as JSON. No SSH keys, tokens, or env values.",
+    },
+  },
+  ctrl.exportConfig,
+);
 // Collection-scoped writes: org from request (X-Organization-Id or
 // session default); no :id in the URL — the controller resolves the
 // project from the JSON body. `collection: true` keeps the existing

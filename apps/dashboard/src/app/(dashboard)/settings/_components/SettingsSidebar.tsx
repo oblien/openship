@@ -61,11 +61,10 @@ export interface SettingsTab {
 }
 
 export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTabId } {
-  const { selfHosted, deployMode, productView } = usePlatform();
+  const { selfHosted, deployMode, features, productView } = usePlatform();
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
-  const localOnly = deployMode === "desktop";
   // `dns` is still accepted, though the DNS tab is gone: AutoDnsPanel deep-links to
   // `/settings?tab=dns` in two places (and a render test pins that string), and a value
   // missing from this list silently falls back to "general".
@@ -85,7 +84,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: KeyRound, visible: true, requiresRole: "admin" },
     { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: Terminal, visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },
-    { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: !localOnly },
+    { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: true },
     { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: Bell, visible: true },
     // Instance SMTP transport — self-hosted only (the SaaS uses its own mailer).
     // In Openship Mail it sits next to a whole rail of mail-server surfaces, where
@@ -100,7 +99,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
       visible: selfHosted,
       requiresRole: "admin",
     },
-    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted && !localOnly },
+    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: features.cloudConnect },
     // The servers this install runs — edge/mail container versions + global scan
     // + untracked edge routes. Self-hosted/desktop only (the SaaS has no
     // operator-managed infra). See settings/page.tsx.

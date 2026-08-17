@@ -1,4 +1,5 @@
-import { AppError, CLOUD_CAPABILITIES, type CloudCapability } from "@repo/core";
+import { AppError, CLOUD_CAPABILITIES, resolveEdition, type CloudCapability } from "@repo/core";
+import { env } from "../../config/env";
 import { platform } from "../controller-helpers";
 import { isCloudConnectedForOrg } from "./session";
 
@@ -49,6 +50,10 @@ export async function requireCloud(
   capability: CloudCapability,
   opts: { organizationId: string },
 ): Promise<void> {
+  // Operator has no Cloud bridge — fail closed even if a stale token exists.
+  if (resolveEdition({ cloudMode: env.CLOUD_MODE === true }) === "operator") {
+    throw new CloudRequiredError(capability);
+  }
   if (platform().target === "cloud") return; // SaaS/native — never gated
   if (await isCloudConnectedForOrg(opts.organizationId)) return;
   throw new CloudRequiredError(capability);
