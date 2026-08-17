@@ -16,6 +16,7 @@ export {
 export * as schema from "./schema";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
 export type { ServerContainerDetail } from "./schema/server-container-status";
+export type { ServerAgentState, ServerAgentPendingOp } from "./schema/servers";
 export type {
   IncomingWebhookActionType,
   IncomingWebhookActionConfig,

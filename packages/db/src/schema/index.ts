@@ -32,7 +32,7 @@ export { webhookDelivery } from "./webhook-delivery";
 export { service, serviceDeployment } from "./service";
 export { deploymentCheckRun } from "./deployment-check-run";
 export { userSettings, instanceSettings } from "./settings";
-export { servers } from "./servers";
+export { servers, type ServerAgentState, type ServerAgentPendingOp } from "./servers";
 export { serverGithubAuth, githubDeployKey } from "./server-github";
 export { serverTunnels } from "./server-tunnel";
 export { mailServers, mailInboundRule } from "./mail";

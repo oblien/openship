@@ -300,6 +300,9 @@ if (env.CLOUD_MODE) {
   const { systemRoutes } = await import("./modules/system/system.routes");
   app.route("/api/system", systemRoutes);
 
+  const { serverAgentRoutes } = await import("./modules/system/server-agent.routes");
+  app.route("/api/servers", serverAgentRoutes);
+
   /** Mail server setup - self-hosted iRedMail wizard */
   const { mailRoutes } = await import("./modules/mail/mail.routes");
   app.route("/api/mail", mailRoutes);

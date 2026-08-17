@@ -71,8 +71,14 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // Cloud manages TLS at Oblien's edge; desktop has a noop SSL provider.
     available: () => platform().target === "selfhosted",
     run: async () => {
-      const r = await renewExpiringCerts();
-      return { renewed: r.renewed, failed: r.failed, total: r.total };
+      const { dispatchToAgent, enrolledServerIds } = await import("../system/server-agent");
+      const handled = new Set<string>();
+      for (const serverId of await enrolledServerIds()) {
+        const dispatched = await dispatchToAgent(serverId, "renew_certs", {}).catch(() => null);
+        if (dispatched?.ok && !dispatched.skipped) handled.add(serverId);
+      }
+      const r = await renewExpiringCerts({ skipServerIds: handled });
+      return { renewed: r.renewed, failed: r.failed, total: r.total, viaAgent: handled.size };
     },
   },
   {
@@ -366,7 +372,19 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // Cloud workloads run on Oblien, whose runtime exposes no stability probe;
     // desktop has no always-on process to poll from.
     available: () => platform().target === "selfhosted",
-    run: async () => runHealthWatch(),
+    run: async () => {
+      const { dispatchToAgent, enrolledServerIds } = await import("../system/server-agent");
+      let viaAgent = 0;
+      for (const serverId of await enrolledServerIds()) {
+        const dispatched = await dispatchToAgent(serverId, "health_check", {}).catch(() => null);
+        if (dispatched?.ok && !dispatched.skipped) viaAgent += 1;
+      }
+      // Incident classification stays in-process. Enrolled boxes still get a
+      // signed health_check so the agent journal records the probe; the sweep
+      // remains the fallback (and the only path) when no agent is enrolled.
+      const summary = await runHealthWatch();
+      return { ...summary, viaAgent };
+    },
   },
   {
     key: "incidents:prune",

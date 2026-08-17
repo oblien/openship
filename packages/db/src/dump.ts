@@ -515,6 +515,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "servers", column: "sshPassword" },
   { table: "servers", column: "sshPrivateKey" },
   { table: "servers", column: "sshKeyPassphrase" },
+  { table: "servers", column: "agentSecret" },
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },

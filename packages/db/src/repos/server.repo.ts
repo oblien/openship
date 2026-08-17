@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { servers } from "../schema";
 
@@ -129,6 +129,24 @@ export function createServerRepo(db: Database) {
     /** Delete a server by ID */
     async delete(id: string): Promise<void> {
       await db.delete(servers).where(eq(servers.id, id));
+    },
+
+    /** Servers that currently have an enrolled agent (kid present). */
+    async listEnrolled(): Promise<Server[]> {
+      return db.query.servers.findMany({
+        where: isNotNull(servers.agentSecret),
+        orderBy: (s, { asc }) => [asc(s.createdAt)],
+      });
+    },
+
+    /** Lookup by the HMAC key id stored in `agent.keyId`. */
+    async findByAgentKeyId(keyId: string): Promise<Server | undefined> {
+      const rows = await db
+        .select()
+        .from(servers)
+        .where(sql`${servers.agent}->>'keyId' = ${keyId}`)
+        .limit(1);
+      return rows[0];
     },
   };
 }
