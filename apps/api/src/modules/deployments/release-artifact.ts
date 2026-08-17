@@ -42,23 +42,33 @@ export function isMountedReleaseRow(dep: Pick<Deployment, "meta">): boolean {
   return meta.deploymentLane === "release" || meta.artifactKind === MOUNTED_TREE_KIND;
 }
 
-/** Host path of this code-release tree, or null. Never a Docker image. */
+export function isSingleReleaseTree(path: string, deploymentId?: string): boolean {
+  if (!isFilesystemArtifactRef(path) || path.includes("..")) return false;
+  const match = path.replace(/\/+$/, "").match(
+    /^\/var\/lib\/openship\/mounted-releases\/[^/]+\/releases\/([^/]+)$/,
+  );
+  if (!match) return false;
+  return !deploymentId || match[1] === deploymentId;
+}
+
+export function isProtectedMountedReleaseFilesystem(path: string): boolean {
+  if (!isFilesystemArtifactRef(path) || path.includes("..")) return false;
+  const hostRoot = path.match(/^(\/var\/lib\/openship\/mounted-releases\/[^/]+)/)?.[1];
+  if (!hostRoot) return false;
+  return isProtectedMountedReleasePath(hostRoot, path);
+}
+
 export function mountedReleaseTreeRef(
-  dep: Pick<Deployment, "imageRef" | "meta">,
+  dep: Pick<Deployment, "id" | "imageRef" | "meta">,
 ): string | null {
   const meta = (dep.meta ?? {}) as MountedReleaseMeta;
-  const candidates = [
-    meta.mountedRelease?.releaseDir,
-    meta.mountedReleaseRoot,
-    dep.imageRef,
-  ];
+  const candidates = [meta.mountedRelease?.releaseDir, meta.mountedReleaseRoot, dep.imageRef];
   for (const value of candidates) {
-    if (isFilesystemArtifactRef(value)) return value!;
+    if (value && isSingleReleaseTree(value, dep.id)) return value;
   }
   return null;
 }
 
-/** Docker image GC must never see filesystem paths or release-lane rows. */
 export function dockerImageGcRef(
   dep: Pick<Deployment, "imageRef" | "meta">,
   ref: string | null | undefined = dep.imageRef,
@@ -123,18 +133,17 @@ export function withSnapshotCommit(
   return { ...contract, commitSha };
 }
 
-/** `chmod -R a-w` on this tree only — never the project root (that would freeze shared/). */
 export function markReleaseTreeReadOnlyCommand(releaseDir: string): string {
-  if (!isFilesystemArtifactRef(releaseDir) || releaseDir.includes("..")) {
-    throw new Error("Release tree path is not a host directory.");
+  if (!isSingleReleaseTree(releaseDir)) {
+    throw new Error("Release tree path is not a single release directory.");
   }
   return `chmod -R a-w ${shellQuote(releaseDir)}`;
 }
 
 /** Make a previously read-only tree deletable, then remove it. */
 export function removeReleaseTreeCommand(path: string): string {
-  if (!isFilesystemArtifactRef(path) || path.includes("..")) {
-    throw new Error("Release path is not a host directory.");
+  if (!isFilesystemArtifactRef(path) || path.includes("..") || isProtectedMountedReleaseFilesystem(path)) {
+    throw new Error("Release path is not a deletable release tree.");
   }
   return `chmod -R u+w ${shellQuote(path)} 2>/dev/null || true; rm -rf ${shellQuote(path)}`;
 }
@@ -154,10 +163,13 @@ const PROTECTED_ROOT_NAMES = new Set(["shared", "current", "source.git", "builde
 
 export function isProtectedMountedReleasePath(hostRoot: string, path: string): boolean {
   const root = hostRoot.replace(/\/+$/, "");
-  if (path === root || path === `${root}/` || path === `${root}/current`) return true;
-  const rel = path.startsWith(`${root}/`) ? path.slice(root.length + 1) : "";
-  const top = rel.split("/")[0] ?? "";
-  return PROTECTED_ROOT_NAMES.has(top) && top !== "releases";
+  const normalized = path.replace(/\/+$/, "");
+  if (normalized === root) return true;
+  if (!normalized.startsWith(`${root}/`)) return false;
+  const rel = normalized.slice(root.length + 1);
+  const [top, ...rest] = rel.split("/");
+  if (top === "releases") return rest.length === 0;
+  return PROTECTED_ROOT_NAMES.has(top ?? "");
 }
 
 /**
@@ -210,7 +222,6 @@ export function retainedMountedReleaseIds(opts: {
   return keep;
 }
 
-/** Image cleanup must destroy a `/` ref as a directory, never `docker rmi`. */
 export function cleanupUsesRemoveImage(type: "image" | "artifact" | string, ref: string): boolean {
   if (type !== "image") return false;
   return !isFilesystemArtifactRef(ref);

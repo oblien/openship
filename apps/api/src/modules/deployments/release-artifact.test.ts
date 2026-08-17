@@ -7,7 +7,9 @@ import {
   freezeMountedReleaseContract,
   isFilesystemArtifactRef,
   isMountedReleaseRow,
+  isProtectedMountedReleaseFilesystem,
   isProtectedMountedReleasePath,
+  isSingleReleaseTree,
   markReleaseTreeReadOnlyCommand,
   mountedReleaseTreeRef,
   readMountedReleaseSnapshot,
@@ -73,6 +75,28 @@ describe("release filesystem typing", () => {
     });
     expect(isMountedReleaseRow(dep)).toBe(true);
     expect(mountedReleaseTreeRef(dep)).toBe(releaseDir);
+  });
+
+  it("never treats the project host root as this row's tree", () => {
+    const dep = asDep({
+      id: "dep_new",
+      imageRef: null,
+      meta: {
+        deploymentLane: "release",
+        artifactKind: "mounted-tree",
+        mountedReleaseRoot: hostRoot,
+      },
+    });
+    expect(isSingleReleaseTree(hostRoot)).toBe(false);
+    expect(isSingleReleaseTree(releaseDir, "dep_new")).toBe(true);
+    expect(isProtectedMountedReleaseFilesystem(hostRoot)).toBe(true);
+    expect(isProtectedMountedReleaseFilesystem(`${hostRoot}/shared`)).toBe(true);
+    expect(isProtectedMountedReleaseFilesystem(`${hostRoot}/current`)).toBe(true);
+    expect(isProtectedMountedReleaseFilesystem(`${hostRoot}/releases`)).toBe(true);
+    expect(isProtectedMountedReleaseFilesystem(releaseDir)).toBe(false);
+    expect(mountedReleaseTreeRef(dep)).toBeNull();
+    expect(mountedReleaseTreeRef(asDep({ id: "dep_new", imageRef: hostRoot, meta: {} }))).toBeNull();
+    expect(() => markReleaseTreeReadOnlyCommand(hostRoot)).toThrow();
   });
 });
 
@@ -176,5 +200,7 @@ describe("periodic host sweep", () => {
     expect(classifyMountedReleaseHostPath(hostRoot, `${hostRoot}/shared`, keep)).toBe("keep");
     expect(classifyMountedReleaseHostPath(hostRoot, `${hostRoot}/builder-cache`, keep)).toBe("keep");
     expect(classifyMountedReleaseHostPath(hostRoot, `${hostRoot}/current`, keep)).toBe("keep");
+    expect(classifyMountedReleaseHostPath(hostRoot, hostRoot, keep)).toBe("keep");
+    expect(classifyMountedReleaseHostPath(hostRoot, `${hostRoot}/releases`, keep)).toBe("keep");
   });
 });

@@ -483,7 +483,6 @@ export async function triggerMountedRelease(
     ...buildConfigSnapshot(project),
     deploymentLane: "release" as const,
     artifactKind: "mounted-tree" as const,
-    mountedReleaseRoot: hostRoot,
     runtimeDeploymentId: runtime.deployment.id,
   };
   const dep = await createQueuedDeployment({

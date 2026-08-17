@@ -6,19 +6,18 @@ import { mountedReleaseConfig, mountedReleaseHostRoot } from "./mounted-release.
 import {
   classifyMountedReleaseHostPath,
   isFilesystemArtifactRef,
-  isMountedReleaseRow,
+  isProtectedMountedReleaseFilesystem,
   releaseBuilderName,
   removeReleaseTreeCommand,
   retainedMountedReleaseIds,
 } from "./release-artifact";
-
-const IN_FLIGHT = new Set(["queued", "building", "deploying"]);
 
 export async function removeHostPath(
   executor: Pick<CommandExecutor, "exec" | "rm">,
   path: string,
 ): Promise<void> {
   if (!isFilesystemArtifactRef(path) || path.includes("..")) return;
+  if (isProtectedMountedReleaseFilesystem(path)) return;
   await executor.exec(removeReleaseTreeCommand(path)).catch(() => {});
 }
 
@@ -32,18 +31,10 @@ function lines(output: string): string[] {
 async function keepReleaseIdsFor(project: Project): Promise<{
   keep: Set<string>;
   inFlightIds: string[];
-  ownedIds: string[];
 }> {
-  const { rows } = await repos.deployment.listByProject(project.id, { perPage: 1000 });
-  const owned = rows.filter((row) => isMountedReleaseRow(row));
-  const ready = owned
-    .filter((row) => row.status === "ready")
-    .sort((a, b) => {
-      const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      return bt - at;
-    });
-  const inFlightIds = owned.filter((row) => IN_FLIGHT.has(row.status)).map((row) => row.id);
+  const ready = await repos.deployment.listReadyOrderedDesc(project.id);
+  const inFlight = await repos.deployment.findInFlightByProject(project.id);
+  const inFlightIds = inFlight ? [inFlight.id] : [];
   const retain = mountedReleaseConfig(project)?.retain ?? 5;
   return {
     keep: retainedMountedReleaseIds({
@@ -53,7 +44,6 @@ async function keepReleaseIdsFor(project: Project): Promise<{
       retain,
     }),
     inFlightIds,
-    ownedIds: owned.map((row) => row.id),
   };
 }
 
@@ -63,7 +53,7 @@ export async function sweepMountedReleaseHost(
   project: Project,
 ): Promise<{ removed: string[] }> {
   const hostRoot = mountedReleaseHostRoot(project.id);
-  const { keep, inFlightIds, ownedIds } = await keepReleaseIdsFor(project);
+  const { keep, inFlightIds } = await keepReleaseIdsFor(project);
   const removed: string[] = [];
 
   const listed = lines(
@@ -81,7 +71,6 @@ export async function sweepMountedReleaseHost(
     removed.push(path);
   }
 
-  const ownedBuilders = new Set(ownedIds.map((id) => releaseBuilderName(id)));
   const protectBuilders = new Set(inFlightIds.map((id) => releaseBuilderName(id)));
   const builderNames = lines(
     await executor
@@ -89,7 +78,9 @@ export async function sweepMountedReleaseHost(
       .catch(() => ""),
   );
   for (const name of builderNames) {
-    if (!ownedBuilders.has(name) || protectBuilders.has(name)) continue;
+    if (!name.startsWith("openship-release-") || protectBuilders.has(name)) continue;
+    const row = await repos.deployment.findById(name.slice("openship-release-".length)).catch(() => undefined);
+    if (!row || row.projectId !== project.id) continue;
     await executor.exec(`docker rm -f ${shellQuote(name)}`).catch(() => {});
   }
 

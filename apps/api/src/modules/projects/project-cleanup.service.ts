@@ -32,7 +32,10 @@ import {
   cleanupUsesRemoveImage,
   isFilesystemArtifactRef,
   isMountedReleaseRow,
+  isProtectedMountedReleaseFilesystem,
+  isSingleReleaseTree,
   mountedReleaseTreeRef,
+  releaseDirFor,
 } from "../deployments/release-artifact";
 
 /** Identity keys a DELETE may act on: each one proves the container is this
@@ -763,10 +766,17 @@ export async function collectDeploymentManifest(
     });
   }
 
-  // Images and release trees. A `/` ref is a host directory — never `docker rmi`.
   const seenImages = new Set<string>();
   const pushImageOrTree = (ref: string | null | undefined, label: string) => {
     if (!ref || seenImages.has(ref)) return;
+    if (isFilesystemArtifactRef(ref) && isProtectedMountedReleaseFilesystem(ref)) return;
+    if (
+      isFilesystemArtifactRef(ref) &&
+      ref.includes("/mounted-releases/") &&
+      !isSingleReleaseTree(ref, dep.id)
+    ) {
+      return;
+    }
     seenImages.add(ref);
     if (isFilesystemArtifactRef(ref)) {
       if (skip("container", ref)) return;
@@ -781,7 +791,9 @@ export async function collectDeploymentManifest(
   for (const sd of serviceRows) {
     pushImageOrTree(sd.imageRef, `service image ${(sd.imageRef ?? "").slice(0, 24)}`);
   }
-  const tree = mountedReleaseTreeRef(dep);
+  const tree =
+    mountedReleaseTreeRef(dep) ??
+    (isMountedReleaseRow(dep) ? releaseDirFor(dep.projectId, dep.id) : null);
   if (tree) pushImageOrTree(tree, `release tree ${tree.slice(0, 40)}`);
 
   return { projectId: dep.projectId, organizationId: dep.organizationId, resources };
