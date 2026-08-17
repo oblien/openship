@@ -139,6 +139,7 @@ export async function planRelease(c: Context) {
     changedPaths: body.changedPaths === undefined ? null : body.changedPaths,
     mountedReleaseEnabled: Boolean(mountedReleaseConfig(project)),
     services: services.map((s) => ({ id: s.id, name: s.name, rootDirectory: s.rootDirectory })),
+    preset: project.mountedRelease?.preset,
     routedServiceIds: body.serviceIds,
     forceAll: body.forceAll,
     refreshRequested: body.refresh,

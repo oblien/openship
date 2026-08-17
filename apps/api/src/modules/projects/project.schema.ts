@@ -328,7 +328,20 @@ const ReleaseSourceSchema = Type.Object({
  * are derived by OpenShip; operators only describe the container contract. */
 const MountedReleaseSchema = Type.Object({
   enabled: Type.Boolean(),
-  buildMode: Type.Optional(Type.Union([Type.Literal("prebuilt"), Type.Literal("server")])),
+  buildMode: Type.Optional(
+    Type.Union([Type.Literal("prebuilt"), Type.Literal("server"), Type.Literal("upload")]),
+  ),
+  runtimeInstall: Type.Optional(
+    Type.Union([Type.Literal("image"), Type.Literal("dockerfile"), Type.Literal("compose")]),
+  ),
+  preset: Type.Optional(
+    Type.Union([
+      Type.Literal("laravel"),
+      Type.Literal("next-static"),
+      Type.Literal("node"),
+      Type.Literal("compose"),
+    ]),
+  ),
   serviceId: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   serviceName: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   sourcePath: Type.Optional(Type.String({ maxLength: 300, pattern: NO_TRAVERSAL_PATTERN })),
@@ -351,6 +364,8 @@ const MountedReleaseSchema = Type.Object({
   healthPath: Type.Optional(Type.String({ minLength: 1, maxLength: 500, pattern: "^/" })),
   healthPort: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
   retain: Type.Optional(Type.Number({ minimum: 2, maximum: 20 })),
+  uid: Type.Optional(Type.Number({ minimum: 0, maximum: 65535 })),
+  gid: Type.Optional(Type.Number({ minimum: 0, maximum: 65535 })),
 });
 
 export const CreateProjectBody = Type.Object({

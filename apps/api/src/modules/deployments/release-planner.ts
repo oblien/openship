@@ -6,6 +6,8 @@
  * mounted code releases only run for deploy_code while opted in.
  */
 
+import { prefixesFromPreset } from "@repo/core";
+
 export type ReleaseAction = "skip" | "deploy_code" | "refresh_config" | "rebuild_runtime";
 
 export type ReleaseTrigger = "skip" | "mounted_release" | "runtime_pipeline";
@@ -35,6 +37,8 @@ export interface PlanReleaseInput {
   services?: PlannerService[];
   /** Override default service path prefixes (`apps/staff`, `apps/public`, `apps/mail`). */
   servicePathPrefixes?: ServicePathPrefix[];
+  /** Recipe preset — its declared prefixes win over the AE defaults. */
+  preset?: string | null;
   /** Existing webhook/smart-route targets — composed with prefix matches. */
   routedServiceIds?: string[];
   forceAll?: boolean;
@@ -66,7 +70,8 @@ export function selectReleaseTrigger(
 }
 
 export function planRelease(input: PlanReleaseInput): ReleasePlan {
-  const prefixes = input.servicePathPrefixes ?? DEFAULT_SERVICE_PATH_PREFIXES;
+  const prefixes =
+    input.servicePathPrefixes ?? prefixesFromPreset(input.preset) ?? DEFAULT_SERVICE_PATH_PREFIXES;
   const services = input.services ?? [];
   const bound = prefixes.filter((spec) => services.some((s) => serviceMatchesPrefix(s, spec)));
 
