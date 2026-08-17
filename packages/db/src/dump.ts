@@ -497,7 +497,6 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "user_settings", column: "cloneTokenEncrypted" },
   { table: "project", column: "cloneTokenEncrypted" },
   { table: "project", column: "webhookSecret" },
-  { table: "cloud_webhook_binding", column: "webhookSecret" },
   { table: "webhook_source", column: "secret" },
   { table: "incoming_webhook", column: "tokenEncrypted" },
   { table: "incoming_webhook", column: "hmacSecretEncrypted" },
