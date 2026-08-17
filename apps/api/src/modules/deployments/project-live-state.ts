@@ -6,6 +6,7 @@ import {
   mountedReleaseBuildMode,
   mountedReleaseConfig,
 } from "./mounted-release.config";
+import { publicHttpsFromMeta, type PublicHttpsResult } from "./public-https-health";
 
 export type ProjectLiveRuntime = {
   deploymentId: string | null;
@@ -27,6 +28,7 @@ export type ProjectLiveState = {
   /** Null when mounted releases are off — this project is runtime-only. */
   code: ProjectLiveCode | null;
   server: { id: string; name: string } | null;
+  public: PublicHttpsResult;
 };
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -111,5 +113,6 @@ export async function readProjectLiveState(project: Project): Promise<ProjectLiv
     server: server
       ? { id: server.id || serverId!, name: serverLabel({ ...server, id: server.id || serverId! }) }
       : null,
+    public: publicHttpsFromMeta(codeDep?.meta),
   };
 }

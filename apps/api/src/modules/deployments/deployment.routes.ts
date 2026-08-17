@@ -64,7 +64,10 @@ r.post(
     tag: "deployment:write",
     collection: true,
     collectionProject: true,
-    body: Type.Object({ projectId: Type.String() }),
+    body: Type.Object({
+      projectId: Type.String(),
+      commitSha: Type.Optional(Type.String()),
+    }),
     mcp: { description: "Deploy Git source through a project's mounted code lane without rebuilding its runtime image." },
   },
   ctrl.mountedRelease,

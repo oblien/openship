@@ -209,11 +209,26 @@ export const deployApi = {
   get: (id: string) => api.get<{ data: any }>(`deployments/${id}`),
 
   /** Fast lane: update mounted code and reload the existing runtime. */
-  mountedRelease: (projectId: string) =>
+  mountedRelease: (projectId: string, opts?: { commitSha?: string }) =>
     api.post<{ data: { deployment_id: string; deployment: any } }>(
       endpoints.deploy.mountedRelease,
-      { projectId },
+      { projectId, ...opts },
     ),
+
+  planRelease: (projectId: string, body?: { changedPaths?: string[] | null; forceAll?: boolean }) =>
+    api.post<{
+      data: {
+        action: "skip" | "deploy_code" | "refresh_config" | "rebuild_runtime";
+        reason: string;
+        serviceIds?: string[];
+      };
+    }>(endpoints.deploy.plan, { projectId, ...body }),
+
+  rollbackLatest: (projectId: string, deploymentId?: string) =>
+    api.post<{ operationId: string }>(endpoints.deploy.rollbackLatest, {
+      projectId,
+      deploymentId,
+    }),
   /** List all deployments for the authenticated user */
   getAll: (opts?: { page?: number; perPage?: number }) =>
     api.get<any>(endpoints.deploy.list, { params: opts }),

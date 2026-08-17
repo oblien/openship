@@ -36,7 +36,7 @@ import {
 import { checkNoActiveBuild } from "./build.service";
 import { livePrimaryContainerId } from "../services/service-container";
 import { decryptEnvMap } from "../../lib/encryption";
-import { isMountedRelease } from "./mounted-release.service";
+import { isMountedRelease, retainedReleaseNeedsRepository } from "./mounted-release.service";
 
 export type {
   ProjectLiveCode,
@@ -241,7 +241,7 @@ export async function previewRestore(deploymentId: string, organizationId: strin
     const active = project?.activeReleaseDeploymentId === dep.id;
     return {
       mode: active ? "ineligible" : "release-swap",
-      needsRepository: true,
+      needsRepository: active ? false : retainedReleaseNeedsRepository(dep),
       rebuildServices: [],
       untouchedServices: [],
       ...(active ? { code: "ALREADY_ACTIVE", reason: "This code release is already active." } : {}),

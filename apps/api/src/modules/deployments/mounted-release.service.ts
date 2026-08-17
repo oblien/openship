@@ -24,12 +24,14 @@ import {
   assertReleaseNotCancelled,
   beginDeployRun,
   cancelledError,
+  claimDeployLease,
   endDeployRun,
   execAndConfirm,
   execUnlessCancelled,
   isCancelledError,
   releaseDeployLease,
   revertIfIncompleteActivation,
+  revertReleaseCurrent,
   type ReleasePhase,
 } from "./deploy-lease";
 import {
@@ -45,12 +47,18 @@ import {
   freezeMountedReleaseContract,
   isMountedReleaseRow,
   markReleaseTreeReadOnlyCommand,
+  mountedReleaseTreeRef,
   readMountedReleaseSnapshot,
   releaseBuilderName,
   releaseDirFor,
   stagedReleaseCleanupPaths,
   withSnapshotCommit,
 } from "./release-artifact";
+import {
+  publicHttpsProbeCommand,
+  resolveProjectPublicHostname,
+  type PublicHttpsResult,
+} from "./public-https-health";
 import type { ReleasePlan } from "./release-planner";
 
 const RELEASE_ERROR = "MOUNTED_RELEASE_FAILED";
@@ -232,6 +240,23 @@ async function checkHealth(
   await exec(dockerExec(containerId, null, probe), { timeout: 30_000 });
 }
 
+async function checkPublicHttps(
+  exec: HostExec,
+  projectId: string,
+  config: MountedReleaseConfig,
+): Promise<PublicHttpsResult> {
+  const hostname = await resolveProjectPublicHostname(projectId);
+  if (!hostname) return { hostname: null, https: "skipped" };
+  try {
+    await exec(publicHttpsProbeCommand(hostname, config.healthPath?.trim() || "/"), {
+      timeout: 20_000,
+    });
+    return { hostname, https: "passed" };
+  } catch {
+    return { hostname, https: "failed" };
+  }
+}
+
 async function prepareSharedPaths(
   exec: HostExec,
   hostRoot: string,
@@ -344,6 +369,7 @@ export async function runMountedRelease(
     const serverId =
       project.serverId ?? (runtime.deployment.meta as { serverId?: string } | null)?.serverId;
     executor = (await resolveServerExecutor(serverId ?? undefined, project.organizationId)).executor;
+    const host = executor;
     const repoUrl = project.gitUrl;
     if (!repoUrl)
       throw new AppError("Mounted releases require a linked Git repository.", 409, RELEASE_ERROR);
@@ -384,8 +410,8 @@ export async function runMountedRelease(
     if (credential.token && !credential.ssh && !credential.ambient) {
       tokenAuth = await materializeGitTokenAuth(
         shellGitSshWriter({
-          exec: (cmd) => executor.exec(cmd),
-          writeSecret: (path, content) => executor.writeFile(path, content),
+          exec: (cmd) => host.exec(cmd),
+          writeSecret: (path, content) => host.writeFile(path, content),
         }),
         `${hostRoot}/.git-auth`,
         credential.token,
@@ -498,6 +524,14 @@ export async function runMountedRelease(
     await runReload(exec, runtime.containerId, config);
     await assertReleaseNotCancelled(dep.id);
     await checkHealth(exec, runtime.containerId, config, runtime.healthPort);
+    const publicHttps = await checkPublicHttps(exec, project.id, config);
+    if (publicHttps.https === "failed") {
+      throw new AppError(
+        `Public HTTPS health check failed for ${publicHttps.hostname}.`,
+        502,
+        RELEASE_ERROR,
+      );
+    }
     await exec(markReleaseTreeReadOnlyCommand(releaseDir));
 
     const version =
@@ -512,6 +546,7 @@ export async function runMountedRelease(
       runtimeDeploymentId: snapshot?.runtimeDeploymentId ?? runtime.deployment.id,
       runtimeContainerId: runtime.containerId,
       releasePreviousCurrent: previous || undefined,
+      publicHttps,
     };
     const applied = await repos.deployment.updateStatus(dep.id, "ready", {
       commitSha: resolvedSha,
@@ -656,12 +691,100 @@ export async function triggerMountedRelease(
   return dep;
 }
 
+export async function retainedReleaseTreeExists(
+  executor: { exec: (command: string) => Promise<string> },
+  target: Pick<Deployment, "id" | "imageRef" | "meta">,
+): Promise<string | null> {
+  const tree = mountedReleaseTreeRef(target);
+  if (!tree) return null;
+  const exists = (
+    await executor.exec(`if [ -d ${shellQuote(tree)} ]; then echo yes; else echo no; fi`)
+  )
+    .trim()
+    .endsWith("yes");
+  return exists ? tree : null;
+}
+
+export function retainedReleaseNeedsRepository(
+  target: Pick<Deployment, "id" | "imageRef" | "meta">,
+): boolean {
+  return mountedReleaseTreeRef(target) == null;
+}
+
+async function swapToRetainedRelease(
+  project: Project,
+  target: Deployment,
+): Promise<Deployment> {
+  await checkNoActiveBuild(project.id);
+  const claimed = await claimDeployLease(project.id, target.id);
+  if (!claimed) {
+    throw new AppError("A deployment is already in progress.", 409, RELEASE_ERROR);
+  }
+  const hostRoot = mountedReleaseHostRoot(project.id);
+  const config = readMountedReleaseSnapshot(target)?.config ?? mountedReleaseConfig(project);
+  if (!config) {
+    await releaseDeployLease(project.id, target.id);
+    throw new AppError("Mounted releases are not enabled for this project.", 409, RELEASE_ERROR);
+  }
+  try {
+    const runtime = await activeRuntime(project);
+    const serverId =
+      project.serverId ?? (runtime.deployment.meta as { serverId?: string } | null)?.serverId;
+    const { executor } = await resolveServerExecutor(serverId ?? undefined, project.organizationId);
+    const exec = (command: string, opts?: { timeout?: number }) => executor.exec(command, opts);
+    const previous = (
+      await exec(`readlink ${shellQuote(`${hostRoot}/current`)} 2>/dev/null || true`)
+    ).trim();
+    await exec(
+      `ln -sfn ${shellQuote(`releases/${target.id}`)} ${shellQuote(`${hostRoot}/current.next`)} && ` +
+        `mv -Tf ${shellQuote(`${hostRoot}/current.next`)} ${shellQuote(`${hostRoot}/current`)}`,
+    );
+    try {
+      await runReload(exec, runtime.containerId, config);
+      await checkHealth(exec, runtime.containerId, config, runtime.healthPort);
+      const publicHttps = await checkPublicHttps(exec, project.id, config);
+      if (publicHttps.https === "failed") {
+        throw new AppError(
+          `Public HTTPS health check failed for ${publicHttps.hostname}.`,
+          502,
+          RELEASE_ERROR,
+        );
+      }
+      await repos.project.setActiveReleaseDeployment(project.id, target.id);
+      await repos.deployment.updateStatus(target.id, "ready", {
+        meta: {
+          ...((target.meta ?? {}) as Record<string, unknown>),
+          publicHttps,
+        },
+      });
+      return (await repos.deployment.findById(target.id)) ?? target;
+    } catch (error) {
+      await revertReleaseCurrent(executor, hostRoot, previous || undefined).catch(() => {});
+      await runReload(exec, runtime.containerId, config).catch(() => {});
+      throw error;
+    }
+  } finally {
+    await releaseDeployLease(project.id, target.id);
+  }
+}
+
 export async function restoreMountedRelease(
   ctx: RequestContext,
   target: Deployment,
 ): Promise<Deployment> {
   if (!isMountedRelease(target) || !target.commitSha) {
     throw new AppError("This is not a mounted code release.", 409, RELEASE_ERROR);
+  }
+  const project = await repos.project.findById(target.projectId);
+  assertResourceInOrg(project, "Project", ctx.organizationId, target.projectId);
+  const runtime = await activeRuntime(project).catch(() => null);
+  const serverId =
+    project.serverId ?? (runtime?.deployment.meta as { serverId?: string } | null)?.serverId;
+  const resolved = await resolveServerExecutor(serverId ?? undefined, project.organizationId).catch(
+    () => null,
+  );
+  if (resolved && (await retainedReleaseTreeExists(resolved.executor, target))) {
+    return swapToRetainedRelease(project, target);
   }
   return triggerMountedRelease(ctx, target.projectId, { commitSha: target.commitSha });
 }

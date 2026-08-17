@@ -267,6 +267,13 @@ describe("mounted release lease, cancel, and recovery", () => {
     await expect(checkNoActiveBuild("p1")).rejects.toThrow(/still cleaning up/);
   });
 
+  it("does not delete current when there is no previous pointer", async () => {
+    mocks.exec.mockResolvedValue("");
+    const { revertReleaseCurrent } = await import("./deploy-lease");
+    await revertReleaseCurrent(executor() as never, "/var/lib/openship/mounted-releases/p1", undefined);
+    expect(mocks.exec).not.toHaveBeenCalled();
+  });
+
   it("does not revert current when the row is ready at revert time", async () => {
     mocks.exec.mockImplementation(async (cmd: string) => {
       if (cmd.includes("readlink")) return "releases/dep_rel\n";

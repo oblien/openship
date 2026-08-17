@@ -11,9 +11,10 @@ import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useRouter } from "next/navigation";
-import { Rocket, ChevronDown, RefreshCw, Layers, GitCommitHorizontal, Box, ArrowRight } from "lucide-react";
+import { Rocket, ChevronDown, RefreshCw, Layers } from "lucide-react";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
+import { LiveReleaseHeader } from "./LiveReleaseHeader";
 
 export const Deployments = () => {
   const {
@@ -31,23 +32,10 @@ export const Deployments = () => {
 
   const [isRedeploying, setIsRedeploying] = React.useState(false);
   const [isCodeDeploying, setIsCodeDeploying] = React.useState(false);
-  const [activeRelease, setActiveRelease] = React.useState<any>(null);
   const mountedReleaseEnabled = Boolean(projectData?.mountedRelease?.enabled);
   // The Openship control-plane self-app has no deployable source and updates
   // itself via the CLI — redeploy/self-update controls would only 403, so hide them.
   const isSelfApp = projectData?.appTemplateId === "openship";
-
-  React.useEffect(() => {
-    if (!projectData?.activeReleaseDeploymentId) {
-      setActiveRelease(null);
-      return;
-    }
-    let cancelled = false;
-    deployApi.get(projectData.activeReleaseDeploymentId)
-      .then((response) => { if (!cancelled) setActiveRelease(response.data); })
-      .catch(() => { if (!cancelled) setActiveRelease(null); });
-    return () => { cancelled = true; };
-  }, [projectData?.activeReleaseDeploymentId]);
 
   // "Project outdated" banner. Two shapes discriminated by `mode`: a commit
   // project is behind its branch HEAD; a release/dist project has a newer
@@ -404,55 +392,10 @@ export const Deployments = () => {
       )}
 
       {!isSelfApp && mountedReleaseEnabled && (
-        <section className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-          <div className="flex flex-col gap-4 border-b border-border/40 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-foreground">Release lanes</h3>
-                <span className="rounded-full bg-success-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-success">Mounted</span>
-              </div>
-              <p className="mt-1 text-[12px] text-muted-foreground">Ship application code quickly. Rebuild the runtime only when its image or container contract changes.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleCodeDeploy()}
-              disabled={isCodeDeploying || isRedeploying}
-              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isCodeDeploying ? <RefreshCw className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-              {isCodeDeploying ? "Deploying code…" : "Deploy code"}
-            </button>
-          </div>
-          <div className="grid divide-y divide-border/40 md:grid-cols-2 md:divide-x md:divide-y-0">
-            <div className="flex items-start gap-3 px-5 py-5">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><GitCommitHorizontal className="size-4" /></span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Code release</p>
-                <p className="mt-1 font-mono text-[13px] font-medium text-foreground">{activeRelease?.commitSha?.slice(0, 7) ?? "Not deployed yet"}</p>
-                <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-                  {activeRelease ? "Fetched, prepared, atomically activated, and health checked." : "Rebuild runtime once to attach the mount, then deploy code here."}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3 px-5 py-5">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground"><Box className="size-4" /></span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Runtime image</p>
-                <p className="mt-1 text-[13px] font-medium text-foreground">{projectData.activeVersion ? `v${projectData.activeVersion}` : "Current container"}</p>
-                <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Use for Dockerfile, PHP extension, base image, or mount changes.</p>
-                <button
-                  type="button"
-                  onClick={() => void runRedeploy("all")}
-                  disabled={isRedeploying || isCodeDeploying}
-                  className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
-                >
-                  {isRedeploying ? <RefreshCw className="size-3.5 animate-spin" /> : <Layers className="size-3.5" />}
-                  {isRedeploying ? "Rebuilding…" : "Rebuild runtime"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
+        <LiveReleaseHeader
+          rebuilding={isRedeploying}
+          onRebuildRuntime={() => void runRedeploy("all")}
+        />
       )}
 
       {!isSelfApp && !mountedReleaseEnabled && (

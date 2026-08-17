@@ -109,9 +109,9 @@ export async function create(c: Context) {
 
 export async function mountedRelease(c: Context) {
   const ctx = getRequestContext(c);
-  const body = await c.req.json<{ projectId: string }>();
+  const body = await c.req.json<{ projectId: string; commitSha?: string }>();
   await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
-  const dep = await triggerMountedRelease(ctx, body.projectId);
+  const dep = await triggerMountedRelease(ctx, body.projectId, { commitSha: body.commitSha });
   return c.json({ data: { deployment_id: dep.id, deployment: deploymentService.presentDeployment(dep) } }, 202);
 }
 

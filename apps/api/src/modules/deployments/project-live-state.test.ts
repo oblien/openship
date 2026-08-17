@@ -119,6 +119,7 @@ describe("resolveProjectLiveState", () => {
       activatedAt: ACTIVATED_AT.toISOString(),
     });
     expect(state.runtime.imageRef).not.toMatch(/mounted-releases/);
+    expect(state.public).toEqual({ hostname: null, https: "unchecked" });
   });
 
   it("derives server-build strategy from a prepare command when buildMode is omitted", async () => {

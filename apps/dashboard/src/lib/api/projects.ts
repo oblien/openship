@@ -525,6 +525,10 @@ export const projectsApi = {
           activatedAt: string | null;
         } | null;
         server: { id: string; name: string } | null;
+        public: {
+          hostname: string | null;
+          https: "passed" | "failed" | "skipped" | "unchecked";
+        };
       };
     }>(endpoints.projects.liveState(id)),
 
