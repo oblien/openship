@@ -60,4 +60,5 @@ export * from "./answer";
 export * from "./host-profile";
 export * from "./host-firewall";
 export * from "./host-channel";
-export * from "./agent-protocol";
+// agent-protocol stays on `@repo/core/agent-protocol` — it uses node:crypto
+// and must not enter the dashboard webpack graph.
