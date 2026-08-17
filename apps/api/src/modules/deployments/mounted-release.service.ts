@@ -1,4 +1,4 @@
-import { assembleGitClone } from "@repo/adapters";
+import { assembleGitClone, materializeGitTokenAuth, shellGitSshWriter } from "@repo/adapters";
 import { shellQuote, safeErrorMessage, AppError, compareCommitSha } from "@repo/core";
 import { repos, type Deployment, type Project } from "@repo/db";
 import type { RequestContext } from "../../lib/request-context";
@@ -297,9 +297,21 @@ async function runMountedRelease(
         `chmod 700 ${shellQuote(authDir)} && chmod 600 ${shellQuote(`${authDir}/id`)} ${shellQuote(`${authDir}/known_hosts`)}`,
       );
     }
+    let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
+    if (credential.token && !credential.ssh && !credential.ambient) {
+      tokenAuth = await materializeGitTokenAuth(
+        shellGitSshWriter({
+          exec: (cmd) => executor.exec(cmd),
+          writeSecret: (path, content) => executor.writeFile(path, content),
+        }),
+        `${hostRoot}/.git-auth`,
+        credential.token,
+      );
+    }
     const clone = assembleGitClone({
       repoUrl,
-      gitToken: credential.token,
+      gitToken: tokenAuth ? undefined : credential.token,
+      gitTokenConfigFile: tokenAuth?.configFile,
       ambient: credential.ambient,
       ssh: credential.ssh
         ? { keyFile: `${authDir}/id`, knownHostsFile: `${authDir}/known_hosts` }
@@ -314,11 +326,15 @@ async function runMountedRelease(
     const refspec = commit
       ? `+${commit}:refs/openship/${dep.id}`
       : `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
-    await executor.exec(
-      `${clone.gitEnv} git ${clone.credFlag} --git-dir=${shellQuote(`${hostRoot}/source.git`)} ` +
-        `fetch --force --prune --depth 50 ${shellQuote(clone.cloneUrl)} ${shellQuote(refspec)}`,
-      { timeout: 120_000 },
-    );
+    try {
+      await executor.exec(
+        `${clone.gitEnv} git ${clone.credFlag} --git-dir=${shellQuote(`${hostRoot}/source.git`)} ` +
+          `fetch --force --prune --depth 50 ${shellQuote(clone.cloneUrl)} ${shellQuote(refspec)}`,
+        { timeout: 120_000 },
+      );
+    } finally {
+      await tokenAuth?.cleanup();
+    }
     const resolvedSha = (
       await executor.exec(
         `git --git-dir=${shellQuote(`${hostRoot}/source.git`)} rev-parse ${shellQuote(commit ? `refs/openship/${dep.id}` : `refs/remotes/origin/${branch}`)}`,

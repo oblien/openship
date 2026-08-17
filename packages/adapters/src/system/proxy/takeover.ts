@@ -40,6 +40,9 @@ export interface EdgeTakeoverOptions {
   nginx?: EdgeProviderOptions;
   /** Extra routes to register beyond the imported sites (e.g. the control plane's own hostname). */
   extraRoutes?: Array<{ domain: string; targetUrl: string; tls: boolean }>;
+  /** Hostnames takeover must not overwrite (self-app + extraRoutes). */
+  reservedDomains?: string[];
+  onRegistered?: RegisterImportedSitesOptions["onRegistered"];
   /** Pinned edge image; the API always supplies its own (never a caller's value). */
   edgeImage?: string;
   /**
@@ -89,6 +92,24 @@ export interface RegisterImportedSitesOptions {
    * path is what lands in the route sidecar (and survives cert renewal). See #456.
    */
   staticRootOverrides?: Record<string, string>;
+  /**
+   * Hostnames the operator already owns (self-app, extraRoutes). Imported sites
+   * that collide are skipped so takeover does not overwrite management routes.
+   */
+  reservedDomains?: string[];
+  /**
+   * Called after a domain is registered (and after any cert carry/issue) so
+   * the API can persist a domain row for ssl:renew.
+   */
+  onRegistered?: (info: ImportedSiteRegistration) => void | Promise<void>;
+}
+
+export interface ImportedSiteRegistration {
+  domain: string;
+  ssl: boolean;
+  /** True when the source cert was reused (`installCert`) — not a certbot lineage. */
+  carried?: boolean;
+  cert?: { expiresAt: string; issuer: string; verified: boolean };
 }
 
 /**
@@ -107,9 +128,14 @@ export async function registerImportedSites(
   sites: ImportedSite[],
   opts: RegisterImportedSitesOptions,
 ): Promise<string[]> {
+  const reserved = new Set((opts.reservedDomains ?? []).map((d) => d.toLowerCase()));
   const registered: string[] = [];
   for (const site of sites) {
     const domains = site.serverNames.filter((d) => {
+      if (reserved.has(d.toLowerCase())) {
+        opts.warnings.push(`skipped "${d}" — reserved for the operator management route`);
+        return false;
+      }
       if (DOMAIN_RE.test(d) && d.length <= 253) return true;
       opts.warnings.push(`skipped unsupported domain "${d}" (wildcards/regex names aren't migratable)`);
       return false;
@@ -158,11 +184,19 @@ export async function registerImportedSites(
           });
         }
 
+        let cert: ImportedSiteRegistration["cert"];
+        let carried = false;
         if (site.ssl) {
           const manual = await resolveCert(executor, site, domain, opts);
           if (manual) {
+            carried = true;
             // Reuse the source's existing certificate — no ACME, no network round-trip.
-            await ssl.installCert(domain, manual);
+            const installed = await ssl.installCert(domain, manual);
+            cert = {
+              expiresAt: installed.expiresAt,
+              issuer: installed.issuer,
+              verified: installed.verified,
+            };
           } else {
             // The slow path: a fresh per-domain ACME issuance, serialized against
             // Let's Encrypt. This is the one step of a migrate that can take real
@@ -177,6 +211,7 @@ export async function registerImportedSites(
               ),
             );
             const r = await ssl.provisionCert(domain);
+            cert = { expiresAt: r.expiresAt, issuer: r.issuer, verified: r.verified };
             if (!r.verified) {
               // The source was serving HTTPS, but we couldn't carry its certificate
               // AND couldn't issue a fresh one — so the edge is now answering :443 with
@@ -198,6 +233,12 @@ export async function registerImportedSites(
 
         opts.onLog(log(`Migrated ${domain} → ${site.target.kind === "proxy" ? site.target.url : site.target.root}`));
         registered.push(domain);
+        await opts.onRegistered?.({
+          domain,
+          ssl: site.ssl,
+          carried,
+          ...(cert ? { cert } : {}),
+        });
       } catch (err) {
         opts.warnings.push(`${domain}: ${safeErrorMessage(err)}`);
       }
@@ -378,9 +419,17 @@ export async function runEdgeTakeover(
           ...providerOptions,
         });
 
+    const reservedDomains = [
+      ...new Set([
+        ...(opts.reservedDomains ?? []),
+        ...(opts.extraRoutes ?? []).map((r) => r.domain),
+      ]),
+    ];
     const registered = await registerImportedSites(nginx, nginx, executor, opts.sites, {
       onLog,
       warnings,
+      reservedDomains,
+      ...(opts.onRegistered ? { onRegistered: opts.onRegistered } : {}),
       ...(certPems ? { certPems } : {}),
       ...(opts.staticRootOverrides ? { staticRootOverrides: opts.staticRootOverrides } : {}),
     });

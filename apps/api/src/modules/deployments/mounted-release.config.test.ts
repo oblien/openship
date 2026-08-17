@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  BindMountCollisionError,
   activeCodeReleaseDeploymentId,
   mountedReleaseHealthPort,
   mountedReleaseHostRoot,
   mountedReleaseVolume,
   resolveMountedReleaseRuntimeTarget,
+  volumeMountTarget,
   withMountedReleaseServiceVolume,
   withMountedReleaseVolume,
 } from "./mounted-release.config";
@@ -141,5 +143,30 @@ describe("mounted release config", () => {
         [{ id: "svc_app", name: "app", enabled: true }],
       ),
     ).toEqual({ ok: false, reason: "missing" });
+  });
+
+  it("parses the container dest out of a compose volume spec", () => {
+    expect(volumeMountTarget("data:/data")).toBe("/data");
+    expect(volumeMountTarget("/host/app:/srv/demo:ro")).toBe("/srv/demo");
+    expect(volumeMountTarget("/host/app:/srv/demo:ro,z")).toBe("/srv/demo");
+    expect(volumeMountTarget("/host/app:/srv/demo:rw,cached")).toBe("/srv/demo");
+    expect(volumeMountTarget("/srv/demo")).toBe("/srv/demo");
+  });
+
+  it("refuses a second bind to the same container dest", () => {
+    expect(() =>
+      withMountedReleaseVolume(project as never, ["existing:/srv/demo:ro"]),
+    ).toThrow(BindMountCollisionError);
+    expect(() =>
+      withMountedReleaseVolume(project as never, ["existing:/srv/demo:ro,z"]),
+    ).toThrow(/already bound/);
+    expect(() =>
+      withMountedReleaseVolume(project as never, ["existing:/srv/demo/"]),
+    ).toThrow(/already bound/);
+  });
+
+  it("still no-ops when the generated mount is already present", () => {
+    const once = withMountedReleaseVolume(project as never, ["data:/data"]);
+    expect(withMountedReleaseVolume(project as never, once)).toEqual(once);
   });
 });

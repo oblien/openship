@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { DiscoveredService } from "./docker-reconcile";
-import { buildAdoptedServiceRows, type RepoComposeService } from "./migrate.service";
+import { buildAdoptedServiceRows, collidesWithAdoptedName, type RepoComposeService } from "./migrate.service";
 
 const repoSvc = (over: Partial<RepoComposeService> & { name: string }): RepoComposeService => ({
   ports: [],
@@ -232,5 +232,14 @@ describe("buildAdoptedServiceRows — two same-named picks stay distinct (#584 c
     });
     expect(rows[0]!.environment).toMatchObject({ WHICH: "legacy" });
     expect(renames["c-b"]).toBe("postgres");
+  });
+});
+
+describe("collidesWithAdoptedName — no placeholder + real row for the same service", () => {
+  it("refuses a repo compose name that already has an adopted row", () => {
+    const adopted = new Set(["api", "postgres"]);
+    expect(collidesWithAdoptedName("api", adopted)).toBe(true);
+    expect(collidesWithAdoptedName("API", adopted)).toBe(true);
+    expect(collidesWithAdoptedName("redis", adopted)).toBe(false);
   });
 });

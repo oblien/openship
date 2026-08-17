@@ -140,6 +140,13 @@ export async function sanitizeEdgeVhosts(
     `      rm -f "$f.osh-link"; echo "dropped-unreadable-link $f"; rm -f "$f"; continue;`,
     `    fi;`,
     `  fi;`,
+    // `_management.conf` (and any vhost that is the loopback mgmt API) has no
+    // `server_name` — the catch-all rule below would delete it and take down
+    // analytics / health / the edge HEALTHCHECK.
+    `  base=$(basename "$f");`,
+    `  if [ "$base" = "_management.conf" ] || grep -qE 'listen[[:space:]]+127\\.0\\.0\\.1:9145' "$f"; then`,
+    `    continue;`,
+    `  fi;`,
     // A real server_name is anything that isn't the `_` wildcard.
     `  if ! grep -qE '^[[:space:]]*server_name[[:space:]]+[^_;[:space:]]' "$f"; then`,
     `    echo "dropped-catchall $f"; rm -f "$f"; continue;`,

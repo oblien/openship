@@ -576,6 +576,12 @@ ${edgeVolumeYaml("      ")}
     network_mode: host
     volumes:
 ${edgeVolumeYaml("      ")}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9145/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   postgres_data:

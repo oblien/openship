@@ -51,6 +51,11 @@ vi.mock("../deliver-managed-image", () => ({
   deliverManagedImage: vi.fn(async () => ({ delivered: false })),
 }));
 
+vi.mock("../imported-domain-track", () => ({
+  reservedOperatorDomains: vi.fn(async () => []),
+  trackImportedDomain: vi.fn(async () => {}),
+}));
+
 import { ensureSelfEdgeInfra } from "./self-edge";
 
 const origPlatform = Object.getOwnPropertyDescriptor(process, "platform");

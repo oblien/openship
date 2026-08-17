@@ -43,6 +43,16 @@ import {
 type EnsureBody = Parameters<typeof ensureProject>[0];
 type ParsedComposeList = Parameters<typeof repos.service.syncFromCompose>[1];
 
+/** Adopted row names win. A repo compose service of the same name must not mint a second row. */
+export function collidesWithAdoptedName(name: string, adoptedNames: Set<string>): boolean {
+  if (adoptedNames.has(name)) return true;
+  const lower = name.toLowerCase();
+  for (const adopted of adoptedNames) {
+    if (adopted.toLowerCase() === lower) return true;
+  }
+  return false;
+}
+
 /** Openship deployment id shape — validated before trusting a server label as a PK. */
 const DEPLOYMENT_ID_RE = /^dep_[A-Za-z0-9]+$/;
 
@@ -486,7 +496,7 @@ export async function adoptServerStack(opts: {
   const newRows: ParsedComposeList = [];
   if (repoServices) {
     for (const [name, rs] of repoServices) {
-      if (adoptedNames.has(name)) continue;
+      if (collidesWithAdoptedName(name, adoptedNames)) continue;
       // Run the compose host ports through the SAME normalizer as the adopted
       // rows: strip every host binding (edge-owned 80/443 AND pinned ports) so a
       // new `web` on "80:80" doesn't collide with the edge and a `db` on "5432:5432"

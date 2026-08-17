@@ -1,5 +1,6 @@
 import type { Project } from "@repo/db";
 import { resolveServicePort, type DeployableService } from "../../lib/deployable-service";
+import { parseVolumeSpec } from "../services/volume-spec";
 
 export interface MountedReleaseConfig {
   enabled: boolean;
@@ -107,12 +108,49 @@ export function mountedReleaseVolume(
   return config ? `${mountedReleaseHostRoot(project.id)}:${config.containerPath}` : null;
 }
 
+/** Container-side dest of a compose volume spec (`src:dest[:mode]`). */
+export function volumeMountTarget(spec: string): string | null {
+  return parseVolumeSpec(spec).target;
+}
+
+export function normalizeMountPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.replace(/\/+$/, "") || "/";
+}
+
+export class BindMountCollisionError extends Error {
+  constructor(
+    public readonly containerPath: string,
+    public readonly existing: string,
+  ) {
+    super(
+      `Mounted release path ${containerPath} is already bound by ${JSON.stringify(existing)}. ` +
+        `Change containerPath or remove that mount — Docker cannot attach two binds to the same destination.`,
+    );
+    this.name = "BindMountCollisionError";
+  }
+}
+
+function destCollision(volumes: string[], dest: string): string | undefined {
+  const want = normalizeMountPath(dest);
+  return volumes.find((spec) => {
+    const target = volumeMountTarget(spec);
+    return target != null && normalizeMountPath(target) === want;
+  });
+}
+
 export function withMountedReleaseVolume(
   project: Pick<Project, "id" | "mountedRelease">,
   volumes: string[],
 ): string[] {
+  const config = mountedReleaseConfig(project);
   const mount = mountedReleaseVolume(project);
-  return mount && !volumes.includes(mount) ? [...volumes, mount] : volumes;
+  if (!config || !mount) return volumes;
+  if (volumes.includes(mount)) return volumes;
+  const colliding = destCollision(volumes, config.containerPath);
+  if (colliding) throw new BindMountCollisionError(config.containerPath, colliding);
+  return [...volumes, mount];
 }
 
 /** Attach the release-root mount only to the selected service. */
@@ -123,14 +161,12 @@ export function withMountedReleaseServiceVolume(
   const config = mountedReleaseConfig(project);
   const mount = mountedReleaseVolume(project);
   if (!config || !mount || (!config.serviceId && !config.serviceName)) return services;
-  return services.map((service) =>
-    matchesMountedReleaseService(config, service)
-      ? {
-          ...service,
-          volumes: (service.volumes ?? []).includes(mount)
-            ? (service.volumes ?? [])
-            : [...(service.volumes ?? []), mount],
-        }
-      : service,
-  );
+  return services.map((service) => {
+    if (!matchesMountedReleaseService(config, service)) return service;
+    const volumes = service.volumes ?? [];
+    if (volumes.includes(mount)) return { ...service, volumes };
+    const colliding = destCollision(volumes, config.containerPath);
+    if (colliding) throw new BindMountCollisionError(config.containerPath, colliding);
+    return { ...service, volumes: [...volumes, mount] };
+  });
 }

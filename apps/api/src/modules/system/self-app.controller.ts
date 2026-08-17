@@ -522,14 +522,26 @@ export async function edgeImportSites(c: Context) {
 
   try {
     const { registerImportedSites } = await import("@repo/adapters");
+    const { reservedOperatorDomains, trackImportedDomain } = await import("../../lib/imported-domain-track");
     const p = platform();
     if (!p.executor) return c.json({ error: "This instance has no local edge to import into" }, 400);
     const warnings: string[] = [];
+    const reservedDomains = await reservedOperatorDomains().catch(() => [] as string[]);
     const registered = await registerImportedSites(p.routing, p.ssl, p.executor, sites, {
       certPems,
       staticRootOverrides,
+      reservedDomains,
       warnings,
       onLog: (entry) => console.log(`[edge-import] ${entry.message}`),
+      onRegistered: async (info) => {
+        try {
+          await trackImportedDomain(info);
+        } catch (err) {
+          warnings.push(
+            `${info.domain}: could not enroll for certificate renewal (${safeErrorMessage(err)})`,
+          );
+        }
+      },
     });
     return c.json({ registered, warnings });
   } catch (err) {

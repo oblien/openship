@@ -75,6 +75,14 @@ import { excludeAlreadyManaged } from "./managed-containers";
 import { perService, selectDiscoveredServices } from "./select-services";
 import { isMovableBind } from "./migration-preflight";
 import { migrationRunBus } from "./migration.sse";
+import {
+  classifyContainerOpError,
+  cutoverTerminalStatus,
+  restartFailuresMessage,
+  rollbackTerminalStatus,
+  runContainerOps,
+  stopFailuresMessage,
+} from "./migration-honesty";
 
 /** Per-service volume ownership for a same-server migration.
  *  "reuse" (default) = seize the original volume in place (zero copy).
@@ -1076,9 +1084,19 @@ class MigrationOrchestratorImpl {
         //
         // The source keeps its containers, its domains, its edge and its server binding.
         // What exists at the end is two independent projects.
-        await this.restartSourceOriginals(sourceServerId, organizationId, scannedContainerIds);
-        await this.transition(id, "succeeded");
-        log(`duplicate succeeded — the original is running again on its own server`);
+        const restored = await this.restartSourceOriginals(
+          sourceServerId,
+          organizationId,
+          scannedContainerIds,
+        );
+        if (restored.failed.length) {
+          const reason = restartFailuresMessage(restored.failed);
+          log(reason);
+          await this.transition(id, "failed", { errorMessage: reason.slice(0, 4096) });
+        } else {
+          await this.transition(id, "succeeded");
+          log(`duplicate succeeded — the original is running again on its own server`);
+        }
       } else if (deployChosen.length > 0) {
         // Only the deploy set has originals to retire. A pure attach-live run
         // adopted the live containers in place, so there is nothing to cut over.
@@ -1088,13 +1106,10 @@ class MigrationOrchestratorImpl {
           await this.transition(id, "cutover");
           log(`cutover: stopping + removing the source originals`);
           const { failed } = await this.cutover(sourceServerId, organizationId, scannedContainerIds);
-          await this.transition(id, "succeeded");
-          // The migration DID succeed — the target is live — so the status stays `succeeded`.
-          // But a container still standing on the old server is something the operator has to
-          // act on (it holds its ports, and a restart policy will bring it back), so it is
-          // named in the log rather than dropped.
           const remainder = describeCutoverRemainder(failed);
-          log(remainder ? `migration succeeded, BUT ${remainder}` : `migration succeeded`);
+          const status = cutoverTerminalStatus(failed);
+          await this.transition(id, status, remainder ? { errorMessage: remainder } : undefined);
+          log(remainder ? `cutover incomplete — ${remainder}` : `migration succeeded`);
         } else {
           await this.transition(id, "awaiting_cutover");
           log(`target verified healthy — awaiting cutover confirmation`);
@@ -1170,10 +1185,10 @@ class MigrationOrchestratorImpl {
       : await createServerDockerRuntime(targetServerId, organizationId);
     try {
       // Quiesce originals for a consistent copy (and to free ports/volumes on
-      // a same-server redeploy). Best-effort — a missing container is fine.
-      for (const cid of Object.values(scannedContainerIds)) {
-        await rtA.stop(cid).catch(() => {});
-      }
+      // a same-server redeploy). Missing / already-stopped is fine; a container
+      // that is STILL running is not — copying under it is a consistency bug.
+      const stopFailed = await runContainerOps(scannedContainerIds, (cid) => rtA.stop(cid), "stop");
+      if (stopFailed.length) throw new Error(stopFailuresMessage(stopFailed));
 
       // Cross-server DEFAULT: move data DIRECTLY server-to-server (rsync +
       // docker save|ssh|load), single hop, no byte through the API host. The
@@ -2216,12 +2231,16 @@ class MigrationOrchestratorImpl {
     const rtA = await createServerDockerRuntime(sourceServerId, organizationId);
     try {
       for (const [name, cid] of Object.entries(scannedContainerIds)) {
-        // A stop failure is not itself fatal — `destroy` force-removes a running container —
-        // so only the destroy verdict decides whether this one is still there.
-        await rtA.stop(cid).catch(() => {});
+        // Stop first so a restart-policy race is less likely. Destroy is what
+        // retires the container; a stop error is only fatal if destroy also
+        // leaves it on the source.
+        await rtA.stop(cid).catch(() => {
+          /* destroy below is the verdict — a stop error is only leftover if destroy also fails */
+        });
         try {
           await rtA.destroy(cid);
         } catch (err) {
+          if (classifyContainerOpError(err, "destroy") === "benign") continue;
           failed.push({ name, containerId: cid, reason: safeErrorMessage(err) });
         }
       }
@@ -2338,6 +2357,12 @@ class MigrationOrchestratorImpl {
       if (run.mode === "project_move" && run.projectId) {
         await this.retireSourceRoutes(run.projectId, run.sourceServerId, organizationId);
       }
+      if (cutoverTerminalStatus(failed) === "failed") {
+        await this.transition(id, "failed", {
+          errorMessage: remainder ?? "cutover left source containers running",
+        });
+        return { ok: false, status: 409, error: remainder ?? "cutover left source containers running" };
+      }
     } else if (
       !kill &&
       run.sourceServerId &&
@@ -2355,11 +2380,17 @@ class MigrationOrchestratorImpl {
       // live standby until the user manually cleans it up (nothing is removed).
       // Same-server keep leaves them stopped: the target now holds the same
       // ports/volumes, so both can't run at once.
-      await this.restartSourceOriginals(
+      const restored = await this.restartSourceOriginals(
         run.sourceServerId,
         organizationId,
         (run.scannedContainerIds ?? {}) as Record<string, string>,
       );
+      if (restored.failed.length) {
+        const reason = restartFailuresMessage(restored.failed);
+        this.appendLog(id, reason);
+        await this.transition(id, "failed", { errorMessage: reason.slice(0, 4096) });
+        return { ok: false, status: 409, error: reason };
+      }
     }
     await this.transition(id, "succeeded");
     // Reported, not swallowed: the caller shows the operator that the old server still has
@@ -2547,9 +2578,15 @@ class MigrationOrchestratorImpl {
         const scanned = (run.scannedContainerIds ?? {}) as Record<string, string>;
         if (run.killOriginals && run.sourceServerId) {
           await this.transition(id, "cutover");
-          await this.cutover(run.sourceServerId, organizationId, scanned);
-          await this.transition(id, "succeeded");
-          log(`resume complete — all paths moved; cutover done`);
+          const { failed } = await this.cutover(run.sourceServerId, organizationId, scanned);
+          const remainder = describeCutoverRemainder(failed);
+          const status = cutoverTerminalStatus(failed);
+          await this.transition(id, status, remainder ? { errorMessage: remainder } : undefined);
+          log(
+            remainder
+              ? `resume cutover incomplete — ${remainder}`
+              : `resume complete — all paths moved; cutover done`,
+          );
         } else {
           await this.transition(id, "awaiting_cutover");
           log(`resume complete — all paths moved; awaiting cutover confirmation`);
@@ -2584,7 +2621,7 @@ class MigrationOrchestratorImpl {
     ctx: { sourceServerId: string; targetServerId: string; organizationId: string },
     scannedContainerIds: Record<string, string>,
     deploymentId: string | undefined,
-  ): Promise<void> {
+  ): Promise<{ failed: LeftBehindContainer[] }> {
     if (deploymentId) {
       try {
         const rtB = await createServerDockerRuntime(ctx.targetServerId, ctx.organizationId);
@@ -2600,31 +2637,38 @@ class MigrationOrchestratorImpl {
         console.warn(`[migration] target teardown failed:`, safeErrorMessage(err));
       }
     }
-    await this.restartSourceOriginals(ctx.sourceServerId, ctx.organizationId, scannedContainerIds);
+    return this.restartSourceOriginals(ctx.sourceServerId, ctx.organizationId, scannedContainerIds);
   }
 
   /**
    * Start the (quiesced) source originals back up by their scanned container ids.
    * `moveData` stops them for a consistent volume copy; this restores them.
    * Shared by the rollback/boot-recovery restore and the keep-source cutover
-   * decision. Best-effort per container; never throws.
+   * decision. Never throws — callers must inspect `failed` and must not claim
+   * `rolled_back` / success if the source is still down.
    */
   private async restartSourceOriginals(
     sourceServerId: string,
     organizationId: string,
     scannedContainerIds: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<{ failed: LeftBehindContainer[] }> {
     try {
       const rtA = await createServerDockerRuntime(sourceServerId, organizationId);
       try {
-        for (const cid of Object.values(scannedContainerIds)) {
-          await rtA.start(cid).catch(() => {});
-        }
+        return { failed: await runContainerOps(scannedContainerIds, (cid) => rtA.start(cid), "start") };
       } finally {
         await rtA.dispose().catch(() => {});
       }
     } catch (err) {
-      console.warn(`[migration] source restore failed:`, safeErrorMessage(err));
+      const reason = safeErrorMessage(err);
+      console.warn(`[migration] source restore failed:`, reason);
+      return {
+        failed: Object.entries(scannedContainerIds).map(([name, containerId]) => ({
+          name,
+          containerId,
+          reason,
+        })),
+      };
     }
   }
 
@@ -2639,7 +2683,7 @@ class MigrationOrchestratorImpl {
   ): Promise<void> {
     // Restore the user's production stack FIRST — it's the priority; the draft
     // cleanup below is secondary bookkeeping.
-    await this.teardownTargetAndRestoreSource(
+    const restored = await this.teardownTargetAndRestoreSource(
       {
         sourceServerId: servers.sourceServerId,
         targetServerId: servers.targetServerId,
@@ -2679,8 +2723,10 @@ class MigrationOrchestratorImpl {
       (m) => this.appendLog(id, m),
     );
 
-    await this.transition(id, "rolled_back", {
-      errorMessage: errorMessage.slice(0, 4096),
+    const status = rollbackTerminalStatus(restored.failed);
+    const restartNote = restored.failed.length ? `\n${restartFailuresMessage(restored.failed)}` : "";
+    await this.transition(id, status, {
+      errorMessage: `${errorMessage}${restartNote}`.slice(0, 4096),
     });
   }
 
@@ -2777,31 +2823,38 @@ class MigrationOrchestratorImpl {
       // (idempotent) cutover — destroying an already-gone container is a no-op —
       // and mark it succeeded.
       if (run.status === "cutover") {
+        let leftover: LeftBehindContainer[] = [];
         if (run.sourceServerId) {
           try {
-            await this.cutover(run.sourceServerId, run.organizationId, scanned);
+            leftover = (await this.cutover(run.sourceServerId, run.organizationId, scanned)).failed;
           } catch (err) {
             console.warn(`[migration] recovery cutover ${run.id} failed:`, safeErrorMessage(err));
+            leftover = [{ name: "cutover", containerId: run.id, reason: safeErrorMessage(err) }];
           }
         }
+        const status = cutoverTerminalStatus(leftover);
+        const remainder = describeCutoverRemainder(leftover);
         await repos.dockerMigrationRun
-          .transition(run.id, "succeeded")
+          .transition(run.id, status, remainder ? { errorMessage: remainder } : undefined)
           .catch((err) =>
             console.warn(`[migration] recovery transition ${run.id} failed:`, safeErrorMessage(err)),
           );
         continue;
       }
 
+      let restoreFailed: LeftBehindContainer[] = [];
       if (run.status !== "queued" && run.sourceServerId) {
-        await this.teardownTargetAndRestoreSource(
-          {
-            sourceServerId: run.sourceServerId,
-            targetServerId: run.targetServerId ?? run.sourceServerId,
-            organizationId: run.organizationId,
-          },
-          scanned,
-          run.deploymentId ?? undefined,
-        );
+        restoreFailed = (
+          await this.teardownTargetAndRestoreSource(
+            {
+              sourceServerId: run.sourceServerId,
+              targetServerId: run.targetServerId ?? run.sourceServerId,
+              organizationId: run.organizationId,
+            },
+            scanned,
+            run.deploymentId ?? undefined,
+          )
+        ).failed;
         // The SAME undo the live rollback performs. Recovery used to stop at the line above —
         // target torn down, source restarted — and leave the project bound to the server it had
         // just emptied, with the transferred volumes still on it. A crash is precisely when
@@ -2814,10 +2867,13 @@ class MigrationOrchestratorImpl {
           (m) => this.appendLog(run.id, m),
         );
       }
+      const recovered = rollbackTerminalStatus(restoreFailed);
+      const restartNote = restoreFailed.length ? restartFailuresMessage(restoreFailed) : "";
       await repos.dockerMigrationRun
-        .transition(run.id, "rolled_back", {
-          errorMessage:
-            "Recovered after an interruption — the original containers were restarted.",
+        .transition(run.id, recovered, {
+          errorMessage: restartNote
+            ? `Recovered after an interruption, but ${restartNote}`
+            : "Recovered after an interruption — the original containers were restarted.",
         })
         .catch((err) =>
           console.warn(`[migration] recovery transition ${run.id} failed:`, safeErrorMessage(err)),

@@ -48,9 +48,14 @@ export {
   assembleGitClone,
   injectGitToken,
   toGitHubSshUrl,
+  gitCloneArgv,
+  gitCloneShellPreview,
+  gitTokenExtraHeader,
+  httpsUrlWithoutUserinfo,
   type GitCloneAuth,
   type GitCloneInvocation,
 } from "./runtime/git-clone";
+export { materializeGitTokenAuth, shellGitSshWriter } from "./runtime/git-ssh-material";
 
 export { BUILD_STEPS } from "./types";
 
@@ -277,6 +282,7 @@ export {
   type EdgeTakeoverOptions,
   type EdgeTakeoverResult,
   type RegisterImportedSitesOptions,
+  type ImportedSiteRegistration,
 } from "./system/proxy/takeover";
 export {
   recoverInterruptedTakeover,
