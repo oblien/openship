@@ -416,16 +416,26 @@ export function Sidebar() {
       </div>
       )}
 
+      {isDesktop && (
+        <div className="px-3 pb-1 pt-1">
+          <div className="mx-2 mb-3 h-px bg-border/60" />
+          {!collapsed && (
+            <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+              Browser sessions
+            </p>
+          )}
+          <DesktopProfileMenu collapsed={collapsed} />
+        </div>
+      )}
+
       {/* ── Account / Org switcher ──────────────────────────── */}
       <div className="px-3 pb-4 pt-1">
-        <div className="mx-2 mb-3 h-px bg-border/60" />
-        {!collapsed && (
+        {!isDesktop && <div className="mx-2 mb-3 h-px bg-border/60" />}
+        {!collapsed && !isDesktop && (
           <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
             {t.dashboard.nav.sections.account}
           </p>
         )}
-
-        {isDesktop && <DesktopProfileMenu collapsed={collapsed} />}
 
         {showOrgSwitcher ? (
           <DismissiblePopover

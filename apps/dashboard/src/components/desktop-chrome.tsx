@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, MoreHorizontal, RefreshCw, Wrench } from "lucide-react";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useHelpMenuActions } from "@/components/HelpMenu";
+import { DesktopControlPlaneChrome } from "@/components/desktop-control-plane";
 import { useI18n } from "@/components/i18n-provider";
 
 type NavState = { canGoBack: boolean; canGoForward: boolean };
@@ -155,8 +156,10 @@ export function DesktopChrome() {
         </button>
       </nav>
 
-      {/* Middle — pure drag surface. */}
-      <div className="app-titlebar-drag" />
+      {/* Middle — drag surface with a compact control-plane readout. */}
+      <div className="app-titlebar-drag">
+        <DesktopControlPlaneChrome />
+      </div>
 
       {/* End — Windows/Linux only. macOS leaves this empty: its native menu holds
           Reload / DevTools / Help (including the GitHub and X links), and the

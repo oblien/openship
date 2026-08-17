@@ -69,7 +69,15 @@ export async function handleMcpMessage(
           tools: { listChanged: false },
           prompts: { listChanged: false },
         },
-        serverInfo: SERVER_INFO,
+        serverInfo: {
+          ...SERVER_INFO,
+          ...(process.env.OPENSHIP_CONTROL_PLANE_FINGERPRINT
+            ? {
+                fingerprint: process.env.OPENSHIP_CONTROL_PLANE_FINGERPRINT,
+                advertisedOrigin: process.env.OPENSHIP_ADVERTISED_ORIGIN,
+              }
+            : {}),
+        },
       });
     }
 

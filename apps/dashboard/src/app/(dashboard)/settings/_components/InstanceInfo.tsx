@@ -6,6 +6,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useAuth } from "@/context/AuthContext";
 import { useDeploymentInfo } from "@/hooks/useDeploymentInfo";
 import { SettingsSection } from "./SettingsSection";
+import { DesktopControlPlanePanel } from "@/components/desktop-control-plane";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 export function InstanceInfo() {
@@ -27,6 +28,8 @@ export function InstanceInfo() {
   const version = (deployMode === "desktop" ? desktopVersion : deployInfo?.version) ?? null;
 
   return (
+    <div className="space-y-6">
+    {isDesktop && <DesktopControlPlanePanel />}
     <SettingsSection
       icon={Info}
       title={t.settings.instance.title}
@@ -68,5 +71,6 @@ export function InstanceInfo() {
         </div>
       </div>
     </SettingsSection>
+    </div>
   );
 }
