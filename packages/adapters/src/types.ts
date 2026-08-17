@@ -6,7 +6,6 @@
  * routing configs, and SSL results.
  */
 
-import { PRICING } from "@repo/core";
 import type { BuildStrategy, ProxySettings } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
@@ -67,9 +66,9 @@ export const DEFAULT_RESOURCE_CONFIG: ResourceConfig = {
  * cheapest tier; now raising it raises every ceiling with it.
  */
 export const DEFAULT_BUILD_RESOURCE_CONFIG: ResourceConfig = {
-  cpuCores: PRICING.oblien.buildResources.cpuCores,
-  memoryMb: PRICING.oblien.buildResources.memoryMb,
-  diskMb: PRICING.oblien.buildResources.diskGb * 1024,
+  cpuCores: 4,
+  memoryMb: 8192,
+  diskMb: 5120,
 };
 
 /** Normalize a tier's vCPU value for the Oblien workspace payload. Oblien

@@ -117,7 +117,7 @@ export function PlatformProvider({
   hostDomain,
 }: PlatformProviderProps) {
   const [selfHosted, setSelfHostedState] = useState(initialSelfHosted);
-  const edition: Edition = editionProp ?? (selfHosted ? "operator" : "cloud");
+  const edition: Edition = editionProp ?? "operator";
   const features = featuresProp ?? featuresForEdition(edition);
   const localOnly = edition === "operator";
   const baseDomain = hostDomain || DEFAULT_CLOUD_DOMAIN;

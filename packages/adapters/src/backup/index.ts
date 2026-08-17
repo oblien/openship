@@ -89,7 +89,7 @@ import "./producers/mongo";
 import "./producers/custom-command";  // explicit-only, no detect
 import "./producers/volume";          // universal fallback — LAST
 import "./executors/docker";          // docker runtime → backup executor
-import "./executors/cloud";           // cloud runtime → backup executor
+
 import "./executors/bare";            // bare SSH host → backup executor (mail, etc.)
 import "./destinations/local";        // local filesystem destination
 import "./destinations/s3";           // S3-compatible (AWS/R2/Wasabi/B2/MinIO/...)

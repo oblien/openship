@@ -48,7 +48,7 @@ import {
 } from "../../lib/domain-redirect";
 import type { TAddDomainBody } from "./domain.schema";
 import { edgeProxy, readEdgeFile, validateCertFor } from "@repo/adapters";
-import type { AdoptedCert, CloudRuntime, CommandExecutor, ManualCert } from "@repo/adapters";
+import type { AdoptedCert, CommandExecutor, ManualCert } from "@repo/adapters";
 // Concrete modules, not the `../dns` barrel: importing a barrel that reaches a
 // routes file mounts the HTTP route table as a side effect of importing a service.
 import {
@@ -666,7 +666,7 @@ export async function reuseServerCertForDomain(ctx: RequestContext, domainId: st
     const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
     if (domain.verified) return true; // already good — nothing to reuse
     // Cloud domains verify via Oblien (CNAME); reuse is a self-hosted concept.
-    if (platform().target === "cloud" || project.cloudWorkspaceId) return false;
+    if (project.cloudWorkspaceId) return false;
     // Can't reach the host from inside the container → nothing to reuse here; the
     // manual Verify surfaces the actionable host-channel hint.
     if (await edgeHostUnreachable(ctx, project)) {
@@ -829,7 +829,7 @@ export async function verifyDomain(
   // certbot's HTTP-01 challenge is forwarded to origin by the CDN over :80, so a
   // successful issuance means the hostname really points here and :80/:443 are
   // reachable. That single check replaces the old A-record + TXT-challenge dig.
-  if (target !== "cloud") {
+  if (true) {
     // externalIngress: TLS terminates at the operator's OWN edge (they may have
     // firewalled origin :80 to CDN IPs, or run Cloudflare "Flexible"), so ACME
     // can't run here. Accept ownership by fiat — self-hosted, operator-owned box
@@ -1466,16 +1466,8 @@ async function getDomainWithAuth(
 
 // ── DNS checks ───────────────────────────────────────────────────────────────
 
-/** Cloud: ask Oblien if the CNAME is pointing correctly. */
-async function verifyCname(hostname: string): Promise<boolean> {
-  const { runtime } = platform();
-  try {
-    const cloud = runtime as CloudRuntime;
-    const result = await cloud.verifyDomain(hostname);
-    return result.cname;
-  } catch {
-    return false;
-  }
+async function verifyCname(_hostname: string): Promise<boolean> {
+  return false;
 }
 
 /** Check _openship-challenge.{hostname} TXT record for verification token. */
@@ -1559,19 +1551,14 @@ async function buildRecords(
 
   const { routeHost, routeName, txtHost, txtName } = dnsRecordHosts(hostname);
 
-  if (target === "cloud") {
+  if (false) {
     // Cloud (Oblien-managed): CNAME to the edge + an ownership TXT, since a
     // shared multi-tenant edge genuinely needs to prove who owns the hostname.
     const txt: DnsRecord = { type: "TXT", host: txtHost, name: txtName, value: token };
     if (externalIngress) {
       return { mode: "external", records: [txt] };
     }
-    let cnameTarget: string | null = null;
-    try {
-      const cloud = runtime as CloudRuntime;
-      const result = await cloud.verifyDomain(hostname);
-      cnameTarget = result.requiredRecords.cname.target;
-    } catch { /* Oblien unreachable */ }
+    const cnameTarget: string | null = null;
 
     const records: DnsRecord[] = [
       { type: "CNAME", host: routeHost, name: routeName, value: cnameTarget ?? "" },
@@ -1580,7 +1567,7 @@ async function buildRecords(
     if (wwwHostname) {
       // The www sibling is its OWN hostname, so it needs its own CNAME + the
       // ownership TXT for that name — the shared edge verifies each separately.
-      const www = dnsRecordHosts(wwwHostname);
+      const www = dnsRecordHosts(wwwHostname ?? hostname);
       records.push({
         type: "CNAME",
         host: www.routeHost,
@@ -1591,7 +1578,7 @@ async function buildRecords(
         type: "TXT",
         host: www.txtHost,
         name: www.txtName,
-        value: generateToken(wwwHostname),
+        value: generateToken(wwwHostname ?? hostname),
       });
     }
     return { mode: "cloud", records };
@@ -1644,7 +1631,7 @@ function verifyMessage(
 
   if (!routeOk) {
     parts.push(
-      target === "cloud"
+      false
         ? `CNAME record not found for ${hostname}`
         : `A record not pointing to server for ${hostname}`,
     );

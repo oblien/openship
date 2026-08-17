@@ -8,7 +8,6 @@
 
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project-connection.controller";
 import { CreateConnectionBody, CreateBundleBody } from "./project-connection.schema";
 
@@ -23,7 +22,6 @@ r.get(
     tag: "project:read",
     mcp: { description: "List the database/app connections wired into this project." },
   },
-  cloudProjectProxy,
   ctrl.list,
 );
 
@@ -38,7 +36,6 @@ r.get(
         "List the projects that consume THIS app's connection (a shared database has many).",
     },
   },
-  cloudProjectProxy,
   ctrl.consumers,
 );
 
@@ -49,7 +46,6 @@ r.post(
     body: CreateConnectionBody,
     mcp: { description: "Connect a database app into this project (inject its connection URL as a secret env)." },
   },
-  cloudProjectProxy,
   ctrl.create,
 );
 
@@ -60,7 +56,6 @@ r.post(
     body: CreateBundleBody,
     mcp: { description: "Wire several outputs from one source app into this project atomically (all-or-nothing)." },
   },
-  cloudProjectProxy,
   ctrl.createBundle,
 );
 
@@ -70,7 +65,6 @@ r.delete(
     tag: "project:admin",
     mcp: { description: "Remove a database/app connection and its injected env var." },
   },
-  cloudProjectProxy,
   ctrl.remove,
 );
 

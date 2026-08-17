@@ -51,7 +51,6 @@ import type {
   LogEntry,
   ResourceConfig,
 } from "@repo/adapters";
-import { resolveCloudResourceConfig } from "./cloud-resources";
 import type { TBuildAccessBody } from "./deployment.schema";
 import { platform } from "../../lib/controller-helpers";
 import { encrypt } from "../../lib/encryption";
@@ -65,11 +64,6 @@ import { resolveProjectInfo } from "./prepare.service";
 import { getFolderSession } from "../projects/folder/session-store";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
-import {
-  assertBuildMinutesAvailable,
-  assertPlanAllowsDeployShape,
-  assertPlanAllowsResourceTier,
-} from "../../lib/plan-guard";
 import { type RequestContext } from "../../lib/request-context";
 import { type PortCheckResult } from "../../lib/deployment-runtime";
 import * as sessionManager from "./session-manager";
@@ -891,28 +885,6 @@ export async function createQueuedDeployment(opts: {
     meta = { ...meta, plan: opts.plan };
   }
 
-  // Plan entitlements, checked BEFORE the row exists so an out-of-allowance org
-  // gets a clean 402 instead of a `failed` deployment to clean up. This is THE
-  // enforcement point: every deploy entry funnels here — requestBuildAccess,
-  // redeployBuildSession (which runs no preflight, so a preflight-only gate would
-  // be bypassed by the Redeploy button and by apply-update) and
-  // triggerDeployment (webhook push, incoming webhooks, service-connection
-  // auto-redeploy). Both gates no-op unless CLOUD_MODE.
-  await assertPlanAllowsDeployShape(opts.organizationId, {
-    workload: snapshotToClass(meta).workload,
-    targetServiceIds: meta.targetServiceIds ?? null,
-    // Workload alone is not enough: a compose/services project deploying ALL its
-    // services carries no targetServiceIds, and if its `hasServer` is false the
-    // workload resolves to "static" — so a container stack would read as a static
-    // site. This is the same predicate the pipeline itself branches on, so the
-    // gate and the executor can't disagree about what will run.
-    usesServicePipeline: async () => {
-      const project = await repos.project.findById(opts.projectId).catch(() => null);
-      return project ? shouldUseProjectServicePipeline(project, meta.composeServices) : false;
-    },
-  });
-  await assertBuildMinutesAvailable(opts.organizationId);
-
   // Version is NOT assigned here. A version number represents a shipped
   // release (a successful deploy of a commit), so it's assigned in onSuccess —
   // per-commit, reusing the number when the same commit is redeployed. Failed
@@ -1320,27 +1292,6 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // (Pages) deploy has no workspace. Non-cloud targets keep the project's own
   // resource config, so the picker is ignored for them. The resolved
   // ResourceConfig rides the existing `snapshot.resources` plumbing →
-  // prodResources → runtime.deploy / ensureServiceGroup → cloud.ts.
-  if (
-    snapshot.deployTarget === "cloud" &&
-    snapshotToClass(snapshot).workload !== "static" &&
-    cloudResourceTier
-  ) {
-    // The plan's per-service size cap, enforced HERE because Oblien cannot do it:
-    // its vCPU/RAM ceilings are per-workspace and applied namespace-wide, and a
-    // transient build workspace needs 4 vCPU / 8 GB — so the Oblien ceiling has to
-    // be build-sized and is useless as a cap on a runtime service. This is the
-    // point where the size is actually chosen, and it had NO bound of any kind:
-    // `cloudResourceCustom` carries no min/max, so a free org could ask for 1024
-    // vCPU and only find out from an opaque Oblien error mid-build.
-    await assertPlanAllowsResourceTier(ctx.organizationId, {
-      tier: cloudResourceTier,
-      cpuCores: cloudResourceCustom?.cpuCores ?? null,
-      memoryMb: cloudResourceCustom?.memoryMb ?? null,
-    });
-    snapshot.resources = resolveCloudResourceConfig(cloudResourceTier, cloudResourceCustom);
-  }
-
   // ── Preflight: validate config + domain before creating any resources ──
   await runDeploymentPreflight(snapshot, routeState, {
     ctx,

@@ -2,7 +2,6 @@
 
 import type { Edition, EditionFeatures } from "@repo/core";
 import { GitHubProvider } from "@/context/GitHubContext";
-import { CloudProvider } from "@/context/CloudContext";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { MailScopeProvider } from "@/context/MailScopeContext";
 import { AuthProvider, type AuthUser } from "@/context/AuthContext";
@@ -66,18 +65,11 @@ export function DashboardProviders({
         hostDomain={hostDomain}
       >
         <GitHubProvider initialData={initialGithubData}>
-          <CloudProvider>
-            {/* Mounted only in mail view: it fetches the mail-server registry on
-                every page, and that call SSH-scans when the registry is empty
-                (backfill from pre-table installs) — not something a platform-mode
-                dashboard should pay for. Consumers get an unloaded shape when
-                it's absent, so nothing breaks. */}
-            {productView === "mail" ? (
-              <MailScopeProvider>{children}</MailScopeProvider>
-            ) : (
-              children
-            )}
-          </CloudProvider>
+          {productView === "mail" ? (
+            <MailScopeProvider>{children}</MailScopeProvider>
+          ) : (
+            children
+          )}
         </GitHubProvider>
       </PlatformProvider>
     </AuthProvider>

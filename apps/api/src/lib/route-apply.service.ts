@@ -39,14 +39,12 @@ import {
   type DeploymentMeta,
   type ResolvedDeploymentPlatform,
 } from "./deployment-runtime";
-import {
-  reapplyCloudProjectRoute,
-  removeCloudProjectRoute,
-  type CloudRouteProject,
-} from "./cloud-route.service";
 import { webhookProxyTarget } from "../config";
 
-export interface RouteReconcileProject extends CloudRouteProject {
+export interface RouteReconcileProject {
+  id: string;
+  slug?: string;
+  cloudWorkspaceId?: string | null;
   webhookDomain?: string | null;
   /**
    * The project's routing config. Read here for `proxy` (upload limit, timeouts,
@@ -122,20 +120,6 @@ export async function reconcileProjectRoutes(
   const registers = opts.registers ?? [];
   const removes = opts.removes ?? [];
   if (registers.length === 0 && removes.length === 0) return;
-
-  // Cloud: page/workspace primitives. The webhook proxy is an nginx concern, so
-  // it does not apply here (cloud webhook delivery uses a different path).
-  if (project.cloudWorkspaceId) {
-    for (const r of removes) await removeCloudProjectRoute(project, r);
-    for (const r of registers) {
-      await reapplyCloudProjectRoute(project, {
-        hostname: r.hostname,
-        port: r.port,
-        isCustomDomain: r.isCustomDomain,
-      });
-    }
-    return;
-  }
 
   // Self-hosted: the deployment's own routing provider, resolved once.
   //

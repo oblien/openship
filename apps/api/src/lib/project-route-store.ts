@@ -1,6 +1,5 @@
 import { repos, type Domain } from "@repo/db";
 import { ConflictError } from "@repo/core";
-import { CloudRuntime } from "@repo/adapters";
 import {
   normalizeStoredPublicEndpoints,
   publicEndpointHostname,
@@ -58,15 +57,7 @@ async function checkManagedSlugAvailable(hostname: string): Promise<boolean | nu
   const slug = managedSlug(hostname);
   if (!slug) return null;
 
-  const runtime = platform().runtime;
-  if (!(runtime instanceof CloudRuntime)) return null;
-
-  try {
-    const result = await runtime.checkSlug(slug, getRoutingBaseDomain());
-    return result.available;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 /**

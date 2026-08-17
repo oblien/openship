@@ -3,7 +3,6 @@
  *
  *   POST /api/system/migration/preflight    — read-only readiness check
  *   POST /api/system/migration/start        — kick off the migration
- *   POST /api/system/migration/start-cloud  — migrate to Openship Cloud
  *   POST /api/system/migration/start-tunnel — migrate behind a tunnel
  *   POST /api/system/migration/switch-back  — reverse migration
  *
@@ -29,12 +28,6 @@ import {
   migrateInstanceToServer,
   MigrationPreflightFailedError,
 } from "./migrate-instance.service";
-import {
-  migrateInstanceToCloud,
-  MigrateToCloudNotConnectedError,
-  MigrateToCloudTargetNotEmptyError,
-  MigrateToCloudFailedError,
-} from "./migrate-to-cloud.service";
 import {
   switchBackToSingleUser,
   SwitchBackNotMigratedError,
@@ -168,73 +161,6 @@ export async function start(c: Context) {
     }
     const message = err instanceof Error ? err.message : "Migration failed.";
     console.error("[migration.start] failed:", err);
-    return c.json({ error: message }, 500);
-  }
-}
-
-/**
- * POST /api/system/migration/start-cloud
- *
- * Path B — migrate to Openship Cloud. Body: { allowNonEmptyTarget? }.
- *
- * Dumps the local DB, uploads it to api.openship.io/api/cloud/ingest-subgraph
- * (authenticated as the org owner via the stored cloud session token),
- * flips local teamMode to "cloud_hosted". Dashboard launcher then
- * points at app.openship.io.
- */
-export async function startCloud(c: Context) {
-  const ctx = getRequestContext(c);
-  await assertInstanceAdmin(ctx);
-
-  const settings = await repos.instanceSettings.get();
-  if ((settings?.teamMode ?? "single_user") !== "single_user") {
-    return c.json(
-      {
-        error:
-          "This instance is already in team mode. Switch back to single-user first to re-migrate.",
-      },
-      409,
-    );
-  }
-
-  const body = await c.req
-    .json<{ allowNonEmptyTarget?: boolean }>()
-    .catch(() => ({} as { allowNonEmptyTarget?: boolean }));
-
-  try {
-    const result = await migrateInstanceToCloud({
-      organizationId: ctx.organizationId,
-      userId: ctx.userId,
-      c,
-      allowNonEmptyTarget: body.allowNonEmptyTarget,
-    });
-    return c.json({
-      ok: true,
-      organizationId: result.organizationId,
-      publicUrl: result.publicUrl,
-      imported: result.imported,
-    });
-  } catch (err) {
-    if (err instanceof MigrateToCloudNotConnectedError) {
-      return c.json({ error: err.message, code: err.code }, 412);
-    }
-    if (err instanceof MigrateToCloudTargetNotEmptyError) {
-      return c.json(
-        { error: err.message, code: err.code, projectCount: err.projectCount },
-        409,
-      );
-    }
-    if (err instanceof MigrateToCloudFailedError) {
-      return c.json({ error: err.message, code: err.code }, 502);
-    }
-    if (err instanceof MigrationAlreadyInProgressError) {
-      return c.json({ error: err.message, code: err.code }, 409);
-    }
-    if (err instanceof MigrationLockAcquireError) {
-      return c.json({ error: err.message, code: err.code }, 503);
-    }
-    const message = err instanceof Error ? err.message : "Cloud migration failed.";
-    console.error("[migration.startCloud] failed:", err);
     return c.json({ error: message }, 500);
   }
 }

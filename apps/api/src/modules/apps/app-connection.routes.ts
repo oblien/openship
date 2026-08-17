@@ -9,7 +9,6 @@
 
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./app.controller";
 
 const r = secureRouter(new Hono(), {
@@ -28,7 +27,6 @@ r.get(
     tag: "project:write",
     mcp: { description: "Get an installed app's resolved connection details (URLs + generated keys)." },
   },
-  cloudProjectProxy,
   ctrl.getConnection,
 );
 

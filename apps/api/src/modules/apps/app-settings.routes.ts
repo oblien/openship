@@ -8,7 +8,6 @@
 
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./app.controller";
 import { AppSettingsPatchBody } from "./app.schema";
 
@@ -20,13 +19,11 @@ const r = secureRouter(new Hono(), {
 r.get(
   "/",
   { tag: "project:read", mcp: { description: "Get an installed app's curated settings schema + current values." } },
-  cloudProjectProxy,
   ctrl.getSettings,
 );
 r.patch(
   "/",
   { tag: "project:write", body: AppSettingsPatchBody, mcp: { description: "Update an installed app's curated settings (safe env merge)." } },
-  cloudProjectProxy,
   ctrl.patchSettings,
 );
 

@@ -19,7 +19,6 @@
 
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./service.controller";
 import { AgentExecBody } from "../../lib/agent-exec.schema";
 import {
@@ -40,7 +39,6 @@ const r = secureRouter(new Hono(), {
 r.get(
   "/",
   { tag: "project:service:list", mcp: { description: "List a project's services (compose services / monorepo sub-apps)." } },
-  cloudProjectProxy,
   ctrl.list,
 );
 r.post(
@@ -55,13 +53,11 @@ r.post(
     body: CreateServiceBody,
     mcp: { description: "Add a service to a project." },
   },
-  cloudProjectProxy,
   ctrl.create,
 );
 r.get(
   "/containers",
   { tag: "project:read", mcp: { description: "List the running containers for a project's services." } },
-  cloudProjectProxy,
   ctrl.activeContainers,
 );
 r.post(
@@ -74,13 +70,11 @@ r.post(
       description: "Sync services from the project's docker-compose file into the service table.",
     },
   },
-  cloudProjectProxy,
   ctrl.syncFromCompose,
 );
 r.get(
   "/:serviceId",
   { tag: "project:service:read", mcp: { description: "Get one service by id." } },
-  cloudProjectProxy,
   ctrl.getById,
 );
 r.post(
@@ -92,7 +86,6 @@ r.post(
   // automation surface.
   "/:serviceId/env-reveal",
   { tag: "project:service:write" },
-  cloudProjectProxy,
   ctrl.revealEnv,
 );
 r.get(
@@ -101,19 +94,16 @@ r.get(
     tag: "project:service:read",
     mcp: { description: "Measure the on-disk size (du) of each of a service's volumes." },
   },
-  cloudProjectProxy,
   ctrl.volumeSizes,
 );
 r.get(
   "/:serviceId/logs",
   { tag: "project:service:read", mcp: { description: "Fetch a service's runtime logs (non-streaming)." } },
-  cloudProjectProxy,
   ctrl.runtimeLogs,
 );
 r.get(
   "/:serviceId/logs/stream",
   { tag: "project:service:read" },
-  cloudProjectProxy,
   ctrl.runtimeLogStream,
 );
 // In-container exec. `project:service:write` means a {project,<id>,[write]} grant
@@ -135,7 +125,6 @@ r.post(
         "Run a shell command inside this service's running container and return its exit code and combined output. Interpreted by `sh -c`; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Requires a Docker runtime — a bare or cloud-hosted service has no container to enter.",
     },
   },
-  cloudProjectProxy,
   ctrl.execInService,
 );
 r.patch(
@@ -145,13 +134,11 @@ r.patch(
     body: UpdateServiceBody,
     mcp: { description: "Update a service's configuration." },
   },
-  cloudProjectProxy,
   ctrl.update,
 );
 r.delete(
   "/:serviceId",
   { tag: "project:service:admin" },
-  cloudProjectProxy,
   ctrl.remove,
 );
 
@@ -159,19 +146,17 @@ r.delete(
 r.post(
   "/:serviceId/drift/accept",
   { tag: "project:service:write", mcp: { description: "Accept upstream docker-compose changes for this service." } },
-  cloudProjectProxy,
   ctrl.acceptDrift,
 );
 r.post(
   "/:serviceId/drift/keep",
   { tag: "project:service:write", mcp: { description: "Keep local edits over upstream docker-compose changes for this service." } },
-  cloudProjectProxy,
   ctrl.keepDrift,
 );
 
 /* ─── Per-service container actions ─────────────────────────────────────── */
-r.post("/:serviceId/start", { tag: "project:service:write", mcp: { description: "Start this service's container." } }, cloudProjectProxy, ctrl.startContainer);
-r.post("/:serviceId/stop", { tag: "project:service:write", mcp: { description: "Stop this service's container." } }, cloudProjectProxy, ctrl.stopContainer);
+r.post("/:serviceId/start", { tag: "project:service:write", mcp: { description: "Start this service's container." } }, ctrl.startContainer);
+r.post("/:serviceId/stop", { tag: "project:service:write", mcp: { description: "Stop this service's container." } }, ctrl.stopContainer);
 r.post(
   "/:serviceId/restart",
   {
@@ -182,7 +167,6 @@ r.post(
       description: "Restart this service's container. Returns { operationId } (the service id).",
     },
   },
-  cloudProjectProxy,
   ctrl.restartContainer,
 );
 
@@ -190,7 +174,6 @@ r.post(
 r.get(
   "/:serviceId/env",
   { tag: "project:service:read", mcp: { description: "List a service's environment variables." } },
-  cloudProjectProxy,
   ctrl.listEnvVars,
 );
 r.put(
@@ -200,7 +183,6 @@ r.put(
     body: SetServiceEnvVarsBody,
     mcp: { description: "Replace a service's environment variables." },
   },
-  cloudProjectProxy,
   ctrl.setEnvVars,
 );
 

@@ -1,11 +1,11 @@
 /**
- * Product edition: Operator (local-first control plane) vs Cloud (SaaS).
+ * Product edition. OpenShip Operator is the only product.
  *
- * Mapped from CLOUD_MODE only — operator := !CLOUD_MODE, cloud := CLOUD_MODE.
- * Do not add a parallel OPENSHIP_EDITION flag that can disagree with CLOUD_MODE.
+ * CLOUD_MODE=true is a boot-time hard fail in the API. These helpers still
+ * accept the flag so callers and tests can detect the rejected value.
  */
 
-export type Edition = "operator" | "cloud";
+export type Edition = "operator";
 
 export type EditionFeatures = {
   billing: boolean;
@@ -23,31 +23,22 @@ export const OPERATOR_FEATURES: EditionFeatures = {
   cloudDeploy: false,
 };
 
-export const CLOUD_FEATURES: EditionFeatures = {
-  billing: true,
-  cloudConnect: true,
-  publicSignup: true,
-  hostedGithubApp: true,
-  cloudDeploy: true,
-};
-
 export function parseCloudModeFlag(value: unknown): boolean {
   return value === true || value === "true" || value === "1";
 }
 
-/** CLOUD_MODE on → cloud; everything else is operator (docker | bare | desktop). */
-export function resolveEdition(opts: { cloudMode: boolean }): Edition {
-  return opts.cloudMode ? "cloud" : "operator";
+/** Operator is the only edition. A true cloudMode flag is rejected at API boot. */
+export function resolveEdition(_opts?: { cloudMode?: boolean }): Edition {
+  return "operator";
 }
 
-export function featuresForEdition(edition: Edition): EditionFeatures {
-  return edition === "cloud" ? CLOUD_FEATURES : OPERATOR_FEATURES;
+export function featuresForEdition(_edition?: Edition): EditionFeatures {
+  return OPERATOR_FEATURES;
 }
 
-export function resolveEditionState(opts: { cloudMode: boolean }): {
+export function resolveEditionState(_opts?: { cloudMode?: boolean }): {
   edition: Edition;
   features: EditionFeatures;
 } {
-  const edition = resolveEdition(opts);
-  return { edition, features: featuresForEdition(edition) };
+  return { edition: "operator", features: OPERATOR_FEATURES };
 }

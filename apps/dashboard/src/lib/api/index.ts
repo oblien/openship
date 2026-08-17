@@ -132,8 +132,6 @@ export type {
   CloneCredentialsState,
   CloneStrategyPreference,
 } from "./settings";
-export { cloudApi } from "./cloud";
-export type { CloudStatus } from "./cloud";
 export { servicesApi, serviceKind } from "./services";
 export type { Service, ServiceContainer, ServiceEnvVar, ServiceInput } from "./services";
 export { mailApi, isMailEngineUnavailable } from "./mail";
@@ -240,19 +238,6 @@ export type {
   AuditSettings,
   AuditSource,
 } from "./audit";
-
-/* --- Billing ------------------------------------------------------- */
-export { billingApi } from "./billing";
-export type {
-  BillingState,
-  CreditPack,
-  UsageGroupBy,
-  UsageQuery,
-  UsageUnits,
-  UsageResponse,
-  SubscriptionPlanTierId,
-  SubscriptionInterval,
-} from "./billing";
 
 /* --- Backups ------------------------------------------------------- */
 export { backupDestinationsApi, backupsApi } from "./backups";

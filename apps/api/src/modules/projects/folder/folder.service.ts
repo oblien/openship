@@ -28,9 +28,6 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import { promisify } from "node:util";
 import { getBuildImage, safeErrorMessage, type StackId } from "@repo/core";
-import { provisionCloudWorkspace } from "@repo/adapters";
-import { env } from "../../../config/env";
-import { getNamespaceClient } from "../../../lib/openship-cloud";
 import { resolveApiPublicUrl } from "../../../lib/public-url";
 import {
   newFolderSessionId,
@@ -128,85 +125,6 @@ export async function createFolderSession(
 
   const id = newFolderSessionId();
   const expiresAt = now + SESSION_TTL_MS;
-
-  if (env.CLOUD_MODE) {
-    // ── SaaS: direct browser → Oblien workspace ──
-    // Use the org's NAMESPACE-scoped client (same as every other cloud service:
-    // cloud-pages, cloud-edge-proxy, deploy). The master client can create a
-    // namespaced workspace but then can't resolve it by bare id.
-    const { client } = await getNamespaceClient(input.orgId);
-    // The workspace image is fixed at create time, so resolve it from the
-    // client-detected stack when known; fall back to a general JS/TS base
-    // otherwise (most uploads are Node/Bun; a mismatch just means the user
-    // re-uploads after switching the build image).
-    let image: string;
-    try {
-      if (!input.stack) throw new Error("no stack hint");
-      image = getBuildImage(input.stack as StackId, input.packageManager);
-    } catch {
-      image = input.packageManager === "bun" ? "oven/bun:latest" : "node:22";
-    }
-
-    let workspaceId: string | undefined;
-    let uploadToken: string;
-    try {
-      // Provision with the SAME primitive the deploy path uses (create temporary
-      // → makeTemporary(remove_on_exit) → connect runtime, with retry): a failed
-      // upload/deploy is reaped by Oblien, a successful deploy promotes it to
-      // permanent (build/access → adoptWorkspaceRuntime).
-      const provisioned = await provisionCloudWorkspace(client, {
-        name: `upload-${input.orgId.slice(0, 16)}-${id.slice(0, 6)}`,
-        image,
-        mode: "temporary",
-        resources: UPLOAD_BUILD_RESOURCES,
-        ttl: WORKSPACE_TTL,
-      });
-      workspaceId = provisioned.workspaceId;
-
-      // The browser uploads the tar.gz straight to the workspace's runtime
-      // gateway, authenticated with its Gateway JWT. provisionCloudWorkspace
-      // already enabled the API server (via runtime()), so getToken just reads
-      // that JWT — a workspace-level op the namespace client is allowed to do,
-      // unlike the admin-only top-level tokens.create.
-      const status = await client.workspace(workspaceId).apiAccess.getToken();
-      if (!status.token) throw new Error("runtime API server returned no token");
-      uploadToken = status.token;
-    } catch (err) {
-      // provisionCloudWorkspace cleans up its own failures; this only runs if it
-      // succeeded but the token read didn't. remove_on_exit/TTL is the backstop.
-      if (workspaceId) await client.workspace(workspaceId).delete().catch(() => {});
-      throw new Error(`Failed to provision upload workspace: ${safeErrorMessage(err)}`);
-    }
-
-    putFolderSession({
-      id,
-      orgId: input.orgId,
-      userId: input.userId,
-      mode: "oblien-direct",
-      createdAt: now,
-      expiresAt,
-      workspaceId,
-      uploaded: false,
-      name: input.name,
-    });
-
-    const workspaceUploadUrl = `${OBLIEN_RUNTIME_URL}/files/transfer/upload?dest=/app`;
-    return {
-      sessionId: id,
-      expiresAt,
-      upload: {
-        url: workspaceUploadUrl,
-        absoluteUrl: workspaceUploadUrl,
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${uploadToken}`,
-          "Content-Type": "application/gzip",
-        },
-        requiresAuth: false,
-        withCredentials: false,
-      },
-    };
-  }
 
   // ── Self-hosted: relay upload to a staging dir on this host ──
   const stagingDir = await mkdtemp(join(tmpdir(), "openship-upload-"));
@@ -324,13 +242,7 @@ export async function scanFolderSession(session: FolderSession) {
 
 async function scanSource(session: FolderSession) {
   if (session.mode === "oblien-direct") {
-    if (!session.workspaceId) throw new Error("Session has no workspace");
-    // Namespace-scoped client (not the master) so the by-id runtime lookup
-    // resolves within the org's namespace — same reason as createFolderSession.
-    const { client } = await getNamespaceClient(session.orgId);
-    const rt = await client.workspaces.runtime(session.workspaceId);
-    const { resolveFromRuntime } = await import("../../deployments/runtime-source");
-    return resolveFromRuntime(rt, session.name ?? "app");
+    throw new Error("Cloud folder upload is not available");
   }
 
   if (!session.stagingDir) throw new Error("Session has no staging directory");

@@ -88,8 +88,8 @@ export async function resolveGitHubCapabilities(
   ctx: RequestContext,
   opts: { cloudConnected: boolean },
 ): Promise<GitHubCapabilities> {
-  const { features } = resolveEditionState({ cloudMode: env.CLOUD_MODE === true });
-  const platform: "saas" | "selfhosted" = env.CLOUD_MODE ? "saas" : "selfhosted";
+  const { features } = resolveEditionState();
+  const platform: "saas" | "selfhosted" = "selfhosted";
   const desktop = env.DEPLOY_MODE === "desktop";
 
   // The instance-wide git identity (device sign-in / pasted token) occupies ONE
@@ -129,13 +129,9 @@ export async function resolveGitHubCapabilities(
     },
     {
       kind: "app",
-      available: features.hostedGithubApp && chainHas(platform, "app-installation"),
-      configured: features.hostedGithubApp && opts.cloudConnected,
-      // Only self-hosted proxies through the cloud; on the SaaS the App is native.
-      requiresCloud: features.hostedGithubApp && platform === "selfhosted",
-      unavailableReason: features.hostedGithubApp
-        ? undefined
-        : "The hosted GitHub App is not available on Operator.",
+      available: false,
+      configured: false,
+      unavailableReason: "The hosted GitHub App is not available on Operator.",
     },
     {
       kind: "ssh-key",

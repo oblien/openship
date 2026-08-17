@@ -119,23 +119,6 @@ function LoginPageInner() {
     }
   }
 
-  async function handleCloudSignIn(callbackUrl: string) {
-    // Desktop is permanently local-only. This branch remains for ordinary
-    // self-hosted web instances that deliberately use cloud-backed auth.
-    if (isDesktop) {
-      toast("error", "This Desktop build uses the local workspace.");
-      return;
-    }
-    const { state, codeChallenge } = await preparePkceFlow();
-    const cloudLoginUrl = buildDesktopAuthorizeUrl({
-      cloudAuthUrl,
-      callbackUrl,
-      state,
-      codeChallenge,
-    });
-    window.location.href = cloudLoginUrl;
-  }
-
   /* ── Zero-auth mode (desktop): auto-redirect to create session ── */
   if (authMode === "none") {
     if (zeroAuth.action === "explain") {
@@ -184,48 +167,6 @@ function LoginPageInner() {
         <div className="flex items-center justify-center py-8">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
-      </AuthShell>
-    );
-  }
-
-  /* ── Cloud mode (desktop): redirect to Openship Cloud for all auth ── */
-  if (authMode === "cloud") {
-    const apiUrl = getApiOrigin(typeof window !== "undefined" ? window.location.origin : undefined);
-    const callbackUrl = `${apiUrl}/api/auth/cloud-callback`;
-    // The actual cloud-authorize URL is built inside handleCloudSignIn so
-    // PKCE state can be minted + stashed in localStorage just before the
-    // redirect (must happen in a click handler, not render).
-
-    return (
-      <AuthShell onBack={handleBack}>
-        <div className="mb-6 text-center">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {t.auth.login.title}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Sign in with your Openship account to continue.
-          </p>
-        </div>
-
-        {callbackError && (
-          <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {callbackError === "missing_code"
-              ? "Authentication was cancelled."
-              : callbackError === "missing_state"
-                ? "Authentication request expired. Please try again."
-                : "Authentication failed. Please try again."}
-          </div>
-        )}
-
-        <Button
-          className="w-full"
-          size="lg"
-          disabled={loading}
-          onClick={() => { void handleCloudSignIn(callbackUrl); }}
-        >
-          {loading ? <Loader2 className="me-2 size-4 animate-spin" /> : <ExternalLink className="me-2 size-4" />}
-          {loading ? "Opening Openship Cloud..." : "Sign in with Openship"}
-        </Button>
       </AuthShell>
     );
   }

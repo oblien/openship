@@ -115,19 +115,12 @@ describe("grantableTypes", () => {
     }
   });
 
-  it("mode-gates the platform features that only exist in one mode", () => {
-    // The jobs router is localOnly; billing exists only on the hosted control plane.
+  it("offers every remaining type in Operator mode", () => {
     expect(grantableTypes(true)).toContain("job");
-    expect(grantableTypes(true)).not.toContain("billing");
-    expect(grantableTypes(false)).toContain("billing");
-    expect(grantableTypes(false)).not.toContain("job");
-  });
-
-  it("offers servers and mail servers only self-hosted", () => {
     expect(grantableTypes(true)).toContain("server");
     expect(grantableTypes(true)).toContain("mail_server");
-    expect(grantableTypes(false)).not.toContain("server");
-    expect(grantableTypes(false)).not.toContain("mail_server");
+    expect(grantableTypes(false)).toEqual(grantableTypes(true));
+    expect(grantableTypes(true)).not.toContain("billing");
   });
 });
 

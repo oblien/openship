@@ -70,11 +70,6 @@ import { applyProjectRouting } from "../domains/routing-apply.service";
 import { syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
-import {
-  currentPlanTier,
-  planProjectLimit,
-  PlanUpgradeRequiredError,
-} from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
 import { getFolderSession } from "./folder/session-store";
@@ -1107,23 +1102,9 @@ async function findProjectByAppSlug(
  * "duplicate" becomes the way around the cap.
  */
 export async function assertProjectQuota(organizationId: string): Promise<void> {
-  if (!env.CLOUD_MODE) {
-    const { total } = await repos.projectGroup.listByOrganization(organizationId, { page: 1, perPage: 1 });
-    if (total >= SYSTEM.PROJECTS.MAX_PER_USER) {
-      throw new ValidationError(`Project limit reached (${SYSTEM.PROJECTS.MAX_PER_USER})`);
-    }
-    return;
-  }
-
-  const planCap = await planProjectLimit(organizationId);
-  const cap = planCap ?? env.CLOUD_MAX_PROJECTS_PER_USER;
   const { total } = await repos.projectGroup.listByOrganization(organizationId, { page: 1, perPage: 1 });
-  if (total >= cap) {
-    throw new PlanUpgradeRequiredError(
-      `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
-      "project-limit",
-      await currentPlanTier(organizationId),
-    );
+  if (total >= SYSTEM.PROJECTS.MAX_PER_USER) {
+    throw new ValidationError(`Project limit reached (${SYSTEM.PROJECTS.MAX_PER_USER})`);
   }
 }
 

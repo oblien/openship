@@ -8,7 +8,6 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../../middleware/auth";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./backup.controller";
 
 const r = secureRouter(new Hono(), {
@@ -27,8 +26,8 @@ r.use("/backup-runs/*", authMiddleware);
 r.use("/backup-restores/*", authMiddleware);
 
 // Policies — project-scoped routes proxy to the SaaS for cloud projects.
-r.get("/projects/:projectId/backup-policies", { tag: "project:write", ids: { project: "projectId" }, mcp: { description: "List a project's backup policies (schedules/retention)." } }, cloudProjectProxy, ctrl.listProjectPolicies);
-r.post("/projects/:projectId/backup-policies", { tag: "project:write", ids: { project: "projectId" } }, cloudProjectProxy, ctrl.createProjectPolicy);
+r.get("/projects/:projectId/backup-policies", { tag: "project:write", ids: { project: "projectId" }, mcp: { description: "List a project's backup policies (schedules/retention)." } }, ctrl.listProjectPolicies);
+r.post("/projects/:projectId/backup-policies", { tag: "project:write", ids: { project: "projectId" } }, ctrl.createProjectPolicy);
 r.patch("/backup-policies/:policyId", { tag: "backup_destination:backup_policy:write" }, ctrl.patchPolicy);
 r.delete("/backup-policies/:policyId", { tag: "backup_destination:backup_policy:write" }, ctrl.removePolicy);
 
@@ -36,7 +35,7 @@ r.delete("/backup-policies/:policyId", { tag: "backup_destination:backup_policy:
 r.post("/backup-policies/:policyId/run", { tag: "backup_destination:backup_policy:write" }, ctrl.triggerManual);
 
 // Runs
-r.get("/projects/:projectId/backup-runs", { tag: "project:write", ids: { project: "projectId" }, mcp: { description: "List a project's backup runs (history, status)." } }, cloudProjectProxy, ctrl.listRuns);
+r.get("/projects/:projectId/backup-runs", { tag: "project:write", ids: { project: "projectId" }, mcp: { description: "List a project's backup runs (history, status)." } }, ctrl.listRuns);
 r.get("/backup-runs/:runId", { tag: "backup_destination:backup_run:read", mcp: { description: "Get one backup run's details/status." } }, ctrl.getOneRun);
 r.get("/backup-runs/:runId/stream", { tag: "backup_destination:backup_run:read" }, ctrl.streamRun);
 

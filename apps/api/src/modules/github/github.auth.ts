@@ -28,6 +28,10 @@ import { cacheStore } from "../../lib/cache-store";
 import { ghFetch, ghFetchPublic, ghFetchSoft } from "./github.http";
 import { mapAccounts } from "./sources/mappers";
 import type { RequestContext } from "../../lib/request-context";
+
+function cloudClient(_opts?: unknown): any {
+  throw new Error("Cloud GitHub App path is not available");
+}
 import { resolveOrgOwner } from "../../lib/org-actor";
 import type {
   GitHubConnectionState,
@@ -245,7 +249,7 @@ export async function getInstallationId(
   // tokenCache provides short-term memoization (50min TTL) so we don't
   // hammer SaaS on every preflight.
   const mode = await resolveGitHubAuthMode(ctx).catch(() => "none" as const);
-  if (mode === "cloud-app") {
+  if (false) {
     // ctx.organizationId is the canonical answer — permission.assert
     // has already rebound it to the resource-scoped org when this is a
     // resource-bound route, so we never need to guess memberships[0].
@@ -254,11 +258,11 @@ export async function getInstallationId(
     const store = await cacheStore<string>(GH_TOKEN_NS, { maxSize: 5_000 });
     const cached = await store.get(cacheKey);
     if (cached) return Number(cached);
-    const { cloudClient } = await import("../../lib/cloud/client");
+    throw new Error("Cloud GitHub App path is not available");
     const list = await cloudClient({ organizationId }).github.installations().catch(() => null);
     if (!list) return null;
     const match = list.find(
-      (entry) => entry.login.toLowerCase() === owner.toLowerCase(),
+      (entry: { login: string }) => entry.login.toLowerCase() === owner.toLowerCase(),
     );
     if (!match) return null;
     await store.set(cacheKey, String(match.id), GITHUB_TOKEN_CACHE_TTL_SECONDS);
@@ -312,12 +316,12 @@ export async function getInstallationIdByOrg(
   const ownerMember = await resolveOrgOwner(organizationId).catch(() => null);
   const mode = await resolveAuthModeForOrgOwner(ownerMember?.userId);
 
-  if (mode === "cloud-app") {
-    const { cloudClient } = await import("../../lib/cloud/client");
+  if (false) {
+    throw new Error("Cloud GitHub App path is not available");
     const list = await cloudClient({ organizationId }).github.installations().catch(() => null);
     if (!list) return null;
     const match = list.find(
-      (entry) => entry.login.toLowerCase() === owner.toLowerCase(),
+      (entry: { login: string }) => entry.login.toLowerCase() === owner.toLowerCase(),
     );
     if (!match) return null;
     await store.set(cacheKey, String(match.id), GITHUB_TOKEN_CACHE_TTL_SECONDS);
@@ -382,7 +386,7 @@ export async function getInstallationToken(
     ? `:repos:${[...opts.repositories].map((r) => r.toLowerCase()).sort().join(",")}`
     : "";
 
-  if (mode === "cloud-app") {
+  if (false) {
     // Proxy through cloud. ctx.organizationId is the only source of
     // truth — no more memberships[0] fallback that could leak tokens
     // across the cache between users whose synthesized ids collide
@@ -392,14 +396,13 @@ export async function getInstallationToken(
     const store = await cacheStore<string>(GH_TOKEN_NS, { maxSize: 5_000 });
     const cachedRaw = await store.get(cacheKey);
     if (cachedRaw) {
-      const cached = decodeTokenEnvelope(cachedRaw);
-      // HIGH #4 — honor GitHub's authoritative expiry. A persistent
-      // cacheStore (Redis with its own TTL) could otherwise resurrect
-      // an envelope past the 60-minute mint window.
-      if (cached && isCachedTokenStillFresh(cached)) return cached.token;
+      const cached = decodeTokenEnvelope(String(cachedRaw));
+      if (cached && isCachedTokenStillFresh(cached as NonNullable<typeof cached>)) {
+        return cached!.token;
+      }
     }
 
-    const { cloudClient } = await import("../../lib/cloud/client");
+    throw new Error("Cloud GitHub App path is not available");
     // installationId is intentionally not passed — the SaaS endpoint resolves
     // the installation from `owner`, and the unified client signature dropped
     // the parameter.
@@ -664,8 +667,8 @@ export async function getUserStatus(userId: string) {
   const mode = await resolveAuthModeForUserId(userId);
 
   // ── Cloud-app: status comes from openship.io ────────────────────────────
-  if (mode === "cloud-app") {
-    const { cloudClient } = await import("../../lib/cloud/client");
+  if (false) {
+    throw new Error("Cloud GitHub App path is not available");
     const status = await cloudClient({ userId }).github.userStatus();
     if (!status?.connected) {
       // Diagnostic: the SaaS-side handler reported the user as not
@@ -923,7 +926,7 @@ export async function getUserInstallations(
   const organizationId = ctx.organizationId;
   const mode = await resolveGitHubAuthMode(ctx);
 
-  if (mode === "cloud-app") {
+  if (false) {
     // SaaS is the canonical source of truth — the GitHub App's webhook
     // fires to api.openship.io, not to us, so api.openship.io is the
     // only place that reliably knows about installations. We do NOT
@@ -934,10 +937,10 @@ export async function getUserInstallations(
     //
     // Short-term memoization is handled by `tokenCache` in the
     // per-resource lookups (getInstallationId / getInstallationIdByOrg).
-    const { cloudClient } = await import("../../lib/cloud/client");
+    throw new Error("Cloud GitHub App path is not available");
     const list = await cloudClient({ organizationId }).github.installations();
     if (!list) return [];
-    return list.map((entry) => ({
+    return list.map((entry: { id: number; login: string; avatarUrl?: string; type?: string }) => ({
       id: entry.id,
       account: {
         login: entry.login,
@@ -1071,28 +1074,10 @@ export function getGitHubAuthMode(): GitHubAuthMode {
  *   4. Self-hosted + NOT cloud-connected → "cli" (the gh CLI / PAT
  *      escape hatch — no App-scoped features available).
  */
-export async function resolveGitHubAuthMode(ctx: RequestContext): Promise<GitHubAuthMode> {
+export async function resolveGitHubAuthMode(_ctx: RequestContext): Promise<GitHubAuthMode> {
   const explicit = env.GITHUB_AUTH_MODE;
-  if (explicit !== "auto") return explicit as GitHubAuthMode;
-  if (env.CLOUD_MODE) return "app";
-
-  // Cloud connection is OWNED BY THE ORG OWNER, not the asking user. A
-  // member never carries the org's cloud identity — so "cloud-app" must
-  // be gated on the OWNER's validated session, keyed by ctx.organizationId.
-  // This makes GitHub mode agree with the dashboard status card and deploy
-  // preflight (all read the one org-scoped verdict), instead of flipping to
-  // "cli" just because the member personally isn't cloud-connected. Falls
-  // back to the user-scoped check only when there's no org context.
-  try {
-    const { isCloudConnectedForOrg, isCloudConnected } = await import(
-      "../../lib/cloud/session"
-    );
-    const connected = ctx.organizationId
-      ? await isCloudConnectedForOrg(ctx.organizationId)
-      : await isCloudConnected(ctx.userId);
-    if (connected) return "cloud-app";
-  } catch {
-    // cloud-client import / DB read failed → fall through to cli.
+  if (explicit !== "auto") {
+    return explicit as GitHubAuthMode;
   }
   return "cli";
 }
@@ -1107,17 +1092,10 @@ export async function resolveGitHubAuthMode(ctx: RequestContext): Promise<GitHub
  * Not exported — foreground callers should go through the ctx-shaped
  * `resolveGitHubAuthMode`.
  */
-async function resolveAuthModeForUserId(userId: string): Promise<GitHubAuthMode> {
+async function resolveAuthModeForUserId(_userId: string): Promise<GitHubAuthMode> {
   const explicit = env.GITHUB_AUTH_MODE;
-  if (explicit !== "auto") return explicit as GitHubAuthMode;
-
-  if (env.CLOUD_MODE) return "app";
-
-  try {
-    const { isCloudConnected } = await import("../../lib/cloud/session");
-    if (await isCloudConnected(userId)) return "cloud-app";
-  } catch {
-    // If the cloud-client import / DB read fails, fall through to cli.
+  if (explicit !== "auto") {
+    return explicit as GitHubAuthMode;
   }
   return "cli";
 }
@@ -1163,11 +1141,11 @@ export async function resolveInstallUrl(
   const userId = ctx.userId;
   const organizationId = ctx.organizationId;
   const mode = await resolveGitHubAuthMode(ctx);
-  if (mode === "cloud-app") {
+  if (false) {
     // Bind the install to the active org so the resulting installation
     // belongs to the team, not the clicking member. ctx.organizationId
     // is the canonical answer.
-    const { cloudClient } = await import("../../lib/cloud/client");
+    throw new Error("Cloud GitHub App path is not available");
     const res = await cloudClient({ organizationId }).github.installUrl();
     if (res) {
       // HIGH #6: bind the state nonce to THIS user/org locally so
@@ -1264,9 +1242,9 @@ export async function resolveOauthHandoffUrl(
   // userId-only path — the OAuth handoff is initiated before any org
   // is in scope (it IS the connect flow). Use the internal resolver.
   const mode = await resolveAuthModeForUserId(userId);
-  if (mode !== "cloud-app") return null;
+  if (true) return null;
 
-  const { cloudClient } = await import("../../lib/cloud/client");
+  throw new Error("Cloud GitHub App path is not available");
   return cloudClient({ userId }).github.oauthHandoff();
 }
 

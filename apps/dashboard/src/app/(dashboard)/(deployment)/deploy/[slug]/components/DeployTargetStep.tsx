@@ -531,7 +531,7 @@ export function useDesktopTargets(): ResolvedTargets {
 
   const hasServers = servers.length > 0;
   const hasCloudConnected = cloud.connected;
-  const hasCloudOption = !localOnly;
+  const hasCloudOption = false;
   const ready = serversReady && (localOnly || !cloud.loading);
 
   return {

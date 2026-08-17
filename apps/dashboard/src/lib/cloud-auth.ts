@@ -202,7 +202,7 @@ export function validateReturnTo(input: string | null): string | null {
   // the returnTo was silently dropped and the user landed on `/`, abandoning the
   // OAuth authorize the MCP client was waiting on — the flow could not complete
   // for anyone not already signed in.
-  const ALLOWED_PREFIXES = ["/cloud-authorize", "/mcp/authorize", "/"];
+  const ALLOWED_PREFIXES = ["/mcp/authorize", "/"];
   const isAllowed = ALLOWED_PREFIXES.some((prefix) => {
     if (prefix === "/") return pathOnly === "/";
     return pathOnly === prefix || pathOnly.startsWith(prefix + "/");

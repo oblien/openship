@@ -44,7 +44,7 @@ import {
   restoreSubgraph,
   type DatabaseDump,
 } from "@repo/db";
-import { cloudClient } from "../../../lib/cloud/client";
+
 import { sshManager } from "../../../lib/ssh-manager";
 import { env } from "../../../config/env";
 import { stopTunnelAgent, teardownTunnel } from "../../tunneling";
@@ -155,14 +155,10 @@ async function pullDumpFromVps(serverId: string): Promise<DatabaseDump> {
  * Path B: ask the SaaS for a dump of the team org's data via the
  * mirror endpoint we just added on cloud-saas.
  */
-async function pullDumpFromCloud(organizationId: string): Promise<DatabaseDump> {
-  const result = await cloudClient({ organizationId }).exportSubgraph({
-    scope: { kind: "organization", organizationId },
-  });
-  if (!result.ok) {
-    throw new SwitchBackRemoteUnreachableError(result.error);
-  }
-  return result.dump;
+async function pullDumpFromCloud(_organizationId: string): Promise<DatabaseDump> {
+  throw new SwitchBackRemoteUnreachableError(
+    "Cloud-hosted switch-back is not available on Operator.",
+  );
 }
 
 /**

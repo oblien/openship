@@ -94,7 +94,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // rollback window on its deploy host. Cloud (SaaS) workloads live on Oblien,
     // not local Docker, so there's nothing to sweep there.
     defaultCron: "23 4 * * *",
-    available: () => platform().target !== "cloud",
+    available: () => true,
     run: async () => {
       const r = await runImageGcSweep();
       return {
@@ -157,7 +157,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     defaultCron: "13,43 * * * *",
     // Cloud has no managed servers and no OpenResty: on the SaaS, traffic analytics
     // live at Oblien's edge and are read through, never scraped into our DB.
-    available: () => platform().target !== "cloud",
+    available: () => true,
     run: async () => runAnalyticsScrapeSweep(),
   },
   {
@@ -182,7 +182,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // Only the self-hosted control plane scrapes OpenResty into these tables; on
     // the SaaS, traffic analytics live at Oblien's edge and are read through, never
     // persisted here, so there is nothing local to prune.
-    available: () => platform().target !== "cloud",
+    available: () => true,
     run: async () => {
       const day = 24 * 60 * 60 * 1000;
       const buckets = await repos.analytics.pruneBuckets(
@@ -255,7 +255,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // anywhere saying why. Daily is ample against a 7-day renewal window. Cloud
     // routes its own workloads through Oblien's edge and has no target to prove.
     defaultCron: "43 5 * * *",
-    available: () => platform().target !== "cloud",
+    available: () => true,
     run: async () => {
       const r = await runEdgeVerifySweep();
       return {
@@ -316,7 +316,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // (both self-update their control plane and manage remote boxes), never
     // cloud. Off-peak, off the :00/:30 marks.
     defaultCron: "43 */6 * * *",
-    available: () => platform().target !== "cloud",
+    available: () => true,
     run: async () => {
       const r = await scanInstanceContainers();
       return { servers: r.servers, behind: r.behind, updated: r.updated };
@@ -335,7 +335,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // costs one indexed query and no SSH at all. Self-hosted + desktop only — the mail
     // module does not exist in the cloud runtime.
     defaultCron: "* * * * *",
-    available: () => platform().target !== "cloud",
+    available: () => true,
     run: async () => {
       const { runInboundWatch } = await import("../mail/inbound/watch");
       return runInboundWatch();
@@ -354,7 +354,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // the write path disarms what it orphans (GH-559). This is the backstop, so a
     // slow off-peak cadence is right. Off the :00/:30 marks.
     defaultCron: "17 */2 * * *",
-    available: () => platform().target !== "cloud",
+    available: () => true,
     run: async () => {
       const { runInboundReconcile } = await import("../mail/inbound/watch");
       return runInboundReconcile();

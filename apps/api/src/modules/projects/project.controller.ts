@@ -67,9 +67,6 @@ import {
   probeMgmt,
 } from "../../lib/project-analytics";
 import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
-import { getAdminOblienClient } from "../../lib/oblien-user-client";
-import { cloudClient } from "../../lib/cloud/client";
-import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
 import {
   updateWebhook,
   deleteWebhook,
@@ -310,31 +307,11 @@ export async function getHome(c: Context) {
   // badge them and replay the source hint on subsequent calls.
   const localProjects = projects.map((p) => ({ ...p, source: "local" as const }));
 
-  let mergedProjects: unknown[] = localProjects;
-  let cloudProjectCount = 0;
-  let cloudDeployments = 0;
-  let cloudSuccessDeployments = 0;
-  let cloudPartial = false;
-  // Skip the cloud merge for a scoped token — cloud projects are ones it didn't
-  // create, so they must stay invisible. Only the owner's full session/token
-  // sees the local+cloud union.
-  if (!scopedIds) {
-    const cloud = await fetchOrgCloudProjects(organizationId);
-    if (cloud.state === "merged") {
-      const localIds = new Set(localProjects.map((p) => (p as { id: string }).id));
-      const cloudProjects = cloud.projects
-        .filter((p) => !localIds.has((p.id as string) ?? ""))
-        .map((p) => ({ ...p, source: "cloud" as const }));
-      mergedProjects = [...localProjects, ...cloudProjects];
-      cloudProjectCount =
-        Number(cloud.numbers.total_projects ?? cloudProjects.length) || cloudProjects.length;
-      const cloudNums = cloud.numbers as Record<string, unknown>;
-      cloudDeployments = Number(cloudNums.total_deployments ?? 0) || 0;
-      cloudSuccessDeployments = Number(cloudNums.total_success_deployments ?? 0) || 0;
-    } else if (cloud.state === "unavailable") {
-      cloudPartial = true;
-    }
-  }
+  const mergedProjects: unknown[] = localProjects;
+  const cloudProjectCount = 0;
+  const cloudDeployments = 0;
+  const cloudSuccessDeployments = 0;
+  const cloudPartial = false;
 
   // The "projects in other orgs" nudge is only useful when the view is truly
   // empty — suppress it once we have any project to show (local or cloud).
@@ -1144,37 +1121,7 @@ export async function serverLogStreamToken(c: Context) {
   }
 
   if (source.kind === "cloud") {
-    const client = getAdminOblienClient();
-    let tokenResult: unknown = null;
-
-    try {
-      tokenResult = client
-        ? await client.analytics.streamToken(source.domain)
-        : await cloudClient({ organizationId }).analytics.streamToken(source.domain);
-    } catch (err) {
-      // Token mint failed. This is a CLOUD project — do NOT claim "self-hosted"
-      // (that sends the client to /server-logs/stream, which 400s for cloud).
-      // Report "unavailable" so the client shows recent logs without erroring.
-      console.warn(
-        `[server-logs] cloud stream-token mint failed for ${source.domain}: ${safeErrorMessage(err)}`,
-      );
-      return c.json({ kind: "unavailable" as const });
-    }
-
-    const tokenData = extractCloudStreamToken(tokenResult);
-    if (!tokenData) {
-      // 200 but unparseable shape. Surface the KEYS (never the token value) so a
-      // SaaS response-shape change is diagnosable instead of silently degrading.
-      const rt = (tokenResult ?? {}) as Record<string, unknown>;
-      const inner = (rt.data ?? rt.result ?? rt) as Record<string, unknown> | null;
-      console.warn(
-        `[server-logs] cloud stream-token unparseable for ${source.domain}; ` +
-          `top keys=[${Object.keys(rt).join(",")}] ` +
-          `inner keys=[${inner && typeof inner === "object" ? Object.keys(inner).join(",") : ""}]`,
-      );
-      return c.json({ kind: "unavailable" as const });
-    }
-    return c.json({ kind: "cloud" as const, url: tokenData.stream_url, token: tokenData.token });
+    return c.json({ kind: "unavailable" as const });
   }
 
   return c.json({ kind: "self-hosted" as const });
@@ -1321,21 +1268,6 @@ export async function recentServerLogs(c: Context) {
   };
 
   const collected: unknown[][] = [];
-
-  const cloudSources = sources.filter((s) => s.kind === "cloud");
-  if (cloudSources.length) {
-    const client = getAdminOblienClient();
-    // Settle per-domain: one domain's upstream failure must not blank the others'.
-    const settled = await Promise.allSettled(
-      cloudSources.map(async (s) => {
-        const result = client
-          ? await client.analytics.requests(s.domain, { limit })
-          : await cloudClient({ organizationId }).analytics.requests(s.domain, { limit });
-        return tagHost(extractCloudRequestLogs(result), s.domain);
-      }),
-    );
-    for (const r of settled) if (r.status === "fulfilled") collected.push(r.value);
-  }
 
   const selfHostedSources = sources.filter((s) => s.kind === "self-hosted");
   if (selfHostedSources.length) {

@@ -115,12 +115,6 @@ export { BareRuntime, STATIC_RELEASE_BASE, type BareRuntimeOptions } from "./run
 // location with the SAME confinement rules the deploy used (no reimplementation:
 // this function is what rejects absolute paths and `../` traversal out of the root).
 export { resolveServedStaticPath, resolveStaticOutputPath } from "./runtime/stack-output";
-export {
-  CloudRuntime,
-  type CloudAdminProxy,
-  PAGE_CONTAINER_PREFIX,
-  provisionCloudWorkspace,
-} from "./runtime/cloud";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
@@ -174,11 +168,6 @@ export {
   type CompiledRedirect,
   type CompiledHeaderRule,
 } from "./infra/vercel-routing";
-export {
-  compileRoutingToOblien,
-  type OblienRoutingContext,
-} from "./runtime/oblien-routing";
-export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
 export {
   ACME_HTTP01_PORT,

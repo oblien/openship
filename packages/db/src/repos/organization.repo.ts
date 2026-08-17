@@ -12,7 +12,7 @@
  * plugin's invariants and audit hooks stay correct.
  */
 
-import { eq, inArray, isNull } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { Database } from "../client";
 import { organization } from "../schema/organization";
 
@@ -58,50 +58,6 @@ export function createOrganizationRepo(db: Database) {
         .update(organization)
         .set({ isTeam })
         .where(eq(organization.id, id));
-    },
-
-    /**
-     * Update the openship-internal subscription status. Used by the
-     * hard-cap handler to flip between `active` and `credit_exhausted`
-     * when usage outruns balance, and by the Stripe webhook handler for
-     * Stripe-driven transitions (`past_due`, `canceled`, `trialing`).
-     */
-    async setSubscriptionStatus(id: string, status: string): Promise<void> {
-      await db
-        .update(organization)
-        .set({ subscriptionStatus: status })
-        .where(eq(organization.id, id));
-    },
-
-    /**
-     * Record the org's Oblien namespace slug.
-     *
-     * This column was read in eleven places and written in NONE, which made the
-     * entire Oblien entitlement path inert: every quota helper opens with
-     * `if (!org.oblienNamespace) return`, so `setQuota`, `addQuota`,
-     * `resetAndRegrant` and `applyResourceLimits` were no-ops, namespaces ran
-     * with no ceiling at all, and the `credits.usage` webhook — which matches
-     * deliveries on this column — dropped every event. Nothing about that failure
-     * was visible: each function returned successfully.
-     */
-    async setOblienNamespace(id: string, namespace: string): Promise<void> {
-      await db
-        .update(organization)
-        .set({ oblienNamespace: namespace })
-        .where(eq(organization.id, id));
-    },
-
-    /**
-     * Orgs with no namespace recorded yet — the boot backfill's work list.
-     * Bounded because this runs on every cloud boot and the tail of orgs that
-     * predate namespace persistence only needs draining once.
-     */
-    async listWithoutOblienNamespace(limit = 200): Promise<{ id: string }[]> {
-      return db
-        .select({ id: organization.id })
-        .from(organization)
-        .where(isNull(organization.oblienNamespace))
-        .limit(limit);
     },
   };
 }

@@ -50,7 +50,6 @@ export type ResourceType =
   | "server"
   | "mail_server"
   | "backup_destination"
-  | "billing"
   | "audit"
   | "analytics"
   | "github"
@@ -65,7 +64,6 @@ export type ResourceType =
   | "settings"
   | "job"
   | "terminal"
-  | "cloud"
   | "notifications"
   | "updates"
   | "service"
@@ -82,14 +80,12 @@ export type ResourceType =
  * instead of a searchable catalog.
  */
 export const ORG_SINGLETON_RESOURCE_TYPES: readonly ResourceType[] = [
-  "billing",
   "audit",
   "analytics",
   "github",
   "permissions",
   "settings",
   "job",
-  "cloud",
   "terminal",
   "notifications",
   "updates",
@@ -116,7 +112,6 @@ export type GrantableResourceType = Extract<
   | "server"
   | "mail_server"
   | "backup_destination"
-  | "billing"
   | "audit"
   | "github_installation"
   | "github_repository"
@@ -129,7 +124,6 @@ export type GrantableResourceType = Extract<
   | "analytics"
   | "settings"
   | "updates"
-  | "cloud"
 >;
 
 /**
@@ -154,9 +148,7 @@ export const GRANTABLE_RESOURCE_TYPES: readonly GrantableResourceType[] = [
   "analytics",
   "updates",
   "settings",
-  "cloud",
   "audit",
-  "billing",
 ];
 
 const GRANTABLE_SET: ReadonlySet<string> = new Set(GRANTABLE_RESOURCE_TYPES);
@@ -201,10 +193,10 @@ export const INFRASTRUCTURE_GRANT_TYPES: readonly GrantableResourceType[] =
 
 /**
  * Grantable types that carry more blast radius than the verb suggests, and are
- * flagged as such wherever they are offered. `billing` reaches payment state;
- * `audit` reaches every actor's history across the org.
+ * flagged as such wherever they are offered. `audit` reaches every actor's
+ * history across the org.
  */
-export const SENSITIVE_GRANT_TYPES: readonly GrantableResourceType[] = ["billing", "audit"];
+export const SENSITIVE_GRANT_TYPES: readonly GrantableResourceType[] = ["audit"];
 
 const SENSITIVE_SET: ReadonlySet<string> = new Set(SENSITIVE_GRANT_TYPES);
 
@@ -225,29 +217,17 @@ export const SELF_HOSTED_ONLY_GRANT_TYPES: readonly GrantableResourceType[] = [
   "job",
 ];
 
-/** Grantable types that exist only on the hosted control plane. */
-export const CLOUD_ONLY_GRANT_TYPES: readonly GrantableResourceType[] = ["billing"];
-
 const SELF_HOSTED_ONLY_SET: ReadonlySet<string> = new Set(SELF_HOSTED_ONLY_GRANT_TYPES);
-const CLOUD_ONLY_SET: ReadonlySet<string> = new Set(CLOUD_ONLY_GRANT_TYPES);
 
 export function isSelfHostedOnlyGrantType(type: string): boolean {
   return SELF_HOSTED_ONLY_SET.has(type);
 }
 
-export function isCloudOnlyGrantType(type: string): boolean {
-  return CLOUD_ONLY_SET.has(type);
-}
-
 /**
- * The grantable types that exist in a given deployment mode, in display order.
- * Filters BOTH ways — a type absent from the running mode is a dead tab whose
- * catalog can only ever be empty.
+ * Operator is the only product — every grantable type exists here.
  */
-export function grantableTypesForMode(selfHosted: boolean): GrantableResourceType[] {
-  return GRANTABLE_RESOURCE_TYPES.filter((t) =>
-    selfHosted ? !isCloudOnlyGrantType(t) : !isSelfHostedOnlyGrantType(t),
-  );
+export function grantableTypesForMode(_selfHosted?: boolean): GrantableResourceType[] {
+  return [...GRANTABLE_RESOURCE_TYPES];
 }
 
 /** Plural label for a picker tab or a summary group heading. */
@@ -256,7 +236,6 @@ export const RESOURCE_TYPE_LABELS: Record<GrantableResourceType, string> = {
   server: "Servers",
   mail_server: "Mail servers",
   backup_destination: "Backup destinations",
-  billing: "Billing",
   audit: "Audit log",
   github_installation: "GitHub orgs",
   github_repository: "GitHub repos",
@@ -265,7 +244,6 @@ export const RESOURCE_TYPE_LABELS: Record<GrantableResourceType, string> = {
   analytics: "Analytics",
   settings: "Instance settings",
   updates: "Updates",
-  cloud: "Cloud",
 };
 
 /**
@@ -278,7 +256,6 @@ export const RESOURCE_TYPE_LABELS_SINGULAR: Record<GrantableResourceType, string
   server: "Server",
   mail_server: "Mail server",
   backup_destination: "Backup destination",
-  billing: "Billing",
   audit: "Audit log",
   github_installation: "GitHub org",
   github_repository: "GitHub repo",
@@ -287,7 +264,6 @@ export const RESOURCE_TYPE_LABELS_SINGULAR: Record<GrantableResourceType, string
   analytics: "Analytics",
   settings: "Instance settings",
   updates: "Updates",
-  cloud: "Cloud",
 };
 
 /**
@@ -301,7 +277,5 @@ export const PLATFORM_GRANT_DESCRIPTIONS: Partial<Record<GrantableResourceType, 
   analytics: "Usage and resource metrics for projects and services",
   settings: "Instance-wide configuration: build defaults, deploy defaults, transfer",
   updates: "Platform update checks and applying updates",
-  cloud: "The cloud control-plane connection",
   audit: "Every action recorded for this organization, by any member",
-  billing: "Plan, payment method and invoices",
 };

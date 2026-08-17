@@ -213,7 +213,6 @@ const TABLES: ReadonlyArray<TableSpec> = [
 
   // GitHub — instance-only.
   { sqlName: "git_installation", table: schema.gitInstallation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "cloud_webhook_binding", table: schema.cloudWebhookBinding, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
 
   // ── Project subgraph (also part of organization scope) ─────────────────────
   //
@@ -455,12 +454,10 @@ const TABLES: ReadonlyArray<TableSpec> = [
   { sqlName: "audit_settings", table: schema.auditSettings, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
 ];
 
-// Deliberately NOT in the catalogue — ephemeral, cloud-only, or re-derived on
-// demand, so shipping them across a migration adds risk without value:
+// Deliberately NOT in the catalogue — ephemeral or re-derived on demand:
 // build_session, deployment_check_run, orphaned_resource, terminal_sessions,
 // service_terminal_sessions, verification, github_install_state,
-// webhook_delivery, oblien_webhook_event, cloud_handoff_code, and all
-// billing_* / credit_pack / stripe_* (CLOUD_MODE-only, absent on self-hosted).
+// webhook_delivery. SaaS billing / Cloud handoff tables were dropped.
 
 // Restore order = TABLES order (parents before children). Truncate uses reverse.
 
@@ -880,16 +877,6 @@ export async function restoreSubgraph(
     await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
 
     if (opts.mode === "wipe") {
-      // Engine-level last-resort gate: a whole-instance TRUNCATE must NEVER run
-      // on the multi-tenant SaaS. The API route is unmounted in CLOUD_MODE and
-      // exportInstance/importInstance refuse too, but this stops even a stray
-      // in-process restoreSubgraph({mode:'wipe'}) from truncating every tenant if
-      // those layers are ever bypassed. packages/db has no apps/api env → read raw.
-      if (process.env.CLOUD_MODE === "true") {
-        throw new Error(
-          "Refusing a wipe restore on a multi-tenant (CLOUD_MODE) instance — this would truncate every tenant.",
-        );
-      }
       // Truncate only the tables this scope claims, in reverse order.
       // For project / organization scope we don't TRUNCATE because that
       // would wipe other tenants — `wipe` mode is conceptually a "this

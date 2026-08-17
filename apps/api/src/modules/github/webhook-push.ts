@@ -12,8 +12,7 @@ import {
   compareCommits,
   getRepository,
 } from "./github.service";
-import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
-import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
+
 import { safeErrorMessage } from "@repo/core";
 import {
   extractChangedFiles,
@@ -448,59 +447,12 @@ async function forwardPushToCloud(
   }
 
   if (!cloudProjectId) {
-    const orgIds = await repos.settings.listCloudLinkedOrgIds().catch(() => []);
-    const ownerKey = input.owner.toLowerCase();
-    const repoKey = input.repo.toLowerCase();
-    for (const orgId of orgIds) {
-      const result = await fetchOrgCloudProjects(orgId).catch(() => null);
-      if (result?.state !== "merged") continue;
-      const match = result.projects.find((p) => {
-        const o = typeof p.gitOwner === "string" ? p.gitOwner.toLowerCase() : "";
-        const r = typeof p.gitRepo === "string" ? p.gitRepo.toLowerCase() : "";
-        if (o !== ownerKey || r !== repoKey || p.autoDeploy !== true) return false;
-        const b =
-          (typeof p.gitBranch === "string" ? p.gitBranch.trim() : "") ||
-          defaultBranch?.trim() ||
-          "";
-        return b === input.branch;
-      });
-      if (match && typeof match.id === "string") {
-        organizationId = orgId;
-        cloudProjectId = match.id;
-        // Self-heal a routing-only binding (secret was lost on promote, so
-        // validation stays on the env/legacy path) so the next push is fast.
-        await repos.cloudWebhookBinding
-          .upsert({
-            organizationId: orgId,
-            cloudProjectId: match.id,
-            gitOwner: input.owner,
-            gitRepo: input.repo,
-            gitBranch: typeof match.gitBranch === "string" ? match.gitBranch : "",
-            webhookId: null,
-            webhookSecret: null,
-          })
-          .catch(() => {});
-        break;
-      }
-    }
+    // Operator has no Cloud-linked projects to forward to.
   }
 
   if (!organizationId || !cloudProjectId) return { forwarded: false };
 
-  const res = await cloudFetchAsOrgOwner(organizationId, "/api/deployments", {
-    method: "POST",
-    body: JSON.stringify({
-      projectId: cloudProjectId,
-      branch: input.branch,
-      commitSha: input.commitSha,
-      smartRoute: true,
-      // Auto-deploy marker → SaaS applies commit-sha dedup (if the App also
-      // delivered this push, whichever lands second skips).
-      trigger: "webhook",
-    }),
-  }).catch(() => null);
-
-  return { forwarded: !!res && res.ok, cloudProjectId, organizationId };
+  return { forwarded: false, cloudProjectId, organizationId };
 }
 
 function projectWebhookBranch(project: Project, defaultBranch?: string | null): string | null {

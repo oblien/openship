@@ -69,26 +69,11 @@ describe("getNavSections (the platform rail)", () => {
     expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "audit"]);
   });
 
-  it("adds Billing on the SaaS and drops the infrastructure section there", () => {
-    const s = getNavSections(false, { billing: true });
-    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing", "audit"]);
-    // Empty sections are filtered out, not rendered as a bare heading.
-    expect(find(s, "infrastructure")).toBeUndefined();
-  });
-
-  it("keeps Billing at the very bottom, below Servers, when billing is on a self-hosted box", () => {
-    // Billing is a feature flag, not a live Cloud-connection bit. If both
-    // infrastructure and billing are present, billing must not outrank host rows.
+  it("never includes billing — Operator has no billing nav", () => {
     const s = getNavSections(true, { billing: true });
     const keys = s.flatMap((x) => keysOf(x));
-    for (const host of ["servers", "emails", "jobs"]) {
-      expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
-    }
-    // Only the audit log follows it. That is a read-only review surface, consulted after
-    // the fact and never on the way to a task, so it is deliberately the last row — it
-    // cannot outrank anything by sitting there.
+    expect(keys).not.toContain("billing");
     expect(keys.at(-1)).toBe("audit");
-    expect(keys.indexOf("billing")).toBe(keys.length - 2);
   });
 
   it("keeps /emails in the platform rail", () => {

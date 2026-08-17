@@ -21,7 +21,6 @@ import {
   resolveDeploymentPlatform,
   type DeploymentMeta,
 } from "../../lib/deployment-runtime";
-import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
 import { computeCleanupKeepSet } from "./cleanup-keep-set";
 import { buildServiceRouteDomain } from "../../lib/routing-domains";
 import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
@@ -420,74 +419,6 @@ export async function collectProjectManifest(
         label: `orphan image ${ref.slice(0, 24)}`,
         runtime: docker,
       });
-    }
-  }
-
-  // ── Cloud workspace (the canonical Oblien binding) ────────────────
-  // `project.cloudWorkspaceId` is the CURRENT workspace this project
-  // deploys to. Deployment rows may reference OLD workspaces (re-provisioned)
-  // or none at all (provision succeeded but no deploy row reached ready),
-  // and the per-deployment runtime resolution above may have been skipped
-  // (server gone). Enumerate it explicitly so deleting the project always
-  // tears the workspace down on Oblien — fixes "deleted locally but still
-  // live on Openship Cloud". De-duped against any deployment container that
-  // already covers it.
-  if (project.cloudWorkspaceId && !seenContainers.has(project.cloudWorkspaceId)) {
-    try {
-      // BOUNDED: this resolution mints a cloud token (cloudFetch, no native
-      // timeout). Without withTimeout a cloud-side hang would stall manifest
-      // collection while the teardown holds the deletion lock — the same hang
-      // class the SSH paths above are bounded against.
-      const { platform: cloudPlatform } = await withTimeout(
-        resolveDeploymentPlatform(
-          { deployTarget: "cloud", workspaceId: project.cloudWorkspaceId },
-          { organizationId: project.organizationId },
-        ),
-        INSPECT_TIMEOUT_MS,
-        `resolve cloud workspace ${project.cloudWorkspaceId}`,
-      );
-      // Guard against a non-cloud base resolving to local/server (a pure
-      // self-hosted project never has a cloud workspace anyway).
-      if (cloudPlatform.runtime.name === "cloud") {
-        seenContainers.add(project.cloudWorkspaceId);
-        resources.push({
-          type: "cloud_workspace",
-          ref: project.cloudWorkspaceId,
-          label: `cloud workspace ${project.cloudWorkspaceId}`,
-          runtime: cloudPlatform.runtime,
-        });
-      } else {
-        // Don't silently drop it — an orphaned workspace should be visible.
-        console.warn(
-          `[cleanup] cloud workspace ${project.cloudWorkspaceId} resolved to non-cloud runtime "${cloudPlatform.runtime.name}" — skipped`,
-        );
-      }
-    } catch (err) {
-      // Two very different failures land here — distinguish them like the
-      // gone-server branch above:
-      //   • PERMANENT (org has no Openship Cloud link → owner unlinked/never
-      //     linked): we can never reach this workspace from here, so blocking
-      //     the delete forever helps nobody. Skip + warn so the project stays
-      //     deletable (the workspace may remain on Oblien; re-link to clean it).
-      //   • TRANSIENT (link exists but cloud/token-mint is down, or we timed
-      //     out above): mark unreachable so the atomicity gate KEEPS the row and
-      //     the user retries once Cloud is reachable. On an inconclusive link
-      //     check we also keep (never orphan on uncertainty).
-      const linkUserId = await resolveOrgCloudUserId(project.organizationId).catch(
-        () => "unknown" as const,
-      );
-      if (linkUserId === null) {
-        console.warn(
-          `[cleanup] cloud workspace ${project.cloudWorkspaceId} skipped — org ${project.organizationId} has no Openship Cloud link (${safeErrorMessage(err)}); workspace may remain on Oblien. Re-link to clean it up.`,
-        );
-      } else {
-        resources.push({
-          type: "unreachable",
-          ref: project.cloudWorkspaceId,
-          label: `cloud workspace ${project.cloudWorkspaceId} (cloud unreachable)`,
-          runtime: null,
-        });
-      }
     }
   }
 

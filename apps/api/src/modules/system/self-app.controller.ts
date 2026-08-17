@@ -25,7 +25,6 @@ import { env } from "../../config";
 import { assertNotCloud, platform } from "../../lib/controller-helpers";
 import { ensureLocalUser } from "../../lib/local-user";
 import { createProject } from "../projects/project-crud.service";
-import { getCloudConnectionStatusForOrg } from "../../lib/cloud/session";
 import { ensureManagedEdgeProxy, ManagedEdgeError } from "../../lib/managed-edge-proxy";
 import { ensureAdoptDeployment, provisionSelfAppEdge } from "../../lib/startup/self-deploy";
 import { ensureLocalServer } from "../../lib/startup/self-server";
@@ -102,9 +101,7 @@ async function ensureControlPlaneApp(organizationId: string, port?: number): Pro
  */
 export async function cloudStatus(c: Context) {
   const guard = assertNotCloud(c); if (guard) return guard;
-  const { organizationId } = await resolveOrg();
-  const status = await getCloudConnectionStatusForOrg(organizationId);
-  return c.json(status);
+  return c.json({ connected: false, available: false });
 }
 
 /**
@@ -117,68 +114,7 @@ export async function cloudStatus(c: Context) {
  * credential. Internal-token gated (the fresh wizard has no session/PAT).
  */
 export async function cloudConnect(c: Context) {
-  const guard = assertNotCloud(c); if (guard) return guard;
-  const body = await c.req
-    .json<{ code?: string; codeVerifier?: string }>()
-    .catch(() => ({}) as { code?: string; codeVerifier?: string });
-  if (!body.code) return c.json({ error: "code is required" }, 400);
-
-  try {
-    const { exchangeCodeWithCloud, mirrorCloudUser, storeCloudSession } = await import(
-      "../../lib/cloud-auth-proxy"
-    );
-    const { clearAuthModeCache, isAuthModePinned } = await import("../../lib/auth-mode");
-    const data = await exchangeCodeWithCloud(body.code, body.codeVerifier);
-    if (!data) return c.json({ error: "Could not verify with Openship Cloud" }, 401);
-    const email = (data.user as { email?: string | null }).email ?? null;
-
-    // If this box ALREADY has a real local admin account, Openship Cloud is linked
-    // for SERVICES ONLY — the free .opsh.io domain and managed mail. Store the cloud
-    // session against the existing owner so the edge-proxy has a token, and DO NOT
-    // change the login method. Only a fresh box with NO local admin (the free-domain
-    // wizard path) adopts cloud as its passwordless link-based login. Keying off a
-    // real admin ROW (not the authMode string) is what makes the free path — which
-    // has no admin yet — correctly fall through to cloud login.
-    const adminId = await foundingAdminId();
-    if (adminId) {
-      // Bind against the ACTUAL admin (its personal org is org_<id>). foundingAdminId
-      // queries the admin row directly — NOT resolveOrg()/ensureLocalUser(), which
-      // would miss the renamed local user and provision a phantom org.
-      await storeCloudSession(adminId, data.sessionToken);
-      await ensureLocalServer().catch(() => {});
-      return c.json({
-        ok: true,
-        userId: adminId,
-        organizationId: `org_${adminId}`,
-        email,
-        linked: "services",
-      });
-    }
-
-    const userId = await mirrorCloudUser(data.user);
-    await storeCloudSession(userId, data.sessionToken);
-    // The mirror just made this box's founding admin, so its "This Server" row is
-    // now registerable — and this is the EARLIEST point on the free-domain install
-    // where that's true (bootstrap-admin will 409 on the very admin created here).
-    await ensureLocalServer().catch(() => {});
-    // Fresh box → local login becomes cloud-backed (passwordless). Reuse the
-    // singleton upsert; clear the cached mode so the change takes effect now.
-    //
-    // Skipped when the launcher DECLARED the mode (OPENSHIP_AUTH_MODE). This line
-    // is where the desktop bug came from: desktop has no local admin by design
-    // (zero-auth auto-provisions), so foundingAdminId() returns null and every
-    // "connect Openship Cloud" from Settings fell through to here and converted a
-    // loopback-only app to remote login — with no way back short of wiping the
-    // local DB. Linking a cloud account must not change how you log in to a box
-    // whose login method was declared at launch.
-    if (!isAuthModePinned()) {
-      await repos.instanceSettings.upsert({ authMode: "cloud" });
-      clearAuthModeCache();
-    }
-    return c.json({ ok: true, userId, organizationId: `org_${userId}`, email });
-  } catch (err) {
-    return c.json({ error: safeErrorMessage(err) }, 500);
-  }
+  return c.json({ error: "Cloud connect is not available on Operator." }, 404);
 }
 
 /**

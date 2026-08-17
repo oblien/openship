@@ -25,7 +25,6 @@ import type {
 import {
   BareRuntime,
   BuildLogger,
-  CloudRuntime,
   DockerRuntime,
   STATIC_RELEASE_BASE,
   sharedMountExecutor,
@@ -1095,7 +1094,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
 
     // deployMode is derived from runtime.name === "cloud", so the cast is sound.
     if (deployRouting.deployMode === "static-edge") {
-      await executeStaticEdgeDeploy(phase, runtime as CloudRuntime);
+      throw new Error("Static edge (Cloud) deploy is not available on Operator.");
     } else {
       await executeServerDeploy(phase);
     }
@@ -1156,55 +1155,11 @@ interface DeployPhaseInputs {
   transports: Set<RuntimeAdapter>;
 }
 
-/** Static edge deploy via CloudRuntime (Oblien Pages). */
 async function executeStaticEdgeDeploy(
-  phase: DeployPhaseInputs,
-  runtime: CloudRuntime,
+  _phase: DeployPhaseInputs,
+  _runtime: unknown,
 ): Promise<void> {
-  const { ctx, project, dep, snapshot, buildSessionId, routeState, buildResult, envMap, prodResources, logger } = phase;
-
-  logger.step("deploy", "running", "Deploying to edge (static)...");
-
-  const staticResult = await runtime.deployStatic({
-    deploymentId: dep.id,
-    projectId: project.id,
-    buildSessionId,
-    imageRef: buildResult.imageRef!,
-    environment: dep.environment,
-    port: snapshot.port,
-    startCommand: snapshot.startCommand,
-    stack: snapshot.framework,
-    envVars: envMap,
-    resources: prodResources,
-    restartPolicy: "no",
-    runtimeName: project.slug ?? project.id,
-    publicEndpoints: routeState.publicEndpoints,
-    outputDirectory: resolveStaticOutputDirectory(
-      snapshot.outputDirectory,
-      routeState.publicEndpoints[0]?.targetPath,
-    ),
-    projectName: project.name,
-  });
-
-  if (staticResult.status === "failed" || !staticResult.containerId) {
-    logger.step("deploy", "failed", "Static deploy failed");
-    await onFailure(ctx, "Failed to deploy static site to edge", buildResult.durationMs);
-    return;
-  }
-
-  logger.step("deploy", "completed", "Deployed to edge successfully");
-
-  await onSuccess(ctx, {
-    containerId: staticResult.containerId,
-    url: staticResult.url,
-    durationMs: buildResult.durationMs ?? 0,
-  });
-
-  // Archive the previous-active deployment for rollback — same helper the
-  // server + compose paths use. (Previously hand-copied here WITHOUT the
-  // helper's best-effort try/catch, so an archive failure threw and failed the
-  // deploy; the shared helper keeps it best-effort per its contract.)
-  await archivePreviousDeployment(dep, project, logger);
+  throw new Error("Static edge (Cloud) deploy is not available on Operator.");
 }
 
 /**

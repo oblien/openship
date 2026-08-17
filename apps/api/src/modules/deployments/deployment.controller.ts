@@ -16,9 +16,6 @@ import * as buildStatusService from "./build-status.service";
 import * as sslService from "./ssl.service";
 import * as prepareService from "./prepare.service";
 import { maskEnv, maskScanService } from "../../lib/secret-env";
-import { maybeProxyCloudProject, proxyToSaaS } from "../../lib/cloud/project-router";
-import { promoteProjectToCloud, TransferConflictError } from "../projects/transfer.service";
-import { env } from "../../config";
 import { isMountedRelease, restoreMountedRelease, triggerMountedRelease, triggerUploadedArtifact } from "./mounted-release.service";
 import { mountedReleaseBuildMode, mountedReleaseConfig } from "./mounted-release.config";
 import { planRelease as classifyRelease } from "./release-planner";
@@ -72,12 +69,6 @@ export async function create(c: Context) {
   }>();
   if (body.projectId) {
     await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: body.projectId, action: "write" });
-    // Cloud-as-source: a cloud project's deploy runs on the SaaS; proxy it as
-    // the org owner. The local box does zero orchestration for cloud projects.
-    const proxied = await maybeProxyCloudProject(c, body.projectId, getRequestContext(c).organizationId, {
-      body: JSON.stringify(body),
-    });
-    if (proxied) return proxied;
   }
   // Construct the trigger arg from an explicit ALLOWLIST — never forward the
   // raw body. triggerDeployment has internal-only fields (reuseSnapshot,
@@ -565,9 +556,6 @@ export async function prepare(c: Context) {
         env: composeEnv,
       };
     } else if (source === "local") {
-      if (env.CLOUD_MODE) {
-        return c.json({ error: "Local projects are not available in cloud mode" }, 403);
-      }
       if (!body.path) {
         return c.json({ error: "path is required" }, 400);
       }
@@ -600,68 +588,6 @@ export async function buildAccess(c: Context) {
   }
 
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: body.projectId, action: "write" });
-
-  // Cloud-as-source: an already-cloud project's build/deploy runs on the SaaS —
-  // proxy it as the org owner; the local box does no orchestration.
-  const proxied = await maybeProxyCloudProject(c, body.projectId, getRequestContext(c).organizationId, {
-    body: JSON.stringify(body),
-  });
-  if (proxied) return proxied;
-
-  // Born-on-cloud (SELF-HOSTED ONLY): a LOCAL project chosen for a CLOUD deploy
-  // is promoted to the SaaS FIRST (ingest + local teardown), so it never exists
-  // as a "local project using cloud pages/compute" hybrid — then the deploy
-  // proxies and runs entirely on the SaaS. Promote throws BEFORE any local
-  // teardown if the SaaS ingest fails, so the local project is left intact.
-  //
-  // EXCEPTION — local build: when the operator chose "Build on this machine",
-  // we deliberately KEEP the project local-canonical and orchestrate the cloud
-  // deploy from here (build locally with the host's credentials, upload the
-  // output to an Openship Cloud workspace, deploy it). No promote/transfer, so
-  // no duplicate/leftover cloud copy, and redeploys re-run this same local
-  // pipeline. That path falls through to requestBuildAccess below, where
-  // resolveEffectiveTarget keeps the cloud target for a local build.
-  //
-  // On the SaaS itself (CLOUD_MODE) there is NOTHING to promote — the project is
-  // already canonical here — so skip and let the deploy run natively below.
-  if (!env.CLOUD_MODE && body.deployTarget === "cloud" && body.buildStrategy !== "local") {
-    try {
-      await promoteProjectToCloud(getRequestContext(c), body.projectId);
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      // A leftover cloud copy of this project (drift): surface a typed 409 with
-      // a clear message. Cleanup is an explicit, runtime-aware operation (the
-      // teardown endpoint) — never a deploy-triggered auto-delete of cloud data.
-      if (err instanceof TransferConflictError) {
-        // A slug/name conflict (a DIFFERENT cloud project owns the name) is not
-        // a leftover copy — tell the operator to rename, not to "clean up".
-        if (err.conflictKind === "slug") {
-          return c.json(
-            {
-              success: false,
-              code: "CLOUD_SLUG_TAKEN",
-              message: `The name "${err.conflictValue}" is already taken on Openship Cloud. Rename this project and try again.`,
-            },
-            409,
-          );
-        }
-        // A leftover cloud copy of THIS project (id) from an earlier transfer.
-        return c.json(
-          {
-            success: false,
-            code: "CLOUD_PROMOTE_CONFLICT",
-            message:
-              "This project already has a copy on Openship Cloud (leftover from an earlier transfer). Clean it up and retry to promote this local copy.",
-          },
-          409,
-        );
-      }
-      const message =
-        err instanceof Error ? err.message : "Failed to move project to Openship Cloud";
-      return c.json({ success: false, message }, 400);
-    }
-    return proxyToSaaS(c, getRequestContext(c).organizationId, { body: JSON.stringify(body) });
-  }
 
   try {
     const result = await buildService.requestBuildAccess(ctx, body);

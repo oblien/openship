@@ -34,7 +34,6 @@ export * from "./secret-keys";
 export * from "./credentials";
 export * from "./workspaces";
 export * from "./connectivity";
-export * from "./cloud-capability";
 export * from "./languages";
 export * from "./metadata";
 export * from "./openship-config";
@@ -49,14 +48,6 @@ export {
   type AppTemplateRejection,
 } from "./apps/schema";
 export * from "./apps/install-phases";
-export * from "./pricing";
-export {
-  pricingCatalogSchema,
-  pricingCopySchema,
-  MAX_SUPPORTED_PRICING_SCHEMA,
-  type PricingCatalogRaw,
-  type PricingPlanRaw,
-} from "./pricing/schema";
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./deployment-class";

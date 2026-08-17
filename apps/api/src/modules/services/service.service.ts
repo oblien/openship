@@ -56,7 +56,6 @@ import {
 } from "../../lib/public-endpoints";
 import { resolveRuntimeResources } from "../../lib/resources";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
-import { assertPlanAllowsServices, assertRunningServiceQuota } from "../../lib/plan-guard";
 import { ensurePendingServiceDomain, removeServiceDomain, reuseServerCertForDomain } from "../domains/domain.service";
 import {
   buildUpstreamUrl,
@@ -600,17 +599,7 @@ export async function createService(
   await assertFreeEndpointsAllowed(
     ctx.organizationId,
     resolveServicePublicEndpoints({ ...routing, ports: data.ports ?? [] }),
-    "managed-compose-domains",
   );
-
-  // Refuse the row too, not just its start: a static-only tier can never run
-  // this container, and persisting a service the org will be blocked from
-  // starting is a worse experience than refusing it here.
-  await assertPlanAllowsServices(ctx.organizationId);
-  // Each service is one Oblien workspace. Oblien would refuse the (N+1)th with a
-  // 409 mid-deploy that reads as a broken build; refuse it here as a plan
-  // decision instead, before the row exists.
-  await assertRunningServiceQuota(ctx.organizationId);
 
   // Through mergeAdvanced even on CREATE: there is nothing to preserve, but it
   // strips the `null`-means-remove sentinels the update path accepts, so a
@@ -831,7 +820,6 @@ export async function updateService(
         const hostname = publicEndpointHostname(endpoint)?.toLowerCase();
         return hostname ? !priorHosts.has(hostname) : false;
       }),
-      "managed-compose-domains",
     );
   }
 
@@ -1767,13 +1755,6 @@ async function provisionServiceContainer(
 ) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-
-  // Plan gate. This path is decoupled from the deploy pipeline — no build, no
-  // createQueuedDeployment, no preflight — so the deploy-side entitlement check
-  // never sees it. A provisioned service container IS a container, so a
-  // static-only tier can't have one, and without this a free org could add a
-  // Postgres service and start it with no gating at all.
-  await assertPlanAllowsServices(ctx.organizationId);
 
   if (!project.activeDeploymentId) {
     throw new Error("Deploy the project first, then start its services.");

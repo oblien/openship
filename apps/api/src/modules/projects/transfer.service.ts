@@ -31,7 +31,6 @@ import {
   type DatabaseDump,
   type SubgraphScope,
 } from "@repo/db";
-import { cloudClient } from "../../lib/cloud/client";
 import { teardownProject } from "./project-teardown";
 import type { RequestContext } from "../../lib/request-context";
 
@@ -146,50 +145,7 @@ export async function transferProjectToCloud(
 
   // 3) Push to cloud. The SaaS derives merge mode from dump.scope and
   //    rewrites every organizationId onto the caller's SaaS org.
-  const result = await cloudClient({
-    organizationId: input.organizationId,
-  }).ingestSubgraph({ dump });
-
-  if (!result.ok) {
-    // No cloud session linked for this org.
-    if (/not connected/i.test(result.error)) {
-      throw new TransferNotConnectedError();
-    }
-    if (result.code === "INGEST_VALIDATION_FAILED") {
-      throw new TransferCloudCallFailedError(result.error);
-    }
-    // A DIFFERENT project on the SaaS already owns this project's name/slug —
-    // a naming conflict, not a leftover copy. Surface it as a slug conflict so
-    // callers show "rename and retry", never the leftover-copy cleanup message.
-    if (result.code === "SLUG_TAKEN") {
-      throw new TransferConflictError("slug", project.slug);
-    }
-    // A leftover SaaS copy of THIS project (its id already exists). Surfaces as
-    // code "PK_COLLISION" (typed) or a "duplicate key value" message (legacy
-    // SaaS). Reported as a conflict; cleanup is an explicit, runtime-aware
-    // operation (not a deploy-triggered auto-delete).
-    if (result.code === "PK_COLLISION" || /duplicate key value/i.test(result.error)) {
-      throw new TransferConflictError("id", project.id);
-    }
-    throw new TransferCloudCallFailedError(result.error);
-  }
-
-  // 4) Ingest succeeded — the SaaS now owns this project (cloud-as-source).
-  //    The CALLER (transfer.controller) tears down the local runtime AND drops
-  //    the local rows via teardownProject({ preserveWebhook: true }) — that
-  //    reuses the tested teardown path so a promoted project leaves no orphaned
-  //    local container, while keeping the GitHub webhook for the cloud copy.
-  //    We deliberately do NOT touch local state here so a teardown failure is
-  //    reported as recoverable drift rather than a half-deleted project.
-  //
-  // Remaining follow-up (operational, not data): hand custom-domain DNS over to
-  // the cloud workspace; the local routes are removed by the teardown but DNS
-  // re-pointing for user-managed domains is the operator's step.
-
-  return {
-    projectId: project.id,
-    imported: result.imported,
-  };
+  throw new TransferCloudCallFailedError("Project transfer to Cloud is not available on Operator.");
 }
 
 export interface PromoteToCloudResult {
@@ -277,80 +233,5 @@ export async function transferProjectToSelfHosted(
 
   // 2) Pull the project subgraph from the SaaS.
   const scope: SubgraphScope = { kind: "project", projectId: input.projectId };
-  const result = await cloudClient({
-    organizationId: input.organizationId,
-  }).exportSubgraph({ scope });
-  if (!result.ok) {
-    if (/not connected/i.test(result.error)) {
-      throw new TransferNotConnectedError();
-    }
-    throw new TransferCloudCallFailedError(result.error);
-  }
-  const dump: DatabaseDump = result.dump;
-
-  // 3) Wipe the local rows for this project, then merge-insert the dump.
-  //    Uses the shared subgraph-delete primitive (child→parent FK order,
-  //    leaves the shared project_app parent) — the same one the SaaS teardown
-  //    uses, so both sides stay in lockstep.
-  await deleteProjectSubgraph(project.id);
-
-  try {
-    await restoreSubgraph(dump, {
-      mode: "merge",
-      remapOrgId: input.organizationId,
-    });
-  } catch (err) {
-    // PkCollisionError = caller already pulled this project back at some
-    // point and didn't clean up local shadow rows fully. We map it to
-    // TransferConflictError so the dashboard surfaces a recoverable
-    // "already exists locally" rather than an opaque 500.
-    if (err instanceof PkCollisionError) {
-      throw new TransferConflictError("id", project.id);
-    }
-    throw err;
-  }
-
-  // 4) Clear cloudWorkspaceId; project is now canonical-local again.
-  await db
-    .update(schema.project)
-    .set({ cloudWorkspaceId: null, updatedAt: new Date() })
-    .where(eq(schema.project.id, project.id));
-
-  // The project is local again — drop any cloud webhook binding so pushes are
-  // handled locally, not forwarded to the (now torn-down) SaaS copy.
-  await repos.cloudWebhookBinding
-    .deleteByCloudProject(project.id)
-    .catch(() => {});
-
-  // 5) Tear down the SaaS copy's ROWS so it doesn't linger as a leftover that
-  //    would collide on a future re-promote. Best-effort: the local copy is
-  //    already authoritative, so a teardown failure is drift to reconcile later
-  //    (via the teardown endpoint), not a reason to fail the bring-home.
-  //    SCOPE: data-only — this drops rows, it does NOT destroy the cloud
-  //    workspace RUNTIME. Row-only leftovers (never-deployed promotes, dev) are
-  //    fully cleaned; a project that was actually RUNNING on cloud leaves its
-  //    workspace to be destroyed by the deferred cloud-workspace teardown below.
-  const teardown = await cloudClient({
-    organizationId: input.organizationId,
-  }).teardownProject({ projectId: project.id });
-  if (!teardown.ok) {
-    console.warn(
-      `[transfer] bring-home: cloud teardown failed for project ${project.id}: ${teardown.error}`,
-    );
-  }
-
-  // TODO (business-logic phase, NOT in this change):
-  //   - destroy the cloud workspace RUNTIME (containers/routes) for a project
-  //     that was live on cloud — teardownProject above is data-only
-  //   - kick the local deploy pipeline so containers come back up
-  //   - re-bind GitHub installation to the local org
-  //   - audit_event row
-
-  const imported = Object.fromEntries(
-    Object.entries(dump.tables)
-      .filter(([, rows]) => rows.length > 0)
-      .map(([k, v]) => [k, v.length]),
-  );
-
-  return { projectId: project.id, imported };
+  throw new TransferCloudCallFailedError("Cloud transfer is not available on Operator.");
 }

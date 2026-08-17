@@ -99,7 +99,6 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
       visible: selfHosted,
       requiresRole: "admin",
     },
-    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: features.cloudConnect },
     // The servers this install runs — edge/mail container versions + global scan
     // + untracked edge routes. Self-hosted/desktop only (the SaaS has no
     // operator-managed infra). See settings/page.tsx.

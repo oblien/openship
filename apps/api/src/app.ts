@@ -10,7 +10,6 @@ import { forceMcpConsent } from "./middleware/mcp-consent";
 import { originGuard } from "./middleware/origin-guard";
 import { migrationGuard } from "./middleware/migration-guard";
 import { initPlatform } from "@repo/adapters";
-import { validatePlanPriceIds } from "@repo/core";
 import { resolvePlatformConfig } from "./lib/controller-helpers";
 import { runWithRequestStore } from "./lib/request-store";
 import { runWithCallSource } from "./lib/call-source";
@@ -39,7 +38,6 @@ import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
 import { serviceRoutes } from "./modules/services/service.routes";
 import { analyticsRoutes } from "./modules/analytics/analytics.routes";
-import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
 import { githubRoutes } from "./modules/github";
@@ -56,8 +54,6 @@ import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
 import { reconcileAllSchedules } from "./modules/backups/triggers/cron";
 import { reconcileJobs } from "./modules/jobs/job.service";
-import { scheduleBillingAnniversary } from "./modules/billing/billing-anniversary.cron";
-import { ensureOblienWebhook } from "./lib/openship-cloud";
 import { backfillWebhookSecrets } from "./modules/github/github.service";
 import { backupOrchestrator } from "./modules/backups/backup.orchestrator";
 import { getJobRunner } from "./lib/job-runner";
@@ -185,7 +181,6 @@ app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/tokens", tokenRoutes);
 app.route("/api/mcp", mcpRoutes);
-app.route("/api/billing", billingPlansRoutes);
 app.route("/api/images", imageRoutes);
 app.route("/api", backupRoutes);
 app.route("/api/backup-destinations", backupDestinationRoutes);
@@ -281,29 +276,15 @@ setupWebSocket(app);
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
-/* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
-if (env.CLOUD_MODE) {
-  const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
-  app.route("/api/cloud", cloudSaasRoutes);
-
-  const { billingSaasRoutes } = await import("./modules/billing/billing.routes");
-  app.route("/api/billing", billingSaasRoutes);
-} else {
-  /**
-   * System routes - filesystem browse, instance setup, user provisioning.
-   *
-   * Dynamic import: in cloud mode these modules are NEVER loaded into the
-   * process. The filesystem controller (node:fs), setup controller
-   * (admin user creation), and all their dependencies don't exist in
-   * the cloud runtime - not just "protected", but fully absent.
-   */
+/* ---------- Operator host routes ---------- */
+{
   const { systemRoutes } = await import("./modules/system/system.routes");
   app.route("/api/system", systemRoutes);
 
   const { serverAgentRoutes } = await import("./modules/system/server-agent.routes");
   app.route("/api/servers", serverAgentRoutes);
 
-  /** Mail server setup - self-hosted iRedMail wizard */
+  /** Mail server setup - iRedMail wizard */
   const { mailRoutes } = await import("./modules/mail/mail.routes");
   app.route("/api/mail", mailRoutes);
 
@@ -313,22 +294,10 @@ if (env.CLOUD_MODE) {
 
   /**
    * Interactive SERVER terminal (xterm.js ↔ WebSocket ↔ ssh2 PTY).
-   * Self-hosted only — exposes the host's SSH-managed servers.
-   * setupWebSocket(app) already ran unconditionally above; this
-   * branch only mounts the SSH-flavored routes.
+   * setupWebSocket(app) already ran unconditionally above.
    */
   const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
   app.route("/api/terminal", terminalRoutes);
-
-  // Operator is a local control plane, not a thin client for Openship Cloud.
-  // cloudLocalRoutes / billingLocalRoutes stay in the tree so CLOUD_MODE still
-  // compiles; they are not mounted here (same as desktop previously).
-
-  // Analytics is scraped on two triggers, neither wired here: the
-  // `analytics:scrape` system job owns durability (the edge holds counters in RAM
-  // under a TTL, so an unswept server loses them), and the read handlers scrape
-  // on view for freshness. Both go through scrapeServerIfStale, which throttles
-  // and dedups, so they collapse rather than compete.
 }
 
 // ─── Backup job runner + boot reconcile ─────────────────────────────
@@ -363,13 +332,10 @@ if (env.CLOUD_MODE) {
   // A Docker migration is an in-memory FSM that quiesces (stops) the source
   // containers before the target deploy — a restart mid-migration would strand
   // a stopped production stack forever. Restart the originals + roll back any
-  // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
-  // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
-  if (!env.CLOUD_MODE) {
-    void import("./modules/migration/migration.orchestrator")
-      .then(({ migrationOrchestrator }) => migrationOrchestrator.recoverInterruptedMigrations())
-      .catch((err) => console.warn("[boot] migration recovery failed:", err));
-  }
+  // interrupted run.
+  void import("./modules/migration/migration.orchestrator")
+    .then(({ migrationOrchestrator }) => migrationOrchestrator.recoverInterruptedMigrations())
+    .catch((err) => console.warn("[boot] migration recovery failed:", err));
 
   const runner = await getJobRunner();
   await runner.start({
@@ -386,85 +352,15 @@ if (env.CLOUD_MODE) {
     )
     .catch((err) => console.warn("[boot] reconcileJobs failed:", err));
 
-  // Self-hosted (single box): any job_run still "running" at boot was orphaned
-  // by a crash/restart mid-run — close it out so the Jobs UI doesn't show a
-  // perpetual "Running" spinner. Not run in CLOUD_MODE, where a shared queue +
-  // multiple replicas mean a "running" row may be live on another replica.
-  if (!env.CLOUD_MODE) {
-    void repos.jobRun
-      .failStaleRunning()
-      .then((n) => n > 0 && console.log(`[boot] reconciled ${n} orphaned job run(s)`))
-      .catch((err) => console.warn("[boot] failStaleRunning failed:", err));
-  }
+  // Any job_run still "running" at boot was orphaned by a crash/restart
+  // mid-run — close it out so the Jobs UI doesn't show a perpetual spinner.
+  void repos.jobRun
+    .failStaleRunning()
+    .then((n) => n > 0 && console.log(`[boot] reconciled ${n} orphaned job run(s)`))
+    .catch((err) => console.warn("[boot] failStaleRunning failed:", err));
 
-  // Hourly billing-period rollover — re-arms Oblien quota for orgs
-  // whose current_period_end has passed (safety net for paid orgs
-  // whose Stripe webhook lagged, and the primary mechanism for
-  // free-tier orgs).
-  void scheduleBillingAnniversary().catch((err) =>
-    console.warn("[boot] scheduleBillingAnniversary failed:", err),
-  );
-
-  // Register the Oblien billing webhook (credits usage/low/depleted + quota
-  // threshold). Idempotent + self-gating on CLOUD_MODE; without it Oblien
-  // never calls our receiver.
-  void ensureOblienWebhook().catch((err) =>
-    console.warn("[boot] ensureOblienWebhook failed:", err),
-  );
-
-  // Drain orgs that have no Oblien namespace recorded. Every org predates
-  // namespace persistence (the column was read in eleven places and written in
-  // none), so until this sweep finishes their credit quotas and resource
-  // ceilings do not exist on Oblien's side. Bounded per boot.
-  void import("./modules/billing/billing-namespace.provision")
-    .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
-    .then((stats) => {
-      if (stats.done > 0 || stats.failed > 0) {
-        console.log(
-          `[boot] Oblien namespaces backfilled: ${stats.done} provisioned, ${stats.failed} failed`,
-        );
-      }
-    })
-    .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
-
-  // Every PUBLISHED price must have a real Stripe price id in the environment.
-  // Now that the pricing catalog states actual prices, a missing id is a
-  // customer-visible failure: the plan card shows $39 and checkout 503s. This
-  // check already existed but had NO caller in either mode — wired here.
-  //
-  // Loud, not fatal: refusing to boot the whole SaaS over an unset price id
-  // would trade a broken checkout button for a total outage, and checkout
-  // already fails closed on its own (503 BILLING_NOT_CONFIGURED at the point of
-  // use, plus BILLING_ENABLED defaults off). Self-hosted logs it as information
-  // — it never sells anything.
-  // A live campaign must match its Stripe coupon, or the page advertises a
-  // discount the customer won't get. Only reaches Stripe when a campaign is
-  // actually running, so the common case costs nothing.
-  void import("./modules/billing/billing.service")
-    .then(({ verifyCampaigns }) => verifyCampaigns())
-    .then((problems) => {
-      for (const p of problems) console.error(`[boot] pricing campaign: ${p}`);
-    })
-    .catch((err) => console.warn("[boot] verifyCampaigns failed:", err));
-
-  {
-    const { missing } = validatePlanPriceIds();
-    if (missing.length > 0) {
-      const detail = missing.join(", ");
-      if (env.CLOUD_MODE) {
-        console.error(
-          `[boot] FATAL: published prices with no Stripe price id configured: ${detail}. Set those env vars or unpublish the price in packages/core/src/pricing/pricing.json.`,
-        );
-      } else {
-        console.log(`[boot] billing not configured (self-hosted, expected): ${detail}`);
-      }
-    }
-  }
-
-  // Self-hosted only: backfill per-project GitHub webhook secrets for
-  // auto-deploy projects registered before per-project secrets were wired
-  // (self-gates on !CLOUD_MODE). Fixes silently-broken auto-deploy on installs
-  // that followed the "GITHUB_WEBHOOK_SECRET is ignored" guidance.
+  // Backfill per-project GitHub webhook secrets for auto-deploy projects
+  // registered before per-project secrets were wired.
   void backfillWebhookSecrets().catch((err) =>
     console.warn("[boot] backfillWebhookSecrets failed:", err),
   );

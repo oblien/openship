@@ -264,7 +264,7 @@ export type RateLimitPolicyId =
   | "read-authed"
   | "write-authed"
   | "webhook-ingress"
-  | "billing-portal";
+
 
 /**
  * MCP exposure for a route. Presence of this block is the MCP allowlist:

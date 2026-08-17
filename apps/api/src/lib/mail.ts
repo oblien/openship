@@ -3,7 +3,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "../config/env";
 import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
-import { cloudClient } from "./cloud/client";
+
 import { decrypt } from "./encryption";
 
 /**
@@ -431,7 +431,7 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
   // Cloud relay branch — only meaningful on a local self-hosted instance.
   // When CLOUD_MODE=true we ARE the SaaS, so "cloud" falls through to the
   // normal transport selection (the SaaS has its own infra mailer).
-  if (preferSource === "cloud" && !env.CLOUD_MODE) {
+  if (preferSource === "cloud") {
     if (!opts.organizationId) {
       console.warn(
         "[mail] preferSource=cloud requires organizationId - skipping email to",
@@ -443,21 +443,8 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
     // only side effects on import, so static import is fine. Cargo-cult
     // comment about matching "platform-transport pattern" was wrong —
     // that one IS local-only, this one isn't.
-    const result = await cloudClient({
-      organizationId: opts.organizationId,
-    }).sendInvitation({
-      to: opts.to,
-      subject: opts.subject,
-      html: opts.html,
-      text: opts.text ?? stripHtmlForText(opts.html),
-    });
-    if (!result.ok) {
-      console.warn(
-        `[mail] cloud invitation relay failed for org=${opts.organizationId}: ${result.error}`,
-      );
-      return false;
-    }
-    return true;
+    console.warn("[mail] Cloud invitation relay is not available on Operator");
+    return false;
   }
 
   const chain = await getTransportChain(preferSource);

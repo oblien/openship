@@ -176,163 +176,17 @@ export async function desktopLogin(c: Context) {
  *      instead of mirroring as a new user).
  */
 export async function cloudCallback(c: Context) {
-  const code = c.req.query("code");
-  if (!code) {
-    return c.html(desktopResultPage("Missing authentication code", "Please return to Openship and try again."));
-  }
-
-  const state = c.req.query("state");
-
-  try {
-    const {
-      exchangeCodeWithCloud,
-      mirrorCloudUser,
-      storeCloudSession,
-      mintSession,
-      resolveDesktopAuth,
-      validateDesktopState,
-      failDesktopAuth,
-    } = await import("../../lib/cloud-auth-proxy");
-
-    if (!state) {
-      const data = await exchangeCodeWithCloud(code);
-      if (!data) {
-        return c.html(desktopResultPage("Authentication failed", "Could not verify with Openship Cloud. Please return to Openship and try again."));
-      }
-
-      const mirroredUserId = await mirrorCloudUser(data.user);
-      await storeCloudSession(mirroredUserId, data.sessionToken);
-
-      const session = await mintSession({
-        purpose: "local-cookie",
-        userId: mirroredUserId,
-        ipAddress: "127.0.0.1",
-        userAgent: "desktop",
-      });
-      await setSessionCookie(c, session.token, session.expiresAt);
-
-      return c.redirect(localDashboardUrl);
-    }
-
-    const validated = validateDesktopState(state);
-    if (!validated) {
-      return c.html(desktopResultPage("Invalid or expired session", "The authorization request has expired. Please return to Openship and try again."));
-    }
-
-    const data = await exchangeCodeWithCloud(code, validated.codeVerifier);
-    if (!data) {
-      failDesktopAuth(validated.nonce);
-      return c.html(desktopResultPage("Authentication failed", "Could not verify with Openship Cloud. Please return to Openship and try again."));
-    }
-
-    // Always mirror the cloud user for record-keeping
-    const mirroredUserId = await mirrorCloudUser(data.user);
-
-    // Cloud:connect flow — link to the CURRENTLY logged-in user when
-    // present; otherwise store against the mirrored cloud user.
-    const targetUserId = validated.connectUserId || mirroredUserId;
-    await storeCloudSession(targetUserId, data.sessionToken);
-
-    const session = await mintSession({
-      purpose: "local-cookie",
-      userId: mirroredUserId,
-      ipAddress: "127.0.0.1",
-      userAgent: "desktop",
-    });
-
-    // Resolve the pending nonce so Electron's polling loop can pick
-    // up the session via /desktop-auth-poll.
-    resolveDesktopAuth(validated.nonce, session.token, session.expiresAt);
-
-    return c.html(desktopResultPage("Signed in to Openship", "You can return to the Openship app now.", true));
-  } catch (err) {
-    // Signal failure to the polling loop so Electron doesn't hang
-    try {
-      const { failDesktopAuth, getActiveNonce } = await import("../../lib/cloud-auth-proxy");
-      const nonce = getActiveNonce();
-      if (nonce) failDesktopAuth(nonce);
-    } catch {
-      // best-effort
-    }
-    console.error("[cloud-callback] error:", err);
-    return c.html(desktopResultPage("Authentication failed", "Something went wrong. Please return to Openship and try again."));
-  }
+  return c.html(desktopResultPage("Cloud sign-in is not available", "Operator uses local login only."));
 }
 
-/**
- * POST /api/auth/desktop-auth-start
- *
- * Register a (nonce, state, PKCE verifier) tuple before the Electron
- * main process opens the system browser. Protected by internalAuth
- * shared token — only the Electron host should be able to register a
- * desktop auth nonce.
- *
- * Net.fetch in Electron sends cookies automatically; if the dashboard
- * is logged in, the current user is linked to the resulting cloud
- * session (cloud:connect flow). Otherwise this is onboarding and the
- * mirrored cloud user becomes the local user.
- */
 export async function desktopAuthStart(c: Context) {
-  const body = await c.req.json();
-  const nonce = body?.nonce;
-  const state = body?.state;
-  const codeVerifier = body?.code_verifier;
-  if (
-    !nonce || typeof nonce !== "string" ||
-    !state || typeof state !== "string" ||
-    !codeVerifier || typeof codeVerifier !== "string"
-  ) {
-    return c.json({ error: "missing nonce, state, or code_verifier" }, 400);
-  }
-
-  let connectUserId: string | undefined;
-  try {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    connectUserId = session?.user?.id;
-  } catch {
-    // No session — onboarding flow; mirror cloud user instead.
-  }
-
-  const { registerDesktopNonce } = await import("../../lib/cloud-auth-proxy");
-  registerDesktopNonce(nonce, state, codeVerifier, connectUserId);
-  return c.json({ ok: true });
+  return c.json({ error: "Cloud desktop auth is not available" }, 404);
 }
 
-/**
- * GET /api/auth/desktop-auth-poll?nonce=...
- *
- * Electron polls this until status === "resolved". On resolve, it
- * navigates the BrowserWindow to /desktop-claim?code=... which sets
- * the cookie + redirects to the dashboard.
- */
 export async function desktopAuthPoll(c: Context) {
-  const nonce = c.req.query("nonce");
-  if (!nonce) {
-    return c.json({ error: "missing nonce" }, 400);
-  }
-  const { pollDesktopAuth } = await import("../../lib/cloud-auth-proxy");
-  return c.json(pollDesktopAuth(nonce));
+  return c.json({ error: "Cloud desktop auth is not available" }, 404);
 }
 
-/**
- * GET /api/auth/desktop-claim?code=...
- *
- * Exchange a one-time claim code for a session cookie. Set-Cookie via
- * HTTP header is reliable across all Electron versions where
- * cookie-via-API has had quirks.
- */
 export async function desktopClaim(c: Context) {
-  const code = c.req.query("code");
-  if (!code) {
-    return c.text("Missing code", 400);
-  }
-
-  const { exchangeDesktopClaim } = await import("../../lib/cloud-auth-proxy");
-  const result = exchangeDesktopClaim(code);
-  if (!result) {
-    return c.text("Claim expired", 400);
-  }
-
-  await setSessionCookie(c, result.token, result.expiresAt);
-  return c.redirect(localDashboardUrl);
+  return c.text("Cloud desktop auth is not available", 404);
 }

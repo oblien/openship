@@ -16,10 +16,4 @@ describe("resolveInvitationMailSource", () => {
     expect(resolveInvitationMailSource(null)).toBe("platform");
   });
 
-  it("honors a stored cloud source on the SaaS", async () => {
-    env.CLOUD_MODE = true;
-    const { resolveInvitationMailSource } = await import("../../src/lib/invitation-mail-source");
-    expect(resolveInvitationMailSource("cloud")).toBe("cloud");
-    expect(resolveInvitationMailSource("platform")).toBe("platform");
-  });
 });

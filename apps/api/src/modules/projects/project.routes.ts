@@ -15,7 +15,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureRouter } from "../../lib/secure-router";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
 import * as transfer from "./transfer.controller";
@@ -191,7 +190,6 @@ r.post(
 r.get(
   "/:id",
   { tag: "project:read", mcp: { description: "Get a project by id — config, source, routes, status." } },
-  cloudProjectProxy,
   ctrl.getById,
 );
 r.patch(
@@ -201,12 +199,11 @@ r.patch(
     body: UpdateProjectBody,
     mcp: { description: "Update a project's configuration (build config, source, options)." },
   },
-  cloudProjectProxy,
   ctrl.update,
 );
-r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
-r.get("/:id/info", { tag: "project:read", mcp: { description: "Get a project's detailed info (runtime, build, source)." } }, cloudProjectProxy, ctrl.getInfo);
-r.get("/:id/environments", { tag: "project:read", mcp: { description: "List a project's environments (production / previews)." } }, cloudProjectProxy, ctrl.listEnvironments);
+r.delete("/:id", { tag: "project:admin" }, ctrl.remove);
+r.get("/:id/info", { tag: "project:read", mcp: { description: "Get a project's detailed info (runtime, build, source)." } }, ctrl.getInfo);
+r.get("/:id/environments", { tag: "project:read", mcp: { description: "List a project's environments (production / previews)." } }, ctrl.listEnvironments);
 r.post(
   "/:id/environments",
   {
@@ -214,22 +211,21 @@ r.post(
     body: CreateProjectEnvironmentBody,
     mcp: { description: "Create a project environment (e.g. a preview)." },
   },
-  cloudProjectProxy,
   ctrl.createEnvironment,
 );
-r.get("/:id/deletion-preview", { tag: "project:read", mcp: { description: "Preview what deleting this project would remove (read-only)." } }, cloudProjectProxy, ctrl.deletionPreview);
+r.get("/:id/deletion-preview", { tag: "project:read", mcp: { description: "Preview what deleting this project would remove (read-only)." } }, ctrl.deletionPreview);
 
 /* ─── Build options ────────────────────────────────────────────────────── */
-r.post("/:id/options", { tag: "project:write", body: SetOptionsBody, mcp: { description: "Set build/deploy options for a project." } }, cloudProjectProxy, ctrl.setOptions);
-r.post("/:id/port-check", { tag: "project:read", readOnly: true, mcp: { description: "Live port-reachability check for the project's active deployment (advisory)." } }, cloudProjectProxy, ctrl.portCheck);
-r.post("/:id/output-check", { tag: "project:read", readOnly: true, mcp: { description: "Live static-output check for the project's active deployment (advisory; static apps)." } }, cloudProjectProxy, ctrl.outputCheck);
+r.post("/:id/options", { tag: "project:write", body: SetOptionsBody, mcp: { description: "Set build/deploy options for a project." } }, ctrl.setOptions);
+r.post("/:id/port-check", { tag: "project:read", readOnly: true, mcp: { description: "Live port-reachability check for the project's active deployment (advisory)." } }, ctrl.portCheck);
+r.post("/:id/output-check", { tag: "project:read", readOnly: true, mcp: { description: "Live static-output check for the project's active deployment (advisory; static apps)." } }, ctrl.outputCheck);
 
 /* ─── Enable / Disable ─────────────────────────────────────────────────── */
-r.post("/:id/enable", { tag: "project:write", mcp: { description: "Enable a project (allow deploys / bring online)." } }, cloudProjectProxy, ctrl.enable);
-r.post("/:id/disable", { tag: "project:write", mcp: { description: "Disable a project (pause deploys / take offline)." } }, cloudProjectProxy, ctrl.disable);
+r.post("/:id/enable", { tag: "project:write", mcp: { description: "Enable a project (allow deploys / bring online)." } }, ctrl.enable);
+r.post("/:id/disable", { tag: "project:write", mcp: { description: "Disable a project (pause deploys / take offline)." } }, ctrl.disable);
 
 /* ─── Retry free-domain edge routing (no rebuild) ──────────────────────── */
-r.post("/:id/routing/retry", { tag: "project:write", mcp: { description: "Retry syncing the project's free .opsh.io edge route (no rebuild); clears the routing 'Action Required' warning on success." } }, cloudProjectProxy, ctrl.retryRouting);
+r.post("/:id/routing/retry", { tag: "project:write", mcp: { description: "Retry syncing the project's free .opsh.io edge route (no rebuild); clears the routing 'Action Required' warning on success." } }, ctrl.retryRouting);
 
 /* ─── Set up / take over the self-hosted edge (OpenResty on 80/443) + apply
       the project's routes, WITHOUT a container redeploy. SSE so the port-80/443
@@ -245,7 +241,7 @@ r.post("/:id/routing/ensure-edge/respond", { tag: "project:write" }, ensureEdgeC
 // project:env_var:* tags required a :envVarId param these routes don't have,
 // so the permission middleware 400'd before the handler. Secret VALUES stay
 // protected by masking in listEnvVars, not by the route tag.
-r.get("/:id/env", { tag: "project:read", mcp: { description: "List a project's environment variables (secret values masked)." } }, cloudProjectProxy, ctrl.listEnvVars);
+r.get("/:id/env", { tag: "project:read", mcp: { description: "List a project's environment variables (secret values masked)." } }, ctrl.listEnvVars);
 // Project env edits go through the MERGE path (PATCH) only — the old destructive
 // full-replace PUT was removed (it could wipe/corrupt masked secrets and had no
 // remaining caller; the editor sends a diff via mergeEnvVars).
@@ -258,17 +254,16 @@ r.patch(
     body: MergeEnvVarsBody,
     mcp: { description: "Merge env var changes (upserts + deletes); untouched vars are preserved." },
   },
-  cloudProjectProxy,
   ctrl.mergeEnvVars,
 );
 
 /* ─── Per-project clone token (git credential override) ────────────────── */
-r.get("/:id/clone-token", { tag: "project:read" }, cloudProjectProxy, ctrl.getCloneToken);
-r.patch("/:id/clone-token", { tag: "project:admin" }, cloudProjectProxy, ctrl.updateCloneToken);
+r.get("/:id/clone-token", { tag: "project:read" }, ctrl.getCloneToken);
+r.patch("/:id/clone-token", { tag: "project:admin" }, ctrl.updateCloneToken);
 
 /* ─── Git ──────────────────────────────────────────────────────────────── */
-r.get("/:id/git", { tag: "project:read", mcp: { description: "Get the project's linked git repository info." } }, cloudProjectProxy, ctrl.getGitInfo);
-r.get("/:id/commit-status", { tag: "project:read", mcp: { description: "Compare the deployed commit against the remote HEAD." } }, cloudProjectProxy, ctrl.getCommitStatus);
+r.get("/:id/git", { tag: "project:read", mcp: { description: "Get the project's linked git repository info." } }, ctrl.getGitInfo);
+r.get("/:id/commit-status", { tag: "project:read", mcp: { description: "Compare the deployed commit against the remote HEAD." } }, ctrl.getCommitStatus);
 r.get(
   "/:id/live-state",
   {
@@ -280,7 +275,6 @@ r.get(
         "Independent live pointers for this project: runtime image/deployment, mounted code release SHA (null when mounted releases are off), and the bound server.",
     },
   },
-  cloudProjectProxy,
   ctrl.getLiveState,
 );
 
@@ -294,26 +288,25 @@ r.get(
         "What is waiting on a human for this project, and how to resolve each item. Covers a deploy blocked on a named cause (e.g. a port already in use), a deploy HELD right now on a decision (answer it with the build-respond tool — the exact action id and body are in the item's resolveWith, and `expiresAt` is when the deploy gives up), a partial-failure release awaiting keep/reject, unsynced routing, unverified domains, and failed/expired certificates. Each item carries `resolveWith`, an array of concrete {method, path, body} calls — use those rather than guessing. Call this after starting a deploy that seems stuck, and whenever a project reads as Action Required. This covers deploy/domain/routing items only — for container-runtime health (crash loops, unhealthy or down containers) read the project's incidents instead. Scoped to ONE project: to ask what is broken across the whole installation (these items for every project, plus runtime incidents, unreachable servers and edge/mail state, ranked by severity), read the issues feed instead.",
     },
   },
-  cloudProjectProxy,
   ctrl.getPendingActions,
 );
-r.post("/:id/git/link", { tag: "project:write", body: LinkRepoBody, mcp: { description: "Link a git repository to the project." } }, cloudProjectProxy, ctrl.linkRepo);
-r.get("/:id/branches", { tag: "project:read", mcp: { description: "List the linked repository's branches." } }, cloudProjectProxy, ctrl.listBranches);
-r.post("/:id/auto-deploy", { tag: "project:write", body: SetAutoDeployBody, mcp: { description: "Enable/disable auto-deploy on push." } }, cloudProjectProxy, ctrl.setAutoDeploy);
-r.post("/:id/webhook-domain", { tag: "project:write" }, cloudProjectProxy, ctrl.setWebhookDomain);
-r.post("/:id/branch", { tag: "project:write", body: SetBranchBody, mcp: { description: "Set the project's deploy branch." } }, cloudProjectProxy, ctrl.setBranch);
+r.post("/:id/git/link", { tag: "project:write", body: LinkRepoBody, mcp: { description: "Link a git repository to the project." } }, ctrl.linkRepo);
+r.get("/:id/branches", { tag: "project:read", mcp: { description: "List the linked repository's branches." } }, ctrl.listBranches);
+r.post("/:id/auto-deploy", { tag: "project:write", body: SetAutoDeployBody, mcp: { description: "Enable/disable auto-deploy on push." } }, ctrl.setAutoDeploy);
+r.post("/:id/webhook-domain", { tag: "project:write" }, ctrl.setWebhookDomain);
+r.post("/:id/branch", { tag: "project:write", body: SetBranchBody, mcp: { description: "Set the project's deploy branch." } }, ctrl.setBranch);
 
 /* ─── Incoming webhooks (generic per-project trigger hooks) ─────────────── */
-r.get("/:id/incoming-webhooks", { tag: "project:read", mcp: { description: "List a project's incoming webhooks (dynamic trigger URLs)." } }, cloudProjectProxy, incomingWebhooks.list);
-r.post("/:id/incoming-webhooks", { tag: "project:write", body: CreateIncomingWebhookBody, mcp: { description: "Create an incoming webhook that fires a deploy or job when its URL is called." } }, cloudProjectProxy, incomingWebhooks.create);
-r.patch("/:id/incoming-webhooks/:hookId", { tag: "project:write", body: UpdateIncomingWebhookBody, mcp: { description: "Update an incoming webhook (name/enabled/action/auth)." } }, cloudProjectProxy, incomingWebhooks.update);
-r.post("/:id/incoming-webhooks/:hookId/rotate", { tag: "project:write", mcp: { description: "Rotate an incoming webhook's token / HMAC secret." } }, cloudProjectProxy, incomingWebhooks.rotate);
-r.delete("/:id/incoming-webhooks/:hookId", { tag: "project:write", mcp: { description: "Delete an incoming webhook." } }, cloudProjectProxy, incomingWebhooks.remove);
-r.get("/:id/incoming-webhooks/:hookId/deliveries", { tag: "project:read", mcp: { description: "List one incoming webhook's recent deliveries (paginated)." } }, cloudProjectProxy, incomingWebhooks.hookDeliveries);
-r.get("/:id/webhook-deliveries", { tag: "project:read", mcp: { description: "List a project's webhook delivery feed — GitHub pushes + custom hooks (paginated)." } }, cloudProjectProxy, incomingWebhooks.deliveries);
+r.get("/:id/incoming-webhooks", { tag: "project:read", mcp: { description: "List a project's incoming webhooks (dynamic trigger URLs)." } }, incomingWebhooks.list);
+r.post("/:id/incoming-webhooks", { tag: "project:write", body: CreateIncomingWebhookBody, mcp: { description: "Create an incoming webhook that fires a deploy or job when its URL is called." } }, incomingWebhooks.create);
+r.patch("/:id/incoming-webhooks/:hookId", { tag: "project:write", body: UpdateIncomingWebhookBody, mcp: { description: "Update an incoming webhook (name/enabled/action/auth)." } }, incomingWebhooks.update);
+r.post("/:id/incoming-webhooks/:hookId/rotate", { tag: "project:write", mcp: { description: "Rotate an incoming webhook's token / HMAC secret." } }, incomingWebhooks.rotate);
+r.delete("/:id/incoming-webhooks/:hookId", { tag: "project:write", mcp: { description: "Delete an incoming webhook." } }, incomingWebhooks.remove);
+r.get("/:id/incoming-webhooks/:hookId/deliveries", { tag: "project:read", mcp: { description: "List one incoming webhook's recent deliveries (paginated)." } }, incomingWebhooks.hookDeliveries);
+r.get("/:id/webhook-deliveries", { tag: "project:read", mcp: { description: "List a project's webhook delivery feed — GitHub pushes + custom hooks (paginated)." } }, incomingWebhooks.deliveries);
 
 /* ─── Resources ────────────────────────────────────────────────────────── */
-r.get("/:id/resources", { tag: "project:read", mcp: { description: "Get the project's CPU/RAM/disk resource config." } }, cloudProjectProxy, ctrl.getResources);
+r.get("/:id/resources", { tag: "project:read", mcp: { description: "Get the project's CPU/RAM/disk resource config." } }, ctrl.getResources);
 r.get(
   "/:id/rollback-capacity",
   {
@@ -323,7 +316,6 @@ r.get(
         "Get the rollback retention window in force (explicit or disk-sized), the measured per-release size, and the deploy host's free disk.",
     },
   },
-  cloudProjectProxy,
   ctrl.getRollbackCapacity,
 );
 r.patch(
@@ -333,35 +325,27 @@ r.patch(
     body: UpdateResourcesBody,
     mcp: { description: "Update the project's CPU/RAM/disk, sleep mode, or port." },
   },
-  cloudProjectProxy,
   ctrl.updateResources,
 );
-r.post("/:id/resources", { tag: "project:write" }, cloudProjectProxy, ctrl.updateResources);
+r.post("/:id/resources", { tag: "project:write" }, ctrl.updateResources);
 
 /* ─── Sleep mode ───────────────────────────────────────────────────────── */
-r.post("/:id/sleep-mode", { tag: "project:write", body: SetSleepModeBody, mcp: { description: "Set the project's sleep mode (auto_sleep / always_on)." } }, cloudProjectProxy, ctrl.setSleepMode);
+r.post("/:id/sleep-mode", { tag: "project:write", body: SetSleepModeBody, mcp: { description: "Set the project's sleep mode (auto_sleep / always_on)." } }, ctrl.setSleepMode);
 
 /* ─── Deployments ──────────────────────────────────────────────────────── */
-r.get("/:id/deployments", { tag: "project:deployment:list", mcp: { description: "List a project's deployments (history, statuses)." } }, cloudProjectProxy, ctrl.listDeployments);
-r.post("/:id/deployment-session", { tag: "project:read", readOnly: true }, cloudProjectProxy, ctrl.deploymentSession);
+r.get("/:id/deployments", { tag: "project:deployment:list", mcp: { description: "List a project's deployments (history, statuses)." } }, ctrl.listDeployments);
+r.post("/:id/deployment-session", { tag: "project:read", readOnly: true }, ctrl.deploymentSession);
 
 /* ─── Custom domain ────────────────────────────────────────────────────── */
-r.post("/:id/connect", { tag: "project:write" }, cloudProjectProxy, ctrl.connectDomain);
+r.post("/:id/connect", { tag: "project:write" }, ctrl.connectDomain);
 
 /* ─── Runtime logs ─────────────────────────────────────────────────────── */
-r.get("/:id/logs", { tag: "project:read", mcp: { description: "Fetch the project's runtime logs (non-streaming)." } }, cloudProjectProxy, ctrl.runtimeLogs);
-r.get("/:id/logs/stream", { tag: "project:read" }, cloudProjectProxy, ctrl.runtimeLogStream);
+r.get("/:id/logs", { tag: "project:read", mcp: { description: "Fetch the project's runtime logs (non-streaming)." } }, ctrl.runtimeLogs);
+r.get("/:id/logs/stream", { tag: "project:read" }, ctrl.runtimeLogStream);
 
 /* ─── Server HTTP request logs ─────────────────────────────────────────── */
-r.get("/:id/server-logs/recent", { tag: "project:read", mcp: { description: "Fetch recent HTTP request logs for the project." } }, cloudProjectProxy, ctrl.recentServerLogs);
-r.get("/:id/server-logs/stream-token", { tag: "project:read" }, cloudProjectProxy, ctrl.serverLogStreamToken);
-r.get("/:id/server-logs/stream", { tag: "project:read" }, cloudProjectProxy, ctrl.serverLogStream);
-
-/* ─── Project transfer / promote (local → cloud) ───────────────────────── */
-// Self-hosted ONLY: promote pushes a LOCAL project to the SaaS, and bring-home
-// pulls it back. Meaningless on the SaaS itself (it IS the cloud), so localOnly
-// 404s them there — never proxied, never run in CLOUD_MODE.
-r.post("/:id/transfer/to-cloud", { tag: "project:admin", localOnly: true }, transfer.transferToCloud);
-r.post("/:id/transfer/to-self-hosted", { tag: "project:admin", localOnly: true }, transfer.transferToSelfHosted);
+r.get("/:id/server-logs/recent", { tag: "project:read", mcp: { description: "Fetch recent HTTP request logs for the project." } }, ctrl.recentServerLogs);
+r.get("/:id/server-logs/stream-token", { tag: "project:read" }, ctrl.serverLogStreamToken);
+r.get("/:id/server-logs/stream", { tag: "project:read" }, ctrl.serverLogStream);
 
 export const projectRoutes = r.hono;

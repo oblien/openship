@@ -11,7 +11,6 @@ import { audit, auditContextFrom } from "../../lib/audit";
 import { notification } from "../../lib/notification-dispatcher";
 import { streamSSE } from "../../lib/sse";
 import * as domainService from "./domain.service";
-import { maybeProxyCloudProject } from "../../lib/cloud/project-router";
 import type { TAddDomainBody, TUploadCertBody } from "./domain.schema";
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -23,8 +22,6 @@ export async function list(c: Context) {
     return c.json({ error: "projectId query parameter required" }, 400);
   }
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "read" });
-  const proxied = await maybeProxyCloudProject(c, projectId, getRequestContext(c).organizationId);
-  if (proxied) return proxied;
   const domains = await domainService.listDomains(ctx, projectId);
   return c.json({ data: domains });
 }
@@ -34,10 +31,6 @@ export async function add(c: Context) {
   const body = await c.req.json<TAddDomainBody>();
   if (body.projectId) {
     await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: body.projectId, action: "write" });
-    const proxied = await maybeProxyCloudProject(c, body.projectId, getRequestContext(c).organizationId, {
-      body: JSON.stringify(body),
-    });
-    if (proxied) return proxied;
   }
   const result = await domainService.addDomain(ctx, body);
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {

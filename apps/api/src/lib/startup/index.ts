@@ -47,7 +47,6 @@ export async function runStartupHooks(): Promise<void> {
   if (env.CLOUD_MODE) return; // self-hosted only — never SaaS
 
   const target = resolvePlatformConfig().target;
-  if (target === "cloud") return;
 
   for (const hook of hooks) {
     if (!hook.modes.includes(target)) continue;

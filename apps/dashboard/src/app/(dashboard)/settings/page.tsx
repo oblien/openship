@@ -20,14 +20,12 @@
 import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
-import { useCloud } from "@/context/CloudContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
 import { BuildPreferences } from "./_components/BuildPreferences";
 import { RoutePreferences } from "./_components/RoutePreferences";
 import { DeployDefaults } from "./_components/DeployDefaults";
-import { CloudConnection } from "./_components/CloudConnection";
 import { GitHubConnection } from "./_components/GitHubConnection";
 import { CloneCredentials } from "./_components/CloneCredentials";
 import { PersonalAccessTokens } from "./_components/PersonalAccessTokens";
@@ -69,7 +67,6 @@ export default function SettingsPage() {
 
 function SettingsPageInner() {
   const { selfHosted, deployMode, features, productView } = usePlatform();
-  const { refresh } = useCloud();
   const { showToast } = useToast();
   const { t } = useI18n();
   const searchParams = useSearchParams();
@@ -91,15 +88,6 @@ function SettingsPageInner() {
   const showBuildPreferences = selfHosted && !mailOnly;
   // Deploy defaults: only meaningful where the picker exists (desktop / self-hosted)
   const showDeployDefaults = selfHosted;
-
-  /* ── Cloud callback (redirect after connect) ── */
-  useEffect(() => {
-    if (searchParams.get("cloud") === "connected") {
-      refresh();
-      showToast(t.settings.page.cloudConnectedToast, "success", t.settings.common.toast.cloud);
-      window.history.replaceState({}, "", "/settings?tab=cloud");
-    }
-  }, [searchParams, showToast, refresh, t]);
 
   return (
     <PageContainer>
@@ -168,8 +156,6 @@ function SettingsPageInner() {
           )}
 
           {activeTab === "credentials" && <Credentials />}
-
-          {activeTab === "cloud" && features.cloudConnect && <CloudConnection />}
 
           {/* Infrastructure — the servers this install runs: edge/mail container
               versions across the fleet + scan + auto-update toggle, and the

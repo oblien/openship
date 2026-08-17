@@ -22,27 +22,6 @@ export const organization = pgTable("organization", {
   metadata: text("metadata"), // JSON-stringified blob the plugin manages
   isTeam: boolean("is_team").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-
-  // ── Billing ───────────────────────────────────────────────────────────────
-  // The active tier is denormalized here so per-request authorization checks
-  // ("can this org do X on the pro tier?") don't have to join through
-  // billing_subscription. The source of truth for subscription state is
-  // billing_subscription; this column is kept in sync by the Stripe webhook
-  // handler. `subscription_status` mirrors the Stripe status verbatim but
-  // adds the openship-internal `credit_exhausted` state for orgs whose
-  // metered usage outran their balance (gating happens in middleware).
-  /** 'free' | 'pro' | 'team' | 'enterprise' */
-  planTierId: text("plan_tier_id").notNull().default("free"),
-  /** Mirrors billing_customer.stripe_customer_id for fast lookup. */
-  stripeCustomerId: text("stripe_customer_id"),
-  /** 'active' | 'past_due' | 'canceled' | 'credit_exhausted' | 'trialing' */
-  subscriptionStatus: text("subscription_status").notNull().default("active"),
-  currentPeriodStart: timestamp("current_period_start"),
-  currentPeriodEnd: timestamp("current_period_end"),
-  /** Oblien-side namespace for this org's metered resources. Set when the
-   *  org is provisioned in Oblien; null for orgs that haven't been
-   *  onboarded to metered billing yet. */
-  oblienNamespace: text("oblien_namespace"),
 });
 
 export const member = pgTable(

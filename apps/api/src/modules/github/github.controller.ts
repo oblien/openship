@@ -85,9 +85,8 @@ export async function getStatus(c: Context) {
   // `deployMode`, which is how it ended up offering a forwarding toggle that could
   // never take effect and a Cloud App row on a box with no cloud link.
   const { resolveGitHubCapabilities } = await import("./github.capabilities");
-  const { isCloudConnected } = await import("../../lib/cloud/session");
   const capabilities = await resolveGitHubCapabilities(ctx, {
-    cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
+    cloudConnected: false,
   }).catch(() => null);
   const { describeCloneCredentials } = await import("./clone-credential-preview");
   const cloneCredential = await describeCloneCredentials(ctx, state, {
@@ -139,9 +138,8 @@ export async function getHome(c: Context) {
   // it here the empty state would have to fall back to guessing platform policy —
   // the duplication this whole thing removes.
   const { resolveGitHubCapabilities } = await import("./github.capabilities");
-  const { isCloudConnected } = await import("../../lib/cloud/session");
   const capabilities = await resolveGitHubCapabilities(ctx, {
-    cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
+    cloudConnected: false,
   }).catch(() => null);
   const { describeCloneCredentials } = await import("./clone-credential-preview");
   const cloneCredential = await describeCloneCredentials(ctx, data.state, {

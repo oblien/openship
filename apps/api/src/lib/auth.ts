@@ -16,10 +16,6 @@ import {
   organizationInviteEmail,
 } from "./email-templates";
 import { memberAudit } from "../modules/audit/member-emitter";
-import {
-  getOrgBillingState,
-  teardownBillingForOrg,
-} from "../modules/billing/billing-org-cleanup";
 import { provisionUser } from "./provision-user";
 import { safeErrorMessage } from "@repo/core";
 
@@ -65,14 +61,14 @@ const INVITE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
  */
 // Cookie prefix - distinct per mode so desktop API (port 4000) and
 // SaaS API (port 4100) don't collide on localhost (cookies ignore port).
-export const COOKIE_PREFIX = env.CLOUD_MODE ? "openship-cloud" : "openship";
+export const COOKIE_PREFIX = "openship";
 
 // "Is this process the multi-tenant SaaS?" — OPENSHIP_TARGET and CLOUD_MODE are
 // independent env vars (runtime-config.ts does no cross-inference), and the SaaS
 // runs with both; keying off either avoids missing it if only one is set. Used
 // to force email verification before login on SaaS only (self-hosted/desktop
 // keep the env-SMTP-gated behavior).
-export const isSaasDeployment = runtimeTargetId === "cloud-saas" || env.CLOUD_MODE;
+export const isSaasDeployment = false;
 
 function getSharedCookieDomain() {
   // A localhost / single-label host (dev — including the local SaaS on :4100)
@@ -90,23 +86,6 @@ function getSharedCookieDomain() {
 
   if (env.BETTER_AUTH_COOKIE_DOMAIN) {
     return env.BETTER_AUTH_COOKIE_DOMAIN;
-  }
-
-  if (!env.CLOUD_MODE) {
-    return undefined;
-  }
-
-  const urls = [runtimeTarget.api, runtimeTarget.dashboard];
-
-  for (const value of urls) {
-    try {
-      const hostname = new URL(value).hostname;
-      if (hostname === "openship.io" || hostname.endsWith(".openship.io")) {
-        return ".openship.io";
-      }
-    } catch {
-      // Ignore invalid URLs and fall back to host-only cookies.
-    }
   }
 
   return undefined;
@@ -642,58 +621,9 @@ export const auth = betterAuth({
             },
           );
 
-          // Give the org its Oblien namespace and push its tier's ceilings.
-          // Cloud only, and fire-and-forget: a slow or unreachable Oblien must
-          // not fail org creation (the boot backfill re-attempts anything that
-          // fails here). Without this a free org had no namespace recorded and
-          // therefore no credit quota and no resource ceiling — metered,
-          // joinable, and uncapped.
-          if (env.CLOUD_MODE) {
-            void import("../modules/billing/billing-namespace.provision")
-              .then(({ provisionOrgNamespace }) => provisionOrgNamespace(organization.id))
-              .catch((err) =>
-                console.warn(
-                  `[auth] namespace provisioning failed for org ${organization.id}: ${err instanceof Error ? err.message : String(err)}`,
-                ),
-              );
-          }
         },
 
         beforeDeleteOrganization: async ({ organization, user }) => {
-          // Pre-flight billing gate. Better Auth commits the org delete
-          // immediately after this hook returns — afterDelete only gets
-          // to fire forensic cleanup, not block. So the only place we
-          // can reject an org-delete with the billing still live is
-          // here. Throws propagate out of the plugin as the 4xx the
-          // APIError describes (crud-org.mjs awaits this hook without
-          // try/catch).
-          const billingState = await getOrgBillingState(organization.id);
-          if (billingState.blocking) {
-            // Audit FIRST so the rejection is observable even if the
-            // attacker scripts a flood of delete attempts — every one
-            // leaves a row. memberAudit.emit swallows its own errors,
-            // so we don't risk the audit-write itself blocking the
-            // rejection it's recording.
-            await memberAudit.emit(
-              { organizationId: organization.id, actorUserId: user.id },
-              {
-                eventType: "organization.deletion.blocked",
-                resourceType: "organization",
-                resourceId: organization.id,
-                after: {
-                  activeSubscriptionCount: billingState.activeSubscriptionCount,
-                  openInvoiceCount: billingState.openInvoiceCount,
-                  openInvoiceAmountCents: billingState.openInvoiceAmountCents,
-                  summary: billingState.summary,
-                },
-              },
-            );
-            throw new APIError("CONFLICT", {
-              message: `Cannot delete organization while billing is active: ${billingState.summary}. Cancel subscriptions and settle open invoices first.`,
-              code: "ORG_DELETE_BILLING_ACTIVE",
-            });
-          }
-
           // HIGH F16: snapshot the membership BEFORE Better Auth's
           // CASCADE wipes the member rows. The afterDelete hook needs
           // these for the audit summary and for sanity-checking the
@@ -731,22 +661,6 @@ export const auth = betterAuth({
             (organization as { _orgDeleteMemberSnapshot?: unknown })
               ._orgDeleteMemberSnapshot ?? null;
 
-          let billingResult: {
-            subscriptionsCancelled: number;
-            subscriptionsFailed: number;
-            namespaceDecommissioned: boolean;
-            customerDeleted: boolean;
-            errors: string[];
-          } | null = null;
-          try {
-            billingResult = await teardownBillingForOrg(organization.id);
-          } catch (err) {
-            console.error(
-              "[organizationHooks.afterDeleteOrganization] billing teardown failed:",
-              err,
-            );
-          }
-
           let grantsDeleted = 0;
           try {
             grantsDeleted = await repos.resourceGrant.deleteByOrganization(
@@ -783,12 +697,6 @@ export const auth = betterAuth({
                 members: memberSnapshot,
               },
               after: {
-                subscriptionsCancelled: billingResult?.subscriptionsCancelled ?? 0,
-                subscriptionsFailed: billingResult?.subscriptionsFailed ?? 0,
-                namespaceDecommissioned:
-                  billingResult?.namespaceDecommissioned ?? false,
-                customerDeleted: billingResult?.customerDeleted ?? false,
-                billingErrors: billingResult?.errors ?? [],
                 grantsDeleted,
                 sessionsRepointed,
               },

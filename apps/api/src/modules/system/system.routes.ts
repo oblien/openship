@@ -264,7 +264,6 @@ r.get("/browse", { tag: "settings:read" }, fs.browse);
 
 /* ── Team-mode migration ─────────────────────────────────────────
  * Path A (single_user → self_hosted_remote): preflight + start
- * Path B (single_user → cloud_hosted):       start-cloud
  * Path C (single_user → tunneled):           start-tunnel
  */
 // requireInstanceAdmin() is mandatory: migrating the instance exports every
@@ -275,7 +274,6 @@ r.get("/browse", { tag: "settings:read" }, fs.browse);
 if (env.DEPLOY_MODE !== "desktop") {
   r.post("/migration/preflight", { tag: "settings:admin" }, requireInstanceAdmin(), migration.preflight);
   r.post("/migration/start", { tag: "settings:admin" }, requireInstanceAdmin(), migration.start);
-  r.post("/migration/start-cloud", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startCloud);
   r.post("/migration/start-tunnel", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startTunnel);
   r.post("/migration/switch-back", { tag: "settings:admin" }, requireInstanceAdmin(), migration.switchBack);
 }

@@ -23,8 +23,6 @@ import {
 } from "@repo/core";
 import { env } from "../config";
 import { isRealContainerRef } from "./container-ref";
-import { cloudClient, getOrgCloudToken } from "./cloud/client";
-import { resolveOrgCloudUserId } from "./cloud/transport";
 import { platform } from "./controller-helpers";
 import { buildSshConfig, sshManager } from "./ssh-manager";
 import { createProvisionLock } from "./provision-lock";
@@ -261,26 +259,10 @@ async function resolveOrgServer(
  * can never drift (a drift caused the self-hosted→cloud-preflight 403).
  */
 export function resolveEffectiveTarget(base: Platform["target"], snapshot: DeploymentMeta): DeployTarget {
-  // AUTO-DETECT, don't hardcode per host platform: a deployment PINNED to a
-  // specific server always routes over SSH to that server — whether the host is
-  // a self-hosted box OR the DESKTOP app operating a remote server. Only the SaaS
-  // (base "cloud") reaches its workloads via the cloud API instead of SSH. This
-  // is what makes a desktop→remote-server deploy's edge/SSL run on the SERVER
-  // (over SSH), not silently fall back to the laptop's noop provider.
-  if (base !== "cloud" && snapshot.serverId) return "server";
-  if (base === "desktop") return snapshot.deployTarget ?? "cloud";
-  if (base === "selfhosted") {
-    // UI chose "server" target but serverId may be missing → still route to SSH
-    if (snapshot.deployTarget === "server") return "server";
-    // Local-orchestrated cloud deploy: build on THIS host, upload the output to
-    // an Openship Cloud workspace, and run it there — the project stays
-    // local-canonical (no promote/transfer). This is the ONLY combo that keeps
-    // the cloud target on a self-hosted box; a server-build cloud deploy is
-    // promoted to the SaaS earlier (deployment.controller) and never reaches here.
-    if (snapshot.deployTarget === "cloud" && snapshot.buildStrategy === "local") return "cloud";
-    return "local";
-  }
-  return "cloud";
+  if (snapshot.serverId) return "server";
+  if (base === "desktop") return snapshot.deployTarget === "server" ? "server" : "local";
+  if (snapshot.deployTarget === "server") return "server";
+  return "local";
 }
 
 export function usesManagedRouting(base: Platform["target"], effectiveTarget: DeployTarget): boolean {
@@ -293,45 +275,6 @@ export function usesManagedRouting(base: Platform["target"], effectiveTarget: De
   );
 }
 
-/**
- * Resolve a cloud-target Platform using ANY cloud-linked org member's
- * token. The deployment doesn't carry a user_id anymore — its
- * `organization_id` is the source of truth. We pick whichever member
- * has linked their Openship Cloud account and use their token to mint
- * cloud requests on behalf of the org.
- */
-async function resolveCloudPlatformForOrg(organizationId?: string): Promise<Platform> {
-  if (!organizationId) {
-    throw new Error("Cannot resolve cloud deployment platform without an organization ID");
-  }
-
-  const result = await getOrgCloudToken(organizationId);
-  if (!result) {
-    // getOrgCloudToken returns null for TWO different reasons — don't conflate
-    // them. A link that exists but couldn't mint a token means Cloud is
-    // unreachable / the session lapsed (transient, retryable); only a missing
-    // link is genuinely "not connected".
-    const linkedUserId = await resolveOrgCloudUserId(organizationId).catch(() => null);
-    throw new Error(
-      linkedUserId
-        ? "Openship Cloud is unreachable right now — couldn't validate the linked session. Check the connection in Settings and try again."
-        : "No member of this organization has linked Openship Cloud. Connect via Settings.",
-    );
-  }
-
-  return createPlatform({
-    target: "cloud",
-    cloudToken: result.token,
-    allowHostBuild: !env.CLOUD_MODE,
-    cloudAdminProxy: {
-      createPage: (input) => cloudClient({ organizationId }).pages.create(input),
-      disablePage: (slug) => cloudClient({ organizationId }).pages.disable(slug),
-      enablePage: (slug) => cloudClient({ organizationId }).pages.enable(slug),
-      deletePage: (slug) => cloudClient({ organizationId }).pages.delete(slug),
-    },
-  });
-}
-
 export async function resolveDeploymentPlatform(
   snapshot: DeploymentMeta,
   opts?: { organizationId?: string; basePlatform?: Platform },
@@ -340,45 +283,19 @@ export async function resolveDeploymentPlatform(
   const effectiveTarget = resolveEffectiveTarget(basePlatform.target, snapshot);
   const runtimeMode = snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare");
 
-  if (effectiveTarget === "local" || effectiveTarget === "server") {
-    const resolvedServerId = effectiveTarget === "server" ? (snapshot.serverId ?? null) : null;
-    const targetPlatform = await resolveTargetPlatform(
-      effectiveTarget,
-      runtimeMode,
-      snapshot.serverId,
-      opts?.organizationId,
-    );
-    return {
-      platform: targetPlatform,
-      effectiveTarget,
-      runtimeMode,
-      usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
-      serverId: resolvedServerId,
-    };
-  }
-
-  // Invariant (cloud-as-source): a multi-user self-hosted server never reaches
-  // a cloud target here — resolveEffectiveTarget() collapses cloud→local/server
-  // for the "selfhosted" base, and cloud projects are proxied to the SaaS by the
-  // gateway before the pipeline runs. So the cloud-platform resolution below is
-  // only ever reached by the SaaS itself (basePlatform.target === "cloud") or by
-  // desktop (single-user, owner-driven) — never by a self-hosted server. That is
-  // what keeps the local cloud-capability path (pages/managed edge) off a
-  // self-hosted box.
-  const needsOrgScopedCloudPlatform =
-    (effectiveTarget === "cloud" && !env.CLOUD_MODE && basePlatform.target !== "cloud") ||
-    (!env.CLOUD_MODE && basePlatform.target === "cloud");
-
-  const resolvedPlatform = needsOrgScopedCloudPlatform
-    ? await resolveCloudPlatformForOrg(opts?.organizationId)
-    : basePlatform;
-
+  const resolvedServerId = effectiveTarget === "server" ? (snapshot.serverId ?? null) : null;
+  const targetPlatform = await resolveTargetPlatform(
+    effectiveTarget === "server" ? "server" : "local",
+    runtimeMode,
+    snapshot.serverId,
+    opts?.organizationId,
+  );
   return {
-    platform: resolvedPlatform,
+    platform: targetPlatform,
     effectiveTarget,
     runtimeMode,
     usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
-    serverId: null,
+    serverId: resolvedServerId,
   };
 }
 

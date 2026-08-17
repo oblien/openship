@@ -1,4 +1,4 @@
-import { parseCloudRequiredCode, type CloudCapability } from "@repo/core";
+type CloudCapability = string;
 
 /**
  * Where a failed deploy attempt's error should go.
@@ -33,13 +33,12 @@ export function shouldPromptCloudConnect(opts: {
   /** What the dashboard currently believes — `useCloud().connected`. */
   cloudConnected: boolean;
 }): boolean {
-  if (!opts.canConnectCloud || opts.cloudConnected) return false;
-  return parseCloudRequiredCode(opts.errorCode) !== null;
+  return false;
 }
 
 /** The capability behind a `CLOUD_REQUIRED_*` code, for the modal's copy. */
 export function deployErrorCloudCapability(
-  errorCode: string | null | undefined,
+  _errorCode: string | null | undefined,
 ): CloudCapability | null {
-  return parseCloudRequiredCode(errorCode);
+  return null;
 }
