@@ -33,6 +33,29 @@ export const TriggerDeployBody = Type.Object({
   ])),
 });
 
+/** Operator MCP: classify a change set without starting a deploy. */
+export const ReleasePlanBody = Type.Object({
+  projectId: Type.String({ minLength: 1 }),
+  changedPaths: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
+  forceAll: Type.Optional(Type.Boolean()),
+  refresh: Type.Optional(Type.Boolean()),
+  serviceIds: Type.Optional(Type.Array(Type.String())),
+});
+
+/** Operator MCP: deploy code or rebuild runtime. */
+export const ReleaseActionBody = Type.Object({
+  projectId: Type.String({ minLength: 1 }),
+  branch: Type.Optional(Type.String()),
+  commitSha: Type.Optional(Type.String()),
+  serviceIds: Type.Optional(Type.Array(Type.String())),
+});
+
+/** Operator MCP: roll back to a deployment, or the previous successful one. */
+export const ReleaseRollbackBody = Type.Object({
+  projectId: Type.String({ minLength: 1 }),
+  deploymentId: Type.Optional(Type.String()),
+});
+
 /** Public endpoint (domain/route) as sent by the deploy wizard. */
 const PublicEndpointInput = Type.Object({
   port: Type.Optional(Type.String()),

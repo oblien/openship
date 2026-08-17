@@ -137,7 +137,19 @@ r.public(
 /* ── Servers CRUD ───────────────────────────────────────────────── */
 r.get("/servers", { tag: "server:list" }, serversCtrl.listServers);
 r.get("/servers/:id", { tag: "server:read" }, serversCtrl.getServer);
-r.get("/servers/:id/reachability", { tag: "server:read" }, serversCtrl.probeReachability);
+r.get(
+  "/servers/:id/reachability",
+  {
+    tag: "server:read",
+    mcp: {
+      name: "servers.health",
+      timeoutMs: 8_000,
+      description:
+        "Probe whether this server is reachable (SSH/host channel). Returns reachable, code, and a hint when it is not.",
+    },
+  },
+  serversCtrl.probeReachability,
+);
 // Create has no :id in the URL — org scope comes from the request and the
 // row is created in the active org. collection:true keeps the permission
 // middleware from demanding a (nonexistent) :id param.

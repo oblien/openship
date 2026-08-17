@@ -18,6 +18,7 @@ describe("mcp prompts catalog", () => {
         "deploy-from-git",
         "deploy-a-folder",
         "install-catalog-app",
+        "operator-release",
       ]),
     );
     for (const p of prompts) {

@@ -71,7 +71,18 @@ export async function putToken(c: Context) {
   const body = await c.req.json<{ token?: string }>().catch(() => ({}) as { token?: string });
   if (!body.token) return c.json({ error: "token is required" }, 400);
   try {
-    return c.json(await setServerToken(g.ctx, g.id, body.token));
+    const saved = await setServerToken(g.ctx, g.id, body.token);
+    const { testServerCloneAccess } = await import("./clone-access-test");
+    const cloneTest = await testServerCloneAccess({
+      serverId: g.id,
+      organizationId: g.ctx.organizationId,
+      token: body.token,
+    }).catch((err) => ({
+      ok: false as const,
+      via: "none" as const,
+      message: err instanceof Error ? err.message : "Clone test failed",
+    }));
+    return c.json({ ...saved, cloneTest });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 400);
   }

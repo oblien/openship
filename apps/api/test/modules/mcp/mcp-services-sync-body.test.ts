@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import "../../../src/modules/services/service.routes";
-import { getMcpTools } from "../../../src/modules/mcp/mcp-tools";
+import { findMcpTool } from "../../../src/modules/mcp/mcp-tools";
 import { SyncServicesBody } from "../../../src/modules/services/service.schema";
 
 /**
@@ -11,7 +11,7 @@ import { SyncServicesBody } from "../../../src/modules/services/service.schema";
  * actually send still validate.
  */
 
-const syncTool = () => getMcpTools().find((t) => t.name === "post_projects_by_id_services_sync");
+const syncTool = () => findMcpTool("post_projects_by_id_services_sync");
 
 /** The shape `openship service sync` builds from `docker compose config` (apps/cli mapComposeService). */
 const cliPayload = {

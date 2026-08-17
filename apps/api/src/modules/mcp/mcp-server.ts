@@ -1,7 +1,15 @@
-import { getMcpTools, toClientTool, filterToolsForPrincipal, type McpPrincipal } from "./mcp-tools";
+import {
+  getMcpTools,
+  toClientTool,
+  listToolsForPrincipal,
+  findMcpTool,
+  CURATED_OPERATOR_TOOLS,
+  type McpPrincipal,
+} from "./mcp-tools";
 import { dispatchTool, type DispatchOrigin } from "./mcp-dispatch";
 import type { ToolCallRecord } from "./mcp-audit";
 import { listPrompts, getPrompt } from "./mcp-prompts";
+import { MCP_EXECUTION_DEADLINE_MS, McpTimeoutError, withDeadline } from "./mcp-timeouts";
 
 /**
  * Minimal MCP server over JSON-RPC 2.0 (Streamable HTTP transport, stateless).
@@ -25,6 +33,12 @@ interface JsonRpcRequest {
 
 function result(id: JsonRpcRequest["id"], value: unknown) {
   return { jsonrpc: "2.0" as const, id: id ?? null, result: value };
+}
+
+/** tools/list extra params — MCP clients ignore unknown fields, so this is additive. */
+export function wantsAdvancedTools(params?: Record<string, unknown>): boolean {
+  if (!params) return false;
+  return params.includeAdvanced === true || params.advanced === true;
 }
 /** JSON-RPC error envelope — shared with mcp.routes.ts so the shape stays single-sourced. */
 export function jsonRpcError(id: JsonRpcRequest["id"], code: number, message: string) {
@@ -71,6 +85,11 @@ export async function handleMcpMessage(
         },
         serverInfo: {
           ...SERVER_INFO,
+          curatedTools: [...CURATED_OPERATOR_TOOLS],
+          advancedTools: {
+            prefix: "advanced.",
+            includeVia: "tools/list params.includeAdvanced or OPENSHIP_MCP_ADVANCED_TOOLS=1",
+          },
           ...(process.env.OPENSHIP_CONTROL_PLANE_FINGERPRINT
             ? {
                 fingerprint: process.env.OPENSHIP_CONTROL_PLANE_FINGERPRINT,
@@ -90,30 +109,58 @@ export async function handleMcpMessage(
 
     case "tools/list":
       // Advertise only what this caller can actually use (call-time still
-      // enforces on tools/call). See filterToolsForPrincipal.
+      // enforces on tools/call). Default catalog is the curated operator set;
+      // generated REST tools stay behind includeAdvanced / the env flag.
       return result(msg.id, {
-        tools: filterToolsForPrincipal(getMcpTools(), principal).map(toClientTool),
+        tools: listToolsForPrincipal(getMcpTools(), principal, {
+          includeAdvanced: wantsAdvancedTools(msg.params),
+        }).map(toClientTool),
       });
 
     case "tools/call": {
       const name = msg.params?.name as string | undefined;
       const args = (msg.params?.arguments as Record<string, unknown>) ?? {};
-      const tool = getMcpTools().find((t) => t.name === name);
+      const tool = findMcpTool(name);
       if (!tool) return jsonRpcError(msg.id, -32602, `Unknown tool: ${name}`);
 
-      const dispatched = await dispatchTool(tool, args, bearerToken, origin);
-      onToolCall?.({
-        tool: tool.name,
-        method: tool.method,
-        path: tool.path,
-        action: tool.perm.action,
-        status: dispatched.status,
-        ok: dispatched.ok,
-      });
-      return result(msg.id, {
-        content: [{ type: "text", text: JSON.stringify(dispatched.data, null, 2) }],
-        isError: !dispatched.ok,
-      });
+      const ac = new AbortController();
+      try {
+        const dispatched = await withDeadline(
+          dispatchTool(tool, args, bearerToken, origin, { signal: ac.signal }),
+          MCP_EXECUTION_DEADLINE_MS,
+          "MCP_EXECUTION_DEADLINE",
+          `MCP execution deadline exceeded after ${MCP_EXECUTION_DEADLINE_MS}ms`,
+        );
+        onToolCall?.({
+          tool: tool.name,
+          method: tool.method,
+          path: tool.path,
+          action: tool.perm.action,
+          status: dispatched.status,
+          ok: dispatched.ok,
+        });
+        return result(msg.id, {
+          content: [{ type: "text", text: JSON.stringify(dispatched.data, null, 2) }],
+          isError: !dispatched.ok,
+        });
+      } catch (err) {
+        ac.abort();
+        if (err instanceof McpTimeoutError) {
+          onToolCall?.({
+            tool: tool.name,
+            method: tool.method,
+            path: tool.path,
+            action: tool.perm.action,
+            status: 504,
+            ok: false,
+          });
+          return result(msg.id, {
+            content: [{ type: "text", text: JSON.stringify({ error: err.message, code: err.code }, null, 2) }],
+            isError: true,
+          });
+        }
+        throw err;
+      }
     }
 
     case "prompts/list":

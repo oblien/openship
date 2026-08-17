@@ -133,10 +133,12 @@ export const githubApi = {
    * than a broken clone mid-deploy. Self-hosted only.
    */
   setInstanceToken: (token: string) =>
-    api.post<{ connected: boolean; login?: string; warning?: string }>(
-      endpoints.github.instanceToken,
-      { token },
-    ),
+    api.post<{
+      connected: boolean;
+      login?: string;
+      warning?: string;
+      cloneTest?: { ok: boolean; via: string; message: string; repo?: string };
+    }>(endpoints.github.instanceToken, { token }),
 
   /** Poll device flow status */
   pollConnect: () => api.get<any>(endpoints.github.connectPoll),

@@ -37,6 +37,7 @@ import { getRouteStrategy } from "../settings/settings.service";
 import { checkProjectPorts } from "./port-check.service";
 import { checkProjectOutput } from "./output-check.service";
 import { getProjectDrift } from "../updates/updates.service";
+import { resolveProjectLiveState } from "../deployments/project-live-state";
 import { AppError, resolveProjectVolumes, safeErrorMessage } from "@repo/core";
 import type {
   TCreateProjectBody,
@@ -435,6 +436,15 @@ export async function getById(c: Context) {
   const project = await projectService.getProject(id, organizationId);
   refreshProjectFaviconIfStale(project);
   return c.json({ data: project });
+}
+
+/** GET /:id/live-state — runtime image pointer, mounted code SHA, bound server. */
+export async function getLiveState(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  await permission.assert(ctx, { resourceType: "project", resourceId: id, action: "read" });
+  const state = await resolveProjectLiveState(id, ctx.organizationId);
+  return c.json({ data: state });
 }
 
 // ─── Project environments ───────────────────────────────────────────────────

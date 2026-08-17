@@ -44,6 +44,17 @@ const EMPTY_STATE: GitHubConnectionState = {
  * to showing the methods it can prove are safe.
  */
 type MethodKind = "device" | "token" | "app" | "ssh-key" | "forwarding";
+interface CloneCredentialPreview {
+  browseAs: { login: string | null; method: string };
+  clone: {
+    kind: string;
+    label: string;
+    login: string | null;
+    appliesTo: "local" | "server" | "both";
+    serverId: string | null;
+    serverName: string | null;
+  };
+}
 interface Capabilities {
   platform: "saas" | "selfhosted";
   desktop: boolean;
@@ -71,6 +82,7 @@ export function GitHubConnection() {
   const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
   const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  const [cloneCredential, setCloneCredential] = useState<CloneCredentialPreview | null>(null);
   const [loading, setLoading] = useState(true);
   // "Forward my git identity to build servers" (Settings → Clone credentials).
   // DESKTOP only — `relayConfigEligible` requires isDesktop. When on, the stored
@@ -94,11 +106,13 @@ export function GitHubConnection() {
       setAccounts(res?.accounts ?? []);
       setInstallUrl(res?.installUrl || null);
       setCapabilities((res?.capabilities as Capabilities | undefined) ?? null);
+      setCloneCredential((res?.cloneCredential as CloneCredentialPreview | undefined) ?? null);
     } catch {
       setState(EMPTY_STATE);
       setAccounts([]);
       setInstallUrl(null);
       setCapabilities(null);
+      setCloneCredential(null);
     } finally {
       setLoading(false);
     }
@@ -281,6 +295,9 @@ export function GitHubConnection() {
       ) : anyConnected ? (
         <div className="space-y-4">
           {/* The identity that is actually authorizing clones, first. */}
+          {cloneCredential && (
+            <CloneCredentialNote preview={cloneCredential} />
+          )}
           {ghConnected && (
             <ActiveIdentity
               icon={Terminal}
@@ -553,6 +570,28 @@ function CredentialProblem(props: {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CloneCredentialNote({ preview }: { preview: CloneCredentialPreview }) {
+  const { t } = useI18n();
+  const identity =
+    preview.browseAs.login ? `@${preview.browseAs.login}` : preview.browseAs.method;
+  const cloneLabel = preview.clone.login
+    ? `${preview.clone.label} (@${preview.clone.login})`
+    : preview.clone.label;
+  const cloneLine =
+    preview.clone.serverName && preview.clone.appliesTo !== "local"
+      ? interpolate(t.settings.github.cloneWillUseOnServer, {
+          server: preview.clone.serverName,
+          label: cloneLabel,
+        })
+      : interpolate(t.settings.github.cloneWillUse, { label: cloneLabel });
+  return (
+    <div className="space-y-1 rounded-xl bg-muted/30 px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
+      <p>{interpolate(t.settings.github.browseAs, { identity })}</p>
+      <p>{cloneLine}</p>
     </div>
   );
 }
@@ -851,9 +890,14 @@ function TokenForm(props: { message: string; hint?: string; onSaved: () => void 
     try {
       // Shared context, not a bare fetch: this refreshes every consumer, so the
       // importer works without a reload.
-      await connectWithToken(value);
+      const saved = (await connectWithToken(value)) as { cloneTest?: { ok: boolean; message: string } } | void;
       setToken(""); // don't leave the secret in component state after success
       onSaved();
+      if (saved && saved.cloneTest && !saved.cloneTest.ok) {
+        setError(
+          interpolate(t.settings.github.cloneTestFailed, { message: saved.cloneTest.message }),
+        );
+      }
     } catch (err) {
       setError(getApiErrorMessage(err, t.settings.github.tokenSaveFailed));
     } finally {
