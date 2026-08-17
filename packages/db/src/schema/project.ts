@@ -444,6 +444,7 @@ export const project = pgTable(
     mountedRelease: jsonb("mounted_release").$type<{
       enabled: boolean;
       buildMode?: "prebuilt" | "server";
+      serviceId?: string;
       serviceName?: string;
       sourcePath?: string;
       containerPath: string;

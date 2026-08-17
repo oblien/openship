@@ -4,7 +4,7 @@ import { repos, type Deployment, type Project } from "@repo/db";
 import type { RequestContext } from "../../lib/request-context";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import { resolveServerExecutor } from "../../lib/deployment-runtime";
-import { livePrimaryContainerId } from "../services/service-container";
+import { liveContainerIdForService, livePrimaryContainerId } from "../services/service-container";
 import { resolveBuildGitToken } from "../github/clone-auth";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import {
@@ -17,7 +17,9 @@ import * as sessionManager from "./session-manager";
 import {
   mountedReleaseBuildMode,
   mountedReleaseConfig,
+  mountedReleaseHealthPort,
   mountedReleaseHostRoot,
+  resolveMountedReleaseRuntimeTarget,
   type MountedReleaseConfig,
 } from "./mounted-release.config";
 import type { ReleasePlan } from "./release-planner";
@@ -49,7 +51,7 @@ function releaseMeta(dep: Pick<Deployment, "meta">): {
 
 async function activeRuntime(
   project: Project,
-): Promise<{ deployment: Deployment; containerId: string }> {
+): Promise<{ deployment: Deployment; containerId: string; healthPort: number }> {
   if (!project.activeDeploymentId) {
     throw new AppError(
       "Build the runtime once before deploying code so OpenShip can attach the release mount.",
@@ -60,11 +62,45 @@ async function activeRuntime(
   const deployment = await repos.deployment.findById(project.activeDeploymentId);
   if (!deployment)
     throw new AppError("The active runtime deployment is missing.", 409, RELEASE_ERROR);
-  const containerId = await livePrimaryContainerId(null, deployment);
+  const config = mountedReleaseConfig(project);
+  const services = await repos.service.listByProject(project.id);
+  const target = resolveMountedReleaseRuntimeTarget(config ?? {}, services);
+  if (!target.ok) {
+    throw new AppError(
+      target.reason === "disabled"
+        ? "The mounted release service is disabled. Enable it or choose another service."
+        : "Choose an enabled compose service before deploying a mounted release.",
+      409,
+      "MOUNTED_RELEASE_SERVICE_REQUIRED",
+    );
+  }
+  let containerId: string | null;
+  if (target.mode === "service") {
+    const serviceId = target.service.id;
+    if (!serviceId) {
+      throw new AppError(
+        "Choose an enabled compose service before deploying a mounted release.",
+        409,
+        "MOUNTED_RELEASE_SERVICE_REQUIRED",
+      );
+    }
+    containerId = await liveContainerIdForService(
+      project,
+      deployment,
+      { id: serviceId, name: target.service.name },
+      { projectId: project.id },
+    );
+  } else {
+    containerId = await livePrimaryContainerId(null, deployment);
+  }
   if (!containerId) {
     throw new AppError("The active runtime container could not be resolved.", 409, RELEASE_ERROR);
   }
-  return { deployment, containerId };
+  return {
+    deployment,
+    containerId,
+    healthPort: mountedReleaseHealthPort(target, project.port ?? 3000),
+  };
 }
 
 function dockerExec(containerId: string, workdir: string | null, command: string): string {
@@ -336,7 +372,7 @@ async function runMountedRelease(
     activated = true;
     log(dep.id, "Activated release; reloading the application");
     await runReload(executor, runtime.containerId, config);
-    await checkHealth(executor, runtime.containerId, config, project.port ?? 3000);
+    await checkHealth(executor, runtime.containerId, config, runtime.healthPort);
 
     const version =
       (await repos.deployment.findReadyVersionByCommit(project.id, resolvedSha)) ??

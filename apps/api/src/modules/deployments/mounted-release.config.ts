@@ -1,9 +1,10 @@
 import type { Project } from "@repo/db";
-import type { DeployableService } from "../../lib/deployable-service";
+import { resolveServicePort, type DeployableService } from "../../lib/deployable-service";
 
 export interface MountedReleaseConfig {
   enabled: boolean;
   buildMode?: "prebuilt" | "server";
+  serviceId?: string;
   serviceName?: string;
   sourcePath?: string;
   containerPath: string;
@@ -17,6 +18,64 @@ export interface MountedReleaseConfig {
   healthPath?: string;
   healthPort?: number;
   retain?: number;
+}
+
+export type MountedReleaseServiceRef = {
+  id?: string;
+  name: string;
+  enabled?: boolean;
+  exposedPort?: string | null;
+  ports?: string[] | null;
+};
+
+/** Id wins when both sides have one; name only for legacy config or id-less snapshots. */
+export function matchesMountedReleaseService(
+  config: Pick<MountedReleaseConfig, "serviceId" | "serviceName">,
+  service: MountedReleaseServiceRef,
+): boolean {
+  if (config.serviceId) {
+    if (service.id) return service.id === config.serviceId;
+    return Boolean(config.serviceName && service.name === config.serviceName);
+  }
+  return Boolean(config.serviceName && service.name === config.serviceName);
+}
+
+export function mountedReleaseTargetService<T extends MountedReleaseServiceRef>(
+  config: Pick<MountedReleaseConfig, "serviceId" | "serviceName">,
+  services: T[],
+): T | undefined {
+  if (config.serviceId) {
+    return services.find((service) => service.id === config.serviceId);
+  }
+  if (config.serviceName) {
+    return services.find((service) => service.name === config.serviceName);
+  }
+  return undefined;
+}
+
+/** Empty list = single-app (primary). Otherwise require an enabled target row. */
+export function resolveMountedReleaseRuntimeTarget<T extends MountedReleaseServiceRef>(
+  config: Pick<MountedReleaseConfig, "serviceId" | "serviceName">,
+  services: T[],
+):
+  | { ok: true; mode: "primary" }
+  | { ok: true; mode: "service"; service: T }
+  | { ok: false; reason: "missing" | "disabled" } {
+  if (services.length === 0) return { ok: true, mode: "primary" };
+  const service = mountedReleaseTargetService(config, services);
+  if (!service) return { ok: false, reason: "missing" };
+  if (service.enabled === false) return { ok: false, reason: "disabled" };
+  return { ok: true, mode: "service", service };
+}
+
+export function mountedReleaseHealthPort(
+  target:
+    | { mode: "primary" }
+    | { mode: "service"; service: Pick<MountedReleaseServiceRef, "exposedPort" | "ports"> },
+  fallbackPort: number,
+): number {
+  if (target.mode !== "service") return fallbackPort;
+  return resolveServicePort(target.service, fallbackPort) ?? fallbackPort;
 }
 
 export function mountedReleaseBuildMode(config: MountedReleaseConfig): "prebuilt" | "server" {
@@ -56,18 +115,16 @@ export function withMountedReleaseVolume(
   return mount && !volumes.includes(mount) ? [...volumes, mount] : volumes;
 }
 
-/** Add the stable release-root mount only to the selected compose service. A
- * missing serviceName is valid for single-app projects, but never sprayed over
- * every service in a compose stack. */
+/** Attach the release-root mount only to the selected service. */
 export function withMountedReleaseServiceVolume(
   project: Pick<Project, "id" | "mountedRelease">,
   services: DeployableService[],
 ): DeployableService[] {
   const config = mountedReleaseConfig(project);
   const mount = mountedReleaseVolume(project);
-  if (!config || !mount || !config.serviceName) return services;
+  if (!config || !mount || (!config.serviceId && !config.serviceName)) return services;
   return services.map((service) =>
-    service.name === config.serviceName
+    matchesMountedReleaseService(config, service)
       ? {
           ...service,
           volumes: (service.volumes ?? []).includes(mount)

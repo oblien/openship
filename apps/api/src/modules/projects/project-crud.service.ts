@@ -86,6 +86,7 @@ import type {
   TUpdateProjectBody,
 } from "./project.schema";
 import { UpdateProjectBody } from "./project.schema";
+import { mountedReleaseTargetService } from "../deployments/mounted-release.config";
 
 /**
  * Mass-assignment allow-list for PATCH /projects/:id — the exact set of
@@ -1451,22 +1452,22 @@ export async function updateProject(
       update.mountedRelease = null;
     } else {
       const release = data.mountedRelease;
-      const services = await repos.service.listByProject(projectId).catch(() => []);
-      if (services.length > 0 && !release.serviceName) {
-        throw new ValidationError("Choose the service that should receive the mounted release.");
-      }
-      if (
-        release.serviceName &&
-        !services.some((service) => service.name === release.serviceName)
-      ) {
+      const services = await repos.service.listByProject(projectId);
+      const target = mountedReleaseTargetService(release, services);
+      if (services.length > 0 && !target) {
         throw new ValidationError(
-          `Mounted release service "${release.serviceName}" does not exist.`,
+          !release.serviceId && !release.serviceName
+            ? "Choose the service that should receive the mounted release."
+            : `Mounted release service "${release.serviceId ?? release.serviceName}" does not exist.`,
         );
+      }
+      if (target && target.enabled === false) {
+        throw new ValidationError("The mounted release service is disabled.");
       }
       const relative = (value: string) => value.trim().replace(/^\/+|\/+$/g, "");
       const buildMode =
         release.buildMode ?? (release.prepareCommand?.trim() ? "server" : "prebuilt");
-      update.mountedRelease = {
+      const persisted = {
         ...release,
         buildMode,
         sourcePath: release.sourcePath ? relative(release.sourcePath) : undefined,
@@ -1485,7 +1486,14 @@ export async function updateProject(
         reloadCommand: release.reloadCommand?.trim() || undefined,
         healthPath: release.healthPath?.trim() || undefined,
         retain: release.retain ?? 5,
+        serviceId: target?.id,
+        serviceName: target?.name,
       };
+      if (!target) {
+        delete persisted.serviceId;
+        delete persisted.serviceName;
+      }
+      update.mountedRelease = persisted;
     }
   }
 
