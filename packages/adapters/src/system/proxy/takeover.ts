@@ -107,6 +107,8 @@ export interface RegisterImportedSitesOptions {
 export interface ImportedSiteRegistration {
   domain: string;
   ssl: boolean;
+  /** True when the source cert was reused (`installCert`) — not a certbot lineage. */
+  carried?: boolean;
   cert?: { expiresAt: string; issuer: string; verified: boolean };
 }
 
@@ -183,9 +185,11 @@ export async function registerImportedSites(
         }
 
         let cert: ImportedSiteRegistration["cert"];
+        let carried = false;
         if (site.ssl) {
           const manual = await resolveCert(executor, site, domain, opts);
           if (manual) {
+            carried = true;
             // Reuse the source's existing certificate — no ACME, no network round-trip.
             const installed = await ssl.installCert(domain, manual);
             cert = {
@@ -229,7 +233,12 @@ export async function registerImportedSites(
 
         opts.onLog(log(`Migrated ${domain} → ${site.target.kind === "proxy" ? site.target.url : site.target.root}`));
         registered.push(domain);
-        await opts.onRegistered?.({ domain, ssl: site.ssl, ...(cert ? { cert } : {}) });
+        await opts.onRegistered?.({
+          domain,
+          ssl: site.ssl,
+          carried,
+          ...(cert ? { cert } : {}),
+        });
       } catch (err) {
         opts.warnings.push(`${domain}: ${safeErrorMessage(err)}`);
       }

@@ -49,11 +49,13 @@ export {
   injectGitToken,
   toGitHubSshUrl,
   gitCloneArgv,
+  gitCloneShellPreview,
   gitTokenExtraHeader,
   httpsUrlWithoutUserinfo,
   type GitCloneAuth,
   type GitCloneInvocation,
 } from "./runtime/git-clone";
+export { materializeGitTokenAuth, shellGitSshWriter } from "./runtime/git-ssh-material";
 
 export { BUILD_STEPS } from "./types";
 

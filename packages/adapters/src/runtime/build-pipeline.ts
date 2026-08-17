@@ -14,7 +14,7 @@
 import type { BuildConfig, BuildStep, LogEntry, LogCallback } from "../types";
 import { safeErrorMessage, packageManagerEnsureCommand } from "@repo/core";
 import { sq, assembleGitClone } from "./git-clone";
-import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
+import { materializeGitSsh, materializeGitTokenAuth, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 
 // Re-exported for the docker adapters that import these from here.
 export { sq, injectGitToken, toGitHubSshUrl, assembleGitClone } from "./git-clone";
@@ -285,10 +285,25 @@ export async function runBuildPipeline(
             );
           }
 
-          // Centralized clone assembly (token / relay / ssh / ambient) — see git-clone.ts.
+          let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
+          if (config.gitToken && !config.gitCredentialHelperPath && !config.gitSsh && !config.gitAmbient) {
+            const writeSecretFile = env.writeSecretFile;
+            if (!writeSecretFile) {
+              throw new Error(
+                "Token clone on this runtime requires a secret-file write path so the token is not in the command.",
+              );
+            }
+            tokenAuth = await materializeGitTokenAuth(
+              shellGitSshWriter({ exec, writeSecret: writeSecretFile }),
+              `${env.projectDir}.gitauth`,
+              config.gitToken,
+            );
+          }
+
           const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
             repoUrl: config.repoUrl,
-            gitToken: config.gitToken,
+            gitToken: tokenAuth ? undefined : config.gitToken,
+            gitTokenConfigFile: tokenAuth?.configFile,
             gitCredentialHelperPath: config.gitCredentialHelperPath,
             ssh: sshMaterial,
             ambient: config.gitAmbient,
@@ -322,7 +337,7 @@ export async function runBuildPipeline(
               );
             }
           } finally {
-            // Always remove the ephemeral SSH key material, success or fail.
+            await tokenAuth?.cleanup();
             await sshMaterial?.cleanup();
           }
         },

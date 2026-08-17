@@ -46,6 +46,8 @@ describe("mounted release config", () => {
   it("parses the container dest out of a compose volume spec", () => {
     expect(volumeMountTarget("data:/data")).toBe("/data");
     expect(volumeMountTarget("/host/app:/srv/demo:ro")).toBe("/srv/demo");
+    expect(volumeMountTarget("/host/app:/srv/demo:ro,z")).toBe("/srv/demo");
+    expect(volumeMountTarget("/host/app:/srv/demo:rw,cached")).toBe("/srv/demo");
     expect(volumeMountTarget("/srv/demo")).toBe("/srv/demo");
   });
 
@@ -53,6 +55,9 @@ describe("mounted release config", () => {
     expect(() =>
       withMountedReleaseVolume(project as never, ["existing:/srv/demo:ro"]),
     ).toThrow(BindMountCollisionError);
+    expect(() =>
+      withMountedReleaseVolume(project as never, ["existing:/srv/demo:ro,z"]),
+    ).toThrow(/already bound/);
     expect(() =>
       withMountedReleaseVolume(project as never, ["existing:/srv/demo/"]),
     ).toThrow(/already bound/);

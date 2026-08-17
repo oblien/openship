@@ -13,9 +13,10 @@
  */
 
 import { repos } from "@repo/db";
-import { SYSTEM } from "@repo/core";
+import { NotFoundError, SYSTEM } from "@repo/core";
 import {
   MAIL_DOMAIN_OWNER,
+  isImportedDomainOwner,
   manageDomainSsl,
   resolveMailOwner,
   tlsIssuedElsewhere,
@@ -131,7 +132,14 @@ export async function renewExpiringCerts(): Promise<RenewalResult> {
       const message = err instanceof Error ? err.message : "Unknown error";
       details.push({ domain: domain.hostname, status: "failed", error: message });
 
-      await repos.domain.updateSsl(domain.id, { sslStatus: "error" }).catch(() => {});
+      // A project-less imported row used to 404 in manageDomainSsl; flipping it
+      // to error then hid it from the next sweep. Leave the row enrollable.
+      const hide =
+        isImportedDomainOwner(domain) &&
+        (err instanceof NotFoundError || /not found/i.test(message));
+      if (!hide) {
+        await repos.domain.updateSsl(domain.id, { sslStatus: "error" }).catch(() => {});
+      }
 
       if (ctx) {
         const daysLeft = Math.ceil(

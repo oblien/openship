@@ -1,13 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   sq,
   injectGitToken,
   toGitHubSshUrl,
   assembleGitClone,
   gitCloneArgv,
+  gitCloneShellPreview,
   gitTokenExtraHeader,
   httpsUrlWithoutUserinfo,
 } from "./git-clone";
+import { localGitSshWriter, materializeGitTokenAuth } from "./git-ssh-material";
 
 describe("sq (POSIX single-quote)", () => {
   it("wraps a plain value", () => {
@@ -108,10 +113,40 @@ describe("assembleGitClone — token must not appear in process arguments", () =
     expect(inv.cloneUrl).not.toContain(token);
     expect(inv.credFlag).not.toContain(token);
     expect(inv.credArgs.join(" ")).not.toContain(token);
-    // Env is allowed — that is the extraheader contract.
+    // Local spawn env map is allowed — extraheader lives there.
     expect(inv.env.GIT_CONFIG_VALUE_0).toContain(
       Buffer.from(`x-access-token:${token}`, "utf8").toString("base64"),
     );
+  });
+
+  it("remote file mode keeps the token and its base64 out of the shell command", () => {
+    const token = "ghs_thisMustNotLeak";
+    const b64 = Buffer.from(`x-access-token:${token}`, "utf8").toString("base64");
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/owner/repo.git",
+      gitTokenConfigFile: "/tmp/osh-gitauth/gitconfig",
+    });
+    const cmd = gitCloneShellPreview(inv);
+    expect(cmd).toContain("GIT_CONFIG_GLOBAL=");
+    expect(cmd).toContain("/tmp/osh-gitauth/gitconfig");
+    expect(cmd).not.toContain(token);
+    expect(cmd).not.toContain(b64);
+    expect(cmd).not.toContain("x-access-token");
+    expect(inv.env.GIT_CONFIG_GLOBAL).toBe("/tmp/osh-gitauth/gitconfig");
+  });
+
+  it("materializeGitTokenAuth writes extraheader to a 0600 file, not argv", async () => {
+    const token = "ghs_fileOnly";
+    const dir = await mkdtemp(join(tmpdir(), "osh-gitauth-"));
+    const { configFile, cleanup } = await materializeGitTokenAuth(localGitSshWriter(), dir, token);
+    const body = await readFile(configFile, "utf8");
+    expect(body).toContain(gitTokenExtraHeader(token));
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/owner/repo.git",
+      gitTokenConfigFile: configFile,
+    });
+    expect(gitCloneShellPreview(inv)).not.toContain(token);
+    await cleanup();
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Project } from "@repo/db";
 import type { DeployableService } from "../../lib/deployable-service";
+import { parseVolumeSpec } from "../services/volume-spec";
 
 export interface MountedReleaseConfig {
   enabled: boolean;
@@ -41,17 +42,9 @@ export function mountedReleaseVolume(
   return config ? `${mountedReleaseHostRoot(project.id)}:${config.containerPath}` : null;
 }
 
-/** Compose bind-mode suffix — same set the volume namespacer recognises. */
-const VOLUME_MODE_SUFFIX = /:(ro|rw|z|Z|nocopy)$/i;
-
 /** Container-side dest of a compose volume spec (`src:dest[:mode]`). */
 export function volumeMountTarget(spec: string): string | null {
-  const body = spec.trim().replace(VOLUME_MODE_SUFFIX, "");
-  if (!body) return null;
-  const idx = body.lastIndexOf(":");
-  if (idx < 0) return body.startsWith("/") ? body : null;
-  const dest = body.slice(idx + 1);
-  return dest || null;
+  return parseVolumeSpec(spec).target;
 }
 
 export function normalizeMountPath(path: string): string {

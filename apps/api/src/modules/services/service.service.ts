@@ -3,7 +3,7 @@
  */
 
 import { normalizeRoutingFields, repos, composeSpecDiff, type Project, type Service, type ServicePublicEndpoint } from "@repo/db";
-import { aliasConflictsWithSiblings, getProjectType, isServicesFramework, mergeAdvanced, normalizeServiceLabel, normalizeAliasStrict, resolveCommandArgv, safeErrorMessage, withTimeout, type ComposeAdvanced, type ServiceContainerState, type StackId } from "@repo/core";
+import { aliasConflictsWithSiblings, getProjectType, mergeAdvanced, normalizeServiceLabel, normalizeAliasStrict, resolveCommandArgv, safeErrorMessage, withTimeout, type ComposeAdvanced, type ServiceContainerState, type StackId } from "@repo/core";
 import {
   BuildLogger,
   DockerRuntime,
@@ -346,14 +346,6 @@ async function reconcileAppServiceRow(project: Project): Promise<void> {
   const rows = await repos.service.listByProject(project.id);
   const hasSidecar = rows.some((s) => s.kind === "compose");
   const appRow = rows.find((s) => s.kind === "monorepo");
-
-  // A services-first project (compose stack) must never grow a placeholder app
-  // row next to the real adopted services. `unknown` is handled below via
-  // hasSourceBuildRecipe (#589).
-  if (isServicesFramework(project.framework)) {
-    await healPhantomAppServiceRow(project, appRow);
-    return;
-  }
 
   // #589: the `projectType` check above is not evidence of a source-built app —
   // it reads the stack's CATEGORY, and everything but `docker`/`services` maps to

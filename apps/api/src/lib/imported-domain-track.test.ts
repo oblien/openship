@@ -72,9 +72,12 @@ describe("trackImportedDomain", () => {
     expect(domainRepo.findOrCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         hostname: "restored.example.com",
+        ownerType: "imported",
+        projectId: null,
         verified: true,
         status: "active",
         sslStatus: "active",
+        manualSsl: false,
         sslExpiresAt: new Date("2027-06-01T00:00:00.000Z"),
       }),
     );
@@ -92,5 +95,17 @@ describe("trackImportedDomain", () => {
       "dom_old",
       expect.objectContaining({ sslStatus: "active", sslExpiresAt: new Date("2027-01-01T00:00:00.000Z") }),
     );
+  });
+
+  it("marks a carried cert as manualSsl so ssl:renew does not hand it to certbot", async () => {
+    domainRepo.findByHostname.mockResolvedValue(null);
+    domainRepo.findOrCreate.mockResolvedValue({ id: "dom_2", hostname: "a.com", sslStatus: "active" });
+    await trackImportedDomain({
+      domain: "a.com",
+      ssl: true,
+      carried: true,
+      cert: { expiresAt: "2027-01-01T00:00:00.000Z", issuer: "Let's Encrypt", verified: true },
+    });
+    expect(domainRepo.findOrCreate).toHaveBeenCalledWith(expect.objectContaining({ manualSsl: true }));
   });
 });

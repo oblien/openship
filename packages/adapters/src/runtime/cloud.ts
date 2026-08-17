@@ -67,6 +67,7 @@ import {
   resolveWithinDirectory,
 } from "./docker-paths";
 import { runLocalBuild } from "./local-build";
+import { materializeGitTokenAuth, shellGitSshWriter } from "./git-ssh-material";
 import { transferLocalDirectory } from "./transfer";
 import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
 import { checkGit } from "../system/checks";
@@ -784,6 +785,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
         // workspace was created before the deploy's env vars were known, so it
         // has none — the pipeline must inject them inline instead.
         hasNativeEnv: !config.cloudWorkspaceId,
+        writeSecretFile: async (path, content) => {
+          await this.workspaceExecutor(rt).writeFile(path, content);
+        },
         exec: async (command, logCb) => {
           if (activeBuild.abort.signal.aborted) {
             throw new Error("Build cancelled");
@@ -993,6 +997,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     const checkoutRef = config.commitSha ?? "FETCH_HEAD";
     const sourceDir = "/openship/dockerfile-source";
     let sourceWorkspaceId: string | undefined;
+    let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
 
     try {
       logger.log(`Resolving Dockerfile source in cloud workspace (${sourceLabel})...\n`);
@@ -1013,9 +1018,19 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       await this.ensureWorkspaceGit(provisioned.runtime, logger, "Dockerfile source workspace");
 
       const executor = this.workspaceExecutor(provisioned.runtime);
+      if (config.gitToken) {
+        tokenAuth = await materializeGitTokenAuth(
+          shellGitSshWriter({
+            exec: (cmd) => executor.exec(cmd),
+            writeSecret: (path, content) => executor.writeFile(path, content),
+          }),
+          `${sourceDir}.gitauth`,
+          config.gitToken,
+        );
+      }
       const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
         repoUrl: config.repoUrl,
-        gitToken: config.gitToken,
+        gitTokenConfigFile: tokenAuth?.configFile,
       });
       const fetchCommand = [
         "set -e",
@@ -1078,6 +1093,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
         }`,
       );
     } finally {
+      await tokenAuth?.cleanup().catch(() => {});
       if (sourceWorkspaceId) {
         await this.ws(sourceWorkspaceId)
           .delete()
@@ -1282,9 +1298,21 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       throw new Error("Dockerfile build context escapes the repository source.");
     }
 
+    const executor = this.workspaceExecutor(targetRuntime);
+    let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
+    if (config.gitToken) {
+      tokenAuth = await materializeGitTokenAuth(
+        shellGitSshWriter({
+          exec: (cmd) => executor.exec(cmd),
+          writeSecret: (path, content) => executor.writeFile(path, content),
+        }),
+        `${repoRoot}.gitauth`,
+        config.gitToken,
+      );
+    }
     const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
       repoUrl: config.repoUrl,
-      gitToken: config.gitToken,
+      gitTokenConfigFile: tokenAuth?.configFile,
     });
     const depthArgs = config.commitSha ? "--depth 50 " : "--depth 1 ";
     const cloneTarget = contextRelativePath ? repoRoot : contextRoot;
@@ -1321,11 +1349,15 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     logger.log(`Preparing Dockerfile build workspace for repository clone (branch: ${config.branch})...\n`);
     await this.ensureWorkspaceGit(targetRuntime, logger, "Dockerfile build workspace");
     logger.log(`Cloning Dockerfile context in build workspace (branch: ${config.branch})...\n`);
-    await this.execAndStream(targetRuntime, ["sh", "-c", cloneCommand], logger.callback, 900);
-    if (checkoutCommand) {
-      await this.execAndStream(targetRuntime, ["sh", "-c", checkoutCommand], logger.callback, 300);
+    try {
+      await this.execAndStream(targetRuntime, ["sh", "-c", cloneCommand], logger.callback, 900);
+      if (checkoutCommand) {
+        await this.execAndStream(targetRuntime, ["sh", "-c", checkoutCommand], logger.callback, 300);
+      }
+      await this.execAndStream(targetRuntime, ["sh", "-c", prepareCommand], logger.callback, 300);
+    } finally {
+      await tokenAuth?.cleanup().catch(() => {});
     }
-    await this.execAndStream(targetRuntime, ["sh", "-c", prepareCommand], logger.callback, 300);
     logger.log("Dockerfile context ready.\n");
   }
 
@@ -2670,8 +2702,11 @@ fi`;
         return result.output;
       },
       streamExec: async (command, onLog) => run(command, onLog, WORKSPACE_STREAM_EXEC_TIMEOUT_MS),
-      writeFile: async () => {
-        throw new Error("Workspace file writes are not supported by this executor");
+      writeFile: async (path, content) => {
+        const b64 = Buffer.from(content, "utf8").toString("base64");
+        await run(
+          `mkdir -p "$(dirname -- ${sq(path)})" && printf '%s' ${sq(b64)} | base64 -d > ${sq(path)} && chmod 600 ${sq(path)}`,
+        );
       },
       readFile: async () => {
         throw new Error("Workspace file reads are not supported by this executor");

@@ -127,7 +127,7 @@ import {
   sq,
   assembleGitClone,
 } from "./build-pipeline";
-import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
+import { materializeGitSsh, materializeGitTokenAuth, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import { createDockerBuildContext, prepareSourceTree, resolveServiceDockerfile } from "./docker-build-context";
@@ -1426,10 +1426,23 @@ export class DockerRuntime implements RuntimeAdapter {
       );
     }
 
-    // Centralized clone assembly (token / relay / ssh / ambient) — see git-clone.ts.
+    // Token for remote exec lives in a 0600 gitconfig, not in the shell string.
+    let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
+    if (config.gitToken && !useHelper && !config.gitSsh && !config.gitAmbient) {
+      tokenAuth = await materializeGitTokenAuth(
+        shellGitSshWriter({
+          exec: (cmd) => executor.exec(cmd),
+          writeSecret: (path, content) => executor.writeFile(path, content),
+        }),
+        `${remoteContextDir}.gitauth`,
+        config.gitToken,
+      );
+    }
+
     const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
       repoUrl: config.repoUrl,
-      gitToken: config.gitToken,
+      gitToken: tokenAuth ? undefined : config.gitToken,
+      gitTokenConfigFile: tokenAuth?.configFile,
       gitCredentialHelperPath: config.gitCredentialHelperPath,
       ssh: sshMaterial,
       ambient: config.gitAmbient,
@@ -1475,6 +1488,7 @@ export class DockerRuntime implements RuntimeAdapter {
       // Never ship .git into the build image.
       await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
     } finally {
+      await tokenAuth?.cleanup();
       await sshMaterial?.cleanup();
     }
   }

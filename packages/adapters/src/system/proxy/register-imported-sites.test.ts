@@ -399,6 +399,7 @@ describe("registerImportedSites", () => {
       {
         domain: "a.com",
         ssl: true,
+        carried: true,
         cert: { expiresAt: "2027-01-01T00:00:00.000Z", issuer: "Let's Encrypt", verified: true },
       },
     ]);

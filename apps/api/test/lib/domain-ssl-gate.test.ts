@@ -46,11 +46,14 @@ vi.mock("@repo/db", () => ({
       updateSsl: h.updateSsl,
     },
     project: {
-      findById: vi.fn(async (id: string) => ({
-        id,
-        organizationId: "org_1",
-        activeDeploymentId: "dep_1",
-      })),
+      findById: vi.fn(async (id: string) => {
+        if (!id) return undefined;
+        return {
+          id,
+          organizationId: "org_1",
+          activeDeploymentId: "dep_1",
+        };
+      }),
     },
     deployment: {
       findById: vi.fn(async (id: string) => ({ id, organizationId: "org_1", meta: {} })),
@@ -79,7 +82,15 @@ vi.mock("../../src/lib/deployment-runtime", () => ({
 }));
 
 vi.mock("../../src/lib/controller-helpers", () => ({
-  platform: () => ({ target: "selfhosted", runtime: {} }),
+  platform: () => ({
+    target: "selfhosted",
+    runtime: {},
+    ssl: {
+      provisionCert: h.provisionCert,
+      renewCert: h.renewCert,
+      verifyCert: h.verifyCert,
+    },
+  }),
 }));
 
 // The lock is orthogonal here — run the body inline.
@@ -241,6 +252,27 @@ describe("manageDomainSsl — refuses to issue what it doesn't own", () => {
    * runtime. If someone changes that, certbot starts running through a transport we
    * already closed; if someone drops the release, the box leaks a listener per cert.
    */
+  it("renews a project-less imported row via the local edge", async () => {
+    domain("imported.example.com", {
+      ownerType: "imported",
+      projectId: null,
+      manualSsl: false,
+    });
+    const res = await manageDomainSsl("imported.example.com", { action: "renew" });
+    expect(h.renewCert).toHaveBeenCalledWith("imported.example.com");
+    expect(res.verified).toBe(true);
+  });
+
+  it("renews a leftover project-less row (ownerType=project, no projectId)", async () => {
+    domain("legacy-import.example.com", {
+      ownerType: "project",
+      projectId: null,
+      manualSsl: false,
+    });
+    await manageDomainSsl("legacy-import.example.com", { action: "renew" });
+    expect(h.renewCert).toHaveBeenCalledWith("legacy-import.example.com");
+  });
+
   it("releases the resolved platform BEFORE issuing through its provider", async () => {
     domain("app.example.com");
 

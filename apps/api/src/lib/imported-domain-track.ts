@@ -6,6 +6,7 @@ import type { ImportedSiteRegistration } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { env } from "../config/env";
 import { isControlPlaneProject } from "./controller-helpers";
+import { IMPORTED_DOMAIN_OWNER } from "./domain-ssl";
 
 export function hostnameFromPublicUrl(raw: string | undefined | null): string | null {
   if (!raw?.trim()) return null;
@@ -38,12 +39,15 @@ export async function trackImportedDomain(info: ImportedSiteRegistration): Promi
   const expiresAt = info.cert?.expiresAt ? new Date(info.cert.expiresAt) : undefined;
   const sslActive = Boolean(info.ssl && info.cert?.verified && expiresAt && !Number.isNaN(expiresAt.getTime()));
 
+  const manualSsl = info.carried === true;
+
   if (existing) {
     if (sslActive) {
       await repos.domain.updateSsl(existing.id, {
         sslStatus: "active",
         sslIssuer: info.cert?.issuer || existing.sslIssuer || undefined,
         sslExpiresAt: expiresAt,
+        ...(manualSsl ? { manualSsl: true } : {}),
       });
     }
     return;
@@ -51,12 +55,13 @@ export async function trackImportedDomain(info: ImportedSiteRegistration): Promi
 
   const created = await repos.domain.findOrCreate({
     hostname,
-    ownerType: "project",
+    ownerType: IMPORTED_DOMAIN_OWNER,
     projectId: null,
     domainType: "custom",
     status: "active",
     verified: true,
     verifiedAt: new Date(),
+    manualSsl,
     sslStatus: sslActive ? "active" : info.ssl ? "provisioning" : "none",
     sslIssuer: info.cert?.issuer || undefined,
     sslExpiresAt: sslActive ? expiresAt : undefined,

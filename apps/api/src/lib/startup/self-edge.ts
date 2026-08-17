@@ -168,10 +168,16 @@ async function runEnsure(
         nginx: resolveAcmeProviderOptions(),
         extraRoutes: [],
         reservedDomains,
-        onRegistered: (info) =>
-          void trackImportedDomain(info).catch((err) =>
-            log(`domain row for ${info.domain} not tracked: ${(err as Error).message}`, "warn"),
-          ),
+        onRegistered: async (info) => {
+          try {
+            await trackImportedDomain(info);
+          } catch (err) {
+            log(
+              `${info.domain}: could not enroll for certificate renewal (${(err as Error).message})`,
+              "warn",
+            );
+          }
+        },
         // Pin the edge the takeover installs. `setDefaultEdgeImage` at boot already
         // covers this, but state it here too: this is the ONE caller of
         // runEdgeTakeover, so leaving its `edgeImage` unset is what made the option

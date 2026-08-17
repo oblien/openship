@@ -1187,7 +1187,7 @@ class MigrationOrchestratorImpl {
       // Quiesce originals for a consistent copy (and to free ports/volumes on
       // a same-server redeploy). Missing / already-stopped is fine; a container
       // that is STILL running is not — copying under it is a consistency bug.
-      const stopFailed = await runContainerOps(scannedContainerIds, (cid) => rtA.stop(cid));
+      const stopFailed = await runContainerOps(scannedContainerIds, (cid) => rtA.stop(cid), "stop");
       if (stopFailed.length) throw new Error(stopFailuresMessage(stopFailed));
 
       // Cross-server DEFAULT: move data DIRECTLY server-to-server (rsync +
@@ -2240,7 +2240,7 @@ class MigrationOrchestratorImpl {
         try {
           await rtA.destroy(cid);
         } catch (err) {
-          if (classifyContainerOpError(err) === "benign") continue;
+          if (classifyContainerOpError(err, "destroy") === "benign") continue;
           failed.push({ name, containerId: cid, reason: safeErrorMessage(err) });
         }
       }
@@ -2655,7 +2655,7 @@ class MigrationOrchestratorImpl {
     try {
       const rtA = await createServerDockerRuntime(sourceServerId, organizationId);
       try {
-        return { failed: await runContainerOps(scannedContainerIds, (cid) => rtA.start(cid)) };
+        return { failed: await runContainerOps(scannedContainerIds, (cid) => rtA.start(cid), "start") };
       } finally {
         await rtA.dispose().catch(() => {});
       }

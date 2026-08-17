@@ -27,8 +27,9 @@ export function sq(value: string): string {
  *   https://github.com/owner/repo.git → https://x-access-token:<token>@github.com/owner/repo.git
  * Unchanged when no token or the URL isn't HTTPS.
  *
- * Do not use this for clone argv — `assembleGitClone` puts the token in
- * `http.extraHeader` env instead so it never appears in process arguments.
+ * Do not use this for clone argv — `assembleGitClone` keeps the token out of
+ * the clone URL. Local spawn may put extraheader in the env map; remote exec
+ * must use `gitTokenConfigFile` (a 0600 file) so the token is not in the command.
  */
 export function injectGitToken(repoUrl: string, token?: string): string {
   if (!token) return repoUrl;
@@ -88,6 +89,11 @@ export function toGitHubSshUrl(repoUrl: string): string {
 export interface GitCloneAuth {
   repoUrl: string;
   gitToken?: string;
+  /**
+   * 0600 gitconfig with `http.extraHeader` already written (remote exec).
+   * When set, the token is not placed in env or argv.
+   */
+  gitTokenConfigFile?: string;
   gitCredentialHelperPath?: string;
   /** SSH mode — key + known_hosts files ALREADY written (0600/0700) by caller. */
   ssh?: { keyFile: string; knownHostsFile: string };
@@ -209,9 +215,16 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
     return invocation(auth.repoUrl, [TERMINAL_PROMPT], false);
   }
 
-  // Token / public: plain URL. The token (if any) is an extraheader in env —
-  // never `https://x-access-token:TOKEN@` in argv (ps, logs, SSH command strings).
+  // Token / public: plain URL. Token stays in extraheader env (local spawn) or
+  // a 0600 gitconfig file (remote exec) — never in the clone URL or git argv.
   const cloneUrl = httpsUrlWithoutUserinfo(auth.repoUrl);
+  if (auth.gitTokenConfigFile) {
+    return invocation(
+      cloneUrl,
+      [TERMINAL_PROMPT, ["GIT_CONFIG_GLOBAL", auth.gitTokenConfigFile, true]],
+      true,
+    );
+  }
   if (auth.gitToken) {
     return invocation(
       cloneUrl,
@@ -225,4 +238,9 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
     );
   }
   return invocation(cloneUrl, [TERMINAL_PROMPT, ["GIT_ASKPASS", "/bin/echo", false]], true);
+}
+
+/** Shell-string preview of a clone (`GIT_ENV git CRED clone URL`). */
+export function gitCloneShellPreview(inv: GitCloneInvocation): string {
+  return `${inv.gitEnv} git ${inv.credFlag} clone ${inv.cloneUrl}`.trim();
 }

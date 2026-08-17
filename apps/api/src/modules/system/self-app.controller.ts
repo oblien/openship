@@ -533,10 +533,15 @@ export async function edgeImportSites(c: Context) {
       reservedDomains,
       warnings,
       onLog: (entry) => console.log(`[edge-import] ${entry.message}`),
-      onRegistered: (info) =>
-        void trackImportedDomain(info).catch((err) =>
-          console.warn(`[edge-import] domain row for ${info.domain} not tracked: ${safeErrorMessage(err)}`),
-        ),
+      onRegistered: async (info) => {
+        try {
+          await trackImportedDomain(info);
+        } catch (err) {
+          warnings.push(
+            `${info.domain}: could not enroll for certificate renewal (${safeErrorMessage(err)})`,
+          );
+        }
+      },
     });
     return c.json({ registered, warnings });
   } catch (err) {
