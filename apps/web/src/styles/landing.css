@@ -1938,22 +1938,174 @@
   margin-right: 4px;
 }
 
+/* ── Self-hosted band - the promise, stated before any price ─── */
+.pp-selfhost-section {
+  padding: clamp(48px, 7vw, 80px) 0 0;
+}
+.pp-selfhost {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  padding: clamp(28px, 5vw, 48px);
+  border: 1px solid var(--th-clr-plum-bdr);
+  border-radius: 24px;
+  background: var(--th-clr-plum-wash);
+}
+@media (min-width: 900px) {
+  .pp-selfhost {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+    align-items: center;
+  }
+}
+.pp-selfhost-tag {
+  display: inline-block;
+  margin-bottom: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--th-clr-plum);
+}
+.pp-selfhost-name {
+  font-size: clamp(1.75rem, 3.6vw, 2.375rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  color: var(--th-text-heading);
+}
+.pp-selfhost-lead {
+  margin-top: 12px;
+  max-width: 34rem;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--th-text-body);
+}
+.pp-selfhost-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 24px;
+}
+.pp-selfhost-amt {
+  font-size: clamp(2rem, 3.6vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--th-text-heading);
+}
+.pp-selfhost-note {
+  font-size: 12.5px;
+  color: var(--th-text-muted);
+}
+.pp-selfhost-features {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pp-selfhost-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--th-text-strong);
+}
+
+/* Filled CTA on a LIGHT surface. `.pp-btn--primary` is white-on-dark and goes
+   invisible here, so this one uses the theme's own primary button tokens. */
+.pp-solid-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 26px;
+  padding: 13px 26px;
+  border-radius: 999px;
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
+  border: 1px solid transparent;
+  transition: background .15s ease, transform .12s ease;
+}
+.pp-solid-cta:hover {
+  background: var(--th-btn-bg-hover);
+  transform: translateY(-1px);
+}
+
 /* ── Plan cards ──────────────────────────────────────────────── */
 .pp-plans-section {
   padding: clamp(40px, 6vw, 80px) 0;
 }
+.pp-plans-head {
+  text-align: center;
+  margin: 0 auto clamp(32px, 5vw, 56px);
+  max-width: 40rem;
+}
+.pp-plans-title {
+  font-size: clamp(1.875rem, 4.5vw, 2.75rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: var(--th-text-heading);
+}
+.pp-plans-note {
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--th-text-body);
+}
+/* ── Campaign notice ─────────────────────────────────────────────
+   Only in the DOM while the catalog has a live campaign, so it costs nothing
+   the rest of the year. Terra reads as an offer without competing with the
+   plum brand accent used by the self-hosted band. */
+.pp-campaign {
+  margin-top: 20px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 999px;
+  background: var(--th-clr-terra-bg);
+  border: 1px solid var(--th-clr-terra-bdr);
+}
+.pp-campaign-badge {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--th-clr-terra);
+}
+.pp-campaign-ends {
+  font-size: 12.5px;
+  color: var(--th-text-body);
+  padding-right: 6px;
+}
+
+/* Mobile-first: one column, then 2-up, then the full ladder side by side.
+   `minmax(0, 1fr)` (not `1fr`) so a long feature line can't push a column past
+   its track and give the page a horizontal scrollbar. */
 .pp-plans {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
-@media (max-width: 900px) { .pp-plans { grid-template-columns: 1fr; } }
+@media (min-width: 620px) {
+  .pp-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1000px) {
+  .pp-plans { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 .pp-plan {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 36px 32px;
+  /* Top padding clears the absolutely-placed "most popular" ribbon, and is
+     uniform so a non-popular card's name still sits on the same baseline. */
+  padding: 44px 26px 30px;
   background: var(--th-bg-page);
   border: 1px solid var(--th-bd-default);
   border-radius: 22px;
@@ -1971,13 +2123,15 @@
     0 28px 60px rgba(0,0,0,.18);
 }
 .pp-plan--highlight:hover { border-color: rgba(255,255,255,.18); }
-@media (min-width: 900px) {
+/* Only lift once the whole ladder is on one row - in the 2-up stack a lifted
+   card just breaks the baseline. */
+@media (min-width: 1000px) {
   .pp-plan--highlight { transform: translateY(-12px); }
 }
 .pp-plan-ribbon {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 14px;
+  right: 14px;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -1988,37 +2142,8 @@
   color: rgba(255,255,255,.95);
   border: 1px solid rgba(255,255,255,.16);
 }
-/* Ribbon on a light (non-highlight) card — the white-on-white default is
-   invisible there, so use theme-aware outlined text. */
-.pp-plan-ribbon--muted {
-  background: transparent;
-  color: var(--th-text-muted);
-  border-color: var(--th-bd-default);
-}
-.pp-plan-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-.pp-plan-n {
-  font-size: 30px;
-  font-weight: 500;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  color: var(--th-text-heading);
-}
-.pp-plan--highlight .pp-plan-n { color: rgba(255,255,255,.95); }
-.pp-plan-tag {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--th-text-muted);
-}
-.pp-plan--highlight .pp-plan-tag { color: rgba(255,255,255,.45); }
 .pp-plan-name {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.15;
@@ -2048,8 +2173,8 @@
 .pp-plan-amt {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: clamp(2.25rem, 4vw, 2.75rem);
+  gap: 6px;
+  font-size: clamp(2rem, 3vw, 2.375rem);
   font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -2068,6 +2193,44 @@
   color: var(--th-text-muted);
 }
 .pp-plan--highlight .pp-plan-pricenote { color: rgba(255,255,255,.45); }
+
+/* ── Campaign, per card ──────────────────────────────────────────
+   `align-self: start` keeps the pill hugging its text instead of stretching
+   across the flex column. Both rules also carry a light-on-dark variant, since
+   the popular card inverts. */
+.pp-plan-save {
+  align-self: start;
+  margin-bottom: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--th-clr-terra);
+  background: var(--th-clr-terra-bg);
+  border: 1px solid var(--th-clr-terra-bdr);
+}
+.pp-plan--highlight .pp-plan-save {
+  color: var(--th-clr-terra-soft);
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.16);
+}
+.pp-plan-was {
+  font-size: 12.5px;
+  color: var(--th-text-muted);
+}
+/* Strike only the money, not the whole "was $39" phrase — the label is copy, the
+   number is what is being replaced. */
+.pp-plan-was s {
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1px;
+}
+.pp-plan--highlight .pp-plan-was { color: rgba(255,255,255,.45); }
+.pp-plan-ends {
+  display: block;
+  margin-top: 2px;
+}
 
 .pp-plan-cta {
   display: inline-flex;
@@ -2106,8 +2269,8 @@
 .pp-plan-features li {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  font-size: 14px;
+  gap: 9px;
+  font-size: 13.5px;
   line-height: 1.55;
   color: var(--th-text-strong);
 }
@@ -2120,6 +2283,62 @@
   color: var(--th-text-heading);
 }
 .pp-plan--highlight .pp-plan-check { color: rgba(255,255,255,.85); }
+
+/* ── Custom-priced tier - one full-width row under the ladder ─── */
+.pp-ent {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  padding: clamp(26px, 4vw, 36px) clamp(24px, 4vw, 40px);
+  background: var(--th-sf-01);
+  border: 1px solid var(--th-bd-default);
+  border-radius: 22px;
+}
+@media (min-width: 900px) {
+  .pp-ent {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) auto;
+    gap: 40px;
+    align-items: center;
+  }
+}
+.pp-ent-name {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--th-text-heading);
+}
+.pp-ent-lead {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.pp-ent-price {
+  margin-top: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--th-text-heading);
+}
+.pp-ent-features {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 28px;
+}
+@media (min-width: 620px) {
+  .pp-ent-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.pp-ent-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--th-text-strong);
+}
+.pp-ent .pp-solid-cta { margin-top: 0; }
 
 /* ── Matrix ──────────────────────────────────────────────────── */
 .pp-matrix-section {

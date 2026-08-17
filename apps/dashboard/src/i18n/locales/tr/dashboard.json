@@ -69,6 +69,7 @@
     "jobs": "Görevler",
     "settings": "Ayarlar",
     "billing": "Faturalandırma ve Kullanım",
+    "audit": "Denetim kaydı",
     "mailSetup": "E-posta kur",
     "mailSetupProgress": "Kurulum ilerlemesi",
     "addMailbox": "Posta kutusu ekle",

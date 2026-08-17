@@ -38,6 +38,7 @@ import type { RequestContext } from "../../lib/request-context";
 import { isLocalHostRow } from "../../lib/box-org";
 import { parseServicePort } from "../../lib/deployable-service";
 import { requireCloud } from "../../lib/cloud/require-cloud";
+import { assertPlanAllowsServices } from "../../lib/plan-guard";
 import { getTrustedHostCapacity } from "../../lib/host-capacity";
 import { createProject } from "../projects/project-crud.service";
 import { createService, updateService, setServiceEnvVars } from "../services/service.service";
@@ -426,6 +427,12 @@ export async function installApp(
   }
 
   assertInstallRoutes(template, input.routes);
+
+  // Plan gate, before anything is written. Every catalog app becomes a
+  // `services` project with image-backed service rows, so it can never be
+  // static — a static-only tier is refused here, at the moment the operator
+  // clicks Install, rather than at the deploy that follows.
+  await assertPlanAllowsServices(ctx.organizationId);
 
   // Gate the operator's CHOSEN routing before the first row is written: a free
   // *.opsh.io hostname only resolves behind the Cloud edge, so a disconnected

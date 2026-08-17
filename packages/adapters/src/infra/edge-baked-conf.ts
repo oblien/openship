@@ -33,6 +33,7 @@ import {
   EDGE_CHALLENGE_LOCATION,
   EDGE_LUA_PACKAGE_PATH,
   EDGE_MGMT_SERVER_BLOCK,
+  EDGE_CLIENT_MAX_BODY_SIZE,
   EDGE_SERVER_NAMES_HASH_BUCKET_SIZE,
   EDGE_SHARED_DICTS,
   OPENRESTY_DEFAULT_PATHS,
@@ -99,6 +100,11 @@ http {
     # (a generated \`<project>-<service>.opsh.io\`, or any custom domain past ~63
     # chars) would otherwise wedge routing for every site on the box.
     server_names_hash_bucket_size ${EDGE_SERVER_NAMES_HASH_BUCKET_SIZE};
+
+    # Upload ceiling every vhost inherits. See EDGE_CLIENT_MAX_BODY_SIZE: nginx's built-in
+    # 1 MB refuses a larger body with 413 before the app sees it, and a project's own
+    # \`client_max_body_size\` still wins because nginx resolves server over http.
+    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};
 
     # Shared-memory zones the openship Lua depends on (analytics counters, raw-log
     # ring buffers + live-log pipe, per-route rules cache, rate-limit counters).

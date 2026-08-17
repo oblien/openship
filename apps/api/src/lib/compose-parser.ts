@@ -360,6 +360,28 @@ function parseCommand(
 }
 
 /**
+ * Interpolate a compose `entrypoint` in place, keeping its SHAPE so `commandToArgv`
+ * can still tell a string from a list from an absent key.
+ *
+ * Separate from `parseCommand`, which folds both shapes into a display string plus
+ * argv; here the shape carries meaning all the way through — `""` and `[]` are both
+ * "clear it" but `undefined` is not, and collapsing them early is what lost the
+ * distinction in the first place.
+ */
+function parseEntrypointValue(
+  value: unknown,
+  env: Record<string, string>,
+): string | string[] | null | undefined {
+  if (typeof value === "string") return interpolateComposeString(value, env);
+  if (Array.isArray(value)) {
+    return value.map((part) => interpolateComposeString(String(part), env));
+  }
+  // Anything else (a number, an object, an explicit null) is not an entrypoint —
+  // hand back undefined so `commandToArgv` reports "absent" and the key is omitted.
+  return undefined;
+}
+
+/**
  * Extract the extended compose keys that live under `service.advanced`. Returns
  * undefined when nothing was found so callers can omit the field entirely (keeps
  * it out of drift comparisons and the runtime payload). Grows as more keys are
@@ -384,6 +406,17 @@ function parseAdvanced(
 
   const pidMode = parseNamespaceField(svc.pid, "pid", env, serviceName, unsupported);
   if (pidMode) advanced.pidMode = pidMode;
+
+  // Entrypoint (#575), on exactly the terms `parseCommand` uses for `command`:
+  // list → argv verbatim, string → shell-word-split (no implicit `sh -c`).
+  //
+  // The `!== null` test rather than a truthiness one is the whole point:
+  // `commandToArgv` answers `null` for an ABSENT key and `[]` for `entrypoint: []`
+  // or `entrypoint: ""`, and those two mean opposite things — leave the image's
+  // ENTRYPOINT alone versus clear it. Storing `[]` is what makes the clearing form
+  // work at all; it used to be dropped without even a warning.
+  const entrypoint = commandToArgv(parseEntrypointValue(svc.entrypoint, env));
+  if (entrypoint !== null) advanced.entrypoint = entrypoint;
 
   // Shutdown behavior. Both are kept as authored strings — the runtime maps
   // stop_signal → StopSignal verbatim and rounds stop_grace_period to the whole
@@ -466,7 +499,7 @@ const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
   storage_opt: "storage_opt is not modeled.",
   blkio_config: "blkio_config is not modeled.",
   // ── Container shape ──
-  entrypoint: "entrypoint is not modeled — the image's own ENTRYPOINT runs (use `command`).",
+  // `entrypoint` is modeled (#575) — see parseAdvanced.
   user: "user is not modeled — the container runs as the image's user.",
   working_dir: "working_dir is not modeled — the image's WORKDIR is used.",
   hostname: "hostname is not modeled — Openship sets the hostname to the service name.",

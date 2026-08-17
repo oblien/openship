@@ -10,6 +10,7 @@ import { forceMcpConsent } from "./middleware/mcp-consent";
 import { originGuard } from "./middleware/origin-guard";
 import { migrationGuard } from "./middleware/migration-guard";
 import { initPlatform } from "@repo/adapters";
+import { validatePlanPriceIds } from "@repo/core";
 import { resolvePlatformConfig } from "./lib/controller-helpers";
 import { runWithRequestStore } from "./lib/request-store";
 import { runWithCallSource } from "./lib/call-source";
@@ -32,6 +33,7 @@ import { projectStorageRoutes } from "./modules/projects/project-storage.routes"
 import { deploymentRoutes } from "./modules/deployments/deployment.routes";
 import { domainRoutes } from "./modules/domains/domain.routes";
 import { dnsRoutes } from "./modules/dns/dns.routes";
+import { credentialRoutes } from "./modules/credentials/credential.routes";
 import { issuesRoutes } from "./modules/issues/issues.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
@@ -176,6 +178,7 @@ app.route("/api/projects/:id/storage", projectStorageRoutes);
 app.route("/api/deployments", deploymentRoutes);
 app.route("/api/domains", domainRoutes);
 app.route("/api/dns", dnsRoutes);
+app.route("/api/credentials", credentialRoutes);
 app.route("/api/webhooks", webhookRoutes);
 app.route("/api/github", githubRoutes);
 app.route("/api/analytics", analyticsRoutes);
@@ -413,6 +416,55 @@ if (env.CLOUD_MODE) {
   void ensureOblienWebhook().catch((err) =>
     console.warn("[boot] ensureOblienWebhook failed:", err),
   );
+
+  // Drain orgs that have no Oblien namespace recorded. Every org predates
+  // namespace persistence (the column was read in eleven places and written in
+  // none), so until this sweep finishes their credit quotas and resource
+  // ceilings do not exist on Oblien's side. Bounded per boot.
+  void import("./modules/billing/billing-namespace.provision")
+    .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
+    .then((stats) => {
+      if (stats.done > 0 || stats.failed > 0) {
+        console.log(
+          `[boot] Oblien namespaces backfilled: ${stats.done} provisioned, ${stats.failed} failed`,
+        );
+      }
+    })
+    .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
+
+  // Every PUBLISHED price must have a real Stripe price id in the environment.
+  // Now that the pricing catalog states actual prices, a missing id is a
+  // customer-visible failure: the plan card shows $39 and checkout 503s. This
+  // check already existed but had NO caller in either mode — wired here.
+  //
+  // Loud, not fatal: refusing to boot the whole SaaS over an unset price id
+  // would trade a broken checkout button for a total outage, and checkout
+  // already fails closed on its own (503 BILLING_NOT_CONFIGURED at the point of
+  // use, plus BILLING_ENABLED defaults off). Self-hosted logs it as information
+  // — it never sells anything.
+  // A live campaign must match its Stripe coupon, or the page advertises a
+  // discount the customer won't get. Only reaches Stripe when a campaign is
+  // actually running, so the common case costs nothing.
+  void import("./modules/billing/billing.service")
+    .then(({ verifyCampaigns }) => verifyCampaigns())
+    .then((problems) => {
+      for (const p of problems) console.error(`[boot] pricing campaign: ${p}`);
+    })
+    .catch((err) => console.warn("[boot] verifyCampaigns failed:", err));
+
+  {
+    const { missing } = validatePlanPriceIds();
+    if (missing.length > 0) {
+      const detail = missing.join(", ");
+      if (env.CLOUD_MODE) {
+        console.error(
+          `[boot] FATAL: published prices with no Stripe price id configured: ${detail}. Set those env vars or unpublish the price in packages/core/src/pricing/pricing.json.`,
+        );
+      } else {
+        console.log(`[boot] billing not configured (self-hosted, expected): ${detail}`);
+      }
+    }
+  }
 
   // Self-hosted only: backfill per-project GitHub webhook secrets for
   // auto-deploy projects registered before per-project secrets were wired

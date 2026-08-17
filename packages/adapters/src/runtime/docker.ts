@@ -102,6 +102,7 @@ function clampShellWindow(
 import type { Feature, SystemLog } from "../system/types";
 import { isRuntimeNotFoundError } from "../system/errors";
 import { dirOf, ensureOwnedDir } from "../system/elevated-executor";
+import { dockerConfigJsonFor, registryForImage, resolveDockerAuth } from "./docker-auth";
 
 import type {
   RuntimeAdapter,
@@ -131,7 +132,7 @@ import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import { createDockerBuildContext, prepareSourceTree, resolveServiceDockerfile } from "./docker-build-context";
 import { startExecStream, daemonConnectionFrom } from "./docker-exec-stream";
-import { resolveComposeCmd } from "./compose-cmd";
+import { resolveComposeCmd, resolveComposeEntrypoint } from "./compose-cmd";
 import { resolveDockerfileCandidates } from "./docker-paths";
 import type { ContainerStabilitySample } from "./stability";
 import { generateDockerfile, staticBuilderOutputPath } from "./docker-build-plan";
@@ -3078,13 +3079,79 @@ export class DockerRuntime implements RuntimeAdapter {
     if (executor) {
       // 10 min ceiling — large images over a slow link; still bounded so a
       // genuinely stuck pull surfaces instead of hanging the whole migration.
-      await executor.exec(`docker pull ${sq(ref)}`, { timeout: 10 * 60_000 });
+      const timeout = 10 * 60_000;
+      const auth = await this.connectionOptions?.resolveRegistryAuth?.(ref);
+      const config = auth ? dockerConfigJsonFor(auth) : null;
+      if (!config) {
+        // No Openship credential for this registry: the remote pulls with whatever it has
+        // of its own, which is the behaviour every existing install depends on.
+        await executor.exec(`docker pull ${sq(ref)}`, { timeout });
+        return;
+      }
+
+      // A remote pull shells out on the TARGET, so it reads that host's credentials — which
+      // is why a private image only worked if the operator had run `docker login` on every
+      // server by hand.
+      //
+      // WHY A FILE AND NOT AN API CALL: dockerode takes an `authconfig` and would need no
+      // file at all — and that is exactly what the local branch below does. It is not
+      // available here: over the SSH transport `modem.followProgress` never receives `end`
+      // and hangs forever (see this method's doc comment), so the CLI is the only usable
+      // transport remotely, and the CLI reads credentials from exactly one place — a
+      // `config.json` in the directory named by DOCKER_CONFIG. There is no env-var or
+      // file-descriptor form. `docker login` would also work and is worse: it persists the
+      // credential on a machine whose lifecycle Openship does not own.
+      //
+      // So: minimize the window instead. The secret goes in through `writeFile`, never argv
+      // (an argument is visible in `ps` to every user on that box for the life of the
+      // command). `mkdir -m 700` without `-p` creates the directory with its mode set
+      // ATOMICALLY and FAILS if the path already exists — no window where it is
+      // world-readable, and no chance of writing into a directory something else prepared.
+      // Cleanup runs on the command's own exit path AND in the finally below, which is what
+      // covers a timeout that kills the exec before it reaches its own `rm`.
+      const dir = `/tmp/openship-pull-${crypto.randomUUID()}`;
+      try {
+        await executor.exec(`mkdir -m 700 ${sq(dir)}`);
+        await executor.writeFile(`${dir}/config.json`, config);
+        await executor.exec(`chmod 600 ${sq(dir)}/config.json`);
+        await executor.exec(
+          `DOCKER_CONFIG=${sq(dir)} docker pull ${sq(ref)}; rc=$?; rm -rf ${sq(dir)}; exit $rc`,
+          { timeout },
+        );
+      } finally {
+        await executor.exec(`rm -rf ${sq(dir)}`).catch(() => {});
+      }
       return;
     }
-    const stream = await this.docker.pull(ref);
-    await new Promise<void>((resolve, reject) => {
-      this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
-    });
+    // dockerode does not read `~/.docker/config.json` the way the CLI does, so this pull
+    // went out anonymous on a `docker login`-ed host and every private-image deploy failed
+    // with an unauthorized manifest fetch (#581). Resolved per pull rather than cached: a
+    // credential can be added while the API is running, and a stale "none" would outlive it.
+    //
+    // The INJECTED resolver wins — that is Openship's own credential store, which works on
+    // every install shape and every target. The host config is the fallback, and only when
+    // no resolver was supplied at all: an org that manages its registries in Openship
+    // should not have a stray `docker login` on the box quietly override it.
+    const authconfig = this.connectionOptions?.resolveRegistryAuth
+      ? await this.connectionOptions.resolveRegistryAuth(ref)
+      : await resolveDockerAuth(ref);
+    try {
+      const stream = await this.docker.pull(ref, authconfig ? { authconfig } : {});
+      await new Promise<void>((resolve, reject) => {
+        this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+      });
+    } catch (err) {
+      // Name the registry and KEEP the daemon's reason. The credential we sent is
+      // never echoed back in a pull error, while the reason is the only thing that
+      // separates "manifest unknown" from "unauthorized" from "no space left on
+      // device" — collapsing all of them into one generic sentence makes every failed
+      // pull undiagnosable, which is a worse outcome than the one being guarded
+      // against. `resolveDockerAuth` is deliberately OUTSIDE this catch: its own error
+      // is already redacted and actionable, and must not be relabelled a pull failure.
+      throw new Error(
+        `Failed to pull ${ref} from ${registryForImage(ref)}: ${safeErrorMessage(err)}`,
+      );
+    }
   }
 
   /** Is this image tag present on THIS daemon? Distinguishes a locally-built
@@ -4101,6 +4168,8 @@ export class DockerRuntime implements RuntimeAdapter {
     // Command (#332): argv Cmd, no implicit `sh -c` (that broke entrypoint+CMD
     // images). See resolveComposeCmd.
     const cmd = resolveComposeCmd(config);
+    // Entrypoint (#575) — `undefined` = keep the image's, `[]` = clear it.
+    const entrypoint = resolveComposeEntrypoint(config.advanced);
 
     // Shared namespaces (compose `network_mode` / `pid`), pre-resolved by the
     // deploy loop to `container:<id>` / `none`.
@@ -4201,6 +4270,12 @@ export class DockerRuntime implements RuntimeAdapter {
       name: containerName,
       Image: config.image,
       Cmd: cmd,
+      // Entrypoint (#575). SPREAD rather than assigned, because `undefined` and `[]`
+      // must reach Docker differently: absent leaves the image's own ENTRYPOINT
+      // alone, while `Entrypoint: []` clears it. Assigning `undefined` would send the
+      // key, and the same conditional-spread shape is why `toStopConfig` returns an
+      // object instead of nullable fields.
+      ...(entrypoint === undefined ? {} : { Entrypoint: entrypoint }),
       Env: env,
       // Docker rejects an explicit hostname when the network namespace is another
       // container's — that container owns the UTS identity too.

@@ -69,7 +69,43 @@
       "liveAccessible": "En ligne et accessible",
       "pausedInaccessible": "En pause et inaccessible",
       "disable": "Désactiver",
-      "enable": "Activer"
+      "enable": "Activer",
+      "migrating": "Déplacement en cours",
+      "migratingHint": "En cours de transfert vers un autre serveur"
+    },
+    "migration": {
+      "title": "Déplacement",
+      "description": "Déplacer ce projet vers un autre serveur",
+      "currentServer": "Serveur actuel",
+      "migrate": "Migrer",
+      "noOtherServers": "Ajoutez un second serveur pour y déplacer ce projet.",
+      "cloudLater": "De serveur à serveur. Le déplacement vers ou depuis Openship Cloud n'est pas encore pris en charge.",
+      "startFailed": "Impossible de démarrer la migration",
+      "confirmTitle": "Déplacer {project} vers {server}",
+      "confirmSubtitle": "Rien ne change avant que vous ne lanciez le déplacement.",
+      "svcVolumes": "{count} volume(s) de données",
+      "downtimeNote": "Le projet est hors ligne pendant la copie des données et le démarrage sur le nouveau serveur. Les services avec état sont indisponibles pendant tout le transfert.",
+      "dnsNote": "Le DNS pointe encore vers l'ancien serveur — modifiez vos enregistrements dès que le nouveau répond.",
+      "cancel": "Annuler",
+      "confirmStart": "Lancer le déplacement",
+      "duplicate": "Dupliquer",
+      "intentMove": "Déplacer",
+      "intentCopy": "Dupliquer",
+      "intentMoveHint": "Le projet déménage. Ses conteneurs et volumes sont supprimés de l'ancien serveur après votre confirmation.",
+      "intentCopyHint": "L'original continue de tourner. Un second projet est créé sur le nouveau serveur avec une copie des données.",
+      "confirmTitleCopy": "Dupliquer {project} sur {server}",
+      "confirmStartCopy": "Lancer la duplication",
+      "downtimeNoteCopy": "Le projet est brièvement hors ligne pendant la copie — les volumes doivent être au repos pour être copiés proprement. Il redémarre sur l'ancien serveur dès la fin de la copie.",
+      "copyNoDomainsNote": "La copie démarre sans domaine — les domaines existants restent au projet qui les sert.",
+      "fromLabel": "Depuis",
+      "toLabel": "Vers",
+      "modeLabel": "Opération",
+      "scopeLabel": "Que dupliquer",
+      "scopeAll": "Tout sélectionner",
+      "scopeHintAll": "Tous les services, avec leurs données.",
+      "scopeHintSome": "{count} service(s) — le reste ne reste que sur l'original.",
+      "sourceServices": "{count} service(s) actifs",
+      "runningStatus": "En cours — {status}"
     },
     "cache": {
       "title": "Cache",
@@ -290,6 +326,8 @@
       "savedTitle": "Enregistré",
       "saveFailed": "Échec de l'enregistrement des variables d'environnement",
       "saveFailedTitle": "Échec de l'enregistrement",
+      "noChanges": "Aucune modification à enregistrer — vos valeurs enregistrées sont conservées.",
+      "noChangesTitle": "Rien à enregistrer",
       "applying": "Redémarrage du service avec le nouvel environnement — sans recompilation.",
       "applyingTitle": "Application",
       "applyFailed": "Impossible d'appliquer l'environnement au service en cours",
@@ -501,6 +539,10 @@
       "high": {
         "name": "Élevée",
         "description": "Applications à fort trafic"
+      },
+      "xlarge": {
+        "name": "Très grand",
+        "description": "Bases de données et charges lourdes"
       }
     },
     "custom": {
@@ -766,7 +808,9 @@
       "toggle": "Enregistrements DNS",
       "hint": "Ajoutez-les chez votre fournisseur DNS, puis cliquez sur Vérifier.",
       "loading": "Chargement des enregistrements…",
-      "none": "Aucun enregistrement à ajouter pour ce domaine."
+      "none": "Aucun enregistrement à ajouter pour ce domaine.",
+      "failed": "Impossible de charger les enregistrements DNS de ce domaine.",
+      "retry": "Réessayer"
     },
     "verifyMissing": {
       "both": "Ni le CNAME ni le TXT ne sont encore résolus — ajoutez les enregistrements ci-dessous, attendez la propagation DNS, puis Vérifiez.",

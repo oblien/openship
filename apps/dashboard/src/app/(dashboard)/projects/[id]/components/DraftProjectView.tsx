@@ -12,6 +12,9 @@
  *     row opens that build directly at /build/{id} — no detour through the
  *     production deployments tab), and the source summary + danger zone
  *     stacked on the RIGHT.
+ *   • the draft's reference facts in a folded "Details" card BELOW the attempt
+ *     list — deliberately last and shut, so nothing static sits between the
+ *     hero and the builds you came to read.
  *
  * Everything a draft needs lives here — you never have to enter the
  * production tabbed UI while a project is still draft. The normal tabbed
@@ -23,9 +26,19 @@
  * status pill (PROJECT_STATUS_META), and sidebar-style key/value rows.
  */
 
-import { useCallback, useEffect, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useId, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
-import { Rocket, Settings, Trash2, Github, FolderCode, Boxes, Loader2, Info } from "lucide-react";
+import {
+  Rocket,
+  Settings,
+  Trash2,
+  Github,
+  FolderCode,
+  Boxes,
+  Loader2,
+  Info,
+  ChevronDown,
+} from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { AppLogo } from "@/components/AppLogo";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
@@ -223,11 +236,32 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
           </div>
         </div>
 
-        {/* Details — the draft's key facts (type, stack, where it'll run). */}
+        {/* Deploy history — reuses the production deployment cards. Hidden for a
+            pristine draft (the hero already says "not deployed yet"). */}
+        {attemptCount > 0 && (
+          <div>
+            <h3 className="mb-3 px-1 text-[14px] font-semibold text-foreground">
+              {t.projects.draft.attemptsTitle}
+            </h3>
+            <DeploymentsContent
+              projectId={id}
+              projectName={projectData?.name}
+              hideHeader
+              hideSidebar
+            />
+          </div>
+        )}
+
+        {/* Details LAST, and folded shut. What you came to a failed draft for is
+            the attempt list — which build broke, open it — while type/framework/
+            target are reference facts that don't change and mostly repeat the
+            Source card beside them. Directly under the hero they pushed the
+            attempts a whole card down the page; behind one press they cost a row. */}
         <SectionCard
           icon={Info}
           title={t.projects.draft.detailsTitle}
           description={t.projects.draft.detailsDescription}
+          collapsible
         >
           <div className="space-y-3">
             <InfoRow
@@ -249,22 +283,6 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
             )}
           </div>
         </SectionCard>
-
-        {/* Deploy history — reuses the production deployment cards. Hidden for a
-            pristine draft (the hero already says "not deployed yet"). */}
-        {attemptCount > 0 && (
-          <div>
-            <h3 className="mb-3 px-1 text-[14px] font-semibold text-foreground">
-              {t.projects.draft.attemptsTitle}
-            </h3>
-            <DeploymentsContent
-              projectId={id}
-              projectName={projectData?.name}
-              hideHeader
-              hideSidebar
-            />
-          </div>
-        )}
       </div>
 
       {/* ── RIGHT COLUMN — source + delete ────────────────────────── */}
@@ -374,30 +392,63 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
 
 // Lighter section card: inline icon + title (no ring box, no heavy divider),
 // content flush below. Reads calmer than a bordered-header card.
+//
+// `collapsible` turns the header into the disclosure control and starts the card
+// shut, so a card of static reference facts costs one row instead of a screenful.
+// Collapsed it drops the description too — a folded card should be a single line,
+// and the subtitle only earns its space once you've asked for the content.
 function SectionCard({
   icon: Icon,
   title,
   description,
   action,
+  collapsible = false,
   children,
 }: {
   icon: ComponentType<{ className?: string }>;
   title: string;
   description?: string;
   action?: React.ReactNode;
+  collapsible?: boolean;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(!collapsible);
+  const contentId = useId();
+
+  const header = (
+    <>
+      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <h3 className="text-[14px] font-semibold leading-none text-foreground">{title}</h3>
+        {description && open && (
+          <p className="mt-1.5 text-[12px] text-muted-foreground">{description}</p>
+        )}
+      </div>
+      {action}
+    </>
+  );
+
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
-      <div className="mb-4 flex items-start gap-2.5">
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-semibold leading-none text-foreground">{title}</h3>
-          {description && <p className="mt-1.5 text-[12px] text-muted-foreground">{description}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={contentId}
+          className={`group flex w-full items-start gap-2.5 text-start ${open ? "mb-4" : ""}`}
+        >
+          {header}
+          <ChevronDown
+            className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-all group-hover:text-foreground ${
+              open ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+      ) : (
+        <div className="mb-4 flex items-start gap-2.5">{header}</div>
+      )}
+      {open && <div id={contentId}>{children}</div>}
     </div>
   );
 }

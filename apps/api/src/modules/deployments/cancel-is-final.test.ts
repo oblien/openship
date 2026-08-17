@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   setActiveDeployment: vi.fn(async () => {}),
   supersedePendingDecisions: vi.fn(async () => {}),
   sseUpdateStatus: vi.fn(),
+  notify: vi.fn(),
+  finishBuildSession: vi.fn(async () => {}),
 }));
 
 // The lifecycle module transitively pulls in auth/notification wiring that reads
@@ -20,14 +22,14 @@ vi.mock("@repo/db", () => ({
       getNextReadyVersion: vi.fn(async () => 1),
       findBuildSessionById: vi.fn(async () => null),
       appendBuildLog: vi.fn(async () => {}),
-      finishBuildSession: vi.fn(async () => {}),
+      finishBuildSession: mocks.finishBuildSession,
     },
     project: { setActiveDeployment: mocks.setActiveDeployment },
     service: { listByDeployment: vi.fn(async () => []) },
   },
 }));
 // Terminal-event side channels, each of which drags in auth/github/mail wiring.
-vi.mock("../../lib/notification-dispatcher", () => ({ notification: { emit: vi.fn() } }));
+vi.mock("../../lib/notification-dispatcher", () => ({ notification: { emit: mocks.notify } }));
 vi.mock("../../lib/audit", () => ({ audit: { recordAsync: vi.fn(), record: vi.fn() } }));
 vi.mock("../../lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn(async () => {}) }));
 vi.mock("../mail/webmail/webmail-install.service", () => ({
@@ -41,7 +43,7 @@ vi.mock("./session-manager", () => ({
   endSession: vi.fn(),
 }));
 
-import { onSuccess, setDeploymentStatus } from "./deployment-lifecycle";
+import { onFailure, onSuccess, setDeploymentStatus } from "./deployment-lifecycle";
 
 /**
  * A cancel is the user's last word, but cancellation is COOPERATIVE and the deploy
@@ -64,7 +66,10 @@ const ctx = {
   },
   buildSessionId: "bld_x",
   provisioned: {},
-  persistLogs: async () => {},
+  // Sync, returning entries — `collectLogs` calls this directly and onFailure's
+  // notification tail slices the result. An async stub returns a Promise here and
+  // only blows up on the paths that actually read the log tail.
+  persistLogs: () => [],
   runtime: null,
   logs: [],
 } as never;
@@ -92,6 +97,42 @@ describe("a cancelled deployment is final", () => {
     await onSuccess(ctx, { containerId: "c1", durationMs: 10 });
 
     expect(mocks.setActiveDeployment).toHaveBeenCalledWith("p1", "d1");
+  });
+
+  /**
+   * The same refusal on the FAILURE side. Cancelling during the deploy phase tears
+   * the containers down under the running pipeline, so the pipeline then fails —
+   * and `onFailure` used to broadcast `failed` regardless of the row refusing the
+   * write. The row said `cancelled` while the stream said `failed`, which is what
+   * made the app wizard show "Install failed" underneath "Install cancelled".
+   */
+  it("onFailure reports the cancel, not a failure, when the row refuses the write", async () => {
+    mocks.updateStatus.mockResolvedValue(false);
+
+    await onFailure(ctx, "container exited 1", 10);
+
+    expect(mocks.sseUpdateStatus).not.toHaveBeenCalled();
+    expect(mocks.finishBuildSession).toHaveBeenCalledWith(
+      "bld_x",
+      "cancelled",
+      expect.anything(),
+      expect.anything(),
+    );
+    // Nobody lost a deploy they meant to keep — no failure notification.
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it("onFailure reports a real failure normally when the write applied", async () => {
+    mocks.updateStatus.mockResolvedValue(true);
+
+    await onFailure(ctx, "container exited 1", 10);
+
+    expect(mocks.sseUpdateStatus).toHaveBeenCalledWith(
+      "d1",
+      "failed",
+      expect.objectContaining({ errorMessage: expect.stringContaining("container exited 1") }),
+    );
+    expect(mocks.notify).toHaveBeenCalled();
   });
 
   it("setDeploymentStatus does not broadcast a status the DB refused", async () => {

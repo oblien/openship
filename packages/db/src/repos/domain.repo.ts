@@ -1,4 +1,4 @@
-import { eq, and, ne, lt, inArray, sql } from "drizzle-orm";
+import { eq, and, ne, lt, asc, inArray, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { domain, project, service } from "../schema";
@@ -33,6 +33,36 @@ export function createDomainRepo(db: Database) {
       .update(domain)
       .set({ isPrimary: true, updatedAt: new Date() })
       .where(eq(domain.id, domainId));
+  }
+
+  /**
+   * Insert a row and return it as the DB actually stored it.
+   *
+   * `{ ...values } as Domain` was a lie for every column the caller didn't pass:
+   * `sslStatus`, `status`, `verified`, `verifyAttempts`, `externalIngress`,
+   * `manualSsl` and `ownerType` are NOT-NULL columns with DB DEFAULTS, so the
+   * returned object satisfied the type while carrying `undefined` for each of
+   * them. Readers that compare against the default then quietly take the wrong
+   * branch — the deploy's first-issuance gate asks `row.sslStatus === "none"`, got
+   * `undefined === "none"` → false, and skipped the certificate for every
+   * domain minted at deploy time.
+   *
+   * One extra SELECT on a path that runs once per new domain, and it cannot drift
+   * as the schema's defaults change.
+   */
+  async function insertAndRead(row: NewDomain & { id: string }): Promise<Domain> {
+    await db.insert(domain).values(row);
+    // NON-THROWING on purpose. The INSERT has already landed, so a rejecting
+    // read-back (connection blip, statement timeout, pool exhaustion) must not
+    // turn a SUCCESSFUL create into a create failure — the caller would then
+    // treat the hostname as unclaimable and skip routing it while the row exists.
+    // `findOrCreate`'s own catch can't save it either: that only re-reads on a
+    // unique violation. Degrade to the insert values (the pre-existing return
+    // shape) instead, which is strictly better than throwing.
+    const created = await db.query.domain
+      .findFirst({ where: eq(domain.id, row.id) })
+      .catch(() => undefined);
+    return created ?? ({ ...row, createdAt: new Date(), updatedAt: new Date() } as Domain);
   }
 
   return {
@@ -144,6 +174,88 @@ export function createDomainRepo(db: Database) {
       return rows.map((r) => r.id);
     },
 
+    /**
+     * Hostnames of the org's Cloud-managed (free) subdomains.
+     *
+     * Returns hostnames, not a count, because the CALLER owns the predicate: what
+     * makes a hostname "ours" is `isCloudManagedHostname` (a `.opsh.io` suffix
+     * test) which lives in the API next to the rest of the routing truth. A count
+     * computed here would have to re-implement it in SQL and drift.
+     *
+     * Deliberately NOT filtered on `domain_type = 'free'`: that column is derived
+     * against `HOST_DOMAIN || CLOUD_DOMAIN`, so on a box with
+     * `HOST_DOMAIN=example.com` the operator's own `api.example.com` is stored as
+     * "free" while costing Cloud nothing. Counting it would bill an operator for
+     * their own DNS.
+     *
+     * Joined through `project` (domain has no organizationId) which also excludes
+     * webhook- and mail-owned rows — those carry a NULL projectId and are always
+     * custom hostnames. Soft-deleted projects are excluded: their rows are
+     * unreachable, and a slot that can't be used must not be charged for.
+     */
+    async listHostnamesForOrg(organizationId: string): Promise<string[]> {
+      const rows = await db
+        .select({ hostname: domain.hostname })
+        .from(domain)
+        .innerJoin(project, eq(domain.projectId, project.id))
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            sql`${project.deletedAt} IS NULL`,
+          ),
+        );
+      return rows.map((r) => r.hostname);
+    },
+
+    /**
+     * Every domain in the org WITH the project that holds it.
+     *
+     * The counterpart to `listHostnamesForOrg`, which returns bare strings and so
+     * can only ever produce a number. A number is not actionable: a user at their
+     * free-subdomain limit was told "you're using 10" with no way to discover
+     * where — a subdomain created by a CLI deploy months ago, in a project they'd
+     * forgotten, was invisible (there is no org-wide domains page and
+     * `GET /api/domains` requires a projectId).
+     *
+     * Same join and filters as the counting query, so the list and the count can
+     * never disagree about what occupies a slot.
+     */
+    async listForOrgWithProject(organizationId: string): Promise<
+      {
+        id: string;
+        hostname: string;
+        domainType: string | null;
+        isPrimary: boolean;
+        projectId: string | null;
+        projectName: string;
+        projectSlug: string;
+        serviceId: string | null;
+        createdAt: Date;
+      }[]
+    > {
+      return db
+        .select({
+          id: domain.id,
+          hostname: domain.hostname,
+          domainType: domain.domainType,
+          isPrimary: domain.isPrimary,
+          projectId: domain.projectId,
+          projectName: project.name,
+          projectSlug: project.slug,
+          serviceId: domain.serviceId,
+          createdAt: domain.createdAt,
+        })
+        .from(domain)
+        .innerJoin(project, eq(domain.projectId, project.id))
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            sql`${project.deletedAt} IS NULL`,
+          ),
+        )
+        .orderBy(asc(project.name), asc(domain.hostname));
+    },
+
     async listByIds(ids: string[]) {
       if (ids.length === 0) return [];
 
@@ -192,14 +304,12 @@ export function createDomainRepo(db: Database) {
 
     async create(data: Omit<NewDomain, "id"> & { verificationToken?: string }) {
       const id = generateId("dom");
-      const row = {
+      return insertAndRead({
         id,
         ...data,
         hostname: data.hostname.toLowerCase(),
         verificationToken: data.verificationToken ?? id,
-      };
-      await db.insert(domain).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Domain;
+      });
     },
 
     /**
@@ -235,9 +345,12 @@ export function createDomainRepo(db: Database) {
         verificationToken: data.verificationToken ?? id,
       };
       try {
-        await db.insert(domain).values(row);
-        if (row.isPrimary && row.projectId) await promotePrimary(row.projectId, id);
-        return { ...row, createdAt: new Date(), updatedAt: new Date() } as Domain;
+        const created = await insertAndRead(row);
+        if (row.isPrimary && row.projectId) {
+          await promotePrimary(row.projectId, id);
+          return { ...created, isPrimary: true };
+        }
+        return created;
       } catch (err: any) {
         // Handle race: another deploy inserted between our check and insert
         if (err?.message?.includes("unique") || err?.code === "23505") {

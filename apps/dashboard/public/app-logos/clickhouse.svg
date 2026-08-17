@@ -1,0 +1,11 @@
+<!-- ClickHouse. Vectorized from the official favicon (clickhouse.com/favicon.ico), which is
+     exactly two colors: #FCFF74 bars on a #161616 square, mark inset 1/6 on every side.
+     Reproduced as a full-bleed tile rather than the bare simpleicons mark because that one
+     ships in brand yellow on transparent — legible on the dark themes, near-invisible on
+     light (#FFCC01 on a white card is ~1.7:1). Yellow-on-near-black reads on all three.
+     Bar geometry is the official mark's, scaled 2/3 and centred to match that inset. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <rect width="24" height="24" fill="#161616"/>
+  <path fill="#FCFF74" transform="translate(4 4) scale(0.666667)"
+        d="M21.333 10H24v4h-2.667ZM16 1.335h2.667v21.33H16Zm-5.333 0h2.666v21.33h-2.666ZM0 22.665V1.335h2.667v21.33zm5.333-21.33H8v21.33H5.333Z"/>
+</svg>

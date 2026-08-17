@@ -65,10 +65,16 @@
     "openApp": "Open app",
     "goToApp": "Go to app",
     "installFailed": "Install failed",
+    "installFailedBody": "It stopped before everything was running. The technical details carry the full build log.",
+    "installCancelledSelf": "You stopped this install.",
+    "installCancelledBody": "The containers and images it had created were removed, and data volumes were kept — installing again reuses them. Anything already live was left alone.",
+    "settledAtPhase": "Stopped at {phase}",
     "viewDetails": "View technical details",
     "showLogs": "Show logs",
     "hideLogs": "Hide logs",
     "deployLogs": "deploy logs",
+    "logsWaiting": "Waiting for output…",
+    "logsEmpty": "No output was captured.",
     "back": "Back",
     "phaseImages": "Preparing images",
     "phaseServices": "Starting services",
@@ -200,7 +206,43 @@
       "liveAccessible": "Live and accessible",
       "pausedInaccessible": "Paused and not accessible",
       "disable": "Disable",
-      "enable": "Enable"
+      "enable": "Enable",
+      "migrating": "Migrating",
+      "migratingHint": "Being moved to another server"
+    },
+    "migration": {
+      "title": "Migration",
+      "description": "Move this project to another server",
+      "currentServer": "Current server",
+      "migrate": "Migrate",
+      "noOtherServers": "Add a second server to move this project to one.",
+      "cloudLater": "Server to server. Moving to or from Openship Cloud isn't supported yet.",
+      "startFailed": "Couldn't start the migration",
+      "confirmTitle": "Move {project} to {server}",
+      "confirmSubtitle": "Nothing changes until you start the move.",
+      "svcVolumes": "{count} volume(s)",
+      "downtimeNote": "The project is offline while its data copies across and the new server starts it. Stateful services are down for the whole transfer.",
+      "dnsNote": "DNS still points at the old server — move your records once the new one is serving.",
+      "cancel": "Cancel",
+      "confirmStart": "Start move",
+      "duplicate": "Duplicate",
+      "intentMove": "Move",
+      "intentCopy": "Duplicate",
+      "intentMoveHint": "The project moves. Its containers and volumes are removed from the old server once you confirm.",
+      "intentCopyHint": "The original keeps running. A second project is created on the new server with a copy of the data.",
+      "confirmTitleCopy": "Duplicate {project} onto {server}",
+      "confirmStartCopy": "Start duplicate",
+      "downtimeNoteCopy": "The project is briefly offline while its data is copied — the volumes have to be still to copy cleanly. It starts again on the old server as soon as the copy finishes.",
+      "copyNoDomainsNote": "The copy starts with no domains — the originals stay with the project that's serving them.",
+      "fromLabel": "From",
+      "toLabel": "To",
+      "modeLabel": "Mode",
+      "scopeLabel": "What to duplicate",
+      "scopeAll": "Select all",
+      "scopeHintAll": "Every service, with its data.",
+      "scopeHintSome": "{count} service(s) — the rest stay only on the original.",
+      "sourceServices": "{count} service(s)",
+      "runningStatus": "In progress — {status}"
     },
     "cache": {
       "title": "Cache",
@@ -453,6 +495,8 @@
       "savedTitle": "Saved",
       "saveFailed": "Failed to save environment variables",
       "saveFailedTitle": "Save failed",
+      "noChanges": "No changes to save — your saved values were kept.",
+      "noChangesTitle": "Nothing to save",
       "applying": "Restarting the service with the new env — no rebuild.",
       "applyingTitle": "Applying",
       "applyFailed": "Couldn't apply the env to the running service",
@@ -660,6 +704,10 @@
       "high": {
         "name": "High",
         "description": "High-traffic applications"
+      },
+      "xlarge": {
+        "name": "Extra large",
+        "description": "Databases and heavy workloads"
       }
     },
     "custom": {
@@ -842,7 +890,9 @@
       "toggle": "DNS records",
       "hint": "Add these at your DNS provider, then click Verify.",
       "loading": "Loading records…",
-      "none": "No records to add for this domain."
+      "none": "No records to add for this domain.",
+      "failed": "Couldn't load the DNS records for this domain.",
+      "retry": "Try again"
     },
     "verifyMissing": {
       "both": "Neither the CNAME nor the TXT record is resolving yet — add the records below, wait for DNS to propagate, then Verify.",

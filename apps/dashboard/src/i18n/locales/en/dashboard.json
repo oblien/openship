@@ -69,6 +69,7 @@
     "jobs": "Jobs",
     "settings": "Settings",
     "billing": "Billing & Usage",
+    "audit": "Audit log",
     "mailSetup": "Set up mail",
     "mailSetupProgress": "Setup progress",
     "addMailbox": "Add mailbox",

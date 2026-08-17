@@ -95,7 +95,12 @@
     "installing": "Installation en cours",
     "running": "En cours d'exécution",
     "incomplete": "Incomplet",
-    "stoppedAt": "Arrêté · étape {step}"
+    "stoppedAt": "Arrêté · étape {step}",
+    "open": "Ouvrir",
+    "openAria": "Ouvrir {name}",
+    "actionsAria": "Actions pour {name}",
+    "overviewTitle": "Aperçu de la messagerie",
+    "hint": "Retirer un serveur le détache uniquement de cette liste : l'installation continue de tourner et peut être réadoptée."
   },
   "setup": {
     "title": "Configuration du serveur de messagerie",

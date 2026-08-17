@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "Free domain routing needs attention" + Retry — the release is live on the
+ * "Domain routing needs attention" + Retry — the release is live on the
  * server, but the routes in front of it didn't sync.
  *
  * It lives on Domains & Routes rather than Deployments because nothing is wrong
@@ -23,6 +23,7 @@ import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import WarningCallout from "@/components/shared/WarningCallout";
+import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 
 export const RoutingUnsyncedCallout = () => {
   const { projectData, updateProjectData } = useProjectSettings();
@@ -39,7 +40,11 @@ export const RoutingUnsyncedCallout = () => {
     try {
       const res = await projectsApi.retryRouting(projectData.id);
       if (res?.ok) {
-        updateProjectData({ routingUnsynced: false });
+        updateProjectData({ routingUnsynced: false, routingWarning: null });
+        // Re-read the whole payload, not just the flag: the repair re-applies routes and
+        // re-checks what the edge SERVES, so per-domain verification and SSL state can all have
+        // moved. Patching one boolean left the domain cards showing their pre-retry state.
+        invalidateProjectCaches(String(projectData.id));
         showToast(t.projects.routingRetry.success, "success", t.projects.routingRetry.title);
       } else {
         showToast(
@@ -66,7 +71,14 @@ export const RoutingUnsyncedCallout = () => {
   return (
     <WarningCallout
       title={t.projects.routingRetry.title}
-      description={t.projects.routingRetry.description}
+      // The SERVER's reason when it has one, and only then the generic line.
+      //
+      // The generic line describes exactly one cause — a free `.opsh.io` URL that didn't route
+      // through Openship Cloud's edge — and it was shown for every cause. On a self-hosted
+      // project with custom domains waiting for certificates it was simply false, and it sent
+      // the operator to a cloud they don't use instead of to DNS + Verify, which is what the
+      // server had already worked out and written down.
+      description={projectData?.routingWarning || t.projects.routingRetry.description}
       actions={
         <button
           type="button"

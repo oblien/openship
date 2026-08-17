@@ -1,8 +1,13 @@
 import { eq, and, isNull, isNotNull, inArray, desc, sql, type SQL } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { project, envVar, deployment } from "../schema";
+import { project, projectGroup, envVar, deployment, service } from "../schema";
 import { member } from "../schema/organization";
+// Cloning a project writes its group and service rows in the same transaction, so this repo
+// needs both insert types. Imported from their own repos (where they are already declared)
+// rather than re-derived here, so there is one definition of each row shape.
+import type { NewProjectGroup } from "./project-group.repo";
+import type { NewService } from "./service.repo";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -306,6 +311,96 @@ export function createProjectRepo(db: Database) {
       const row = { id, ...rest };
       await db.insert(project).values(row);
       return { ...row, createdAt: new Date(), updatedAt: new Date() } as Project;
+    },
+
+    /**
+     * Create a whole project — its group, the project row, its service rows and its env vars —
+     * in ONE transaction.
+     *
+     * Exists for duplicating a project (see `project-clone.service.ts`), where a partial
+     * result is the worst outcome available: a project row with no services is an empty
+     * project the operator has to notice and delete, and a project with services but no env is
+     * a stack that boots and fails on a missing DATABASE_URL. The step-by-step create path
+     * (`createServicesProject`) compensates by soft-deleting its group on failure, which
+     * cannot cover a failure *between* the service and env inserts.
+     *
+     * The caller decides every value — this deliberately computes nothing. What to copy, what
+     * to reset and what to override is a product decision that belongs with the service that
+     * understands the two projects; the repo's only job is that all of it lands or none does.
+     *
+     * Service ids are minted here, so the returned map is how the caller (and any env row
+     * scoped to a service) resolves a SOURCE service id to the row that now stands for it.
+     */
+    async createProjectWithRecords(input: {
+      group: Omit<NewProjectGroup, "id">;
+      /** Project row minus the two ids this method owns. */
+      project: Omit<NewProject, "id" | "groupId">;
+      /** `sourceId` is only used to key the returned map (and the env rows below). */
+      services: Array<{ sourceId: string; row: Omit<NewService, "id" | "projectId"> }>;
+      /** `sourceServiceId: null` = a project-level var; otherwise it follows that service. */
+      envVars: Array<{
+        sourceServiceId: string | null;
+        key: string;
+        value: string;
+        environment: string;
+        isSecret?: boolean;
+      }>;
+    }): Promise<{ project: Project; serviceIdBySourceId: Record<string, string> }> {
+      const groupId = generateId("app");
+      const projectId = generateId("proj");
+      const serviceIdBySourceId: Record<string, string> = {};
+      for (const svc of input.services) serviceIdBySourceId[svc.sourceId] = generateId("svc");
+
+      const projectRow = { id: projectId, groupId, ...input.project };
+
+      await db.transaction(async (tx) => {
+        await tx.insert(projectGroup).values({ id: groupId, ...input.group });
+        await tx.insert(project).values(projectRow);
+        if (input.services.length > 0) {
+          await tx.insert(service).values(
+            input.services.map((svc) => ({
+              id: serviceIdBySourceId[svc.sourceId]!,
+              projectId,
+              ...svc.row,
+            })),
+          );
+        }
+        if (input.envVars.length > 0) {
+          await tx.insert(envVar).values(
+            input.envVars.map((v) => {
+              let serviceId: string | null = null;
+              if (v.sourceServiceId) {
+                serviceId = serviceIdBySourceId[v.sourceServiceId] ?? null;
+                // A var scoped to a service the caller did not clone. Coalescing to null
+                // would PROMOTE it to a project-level var — one service's config, quietly
+                // handed to every other service in the new project. Dropping it silently is
+                // the other wrong answer. It can only mean the caller's service list and env
+                // list disagree, so refuse: we are inside the transaction, and nothing lands.
+                if (!serviceId) {
+                  throw new Error(
+                    `createProjectWithRecords: env var "${v.key}" is scoped to service ` +
+                      `${v.sourceServiceId}, which is not in the services being created`,
+                  );
+                }
+              }
+              return {
+                id: generateId("env"),
+                projectId,
+                serviceId,
+                environment: v.environment,
+                key: v.key,
+                value: v.value,
+                isSecret: v.isSecret ?? false,
+              };
+            }),
+          );
+        }
+      });
+
+      return {
+        project: { ...projectRow, createdAt: new Date(), updatedAt: new Date() } as Project,
+        serviceIdBySourceId,
+      };
     },
 
     async update(id: string, data: Partial<NewProject>) {

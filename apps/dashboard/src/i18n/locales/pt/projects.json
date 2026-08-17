@@ -13,6 +13,7 @@
     "queued": "Em fila",
     "building": "A construir",
     "deploying": "A implementar",
+    "migrating": "A migrar",
     "failed": "Falhou",
     "cancelled": "Cancelado",
     "deleting": "A eliminar",
@@ -336,12 +337,12 @@
     "unknown": "Desconhecido"
   },
   "routingRetry": {
-    "title": "O encaminhamento do domínio gratuito precisa de atenção",
-    "description": "A aplicação está ativa no servidor, mas o seu URL gratuito .opsh.io não foi encaminhado através da edge do Openship Cloud. Tente novamente assim que o servidor estiver acessível a partir da cloud na porta 80.",
+    "title": "O encaminhamento do domínio precisa de atenção",
+    "description": "A app está ativa no servidor, mas as rotas à frente dela não sincronizaram. Tente reparar novamente ou verifique o DNS e o edge deste servidor.",
     "retry": "Repetir encaminhamento",
     "retrying": "A repetir…",
-    "success": "Encaminhamento do domínio gratuito sincronizado.",
-    "failed": "Não foi possível sincronizar o encaminhamento do domínio gratuito."
+    "success": "Encaminhamento do domínio sincronizado.",
+    "failed": "Não foi possível sincronizar o encaminhamento do domínio."
   },
   "deployBlocked": {
     "redeploy": "Reimplementar"
@@ -510,5 +511,6 @@
       "unhealthy": "Com problemas",
       "server_unreachable": "Servidor inacessível"
     }
-  }
+  },
+  "migrationAwaitingHint": "A migração está à sua espera — conclua a transição ou reverta-a no separador Avançado do projeto"
 }

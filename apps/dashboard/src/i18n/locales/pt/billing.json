@@ -3,6 +3,8 @@
     "title": "Capacidade e uso",
     "subtitle": "Capacidade incluída no seu plano e quanto você usou. Os números ao vivo são sincronizados do Openship Cloud.",
     "routes": "Rotas gratuitas",
+    "runningServices": "Serviços em execução",
+    "projects": "Projetos",
     "workspaces": "Espaços de trabalho",
     "unlimited": "Ilimitado",
     "used": "usado",

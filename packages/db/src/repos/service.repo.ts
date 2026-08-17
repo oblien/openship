@@ -1,7 +1,7 @@
-import { eq, and, asc, inArray } from "drizzle-orm";
+import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { commandToArgv, generateId, mergeAdvanced, normalizeCustomHostname, resolveCommandArgv, type ComposeAdvanced } from "@repo/core";
 import type { Database } from "../client";
-import { service, serviceDeployment } from "../schema";
+import { project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
 
 /** A public route as it arrives on the wire (port may be a string) before
@@ -138,7 +138,13 @@ export function composeWritePatch(
  * are the opposite: nothing but the compose file sets them, so an absent key
  * means DELETED, and merging would keep pinning the container into a namespace
  * the file no longer asks for (or into a service that no longer exists, which
- * the deploy then refuses).
+ * the deploy then refuses). `entrypoint` (#575) is owned for the same reason —
+ * dropping `entrypoint:` from the file has to hand the image's own ENTRYPOINT
+ * back, not keep running last week's override.
+ *
+ * Note this sweep tests for `undefined`, not falsiness, which is what lets
+ * `entrypoint: []` — compose's "clear the image ENTRYPOINT" — survive it. A
+ * truthiness test here would silently reinstate the wrapper it exists to remove.
  *
  * Only honored when the caller says its input IS the file. Half of
  * syncFromCompose's callers pass a release's frozen snapshot rather than a fresh
@@ -147,7 +153,7 @@ export function composeWritePatch(
  * namespace on the next deploy. Removal on the git path already propagates the
  * right way, through `reconcileFromCompose` applying `theirs` wholesale.
  */
-const COMPOSE_OWNED_ADVANCED_KEYS = ["networkMode", "pidMode"] as const;
+const COMPOSE_OWNED_ADVANCED_KEYS = ["networkMode", "pidMode", "entrypoint"] as const;
 
 function clearComposeOwnedKeys(
   merged: ComposeAdvanced,
@@ -345,6 +351,35 @@ export function createServiceRepo(db: Database) {
         where: eq(service.projectId, projectId),
         orderBy: [asc(service.sortOrder), asc(service.name)],
       });
+    },
+
+    /**
+     * How many services the org has that would each occupy one Oblien workspace.
+     *
+     * This is the count behind a tier's "N running services" allowance. Joined
+     * through `project` (service has no organizationId) and filtered to `enabled`,
+     * because a disabled service row holds no workspace. Soft-deleted projects are
+     * excluded — a slot that can't be used must not be charged for.
+     *
+     * Approximate BY DESIGN: Oblien's own workspace count is the hard ceiling
+     * (a build in flight, a crashed workspace, or a service someone started
+     * outside the API all shift the true number). This is the fast, friendly
+     * count that lets us refuse with "upgrade to add another database" instead of
+     * letting Oblien 409 mid-deploy.
+     */
+    async countRunningForOrg(organizationId: string): Promise<number> {
+      const [row] = await db
+        .select({ total: sql<number>`count(*)` })
+        .from(service)
+        .innerJoin(project, eq(service.projectId, project.id))
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            eq(service.enabled, true),
+            sql`${project.deletedAt} IS NULL`,
+          ),
+        );
+      return Number(row?.total ?? 0);
     },
 
     /**
@@ -758,19 +793,21 @@ export function createServiceRepo(db: Database) {
       });
     },
 
-    async createServiceDeployment(data: Omit<NewServiceDeployment, "id">) {
-      const id = generateId("sd");
-      const row = { id, ...data };
-      await db.insert(serviceDeployment).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as ServiceDeployment;
-    },
-
     /**
      * Insert-or-update a service_deployment row keyed by (deploymentId,
      * serviceId) — respects the uq_service_deployment_dep_svc unique index.
-     * Used by a partial (smart) redeploy to carry an unchanged service's
-     * runtime row forward over the pre-created "skipped" row without
-     * violating the unique constraint.
+     *
+     * This is the ONLY way to record a service's runtime outcome, and the plain-insert
+     * sibling that used to sit here is deliberately gone: a deploy has two writers for
+     * this pair (a scoped deploy pre-creates a `skipped` row for every service it did not
+     * target — service-checks.ts — and the compose loop writes the ones it deployed), so a
+     * row very often already exists by the time an outcome is known. Inserting there raised
+     * a unique violation that killed the deploy on its own bookkeeping, twice (#585).
+     *
+     * FULL-ROW writer: every column in the `set` below is assigned, so a caller must pass
+     * the complete runtime picture. To patch a column or two, use `updateServiceDeployment`
+     * — calling this with a partial payload NULLS the rest, which is how a carried `:latest`
+     * service lost the `image_digest` the update scanner reads.
      */
     async upsertServiceDeployment(data: Omit<NewServiceDeployment, "id">) {
       const id = generateId("sd");
@@ -855,6 +892,49 @@ export function createServiceRepo(db: Database) {
         .onConflictDoUpdate({
           target: [serviceDeployment.deploymentId, serviceDeployment.serviceId],
           set,
+        });
+    },
+
+    /**
+     * Record that a service was SKIPPED in this deployment, whether or not a row for it
+     * already exists.
+     *
+     * Same discipline — and the same reason for existing — as
+     * `markServiceDeploymentFailed` above: the row this collides with is very often the
+     * `skipped` row a smart/partial deploy pre-created (service-checks.ts), or one
+     * carrying the LIVE runtime details of a container that is still running. The `set`
+     * below therefore lists ONLY the skip facts, so `containerId` / `imageRef` /
+     * `imageDigest` / `hostPort` / `ip` survive by OMISSION. That is the load-bearing
+     * detail, and the reason this cannot be `upsertServiceDeployment` (a full-row writer
+     * that coalesces every one of those to null).
+     */
+    async markServiceDeploymentSkipped(data: {
+      deploymentId: string;
+      serviceId: string;
+      serviceName: string;
+      /** Why it was skipped — see the `reason` docblock on the schema for the vocabulary. */
+      reason: string;
+    }) {
+      await db
+        .insert(serviceDeployment)
+        .values({
+          id: generateId("sd"),
+          deploymentId: data.deploymentId,
+          serviceId: data.serviceId,
+          serviceName: data.serviceName,
+          status: "skipped",
+          reason: data.reason,
+          reasonSkipped: data.reason,
+        })
+        .onConflictDoUpdate({
+          target: [serviceDeployment.deploymentId, serviceDeployment.serviceId],
+          set: {
+            serviceName: data.serviceName,
+            status: "skipped",
+            reason: data.reason,
+            reasonSkipped: data.reason,
+            updatedAt: new Date(),
+          },
         });
     },
 

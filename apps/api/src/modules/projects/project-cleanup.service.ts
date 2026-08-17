@@ -24,6 +24,7 @@ import {
 import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
 import { computeCleanupKeepSet } from "./cleanup-keep-set";
 import { buildServiceRouteDomain } from "../../lib/routing-domains";
+import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { resolveLiveServiceState, type LiveMatchKind } from "../services/live-state";
 
@@ -73,6 +74,13 @@ export interface CleanupResource {
 
 export interface CleanupManifest {
   projectId: string;
+  /**
+   * Owning org — needed to release a managed (`*.opsh.io`) route on Openship
+   * Cloud's edge, which is namespace-scoped upstream. Optional so an older
+   * manifest (or a caller that only destroys runtime resources) still type-checks;
+   * a route release is simply skipped without it.
+   */
+  organizationId?: string;
   resources: CleanupResource[];
 }
 
@@ -524,7 +532,7 @@ export async function collectProjectManifest(
   };
   resources.sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type]);
 
-  return { projectId: project.id, resources };
+  return { projectId: project.id, organizationId: project.organizationId, resources };
 }
 
 /**
@@ -728,7 +736,7 @@ export async function collectDeploymentManifest(
   try {
     runtime = (await resolveDeploymentRuntime(dep)).runtime;
   } catch {
-    return { projectId: dep.projectId, resources };
+    return { projectId: dep.projectId, organizationId: dep.organizationId, resources };
   }
 
   for (const containerId of containerIds) {
@@ -758,7 +766,7 @@ export async function collectDeploymentManifest(
     }
   }
 
-  return { projectId: dep.projectId, resources };
+  return { projectId: dep.projectId, organizationId: dep.organizationId, resources };
 }
 
 // ─── Cleanup Executor ────────────────────────────────────────────────────────
@@ -810,7 +818,7 @@ export async function executeCleanup(
   for (let i = 0; i < manifest.resources.length; i += concurrency) {
     const batch = manifest.resources.slice(i, i + concurrency);
     const settled = await Promise.allSettled(
-      batch.map((resource) => destroyResource(resource, routing)),
+      batch.map((resource) => destroyResource(resource, routing, manifest.organizationId)),
     );
 
     for (let j = 0; j < settled.length; j++) {
@@ -855,19 +863,29 @@ export function disposeManifestRuntimes(manifest: CleanupManifest): void {
 async function destroyResource(
   resource: CleanupResource,
   routing: ReturnType<typeof platform>["routing"],
+  organizationId?: string,
 ): Promise<void> {
   try {
-    await withTimeout(destroyResourceOnce(resource, routing), DESTROY_TIMEOUT_MS, resource.label);
+    await withTimeout(
+      destroyResourceOnce(resource, routing, organizationId),
+      DESTROY_TIMEOUT_MS,
+      resource.label,
+    );
   } catch (firstErr) {
     // Retry once after backoff (also bounded — the retry can hang too).
     await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    await withTimeout(destroyResourceOnce(resource, routing), DESTROY_TIMEOUT_MS, resource.label);
+    await withTimeout(
+      destroyResourceOnce(resource, routing, organizationId),
+      DESTROY_TIMEOUT_MS,
+      resource.label,
+    );
   }
 }
 
 async function destroyResourceOnce(
   resource: CleanupResource,
   routing: ReturnType<typeof platform>["routing"],
+  organizationId?: string,
 ): Promise<void> {
   switch (resource.type) {
     case "container": {
@@ -899,7 +917,20 @@ async function destroyResourceOnce(
       return;
     }
     case "route": {
+      // Local vhost first — that stops the box serving the hostname.
       await routing.removeRoute(resource.ref);
+      // Then the Cloud edge record, which is a SEPARATE resource for a managed
+      // `*.opsh.io` hostname. Without this a deleted project left its free URL
+      // resolving and its globally-unique slug reserved, so the org could not
+      // re-claim its own name. Non-managed hostnames short-circuit inside the
+      // helper. Throws on failure so the cleanup result reports it as a failed
+      // resource rather than swallowing a leak.
+      if (organizationId) {
+        const { failures } = await releaseManagedHostnames([resource.ref], { organizationId });
+        if (failures.length > 0) {
+          throw new Error(`Cloud edge route not released: ${failures.join(", ")}`);
+        }
+      }
       return;
     }
     case "volume": {

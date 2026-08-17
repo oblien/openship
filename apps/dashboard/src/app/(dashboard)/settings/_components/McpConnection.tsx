@@ -663,7 +663,7 @@ function ClientsList({
                       already filter to "an AI assistant", but arriving from the
                       row that names one and having to re-pick it was the gap. */}
                   <Link
-                    href={`/settings?tab=audit&source=mcp&client=${encodeURIComponent(c.auditClientId)}`}
+                    href={`/audit?source=mcp&client=${encodeURIComponent(c.auditClientId)}`}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
                   >
                     <ScrollText className="size-3.5" />

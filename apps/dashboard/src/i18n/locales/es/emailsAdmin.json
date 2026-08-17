@@ -4,25 +4,27 @@
       "overview": "Resumen",
       "domains": "Dominios",
       "mailboxes": "Buzones",
-      "inbound": "Entrantes",
+      "notifications": "Notificaciones",
+      "sending": "Envío",
       "dns": "DNS",
       "health": "Estado",
-      "test": "Prueba",
       "backup": "Copia de seguridad",
       "advanced": "Avanzado"
     },
     "ariaLabel": "Secciones de administración de correo"
   },
-  "inbound": {
-    "heading": "Reglas de correo entrante",
+  "notifications": {
+    "heading": "Reglas de notificación",
     "description": "Recibe un aviso en un canal de notificaciones cuando llegue correo a una dirección de este servidor.",
     "newRule": "Nueva regla",
-    "newTitle": "Nueva regla de correo entrante",
-    "editTitle": "Editar regla de correo entrante",
+    "newTitle": "Nueva regla de notificación",
+    "editTitle": "Editar regla de notificación",
     "edit": "Editar",
-    "emptyTitle": "Aún no hay reglas de correo entrante",
+    "emptyTitle": "Aún no hay reglas de notificación",
     "emptyBody": "Añade una regla para recibir un aviso en Slack, Telegram, Discord o un webhook cuando llegue correo a un buzón o a un dominio de este servidor.",
     "noChannels": "Aún no tienes canales de notificación verificados. Añade y verifica uno en Ajustes → Notificaciones y luego vuelve aquí para crear una regla.",
+    "addChannel": "Añadir un canal de notificación",
+    "manageChannels": "Gestionar canales",
     "fieldName": "Nombre",
     "namePlaceholder": "Bandeja de soporte → #support",
     "fieldScope": "Vigilar",
@@ -47,7 +49,7 @@
     "active": "Activa",
     "disabled": "Desactivada",
     "paused": "Pausada",
-    "deleteTitle": "Eliminar regla de correo entrante",
+    "deleteTitle": "Eliminar regla de notificación",
     "deleteConfirm": "Eliminar regla",
     "deleting": "Eliminando…",
     "deleteHint": "Las notificaciones ya enviadas no se ven afectadas. El correo que ya se capturó pero aún no se ha procesado se descarta.",
@@ -58,10 +60,13 @@
     "testing": "Probando…",
     "testResult": "Se leyeron {read} mensaje(s) capturado(s): {matched} coincidieron con una regla y {dropped} se descartaron por los filtros. No se envió ni se eliminó nada.",
     "testFailed": "No se pudo ejecutar la prueba.",
-    "loadFailed": "No se pudieron cargar las reglas de correo entrante.",
+    "loadFailed": "No se pudieron cargar las reglas de notificación.",
     "saveFailed": "No se pudo guardar la regla.",
     "deleteFailed": "No se pudo eliminar la regla.",
     "confirmDelete": "¿Eliminar la regla «{name}»? La captura se detiene para su dirección salvo que otra regla siga necesitándola."
+  },
+  "sending": {
+    "testLiveNote": "Envía por la ruta activa ahora, no por los cambios sin guardar de arriba."
   },
   "overview": {
     "mailServer": "Servidor de correo",
@@ -617,6 +622,7 @@
     "close": "Cerrar",
     "logsLoadFailed": "No se pudieron cargar los registros",
     "loadingLogs": "Cargando registros…",
-    "noLogLines": "Aún no hay líneas de registro para este componente."
+    "noLogLines": "Aún no hay líneas de registro para este componente.",
+    "rowActions": "Acciones para {name}"
   }
 }

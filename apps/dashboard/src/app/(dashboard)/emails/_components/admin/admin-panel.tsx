@@ -5,18 +5,17 @@
  * provisioned. Tab state lives in the URL so refreshes and back/forward
  * navigation preserve context.
  *
- * Tab bar: chunky horizontal nav with icon-above-label. Each tab gets a
- * proper hit area + clear active state so the admin reads as a flagship
- * surface, not a settings page. Built on a sticky <nav> with a single
- * bottom border, like Vercel's project header tabs.
+ * Which sections exist, and their order, come from `MAIL_TAB_KEYS`
+ * (@/lib/mail-tabs) — the same list the mail rail renders from, so the bar and the
+ * rail cannot disagree. `TAB_ICONS` below is only the glyph for each, and the
+ * component rendered for each is the `tab === "…"` run further down. A prose list
+ * of the tabs used to live here; it went stale twice, which is the drift that let
+ * `inbound` and `test` survive in three readers at once.
  *
- * Tabs:
- *   - Overview:   credentials + setup-guide banners + webmail.
- *   - Domains:    vmail.domain CRUD.
- *   - Mailboxes:  vmail.mailbox CRUD per domain.
- *   - DNS:        reference of DNS records.
- *   - Components: live daemon health (separated from Overview by request).
- *   - Advanced:   destructive / power-user actions.
+ * Tab bar: chunky horizontal nav with icon beside label. Each tab gets a proper hit
+ * area + clear active state so the admin reads as a flagship surface, not a settings
+ * page. Built on a <nav> with a single bottom border, like Vercel's project header
+ * tabs.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -26,10 +25,9 @@ import {
   Globe,
   UserRound,
   Forward,
-  Inbox,
+  Bell,
   FileText,
   HeartPulse,
-  Send,
   Settings,
   DatabaseBackup,
   Waypoints,
@@ -39,14 +37,14 @@ import type { MailSetupStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/components/i18n-provider";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
+import { canonicalMailTab, MAIL_TAB_KEYS, type MailTabKey } from "@/lib/mail-tabs";
 import { OverviewTab } from "./overview-tab";
 import { DomainsTab } from "./domains-tab";
 import { MailboxesTab } from "./mailboxes-tab";
 import { AliasesTab } from "./aliases-tab";
-import { InboundTab } from "./inbound-tab";
+import { NotificationsTab } from "./notifications-tab";
 import { DnsTab } from "./dns-tab";
 import { HealthTab } from "./health-tab";
-import { TestTab } from "./test-tab";
 import { BackupTab } from "./backup-tab";
 import { SendingTab } from "./sending-tab";
 import { AdvancedTab } from "./advanced-tab";
@@ -64,54 +62,45 @@ interface MailAdminPanelProps {
   onForgotten: () => void;
 }
 
-type TabKey =
-  | "overview"
-  | "domains"
-  | "mailboxes"
-  | "aliases"
-  | "inbound"
-  | "dns"
-  | "health"
-  | "test"
-  | "backup"
-  | "sending"
-  | "advanced";
-
 interface TabDef {
-  key: TabKey;
+  key: MailTabKey;
   icon: LucideIcon;
 }
 
 /**
- * Sending sits at the head of the delivery run (Sending → DNS → Health → Test),
- * matching the rail's Delivery group in `lib/sidebar-nav.ts` — the two are one
- * ordering, and it exists in both places only because platform view renders this
- * bar while mail view renders the rail. Sending is the decision (direct vs relay);
- * DNS/Health/Test check what it decided, so it can't come after them.
+ * Sending sits at the head of the delivery run (Sending → DNS → Health), matching
+ * the rail's Delivery group in `lib/sidebar-nav.ts` — the two are one ordering, and
+ * it exists in both places only because platform view renders this bar while mail
+ * view renders the rail. Sending is the decision (direct vs relay); DNS and Health
+ * check what it decided, so they can't come before it. Sending a test email is a
+ * check too, which is why it's an action inside Sending and not a tab of its own.
+ *
+ * Order comes from `MAIL_TAB_KEYS`; this map only says which glyph each section
+ * gets, so a new section is a type error here rather than a tab that silently
+ * never renders.
  */
-const TABS: TabDef[] = [
-  { key: "overview", icon: LayoutDashboard },
-  { key: "domains", icon: Globe },
-  { key: "mailboxes", icon: UserRound },
-  { key: "aliases", icon: Forward },
-  { key: "inbound", icon: Inbox },
-  { key: "sending", icon: Waypoints },
-  { key: "dns", icon: FileText },
-  { key: "health", icon: HeartPulse },
-  { key: "test", icon: Send },
-  { key: "backup", icon: DatabaseBackup },
-  { key: "advanced", icon: Settings },
-];
+const TAB_ICONS: Record<MailTabKey, LucideIcon> = {
+  overview: LayoutDashboard,
+  domains: Globe,
+  mailboxes: UserRound,
+  aliases: Forward,
+  notifications: Bell,
+  sending: Waypoints,
+  dns: FileText,
+  health: HeartPulse,
+  backup: DatabaseBackup,
+  advanced: Settings,
+};
 
-const VALID_TABS: TabKey[] = TABS.map((t) => t.key);
+const TABS: TabDef[] = MAIL_TAB_KEYS.map((key) => ({ key, icon: TAB_ICONS[key] }));
 
 export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: MailAdminPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // In Openship Mail the sidebar IS this tab bar — same ten keys, same order
-  // (`MAIL_TABS` in lib/sidebar-nav.ts) — so showing both is one row of
-  // navigation twice. See the hook for why it depends on the rail's state and
-  // not just on the view.
+  // (`MAIL_TAB_KEYS` in lib/mail-tabs.ts, which both render from) — so showing both
+  // is one row of navigation twice. See the hook for why it depends on the rail's
+  // state and not just on the view.
   const railHasTabs = useMailRailOwnsTabs(serverId);
   const primaryDomain = status.domain ?? "";
   const [showWelcome, setShowWelcome] = useState(false);
@@ -133,16 +122,15 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
     setShowWelcome(false);
   }, [serverId]);
 
-  const tab = useMemo<TabKey>(() => {
-    const raw = searchParams.get("tab") as TabKey | null;
-    if (raw && VALID_TABS.includes(raw)) return raw;
-    return "overview";
-  }, [searchParams]);
+  // Resolved through the shared alias table, not a bare validity check: the page
+  // header reads the same URL through the same function, so a retired `?tab=test`
+  // shows Sending under Sending's heading rather than under "Email Server".
+  const tab = useMemo<MailTabKey>(() => canonicalMailTab(searchParams.get("tab")), [searchParams]);
 
   const selectedDomain = searchParams.get("domain") || primaryDomain;
 
   const setQuery = useCallback(
-    (patch: { tab?: TabKey; domain?: string | null }) => {
+    (patch: { tab?: MailTabKey; domain?: string | null }) => {
       const next = new URLSearchParams(searchParams.toString());
       if (patch.tab !== undefined) next.set("tab", patch.tab);
       if (patch.domain !== undefined) {
@@ -207,8 +195,8 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
             onSelectDomain={(d) => setQuery({ domain: d })}
           />
         )}
-        {tab === "inbound" && (
-          <InboundTab serverId={serverId} primaryDomain={primaryDomain} />
+        {tab === "notifications" && (
+          <NotificationsTab serverId={serverId} primaryDomain={primaryDomain} />
         )}
         {tab === "dns" && (
           <DnsTab
@@ -220,7 +208,6 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
           />
         )}
         {tab === "health" && <HealthTab serverId={serverId} />}
-        {tab === "test" && <TestTab serverId={serverId} />}
         {tab === "backup" && <BackupTab serverId={serverId} domain={primaryDomain} />}
         {tab === "sending" && <SendingTab serverId={serverId} primaryDomain={primaryDomain} />}
         {tab === "advanced" && (
@@ -258,8 +245,8 @@ function TabBar({
   onChange,
 }: {
   tabs: TabDef[];
-  active: TabKey;
-  onChange: (key: TabKey) => void;
+  active: MailTabKey;
+  onChange: (key: MailTabKey) => void;
 }) {
   const { t } = useI18n();
   return (

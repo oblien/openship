@@ -77,6 +77,27 @@ export const EDGE_LUA_PACKAGE_PATH = `${OPENRESTY_SITE_LUALIB}/?.lua;;`;
 export const EDGE_SERVER_NAMES_HASH_BUCKET_SIZE = 128;
 
 /**
+ * Upload ceiling every vhost inherits, unless the project overrides it.
+ *
+ * nginx's built-in default is 1 MB, and it is not a soft limit — a larger request is
+ * refused with 413 before it reaches the app, so a form upload, an avatar or a CSV import
+ * fails with no application log to explain it. Openship exposed
+ * `client_max_body_size` as a per-project tunable (PROXY_DIRECTIVES) but shipped no
+ * DEFAULT, which meant every project that had never opened that panel was still on 1 MB.
+ *
+ * Set at HTTP level on purpose rather than written into each vhost: nginx resolves
+ * `server` over `http`, so one line here raises the floor for every site — including the
+ * ones Openship generates for mail, webmail and the default server — while a project's own
+ * value continues to win. Writing it per-vhost would also mean regenerating every vhost on
+ * every box to change the floor.
+ *
+ * 50m, not larger: it is generous for the uploads a web app actually does, and the ceiling
+ * is what stops a single unbounded request from filling the disk of a box whose whole job
+ * is proxying. A project that needs more sets its own.
+ */
+export const EDGE_CLIENT_MAX_BODY_SIZE = "50m";
+
+/**
  * Shared-memory zones the openship Lua depends on, and the ONE definition of
  * their sizes.
  *
@@ -527,6 +548,26 @@ export async function ensureOpenRestyConfig(
       );
     }
   }
+
+  // Raise the upload ceiling on a box whose nginx.conf predates the default.
+  //
+  // MINIMAL_NGINX_CONF only runs on a FRESH install, so without this every box installed
+  // before EDGE_CLIENT_MAX_BODY_SIZE existed stays on nginx's 1 MB — the exact silent 413
+  // the constant exists to prevent, and one an operator cannot fix from the dashboard
+  // because the project panel writes SERVER scope, not this.
+  //
+  // Idempotent by grep, and it only ADDS: an operator who tuned this line themselves keeps
+  // their value, because rewriting an existing directive would quietly overrule a
+  // deliberate choice on their own machine.
+  const hasBodySize = await executor
+    .exec(`grep -qE '^[[:space:]]*client_max_body_size' ${paths.confPath}`)
+    .then(() => true)
+    .catch(() => false);
+  if (!hasBodySize) {
+    await executor.exec(
+      `sed -i '/http *{/a \\    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};' ${paths.confPath}`,
+    );
+  }
 }
 
 /** Minimal nginx.conf that OpenResty can boot with. */
@@ -545,6 +586,9 @@ http {
     # \`nginx -t\` outright for any server_name past ~63 chars, refusing the reload
     # and wedging every route on the box, not just the long one.
     server_names_hash_bucket_size ${EDGE_SERVER_NAMES_HASH_BUCKET_SIZE};
+    # See EDGE_CLIENT_MAX_BODY_SIZE — nginx's 1 MB default 413s an upload before the app
+    # ever sees it. A project's own value overrides this (server beats http).
+    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};
     include ${sitesDir}/*.conf;
 }
 `;

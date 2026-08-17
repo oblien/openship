@@ -28,7 +28,7 @@ import {
 import * as sessionManager from "../session-manager";
 import { pinnedImageForService } from "../pinned-artifacts";
 import { newerThanRestoredRelease } from "./project-services";
-import { serviceKind, isStaticService } from "../../../lib/deployable-service";
+import { serviceKind, isStaticService, hasSourceBuildRecipe } from "../../../lib/deployable-service";
 import { normalizeProjectRootDirectory } from "../../../lib/project-root-detector";
 import { resolveServicePort } from "./domain-helpers";
 
@@ -391,9 +391,14 @@ export async function buildComposeImages(opts: {
           // sub-app, or the #231 materialized app row) must be selected as
           // buildable HERE too. Keying off the raw row dropped it to neither
           // bucket → the misleading "No image available" the comment above warns of.
-          ((service.framework ?? opts.snapshot.framework) === "docker" ||
-            !!(service.buildCommand ?? opts.snapshot.buildCommand) ||
-            !!(service.startCommand ?? opts.snapshot.startCommand)))),
+          //
+          // The verdict itself is `hasSourceBuildRecipe` so the row-materializer
+          // gates on the identical rule (#589) — only the fallback is local.
+          hasSourceBuildRecipe({
+            framework: service.framework ?? opts.snapshot.framework,
+            buildCommand: service.buildCommand ?? opts.snapshot.buildCommand,
+            startCommand: service.startCommand ?? opts.snapshot.startCommand,
+          }))),
   );
   const external = enabled.filter(
     (service) =>

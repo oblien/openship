@@ -7,10 +7,51 @@ export type ProjectStatus =
   | "queued"
   | "building"
   | "deploying"
+  | "migrating"
   | "failed"
   | "cancelled"
   | "deleting"
   | "draft";
+
+/**
+ * The live migration run for this project, as the project payload carries it (API
+ * `readActiveMigration` — id, status, mode, nothing else).
+ *
+ * Present here, in the shared status source, rather than fetched by whichever panel cares:
+ * a project being moved to another server is a fact about the PROJECT, so the cards, the
+ * sidebar, the page header and the project's own Advanced tab all read it from the payload
+ * they already have. The panel that used to ask the migration API on mount learned about a
+ * run only when it happened to be mounted, and a reload started that clock over.
+ */
+export type ActiveMigration = {
+  id: string;
+  /** A `DockerMigrationStatus`, typed wide because this crosses the API boundary. */
+  status: string;
+  /** `project_move` (relocating this project) | `project_copy` (building a second one). */
+  mode: string;
+};
+
+/**
+ * Migration statuses where the run has stopped and is WAITING for the operator.
+ *
+ * These read "Action Required", not "Migrating", and that distinction is the whole reason
+ * this set exists: a run parked at `awaiting_cutover` has the target up and the source
+ * stopped-but-intact, and it stays there until a human confirms or rolls back — forever, if
+ * nobody does. A pill that said "Migrating" for three days while nothing migrated would be
+ * the "demands an action it never names" bug this module already documents.
+ */
+const MIGRATION_AWAITING_OPERATOR = new Set(["awaiting_cutover", "partial"]);
+
+/**
+ * Has this project's run stopped and started waiting for a human?
+ *
+ * Exported so a panel can ask the question without re-listing the statuses. The set stays
+ * private: two copies of "which phases are parked" would drift, and the visible symptom would
+ * be a card calling a run "in progress" next to a pill that says it needs attention.
+ */
+export function migrationNeedsOperator(run: ActiveMigration | null | undefined): boolean {
+  return Boolean(run && MIGRATION_AWAITING_OPERATOR.has(run.status));
+}
 
 export type ProjectStatusSource = {
   activeDeploymentId?: string | null;
@@ -51,6 +92,8 @@ export type ProjectStatusSource = {
   appTemplateId?: string | null;
   isApp?: boolean | null;
   hasServer?: boolean | null;
+  /** The in-flight migration run for this project, or null/absent when there is none. */
+  activeMigration?: ActiveMigration | null;
 };
 
 // CSS-only presentation. The human-readable label is resolved from the
@@ -65,6 +108,9 @@ export const PROJECT_STATUS_META: Record<ProjectStatus, { badge: string }> = {
   building: { badge: "bg-info-bg text-info" },
   // primary = brand accent, intentionally not a status token.
   deploying: { badge: "bg-primary/10 text-primary" },
+  // Work in progress, like queued/building — NOT amber. A migration the operator started
+  // and that is proceeding needs nothing from them; the amber states are the ones that do.
+  migrating: { badge: "bg-info-bg text-info" },
   failed: { badge: "bg-danger-bg text-danger" },
   cancelled: { badge: "bg-muted text-muted-foreground" },
   deleting: { badge: "bg-danger-bg text-danger" },
@@ -99,7 +145,10 @@ export type ProjectAttentionReason =
   /** Newest deploy is blocked on a named, clearable cause (port conflict). */
   | "blocked"
   /** Newest deploy did not land; an older release is still serving. */
-  | "newestDeployDidNotLand";
+  | "newestDeployDidNotLand"
+  /** A migration run is parked waiting for the operator to confirm the cutover or roll
+   *  back (or to resolve a partial transfer). Nothing advances until they do. */
+  | "migrationCutover";
 
 /**
  * Is the newest deploy the one that is actually serving?
@@ -128,6 +177,10 @@ export function getProjectAttentionReason(
 ): ProjectAttentionReason | null {
   if (project.appTemplateId === "openship") return null;
   if (project.deletedAt || project.deletionInProgress) return null;
+  // Before every deploy-derived reason: a parked migration is about the WORKLOAD's location,
+  // and it outranks anything the deployment row has to say — the target's own deploy is
+  // `ready` at this point, which is exactly why the run is waiting.
+  if (migrationNeedsOperator(project.activeMigration)) return "migrationCutover";
   if (project.awaitingDecision) return "decision";
   if (project.routingUnsynced) return "routing";
   if (project.latestDeploymentBlocked) return "blocked";
@@ -153,6 +206,20 @@ export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
   // CTA. If you can see the dashboard, it's live.
   if (project.appTemplateId === "openship") {
     return "live";
+  }
+
+  // A migration in flight, ABOVE every arm below it — including `paused` and the deployment
+  // switch. During a run none of them describes what is happening: the source containers are
+  // stopped (so a live-container reading says "down"), the target's deploy row says
+  // "deploying" (true of the copy, not of the project), and a project the operator paused
+  // before moving it is still, first and foremost, being moved.
+  //
+  // Two outcomes, one arm: a run that is PROGRESSING reports progress, and a run that has
+  // parked waiting for a human reports "Action Required" — with `projectStatusHint` naming
+  // the move, since an amber pill that doesn't say what to do is the bug this module's other
+  // attention states already fixed.
+  if (project.activeMigration) {
+    return migrationNeedsOperator(project.activeMigration) ? "attention" : "migrating";
   }
 
   switch (project.latestDeploymentStatus) {
@@ -243,6 +310,10 @@ export function projectStatusHint(project: ProjectStatusSource, t: Dictionary): 
       return `${p.draft.headingFailed} — ${p.redeploy.reviewDeployment}`;
     case "newestDeployDidNotLand":
       return `${p.draft.headingFailed} — ${p.redeploy.redeployLatest}`;
+    // Its own sentence rather than a compose of two halves: unlike the deploy states above,
+    // neither half of "a parked migration and what to do about it" existed anywhere to reuse.
+    case "migrationCutover":
+      return p.migrationAwaitingHint;
     default:
       return null;
   }

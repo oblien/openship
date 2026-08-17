@@ -95,7 +95,12 @@
     "installing": "Installing",
     "running": "Running",
     "incomplete": "Incomplete",
-    "stoppedAt": "Stopped · step {step}"
+    "stoppedAt": "Stopped · step {step}",
+    "open": "Open",
+    "openAria": "Open {name}",
+    "actionsAria": "Actions for {name}",
+    "overviewTitle": "Mail overview",
+    "hint": "Removing a server only detaches it from this list — the install keeps running and can be re-adopted."
   },
   "setup": {
     "title": "Mail Server Setup",

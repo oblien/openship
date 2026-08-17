@@ -22,6 +22,7 @@ import {
   BUILD_PHASES,
   DEFAULT_CONFIG,
   INITIAL_STATE,
+  carryServiceIds,
   ensurePublicEndpoints,
   normalizeComposeService,
   resolveBuildElapsedMs,
@@ -319,10 +320,17 @@ export function useDeploymentBuild(
         isDeploying: false,
         failureMessage: "",
         warningMessage,
-        // A warning on success means a partial failure (some services failed):
-        // hold it for an explicit keep/reject decision. The server flag takes
-        // over on refresh (loadBuildSession) — false once the user keeps it.
-        decisionPending: data?.decisionPending ?? !!warningMessage,
+        // THE SERVER'S FLAG ONLY. Never inferred from the presence of a warning.
+        //
+        // This used to read `?? !!warningMessage`, on the premise that "a warning on success means
+        // a partial failure". It doesn't. A successful deploy also warns when its domains aren't
+        // routed yet, or are routed with no TLS certificate — and those warnings then opened the
+        // failed-services keep/reject modal on a deploy where nothing failed, reading
+        // "0 of 5 services failed" over a "Retry 0 Failed Services" button.
+        //
+        // A warning is information; a decision is a thing the server is holding open. Only the
+        // server knows which, and it now says so on this event (`finalizeComposeDeploy`).
+        decisionPending: !!data?.decisionPending,
         decisionFailedServiceIds: data?.partial?.failed ?? prev.decisionFailedServiceIds,
         // Advisory port-check rides the `complete` event; skips only ever arrive
         // via refresh (build-status), so keep the prior skip list here.
@@ -1180,8 +1188,14 @@ export function useDeploymentBuild(
             // "Edit Configuration" — so the compose wizard shows them even when
             // the service table is empty (e.g. a deploy that failed before its
             // rows were persisted). Falls back to whatever's already loaded.
+            // `carryServiceIds`: the snapshot has no service-row ids, and this assignment
+            // REPLACES the list — so without it, hydrating here after the rows had loaded
+            // dropped the ids the env editor needs to reveal stored values.
             services: Array.isArray(data.composeServices)
-              ? (data.composeServices as RawComposeService[]).map(normalizeComposeService)
+              ? carryServiceIds(
+                  (data.composeServices as RawComposeService[]).map(normalizeComposeService),
+                  prev.services,
+                )
               : prev.services,
             options: {
               buildCommand: apiConfig.buildCommand || prev.options.buildCommand,

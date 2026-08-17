@@ -14,6 +14,8 @@ import { ConflictError, ENV_MASK, NotFoundError, safeErrorMessage } from "@repo/
 import { repos, type DnsCredential } from "@repo/db";
 import { encryptSecretField, decryptSecretField } from "../../lib/credential-encryption";
 import { resolveDnsProvider } from "./registry";
+import * as credentialService from "../credentials/credential.service";
+import { listProviderCredentials } from "../credentials/credential.service";
 import {
   DnsApiError,
   DnsProviderNotReadyError,
@@ -52,57 +54,68 @@ export function sanitizeCredential(cred: DnsCredential): SanitizedDnsCredential 
   };
 }
 
+/**
+ * These endpoints are a VIEW over the generic `credential` store, not a second store.
+ *
+ * They stay while the Credentials screen replaces them so nothing breaks mid-migration —
+ * but they read and write the same rows, because a token connected here and listed there
+ * disagreeing would be worse than either UI alone.
+ */
+function asDnsCredential(
+  organizationId: string,
+  row: { id: string; provider: string; name: string; status: string; lastVerifiedAt: Date | null; createdAt: Date; updatedAt: Date },
+): SanitizedDnsCredential {
+  return {
+    id: row.id,
+    organizationId,
+    provider: row.provider,
+    name: row.name,
+    status: row.status,
+    // Unchanged guarantee: no endpoint returns the token, or a prefix of it.
+    tokenMasked: ENV_MASK,
+    lastVerifiedAt: row.lastVerifiedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export async function listCredentials(organizationId: string): Promise<SanitizedDnsCredential[]> {
-  const rows = await repos.dnsCredential.listByOrg(organizationId);
-  return rows.map(sanitizeCredential);
+  const rows = await credentialService.listCredentials(organizationId);
+  return rows
+    .filter((r) => r.provider === "cloudflare")
+    .map((r) => asDnsCredential(organizationId, r));
 }
 
 export async function getCredential(
   organizationId: string,
   id: string,
 ): Promise<SanitizedDnsCredential | null> {
-  const row = await repos.dnsCredential.findById(organizationId, id);
-  return row ? sanitizeCredential(row) : null;
+  const row = await credentialService.getCredential(organizationId, id).catch(() => null);
+  if (!row || row.provider !== "cloudflare") return null;
+  return asDnsCredential(organizationId, row);
 }
 
 export async function addCredential(
   organizationId: string,
   input: { provider: string; name: string; apiToken: string },
 ): Promise<SanitizedDnsCredential> {
-  const provider = resolveDnsProvider(input.provider);
-  const name = input.name.trim();
-
-  // Reject the duplicate here rather than letting the unique index raise: the
-  // operator gets "you already have one called that", not a constraint name.
-  const existing = await repos.dnsCredential.findByName(organizationId, input.provider, name);
-  if (existing) {
-    throw new ConflictError(`A ${provider.name} credential named "${name}" already exists.`);
-  }
-
-  // Prove the token works before storing it. A credential that was never valid
-  // is worse than none: it silently owns the zone lookup for every domain add.
-  const pre = await provider.preflight({ apiToken: input.apiToken });
-  if (!pre.ok) throw new DnsProviderNotReadyError(provider.name, pre.reason);
-
-  const apiTokenEnc = encryptSecretField(input.apiToken);
-  if (!apiTokenEnc) throw new Error("Failed to encrypt the DNS API token.");
-
-  const row = await repos.dnsCredential.create({
-    organizationId,
-    provider: input.provider,
-    name,
-    apiTokenEnc,
-    status: "active",
-    lastVerifiedAt: new Date(),
+  // The credential service verifies with Cloudflare before storing — the same rule this
+  // function used to enforce with `provider.preflight`, now applied to every provider.
+  const row = await credentialService.createCredential(organizationId, {
+    provider: "cloudflare",
+    name: input.name,
+    // Org-wide: the token addresses every zone it can see, so there is nothing to scope it
+    // to, and the unique index treats a NULL selector as "" so labels stay unique.
+    selector: null,
+    values: { apiToken: input.apiToken },
   });
-
-  return sanitizeCredential(row);
+  return asDnsCredential(organizationId, row);
 }
 
 export async function removeCredential(organizationId: string, id: string): Promise<void> {
-  const existing = await repos.dnsCredential.findById(organizationId, id);
-  if (!existing) throw new NotFoundError("DNS credential", id);
-  await repos.dnsCredential.delete(organizationId, id);
+  const existing = await credentialService.getCredential(organizationId, id).catch(() => null);
+  if (!existing || existing.provider !== "cloudflare") throw new NotFoundError("DNS credential", id);
+  await credentialService.deleteCredential(organizationId, id);
 }
 
 /* ────── Zone resolution ─────────────────────────────────────────── */
@@ -134,7 +147,16 @@ export async function resolveDnsManager(
   organizationId: string,
   hostname: string,
 ): Promise<DnsManagerLookup> {
-  const credentials = await repos.dnsCredential.findActiveByOrg(organizationId);
+  // The generic credential store is the single source of truth: `dns_credential` was one
+  // of three places Openship kept a third-party secret, each with its own shape and form.
+  // Rows land here via the boot backfill (see credential-backfill.ts) — SQL could not do
+  // that copy, because the old column is an `enc1:` envelope over the RAW token and the new
+  // one is over a JSON object, and the key is app-side.
+  //
+  // listProviderCredentials, not a single lookup: zone ownership is discovered by ASKING
+  // each token which zones it can see, so a second token owning a second zone needs the
+  // whole list.
+  const credentials = await listProviderCredentials(organizationId, "cloudflare");
   if (credentials.length === 0) return { status: "none" };
 
   // Remembered, not returned immediately: a second credential may still own this
@@ -143,23 +165,20 @@ export async function resolveDnsManager(
   let unavailable: string | null = null;
 
   for (const cred of credentials) {
-    let apiToken: string;
-    try {
-      const plain = decryptSecretField(cred.apiTokenEnc);
-      if (!plain) throw new Error("stored token is empty");
-      apiToken = plain;
-    } catch (err) {
-      // Almost always a rotated BETTER_AUTH_SECRET. Same operator action as a
-      // revoked token: re-paste it.
+    if (!cred.readable) {
+      // Almost always a rotated BETTER_AUTH_SECRET, or a cross-instance restore that
+      // blanked the envelope. Same operator action as a revoked token: re-paste it. Kept
+      // as a REASON rather than skipped, so this does not read as "no DNS provider".
       unauthorized ??= {
         credentialId: cred.id,
-        reason: `Stored token could not be decrypted (${safeErrorMessage(err)}). Re-connect the credential.`,
+        reason: "Stored token could not be decrypted. Re-connect the credential.",
       };
       continue;
     }
+    const apiToken = cred.secrets.apiToken!;
 
     try {
-      const provider = resolveDnsProvider(cred.provider);
+      const provider = resolveDnsProvider("cloudflare");
       const zone = await provider.findZone({ apiToken }, hostname);
       if (zone) {
         return {
@@ -190,8 +209,8 @@ export async function markCredentialInvalid(
   organizationId: string,
   credentialId: string,
 ): Promise<void> {
-  await repos.dnsCredential
-    .update(organizationId, credentialId, { status: "invalid" })
+  await repos.credential
+    .markInvalid(organizationId, credentialId, "The DNS provider rejected this token.")
     .catch((err: unknown) =>
       console.warn("[dns] could not mark credential invalid:", safeErrorMessage(err)),
     );

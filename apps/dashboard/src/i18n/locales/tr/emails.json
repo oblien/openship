@@ -95,7 +95,12 @@
     "installing": "Kuruluyor",
     "running": "Çalışıyor",
     "incomplete": "Tamamlanmamış",
-    "stoppedAt": "Durduruldu · adım {step}"
+    "stoppedAt": "Durduruldu · adım {step}",
+    "open": "Aç",
+    "openAria": "{name} sunucusunu aç",
+    "actionsAria": "{name} için işlemler",
+    "overviewTitle": "E-posta genel görünümü",
+    "hint": "Kaldırmak sunucuyu yalnızca bu listeden ayırır — kurulum çalışmaya devam eder ve yeniden devralınabilir."
   },
   "setup": {
     "title": "E-posta Sunucusu Kurulumu",

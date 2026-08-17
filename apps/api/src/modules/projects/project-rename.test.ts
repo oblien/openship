@@ -64,6 +64,11 @@ vi.mock("@repo/db", () => ({
     service: { listByProject: async () => [] },
     domain: { listByProject: async () => [] },
     server: { getInOrganization: async () => null },
+    // `enrichProject` runs on the way out of a rename and asks whether the project has a live
+    // migration (the field every status pill reads). Declared so these tests exercise the real
+    // lookup — the service also survives its absence, but by logging and reporting "no
+    // migration", which is not the path a rename test should be silently taking.
+    dockerMigrationRun: { findActiveForProject: async () => null },
   },
 }));
 

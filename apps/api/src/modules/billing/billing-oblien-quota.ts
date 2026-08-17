@@ -28,7 +28,13 @@
  * null / no-op) so callers don't need an extra guard.
  */
 
-import { PLANS, type PlanTierId, safeErrorMessage } from "@repo/core";
+import {
+  PLANS,
+  DEFAULT_PLAN_TIER,
+  type PlanDefinition,
+  type PlanTierId,
+  safeErrorMessage,
+} from "@repo/core";
 import { repos } from "@repo/db";
 import type { NamespaceUsageUnits } from "@repo/adapters";
 
@@ -62,10 +68,22 @@ export { toOblienCredits, fromOblienCredits };
  * Shared by `setQuotaForTier`/`resetAndRegrant` so a plan change/renewal picks
  * up new caps. `namespaces.update` is idempotent server-side.
  */
+/**
+ * `organization.plan_tier_id` is a free-text column with no constraint, so a
+ * hand-edited row or a tier retired from the catalog can hold a string PLANS has
+ * no entry for. A bare `PLANS[tierId]` there is a TypeError thrown INSIDE a
+ * Stripe webhook transaction — which rolls the transaction back and makes Stripe
+ * retry the same event forever. Resolve to the free tier instead: the safe
+ * direction for a quota is the smallest one.
+ */
+function resolveTier(tierId: PlanTierId): PlanDefinition {
+  return PLANS[tierId] ?? PLANS[DEFAULT_PLAN_TIER];
+}
+
 async function applyResourceLimits(
   client: ReturnType<typeof getOblienClient>,
   namespace: string,
-  tier: (typeof PLANS)[PlanTierId],
+  tier: PlanDefinition,
 ): Promise<void> {
   if (!tier.oblienLimits) return;
   try {
@@ -73,8 +91,16 @@ async function applyResourceLimits(
       resource_limits: tier.oblienLimits,
     });
   } catch (err) {
-    throw new Error(
-      `Failed to apply ${tier.id} resource_limits to namespace ${namespace}: ${safeErrorMessage(err)}`,
+    // Deliberately NOT rethrown. This runs inside the Stripe webhook
+    // transaction, and a throw here rolled back the tier upsert — so a customer
+    // who had just paid stayed on their old plan while Stripe redelivered the
+    // event forever, and every retry hit the same failing namespace call. The
+    // credit quota (set just before this) is the entitlement that matters;
+    // resource ceilings are a backstop Oblien re-reads on the next push, and the
+    // anniversary cron re-applies them every period. Losing the ceiling for one
+    // period is strictly better than never granting the plan the customer bought.
+    console.error(
+      `[billing] failed to apply ${tier.id} resource_limits to namespace ${namespace} (tier change still applied): ${safeErrorMessage(err)}`,
     );
   }
 }
@@ -175,7 +201,7 @@ export async function setQuotaForTier(orgId: string, tierId: PlanTierId): Promis
   }
   if (!org.oblienNamespace) return;
 
-  const tier = PLANS[tierId];
+  const tier = resolveTier(tierId);
   if (tier.monthlyCredits === null) return;
 
   const client = getOblienClient();
@@ -272,7 +298,7 @@ export async function resetAndRegrant(orgId: string, tierId: PlanTierId): Promis
   }
   if (!org.oblienNamespace) return;
 
-  const tier = PLANS[tierId];
+  const tier = resolveTier(tierId);
   if (tier.monthlyCredits === null) return;
 
   const client = getOblienClient();

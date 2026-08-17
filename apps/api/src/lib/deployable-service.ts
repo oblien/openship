@@ -126,6 +126,41 @@ export function isStaticService(service: {
 }
 
 /**
+ * Does a source-built unit carry enough of a recipe to PRODUCE an image?
+ *
+ * Three ways to satisfy it, and they are the only three the build side knows:
+ *   - `framework === "docker"` — a Dockerfile owns install/build/start, so having
+ *     no commands is correct there, not empty.
+ *   - a build command — there is a build step to run.
+ *   - a start command — run-only (prebuilt artifact in the repo, static serve);
+ *     still needs containerizing, and the generated Dockerfile is happy with an
+ *     empty build step as long as it has something to CMD.
+ *
+ * Pass the ALREADY-RESOLVED values (row field ?? project/snapshot fallback) — the
+ * fallback rule lives with each caller, the verdict lives here. `getProjectType`
+ * is NOT a substitute: it answers "what shape is this stack" and returns "app"
+ * for the `generic` category, so a project with no recipe at all (framework
+ * "unknown") reads as a deployable app (issue #589).
+ *
+ * One helper because two sides must agree: compose/build.service.ts uses it to
+ * decide a monorepo row is buildable, and services/service.service.ts uses it to
+ * decide whether materializing an app row could ever succeed. When they
+ * disagreed, materialization produced a row the builder refused to build and the
+ * deploy died on "No image available".
+ */
+export function hasSourceBuildRecipe(resolved: {
+  framework?: string | null;
+  buildCommand?: string | null;
+  startCommand?: string | null;
+}): boolean {
+  return (
+    resolved.framework === "docker" ||
+    !!resolved.buildCommand ||
+    !!resolved.startCommand
+  );
+}
+
+/**
  * Parse the rightmost port from a compose-style port string.
  *   "3000"          → 3000
  *   "8080:3000"     → 3000 (container side)

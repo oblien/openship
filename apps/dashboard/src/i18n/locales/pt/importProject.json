@@ -132,7 +132,7 @@
     "valuePlaceholder": "valor",
     "dropHere": "Solte o arquivo .env aqui",
     "noneTitle": "Nenhuma variável de ambiente",
-    "emptyHintEditing": "Clique em \"Adicionar Variável\", use \"Colar .env\", envie um arquivo ou cole em qualquer lugar dentro desta caixa",
+    "emptyHintEditing": "Cole um bloco .env em qualquer lugar dentro desta caixa ou solte aqui um arquivo .env.",
     "emptyHintReadonly": "Clique em \"Editar\" para gerenciar as variáveis de ambiente",
     "pasteHint": "Cole um bloco .env completo em qualquer lugar dentro desta caixa.",
     "addVariable": "Adicionar Variável",
@@ -353,9 +353,6 @@
       "successful": "Implantação Bem-sucedida",
       "deploying": "Implantando Serviços…"
     },
-    "running": "em execução",
-    "buildingSuffix": "· {count} compilando",
-    "failedSuffix": "· {count} com falha",
     "decisionBannerTitle": "Ação necessária — alguns serviços falharam",
     "decisionBannerDefaultMsg": "Esta implantação foi concluída com serviços que falharam. Mantenha-a e corrija-os depois, ou rejeite-a para restaurar a versão anterior.",
     "review": "Revisar",
@@ -395,6 +392,12 @@
       "retryOther": "Tentar Novamente {count} Serviços Com Falha"
     }
   },
+  "composeServiceTally": {
+    "running": "em execução",
+    "builtSuffix": "· {count} compilados",
+    "buildingSuffix": "· {count} compilando",
+    "failedSuffix": "· {count} com falha"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Cancelada",
@@ -405,12 +408,11 @@
     },
     "detailsTitle": "Detalhes da Implantação",
     "rowStatus": "Status",
+    "rowTarget": "Destino",
+    "rowBuild": "Build",
     "rowBuildTime": "Tempo de Build",
     "rowServices": "Serviços",
     "rowProject": "Projeto",
-    "rowType": "Tipo",
-    "running": "em execução",
-    "buildingSuffix": "· {count} compilando",
-    "failedSuffix": "· {count} com falha"
+    "rowType": "Tipo"
   }
 }

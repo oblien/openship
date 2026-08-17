@@ -32,6 +32,7 @@ import { isLocalHostRow } from "./box-org";
 import { isConnectionLoss } from "./remote-state";
 import { resolveAcmeProviderOptions } from "./acme-config";
 import { findLocalServer } from "./startup/self-server";
+import { registryAuthResolver } from "../modules/credentials/registry-auth";
 
 /**
  * The shape of `deployment.meta` JSONB. Snapshotted per-deploy —
@@ -502,13 +503,18 @@ export async function createServerDockerRuntime(
   organizationId: string,
 ): Promise<DockerRuntime> {
   const { executor, isLocal, ssh } = await resolveServerExecutor(serverId, organizationId);
+  // Registry credentials for every pull this runtime makes, bound to THIS org. Injected
+  // rather than read from the host's docker config: it is the only source that works on
+  // every install shape, and binding the org here means no later call site can resolve
+  // another tenant's login (#581).
+  const resolveRegistryAuth = registryAuthResolver(organizationId);
   // isLocal ("This Server") → the host daemon over the local/mounted socket
   // (bare host, or DooD when the API is containerized) — no SSH bridge. Others
   // → dockerode over the pooled SSH connection.
   if (isLocal) {
-    return DockerRuntime.create({ transport: "socket" });
+    return DockerRuntime.create({ transport: "socket", resolveRegistryAuth });
   }
-  return DockerRuntime.create(toDockerSshTransport(ssh!, executor));
+  return DockerRuntime.create({ ...toDockerSshTransport(ssh!, executor), resolveRegistryAuth });
 }
 
 /**

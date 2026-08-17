@@ -90,6 +90,8 @@ export {
   type NewDomain,
   type DnsCredential,
   type NewDnsCredential,
+  type Credential,
+  type NewCredential,
   type MailInboundRule,
   type NewMailInboundRule,
   type MailInboundScope,

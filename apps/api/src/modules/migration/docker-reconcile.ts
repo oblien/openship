@@ -35,6 +35,14 @@ export interface DiscoveredVolumeMount {
   rw: boolean;
 }
 
+/** Compose declarations are keyed by PROJECT + service, because a bare service name
+ *  is not unique on a host running more than one stack. Lives here (the pure module)
+ *  and is used by both the reader in docker-inspect.service and the lookup below, so
+ *  the two can never disagree about the shape. */
+export function declaredKey(composeProject: string, serviceName: string): string {
+  return `${composeProject}\u0000${serviceName}`;
+}
+
 export interface DiscoveredService {
   /** compose service name, or the container name for a standalone container. */
   name: string;
@@ -619,7 +627,9 @@ export function reconcileStack(opts: {
       null,
     service: toDiscoveredService(
       d,
-      d.composeService ? declared.get(d.composeService) : undefined,
+      // Keyed by the container's OWN compose project (see declaredKey): looking this
+      // up by bare service name pulled another stack's declaration.
+      d.composeService ? declared.get(declaredKey(d.composeProject ?? "", d.composeService)) : undefined,
       imageEnv?.get(imageRefKey(d)),
       imageCmds?.get(imageRefKey(d)),
       proxyRoutesByPort,

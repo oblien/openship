@@ -241,7 +241,9 @@
     "editRetry": "Modifier et réessayer",
     "safetyTitle": "Non destructif et réversible.",
     "safetyBody": "Votre source continue de fonctionner tout du long — les données sont copiées, jamais déplacées. Rien n'est supprimé, même après une migration réussie : vos conteneurs d'origine restent (arrêtés, comme filet de sécurité) jusqu'à ce que vous les supprimiez explicitement lors de la bascule.",
-    "cleanupTarget": "Supprimer les données copiées sur la cible"
+    "cleanupTarget": "Supprimer les données copiées sur la cible",
+    "retryRun": "Réessayer",
+    "changeTarget": "Changer de cible"
   },
   "plan": {
     "missing": "introuvable"

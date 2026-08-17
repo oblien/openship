@@ -961,6 +961,72 @@ describe("parseComposeFile — shutdown behavior (stop_signal / stop_grace_perio
   });
 });
 
+/**
+ * #575. `entrypoint:` used to be parsed, sometimes warned about, and then dropped —
+ * the image's own ENTRYPOINT always ran. The clearing form was worse than dropped:
+ * `requestsSomething` reads `[]` / `""` as "asks for nothing", so it produced no
+ * warning either, and that form is precisely the one people pair with `command:` to
+ * run a binary directly in an image whose ENTRYPOINT is a wrapper.
+ *
+ * `[]` vs absent is therefore the distinction every case here exists to hold.
+ */
+describe("parseComposeFile — entrypoint (#575)", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("shell-splits a string form into argv, with no implicit sh -c", () => {
+    const parsed = parseComposeFile(svc("    entrypoint: /custom-init.sh --verbose\n"));
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual(["/custom-init.sh", "--verbose"]);
+    // Honored now, so it must not also be reported as dropped.
+    expect(parsed.unsupported.map((u) => u.field)).not.toContain("entrypoint");
+  });
+
+  it("takes a list form as argv verbatim", () => {
+    const parsed = parseComposeFile(
+      svc("    entrypoint:\n      - /bin/tini\n      - '--'\n      - /app/start\n"),
+    );
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual(["/bin/tini", "--", "/app/start"]);
+  });
+
+  // THE bug. An empty list is a request to CLEAR, and it used to vanish in silence.
+  it("stores an empty list as the CLEAR, and does not silently skip it", () => {
+    const parsed = parseComposeFile(
+      svc("    entrypoint: []\n    command:\n      - /app/bin/thing\n      - --flag\n"),
+    );
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual([]);
+    expect(parsed.unsupported.map((u) => u.field)).not.toContain("entrypoint");
+    // The pairing that makes it useful: command still overrides CMD as argv (#332).
+    expect(parsed.services[0]?.commandArgv).toEqual(["/app/bin/thing", "--flag"]);
+  });
+
+  it("treats an empty STRING as the clear too", () => {
+    const parsed = parseComposeFile(svc('    entrypoint: ""\n'));
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual([]);
+  });
+
+  // The other side of the distinction: absent must stay absent, or every service
+  // would start claiming it wants the image entrypoint cleared.
+  it("omits the key entirely when no entrypoint is declared", () => {
+    const parsed = parseComposeFile(svc("    ports:\n      - '80:80'\n"));
+    expect(parsed.services[0]?.advanced?.entrypoint).toBeUndefined();
+  });
+
+  it("interpolates from the env file", () => {
+    const parsed = parseComposeFile(svc("    entrypoint: ${INIT} --once\n"), {
+      envFileContent: "INIT=/opt/init.sh\n",
+    });
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual(["/opt/init.sh", "--once"]);
+  });
+
+  it("quotes hold, so an argument with spaces stays one word", () => {
+    const parsed = parseComposeFile(svc('    entrypoint: /bin/sh -c "sleep 1 && exec app"\n'));
+    expect(parsed.services[0]?.advanced?.entrypoint).toEqual([
+      "/bin/sh",
+      "-c",
+      "sleep 1 && exec app",
+    ]);
+  });
+});
+
 describe("parseComposeFile — dropped-key reporting", () => {
   const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
 

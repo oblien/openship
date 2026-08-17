@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   assertGitHubRepoAccess,
+  getCommitByRef,
   getForwardGitToServer,
   kickoffBuild,
   repos,
@@ -13,6 +14,7 @@ const {
   syncProjectRouteState,
 } = vi.hoisted(() => ({
   assertGitHubRepoAccess: vi.fn(),
+  getCommitByRef: vi.fn(),
   getForwardGitToServer: vi.fn(),
   kickoffBuild: vi.fn(),
   repos: {
@@ -70,6 +72,7 @@ vi.mock("../../../src/modules/github/github-access", () => ({
 }));
 
 vi.mock("../../../src/modules/github/github.service", () => ({
+  getCommitByRef,
   getLatestCommit: vi.fn(),
   getRepository: vi.fn(),
 }));
@@ -259,6 +262,8 @@ describe("triggerDeployment", () => {
 
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
+    // Only read by the best-effort compose-drift reconcile (git projects).
+    repos.service.listByProject.mockResolvedValue([]);
     repos.deployment.listByProject.mockResolvedValue({ rows: [] });
     repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
     repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
@@ -305,6 +310,63 @@ describe("triggerDeployment", () => {
         multiService: true,
         composeServices,
       }),
+    );
+  });
+
+  /**
+   * `commitSha` is a free string on the wire (`openship deploy --commit 1eeaf76`,
+   * the MCP deploy tool, a CI script) and git checks out an abbreviation happily —
+   * so the deploy is right while the row records a name no value comparison can
+   * match. That row is what the drift banner reads, which is how a project
+   * deployed at `1eeaf76` came to be offered `1eeaf76` as a new commit forever.
+   */
+  it("stores the full sha for an abbreviated --commit ref", async () => {
+    const full = "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5";
+    repos.project.findById.mockResolvedValue(
+      baseProject({ gitProvider: "github", gitOwner: "acme", gitRepo: "app", localPath: null }),
+    );
+    getCommitByRef.mockResolvedValue({ sha: full, message: "feat: queue" });
+
+    await triggerDeployment(ctx, {
+      projectId: "project-1",
+      branch: "main",
+      commitSha: "1eeaf76",
+    });
+
+    expect(getCommitByRef).toHaveBeenCalledWith(ctx, "acme", "app", "1eeaf76");
+    expect(repos.deployment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ commitSha: full }),
+    );
+  });
+
+  it("keeps an unresolvable ref verbatim rather than failing the deploy", async () => {
+    repos.project.findById.mockResolvedValue(
+      baseProject({ gitProvider: "github", gitOwner: "acme", gitRepo: "app", localPath: null }),
+    );
+    getCommitByRef.mockResolvedValue(null); // rate limited / no credential / bad ref
+
+    await triggerDeployment(ctx, {
+      projectId: "project-1",
+      branch: "main",
+      commitSha: "1eeaf76",
+    });
+
+    expect(repos.deployment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ commitSha: "1eeaf76" }),
+    );
+  });
+
+  it("spends no lookup on a sha that is already canonical", async () => {
+    const full = "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5";
+    repos.project.findById.mockResolvedValue(
+      baseProject({ gitProvider: "github", gitOwner: "acme", gitRepo: "app", localPath: null }),
+    );
+
+    await triggerDeployment(ctx, { projectId: "project-1", branch: "main", commitSha: full });
+
+    expect(getCommitByRef).not.toHaveBeenCalled();
+    expect(repos.deployment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ commitSha: full }),
     );
   });
 

@@ -439,7 +439,34 @@ export async function listBranches(
 }
 
 /**
- * Get the latest commit on a branch.
+ * The commit a ref resolves to — a branch, a tag, or an abbreviated sha all go
+ * through the same endpoint, and the reply always carries the FULL sha. That is
+ * what makes this the way to canonicalize a caller-supplied `commitSha`: an
+ * abbreviation is a legal name for a commit everywhere except in the value
+ * comparisons that decide whether a project is behind.
+ */
+export async function getCommitByRef(
+  ctx: RequestContext,
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<{ sha: string; message: string } | null> {
+  try {
+    const data = await githubFetch<{ sha: string; commit: { message: string } }>({
+      ctx,
+      owner,
+      repo,
+      url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
+    });
+    return { sha: data.sha, message: data.commit.message };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the latest commit on a branch — `getCommitByRef` with a branch name, so the
+ * HEAD read and the ref canonicalization can never diverge.
  */
 export async function getLatestCommit(
   ctx: RequestContext,
@@ -447,17 +474,7 @@ export async function getLatestCommit(
   repo: string,
   branch: string,
 ): Promise<{ sha: string; message: string } | null> {
-  try {
-    const data = await githubFetch<{ sha: string; commit: { message: string } }>({
-      ctx,
-      owner,
-      repo,
-      url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(branch)}`,
-    });
-    return { sha: data.sha, message: data.commit.message };
-  } catch {
-    return null;
-  }
+  return getCommitByRef(ctx, owner, repo, branch);
 }
 
 /**

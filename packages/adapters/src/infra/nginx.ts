@@ -32,6 +32,7 @@ import { posix as edgePath } from "node:path";
 
 import type { CommandExecutor, ManualCert, RouteConfig, RouteHeaderRule, RouteRedirect, SslResult } from "../types";
 import type { RoutingProvider, SslProvider } from "./types";
+import { probeListeningPort } from "../runtime/port-conflict";
 import { LUA_LOGGER_PATH, RULES_GUARD_PATH, luaSourceAvailable, buildReloadCommand, detectOpenRestyPaths, ACME_HTTP01_PORT, ACME_CHALLENGE_LOCATION, EDGE_CHALLENGE_DIR, EDGE_CHALLENGE_LOCATION, EDGE_CHALLENGE_URL_PREFIX, EDGE_SAME_PATH_MOUNTS, OPENRESTY_DEFAULT_PATHS, edgeChallengeVhostConf, type OpenRestyPaths } from "./openresty-lua";
 import { safeErrorMessage, sanitizeProxySettings, resolveRedirectStatus, PROXY_DIRECTIVES, parseProxyValue, resolveProxyDirectives, type NginxVersion, type ProxySettings } from "@repo/core";
 import { cloudEdgeRealIpConf, isCloudFrontedHost } from "./edge-real-ip";
@@ -83,13 +84,29 @@ const { dirname, join } = edgePath;
  */
 const CTL = "\\x00-\\x1f\\x7f";
 
+/**
+ * `proxy_pass_header X-Accel-Buffering` is load-bearing, not decoration: nginx hides
+ * the whole X-Accel-* family from the response it passes downstream, so an upstream's
+ * "don't buffer me" instruction is consumed by the FIRST proxy that honours it. A
+ * Cloud-fronted `*.opsh.io` host has two hops, and the second one buffered a stream
+ * this one had correctly let through — SSE arriving as one blob at close, or not at
+ * all (GH-570). Re-exposing the header costs nothing for a response that doesn't set
+ * it, which is every response but a stream.
+ *
+ * Hop 2 is NOT configured from this repo (managed-edge-proxy only hands Cloud a slug
+ * and a target), so that it honours the header is inference from nginx's defaults, not
+ * something a test here can prove. Confirm it once against a live `*.opsh.io` SSE
+ * endpoint. It names one field deliberately: X-Accel-Redirect stays hidden, so a
+ * tenant app cannot drive an internal redirect inside Cloud's shared edge.
+ */
 const PROXY_HEADERS = `proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $openship_fwd_proto;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";`;
+        proxy_set_header Connection "upgrade";
+        proxy_pass_header X-Accel-Buffering;`;
 
 /**
  * Per-request vars every generated server block opens with.
@@ -139,8 +156,11 @@ const FORWARD_VARS = `    set $openship_fwd_proto $scheme;
  *
  * 1 — server-scope X-Real-IP recovery for Cloud-fronted `*.opsh.io` hosts. Vhosts written
  *     before it log every free-domain visitor as Openship Cloud's edge.
+ * 2 — `proxy_pass_header X-Accel-Buffering`, so an upstream's no-buffering instruction
+ *     survives the second proxy hop. Vhosts written before it stall SSE behind Cloud's
+ *     edge (GH-570).
  */
-export const VHOST_GENERATION = 1;
+export const VHOST_GENERATION = 2;
 
 /** Marker line carrying {@link VHOST_GENERATION}, matched by {@link readVhostGeneration}. */
 const GENERATION_MARKER = `# openship-vhost-gen: ${VHOST_GENERATION}`;
@@ -994,6 +1014,22 @@ const execFileAsync = promisify(cpExecFile);
  * diagnosis so a failed cert says WHY — DNS, firewall/port-80, or a proxy still on
  * :80 — instead of the opaque opener.
  */
+/**
+ * Did certbot fail to BIND its challenge listener, rather than fail to validate?
+ *
+ * One definition, two readers: the diagnosis branch below and the live occupant probe at the
+ * issuance call site. Two copies of this regex would drift into a message that names the wrong
+ * cause or a probe that runs on the wrong failure.
+ *
+ * Three wordings because certbot has used all three across versions ("Could not bind TCP port N",
+ * "Problem binding to port N", and the bare OS "Address already in use").
+ */
+export function isAcmePortBindFailure(output: string): boolean {
+  return /could not bind (?:tcp )?port|address already in use|problem binding to port/i.test(
+    output || "",
+  );
+}
+
 export function summarizeCertbotFailure(output: string, domain: string): string {
   // certbot never ran: the `docker exec` that would have started it was refused
   // because the edge container is down, and the executor already explained why. No
@@ -1037,7 +1073,30 @@ function certbotDiagnosis(output: string, domain: string): string | undefined {
   const redirectedToHttps = /^https:/i.test(challengeUrl ?? "");
 
   let diagnosis: string | undefined;
-  if (/timeout during connect|connection refused|failed to connect|Timeout/i.test(text)) {
+  if (isAcmePortBindFailure(text)) {
+    // FIRST, and that ordering is the point: this failure happens BEFORE any validation
+    // attempt, so every branch below — unreachable :80, DNS, a proxy answering the challenge —
+    // would send the operator after something that was never tried. Let's Encrypt was never
+    // contacted at all.
+    //
+    // The bind is the one moving part of our ACME design: issuance is edge-driven (the edge
+    // proxies /.well-known/acme-challenge/ to certbot on a fixed loopback port, so there is no
+    // port-80 fight and no webroot), and certbot holds that port only for the seconds it is
+    // issuing. Nothing else in the design binds it, so a collision means a certbot from an
+    // earlier attempt never exited — which is why it is transient and a retry usually clears it.
+    //
+    // Without this branch the operator got certbot's own wall verbatim: "Saving debug log to
+    // /var/log/letsencrypt/letsencrypt.log · Could not bind TCP port 49180 … · Ask for help or
+    // search for solutions at https://community.letsencrypt.org" — three lines of which exactly
+    // one said anything, and none of it said what to do.
+    diagnosis =
+      `Couldn't start the certificate challenge listener for ${domain} on port ${ACME_HTTP01_PORT}: ` +
+      `something on this server is already holding it. That port is used only while a certificate ` +
+      `is being issued, so this is almost always a certificate run from an earlier attempt that ` +
+      `hasn't exited — retry, and if it persists find the holder with ` +
+      `\`ss -ltnp | grep ${ACME_HTTP01_PORT}\` and stop it. Nothing was requested from ` +
+      `Let's Encrypt, so this is not a DNS or routing problem.`;
+  } else if (/timeout during connect|connection refused|failed to connect|Timeout/i.test(text)) {
     diagnosis =
       `Port 80 for ${domain} isn't reachable from the internet — a firewall / cloud security group ` +
       `is blocking it, the domain doesn't point at this server, or another proxy is still bound to :80.`;
@@ -2193,18 +2252,24 @@ ${serveLocation}
   /**
    * Provision a TLS certificate using certbot.
    *
-   * Runs `certbot certonly` in webroot mode using the ACME challenge
-   * directory served by OpenResty, then rewrites the config to include
-   * SSL and reloads.
+   * HTTP-01 ONLY — there is no DNS-01 path anywhere in this file, and the DNS credentials the
+   * product stores are for record MANAGEMENT, not for challenges.
    *
-   * Only --webroot is attempted. The previous --standalone fallback was
-   * dead code on any normal install: certbot --standalone binds to port
-   * 80 itself, but OpenResty already owns 80 on the same box, so the
-   * fallback would always fail with EADDRINUSE — amplifying a transient
-   * --webroot failure into an immediate hard error. The caller
-   * (route-registration.ts) already wraps provisionCert in try/catch so
-   * a webroot failure becomes a "deploy continues on HTTP, retry from
-   * Domains tab" warning instead of a deploy abort.
+   * The authenticator is `--standalone` on {@link ACME_HTTP01_PORT} (a loopback alt-port), with
+   * the edge proxying `/.well-known/acme-challenge/` to it — see `ACME_CHALLENGE_LOCATION`. So
+   * Let's Encrypt fetches the challenge over :80 from OpenResty, which forwards it to certbot's
+   * transient listener. No port-80 fight, no webroot directory to keep in sync, and zero
+   * downtime: certbot holds that port only while issuing.
+   *
+   * THIS COMMENT USED TO DESCRIBE `--webroot`, and argued that `--standalone` was dead code
+   * because "certbot --standalone binds to port 80 itself, but OpenResty already owns 80". That
+   * was true of plain `--standalone`, and it is exactly the problem `--http-01-port` solves —
+   * the two sat contradicting each other in one file, with the doc describing a mechanism the
+   * code below had stopped using. Left recorded because the stale version's reasoning is
+   * persuasive enough to "fix" the code back.
+   *
+   * The caller (route-registration.ts) wraps this in try/catch, so a failure becomes a "deploy
+   * continues on HTTP, retry from the Domains tab" warning rather than a deploy abort.
    */
   async provisionCert(
     domain: string,
@@ -2260,7 +2325,32 @@ ${serveLocation}
       ], opts?.onLog);
     } catch (err) {
       // Replace certbot's opaque opener with the real, actionable cause.
-      throw new Error(summarizeCertbotFailure(this.redactAcmeSecrets(safeErrorMessage(err)), domain));
+      const raw = this.redactAcmeSecrets(safeErrorMessage(err));
+      let summary = summarizeCertbotFailure(raw, domain);
+      // A failed challenge-listener bind is the one certbot failure whose cause is a live fact
+      // about THIS host, so go and read it instead of telling the operator to. Same probe the
+      // deploy-time port-conflict flow uses (`probeListeningPort` → pid, command, systemd unit,
+      // and whether it's an Openship deployment), so the two describe an occupied port
+      // identically rather than in two dialects.
+      //
+      // Read-only and best-effort: naming the holder is an improvement to the message, never a
+      // reason to lose the message. Stopping it needs the operator's consent — see
+      // `ensurePortAvailable`, which this deliberately does not call: it prompts, and cert
+      // issuance also runs where there is no session to prompt in (Domains-tab Verify, boot
+      // backfill, a migration's cert carry).
+      // `this.executor` is nullable (a provider constructed for local/no-exec use), and a probe
+      // is an optional embellishment — no executor simply means no name to add.
+      if (isAcmePortBindFailure(raw) && this.executor) {
+        const occupant = await probeListeningPort(this.executor, ACME_HTTP01_PORT).catch(() => null);
+        if (occupant) {
+          summary +=
+            ` Currently held by ${occupant.command}` +
+            (occupant.pid !== null ? ` (pid ${occupant.pid})` : "") +
+            (occupant.systemdUnit ? ` via ${occupant.systemdUnit}` : "") +
+            `.`;
+        }
+      }
+      throw new Error(summary);
     } finally {
       // Remove the whole 0700 directory, not just the ini — one unit, like
       // git-ssh-material's cleanup.

@@ -4,25 +4,27 @@
       "overview": "概览",
       "domains": "域名",
       "mailboxes": "邮箱",
-      "inbound": "入站",
+      "notifications": "通知",
+      "sending": "发送",
       "dns": "DNS",
       "health": "健康状态",
-      "test": "测试",
       "backup": "备份",
       "advanced": "高级"
     },
     "ariaLabel": "邮件管理分区"
   },
-  "inbound": {
-    "heading": "入站规则",
+  "notifications": {
+    "heading": "通知规则",
     "description": "当邮件送达此服务器上的某个地址时，在通知渠道中收到提醒。",
     "newRule": "新建规则",
-    "newTitle": "新建入站规则",
-    "editTitle": "编辑入站规则",
+    "newTitle": "新建通知规则",
+    "editTitle": "编辑通知规则",
     "edit": "编辑",
-    "emptyTitle": "暂无入站规则",
+    "emptyTitle": "暂无通知规则",
     "emptyBody": "添加一条规则，当邮件送达此服务器上的某个邮箱或域名时，即可在 Slack、Telegram、Discord 或 webhook 中收到通知。",
     "noChannels": "你还没有已验证的通知渠道。请先在 设置 → 通知 中添加并验证一个，然后回来创建规则。",
+    "addChannel": "添加通知渠道",
+    "manageChannels": "管理渠道",
     "fieldName": "名称",
     "namePlaceholder": "支持收件箱 → #support",
     "fieldScope": "监听范围",
@@ -47,7 +49,7 @@
     "active": "已开启",
     "disabled": "已关闭",
     "paused": "已暂停",
-    "deleteTitle": "删除入站规则",
+    "deleteTitle": "删除通知规则",
     "deleteConfirm": "删除规则",
     "deleting": "删除中…",
     "deleteHint": "现有通知不受影响。已捕获但尚未处理的邮件将被丢弃。",
@@ -58,10 +60,13 @@
     "testing": "测试中…",
     "testResult": "已读取 {read} 封捕获的邮件：{matched} 封匹配到规则，{dropped} 封被过滤掉。未发送或删除任何邮件。",
     "testFailed": "无法运行测试。",
-    "loadFailed": "无法加载入站规则。",
+    "loadFailed": "无法加载通知规则。",
     "saveFailed": "无法保存规则。",
     "deleteFailed": "无法删除规则。",
     "confirmDelete": "删除规则“{name}”？除非仍有其他规则需要，否则将停止捕获其地址的邮件。"
+  },
+  "sending": {
+    "testLiveNote": "通过当前生效的路径发送，而不是上方尚未保存的更改。"
   },
   "overview": {
     "mailServer": "邮件服务器",
@@ -617,6 +622,7 @@
     "close": "关闭",
     "logsLoadFailed": "加载日志失败",
     "loadingLogs": "正在加载日志…",
-    "noLogLines": "此组件暂无日志内容。"
+    "noLogLines": "此组件暂无日志内容。",
+    "rowActions": "{name} 的操作"
   }
 }

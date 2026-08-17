@@ -58,20 +58,21 @@ import {
   type DeployRouting,
 } from "./build-execution-plan";
 import { attachLinkedNetworks } from "./attach-linked-networks";
-import { resolveReadinessTarget } from "./readiness-target";
-import { waitForReadyFromExecutor } from "./forwarded-readiness";
+import { probeDeployedReadiness } from "./readiness-probe";
 import { syncProjectToServerManifest } from "../../lib/openship-manifest-sync";
 import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-edge-proxy";
 import { decryptEnvMap } from "../../lib/encryption";
 import {
+  auditRoutedDomainTls,
   buildProjectRouteDomains,
   createTrackedSslProvider,
   ensureRouteDomainRecord,
   toRoutedDomainInputs,
+  withEnsuredDomainRecord,
 } from "../../lib/routing-domains";
 import { normalizeTargetPath } from "../../lib/public-endpoints";
 import { resolveRuntimeResources, resolveBuildResources } from "../../lib/resources";
-import { resolveBuildGitToken } from "../github/clone-auth";
+import { cloneOnServerAvailable, resolveBuildGitToken } from "../github/clone-auth";
 import { openDeployRelay } from "../../lib/git-forwarding";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { resolveAcmeProviderOptions } from "../../lib/acme-config";
@@ -410,7 +411,13 @@ export async function finalizeComposeDeploy(opts: {
           extra: { meta: { ...meta, composeDeployment } },
           sse: {
             status: "ready",
-            meta: { warningMessage },
+            // `decisionPending` explicitly, because THIS is the only thing that means a
+            // keep/reject decision is being held. The live event used to carry only
+            // `warningMessage`, so the client inferred the decision from "a warning exists on
+            // success" — and every OTHER warning then opened the failed-services modal. A
+            // successful deploy whose domains have no cert yet showed "Deployment finished with
+            // failed services · 0 of 5 services failed · Retry 0 Failed Services".
+            meta: { warningMessage, decisionPending: true },
           },
         });
       } else if (rolled === "failed") {
@@ -776,12 +783,9 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // nothing qualifies, fall back to cloning on the API host and transferring the
     // context — warn, never hard-fail. (The BARE runtime always clones on the
     // target and is gated by preflight separately, so this only changes DOCKER.)
-    const cloneCredentialAvailable =
-      !!gitCred.ambient ||
-      gitCred.relay === true ||
-      !!gitCred.ssh ||
-      gitCred.anonymous === true ||
-      (!!gitCred.token && !gitCred.apiHostFallback);
+    // The rule itself lives with the credential type (`cloneOnServerAvailable`), so a capability
+    // check shown in the picker and the decision made here can never disagree.
+    const cloneCredentialAvailable = cloneOnServerAvailable(gitCred).available;
     const effectiveCloneOnServer =
       cloneOnServer && (runtime.name === "bare" || cloneCredentialAvailable);
     if (cloneOnServer && runtime.name !== "bare" && !cloneCredentialAvailable) {
@@ -1605,51 +1609,28 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
         },
         resolveRoute: undefined,
         readiness: async (containerId, cfg) => {
-          const { host, port } = await resolveReadinessTarget({
+          // Address, dialing machine, and every message: all in probeDeployedReadiness, so
+          // the compose per-service probe cannot answer this differently.
+          const verdict = await probeDeployedReadiness({
             runtime,
             containerId,
             primaryPort: cfg.port,
-            probePort: readinessGate.probe.port,
+            probe: readinessGate.probe,
+            targetExecutor: phase.targetExecutor,
+            log: (message, level) => logger.log(message, level),
           });
-          // Name the address actually dialed. Reporting `cfg.port` here sent
-          // operators to look at the app's own port (3000) when the probe had
-          // really been talking to the published host port, so a wrong-port or
-          // unreachable-address failure read as "my app is broken".
-          const target = `${host}:${port}${readinessGate.probe.path ?? ""}`;
-          const seconds = Math.round(readinessGate.probe.timeoutMs / 1000);
-          logger.log(
-            `Health check: waiting up to ${seconds}s for the app to answer at ${target}` +
-              `${readinessGate.probe.path ? "" : " (TCP connect)"}…\n`,
-          );
-          let ready: boolean;
-          try {
-            // A containerized OpenShip API has its own loopback/network namespace.
-            // Probe from the host through the same pooled SSH channel used for
-            // local host operations; a non-containerized install transparently
-            // falls back to the executor process's direct socket path.
-            ready = await sshManager.withHostExecutor((executor) =>
-              waitForReadyFromExecutor(executor, host, port, {
-                path: readinessGate.probe.path,
-                timeoutMs: readinessGate.probe.timeoutMs,
-                intervalMs: readinessGate.probe.intervalMs,
-              }),
+          // Could not ASK — so there is no verdict, and a verdict is the only thing
+          // allowed to fail a deploy. Warn and pass: destroying a running deployment
+          // because the probe couldn't reach it is GH-583, where a host channel that
+          // forbade port forwarding read exactly like a dead app.
+          if (verdict.skipped) {
+            logger.log(
+              `Health check SKIPPED: ${verdict.skipped} The deploy is left live and unverified.\n`,
+              "warn",
             );
-          } catch (error) {
-            return (
-              `OpenShip could not probe ${target} from the deployment host: ` +
-              `${safeErrorMessage(error)}. Check the local host-control channel.`
-            );
+            return null;
           }
-          if (!ready) {
-            return (
-              `The app never answered at ${target} within ${seconds}s` +
-              `${readinessGate.probe.path ? " (or answered 500+)" : ""}. It may have crashed on ` +
-              `startup, may still be booting, or may be listening on a different port than ${cfg.port} ` +
-              `— check the runtime logs.`
-            );
-          }
-          logger.log(`Health check passed: the app answered at ${target}.\n`);
-          return null;
+          return verdict.failure;
         },
       };
 
@@ -1851,7 +1832,11 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
         createdDomainIds.push(created.id);
         logger.log(`Created domain record for "${route.hostname}".\n`);
       }
-      routableDomains.push(route);
+      // Same ordering hole the compose path has: the plan above was built from the
+      // rows read BEFORE this loop, so a hostname minted right here was planned
+      // with no row and came out `provisionSsl: false` — see
+      // withEnsuredDomainRecord. Re-resolve against the row that exists now.
+      routableDomains.push(withEnsuredDomainRecord(route, created));
     } catch (err) {
       const message = safeErrorMessage(err);
       logger.log(`Skipping domain "${route.hostname}" (not routed — ${message}).\n`, "warn");
@@ -1878,7 +1863,12 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     onReadinessWarning: (detail) => readinessWarnings.push(detail),
   });
 
-  const deploySsl = plannedDomains.some((domain) => domain.provisionSsl)
+  // Gate on the ROUTABLE set, not the plan: `routableDomains` carries the
+  // post-ensure SSL verdict (and drops hostnames another project owns), and it is
+  // what `toRoutedDomainInputs` hands the pipeline. Reading the pre-ensure plan
+  // here left the tracked provider unwired for a first-deploy domain — so even
+  // once issuance fired, nothing persisted the cert status onto the row.
+  const deploySsl = routableDomains.some((domain) => domain.provisionSsl)
     ? createTrackedSslProvider(ssl, domainByHostname, (m) => logger.log(`${m}\n`))
     : ssl;
 
@@ -2070,8 +2060,20 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // + the Domains-tab dot instead of failing an otherwise-good deploy. Cleared
   // by Retry routing / the next clean deploy.
   const routeIssues = [...domainClaimWarnings, ...(deployResult.routeWarnings ?? [])];
-  if (routeIssues.length) {
-    const msg = routeIssuesWarning(routeIssues);
+  // Routed, but is it serving HTTPS? `registerRoute` succeeds without a certificate
+  // (the edge keeps a bootstrap self-signed cert on :443) and the issuance failure
+  // inside registerResolvedRoutes is caught and only logged — so a domain could
+  // finish a green deploy routed, serving a self-signed cert, with nothing saying
+  // so. One shared auditor with the compose pipeline; `routeIssues` is passed so a
+  // host already reported as UNROUTED isn't also reported as uncertified.
+  const tlsPending = await auditRoutedDomainTls({
+    projectId: project.id,
+    routes: routableDomains,
+    routeWarnings: routeIssues,
+    log: (message) => logger.log(`${message}\n`, "warn"),
+  });
+  if (routeIssues.length || tlsPending.length) {
+    const msg = routeIssuesWarning(routeIssues, tlsPending);
     metaPatch.deployWarning = metaPatch.deployWarning ? `${metaPatch.deployWarning} · ${msg}` : msg;
     metaPatch.edgeUnsynced = true;
   }

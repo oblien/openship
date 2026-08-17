@@ -21,11 +21,14 @@ import {
   buildProjectRouteDomains,
   buildServiceRouteDomain,
   buildServiceRouteDomains,
+  collectUncertifiedRouteWarnings,
+  routeWarningHostnames,
   serviceCustomHostnames,
   getRoutingBaseDomain,
   createTrackedSslProvider,
   resolveRouteDestination,
   resolveServiceEndpointHostname,
+  withEnsuredDomainRecord,
 } from "../../src/lib/routing-domains";
 
 const customSvc = {
@@ -597,5 +600,220 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
     await tracked.provisionCert("app.example.com");
     expect(repos.domain.updateSsl).not.toHaveBeenCalled();
     expect(repos.domain.markVerifiedActive).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The first-deploy issuance hole. Both pipelines build the route plan from the
+// domain rows read BEFORE they ensure a row per planned route, so a hostname the
+// deploy mints itself was planned with `domainRow === undefined` and the
+// `sslStatus === "none"` half of the gate evaluated `undefined === "none"` →
+// false. `provisionSsl` came out FALSE for exactly the case it exists to cover,
+// and registerResolvedRoutes then skipped issuance in silence — no cert, no log
+// line, domain left Pending. Compose felt it every time: `syncFromCompose` writes
+// a service's routing columns and no domain row, so the row is ALWAYS created by
+// the deploy.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("withEnsuredDomainRecord", () => {
+  const plannedCustom = (over: Record<string, unknown> = {}) =>
+    ({
+      hostname: "api.example.com",
+      tls: true,
+      requiresSslTooling: true,
+      provisionSsl: false,
+      terminatesTlsLocally: true,
+      isCloud: false,
+      targetPort: 4010,
+      domainType: "custom",
+      verified: false,
+      ...over,
+    }) as any;
+
+  it("turns provisionSsl ON for a row this deploy just minted (sslStatus none)", () => {
+    const out = withEnsuredDomainRecord(plannedCustom(), {
+      id: "dom_1",
+      verified: false,
+      sslStatus: "none",
+    } as any);
+    expect(out.provisionSsl).toBe(true);
+    expect(out.verified).toBe(false);
+  });
+
+  it("treats a MISSING sslStatus as 'none' — a row assembled from insert values carries undefined", () => {
+    const out = withEnsuredDomainRecord(plannedCustom(), {
+      id: "dom_1",
+      verified: false,
+    } as any);
+    expect(out.provisionSsl).toBe(true);
+  });
+
+  it("does NOT re-attempt an unverified row whose first issuance already failed", () => {
+    const out = withEnsuredDomainRecord(plannedCustom(), {
+      id: "dom_1",
+      verified: false,
+      sslStatus: "error",
+    } as any);
+    expect(out.provisionSsl).toBe(false);
+  });
+
+  it("issues for a verified row regardless of its ssl state", () => {
+    const out = withEnsuredDomainRecord(plannedCustom(), {
+      id: "dom_1",
+      verified: true,
+      sslStatus: "provisioning",
+    } as any);
+    expect(out.provisionSsl).toBe(true);
+    expect(out.verified).toBe(true);
+  });
+
+  it("never issues when the route needs no certbot (external ingress / manual SSL / free host)", () => {
+    const out = withEnsuredDomainRecord(
+      plannedCustom({ requiresSslTooling: false }),
+      { id: "dom_1", verified: true, sslStatus: "none" } as any,
+    );
+    expect(out.provisionSsl).toBe(false);
+  });
+
+  it("leaves the plan untouched when there is no row to write cert status onto", () => {
+    const route = plannedCustom();
+    expect(withEnsuredDomainRecord(route, null)).toBe(route);
+  });
+
+  it("keeps a managed *.opsh.io route verified even if its row says otherwise", () => {
+    const out = withEnsuredDomainRecord(
+      plannedCustom({ isCloud: true, verified: true, requiresSslTooling: false }),
+      { id: "dom_1", verified: false, sslStatus: "none" } as any,
+    );
+    expect(out.verified).toBe(true);
+    expect(out.provisionSsl).toBe(false);
+  });
+});
+
+// A registered route with no certificate was the one routing outcome nothing
+// reported: registerRoute SUCCEEDS without a cert (the edge keeps a bootstrap
+// self-signed cert on :443) and the issuance failure is caught and only logged,
+// so the deploy went green with HTTPS serving a self-signed cert.
+describe("collectUncertifiedRouteWarnings", () => {
+  const route = (hostname: string, over: Record<string, unknown> = {}) =>
+    ({
+      hostname,
+      tls: true,
+      requiresSslTooling: true,
+      provisionSsl: true,
+      terminatesTlsLocally: true,
+      isCloud: false,
+      targetPort: 4010,
+      domainType: "custom",
+      ...over,
+    }) as any;
+  const rows = (...entries: Array<[string, Record<string, unknown>]>) =>
+    new Map(entries.map(([hostname, row]) => [hostname, { hostname, ...row } as any]));
+
+  it("flags a routed custom domain that holds no certificate", () => {
+    const out = collectUncertifiedRouteWarnings(
+      [route("api.example.com")],
+      rows(["api.example.com", { verified: false, sslStatus: "none" }]),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain("api.example.com");
+    expect(out[0]).toContain("DNS");
+  });
+
+  it("prefers the row's recorded failure reason when there is one", () => {
+    const out = collectUncertifiedRouteWarnings(
+      [route("api.example.com")],
+      rows([
+        "api.example.com",
+        { verified: false, sslStatus: "error", lastVerifyError: "rate limited by Let's Encrypt" },
+      ]),
+    );
+    expect(out).toEqual(["api.example.com: rate limited by Let's Encrypt"]);
+  });
+
+  it("says nothing about a domain whose certificate is active", () => {
+    expect(
+      collectUncertifiedRouteWarnings(
+        [route("api.example.com")],
+        rows(["api.example.com", { verified: true, sslStatus: "active" }]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("says nothing about a host whose TLS terminates upstream (managed edge / external ingress)", () => {
+    expect(
+      collectUncertifiedRouteWarnings(
+        [route("app.opsh.io", { terminatesTlsLocally: false })],
+        rows(["app.opsh.io", { verified: true, sslStatus: "none" }]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("says nothing about a route with no recorded row", () => {
+    expect(collectUncertifiedRouteWarnings([route("api.example.com")], rows())).toEqual([]);
+  });
+
+  it("reports a hostname once even when several services route it", () => {
+    const out = collectUncertifiedRouteWarnings(
+      [route("api.example.com"), route("API.example.com")],
+      rows(["api.example.com", { verified: false, sslStatus: "none" }]),
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it("says nothing about a host whose TLS is recorded as terminated upstream", () => {
+    expect(
+      collectUncertifiedRouteWarnings(
+        [route("api.example.com")],
+        rows(["api.example.com", { verified: true, sslStatus: "external" }]),
+      ),
+    ).toEqual([]);
+  });
+
+  // Telling the operator both "isn't routed" and "is routed but has no HTTPS"
+  // about ONE hostname is two contradictory instructions for one problem. The
+  // unrouted report wins — a host with no vhost has no certificate either.
+  it("stays silent about a hostname already reported as unrouted", () => {
+    const out = collectUncertifiedRouteWarnings(
+      [route("api.example.com")],
+      rows(["api.example.com", { verified: false, sslStatus: "none" }]),
+      new Set(["api.example.com"]),
+    );
+    expect(out).toEqual([]);
+  });
+
+  it("still reports the OTHER hostnames of a deploy that had one unrouted", () => {
+    const out = collectUncertifiedRouteWarnings(
+      [route("api.example.com"), route("app.example.com")],
+      rows(
+        ["api.example.com", { verified: false, sslStatus: "none" }],
+        ["app.example.com", { verified: false, sslStatus: "none" }],
+      ),
+      new Set(["api.example.com"]),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain("app.example.com");
+  });
+});
+
+describe("routeWarningHostnames", () => {
+  it("reads the hostname out of the shared `<hostname>: <reason>` shape", () => {
+    expect([
+      ...routeWarningHostnames([
+        "api.example.com: DNS problem: NXDOMAIN looking up A for api.example.com",
+        "app.example.com: Timeout during connect",
+      ]),
+    ]).toEqual(["api.example.com", "app.example.com"]);
+  });
+
+  it("lowercases so it matches the route keys the audit compares against", () => {
+    expect(routeWarningHostnames(["API.Example.com: boom"]).has("api.example.com")).toBe(true);
+  });
+
+  it("takes the whole string when a warning carries no reason", () => {
+    expect(routeWarningHostnames(["api.example.com"]).has("api.example.com")).toBe(true);
+  });
+
+  it("drops an empty prefix rather than adding a blank hostname", () => {
+    expect(routeWarningHostnames([": orphaned reason", ""]).size).toBe(0);
   });
 });

@@ -112,7 +112,7 @@ describe("GET /categories billing gate", () => {
     // Same registry-stays-complete guarantee as billing, in the other direction: a row
     // stored before a migration to cloud must keep its label, not degrade to the raw id.
     await fetchCategories(true);
-    expect(findCategory("mail.inbound_received")?.label).toBe("Inbound email received");
+    expect(findCategory("mail.inbound_received")?.label).toBe("Mail arrived at a watched address");
   });
 
   // Per-message events must never default on: the dispatcher's fallback fans a

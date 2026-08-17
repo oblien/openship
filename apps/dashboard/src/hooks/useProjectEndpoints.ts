@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { beginFetchState } from "./begin-fetch-state";
 import { api, ApiError, endpoints, projectsApi } from "@/lib/api";
 
 /**
@@ -275,8 +276,19 @@ function useEndpoint<T>(
     return { data: null, isLoading: true, error: null };
   });
 
+  /**
+   * Which id the data currently on screen belongs to — the difference between a REFRESH and a
+   * NAVIGATION, which need opposite answers below.
+   *
+   * Same id: we are re-reading data the user is already looking at, so it must keep showing.
+   * Different id: whatever we hold is another project's, and reporting it as loaded would
+   * render project A's page under project B's URL.
+   */
+  const loadedIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!id) {
+      loadedIdRef.current = null;
       setState({ data: null, isLoading: false, error: null });
       return;
     }
@@ -284,12 +296,17 @@ function useEndpoint<T>(
     // Cached ready → flip into resolved state and bail.
     const cached = cache.get(id);
     if (cached?.kind === "ready") {
+      loadedIdRef.current = id;
       setState({ data: cached.data, isLoading: false, error: null });
       return;
     }
 
     let cancelled = false;
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    // Stale-while-revalidate: a REFRESH keeps what's on screen, a first load reports loading.
+    // Load-bearing rather than a nicety — see `beginFetchState`, which owns the reasoning and
+    // the infinite-loop regression it exists to prevent.
+    const loadedId = loadedIdRef.current;
+    setState((prev) => beginFetchState(prev, loadedId, id));
 
     let promise: Promise<T>;
     if (cached?.kind === "loading") {
@@ -308,6 +325,7 @@ function useEndpoint<T>(
         // changed since the effect started. Both flags together cover
         // synchronous (cancelled) and racy (idRef mismatch) cases.
         if (cancelled || idRef.current !== id) return;
+        loadedIdRef.current = id;
         setState({ data, isLoading: false, error: null });
       })
       .catch((err: unknown) => {
@@ -317,6 +335,9 @@ function useEndpoint<T>(
         cache.delete(id);
         if (cancelled || idRef.current !== id) return;
         const message = err instanceof Error ? err.message : "Request failed";
+        // The data goes with the error, so the next revision must report loading again rather
+        // than revalidating something that is no longer on screen.
+        loadedIdRef.current = null;
         setState({ data: null, isLoading: false, error: message });
       });
 
@@ -339,6 +360,7 @@ function useEndpoint<T>(
         .then((data) => {
           cache.set(id, { kind: "ready", data });
           if (cancelled || idRef.current !== id) return;
+          loadedIdRef.current = id;
           setState({ data, isLoading: false, error: null });
         })
         .catch(() => {});

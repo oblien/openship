@@ -3,6 +3,8 @@
     "title": "Kapasite ve Kullanım",
     "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler Openship Cloud'dan senkronize edilir.",
     "routes": "Ücretsiz rotalar",
+    "runningServices": "Çalışan hizmetler",
+    "projects": "Projeler",
     "workspaces": "Çalışma alanları",
     "unlimited": "Sınırsız",
     "used": "kullanıldı",

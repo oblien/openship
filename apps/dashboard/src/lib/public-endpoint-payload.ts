@@ -34,7 +34,19 @@ import type { PublicEndpoint } from "@/context/deployment/types";
  * one the save matches on would offer targets that don't exist.
  */
 export function resolvePublicEndpointHostname(
-  endpoint: Partial<PublicEndpoint> & { hostname?: string },
+  /**
+   * Structurally typed to exactly the four fields this reads, rather than
+   * `Partial<PublicEndpoint>`: the saved-payload shape (`port: number`,
+   * `domainType: string`) is not assignable to the editor's draft type, and that
+   * mismatch was the whole reason a SECOND copy of this resolver grew for the
+   * optimistic-row path. Widening costs nothing — the extra fields were never read.
+   */
+  endpoint: {
+    hostname?: string | null;
+    domainType?: string | null;
+    customDomain?: string | null;
+    domain?: string | null;
+  },
   baseDomain: string,
 ): string {
   if (typeof endpoint.hostname === "string" && endpoint.hostname.trim()) {

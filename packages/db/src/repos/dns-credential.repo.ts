@@ -117,6 +117,19 @@ export function createDnsCredentialRepo(db: Database) {
     },
 
     /** Delete a DNS credential by org and ID. */
+    /**
+     * Every legacy row, across all organizations — for the ONE-TIME boot backfill that
+     * moves these into the generic `credential` store.
+     *
+     * Deliberately unscoped, unlike every other read here: the backfill runs once per
+     * instance with no request context, so there is no organization to scope to. Nothing
+     * else may use it — a request-path read that ignores the org boundary is how one
+     * tenant's token reaches another.
+     */
+    async listAll(): Promise<DnsCredential[]> {
+      return db.query.dnsCredential.findMany();
+    },
+
     async delete(organizationId: string, id: string): Promise<void> {
       await db
         .delete(dnsCredential)

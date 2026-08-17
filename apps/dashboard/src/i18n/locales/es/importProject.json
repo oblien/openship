@@ -132,7 +132,7 @@
     "valuePlaceholder": "valor",
     "dropHere": "Suelta el archivo .env aquí",
     "noneTitle": "Sin variables de entorno",
-    "emptyHintEditing": "Haz clic en \"Añadir variable\", usa \"Pegar .env\", sube un archivo o pega en cualquier lugar dentro de esta caja",
+    "emptyHintEditing": "Pega un bloque .env en cualquier lugar dentro de esta caja o suelta aquí un archivo .env.",
     "emptyHintReadonly": "Haz clic en \"Editar\" para gestionar las variables de entorno",
     "pasteHint": "Pega un bloque .env completo en cualquier lugar dentro de esta caja.",
     "addVariable": "Añadir variable",
@@ -353,9 +353,6 @@
       "successful": "Despliegue exitoso",
       "deploying": "Desplegando servicios…"
     },
-    "running": "en ejecución",
-    "buildingSuffix": "· {count} compilando",
-    "failedSuffix": "· {count} fallidos",
     "decisionBannerTitle": "Acción requerida: algunos servicios fallaron",
     "decisionBannerDefaultMsg": "Este despliegue finalizó con servicios fallidos. Consérvalo y corrígelos más tarde, o recházalo para restaurar la versión anterior.",
     "review": "Revisar",
@@ -395,6 +392,12 @@
       "retryOther": "Reintentar {count} servicios fallidos"
     }
   },
+  "composeServiceTally": {
+    "running": "en ejecución",
+    "builtSuffix": "· {count} compilados",
+    "buildingSuffix": "· {count} compilando",
+    "failedSuffix": "· {count} fallidos"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Cancelado",
@@ -405,12 +408,11 @@
     },
     "detailsTitle": "Detalles del despliegue",
     "rowStatus": "Estado",
+    "rowTarget": "Destino",
+    "rowBuild": "Compilación",
     "rowBuildTime": "Tiempo de compilación",
     "rowServices": "Servicios",
     "rowProject": "Proyecto",
-    "rowType": "Tipo",
-    "running": "en ejecución",
-    "buildingSuffix": "· {count} compilando",
-    "failedSuffix": "· {count} fallidos"
+    "rowType": "Tipo"
   }
 }

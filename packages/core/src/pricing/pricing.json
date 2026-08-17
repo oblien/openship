@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "currency": "usd",
+  "freeDomainSuffix": ".opsh.io",
+  "annual": {
+    "enabled": false,
+    "monthsFree": 2
+  },
+  "oblien": {
+    "buildWorkspaceHeadroom": 2,
+    "buildResources": {
+      "cpuCores": 4,
+      "memoryMb": 8192,
+      "diskGb": 10
+    }
+  },
+  "campaigns": [],
+  "plans": [
+    {
+      "id": "free",
+      "price": {
+        "monthly": 0,
+        "annual": null
+      },
+      "stripePriceEnv": {
+        "monthly": null,
+        "annual": null
+      },
+      "popular": false,
+      "contactSales": null,
+      "support": "community",
+      "credits": {
+        "monthlyMilli": 500000
+      },
+      "limits": {
+        "workloads": [
+          "static"
+        ],
+        "services": false,
+        "runningServices": 0,
+        "maxProjects": 3,
+        "maxResourceTier": "low",
+        "buildMinutesPerMonth": 15,
+        "freeSubdomains": 10,
+        "customDomains": null,
+        "seats": null
+      },
+      "features": [
+        "staticOnly",
+        "buildMinutes",
+        "freeSubdomains",
+        "customDomains",
+        "projects",
+        "unlimitedSeats",
+        "communitySupport"
+      ]
+    },
+    {
+      "id": "starter",
+      "price": {
+        "monthly": 1000,
+        "annual": null
+      },
+      "stripePriceEnv": {
+        "monthly": "STRIPE_PRICE_STARTER_MONTHLY",
+        "annual": "STRIPE_PRICE_STARTER_ANNUAL"
+      },
+      "popular": false,
+      "contactSales": null,
+      "support": "email",
+      "inherits": "free",
+      "credits": {
+        "monthlyMilli": 2000000
+      },
+      "limits": {
+        "workloads": [
+          "static",
+          "web",
+          "worker"
+        ],
+        "services": true,
+        "runningServices": 3,
+        "maxProjects": 5,
+        "maxResourceTier": "medium",
+        "buildMinutesPerMonth": 400,
+        "freeSubdomains": 25,
+        "customDomains": null,
+        "seats": null
+      },
+      "features": [
+        "everythingIn",
+        "anyWorkload",
+        "managedServices",
+        "runningServices",
+        "power",
+        "projects",
+        "buildMinutes",
+        "credits",
+        "meteredCredits",
+        "freeSubdomains",
+        "previewDeploys",
+        "emailSupport"
+      ]
+    },
+    {
+      "id": "pro",
+      "price": {
+        "monthly": 3900,
+        "annual": null
+      },
+      "stripePriceEnv": {
+        "monthly": "STRIPE_PRICE_PRO_MONTHLY",
+        "annual": "STRIPE_PRICE_PRO_ANNUAL"
+      },
+      "popular": true,
+      "contactSales": null,
+      "support": "priority",
+      "inherits": "starter",
+      "credits": {
+        "monthlyMilli": 10000000
+      },
+      "limits": {
+        "workloads": [
+          "static",
+          "web",
+          "worker"
+        ],
+        "services": true,
+        "runningServices": 10,
+        "maxProjects": 25,
+        "maxResourceTier": "high",
+        "buildMinutesPerMonth": 2000,
+        "freeSubdomains": 100,
+        "customDomains": null,
+        "seats": null
+      },
+      "features": [
+        "everythingIn",
+        "runningServices",
+        "power",
+        "projects",
+        "buildMinutes",
+        "credits",
+        "meteredCredits",
+        "freeSubdomains",
+        "backups",
+        "observability",
+        "mailServer",
+        "prioritySupport"
+      ]
+    },
+    {
+      "id": "team",
+      "price": {
+        "monthly": 9900,
+        "annual": null
+      },
+      "stripePriceEnv": {
+        "monthly": "STRIPE_PRICE_TEAM_MONTHLY",
+        "annual": "STRIPE_PRICE_TEAM_ANNUAL"
+      },
+      "popular": false,
+      "contactSales": null,
+      "support": "priority",
+      "inherits": "pro",
+      "credits": {
+        "monthlyMilli": 60000000
+      },
+      "limits": {
+        "workloads": [
+          "static",
+          "web",
+          "worker"
+        ],
+        "services": true,
+        "runningServices": 50,
+        "maxProjects": null,
+        "maxResourceTier": "xlarge",
+        "buildMinutesPerMonth": 6000,
+        "freeSubdomains": null,
+        "customDomains": null,
+        "seats": null
+      },
+      "features": [
+        "everythingIn",
+        "runningServices",
+        "power",
+        "projectsUnlimited",
+        "buildMinutes",
+        "credits",
+        "meteredCredits",
+        "freeSubdomainsUnlimited",
+        "auditLog",
+        "sharedChannel",
+        "prioritySupport"
+      ]
+    },
+    {
+      "id": "enterprise",
+      "price": {
+        "monthly": null,
+        "annual": null
+      },
+      "stripePriceEnv": {
+        "monthly": null,
+        "annual": null
+      },
+      "popular": false,
+      "contactSales": "mailto:sales@openship.io",
+      "support": "dedicated",
+      "inherits": "team",
+      "credits": {
+        "monthlyMilli": null
+      },
+      "limits": {
+        "workloads": [
+          "static",
+          "web",
+          "worker"
+        ],
+        "services": true,
+        "runningServices": null,
+        "maxProjects": null,
+        "maxResourceTier": null,
+        "buildMinutesPerMonth": null,
+        "freeSubdomains": null,
+        "customDomains": null,
+        "seats": null
+      },
+      "features": [
+        "everythingIn",
+        "customLimits",
+        "sso",
+        "dedicatedInfra",
+        "onboarding",
+        "dedicatedSupport"
+      ]
+    }
+  ],
+  "creditPacks": [
+    {
+      "id": "pack_5k",
+      "creditsMilli": 5000000,
+      "priceCents": 500,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_5K",
+      "sortOrder": 10
+    },
+    {
+      "id": "pack_25k",
+      "creditsMilli": 25000000,
+      "priceCents": 2000,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_25K",
+      "sortOrder": 20
+    },
+    {
+      "id": "pack_100k",
+      "creditsMilli": 100000000,
+      "priceCents": 7000,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_100K",
+      "sortOrder": 30
+    }
+  ],
+  "selfHosted": {
+    "features": [
+      "selfHostedOpenSource",
+      "selfHostedUnlimited",
+      "selfHostedServices",
+      "selfHostedClients",
+      "selfHostedFreeSubdomains",
+      "communitySupport"
+    ]
+  }
+}

@@ -13,6 +13,7 @@
     "queued": "En cola",
     "building": "Compilando",
     "deploying": "Desplegando",
+    "migrating": "Migrando",
     "failed": "Fallido",
     "cancelled": "Cancelado",
     "deleting": "Eliminando",
@@ -336,12 +337,12 @@
     "unknown": "Desconocido"
   },
   "routingRetry": {
-    "title": "El enrutamiento del dominio gratuito necesita atención",
-    "description": "La aplicación está en vivo en el servidor, pero su URL gratuita .opsh.io no se enrutó a través del edge de Openship Cloud. Reintenta cuando el servidor sea accesible desde la nube en el puerto 80.",
+    "title": "El enrutamiento del dominio necesita atención",
+    "description": "La app está activa en el servidor, pero las rutas delante de ella no se sincronizaron. Reintenta la reparación o revisa el DNS y el edge de este servidor.",
     "retry": "Reintentar enrutamiento",
     "retrying": "Reintentando…",
-    "success": "Enrutamiento del dominio gratuito sincronizado.",
-    "failed": "No se pudo sincronizar el enrutamiento del dominio gratuito."
+    "success": "Enrutamiento del dominio sincronizado.",
+    "failed": "No se pudo sincronizar el enrutamiento del dominio."
   },
   "deployBlocked": {
     "redeploy": "Redesplegar"
@@ -510,5 +511,6 @@
       "unhealthy": "En mal estado",
       "server_unreachable": "Servidor inaccesible"
     }
-  }
+  },
+  "migrationAwaitingHint": "La migración te espera: completa el cambio o revértela en la pestaña Avanzado del proyecto"
 }

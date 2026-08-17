@@ -38,17 +38,38 @@ const OTHER_PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIold openship-host-execut
 const OPERATOR_KEY = "ssh-rsa AAAAB3NzaC1yc2EAAAA operator@laptop";
 
 describe("rewriteHostAuthorizedKeys", () => {
-  it("restricts the grant to the docker bridge and disables forwarding", () => {
+  it("restricts the grant to the docker bridge, keeping only the two capabilities we use", () => {
     const out = rewriteHostAuthorizedKeys("", PUB);
     // Source-restricted: an unrestricted key is a login from anywhere sshd
     // accepts, which on a VPS is the internet.
     expect(out).toContain('from="172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1"');
-    // No port/agent forwarding — stops a leaked key becoming a tunnel into
-    // other services bound on the host.
+    // Fail-closed baseline: agent forwarding, X11 and ~/.ssh/rc stay off, and so
+    // does anything OpenSSH adds later.
     expect(out).toContain("restrict");
-    // …but a pty is kept, because the host terminal opens a shell channel.
+    // …with a pty named back, because the host terminal opens a shell channel.
     expect(out).toContain("pty");
     expect(out.trimEnd().endsWith(PUB)).toBe(true);
+  });
+
+  // GH-583. The deploy readiness probe reaches `127.0.0.1:<hostPort>` — an address that
+  // only means the right thing from the host — over an ssh2 direct-tcpip channel, which
+  // `restrict` alone forbids. sshd then refused the channel open, the refusal looked
+  // exactly like a closed port, and every readiness-gated deploy on a Compose install
+  // failed with "the app never answered" while curl on the host returned 200.
+  it("permits port forwarding, which the deploy-time readiness probe needs", () => {
+    expect(rewriteHostAuthorizedKeys("", PUB)).toContain("port-forwarding");
+  });
+
+  // Re-running `openship up` is the repair path for an install provisioned before that
+  // fix, so the revoke-and-replace must actually swap a forwarding-less line.
+  it("replaces a forwarding-less line from an earlier install", () => {
+    const out = rewriteHostAuthorizedKeys(
+      `from="172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1",restrict,pty ${PUB}\n`,
+      PUB,
+    );
+    const ourLines = out.split("\n").filter((l) => l.includes("openship-host-executor"));
+    expect(ourLines).toHaveLength(1);
+    expect(ourLines[0]).toContain("port-forwarding");
   });
 
   it("never emits a bare, unrestricted key line", () => {
@@ -128,7 +149,7 @@ describe("stripHostAuthorizedKeys", () => {
 
 /** The hardened form, as the provisioner writes it. */
 function hardened(pub: string): string {
-  return `from="172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1",restrict,pty ${pub}`;
+  return `from="172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1",restrict,pty,port-forwarding ${pub}`;
 }
 
 /**

@@ -1,23 +1,120 @@
 ---
 title: Billing API
-description: The billing API is coming soon alongside Openship Cloud. Self-hosted Openship has no billing.
+description: Read published plans without auth, then manage a subscription, usage, credit top-ups, and the Stripe portal on Openship Cloud. Self-hosted Openship has no billing.
 ---
 
-<Callout type="info" title="Coming soon">
-The billing API ships with Openship Cloud, which isn't available yet. Pricing and
-the subscription, usage, and top-up endpoints will be documented here before Cloud
-becomes a paid service.
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+The Billing API has two halves. `GET /api/billing/plans` is **public and present
+on every instance** — it serves the published plan catalog, prices included, so a
+pricing page or signup flow can read it before anyone has a session. Everything
+else is **Openship Cloud only**: Stripe-backed subscriptions, metered usage,
+credit top-ups, and the customer portal.
+
+<Callout title="Base path & auth">
+All paths are relative to your instance, under **`/api`** — e.g.
+`https://your-host/api/billing/plans`. `GET /plans` needs no credentials. The
+rest take a personal access token as a bearer header
+(`Authorization: Bearer <token>`), created with
+[`openship token create`](/docs/cli/access); the dashboard uses your session
+cookie instead. See the [API overview](/docs/api) for the full auth model.
 </Callout>
 
-## Self-hosted
+<Callout title="Self-hosted has no billing" type="info">
+On a self-hosted instance only `GET /plans` is mounted. There's nothing to pay,
+no subscription, and no usage meter — see the
+[billing guide](/docs/guides/billing).
+</Callout>
 
-A self-hosted Openship has **no billing** — there's nothing to pay and no
-subscription, usage, or top-up endpoints to call. You only pay for your own
-infrastructure.
+## Endpoints
 
-## Openship Cloud
+| Method & path | Permission | What it does |
+|---|---|---|
+| `GET /api/billing/plans` | public | The published plan catalog — prices, limits, features, localized copy. |
+| `GET /api/billing/state` | `billing:read` | Dashboard snapshot: plan, period, credit balance, capacity. |
+| `GET /api/billing/usage` | `billing:read` | Metered usage over the current period. |
+| `GET /api/billing/subscription` | `billing:read` | The org's subscription slice — tier, status, period. |
+| `POST /api/billing/subscription` | `billing:write` | Start a Stripe Checkout session for a plan change. |
+| `POST /api/billing/cancel` | `billing:admin` | End the subscription at the close of the paid period. |
+| `GET /api/billing/topup-packs` | `billing:read` | The credit packs available to buy. |
+| `POST /api/billing/topup` | `billing:write` | Start Checkout for a one-shot credit pack. |
+| `POST /api/billing/portal` | `billing:write` | Mint a Stripe billing-portal session (invoices, cards). |
 
-When Openship Cloud launches, this page will document the Stripe-backed
-subscription, metered usage, one-shot credit top-ups, and the billing portal.
+## List plans
 
-Want a heads-up when it's ready? [Get in touch](/contact).
+```
+GET /api/billing/plans
+```
+
+Public on every deploy mode. The response is the resolved pricing catalog: one
+entry per tier in display order, with prices in the currency's **minor units**
+(cents), the numeric limits enforcement reads, and finished localized feature
+strings.
+
+Pass `?locale=<lang>` — or send an `Accept-Language` header — to pick the
+language. An unsupported tag falls back to its base language, then to English;
+the locale that was actually used comes back in the response.
+
+The envelope is `{ data: { locale, annual, ui, plans } }`. `annual` reports
+whether annual terms are published (`enabled`) and how many months an annual term
+waives; `ui` carries the short labels a pricing UI needs — the `/mo` suffix, the
+"Custom" and "Free" words, the "Most popular" badge — already translated, because
+a marketing site may have no dictionary of its own.
+
+Each entry in `plans` looks like:
+
+<TypeTable
+  type={{
+    id: { type: 'string', description: 'Stable tier id — free, starter, pro, team, enterprise. Never localized; this is what you send back when starting a subscription.' },
+    name: { type: 'string', description: 'Display name in the resolved locale. Do not key logic off this.' },
+    description: { type: 'string', description: "The tier's one-line pitch, localized." },
+    popular: { type: 'boolean', description: 'Render the "most popular" badge on exactly this tier.' },
+    price: { type: 'object', description: 'Monthly and annual price in the currency’s MINOR units (cents). null on either side means that interval is not purchasable.' },
+    monthlyCredits: { type: 'number | null', description: 'Compute credits granted per period, in milli-credits. null = granted by hand (custom tiers).' },
+    limits: { type: 'object', description: 'The numeric allowances enforcement reads: workloads, services, build minutes, free subdomains, seats, workspaces, vCPU, RAM, disk, bandwidth.' },
+    oblienLimits: { type: 'object | null', description: 'Per-workspace ceilings pushed at provision time. null when the tier is custom, or when any single dimension is unlimited.' },
+    features: { type: 'string[]', description: 'Finished, localized bullet strings — numbers already interpolated and locale-formatted. Render verbatim.' },
+    support: { type: 'string', description: 'Support level: community, email, priority, or dedicated.' },
+    contactSales: { type: 'string | null', description: 'Where to send a buyer when the tier has no self-serve price — a mailto or URL. null on purchasable tiers.' },
+  }}
+/>
+
+Two conventions matter when you render this:
+
+- **`price.monthly` is in cents**, and `null` means the tier is priced per
+  contract — pair it with `contactSales` and render the `ui.custom` label rather
+  than a number.
+- **A `null` limit is always "unlimited"**, never zero. `annual.enabled` is
+  `false` while annual terms are unpublished, and every `price.annual` is `null`
+  to match — keep annual affordances hidden while it is.
+
+Prices and limits come from one committed catalog in `@repo/core`, which the API,
+the dashboard, and the [pricing page](/pricing) all read, so they cannot drift
+apart.
+
+## Subscription and usage
+
+`GET /state` is the snapshot the dashboard's Billing screen renders in one call:
+the active tier, the period you're in, the credit balance, and how much of the
+plan's capacity is in use. `GET /usage` returns the metered series behind the
+usage chart. `GET /subscription` returns just the subscription slice — tier,
+status, and period boundaries.
+
+`POST /subscription` starts a Stripe Checkout session for an upgrade or downgrade
+and returns the URL to send the browser to. The local subscription row is not
+written by that call — Stripe's `customer.subscription.*` webhooks finalize it,
+so a plan change only lands once payment actually clears.
+
+`POST /cancel` flips the subscription to `cancel_at_period_end`. Access stays
+until the paid period ends, then the deletion webhook downgrades the org to the
+free tier. Nothing is deleted by cancelling.
+
+## Top-ups and the portal
+
+`GET /topup-packs` lists the one-shot credit packs from the same catalog;
+`POST /topup` opens Checkout for one. Credits bought this way sit on top of the
+plan's monthly allowance.
+
+`POST /portal` mints a short-lived Stripe billing-portal session for invoices and
+payment methods. It's a POST because each call is a Stripe-side mutation, and
+it's rate-limited per organization for the same reason.

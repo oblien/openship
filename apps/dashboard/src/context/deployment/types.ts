@@ -76,6 +76,11 @@ export type ComposeServiceInfo = PrepareComposeService;
  * result. All carry the same camelCase fields but with nullable columns.
  */
 export type RawComposeService = {
+  /** The persisted service row's id, when this came from saved rows rather than a
+   *  fresh compose scan. Carried so an edit flow can reveal that service's stored
+   *  env — the reveal endpoint is keyed by service id, and re-deriving it from the
+   *  name later would be a second source of truth for the same fact. */
+  id?: string | null;
   name: string;
   image?: string | null;
   build?: string | null;
@@ -106,8 +111,35 @@ export type RawComposeService = {
  * and build-session hydration paths can't drift. Nullable columns collapse to
  * undefined / empty collections.
  */
+/**
+ * Re-attach persisted service ids to a freshly-hydrated compose list.
+ *
+ * A deployment SNAPSHOT carries the full compose config but no service-row ids (it is
+ * also the path used when a deploy failed before its rows existed, where there are none
+ * to carry). It overwrites `config.services` wholesale, so hydrating from a snapshot
+ * after the rows had already loaded silently dropped the ids — and with them the env
+ * editor's ability to reveal stored values.
+ *
+ * Matched on name because that is the only join the two sides share, and within ONE
+ * project's compose file names are unique by construction — compose itself keys services
+ * by name. An id already on the incoming row always wins; this only fills blanks.
+ */
+export function carryServiceIds(
+  next: ComposeServiceInfo[],
+  prev: ComposeServiceInfo[] | undefined,
+): ComposeServiceInfo[] {
+  if (!prev?.length) return next;
+  const idByName = new Map<string, string>();
+  for (const s of prev) if (s.serviceId) idByName.set(s.name, s.serviceId);
+  if (idByName.size === 0) return next;
+  return next.map((s) =>
+    s.serviceId ? s : { ...s, serviceId: idByName.get(s.name) ?? undefined },
+  );
+}
+
 export function normalizeComposeService(raw: RawComposeService): ComposeServiceInfo {
   return {
+    serviceId: raw.id ?? undefined,
     name: raw.name,
     image: raw.image ?? undefined,
     build: raw.build ?? undefined,
@@ -163,6 +195,45 @@ export interface ServiceDeployStatus {
   hostPort?: number;
   image?: string;
   build?: string;
+}
+
+/**
+ * How many services are in each state, for the "0/5 running · 2 built · 1 building"
+ * readout.
+ *
+ * Shared because that sentence is rendered TWICE on the compose deploy screen — the
+ * logs-panel chip and the Deployment Details row, side by side in the same grid —
+ * and each used to filter the same array itself against its own copy of the
+ * strings. A status-set change (counting `deploying` as in-flight) or a wording
+ * change applied to one made the two contradict each other about one stack, at the
+ * same instant, with nothing able to catch it: both i18n keys existed in every
+ * locale, so only their VALUES drifted.
+ *
+ * `status` is a single scalar and the SSE reducer upserts by `serviceId`, so these
+ * counts are mutually exclusive and sum to at most the service count.
+ *
+ * `total` is deliberately NOT here: the two callers legitimately disagree — the
+ * logs panel counts services that have produced log lines but aren't in the roster
+ * yet (`Math.max(services.length, logServiceNames.length)`), the sidebar counts
+ * only known services.
+ */
+export function composeServiceTally(services: readonly ServiceDeployStatus[]): {
+  running: number;
+  built: number;
+  building: number;
+  failed: number;
+} {
+  let running = 0;
+  let built = 0;
+  let building = 0;
+  let failed = 0;
+  for (const service of services) {
+    if (service.status === "running") running += 1;
+    else if (service.status === "built") built += 1;
+    else if (service.status === "building") building += 1;
+    else if (service.status === "failed") failed += 1;
+  }
+  return { running, built, building, failed };
 }
 
 // ─── Build Strategy ──────────────────────────────────────────────────────────

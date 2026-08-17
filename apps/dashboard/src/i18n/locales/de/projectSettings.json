@@ -69,7 +69,43 @@
       "liveAccessible": "Live und erreichbar",
       "pausedInaccessible": "Pausiert und nicht erreichbar",
       "disable": "Deaktivieren",
-      "enable": "Aktivieren"
+      "enable": "Aktivieren",
+      "migrating": "Zieht um",
+      "migratingHint": "Wird auf einen anderen Server verschoben"
+    },
+    "migration": {
+      "title": "Umzug",
+      "description": "Dieses Projekt auf einen anderen Server verschieben",
+      "currentServer": "Aktueller Server",
+      "migrate": "Migrieren",
+      "noOtherServers": "Füge einen zweiten Server hinzu, um dieses Projekt dorthin zu verschieben.",
+      "cloudLater": "Von Server zu Server. Verschieben zu oder von Openship Cloud ist noch nicht möglich.",
+      "startFailed": "Migration konnte nicht gestartet werden",
+      "confirmTitle": "{project} auf {server} verschieben",
+      "confirmSubtitle": "Es ändert sich nichts, bis du die Migration startest.",
+      "svcVolumes": "{count} Volume(s)",
+      "downtimeNote": "Das Projekt ist offline, während die Daten kopiert werden und der neue Server es startet. Zustandsbehaftete Services sind während der gesamten Übertragung nicht erreichbar.",
+      "dnsNote": "DNS zeigt weiterhin auf den alten Server — ändere die Records, sobald der neue ausliefert.",
+      "cancel": "Abbrechen",
+      "confirmStart": "Verschieben starten",
+      "duplicate": "Duplizieren",
+      "intentMove": "Verschieben",
+      "intentCopy": "Duplizieren",
+      "intentMoveHint": "Das Projekt zieht um. Container und Volumes werden nach deiner Bestätigung vom alten Server entfernt.",
+      "intentCopyHint": "Das Original läuft weiter. Auf dem neuen Server entsteht ein zweites Projekt mit einer Kopie der Daten.",
+      "confirmTitleCopy": "{project} auf {server} duplizieren",
+      "confirmStartCopy": "Duplizieren starten",
+      "downtimeNoteCopy": "Das Projekt ist kurz offline, während die Daten kopiert werden — die Volumes müssen dafür ruhen. Auf dem alten Server startet es direkt nach der Kopie wieder.",
+      "copyNoDomainsNote": "Die Kopie startet ohne Domains — die bestehenden bleiben beim Projekt, das sie ausliefert.",
+      "fromLabel": "Von",
+      "toLabel": "Nach",
+      "modeLabel": "Modus",
+      "scopeLabel": "Was dupliziert wird",
+      "scopeAll": "Alle auswählen",
+      "scopeHintAll": "Alle Dienste samt Daten.",
+      "scopeHintSome": "{count} Dienst(e) — der Rest bleibt nur im Original.",
+      "sourceServices": "{count} Dienst(e)",
+      "runningStatus": "Läuft — {status}"
     },
     "cache": {
       "title": "Cache",
@@ -294,6 +330,8 @@
       "savedTitle": "Gespeichert",
       "saveFailed": "Speichern der Umgebungsvariablen fehlgeschlagen",
       "saveFailedTitle": "Speichern fehlgeschlagen",
+      "noChanges": "Keine Änderungen zu speichern — gespeicherte Werte bleiben erhalten.",
+      "noChangesTitle": "Nichts zu speichern",
       "applying": "Der Dienst wird mit der neuen Umgebung neu gestartet — kein Neubau.",
       "applyingTitle": "Wird angewendet",
       "applyFailed": "Umgebung konnte nicht auf den laufenden Dienst angewendet werden",
@@ -501,6 +539,10 @@
       "high": {
         "name": "High",
         "description": "Anwendungen mit hohem Traffic"
+      },
+      "xlarge": {
+        "name": "Sehr groß",
+        "description": "Datenbanken und schwere Workloads"
       }
     },
     "custom": {
@@ -763,6 +805,10 @@
       "noneYet": "Es wurde noch keine Prüfung ausgeführt, daher gibt es kein Ergebnis. Fügen Sie die angezeigten DNS-Einträge hinzu und führen Sie dann „Verifizieren“ aus.",
       "attempts": "Bisher {count} fehlgeschlagene Versuche.",
       "pillHint": "Grund anzeigen"
+    },
+    "records": {
+      "failed": "Die DNS-Einträge für diese Domain konnten nicht geladen werden.",
+      "retry": "Erneut versuchen"
     }
   }
 }

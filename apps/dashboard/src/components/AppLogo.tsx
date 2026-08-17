@@ -27,11 +27,16 @@ export const APP_LOGO: Record<
   // are left alone.
   ghost: { slug: "ghost", darkInvert: true },
   "uptime-kuma": { slug: "uptimekuma" },
-  vaultwarden: { slug: "vaultwarden" },
+  // Vaultwarden's shield mark is pure #000000, so it sinks into a dark tile — invert
+  // renders it clean white there (single flat color, nothing to distort).
+  vaultwarden: { slug: "vaultwarden", darkInvert: true },
   metabase: { slug: "metabase" },
   // Directus' rabbit is near-black (#263238) → invert it on the dark themes.
   directus: { slug: "directus", darkInvert: true },
-  nocodb: { slug: "nocodb" },
+  // simpleicons DROPPED the NocoDB mark — `cdn.simpleicons.org/nocodb` 404s now, so the
+  // slug it used to resolve left the card on the generic Boxes glyph. Vendored brand SVG
+  // instead (indigo gradient, so it reads on light and dark alike — no invert).
+  nocodb: { src: "/app-logos/nocodb.svg" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
   gitea: { slug: "gitea" },
@@ -57,8 +62,17 @@ export const APP_LOGO: Record<
   // Buzz (block/buzz) — vendored bee mark (its own favicon, OS-recolor stripped).
   // Monochrome near-black, so darkInvert flips it to light on the dark themes.
   buzz: { slug: undefined, src: "/app-logos/buzz.svg", darkInvert: true },
-  // code-server / IT-Tools / Stirling-PDF have no reliable simpleicons mark →
-  // they fall back to the monochrome Boxes glyph.
+  // simpleicons carries a mark for none of these four (Microsoft's VS Code icon is gone
+  // from the CDN too), and ClickHouse's exists only in brand yellow — unreadable on the
+  // light theme, see the note in clickhouse.svg. All four are vendored under
+  // public/app-logos, so they also render air-gapped. Stirling PDF, IT-Tools and
+  // ClickHouse are square marks carrying their own background → `fill`.
+  clickhouse: { src: "/app-logos/clickhouse.svg", fill: true },
+  // code-server = VS Code in the browser, so it wears the VS Code logo. NO darkInvert:
+  // the mark is brand blue, and inverting it would come out orange.
+  "code-server": { src: "/app-logos/code-server.svg" },
+  "it-tools": { src: "/app-logos/it-tools.png", fill: true },
+  "stirling-pdf": { src: "/app-logos/stirling-pdf.svg", fill: true },
   // openship-native mail stack — its own brand mark, a full-bleed square icon.
   // "mail" is the engine flow; "webmail" the catalog app that installs the client.
   // "mail-webmail" is the retired template id still stored on pre-catalog webmail

@@ -3,6 +3,8 @@
     "title": "Kapazität & Nutzung",
     "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus Openship Cloud synchronisiert.",
     "routes": "Kostenlose Routen",
+    "runningServices": "Laufende Dienste",
+    "projects": "Projekte",
     "workspaces": "Workspaces",
     "unlimited": "Unbegrenzt",
     "used": "genutzt",

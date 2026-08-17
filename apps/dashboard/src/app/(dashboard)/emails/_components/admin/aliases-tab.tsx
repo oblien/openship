@@ -23,16 +23,19 @@ import {
 import { useModal } from "@/context/ModalContext";
 import {
   DataTable,
-  RowIconButton,
+  RowActionsMenu,
   type DataTableColumn,
 } from "./_shared/data-table";
+import { DomainPicker } from "./_shared/domain-picker";
 import { StatusPill } from "./_shared/status-pill";
 import {
   Field,
   FormModalContent,
   inputClassName,
 } from "./_shared/form-modal-content";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 
 interface AliasesTabProps {
@@ -160,7 +163,7 @@ export function AliasesTab({
       width: "minmax(220px, 1.4fr)",
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
             <Forward className="size-4 text-muted-foreground" strokeWidth={2} />
           </div>
           <p className="text-sm font-medium text-foreground truncate font-mono">
@@ -194,11 +197,11 @@ export function AliasesTab({
       width: "140px",
       cell: (r) =>
         r.active ? (
-          <StatusPill tone="success" dot>
+          <StatusPill tone="success">
             {t.emailsAdmin.aliases.active}
           </StatusPill>
         ) : (
-          <StatusPill tone="neutral" dot>
+          <StatusPill tone="neutral">
             {t.emailsAdmin.aliases.disabled}
           </StatusPill>
         ),
@@ -228,25 +231,14 @@ export function AliasesTab({
         </button>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-muted-foreground">{t.emailsAdmin.aliases.domainLabel}</span>
-        {loadingDomains ? (
-          <div className="px-3 py-2 rounded-xl border border-border bg-muted/30 flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{t.emailsAdmin.aliases.loading}</span>
-          </div>
-        ) : (
-          <select
-            value={activeDomain}
-            onChange={(e) => onSelectDomain(e.target.value)}
-            className="px-3 py-2 text-sm rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors min-w-[200px]"
-          >
-            {domains.map((d) => (
-              <option key={d.domain} value={d.domain}>
-                {d.domain}
-              </option>
-            ))}
-          </select>
-        )}
+      <DomainPicker
+        label={t.emailsAdmin.aliases.domainLabel}
+        value={activeDomain}
+        domains={domains.map((d) => d.domain)}
+        onChange={onSelectDomain}
+        loading={loadingDomains}
+        loadingLabel={t.emailsAdmin.aliases.loading}
+      >
         {!loadingAliases && aliases.length > 0 && (
           <span className="ms-auto text-xs text-muted-foreground tabular-nums">
             {interpolate(t.emailsAdmin.aliases.activeCount, {
@@ -255,7 +247,7 @@ export function AliasesTab({
             })}
           </span>
         )}
-      </div>
+      </DomainPicker>
 
       {error && (
         <div className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
@@ -269,19 +261,27 @@ export function AliasesTab({
         rowKey={(r) => String(r.id)}
         loading={loadingAliases}
         rowActions={(row) => (
-          <>
-            <RowIconButton
-              icon={Power}
-              label={row.active ? t.emailsAdmin.aliases.deactivateAction : t.emailsAdmin.aliases.activateAction}
-              onClick={() => void toggleActive(row)}
-            />
-            <RowIconButton
-              icon={Trash2}
-              label={t.emailsAdmin.aliases.deleteAction}
-              variant="danger"
-              onClick={() => openDelete(row)}
-            />
-          </>
+          <RowActionsMenu
+            label={interpolate(t.emailsAdmin.shared.rowActions, { name: row.address })}
+            actions={[
+              {
+                id: "toggle",
+                label: row.active
+                  ? t.emailsAdmin.aliases.deactivateAction
+                  : t.emailsAdmin.aliases.activateAction,
+                icon: <Power className="size-4" />,
+                onClick: () => void toggleActive(row),
+              },
+              { id: "sep", divider: true },
+              {
+                id: "delete",
+                label: t.emailsAdmin.aliases.deleteAction,
+                icon: <Trash2 className="size-4" />,
+                variant: "danger",
+                onClick: () => openDelete(row),
+              },
+            ]}
+          />
         )}
         empty={{
           icon: Forward,
@@ -359,26 +359,15 @@ function CreateAliasForm({
       disabled={!canSubmit}
     >
       <Field label={t.emailsAdmin.aliases.domainLabel}>
-        <select
+        <CustomSelect
           value={domain}
-          onChange={(e) => setDomain(e.target.value)}
-          className={inputClassName}
-        >
-          {domains.map((d) => (
-            <option key={d.domain} value={d.domain}>
-              {d.domain}
-            </option>
-          ))}
-        </select>
+          options={domains.map((d) => ({ value: d.domain, label: d.domain }))}
+          onChange={setDomain}
+        />
       </Field>
 
-      <label className="flex items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl hover:bg-muted/30 transition-colors">
-        <input
-          type="checkbox"
-          checked={isCatchAll}
-          onChange={(e) => setIsCatchAll(e.target.checked)}
-          className="rounded border-border mt-0.5"
-        />
+      <button type="button" onClick={() => setIsCatchAll(!isCatchAll)} aria-pressed={isCatchAll} className="flex w-full items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl text-start hover:bg-muted/30 transition-colors">
+        <Checkbox checked={isCatchAll} className="pointer-events-none mt-0.5" />
         <span>
           <span className="block text-sm font-medium text-foreground">
             {t.emailsAdmin.aliases.create.catchAllLabel}
@@ -387,7 +376,7 @@ function CreateAliasForm({
             {interpolate(t.emailsAdmin.aliases.create.catchAllHint, { domain: domain || "…" })}
           </span>
         </span>
-      </label>
+      </button>
 
       {!isCatchAll && (
         <Field

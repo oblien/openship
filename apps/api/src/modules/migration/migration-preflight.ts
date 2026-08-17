@@ -11,6 +11,8 @@
 
 import { edgeProxy } from "@repo/adapters";
 import { discoverServerStack } from "./docker-inspect.service";
+import { classifyManagedContainers } from "./managed-containers";
+import { selectDiscoveredServices } from "./select-services";
 import { createServerCommandExecutor } from "../../lib/deployment-runtime";
 import { sshManager } from "../../lib/ssh-manager";
 import { sizeOfMoveSet, type SizedItem } from "./migration-size";
@@ -143,21 +145,49 @@ export async function buildMigrationPreview(opts: {
   targetServerId: string;
   serviceNames: string[];
   organizationId: string;
+  /** Container ids of the selected services — globally unique, unlike a compose
+   *  service name. See {@link selectDiscoveredServices}. */
+  serviceContainerIds?: string[];
+  /** Must match the scan the operator selected from. The plan is what they approve, so
+   *  discovering in a different mode than the migration will run sizes a different set. */
+  flatDocker?: boolean;
   /** User-selected extra paths to move (sized in the plan). */
   customPaths?: Array<{ source: string; dest: string }>;
 }): Promise<MigrationPreview> {
   const { sourceServerId, targetServerId, serviceNames, organizationId } = opts;
   const customPaths = opts.customPaths ?? [];
 
-  const stack = await discoverServerStack(sourceServerId, organizationId);
-  const selected = new Set(serviceNames);
-  const chosen = stack.services.filter((s) => selected.has(s.name));
+  const stack = await discoverServerStack(sourceServerId, organizationId, undefined, {
+    flatDocker: opts.flatDocker,
+  });
+  // Identity-first (see select-services). The plan is sized and rendered from this
+  // set, so an unscoped name match also reported ANOTHER stack's volumes as part of
+  // this migration — including the control plane's own `postgres` (#584).
+  const selected = selectDiscoveredServices(stack.services, {
+    containerIds: opts.serviceContainerIds,
+    names: serviceNames,
+  });
+  // The SAME classification the migration uses, so the plan the operator approves is
+  // the plan that runs. Ours are dropped exactly as the migration drops them; a real
+  // conflict becomes a BLOCKED row rather than a failed preview — the preview is
+  // read-only, and a 502 where a plan should be teaches the operator nothing.
+  // `conflicts` already means VOLUME conflicts in this file — keep them distinct.
+  const { controlPlane, conflicts: managedConflicts } = await classifyManagedContainers(
+    selected,
+    organizationId,
+  );
+  const chosen =
+    controlPlane.size > 0
+      ? selected.filter((s) => !(s.containerId && controlPlane.has(s.containerId)))
+      : selected;
+  const managedByContainer = new Map(managedConflicts.map((c) => [c.containerId, c]));
   const sameServer = sourceServerId === targetServerId;
 
   const services: MigrationPreviewService[] = chosen.map((s) => {
     // Build-only = has a build context and no runnable registry image.
     const isBuild = Boolean(s.build) && !s.image;
     const isProxy = Boolean(s.proxyKind);
+    const managedBy = s.containerId ? managedByContainer.get(s.containerId) : undefined;
     const volumes = s.volumes
       .filter((v) => v.type === "volume" && v.source)
       .map((v) => ({ name: v.source as string, target: v.target }));
@@ -169,8 +199,10 @@ export async function buildMigrationPreview(opts: {
       source: s.source,
       image: s.image,
       classification: isBuild ? "build" : "registry",
-      blocked: isBuild,
-      reason: isBuild
+      blocked: isBuild || Boolean(managedBy),
+      reason: managedBy
+        ? `Already managed here by project "${managedBy.projectName}" — redeploy or edit that project instead of re-importing.`
+        : isBuild
         ? "Built-from-source services can't be migrated yet — publish an image or link a repo first."
         : isProxy
           ? `Reverse proxy (${s.proxyKind}) on ${(s.edgePorts ?? []).map((p) => `:${p}`).join("/")} — Openship's edge replaces it; not imported.`

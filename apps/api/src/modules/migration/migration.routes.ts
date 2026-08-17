@@ -35,6 +35,11 @@ r.post("/repo-compose", { tag: "server:read", readOnly: true, collection: true }
 r.post("/preview", { tag: "server:write", collection: true }, migration.previewMigration);
 // Start a full migration (adopt → move → deploy → verify → await cutover).
 r.post("/migrate", { tag: "server:write", collection: true }, migration.startMigration);
+
+// Project move (door B): relocate a project this instance already owns. `server:write`
+// like the rest of this module — the handler additionally asserts `project:write`, because
+// neither permission implies the other when a run mutates a workload on two machines.
+r.post("/project", { tag: "server:write", collection: true }, migration.startProjectMove);
 // Migration run status, live progress, and the opt-in destructive cutover.
 r.get("/migrations/:id", { tag: "server:read", collection: true }, migration.getMigration);
 r.get("/migrations/:id/stream", { tag: "server:read", collection: true }, migration.streamMigration);
@@ -47,7 +52,9 @@ r.post("/migrations/:id/resume", { tag: "server:write", collection: true }, migr
 r.post("/migrations/:id/cleanup-target", { tag: "server:write", collection: true }, migration.cleanupTargetData);
 // Delete a terminal run's record (history cleanup; project + data untouched).
 r.delete("/migrations/:id", { tag: "server:write", collection: true }, migration.deleteMigration);
-// The in-flight run for a server, so a reloaded client can re-attach.
+// The in-flight run for a server, so a reloaded client can re-attach. A PROJECT's live run is
+// not here — it rides on the project payload (`readActiveMigration`), which is what every
+// surface that renders a project already reads. See the handler.
 r.get("/active", { tag: "server:read", collection: true }, migration.getActiveMigration);
 // Recent runs for a server (the "Migrations" tab list, like project deployments).
 r.get("/runs", { tag: "server:read", collection: true }, migration.getMigrationRuns);

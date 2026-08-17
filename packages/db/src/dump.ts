@@ -366,6 +366,23 @@ const TABLES: ReadonlyArray<TableSpec> = [
     hasOrganizationId: true,
   },
 
+  // Credentials
+  // The generic third-party credential store (registry logins, DNS tokens). Carried by an
+  // org transfer for the same reason dns_credential is: without it the receiving instance
+  // silently loses the ability to pull that org's private images or write its DNS records.
+  // Paired with its ENCRYPTED_COLUMNS spec below — catalogued WITHOUT one, the restore-side
+  // redaction pass skips secrets_enc and a crafted ingest could plant ciphertext for a
+  // registry the tenant does not own.
+  {
+    sqlName: "credential",
+    table: schema.credential,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "organizationId" },
+    ],
+    hasOrganizationId: true,
+  },
+
   // Notifications
   {
     sqlName: "notification_channel",
@@ -494,6 +511,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "backup_destination", column: "sftpPrivateKeyEnc" },
   { table: "backup_destination", column: "sftpKeyPassphraseEnc" },
   { table: "dns_credential", column: "apiTokenEnc" },
+  { table: "credential", column: "secretsEnc" },
   { table: "servers", column: "sshPassword" },
   { table: "servers", column: "sshPrivateKey" },
   { table: "servers", column: "sshKeyPassphrase" },

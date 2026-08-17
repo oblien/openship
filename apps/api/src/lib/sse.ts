@@ -3,7 +3,9 @@
  * Sends a ping every HEARTBEAT_INTERVAL_MS to prevent proxy/CDN drops.
  *
  * Every write — the keep-alive ping AND the handler's own events — is funnelled
- * through ONE promise chain (see `serializeWrites`). The keep-alive is a timer,
+ * through ONE promise chain (see `serializeWrites`). `SSE_PRIMER` is the one
+ * deliberate exception: it goes out raw, before anything else can be queued, so it
+ * has nothing to race. The keep-alive is a timer,
  * so it fires whenever it likes: without serialization it can start a write
  * while the handler's `await writeSSE(...)` is mid-flight, and the last frame
  * before the stream closes is the one that loses that race. That frame is
@@ -72,6 +74,21 @@ export function serializeWrites(stream: SSEStreamingApi): () => Promise<void> {
  *  produced, which is the handler's problem, not the stream's. */
 const DRAIN_PASSES = 8;
 
+/**
+ * Opening frame of every stream, written before the handler does any work.
+ *
+ * The heartbeat's first ping is a full interval away, so a handler that takes
+ * seconds to produce its first frame leaves the response headed-but-empty until
+ * then — indistinguishable, to a client and to every intermediary, from a dead
+ * stream (GH-570). It also means a client's first-byte deadline doesn't depend on
+ * what a given handler happens to do first.
+ *
+ * An SSE comment: inert to every parser (`pipe_stream.lua` opens the same way),
+ * but real bytes on the wire. Exported because it prefixes the body of every SSE
+ * response, which the byte-exact relay tests have to account for.
+ */
+export const SSE_PRIMER = ": ok\n\n";
+
 /** `drain()` bounded by a deadline — a client that has gone away never accepts
  *  the queued frames, and waiting on it would hold the response open. */
 async function drainWithDeadline(drain: () => Promise<void>, ms: number): Promise<void> {
@@ -104,6 +121,8 @@ export function streamSSE(
 
   return _streamSSE(c, async (sseStream) => {
     const drain = serializeWrites(sseStream);
+
+    void sseStream.write(SSE_PRIMER).catch(() => {});
 
     const heartbeat = setInterval(() => {
       void sseStream

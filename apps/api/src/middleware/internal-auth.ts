@@ -23,6 +23,12 @@ import { isLoopbackRequest, peerAddress } from "./loopback-peer";
  *
  * Uses timing-safe comparison to prevent side-channel leakage on the
  * normal path.
+ *
+ * The refusal body is exactly `{"error":"Unauthorized"}`, and the CLI reads it:
+ * lib/loopback-api's internalFetch treats THAT shape (and only it) as "the token was
+ * refused, before any handler ran", which is what makes retrying with this box's other
+ * token safe. A handler's own 401 — /cloud-connect after a single-use PKCE exchange —
+ * must stay distinguishable from this one, so keep the wording.
  */
 export async function internalAuth(c: Context, next: Next) {
   if (!env.INTERNAL_TOKEN) {

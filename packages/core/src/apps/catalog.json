@@ -509,7 +509,7 @@
     },
     {
       "available": true,
-      "verified": true,
+      "verified": false,
       "id": "mongodb",
       "name": "MongoDB",
       "description": "MongoDB document database with the Mongo Express web admin UI.",
@@ -2214,7 +2214,7 @@
     },
     {
       "available": true,
-      "verified": true,
+      "verified": false,
       "id": "kafka",
       "name": "Apache Kafka",
       "description": "Apache Kafka event-streaming broker (KRaft mode — no ZooKeeper) with the Kafbat Kafka UI web console for topics, messages, and consumer groups.",
@@ -2539,15 +2539,14 @@
     },
     {
       "available": true,
-      "verified": true,
-      "hosting": "experimental",
+      "verified": false,
       "minResources": {
         "memoryMb": 4096,
         "cpuCores": 2
       },
       "id": "neon",
       "name": "Neon",
-      "description": "Self-hosted Neon — serverless Postgres with database branching, a web console and per-branch connection strings, in a single container. Built on the community `neond` control plane (Apache-2.0), which bundles Neon's pageserver, safekeeper, storage broker and storage controller behind a management API and dashboard. Neon's own cloud console is proprietary and the upstream neon repo ships no web UI at all, so a community control plane is the only way to run self-hosted Neon with a dashboard. EXPERIMENTAL: one container and no HA, a ~1.2 GB image, and it publishes fixed host ports for branch endpoints. Not for critical data.",
+      "description": "Self-hosted Neon — serverless Postgres with database branching, a web console and per-branch connection strings, in a single container. Built on the community `neond` control plane (Apache-2.0), which bundles Neon's pageserver, safekeeper, storage broker and storage controller behind a management API and dashboard. Neon's own cloud console is proprietary and the upstream neon repo ships no web UI, so a community control plane is the only way to run self-hosted Neon with a dashboard. One container with no HA, a ~1.2 GB image, and it publishes fixed host ports for branch endpoints — sized for development and preview databases rather than critical data.",
       "repository": "https://github.com/matisiekpl/neond",
       "kind": "template",
       "logo": "neon",
@@ -2720,14 +2719,13 @@
     {
       "available": true,
       "verified": false,
-      "hosting": "experimental",
       "minResources": {
         "memoryMb": 16384,
         "cpuCores": 4
       },
       "id": "posthog",
       "name": "PostHog",
-      "description": "Self-hosted PostHog — product analytics, session replay, and feature flags, with real event ingestion. This mirrors PostHog's own hobby topology: a Caddy path router in front of the Django app, the Rust capture/flags/hypercache/persons services, the Node ingestion consumers, ClickHouse + Kafka + Postgres + Redis + Valkey + S3. EXPERIMENTAL and heavy: 21 containers, wants roughly 4 vCPU / 16 GB RAM and 30+ GB disk. PostHog ships no tagged releases for self-hosting and rebuilds `latest` hourly, so this tracks a moving upstream. Not for production.",
+      "description": "Self-hosted PostHog — product analytics, session replay, and feature flags, with real event ingestion. This mirrors PostHog's own hobby topology: a Caddy path router in front of the Django app, the Rust capture/flags/hypercache/persons services, the Node ingestion consumers, ClickHouse + Kafka + Postgres + Redis + Valkey + S3. Heavy: 21 containers, roughly 4 vCPU / 16 GB RAM and 30+ GB disk. PostHog ships no tagged releases for self-hosting and rebuilds `latest` hourly, so this tracks a moving upstream.",
       "repository": "https://github.com/PostHog/posthog",
       "kind": "template",
       "logo": "posthog",
@@ -3498,7 +3496,7 @@
     },
     {
       "available": true,
-      "verified": true,
+      "verified": false,
       "id": "redis",
       "name": "Valkey (Redis)",
       "description": "In-memory data store for caching, sessions, rate limits, and queues — Valkey, the open-source Redis fork. Drop-in Redis-compatible: point any redis client at it. Ships with RedisInsight, a browser UI that arrives already connected to this instance.",
@@ -3976,7 +3974,7 @@
     },
     {
       "available": true,
-      "verified": true,
+      "verified": false,
       "id": "clickhouse",
       "name": "ClickHouse",
       "description": "The columnar SQL database for analytics — billions of rows scanned per second. Ships with the CH-UI console, so you get a SQL editor, schema browser and dashboards the moment it installs: sign in with the ClickHouse user and password below, no extra setup.",

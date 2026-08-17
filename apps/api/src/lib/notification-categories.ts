@@ -224,11 +224,14 @@ export const CATEGORIES: readonly NotificationCategory[] = [
   // PER-MESSAGE event that is both a flood and a mail loop: the notification mail
   // would land on the same engine, inside a watched domain, and capture itself.
   {
+    // The id is stored on every alert row already emitted, so it keeps saying
+    // inbound; the label and description are what an operator reads, and the panel
+    // that creates these rules is called Notifications.
     id: "mail.inbound_received",
     group: "mail",
-    label: "Inbound email received",
+    label: "Mail arrived at a watched address",
     description:
-      "A message arrived at a mailbox or domain one of your inbound rules watches.",
+      "A message arrived at a mailbox or domain one of your notification rules watches.",
     defaultEnabled: false,
   },
 

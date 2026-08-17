@@ -16,6 +16,7 @@
 import type { Dictionary } from "@/i18n";
 import { usePlatform } from "@/context/PlatformContext";
 import { useMailScope } from "@/context/MailScopeContext";
+import type { MailTabKey } from "@/lib/mail-tabs";
 
 /**
  * True when the mail rail is listing THIS server's sections.
@@ -53,7 +54,7 @@ export interface MailSectionHeading {
  * server's front page, so "Email Server" IS its heading (and it has no <h2> of
  * its own to hoist).
  */
-export function getMailSectionHeading(tab: string, t: Dictionary): MailSectionHeading | null {
+export function getMailSectionHeading(tab: MailTabKey, t: Dictionary): MailSectionHeading | null {
   const a = t.emailsAdmin;
   switch (tab) {
     case "domains":
@@ -62,14 +63,12 @@ export function getMailSectionHeading(tab: string, t: Dictionary): MailSectionHe
       return { title: a.mailboxes.heading, description: a.mailboxes.description };
     case "aliases":
       return { title: a.aliases.heading, description: a.aliases.description };
-    case "inbound":
-      return { title: a.inbound.heading, description: a.inbound.description };
+    case "notifications":
+      return { title: a.notifications.heading, description: a.notifications.description };
     case "dns":
       return { title: a.dns.heading, description: a.dns.description };
     case "health":
       return { title: a.health.heading, description: a.health.description };
-    case "test":
-      return { title: a.test.title, description: a.test.description };
     case "backup":
       return { title: a.backup.heading, description: a.backup.description };
     case "sending":

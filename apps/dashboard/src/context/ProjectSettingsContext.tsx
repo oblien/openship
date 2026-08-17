@@ -16,6 +16,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { projectsApi, servicesApi, type Service } from "@/lib/api";
 import { PROJECT_INFO_NOT_FOUND, useProjectInfo } from "@/hooks/useProjectEndpoints";
+import type { ActiveMigration } from "@/utils/project-status";
 import { dedupeServerLogs } from "./server-log-dedup";
 
 interface ProjectDomain {
@@ -68,6 +69,22 @@ interface BasicProjectData {
   activeDeploymentId?: string | null;
   /** Operator switch, derived server-side from `disabled_at` (enrichProject). */
   enabled?: boolean;
+  /**
+   * WHY the routes didn't sync, in the server's own words (`routeIssuesWarning`), or null.
+   *
+   * The routing banner carried ONE hardcoded sentence — about a free `.opsh.io` URL failing to
+   * route through Openship Cloud's edge — and showed it for every cause, including custom
+   * domains merely waiting on a certificate. The accurate sentence was already computed
+   * server-side and written to the deployment meta; it just had no way through to the UI.
+   */
+  routingWarning?: string | null;
+  /**
+   * The in-flight migration run for this project, or null (server-side
+   * `readActiveMigration`). Typed here rather than left to the interface's index signature
+   * because it drives BOTH the status pill and whether the Advanced tab shows the migration
+   * session — a run is part of the project's state, not something a panel fetches.
+   */
+  activeMigration?: ActiveMigration | null;
   deployTarget?: "cloud" | "server" | "local";
   cloudWorkspaceId?: string | null;
   deletedAt?: string | null;

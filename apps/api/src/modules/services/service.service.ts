@@ -41,9 +41,14 @@ import { sq } from "../migration/direct-transfer";
 import { bounded, duBytes, volumeBytes } from "../migration/migration-size";
 import { deployComposeServices } from "../deployments/compose/deploy.service";
 import { deploymentWorkload } from "../deployments/deployment-class";
+import { hasSourceBuildRecipe } from "../../lib/deployable-service";
 import { deriveProjectRouteState } from "../domains/project-route.service";
 import { registerStartupHook } from "../../lib/startup";
-import { buildServiceRouteDomains, serviceCustomHostnames } from "../../lib/routing-domains";
+import {
+  buildServiceRouteDomains,
+  serviceCustomHostnames,
+  serviceDomainRowsToEnsure,
+} from "../../lib/routing-domains";
 import {
   mergeServiceRoutingPatch,
   publicEndpointHostname,
@@ -51,6 +56,7 @@ import {
 } from "../../lib/public-endpoints";
 import { resolveRuntimeResources } from "../../lib/resources";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
+import { assertPlanAllowsServices, assertRunningServiceQuota } from "../../lib/plan-guard";
 import { ensurePendingServiceDomain, removeServiceDomain, reuseServerCertForDomain } from "../domains/domain.service";
 import {
   buildUpstreamUrl,
@@ -312,8 +318,13 @@ export async function keepServiceDrift(
  * public endpoints). Idempotent, and guarded to a real app-framework SERVER
  * project's first compose sidecar; genuine docker-compose / services / monorepo
  * projects and static/no-server apps are left alone.
+ *
+ * Reconciles in BOTH directions (#589): it creates the row when the project has a
+ * real source-build recipe, and removes one it previously created when the project
+ * has none. See `hasSourceBuildRecipe` for why the stack category alone was never
+ * evidence, and `healPhantomAppServiceRow` for what makes the removal safe.
  */
-async function materializeAppServiceRow(project: Project): Promise<void> {
+async function reconcileAppServiceRow(project: Project): Promise<void> {
   // A web app AND a worker are both long-running containers that must survive a
   // sidecar being added; only a STATIC site has no container to keep (#538-B).
   if (deploymentWorkload(project) === "static") return;
@@ -334,10 +345,31 @@ async function materializeAppServiceRow(project: Project): Promise<void> {
 
   const rows = await repos.service.listByProject(project.id);
   const hasSidecar = rows.some((s) => s.kind === "compose");
-  const hasAppRow = rows.some((s) => s.kind === "monorepo");
+  const appRow = rows.find((s) => s.kind === "monorepo");
+
+  // #589: the `projectType` check above is not evidence of a source-built app —
+  // it reads the stack's CATEGORY, and everything but `docker`/`services` maps to
+  // "app", `generic` (the `unknown` stack) included. So it admits exactly the
+  // projects it claims to exempt: service-first ones store `framework: "unknown"`
+  // deliberately (createServicesProject) or get it by omission on create.
+  //
+  // Require what the BUILDER requires instead, via the same helper — a row with
+  // no recipe lands in neither the buildable nor the external-image bucket, and
+  // the deploy dies on `No image available`. Then it gets worse: that failure
+  // persists a service_deployment row, flipping `everDeployed` true and
+  // disqualifying the row from preflight's dead-row carve-out, so from the second
+  // deploy on the whole project is refused. Hence the repair below, not just the
+  // gate. Reading the values off the PROJECT is exact rather than approximate:
+  // the row leaves every build field null and inherits them (see create below),
+  // which is precisely what the builder resolves for it.
+  if (!hasSourceBuildRecipe(project)) {
+    await healPhantomAppServiceRow(project, appRow);
+    return;
+  }
+
   // Nothing to pair the app with, or the app row already exists. Idempotent, so
   // it is safe to call on every sidecar add AND from the boot backfill.
-  if (!hasSidecar || hasAppRow) return;
+  if (!hasSidecar || appRow) return;
 
   const projectDomains = await repos.domain.listByProject(project.id).catch(() => []);
   const routeState = deriveProjectRouteState(project, { projectDomains });
@@ -375,23 +407,117 @@ async function materializeAppServiceRow(project: Project): Promise<void> {
 }
 
 /**
+ * Is this row one the materializer above WROTE, rather than one a person
+ * configured? Keyed on the full signature it creates: the project slug as the
+ * name, `sortOrder: -1` (which nothing else in the codebase writes), and every
+ * build-identity field left null so it inherits the project snapshot.
+ *
+ * A row is only reclaimable while its build identity is pristine. `enabled` is
+ * deliberately NOT part of the signature — disabling the mystery service is the
+ * first thing an operator hit by #589 tries, and that workaround must not make
+ * the row un-healable. Nor are `environment` / `ports` / `volumes`: the caller
+ * gates on the row never having deployed successfully, which is the real
+ * data-safety property (no container was ever created from it, so no volume
+ * holds anything), and a few unused form fields are not worth leaving a project
+ * un-deployable over.
+ */
+export function isMaterializedAppRow(
+  project: Pick<Project, "slug">,
+  row: Pick<
+    Service,
+    | "kind"
+    | "name"
+    | "sortOrder"
+    | "image"
+    | "build"
+    | "dockerfile"
+    | "framework"
+    | "installCommand"
+    | "buildCommand"
+    | "startCommand"
+    | "outputDirectory"
+  >,
+): boolean {
+  return (
+    row.kind === "monorepo" &&
+    row.name === project.slug &&
+    row.sortOrder === -1 &&
+    !row.image &&
+    !row.build &&
+    !row.dockerfile &&
+    !row.framework &&
+    !row.installCommand &&
+    !row.buildCommand &&
+    !row.startCommand &&
+    !row.outputDirectory
+  );
+}
+
+/**
+ * #589 repair: drop a phantom app row this helper created before the recipe gate
+ * existed. Declining to create new ones is not enough on its own — the row is
+ * already persisted on every affected project, the boot hook used to re-create it
+ * after any manual delete, and from the second deploy onward preflight refuses
+ * the whole project because of it. Prevention alone would leave those projects
+ * permanently un-deployable.
+ *
+ * Two conditions, both required. The row must match the materializer's exact
+ * signature, and it must never have deployed successfully — that second one is
+ * what makes the delete safe rather than merely likely-safe: no successful
+ * deployment means no container and no volume ever came from this row, so there
+ * is nothing on the host to orphan. It also protects the one case where the
+ * signature alone would be wrong — a project that HAD a recipe, deployed its app
+ * row, then had its commands cleared. Anything ambiguous is left alone; a visible
+ * dead row an operator can delete beats deleting something they wanted.
+ *
+ * Reach differs by mode, deliberately. Self-hosted and desktop get it
+ * automatically at boot; CLOUD_MODE has no startup hooks, so a cloud org's
+ * pre-existing phantom is repaired on its next compose-service create. That is
+ * enough there because the boot hook was never the cloud producer either — only
+ * `createService` was — and with the gate in place a manual delete from the
+ * dashboard now STICKS, which is what made this unrecoverable before.
+ */
+async function healPhantomAppServiceRow(
+  project: Project,
+  appRow: Service | undefined,
+): Promise<void> {
+  if (!appRow || !isMaterializedAppRow(project, appRow)) return;
+
+  const history = await repos.serviceDeployment.listByService(appRow.id).catch(() => []);
+  if (history.some((d) => d.status === "success")) return;
+
+  await repos.service.remove(appRow.id);
+  console.warn(
+    `[services] removed phantom app row "${appRow.name}" from project ${project.id}: ` +
+      `the project has no build or start command, so it could never produce an image (#589)`,
+  );
+}
+
+/**
  * #231 backfill: app-framework projects that gained sidecars BEFORE the
  * materialization above shipped have a compose row but no app row, so their
- * deploy drops the app. Run the same (idempotent) materialization once per boot
- * for every project — the helper no-ops unless the project has a sidecar and no
- * app row. Self-hosted + desktop only (the whole startup module is a no-op under
+ * deploy drops the app. Run the same (idempotent) reconcile once per boot for
+ * every project — it no-ops unless the project has a sidecar and no app row.
+ * Self-hosted + desktop only (the whole startup module is a no-op under
  * CLOUD_MODE).
+ *
+ * It is also the delivery mechanism for the #589 repair: the same pass now
+ * REMOVES a phantom row on a project with no build recipe. That direction has to
+ * live here rather than on the create endpoint, because the projects worst hit by
+ * #589 — the ones docker-migration adopts — never call `createService` at all;
+ * their compose rows are written directly by the import, and the phantom appeared
+ * on the next restart.
  */
-export function registerAppServiceMaterializeBackfill(): void {
+export function registerAppServiceRowReconcile(): void {
   registerStartupHook({
-    id: "services:materialize-app-backfill",
+    id: "services:reconcile-app-row",
     modes: ["selfhosted", "desktop"],
     run: async () => {
       const projects = await repos.project.listAllForScan().catch(() => []);
       for (const project of projects) {
-        await materializeAppServiceRow(project).catch((err) =>
+        await reconcileAppServiceRow(project).catch((err) =>
           console.warn(
-            `[services] app-materialize backfill skipped for ${project.id}: ${(err as Error).message}`,
+            `[services] app-row reconcile skipped for ${project.id}: ${(err as Error).message}`,
           ),
         );
       }
@@ -477,6 +603,15 @@ export async function createService(
     "managed-compose-domains",
   );
 
+  // Refuse the row too, not just its start: a static-only tier can never run
+  // this container, and persisting a service the org will be blocked from
+  // starting is a worse experience than refusing it here.
+  await assertPlanAllowsServices(ctx.organizationId);
+  // Each service is one Oblien workspace. Oblien would refuse the (N+1)th with a
+  // 409 mid-deploy that reads as a broken build; refuse it here as a plan
+  // decision instead, before the row exists.
+  await assertRunningServiceQuota(ctx.organizationId);
+
   // Through mergeAdvanced even on CREATE: there is nothing to preserve, but it
   // strips the `null`-means-remove sentinels the update path accepts, so a
   // caller can send one payload shape to both.
@@ -525,15 +660,21 @@ export async function createService(
   // Mint verifiable PENDING rows for any custom domain configured at create
   // time, so the routing UI shows Verify/DNS/SSL immediately — parity with the
   // edit path. Live route registration still happens through the deploy/add
-  // flow, not here.
-  for (const hostname of serviceCustomHostnames(created)) {
-    await ensurePendingServiceDomain({ projectId, serviceId: created.id, hostname });
+  // flow, not here. `serviceDomainRowsToEnsure` is the shared derivation (it also
+  // attaches each hostname's port, which this site used to drop).
+  for (const row of serviceDomainRowsToEnsure(created)) {
+    await ensurePendingServiceDomain({
+      projectId,
+      serviceId: created.id,
+      hostname: row.hostname,
+      targetPort: row.targetPort,
+    });
   }
 
   // #231: keep the app deployable once it gains a compose sidecar (see helper).
   // Best-effort — a failure here must never block adding the service.
   if (kind === "compose") {
-    await materializeAppServiceRow(project).catch((err) =>
+    await reconcileAppServiceRow(project).catch((err) =>
       console.warn(`[services] app materialization skipped: ${(err as Error).message}`),
     );
   }
@@ -807,17 +948,22 @@ export async function updateService(
       // Track the freshly-created ones so we can reuse an existing on-server cert
       // for them below (migration / first publish) instead of forcing an ACME
       // re-issue.
+      // Same shared derivation as create + compose sync, so the three cannot
+      // disagree about which hostnames get a row. It reads the CONFIG, so it also
+      // covers a custom hostname whose port hasn't been set yet — `nextRoutes`
+      // dropped those (no resolvable port → no route), which is how the same
+      // config could get a row from create and none from an edit. Still gated on
+      // `isRoutable`: an unexposed service publishes nothing, and only a route we
+      // just published is a candidate for adopting an existing on-server cert.
       const freshlyPublishedDomainIds: string[] = [];
-      for (const route of nextRoutes) {
-        if (route.domainType === "custom") {
-          const ensured = await ensurePendingServiceDomain({
-            projectId: project.id,
-            serviceId,
-            hostname: route.hostname,
-            targetPort: route.targetPort,
-          });
-          if (ensured.created && ensured.domainId) freshlyPublishedDomainIds.push(ensured.domainId);
-        }
+      for (const row of isRoutable ? serviceDomainRowsToEnsure(updated) : []) {
+        const ensured = await ensurePendingServiceDomain({
+          projectId: project.id,
+          serviceId,
+          hostname: row.hostname,
+          targetPort: row.targetPort,
+        });
+        if (ensured.created && ensured.domainId) freshlyPublishedDomainIds.push(ensured.domainId);
       }
       // Drop the derived row for any custom hostname the service no longer
       // CONFIGURES (cleared / renamed / switched to free) — keyed on config,
@@ -1079,6 +1225,68 @@ export async function syncComposeServices(
   const synced = await repos.service.syncFromCompose(projectId, reconciled, {
     composeAuthoritative: true,
   });
+
+  // Mint a verifiable PENDING row for every custom hostname this sync persisted —
+  // the same thing createService and updateService already do, and the reason they
+  // do it: the row is what the routing UI keys Verify / DNS-records / SSL on.
+  //
+  // This path wrote the routing COLUMNS straight through `syncFromCompose` and no
+  // domain row at all, which is how a wizard-configured compose project reached its
+  // first deploy with none: the Domains tab then rendered cards synthesized from the
+  // service config (Pending / Inactive, with a Verify button keyed on an id that
+  // doesn't exist), and the deploy planned every route against a missing row — the
+  // exact condition that made `provisionSsl` false and skipped the certificate.
+  //
+  // Best-effort per hostname: an invalid or foreign hostname throws here (Validation
+  // / Conflict), and a compose sync that already persisted its services must not
+  // fail on the follow-up bookkeeping. The deploy path re-attempts the same
+  // ensure and reports what it couldn't claim.
+  // Verifiable PENDING rows for every custom hostname this sync persisted — the
+  // same thing createService and updateService do, and for the same reason: the row
+  // is what the routing UI keys Verify / DNS-records / SSL on. This path wrote the
+  // routing COLUMNS straight through `syncFromCompose` and no row at all, which is
+  // how a wizard-configured compose project reached its first deploy with none.
+  //
+  // BOTH halves of the lifecycle, like updateService: mint what the config now
+  // declares, then drop the row for any hostname that LEFT it. Minting alone left a
+  // renamed or cleared custom domain's row behind forever — `syncFromCompose`
+  // updates a surviving service in place, so the serviceId FK cascade never fires
+  // — and the orphan kept appearing in the Domains tab and being retried by the
+  // verify cron.
+  //
+  // One derivation for all three write paths (`serviceDomainRowsToEnsure`), so the
+  // sync can't disagree with create/update about which hostnames get a row.
+  // Best-effort per hostname: an invalid or foreign hostname throws here
+  // (Validation / Conflict) and a sync that already persisted its services must not
+  // fail on the follow-up bookkeeping; the deploy path re-attempts the same ensure.
+  const storedByName = new Map(stored.map((svc) => [svc.name, svc]));
+  for (const svc of synced) {
+    for (const row of serviceDomainRowsToEnsure(svc)) {
+      await ensurePendingServiceDomain({
+        projectId,
+        serviceId: svc.id,
+        hostname: row.hostname,
+        targetPort: row.targetPort,
+      }).catch((err: unknown) => {
+        console.warn(
+          `[services] ${svc.name}: could not record domain "${row.hostname}" — ${safeErrorMessage(err)}`,
+        );
+      });
+    }
+
+    const previous = storedByName.get(svc.name);
+    if (!previous) continue;
+    const stillConfigured = new Set(serviceCustomHostnames(svc));
+    for (const hostname of serviceCustomHostnames(previous)) {
+      if (stillConfigured.has(hostname)) continue;
+      await removeServiceDomain({ serviceId: svc.id, hostname }).catch((err: unknown) => {
+        console.warn(
+          `[services] ${svc.name}: could not drop stale domain "${hostname}" — ${safeErrorMessage(err)}`,
+        );
+      });
+    }
+  }
+
   return synced.map(maskServiceEnv);
 }
 
@@ -1559,6 +1767,14 @@ async function provisionServiceContainer(
 ) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+
+  // Plan gate. This path is decoupled from the deploy pipeline — no build, no
+  // createQueuedDeployment, no preflight — so the deploy-side entitlement check
+  // never sees it. A provisioned service container IS a container, so a
+  // static-only tier can't have one, and without this a free org could add a
+  // Postgres service and start it with no gating at all.
+  await assertPlanAllowsServices(ctx.organizationId);
+
   if (!project.activeDeploymentId) {
     throw new Error("Deploy the project first, then start its services.");
   }

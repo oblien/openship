@@ -256,8 +256,11 @@
   /* ─ Divider ─ */
   --th-divider:       rgba(255,255,255,.06);
 
-  /* ─ Overlay ─ */
-  --th-overlay:       rgba(0,0,0,.6);
+  /* ─ Overlay ─ Lifted off pure black on purpose: the page here is #000000, so
+   * a black scrim (it was rgba(0,0,0,.6)) composites back to #000 and the
+   * backdrop is invisible — no dimming, and the modal has nothing to sit on.
+   * Darkening is not available in hard dark; the scrim has to lighten. */
+  --th-overlay:       rgb(20 20 20 / 60%);
 
   /* ─ Dropdown ─ */
   --th-dropdown-bg:     #161616;

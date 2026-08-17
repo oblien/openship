@@ -1,18 +1,21 @@
 /**
  * `openship reset-admin-password` — recover the box login WITHOUT signing in.
  *
- * The CLI owns the loopback internal token (~/.openship/internal-token) that the
- * running service loaded at boot, so it can hit the internal-token-gated
- * /api/system/reset-admin-password on localhost — "god access" from the machine
- * itself. This is the forgot-password path for a self-hosted box: reset the local
- * admin credential (and force authMode back to local, so it also un-sticks a box
- * that got locked onto a broken cloud login).
+ * The CLI owns the loopback internal token that the running service loaded at boot, so
+ * it can hit the internal-token-gated /api/system/reset-admin-password on localhost —
+ * "god access" from the machine itself. This is the forgot-password path for a
+ * self-hosted box: reset the local admin credential (and force authMode back to local,
+ * so it also un-sticks a box that got locked onto a broken cloud login).
+ *
+ * WHICH token that is depends on the install method (bare file vs the compose stack's
+ * `.env`), which is why this goes through internalFetch rather than naming a store:
+ * naming the bare one made this command fail with "Unauthorized" on every compose box.
  */
 import { Command } from "commander";
 import chalk from "chalk";
 import { intro, outro, password as passwordPrompt, isCancel, cancel, log } from "@clack/prompts";
 import { storedApiPort } from "../lib/ports";
-import { ensureInternalToken } from "./up";
+import { internalFetch, internalTokenRejectedProblem } from "../lib/loopback-api";
 
 export const resetAdminCommand = new Command("reset-admin-password")
   .description("Reset the local admin login on THIS machine (no sign-in required)")
@@ -51,22 +54,32 @@ export const resetAdminCommand = new Command("reset-admin-password")
     // Ports are dynamic; storedApiPort() is the remembered one (4000 only as the
     // last-resort default), so the reset targets whichever port this box resolved to.
     const port = String(opts.port || storedApiPort());
-    let res: Response;
-    try {
-      res = await fetch(`http://127.0.0.1:${port}/api/system/reset-admin-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Internal-Token": ensureInternalToken() },
-        body: JSON.stringify({ password: pw, email: opts.email, name: opts.name }),
-      });
-    } catch {
+    const call = await internalFetch(port, "/api/system/reset-admin-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw, email: opts.email, name: opts.name }),
+    });
+    if (call.kind === "unreachable") {
       log.error(`Couldn't reach the Openship API on port ${port}. Is it running? (openship status)`);
       log.info("If it's listening on another port, pass --port <n>.");
       process.exit(1);
     }
+    if (call.kind === "no-token") {
+      // Not an auth failure: there was nothing to authenticate WITH. The detail names
+      // the store and the fix (usually: re-run under sudo, since a stack installed as
+      // root keeps its token in a 0600 `.env`).
+      log.error(`Reset failed — ${call.detail}`);
+      process.exit(1);
+    }
 
+    const res = call.res;
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; email?: string; error?: string };
     if (!res.ok || !data.ok) {
-      log.error(`Reset failed: ${data.error || res.statusText}`);
+      // tokenRejected means every token this box holds was refused by internalAuth —
+      // say which situation that is instead of echoing the API's bare "Unauthorized".
+      log.error(
+        `Reset failed: ${call.tokenRejected ? internalTokenRejectedProblem() : data.error || res.statusText}`,
+      );
       process.exit(1);
     }
     outro(chalk.green(`Password reset. Log in as ${data.email} with your new password.`));

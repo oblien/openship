@@ -93,3 +93,60 @@ describe("composeWritePatch keeps argv faithful across a string-only writer (#33
     expect(patch.commandArgv).toEqual(["server", "start"]);
   });
 });
+
+/**
+ * #575: `entrypoint` is COMPOSE-OWNED, so removing `entrypoint:` from the file has to
+ * hand the image's own ENTRYPOINT back — the same reasoning as `networkMode`/`pidMode`,
+ * and the opposite of the merge that protects keys compose cannot express (a readiness
+ * gate, generated files, an alias).
+ *
+ * The trap this pins is that the owned-key sweep tests for `undefined`, not falsiness:
+ * `entrypoint: []` IS a value — compose's "clear the image ENTRYPOINT" — so a truthiness
+ * test would quietly reinstate the wrapper the operator asked to remove.
+ */
+describe("composeWritePatch — entrypoint is compose-owned (#575)", () => {
+  const storedOverride = { advanced: { entrypoint: ["/old-init.sh"] } };
+  /** `composeAuthoritative` = the input IS a fresh read of the file. */
+  const fromFile = true;
+
+  it("applies an entrypoint the file declares", () => {
+    const patch = composeWritePatch(
+      { name: "web", advanced: { entrypoint: ["/new-init.sh", "-v"] } },
+      storedOverride,
+      fromFile,
+    );
+    expect(patch.advanced.entrypoint).toEqual(["/new-init.sh", "-v"]);
+  });
+
+  it("KEEPS an empty array — the clear survives the owned-key sweep", () => {
+    const patch = composeWritePatch(
+      { name: "web", advanced: { entrypoint: [] } },
+      storedOverride,
+      fromFile,
+    );
+    expect(patch.advanced.entrypoint).toEqual([]);
+  });
+
+  it("drops the override when the file no longer declares one", () => {
+    const patch = composeWritePatch({ name: "web", advanced: {} }, storedOverride, fromFile);
+    expect(patch.advanced.entrypoint).toBeUndefined();
+  });
+
+  // The half that must NOT delete: several syncFromCompose callers pass a release's
+  // frozen snapshot rather than a fresh parse, and that shape carries no `advanced` at
+  // all — so its silence cannot be read as "the operator removed the entrypoint".
+  it("leaves it alone when the writer is not speaking for the file", () => {
+    const patch = composeWritePatch({ name: "web", advanced: {} }, storedOverride);
+    expect(patch.advanced.entrypoint).toEqual(["/old-init.sh"]);
+  });
+
+  it("does not disturb sibling advanced keys compose cannot express", () => {
+    const patch = composeWritePatch(
+      { name: "web", advanced: { entrypoint: [] } },
+      { advanced: { entrypoint: ["/old-init.sh"], readiness: { enabled: true } } },
+      fromFile,
+    );
+    expect(patch.advanced.entrypoint).toEqual([]);
+    expect(patch.advanced.readiness).toEqual({ enabled: true });
+  });
+});

@@ -19,6 +19,8 @@ import type { Terminal } from "@xterm/xterm";
 import BuildTerminal from "./BuildTerminal";
 import { PortAdvisoryModal } from "./PortAdvisoryModal";
 import { PromptDetails } from "./PromptDetails";
+import { describeBuildStrategy } from "./deploy-target-label";
+import { DeployTargetValue } from "./DeployTargetValue";
 import { generateIcon } from "@/utils/icons";
 import { useRouter } from "next/navigation";
 import { encodeRepoSlug } from "@/utils/repoSlug";
@@ -29,8 +31,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useTheme } from "@/components/theme-provider";
 import { useModal } from "@/context/ModalContext";
-import { useI18n, interpolate } from "@/components/i18n-provider";
-import type { Dictionary } from "@/i18n";
+import { useI18n } from "@/components/i18n-provider";
 
 interface DeploymentProcessingProps {
   // Resolves to the new deployment id (navigates on success) or null on failure.
@@ -44,33 +45,6 @@ function formatDurationMs(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}m ${s.toString().padStart(2, "0")}s`;
-}
-
-/** Human label for the build/deploy target shown in Deployment Details. */
-function describeBuildTarget(config: {
-  deployTarget: string;
-  serverName?: string;
-}, t: Dictionary): string {
-  const dp = t.importProject.deploymentProcessing;
-  if (config.deployTarget === "cloud") return dp.targetOpenshipCloud;
-  if (config.deployTarget === "server") {
-    return config.serverName ? interpolate(dp.targetServerNamed, { name: config.serverName }) : dp.targetServer;
-  }
-  if (config.deployTarget === "local") return dp.targetLocal;
-  return "—";
-}
-
-/** Where the build runs (vs where it deploys, shown by Instance). Concise so it
- *  fits the narrow info column without truncating. */
-function describeBuildStrategy(config: {
-  deployTarget: string;
-  buildStrategy: string;
-}, t: Dictionary): string {
-  const dp = t.importProject.deploymentProcessing;
-  if (config.buildStrategy === "local") return dp.strategyLocal;
-  if (config.deployTarget === "cloud") return dp.strategyCloud;
-  if (config.deployTarget === "server") return dp.strategyServer;
-  return dp.strategyHost;
 }
 
 /** One themed row in the Deployment Details list: colored icon chip + label + value. */
@@ -532,7 +506,7 @@ const DeploymentDetails = memo(() => {
             <p className={`text-sm font-medium truncate ${statusColor}`}>{statusLabel}</p>
           </div>
         </div>
-        <DetailRow icon={InstanceIcon} label={dp.detailInstance} value={describeBuildTarget(config, t)} />
+        <DetailRow icon={InstanceIcon} label={dp.detailInstance} value={<DeployTargetValue config={config} />} />
         <DetailRow icon={Hammer} label={dp.detailBuild} value={describeBuildStrategy(config, t)} />
         <DetailRow icon={Clock} label={dp.detailBuildTime} value={<BuildTimeLabel />} />
         <DetailRow icon={Layers} label={dp.detailFramework} value={config.framework} />

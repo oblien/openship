@@ -312,14 +312,26 @@ textarea.bg-card,
   border-color: var(--th-bd-default);
 }
 
-/* A card nested inside a card, light only. Dark and dim need nothing here: their
- * fills are translucent white overlays, so a nested one composites lighter than
- * its parent and separates for free. Light's fill is opaque #ffffff, so an inner
- * card on an outer card is the same colour and vanishes entirely once the border
- * is gone. Recess it to page level instead of handing the border back, so the
- * borderless language still holds. Form controls opt out — they keep the white
- * field background that --th-input-bg specifies. */
+/* A card nested inside a card, light only. Dim needs nothing here: its fill is a
+ * translucent white overlay, so a nested one composites lighter than its parent
+ * and separates for free. Light's fill is opaque #ffffff, so an inner card on an
+ * outer card is the same colour and vanishes entirely once the border is gone.
+ * Recess it to page level instead of handing the border back, so the borderless
+ * language still holds. Form controls opt out — they keep the white field
+ * background that --th-input-bg specifies. */
 html:not([data-theme="dark"]):not([data-theme="dim"])
+  .bg-card .bg-card:not(input):not(select):not(textarea) {
+  background-color: var(--th-sf-03);
+}
+
+/* Hard dark is the exception to the paragraph above: nesting composites too far.
+ * Its card fill is .05 white, sized to clear a pure #000 page (0 → #0d0d0d), and
+ * a nested card repeats that entire step (#0d0d0d → #191919) — a second page
+ * rather than a shelf on the first. Level two only has to separate from level
+ * one, not from black, so it steps like dim's ladder: +7, to #141414. Same
+ * selector and opt-outs as light. Lower this and the inner card starts merging
+ * into the outer one; there is no border left to save it. */
+html[data-theme="dark"]
   .bg-card .bg-card:not(input):not(select):not(textarea) {
   background-color: var(--th-sf-03);
 }

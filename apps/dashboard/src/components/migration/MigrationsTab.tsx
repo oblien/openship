@@ -1,64 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  ChevronRight,
-  Clock,
-  Loader2,
-  Plus,
-  XCircle,
-} from "lucide-react";
-import {
-  dockerMigrationApi,
-  type MigrationRun,
-  type MigrationStatus,
-} from "@/lib/api/server-migration";
+import { Loader2, Plus } from "lucide-react";
+import { dockerMigrationApi, type MigrationRun } from "@/lib/api/server-migration";
 import { systemApi } from "@/lib/api";
-import { formatBytes } from "@/lib/formatBytes";
 import { useI18n } from "@/components/i18n-provider";
 import { ServerConnectionCard } from "@/app/(dashboard)/servers/[serverId]/_components/connection-card";
 import { ServerMigrationWizard } from "./ServerMigrationWizard";
-
-const IN_FLIGHT: MigrationStatus[] = [
-  "queued",
-  "adopting",
-  "moving_data",
-  "deploying",
-  "verifying",
-  "awaiting_cutover",
-  "cutover",
-];
-const isInFlight = (s: MigrationStatus) => IN_FLIGHT.includes(s);
-
-/** Status → theme-aware tone + icon (semantic tokens, never hardcoded colors). */
-function statusTone(status: MigrationStatus): {
-  text: string;
-  bg: string;
-  Icon: React.ElementType;
-  spin?: boolean;
-} {
-  if (status === "succeeded")
-    return { text: "text-success", bg: "bg-success-bg", Icon: CheckCircle2 };
-  if (status === "failed" || status === "rolled_back")
-    return { text: "text-danger", bg: "bg-danger-bg", Icon: XCircle };
-  if (status === "awaiting_cutover" || status === "partial")
-    return { text: "text-warning", bg: "bg-warning-bg", Icon: AlertTriangle };
-  if (status === "queued")
-    return { text: "text-muted-foreground", bg: "bg-muted", Icon: Clock };
-  return { text: "text-warning", bg: "bg-warning-bg", Icon: Loader2, spin: true };
-}
-
-function relTime(iso?: string | null): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return "";
-  }
-}
+// The rows themselves are shared with the project's own migration history — one list, two
+// viewpoints. See MigrationRunList.
+import { MigrationRunList, isRunInFlight } from "./MigrationRunList";
 
 /**
  * Server-detail "Migrations" tab. Two in-page states, no modals:
@@ -116,7 +67,7 @@ export function MigrationsTab({
 
   // Poll while anything is in flight (and only while showing the list) so the
   // rows reflect live status without a second stream.
-  const anyInFlight = Boolean(runs?.some((r) => isInFlight(r.status)));
+  const anyInFlight = Boolean(runs?.some((r) => isRunInFlight(r.status)));
   useEffect(() => {
     if (flow || !anyInFlight) return;
     const iv = setInterval(() => void fetchRuns(), 3500);
@@ -143,12 +94,6 @@ export function MigrationsTab({
     );
   }
 
-  const peerName = (run: MigrationRun): string | null => {
-    if (run.mode === "same_server") return tab.inPlace;
-    const peerId = run.targetServerId === serverId ? run.sourceServerId : run.targetServerId;
-    return peerId ? (names[peerId] ?? tab.crossServer) : tab.crossServer;
-  };
-
   if (runs === null) {
     return (
       <div className="flex items-center justify-center rounded-2xl border border-border/50 bg-card py-16 text-muted-foreground">
@@ -172,51 +117,12 @@ export function MigrationsTab({
   return (
     <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_340px]">
       <div className="min-w-0">
-        <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/50 bg-card">
-          {runs.map((run) => {
-            const tone = statusTone(run.status);
-            const bytes = run.bytesMoved ? formatBytes(run.bytesMoved) : null;
-            return (
-              <button
-                key={run.id}
-                onClick={() => setFlow({ runId: run.id })}
-                className="flex w-full items-center gap-3.5 px-5 py-4 text-left transition hover:bg-muted/40"
-              >
-                <span
-                  className={`inline-flex size-9 shrink-0 items-center justify-center rounded-full ${tone.bg} ${tone.text}`}
-                >
-                  <tone.Icon className={`size-[18px] ${tone.spin ? "animate-spin" : ""}`} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[15px] font-medium text-foreground">
-                      {run.projectName || "—"}
-                    </span>
-                    <span className={`shrink-0 text-xs font-medium ${tone.text}`}>
-                      {tab.status[run.status] ?? run.status}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      {names[serverId] ?? tab.crossServer}
-                      <ArrowRight className="size-3" />
-                      {peerName(run)}
-                    </span>
-                    <span>·</span>
-                    <span>{relTime(run.startedAt)}</span>
-                    {bytes && (
-                      <>
-                        <span>·</span>
-                        <span className="tabular-nums">{bytes}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            );
-          })}
-        </div>
+        <MigrationRunList
+          runs={runs}
+          serverNames={names}
+          viewpoint={{ kind: "server", serverId }}
+          onOpen={(runId) => setFlow({ runId })}
+        />
       </div>
 
       <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">

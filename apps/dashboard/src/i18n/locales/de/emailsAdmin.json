@@ -4,25 +4,27 @@
       "overview": "Übersicht",
       "domains": "Domains",
       "mailboxes": "Postfächer",
-      "inbound": "Eingang",
+      "notifications": "Benachrichtigungen",
+      "sending": "Versand",
       "dns": "DNS",
       "health": "Zustand",
-      "test": "Test",
       "backup": "Sicherung",
       "advanced": "Erweitert"
     },
     "ariaLabel": "Mail-Admin-Bereiche"
   },
-  "inbound": {
-    "heading": "Eingangsregeln",
+  "notifications": {
+    "heading": "Benachrichtigungsregeln",
     "description": "Lassen Sie sich in einem Benachrichtigungskanal informieren, wenn Mail an eine Adresse auf diesem Server eintrifft.",
     "newRule": "Neue Regel",
-    "newTitle": "Neue Eingangsregel",
-    "editTitle": "Eingangsregel bearbeiten",
+    "newTitle": "Neue Benachrichtigungsregel",
+    "editTitle": "Benachrichtigungsregel bearbeiten",
     "edit": "Bearbeiten",
-    "emptyTitle": "Noch keine Eingangsregeln",
+    "emptyTitle": "Noch keine Benachrichtigungsregeln",
     "emptyBody": "Fügen Sie eine Regel hinzu, um in Slack, Telegram, Discord oder per Webhook benachrichtigt zu werden, wenn Mail an ein Postfach oder eine Domain auf diesem Server eintrifft.",
     "noChannels": "Sie haben noch keine verifizierten Benachrichtigungskanäle. Fügen Sie unter Einstellungen → Benachrichtigungen einen hinzu, verifizieren Sie ihn und kommen Sie dann zurück, um eine Regel zu erstellen.",
+    "addChannel": "Benachrichtigungskanal hinzufügen",
+    "manageChannels": "Kanäle verwalten",
     "fieldName": "Name",
     "namePlaceholder": "Support-Postfach → #support",
     "fieldScope": "Überwachen",
@@ -47,7 +49,7 @@
     "active": "Aktiv",
     "disabled": "Aus",
     "paused": "Pausiert",
-    "deleteTitle": "Eingangsregel löschen",
+    "deleteTitle": "Benachrichtigungsregel löschen",
     "deleteConfirm": "Regel löschen",
     "deleting": "Wird gelöscht…",
     "deleteHint": "Bereits gesendete Benachrichtigungen bleiben unberührt. Bereits erfasste, aber noch nicht verarbeitete Mail wird verworfen.",
@@ -58,10 +60,13 @@
     "testing": "Wird getestet…",
     "testResult": "{read} erfasste Nachricht(en) gelesen: {matched} passten zu einer Regel, {dropped} wurden herausgefiltert. Es wurde nichts gesendet oder gelöscht.",
     "testFailed": "Der Test konnte nicht ausgeführt werden.",
-    "loadFailed": "Eingangsregeln konnten nicht geladen werden.",
+    "loadFailed": "Benachrichtigungsregeln konnten nicht geladen werden.",
     "saveFailed": "Die Regel konnte nicht gespeichert werden.",
     "deleteFailed": "Die Regel konnte nicht gelöscht werden.",
     "confirmDelete": "Die Regel „{name}“ löschen? Die Erfassung für ihre Adresse wird beendet, sofern keine andere Regel sie noch benötigt."
+  },
+  "sending": {
+    "testLiveNote": "Sendet über den aktuell aktiven Pfad, nicht über ungespeicherte Änderungen oben."
   },
   "overview": {
     "mailServer": "Mailserver",
@@ -617,6 +622,7 @@
     "close": "Schließen",
     "logsLoadFailed": "Protokolle konnten nicht geladen werden",
     "loadingLogs": "Protokolle werden geladen…",
-    "noLogLines": "Noch keine Protokollzeilen für diese Komponente."
+    "noLogLines": "Noch keine Protokollzeilen für diese Komponente.",
+    "rowActions": "Aktionen für {name}"
   }
 }

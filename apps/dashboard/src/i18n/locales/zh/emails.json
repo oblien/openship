@@ -95,7 +95,12 @@
     "installing": "正在安装",
     "running": "运行中",
     "incomplete": "未完成",
-    "stoppedAt": "已停止 · 步骤 {step}"
+    "stoppedAt": "已停止 · 步骤 {step}",
+    "open": "打开",
+    "openAria": "打开 {name}",
+    "actionsAria": "{name} 的操作",
+    "overviewTitle": "邮件概览",
+    "hint": "移除只会将服务器从此列表中分离 — 安装仍在运行，随时可以重新接管。"
   },
   "setup": {
     "title": "邮件服务器设置",

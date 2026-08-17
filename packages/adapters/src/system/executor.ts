@@ -211,6 +211,13 @@ export interface HostChannelHealth {
    * splitting the code would fan out into all of them for no gain.
    */
   cause?: TcpProbeFailure;
+  /**
+   * Whether the channel can carry a TCP FORWARD, which is a separate question from
+   * whether it works — see {@link HostChannelForwarding}. Only the deploy-time readiness
+   * probe needs it, so `blocked` leaves `ok` true and is reported as an advisory.
+   * Absent when there was no key to authenticate with.
+   */
+  forwarding?: HostChannelForwarding;
 }
 
 /**
@@ -262,12 +269,86 @@ function explainDialFailure(
  */
 const AUTH_MEMO_OK_MS = 30_000;
 const AUTH_MEMO_FAIL_MS = 5_000;
-let authMemo: { key: string; hint: string | null; expires: number } | null = null;
+let authMemo: {
+  key: string;
+  hint: string | null;
+  forwarding: HostChannelForwarding;
+  expires: number;
+} | null = null;
 
 /** Drop the memoized auth verdict. For a caller that just CHANGED the channel — a
  *  re-provision — and must not then read its own stale "refused". */
 export function invalidateHostChannelAuth(): void {
   authMemo = null;
+}
+
+/**
+ * Can this channel carry a TCP forward, as distinct from a command?
+ *
+ * A separate axis from `ok` ON PURPOSE. `restrict` in `authorized_keys` (what
+ * `openship up` wrote before GH-583) denies forwarding while leaving exec untouched, so
+ * such a channel is genuinely healthy for everything the platform does EXCEPT the
+ * deploy-time readiness probe — which is why "host control reachable" was a true
+ * statement that still misled two rounds of qualification. Folding it into `ok` would
+ * swing the error the other way and report a working box as broken.
+ *
+ * `unknown` = we did not get to ask (no key material, or the connection failed first).
+ */
+export type HostChannelForwarding = "ok" | "blocked" | "unknown";
+
+/**
+ * Ask sshd for a forward we expect to FAIL to connect, and read which way it fails.
+ *
+ * Port 1 on the host's own loopback: nothing listens there, so a channel that permits
+ * forwarding answers CONNECT_FAILED (reason 2) — which is the "yes" we're looking for,
+ * because sshd only tries to connect once policy has allowed the request.
+ * ADMINISTRATIVELY_PROHIBITED (reason 1) is the "no". Nothing is ever actually
+ * connected to, so this probe cannot touch a real service.
+ */
+function probeForwarding(
+  client: { forwardOut: (...args: never[]) => unknown },
+  timeoutMs: number,
+): Promise<HostChannelForwarding> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (verdict: HostChannelForwarding) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(verdict);
+    };
+    const timer = setTimeout(() => finish("unknown"), timeoutMs);
+    timer.unref?.();
+
+    try {
+      (
+        client.forwardOut as unknown as (
+          srcIp: string,
+          srcPort: number,
+          dstIp: string,
+          dstPort: number,
+          cb: (err?: unknown, stream?: { destroy: () => void }) => void,
+        ) => void
+      )("127.0.0.1", 0, "127.0.0.1", 1, (err, stream) => {
+        if (stream) {
+          stream.destroy();
+          finish("ok");
+          return;
+        }
+        const reason = (err as { reason?: unknown } | undefined)?.reason;
+        const message = (err as { message?: unknown } | undefined)?.message;
+        if (reason === 1 || reason === 3) return finish("blocked");
+        if (typeof message === "string" && /administratively prohibited/i.test(message)) {
+          return finish("blocked");
+        }
+        // Anything else (CONNECT_FAILED being the expected one) means the request was
+        // permitted and only the destination was unreachable.
+        finish("ok");
+      });
+    } catch {
+      finish("unknown");
+    }
+  });
 }
 
 /**
@@ -290,15 +371,18 @@ async function verifyHostChannelAuth(config: {
   username: string;
   privateKey: string;
   timeoutMs: number;
-}): Promise<{ hint: string } | null> {
+}): Promise<{ hint?: string; forwarding: HostChannelForwarding }> {
   // The key's LENGTH, not the key: enough to notice a re-provision swapped the material,
   // without holding a credential in a module-level cache for 30 seconds.
   const memoKey = `${config.username}@${config.host}:${config.port}#${config.privateKey.length}`;
   if (authMemo?.key === memoKey && authMemo.expires > Date.now()) {
-    return authMemo.hint ? { hint: authMemo.hint } : null;
+    return authMemo.hint
+      ? { hint: authMemo.hint, forwarding: authMemo.forwarding }
+      : { forwarding: authMemo.forwarding };
   }
 
   let hint: string | null = null;
+  let forwarding: HostChannelForwarding = "unknown";
   try {
     // Dynamic for the reason every SSH import on this path is dynamic: this function is
     // reachable from the boot hook and from unauthenticated /health/env, and must not
@@ -314,6 +398,13 @@ async function verifyHostChannelAuth(config: {
       // hint an operator reads here is the same sentence the deploy log gives them.
       hostChannel: true,
     });
+    // Free, in the sense that matters: the connection and the handshake are already
+    // paid for, so the capability the readiness probe depends on costs one extra
+    // round trip and is memoized with the auth verdict beside it.
+    forwarding = await probeForwarding(
+      client as unknown as { forwardOut: (...args: never[]) => unknown },
+      config.timeoutMs,
+    );
     client.end();
   } catch (err) {
     if (isSshAuthError(err)) {
@@ -324,9 +415,10 @@ async function verifyHostChannelAuth(config: {
   authMemo = {
     key: memoKey,
     hint,
+    forwarding,
     expires: Date.now() + (hint ? AUTH_MEMO_FAIL_MS : AUTH_MEMO_OK_MS),
   };
-  return hint ? { hint } : null;
+  return hint ? { hint, forwarding } : { forwarding };
 }
 
 /**
@@ -403,20 +495,26 @@ export async function hostChannelHealth(timeoutMs = 2_500): Promise<HostChannelH
   // sshd refuses the key, and this is the only place cheap enough to find that out
   // before an operation needs it (#527). Spent only on the path where it can change the
   // answer: an unreachable port never gets here, and a verdict is memoized.
+  let forwarding: HostChannelForwarding = "unknown";
   if (privateKey) {
-    const rejected = await verifyHostChannelAuth({
+    const verdict = await verifyHostChannelAuth({
       host,
       port,
       username: hostChannelUser(),
       privateKey,
       timeoutMs,
     });
-    if (rejected) {
-      return { ok: false, code: "auth_rejected", host, port, target, hint: rejected.hint };
+    if (verdict.hint) {
+      return { ok: false, code: "auth_rejected", host, port, target, hint: verdict.hint };
     }
+    forwarding = verdict.forwarding;
   }
 
-  return { ok: true, code: "ok", host, port, target };
+  // `ok` regardless of `forwarding`: a channel that execs but won't forward runs
+  // everything the platform does except the deploy readiness probe, which now says so
+  // itself and falls back. Reporting the whole box unhealthy over it would trade a
+  // misleading "fine" for a misleading "broken".
+  return { ok: true, code: "ok", host, port, target, forwarding };
 }
 
 /**

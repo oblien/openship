@@ -7,6 +7,7 @@
 
 import type { Context } from "hono";
 import { repos } from "@repo/db";
+import { NotFoundError } from "@repo/core";
 import { param, isServerInOrg } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
 import { permission, checkPermissionOnResource } from "../../lib/permission";
@@ -37,24 +38,64 @@ async function assertJobServersWritable(c: Context, serverIds: string[]): Promis
 }
 
 /**
+ * Write gate for an EXISTING job, by key — the one gate every `/:key` write goes
+ * through (update, remove, run).
+ *
+ * The job KEY is not an authorization boundary: jobs are instance-global, and
+ * `job:write` only checks org membership. Authority comes from the job's TARGET
+ * SERVERS, and the targets that matter are the ones STORED on the row — plus any
+ * the patch adds, since a patch may re-point the job.
+ *
+ * Gating only on the body was the hole (reported externally, fixed Aug 2026): an update is a
+ * MERGE (`buildActionConfig` keeps the stored `serverIds` when the patch names
+ * none), so a patch carrying just `{command}` rewrote another tenant's job onto
+ * their own servers — root RCE on the next tick — while a patch that named the
+ * server was correctly refused. `remove` had no server gate at all. Anything that
+ * mutates a job by key must call this, not re-derive targets from user input.
+ */
+export async function assertJobWritable(
+  c: Context,
+  key: string,
+  patch?: { serverId?: string; serverIds?: string[] },
+): Promise<Response | null> {
+  const row = await repos.job.findByKey(key);
+  // Same 404 the service's NotFoundError produced, just reached before the write.
+  if (!row) return jobNotFound(c);
+  const targets = [
+    ...resolveServerIds((row.actionConfig ?? {}) as CommandConfig),
+    ...(patch ? resolveServerIds(patch) : []),
+  ];
+  // EVERY denial answers exactly what an unknown key answers. Letting the target
+  // check reply for itself would hand an unauthorized caller two facts the read
+  // gate refuses them: that the key exists, and — since `permission.assert` throws
+  // `NotFoundError("server", id)` — which server id it points at. `create` keeps the
+  // specific message on purpose: there is no stored job to conceal there, and the
+  // id in that message is the caller's own input.
+  try {
+    if (await assertJobServersWritable(c, targets)) return jobNotFound(c);
+  } catch (err) {
+    if (err instanceof NotFoundError) return jobNotFound(c);
+    throw err; // a real failure (DB, etc.) must not read as "denied"
+  }
+  return null;
+}
+
+/** The one write-path denial: indistinguishable from "no such job". */
+function jobNotFound(c: Context): Response {
+  return c.json({ error: "Job not found" }, 404);
+}
+
+/**
  * Full authorization to RUN a job by key, shared by the run route and any other
  * caller that can trigger a job (e.g. an incoming-webhook `job` action). Jobs are
  * instance-global, so a bare `runJobNow(key)` bypasses both the `job:write` org
- * gate and the per-target server-admin check. Assert both here so no path can
- * trigger a job the caller couldn't run via `POST /jobs/:key/run`. Returns a
- * Response (403/404) when denied, or null when the caller may run it.
+ * gate and the per-target server-admin check. Asserts the org gate itself (the
+ * webhook path has no route tag to do it) and defers the target check to the
+ * shared gate above. Returns a Response (403/404) when denied, else null.
  */
 export async function assertJobRunnable(c: Context, key: string): Promise<Response | null> {
-  const ctx = getRequestContext(c);
-  await permission.assert(ctx, { resourceType: "job", resourceId: "*", action: "write" });
-  const row = await repos.job.findByKey(key);
-  if (!row) return c.json({ error: "Job not found" }, 404);
-  const serverIds = resolveServerIds((row.actionConfig ?? {}) as CommandConfig);
-  if (serverIds.length) {
-    const denied = await assertJobServersWritable(c, serverIds);
-    if (denied) return denied;
-  }
-  return null;
+  await permission.assert(getRequestContext(c), { resourceType: "job", resourceId: "*", action: "write" });
+  return assertJobWritable(c, key);
 }
 
 /**
@@ -62,6 +103,12 @@ export async function assertJobRunnable(c: Context, key: string): Promise<Respon
  * job with `key`?". Used to gate disclosure of a job-triggering credential (an
  * incoming-webhook token/HMAC IS a run-this-job capability, so it may only be
  * revealed to a principal who could run the job). Returns false on any miss.
+ *
+ * Deliberately NOT expressed in terms of the assert helpers above, despite the
+ * identical shape: `permission.assert` has side effects (it rebinds the request's
+ * `ctx` to the resource's org — see lib/permission), and a disclosure PROBE must
+ * not re-scope the request it is called from. `checkPermissionOnResource` is the
+ * pure read. Same reason `canAccessServers` below stays separate.
  */
 export async function canRunJob(c: Context, key: string): Promise<boolean> {
   const ctx = getRequestContext(c);
@@ -196,18 +243,20 @@ export async function create(c: Context) {
 export async function update(c: Context) {
   const key = param(c, "key");
   const body = await c.req.json<TUpdateJobBody>();
-  // If the patch re-points the job at (new) servers, authorize those targets.
-  const targets = resolveServerIds(body);
-  if (targets.length) {
-    const denied = await assertJobServersWritable(c, targets);
-    if (denied) return denied;
-  }
+  // The job's CURRENT targets as well as any the patch adds — see assertJobWritable.
+  const denied = await assertJobWritable(c, key, body);
+  if (denied) return denied;
   const updated = await jobService.updateJob(key, body);
   return c.json({ data: await jobService.getJob(updated.key) });
 }
 
 export async function remove(c: Context) {
-  await jobService.deleteCustomJob(param(c, "key"));
+  const key = param(c, "key");
+  const denied = await assertJobWritable(c, key);
+  if (denied) return denied;
+  // System jobs are still undeletable — that rejection comes from the service,
+  // after this gate passes on their empty target set.
+  await jobService.deleteCustomJob(key);
   return c.json({ success: true });
 }
 

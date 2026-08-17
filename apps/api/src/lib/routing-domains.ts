@@ -64,6 +64,49 @@ function usesCertbotSsl(runtimeName: string): boolean {
   return runtimeName === "bare" || runtimeName === "docker";
 }
 
+/**
+ * Should THIS deploy attempt issuance for a route?
+ *
+ * The one formula, called by all three sites that ask: both route planners
+ * (`buildProjectRouteDomains`'s `add()` and `buildServiceRouteDomains`) and the
+ * post-ensure re-resolve (`withEnsuredDomainRecord`). They were three hand-typed
+ * copies and had already drifted — the planners tested a bare
+ * `sslStatus === "none"` while the re-resolve tested `(sslStatus ?? "none")`, which
+ * is precisely the undefined-vs-default bug the re-resolve exists to fix. Worse,
+ * the re-resolve runs LAST for every routable domain, so narrowing the gate in the
+ * two planners (the sites every comment calls "the gate") would have been silently
+ * overwritten by the third.
+ *
+ * DELIBERATELY NARROW: it takes `requiresSslTooling` as an INPUT rather than
+ * deriving it. That flag is where the two planners legitimately disagree
+ * (`!managed.isManaged && !skipSsl` vs `endpoint.domainType === "custom"`) and
+ * unifying it is a behaviour change in security-critical TLS routing, not a
+ * cleanup — see the divergence note on `buildServiceRouteDomains`.
+ *
+ * A row whose first attempt HAS run (error/provisioning/active) is not re-attempted
+ * here — that's the rate-limit loop guard; the verify-pending cron and manual
+ * Verify drive retries. A verified row issues regardless. [#291/#304]
+ */
+export function resolveProvisionSsl(input: {
+  requiresSslTooling: boolean;
+  verified: boolean;
+  /**
+   * The row's recorded SSL state, or `undefined` for "there is no row to judge".
+   *
+   * Those two are NOT the same question, which is why this stays a bare `===` and
+   * the normalization lives at the one call site that needs it. A PLANNER reading a
+   * hostname it has no row for cannot claim an attempt is due — the row is minted
+   * moments later and `withEnsuredDomainRecord` re-asks then. A row that EXISTS
+   * with no status recorded is a different thing: `sslStatus` is NOT NULL with a DB
+   * default, so `undefined` there is an artifact of an object built from insert
+   * values, and it means "nothing attempted yet" — that caller normalizes to
+   * `"none"` itself.
+   */
+  sslStatus?: string | null;
+}): boolean {
+  return input.requiresSslTooling && (input.verified || input.sslStatus === "none");
+}
+
 export function resolveManagedHostname(hostname: string): { isManaged: boolean; subdomain?: string } {
   const baseDomain = getRoutingBaseDomain().toLowerCase();
   const normalized = hostname.trim().toLowerCase();
@@ -235,13 +278,16 @@ export function buildProjectRouteDomains(opts: {
       // Ours to terminate unless an upstream ingress owns it (externalIngress) or
       // it's a managed *.opsh.io host fronted by Openship Cloud's edge.
       terminatesTlsLocally: !external && !managed.isManaged,
-      // Attempt issuance on the FIRST deploy of an unverified custom domain
-      // (sslStatus still "none" = no attempt yet, by any path) — issuing IS the
-      // verification on self-hosted, so this makes the domain Live at end-of-deploy
-      // instead of waiting on the 13-min cron or a manual Verify. A domain whose
-      // first attempt already ran (error/provisioning/active) is NOT re-attempted
-      // here; a verified domain issues as before. [#291/#304 follow-up]
-      provisionSsl: requiresSslTooling && (isVerified || domainRow?.sslStatus === "none"),
+      // Attempt issuance on the FIRST deploy of an unverified custom domain —
+      // issuing IS the verification on self-hosted, so the domain is Live at
+      // end-of-deploy instead of waiting on the 13-min cron or a manual Verify.
+      // See resolveProvisionSsl for the full rule; it is shared with the service
+      // planner and the post-ensure re-resolve so the three cannot drift.
+      provisionSsl: resolveProvisionSsl({
+        requiresSslTooling,
+        verified: isVerified,
+        sslStatus: domainRow?.sslStatus,
+      }),
       isCloud: managed.isManaged,
       ...(route.destination?.targetPort !== undefined
         ? { targetPort: route.destination.targetPort }
@@ -437,9 +483,14 @@ export function buildServiceRouteDomains(opts: {
       // Same rule as the single-app path: a custom host on this box is ours to
       // terminate; a managed free host is Cloud's.
       terminatesTlsLocally: endpoint.domainType === "custom" && !external,
-      // First-deploy issuance for an unverified custom service route — see the
-      // single-app add() gate above for the rationale. [#291/#304 follow-up]
-      provisionSsl: requiresSslTooling && (isVerified || domainRow?.sslStatus === "none"),
+      // First-deploy issuance for an unverified custom service route — the SAME
+      // shared rule the single-app planner uses. Only `requiresSslTooling` above
+      // diverges between the two paths, and that divergence is deliberate.
+      provisionSsl: resolveProvisionSsl({
+        requiresSslTooling,
+        verified: isVerified,
+        sslStatus: domainRow?.sslStatus,
+      }),
       isCloud: managed.isManaged,
       targetPort: endpoint.port,
       domainType: endpoint.domainType,
@@ -485,6 +536,42 @@ export function serviceCustomHostnames(service: Service): string[] {
     add(service.customDomain);
   }
   return [...hosts];
+}
+
+/**
+ * The custom-domain rows a service should HAVE, as `{ hostname, targetPort }`.
+ *
+ * The one answer to "which of this service's hostnames get a verifiable domain
+ * row", for every write path that mints them (create, update, compose sync). Those
+ * three had three different derivations, and they disagreed: the sync path read
+ * `resolveServicePublicEndpoints`, which drops any endpoint whose port doesn't
+ * normalize — so a service the operator points a domain at BEFORE adding its port
+ * got a row from `createService` and none from a re-sync, leaving the Domains tab
+ * showing a card with no Verify affordance.
+ *
+ * Built on `serviceCustomHostnames`, which is the config-truth read: it ignores
+ * `exposed` on purpose, so merely pausing a service can't look like a
+ * de-configuration and orphan a verified domain. The port is attached
+ * best-effort from the matching endpoint — it is a routing hint on the row, not
+ * the reason the row exists, so a portless hostname still gets one.
+ */
+export function serviceDomainRowsToEnsure(
+  service: Service,
+): Array<{ hostname: string; targetPort?: number }> {
+  // Read with `exposed: true` so the ports of a PAUSED service still resolve;
+  // `serviceCustomHostnames` already decides which hostnames count.
+  const portByHostname = new Map<string, number>();
+  for (const endpoint of resolveServicePublicEndpoints({ ...service, exposed: true })) {
+    if (endpoint.domainType !== "custom" || endpoint.port === undefined) continue;
+    const hostname = endpoint.customDomain
+      ? normalizeCustomHostname(endpoint.customDomain)
+      : undefined;
+    if (hostname && !portByHostname.has(hostname)) portByHostname.set(hostname, endpoint.port);
+  }
+  return serviceCustomHostnames(service).map((hostname) => {
+    const targetPort = portByHostname.get(hostname);
+    return targetPort === undefined ? { hostname } : { hostname, targetPort };
+  });
 }
 
 /**
@@ -712,6 +799,175 @@ export async function ensureRouteDomainRecord(opts: {
   });
   domainByHostname.set(key, created);
   return created;
+}
+
+/**
+ * Re-resolve a planned route's verification/SSL gate against the domain row that
+ * exists NOW — the one `ensureRouteDomainRecord` just returned.
+ *
+ * WHY this exists: both pipelines read the project's domain rows, build the route
+ * plan from them, and only THEN ensure a row per planned route. So a hostname the
+ * deploy mints itself was planned against `domainRow === undefined`, and the
+ * first-deploy half of add()/buildServiceRouteDomains' gate —
+ * `domainRow?.sslStatus === "none"` — evaluates `undefined === "none"` → false.
+ * `provisionSsl` therefore came out FALSE for exactly the case #291/#304 added it
+ * for: the domain's very first deploy. `registerResolvedRoutes` then skipped
+ * issuance silently (its `if (domain.provisionSsl && ssl)` is the only thing that
+ * logs "Checking SSL for …"), so the deploy registered a vhost, said nothing about
+ * TLS, and left the row Pending/none for the 13-minute verify cron to find.
+ *
+ * It bites compose hardest because a compose project's routing is written straight
+ * through `syncFromCompose`, which mints no domain row — so for compose services
+ * the row is ALWAYS created by the deploy, and the first deploy therefore never
+ * attempted a certificate at all.
+ *
+ * Only `verified` and `provisionSsl` can differ: `tls`, `terminatesTlsLocally` and
+ * `requiresSslTooling` are decided by `externalIngress`/`manualSsl`, which are
+ * operator-set columns a deploy-minted row cannot carry, so the plan's values for
+ * them already agree with the row. A null record (a hostname routable without
+ * ownership — see lib/domain-claims) keeps the plan untouched: there is no row to
+ * write cert status onto.
+ */
+export function withEnsuredDomainRecord(
+  route: PlannedRouteDomain,
+  record: Domain | null,
+): PlannedRouteDomain {
+  if (!record) return route;
+  // A managed *.opsh.io host needs no challenge — keep the planner's verdict
+  // rather than the row's, which is what the planner did too.
+  const verified = route.isCloud ? route.verified ?? true : record.verified;
+  // The SAME predicate the planners used — re-run, not re-typed, against the row
+  // that exists now. `requiresSslTooling` is carried through from whichever planner
+  // produced this route, so its deliberate per-path divergence is preserved.
+  const provisionSsl = resolveProvisionSsl({
+    requiresSslTooling: route.requiresSslTooling,
+    verified: !!verified,
+    // The row EXISTS — so a missing status means "nothing attempted yet", not
+    // "unknown". `repos.domain` reads its inserts back now, but a row assembled
+    // from insert values still reaches here from older paths, and reading that
+    // absence as "an attempt already ran" is the exact inversion this whole
+    // function was added to undo.
+    sslStatus: record.sslStatus ?? "none",
+  });
+  if (verified === route.verified && provisionSsl === route.provisionSsl) return route;
+  return { ...route, verified, provisionSsl };
+}
+
+/**
+ * Routed hostnames whose TLS is OURS to terminate but which hold no live
+ * certificate — as `"<hostname>: <reason>"` warning strings, the shape the
+ * pipelines' route warnings already use.
+ *
+ * The deploy rule is "never fail on domains, but try, and mark action-required
+ * when it didn't work". The trying half is `provisionSsl`; this is the marking
+ * half, and it was missing entirely: `registerRoute` SUCCEEDS without a
+ * certificate (the edge installs a bootstrap self-signed cert so a routed host
+ * always has a :443 listener — see bootstrap-tls-listener), and the issuance
+ * failure inside `registerResolvedRoutes` is deliberately caught and only LOGGED.
+ * So a domain could come out of a deploy routed, serving a self-signed cert over
+ * HTTPS, with a green deployment and nothing anywhere saying so.
+ *
+ * Deliberately narrow, so this can't cry wolf:
+ *  - `terminatesTlsLocally` excludes managed *.opsh.io hosts (Cloud's edge
+ *    terminates) and externalIngress hosts (an upstream LB/tunnel does).
+ *  - `sslStatus === "active"` excludes both a certbot cert and an operator's
+ *    uploaded one, so a manual-SSL host that already has its cert is silent.
+ *  - a route with no row (`domainByHostname` miss) is skipped — nothing was
+ *    recorded to make a claim about.
+ */
+export function collectUncertifiedRouteWarnings(
+  routes: PlannedRouteDomain[],
+  domainByHostname: Map<string, Domain>,
+  /** Hostnames already reported as UNROUTED. Excluded so one host can't be
+   *  described twice, contradictorily — see `auditRoutedDomainTls`. */
+  skipHostnames?: ReadonlySet<string>,
+): string[] {
+  const warnings: string[] = [];
+  const seen = new Set<string>();
+  for (const route of routes) {
+    if (!route.terminatesTlsLocally) continue;
+    const key = route.hostname.toLowerCase();
+    if (seen.has(key) || skipHostnames?.has(key)) continue;
+    const record = domainByHostname.get(key);
+    // "active" covers a certbot cert AND an operator's uploaded one; "external"
+    // means TLS is terminated upstream and recorded as such. Neither is pending.
+    if (!record || record.sslStatus === "active" || record.sslStatus === "external") continue;
+    seen.add(key);
+    warnings.push(
+      `${route.hostname}: ${
+        record.lastVerifyError ??
+        (record.verified
+          ? "no HTTPS certificate yet"
+          : "DNS is not pointing at this server yet, so no HTTPS certificate could be issued")
+      }`,
+    );
+  }
+  return warnings;
+}
+
+/**
+ * The hostname each route warning is about.
+ *
+ * Every producer builds them as `"<hostname>: <reason>"` — `registerResolvedRoutes`,
+ * the compose static branch, and the domain-claim skip. A hostname cannot contain
+ * ":", so the prefix is unambiguous. Kept here, beside the only consumer that needs
+ * to read it back, so the format has one documented home.
+ */
+export function routeWarningHostnames(warnings: readonly string[]): Set<string> {
+  const hosts = new Set<string>();
+  for (const warning of warnings) {
+    const separator = warning.indexOf(":");
+    const hostname = (separator === -1 ? warning : warning.slice(0, separator)).trim().toLowerCase();
+    if (hostname) hosts.add(hostname);
+  }
+  return hosts;
+}
+
+/**
+ * "These routes exist — is each one actually serving HTTPS?" Both pipelines' whole
+ * TLS audit, in one place.
+ *
+ * Rows are re-read rather than taken from the deploy's `domainByHostname`: issuance
+ * writes cert status straight to the DB (`createTrackedSslProvider` →
+ * `repos.domain.updateSsl` / `markVerifiedActive`) and never back into that map, so
+ * judging from it would report the PRE-deploy state and call a domain that just
+ * went Live uncertified.
+ *
+ * `routeWarnings` are the failures already reported as UNROUTED. They are excluded,
+ * because a host whose vhost never got written has no certificate either — and
+ * telling the operator both "isn't routed" and "is routed but has no HTTPS" about
+ * the same hostname is two contradictory instructions for one problem.
+ *
+ * Best-effort by construction: the deploy is over and the workloads are up; this
+ * only decides whether to attach a warning. A failed read means no warning, never a
+ * failed deploy.
+ */
+export async function auditRoutedDomainTls(opts: {
+  projectId: string;
+  routes: PlannedRouteDomain[];
+  routeWarnings: readonly string[];
+  /** Emitted once per pending host, so the reason is in the deploy log too. */
+  log: (message: string) => void;
+}): Promise<string[]> {
+  const { projectId, routes, routeWarnings, log } = opts;
+  if (routes.length === 0) return [];
+  const pending = await repos.domain
+    .listByProject(projectId)
+    .then((rows) =>
+      collectUncertifiedRouteWarnings(
+        routes,
+        new Map(rows.map((row) => [row.hostname.toLowerCase(), row])),
+        routeWarningHostnames(routeWarnings),
+      ),
+    )
+    .catch(() => [] as string[]);
+  for (const detail of pending) {
+    log(
+      `Domain routed without HTTPS — ${detail}. Point its DNS at this server, then ` +
+        `Verify from the Domains tab.`,
+    );
+  }
+  return pending;
 }
 
 export function toRoutedDomainInputs(domains: PlannedRouteDomain[]): RoutedDomainInput[] {

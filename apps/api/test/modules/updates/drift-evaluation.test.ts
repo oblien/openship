@@ -111,6 +111,33 @@ describe("commit drift — the deployed side is live", () => {
     expect(after).toMatchObject({ behind: false, deployedSha: NEWER });
   });
 
+  it("reads an abbreviated deployed sha as the same commit, not a new one", async () => {
+    // The reported case: `POST /deployments` accepts any ref as `commitSha` (an
+    // `openship deploy --commit 1314074`, an MCP call, a CI script), git checks it
+    // out, and the row keeps the abbreviation. Compared by bytes against the
+    // 40-char HEAD it is a second commit forever — and since both sides render
+    // slice(0, 7), the operator was told "new commit 1314074 available — you're
+    // deployed on 1314074".
+    const p = gitProject();
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_live",
+      commitSha: SHIPPED.slice(0, 7),
+    });
+
+    const status = await evaluateDrift(p, commitUpstream(p, SHIPPED));
+
+    expect(status).toMatchObject({ behind: false });
+    // A genuinely newer HEAD still reports drift against that same short row.
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER))).toMatchObject({ behind: true });
+  });
+
+  it("claims nothing when the deployed ref is a tag we cannot compare by value", async () => {
+    const p = gitProject();
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: "v0.6.5" });
+
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER))).toMatchObject({ behind: false });
+  });
+
   it("suppresses the nudge while the newest commit is already deploying", async () => {
     const p = gitProject();
     deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });

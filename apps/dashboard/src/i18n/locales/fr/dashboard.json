@@ -67,6 +67,7 @@
     "emails": "E-mails",
     "settings": "Paramètres",
     "billing": "Facturation et utilisation",
+    "audit": "Journal d'audit",
     "mailSetup": "Configurer la messagerie",
     "mailSetupProgress": "Progression de la configuration",
     "addMailbox": "Ajouter une boîte aux lettres",

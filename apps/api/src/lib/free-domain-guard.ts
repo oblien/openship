@@ -1,6 +1,11 @@
 import type { CloudCapability } from "@repo/core";
 import { requireCloud } from "./cloud/require-cloud";
-import { storedPublicEndpointsNeedCloud, type StoredPublicEndpoint } from "./public-endpoints";
+import { assertFreeSubdomainQuota } from "./plan-guard";
+import {
+  cloudManagedHostnameOf,
+  storedPublicEndpointsNeedCloud,
+  type StoredPublicEndpoint,
+} from "./public-endpoints";
 
 /**
  * Atomic gate for free (*.opsh.io) routes. A free managed subdomain only
@@ -27,4 +32,15 @@ export async function assertFreeEndpointsAllowed(
   // Only custom domains in play → no Cloud edge needed.
   if (!storedPublicEndpointsNeedCloud(endpoints)) return;
   await requireCloud(capability, { organizationId });
+
+  // Then the plan allowance. Order matters: "connect Cloud" must be answered
+  // before "you've used all 10", because an unconnected instance can't have a
+  // free route at all and the connect prompt is the actionable one. A quota
+  // refusal is deliberately NOT a CloudRequiredError — that error's copy sends
+  // the user to a connect-Cloud flow which, for an already-connected org, would
+  // succeed and change nothing.
+  await assertFreeSubdomainQuota(
+    organizationId,
+    (endpoints ?? []).map(cloudManagedHostnameOf),
+  );
 }

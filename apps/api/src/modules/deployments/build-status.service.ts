@@ -6,6 +6,7 @@ import { snapshotToClass } from "./deployment-class";
 import { STEP_INDEX, STEP_PROGRESS } from "./build-steps";
 import { isMultiServiceProject } from "./compose";
 import { serviceKind } from "../../lib/deployable-service";
+import { terminalMessages } from "./terminal-messages";
 import { maskServicesEnv } from "../../lib/secret-env";
 import { resolveProjectRouteState } from "../domains/project-route.service";
 
@@ -227,14 +228,16 @@ export async function getBuildSessionStatus(deploymentId: string) {
     screenshots: [],
     buildDurationMs: buildSessionRow?.durationMs ?? null,
     buildStartedAt: buildSessionRow?.startedAt?.toISOString() ?? null,
-    failureMessage: effectiveStatus === "failed" ? dep.errorMessage || "" : "",
-    // Surface the partial-deploy warning for any settled-but-not-failed state
-    // (ready / partial_failure / reconciling) so it survives a refresh in a new
-    // tab, not just while the SSE session says "ready".
-    warningMessage:
-      effectiveStatus !== "failed" && effectiveStatus !== "cancelled"
-        ? snapshot?.composeDeployment?.warningMessage || snapshot?.deployWarning || ""
-        : "",
+    // The terminal prose. See `terminalMessages` for why a CANCELLED row's reason
+    // is surfaced now, and why the warning keeps its narrower gate. (The warning
+    // covers any settled-but-not-failed state — ready / partial_failure /
+    // reconciling — so it survives a refresh in a new tab.)
+    ...terminalMessages({
+      effectiveStatus,
+      rowStatus: dep.status,
+      errorMessage: dep.errorMessage,
+      warning: snapshot?.composeDeployment?.warningMessage || snapshot?.deployWarning,
+    }),
     // Real persisted status (dep.status carries partial_failure; `status` above
     // stays SSE-facing "ready" so the build page still renders as finished) plus
     // the server-backed keep/reject decision so the "Action Required" banner +

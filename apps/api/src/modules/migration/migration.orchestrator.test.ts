@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveScannedContainerId,
   planResumeTransfer,
+  describeCutoverRemainder,
   type PendingItem,
 } from "./migration.orchestrator";
 
@@ -110,5 +111,56 @@ describe("planResumeTransfer", () => {
       source: "/src",
       dest: "/src",
     });
+  });
+});
+
+/**
+ * Cutover is NOT atomic and cannot be — there is no transaction across two Docker daemons,
+ * and by then the target is already serving. What it must be is honest, which is what this
+ * pins: the bug it replaces caught every destroy error and dropped it, then reported
+ * `succeeded`, so a container still standing on the old server (holding its ports, or
+ * brought back by a restart policy) was invisible.
+ */
+describe("describeCutoverRemainder", () => {
+  const c = (name: string, id: string, reason = "device or resource busy") => ({
+    name,
+    containerId: id,
+    reason,
+  });
+
+  it("returns null when everything was removed", () => {
+    // The caller logs a plain success off this — never "0 containers could not be removed".
+    expect(describeCutoverRemainder([])).toBeNull();
+  });
+
+  it("names every container that survived, and why", () => {
+    // "Some containers could not be removed" would leave the operator hunting on a host they
+    // were just told to stop thinking about.
+    const msg = describeCutoverRemainder([c("web", "abcdef1234567890"), c("api", "0123456789abcdef")]);
+    expect(msg).toContain("web (abcdef123456");
+    expect(msg).toContain("api (0123456789ab");
+    expect(msg).toContain("device or resource busy");
+  });
+
+  it("counts them and says what to do", () => {
+    const msg = describeCutoverRemainder([c("web", "abcdef1234567890")]);
+    expect(msg).toContain("1 source container(s)");
+    expect(msg).toMatch(/by hand on the old server/);
+  });
+
+  it("shortens the container id to the docker-style prefix", () => {
+    // A full 64-hex id in a log line buries the reason after it.
+    const msg = describeCutoverRemainder([c("web", "a".repeat(64))])!;
+    expect(msg).toContain("a".repeat(12));
+    expect(msg).not.toContain("a".repeat(13));
+  });
+
+  it("carries each container's OWN reason rather than one summary", () => {
+    const msg = describeCutoverRemainder([
+      c("web", "aaaaaaaaaaaa1111", "in use by network"),
+      c("db", "bbbbbbbbbbbb2222", "permission denied"),
+    ])!;
+    expect(msg).toContain("in use by network");
+    expect(msg).toContain("permission denied");
   });
 });

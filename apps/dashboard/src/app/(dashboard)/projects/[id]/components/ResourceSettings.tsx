@@ -176,10 +176,22 @@ export const ResourceSettings: React.FC = () => {
     return `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}`;
   };
 
-  const tierName = (tier: ResourceTier): string =>
-    tier === "custom" ? r.custom.name : r.tiers[tier as keyof typeof r.tiers].name;
-  const tierDescription = (tier: ResourceTier): string =>
-    tier === "custom" ? r.custom.description : r.tiers[tier as keyof typeof r.tiers].description;
+  /**
+   * Tier copy, and it must NEVER be a hard index into the dictionary.
+   *
+   * `RESOURCE_TIER_ORDER` (packages/core) is the source of truth for which tiers exist, and this
+   * component renders every one of them. When `xlarge` was added there without its locale keys,
+   * `r.tiers[tier].name` read `undefined.name` and took the whole Resources tab down with a
+   * runtime TypeError — a white screen for a missing translation.
+   *
+   * A locale is data that lags the code by definition (nine files, and five of them have no
+   * `resources` block at all and inherit English). So an absent key degrades to the tier's own
+   * id, which is ugly and completely usable, instead of crashing.
+   */
+  const tierCopy = (tier: ResourceTier): { name?: string; description?: string } | undefined =>
+    tier === "custom" ? r.custom : (r.tiers as Record<string, { name?: string; description?: string }>)[tier];
+  const tierName = (tier: ResourceTier): string => tierCopy(tier)?.name ?? tier;
+  const tierDescription = (tier: ResourceTier): string => tierCopy(tier)?.description ?? "";
 
   // Collapsed-header readout of what's live. "No limits" already says it all, so
   // it doesn't get its "Machine capacity" spec appended.

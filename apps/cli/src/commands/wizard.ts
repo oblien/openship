@@ -35,7 +35,7 @@ import {
 import { isValidEmail } from "@repo/core";
 import { startService, normalizeUrl } from "./up";
 import {
-  ensureInternalToken,
+  internalFetch,
   internalGet,
   internalPost,
   bootstrapAdmin,
@@ -231,10 +231,11 @@ async function streamProvision(
   // on 80/443, or a cert issue) reports WHY instead of a generic "not ready".
   let detail: string | undefined;
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/system/self-register/stream?id=${sessionId}`, {
-      headers: { "X-Internal-Token": ensureInternalToken() },
+    const call = await internalFetch(port, `/api/system/self-register/stream?id=${sessionId}`, {
       signal: AbortSignal.timeout(300_000),
     });
+    if (call.kind !== "response") return { ok: false, detail: call.detail };
+    const res = call.res;
     if (!res.ok || !res.body) return { ok: false };
     const reader = (res.body as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();

@@ -1,0 +1,88 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Publique sites estáticos na Openship Cloud sem custo."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Para o seu primeiro app de verdade: contêineres, bancos de dados e tudo o mais."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Para apps em produção que precisam de espaço para crescer."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Para equipes com tráfego pesado em infraestrutura compartilhada."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Limites sob medida, infraestrutura dedicada e um SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "Tudo do {inherited}, e mais:",
+    "staticOnly": "Somente sites estáticos: SSG, SPA e HTML puro",
+    "anyWorkload": "Execute qualquer coisa: contêineres, stacks do Compose e workers",
+    "managedServices": "Postgres e Redis gerenciados, e o catálogo completo de apps",
+    "buildMinutes": "{buildMinutes} minutos de build por mês",
+    "credits": "{credits} créditos de computação por mês",
+    "freeSubdomains": "{freeSubdomains} subdomínios {freeDomainSuffix} gratuitos",
+    "freeSubdomainsUnlimited": "Subdomínios {freeDomainSuffix} gratuitos e ilimitados",
+    "customDomains": "Domínios próprios ilimitados, com TLS incluído",
+    "unlimitedSeats": "Membros de equipe ilimitados: nunca pague por usuário",
+    "previewDeploys": "Deploys de pré-visualização a cada push",
+    "backups": "Backups diários com recuperação para um ponto no tempo",
+    "observability": "Logs em tempo real, métricas e alertas de saúde",
+    "mailServer": "Servidor de e-mail integrado: SMTP, IMAP e webmail",
+    "auditLog": "Log de auditoria com retenção estendida",
+    "sharedChannel": "Canal compartilhado no Slack ou Discord",
+    "sso": "SSO e SAML",
+    "customLimits": "Limites sob medida, negociados por contrato",
+    "dedicatedInfra": "Infraestrutura e regiões dedicadas",
+    "onboarding": "Configuração inicial e migração acompanhadas de ponta a ponta",
+    "communitySupport": "Suporte da comunidade",
+    "emailSupport": "Suporte por e-mail",
+    "prioritySupport": "Suporte prioritário",
+    "dedicatedSupport": "Suporte dedicado com SLA",
+    "selfHostedOpenSource": "A plataforma inteira, de código aberto (Apache 2.0)",
+    "selfHostedUnlimited": "Deploys, projetos, servidores e domínios ilimitados",
+    "selfHostedServices": "Todos os serviços gerenciados: Postgres, Redis, e-mail",
+    "selfHostedClients": "CLI, web e desktop: um único backend",
+    "selfHostedFreeSubdomains": "{freeSubdomains} subdomínios {freeDomainSuffix} gratuitos ao conectar à Cloud",
+    "runningServices": "{runningServices} serviços em execução: apps, bancos de dados, workers",
+    "power": "Até {powerCpu} vCPU e {powerRamGb} GB de RAM por serviço",
+    "projects": "{maxProjects} projetos",
+    "projectsUnlimited": "Projetos ilimitados",
+    "meteredCredits": "Computação, largura de banda e armazenamento consomem os seus créditos mensais"
+  },
+  "selfHosted": {
+    "name": "Auto-hospedado",
+    "tagline": "Rode a plataforma inteira em máquinas suas. Qualquer máquina Linux, qualquer provedor, qualquer região. Sem medição de uso, sem limite de usuários, sem telemetria.",
+    "priceLabel": "Grátis",
+    "priceNote": "Apache 2.0: grátis para sempre, sem cartão de crédito",
+    "cta": "Começar a auto-hospedar"
+  },
+  "creditPacks": {
+    "pack_5k": "{credits} créditos",
+    "pack_25k": "{credits} créditos",
+    "pack_100k": "{credits} créditos"
+  },
+  "ui": {
+    "perMonth": "/mês",
+    "perYear": "/ano",
+    "custom": "Sob medida",
+    "free": "Grátis",
+    "unlimited": "Ilimitado",
+    "mostPopular": "Mais popular",
+    "monthsFree": "{months} meses grátis",
+    "ctaStart": "Começar grátis",
+    "ctaChoose": "Escolher {name}",
+    "ctaContact": "Falar com vendas",
+    "billedMonthly": "cobrança mensal, cancele quando quiser",
+    "campaignBadge": "{percentOff}% de desconto",
+    "campaignEnds": "Oferta termina em {date}",
+    "wasPrice": "antes {price}"
+  }
+}

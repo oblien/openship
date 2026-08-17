@@ -3,6 +3,8 @@
     "title": "容量与用量",
     "subtitle": "您套餐包含的容量以及已用量。实时数据从 Openship Cloud 同步。",
     "routes": "免费路由",
+    "runningServices": "运行中的服务",
+    "projects": "项目",
     "workspaces": "工作区",
     "unlimited": "无限制",
     "used": "已用",

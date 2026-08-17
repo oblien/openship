@@ -133,7 +133,7 @@
     "valuePlaceholder": "değer",
     "dropHere": ".env dosyasını buraya sürükleyip bırakın",
     "noneTitle": "Ortam değişkeni yok",
-    "emptyHintEditing": "\"Değişken Ekle\"ye tıklayın, \".env Yapıştır\"ı kullanın, bir dosya yükleyin veya bu kutunun içine yapıştırın",
+    "emptyHintEditing": "Bu kutunun içinde herhangi bir yere bir .env bloğu yapıştırın veya buraya bir .env dosyası bırakın.",
     "emptyHintReadonly": "Ortam değişkenlerini yönetmek için \"Düzenle\"ye tıklayın",
     "pasteHint": "Tam bir .env bloğunu bu kutunun içinde herhangi bir yere yapıştırın.",
     "addVariable": "Değişken Ekle",
@@ -369,9 +369,6 @@
       "successful": "Dağıtım Başarılı",
       "deploying": "Servisler Dağıtılıyor…"
     },
-    "running": "çalışıyor",
-    "buildingSuffix": "· {count} derleniyor",
-    "failedSuffix": "· {count} başarısız",
     "decisionBannerTitle": "İşlem gerekiyor — bazı servisler başarısız oldu",
     "decisionBannerDefaultMsg": "Bu dağıtım bazı servisler başarısız olarak tamamlandı. Dağıtımı koruyup başarısız servisleri daha sonra düzeltebilir veya önceki sürümü geri yüklemek için dağıtımı reddedebilirsiniz.",
     "review": "İncele",
@@ -411,6 +408,12 @@
       "retryOther": "{count} Başarısız Servisi Tekrar Dene"
     }
   },
+  "composeServiceTally": {
+    "running": "çalışıyor",
+    "builtSuffix": "· {count} derlendi",
+    "buildingSuffix": "· {count} derleniyor",
+    "failedSuffix": "· {count} başarısız"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "İptal Edildi",
@@ -421,12 +424,11 @@
     },
     "detailsTitle": "Dağıtım Detayları",
     "rowStatus": "Durum",
+    "rowTarget": "Hedef",
+    "rowBuild": "Derleme",
     "rowBuildTime": "Derleme Süresi",
     "rowServices": "Servisler",
     "rowProject": "Proje",
-    "rowType": "Tür",
-    "running": "çalışıyor",
-    "buildingSuffix": "· {count} derleniyor",
-    "failedSuffix": "· {count} başarısız"
+    "rowType": "Tür"
   }
 }

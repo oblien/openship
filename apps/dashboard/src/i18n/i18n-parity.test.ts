@@ -48,12 +48,27 @@ const MISSING_BASELINE: Record<string, number> = {
   // the status dot (the "step N of M" counter, the per-service tally, and the three
   // labels of the chosen-configuration card). Translated in tr, English-first in
   // the other 7 via deepMerge, same as every other key in this block.
-  projectSettings: 1317,
+  //
+  // +42: appInstall's settled install screen — 6 keys so a stopped install stops
+  // contradicting itself: the failed/cancelled body copy (the cancel one is the
+  // only place that says the data volumes survived), the "you stopped it" line kept
+  // SEPARATE from that copy so a boot-sweep cancel isn't blamed on the operator,
+  // the "Stopped at {phase}" read-out, and the two log-panel placeholders that
+  // replaced a hardcoded English "Waiting for output…" still shown under a
+  // cancelled install. Translated in tr, English-first in the other 7 via
+  // deepMerge.
+  projectSettings: 1359,
   jobs: 876,
   // +15: discover.envFromImage/Hint/Import — the collapsed "vars come from the
   // image" row and its one-click import. Translated in ar/fr/tr; the other 5
   // locales have no migration.json at all and fall back via deepMerge.
-  migration: 1252,
+  //
+  // +10: tab.retryRun/changeTarget — the two actions a FAILED PROJECT migration offers
+  // instead of "Edit & retry" (which re-scans the whole server, meaningless for a project
+  // whose workload is its own containers). Translated in every locale that HAS a
+  // migration.json — en/ar/fr/tr — so this +10 is 2 keys × the 5 locales that have no such
+  // file at all and render English through deepMerge, exactly like the 1252 above.
+  migration: 1262,
   // +64: the GitHub card's credential-health strings — 8 English-first keys for
   // "GitHub rejected the stored {method}" vs "couldn't reach GitHub to check it",
   // the manage-on-GitHub links, and the note that Disconnect does NOT revoke the
@@ -115,7 +130,14 @@ const MISSING_BASELINE: Record<string, number> = {
   // upgrade). Translated in tr; English-first in the other 7 via deepMerge. The
   // deploy screen's own four keys for the same flow are translated in all 8, keeping
   // `deploy` at 0.
-  emailsAdmin: 806,
+  // −7: `panel.tabs.sending`, translated in the 7 locales that lacked it. The
+  // Inbound→Notifications rename and the folding of the Test tab into Sending are
+  // net-zero here (renamed and retired keys landed in all 9 at once, and the two
+  // new `notifications` keys plus `sending.testLiveNote` were translated
+  // everywhere) — but retiring `?tab=test` made Sending the section that old URL
+  // resolves to, and it was the one tab label still rendering in English in 7 of 9
+  // locales. `panel.tabs.aliases` is the last gap in that object, still 8.
+  emailsAdmin: 799,
   // +360: permissions.sourceAccess — 45 keys for the source access modal and its
   // repository path tree,
   // still English in the other 8 locales (they fall back via deepMerge, so the UI

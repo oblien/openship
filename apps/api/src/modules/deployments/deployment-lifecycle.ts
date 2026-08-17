@@ -41,13 +41,31 @@ import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
  * Retry cannot succeed until the edge starts. Sending an operator to their DNS
  * provider over a crash-looping OpenResty costs them the whole debugging session.
  */
-export function routeIssuesWarning(issues: string[]): string {
-  const detail = issues.join("; ");
-  return isEdgeDownMessage(detail)
-    ? `The app is deployed and running, but its domains aren't being served: the edge on this ` +
-        `server is down. Bring the edge back up, then Retry from the Domains tab: ${detail}`
-    : `Some domains aren't routed yet — the app is deployed and running; fix DNS/routing and ` +
-        `Retry from the Domains tab: ${detail}`;
+export function routeIssuesWarning(issues: string[], tlsPending: string[] = []): string {
+  const parts: string[] = [];
+  if (issues.length > 0) {
+    const detail = issues.join("; ");
+    parts.push(
+      isEdgeDownMessage(detail)
+        ? `The app is deployed and running, but its domains aren't being served: the edge on this ` +
+            `server is down. Bring the edge back up, then Retry from the Domains tab: ${detail}`
+        : `Some domains aren't routed yet — the app is deployed and running; fix DNS/routing and ` +
+            `Retry from the Domains tab: ${detail}`,
+    );
+  }
+  // A DIFFERENT outcome with a DIFFERENT remedy, which is why it gets its own
+  // sentence rather than joining the list above: these hostnames ARE routed (the
+  // vhost exists and answers on :80), they just have no certificate, so HTTPS is
+  // served by the edge's bootstrap self-signed cert. "Fix routing and retry" would
+  // send the operator after the wrong thing — the fix is DNS + Verify.
+  if (tlsPending.length > 0) {
+    parts.push(
+      `${tlsPending.length} domain${tlsPending.length === 1 ? " is" : "s are"} routed but ` +
+        `${tlsPending.length === 1 ? "has" : "have"} no HTTPS certificate yet — point DNS at this ` +
+        `server, then Verify from the Domains tab: ${tlsPending.join("; ")}`,
+    );
+  }
+  return parts.join(" · ");
 }
 
 export interface LifecycleContext {
@@ -265,6 +283,16 @@ export async function setDeploymentStatus(
         errorDetails?: Record<string, unknown>;
         warningMessage?: string;
         errorMessage?: string;
+        /**
+         * A keep/reject decision is being HELD for this deployment (a partial failure).
+         *
+         * Sent explicitly because it is not derivable from anything else on the event. The client
+         * used to infer it from "there is a warningMessage and the deploy succeeded", which is
+         * true of a partial failure and also of every routing/TLS advisory on a perfectly
+         * successful deploy — so a project whose domains had no cert yet was shown "Deployment
+         * finished with failed services · 0 of 5 services failed".
+         */
+        decisionPending?: boolean;
       };
     };
   },
@@ -445,7 +473,7 @@ export async function onFailure(
   // session below is always told `failed`, because "ready|failed|cancelled" is
   // what closes the stream (session-manager). Same split as `partial_failure`.
   const dbStatus = failureStatusFor(errorMeta?.errorCode);
-  await recordOutcome(
+  const outcome = await recordOutcome(
     dep.id,
     dbStatus,
     {
@@ -455,6 +483,28 @@ export async function onFailure(
     },
     ["errorDetails"],
   );
+
+  // The row refused the write because it is already cancelled: the user stopped
+  // this deploy mid-flight and the pipeline then failed under its own teardown.
+  // The cancel is the truth. Broadcasting `failed` over it anyway is what let a
+  // stopped install report itself as a failure — the row said `cancelled` while
+  // the stream said `failed`, so the wizard flagged a neutral cancel AND took the
+  // failure message, and printed "Install failed" under "Install cancelled".
+  //
+  // cancelBuildSession has already torn down what it provisioned and already
+  // broadcast `cancelled`, so settle the session as cancelled and emit nothing
+  // further: no second terminal event, and no `deployment.failed` notification
+  // for a deploy the user ended on purpose. Mirrors the guard in onSuccess.
+  if (outcome.state === "refused") {
+    console.warn(
+      `[deployment-lifecycle] ${dep.id}: deploy failed after the user cancelled it; ` +
+        `leaving the row cancelled and reporting the cancel rather than a failure`,
+    );
+    ctx.settled = "cancelled";
+    await finishSession(buildSessionId, "cancelled", durationMs ?? 0, collapsed);
+    return;
+  }
+
   ctx.settled = "failed";
   await finishSession(buildSessionId, "failed", durationMs ?? 0, collapsed);
   sessionManager.updateStatus(dep.id, "failed", {

@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -54,6 +54,10 @@ interface EnvironmentVariablesPropsOptional {
    *  itself - including Paste .env and Upload .env - stays visible at all
    *  times so the primary affordances aren't hidden behind the chevron. */
   collapsible?: boolean;
+  /** Hosts that already title the section — the compose / migration env modals,
+   *  whose own header carries the service name, "Environment variables" and the
+   *  count — hide the panel's icon + title so it isn't stated twice. */
+  hideTitle?: boolean;
   // For settings mode - external env vars
   envVars?: EnvironmentVariableRow[];
   envMeta?: Record<string, EnvironmentVariableMeta>;
@@ -67,6 +71,18 @@ interface EnvironmentVariablesPropsOptional {
    * source (a new, unsaved service) — they simply won't show.
    */
   onReveal?: (keys: string[]) => Promise<Record<string, string>>;
+  /**
+   * Reveal every masked row once, on mount, instead of waiting for the operator to
+   * click. For the surfaces you reach by pressing "Edit" on env that ALREADY exists:
+   * you opened it to read and change values, and a column of dots is nothing to edit —
+   * the first action would always have been "show values" anyway.
+   *
+   * Opt-in per host, not the default. On a surface that merely LISTS env next to other
+   * settings, disclosing every secret to anyone who scrolls past is a different
+   * bargain than disclosing them to someone who opened the editor. Needs {@link
+   * onReveal}; without a source there is nothing to fetch.
+   */
+  revealOnOpen?: boolean;
 }
 
 const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
@@ -81,10 +97,12 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   showSettingsActions = true,
   borderless = false,
   collapsible = false,
+  hideTitle = false,
   envVars: externalEnvVars,
   envMeta,
   onEnvVarsChange,
   onReveal,
+  revealOnOpen = false,
 }) => {
   const deployment = useOptionalDeployment();
   const { showToast } = useToast();
@@ -232,6 +250,25 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     },
     [ensureRevealed, showToast, ev]
   );
+
+  // `revealOnOpen`: fetch every masked row once, so an editor opened on existing env
+  // shows values instead of a column of dots.
+  //
+  // Guarded by a ref, not by the masked-key list: `revealAndShow` writes state, which
+  // re-renders, and the rows stay masked the whole time (the row keeps the sentinel by
+  // design — see `revealedValues`). Keyed off the list, this would re-fire on every
+  // render and hammer the endpoint. It fires for the FIRST non-empty set of masked keys
+  // and never again — a later paste or a new row is the operator's own doing, and they
+  // can use the eye. A failure isn't retried either: `revealAndShow` has already
+  // toasted, and a silent retry loop against a failing endpoint is worse than a row
+  // the operator can click.
+  const autoRevealed = useRef(false);
+  useEffect(() => {
+    if (!revealOnOpen || !onReveal || autoRevealed.current) return;
+    if (maskedKeys.length === 0) return;
+    autoRevealed.current = true;
+    void revealAndShow(maskedKeys);
+  }, [revealOnOpen, onReveal, maskedKeys, revealAndShow]);
 
   // Drop plaintext for `keys` from the overlay as they're hidden, so a revealed
   // secret doesn't linger in component state after the operator hides it. Showing
@@ -593,21 +630,34 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     });
   }, [processFile]);
 
+  // One class for every secondary toolbar action (paste / upload / edit / reveal).
+  const actionBtn =
+    "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-muted/60 px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50";
+  // With `hideTitle` the row can end up empty — don't render a bare 56px gap.
+  const hasHeaderActions =
+    mode === "settings" ||
+    (mode === "deploy" && isEditingMode) ||
+    (Boolean(onReveal) && hasMaskedRow) ||
+    collapsible;
+
   return (
     <div className={borderless ? '' : 'bg-card rounded-2xl border border-border/50'}>
-      <div className="flex items-center justify-between px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
+      {(!hideTitle || hasHeaderActions) && (
+      <div className="flex items-center justify-between gap-3 px-5 py-4">
+        {!hideTitle && (
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="size-9 shrink-0 rounded-xl bg-violet-500/10 flex items-center justify-center">
             <Key className="size-[18px] text-violet-500" />
           </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">{ev.title}</p>
-            <p className="text-xs text-muted-foreground">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{ev.title}</p>
+            <p className="truncate text-xs text-muted-foreground">
               {currentEnvVars.length === 0 ? ev.noneSet : interpolate(currentEnvVars.length === 1 ? t.importProject.counts.variableOne : t.importProject.counts.variableOther, { count: String(currentEnvVars.length) })}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        )}
+        <div className="ms-auto flex shrink-0 items-center gap-2">
           {mode === "settings" && !isEditingMode && (
             <>
               {/* Paste / Upload always available — clicking either
@@ -619,7 +669,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   setIsEditingMode(true);
                   void handlePasteFromClipboard();
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <FileText className="size-3.5" />
                 {ev.pasteEnv}
@@ -629,14 +679,14 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   setIsEditingMode(true);
                   handleUploadClick();
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Upload className="size-3.5" />
                 {ev.uploadEnv}
               </button>
               <button
                 onClick={() => setIsEditingMode(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Pencil className="size-3.5" />
                 {ev.edit}
@@ -656,14 +706,14 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
               )}
               <button
                 onClick={() => void handlePasteFromClipboard()}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <FileText className="size-3.5" />
                 {ev.pasteEnv}
               </button>
               <button
                 onClick={handleUploadClick}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Upload className="size-3.5" />
                 {ev.uploadEnv}
@@ -672,7 +722,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                 <button
                   onClick={onSave}
                   disabled={isSaving}
-                  className="px-4 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex h-8 shrink-0 items-center rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? ev.saving : ev.saveChanges}
                 </button>
@@ -683,14 +733,14 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
             <>
               <button
                 onClick={() => void handlePasteFromClipboard()}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <FileText className="size-3.5" />
                 {ev.pasteEnv}
               </button>
               <button
                 onClick={handleUploadClick}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Upload className="size-3.5" />
                 {ev.uploadEnv}
@@ -704,7 +754,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
               type="button"
               onClick={() => void toggleRevealAll()}
               disabled={revealingKeys.size > 0}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors disabled:opacity-50"
+              className={actionBtn}
               title={allShown ? ev.reveal?.hide : ev.reveal?.show}
             >
               {allShown ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -727,7 +777,8 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
           )}
         </div>
       </div>
-      
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -824,40 +875,54 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
           );
         })}
 
+        {/* The box holds the add CTA but is NOT itself a button: clicking its empty
+            space focuses the paste zone, the documented fallback for when the
+            clipboard API is blocked (see the clipboardBlocked toast). */}
         {currentEnvVars.length === 0 && (
           <div
-            className={`text-center flex flex-col items-center justify-center py-10 px-6 border-2 border-dashed rounded-xl transition-all ${
+            className={`flex flex-col items-center justify-center rounded-xl border border-dashed px-6 py-8 text-center transition-colors ${
               isDragging
                 ? 'border-primary bg-primary/5'
-                : 'border-border/50 bg-muted/20'
+                : 'border-border/60 bg-muted/15'
             }`}
           >
-            <Key className={`size-10 mb-3 ${isDragging ? 'text-primary' : 'text-muted-foreground/30'}`} />
-            <p className={`text-sm font-medium mb-1 ${isDragging ? 'text-primary' : 'text-foreground'}`}>
+            <div
+              className={`mb-3 flex size-10 items-center justify-center rounded-xl transition-colors ${
+                isDragging ? 'bg-primary/10 text-primary' : 'bg-muted/60 text-muted-foreground'
+              }`}
+            >
+              <Key className="size-[18px]" />
+            </div>
+            <p className={`text-sm font-medium ${isDragging ? 'text-primary' : 'text-foreground'}`}>
               {isDragging ? ev.dropHere : ev.noneTitle}
             </p>
-            <p className="text-xs text-muted-foreground max-w-xs">
-              {isEditingMode
-                ? ev.emptyHintEditing
-                : ev.emptyHintReadonly}
+            <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+              {isEditingMode ? ev.emptyHintEditing : ev.emptyHintReadonly}
             </p>
+            {isEditingMode && (
+              <button
+                type="button"
+                onClick={addEnvVar}
+                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Plus className="size-3.5" />
+                {ev.addVariable}
+              </button>
+            )}
           </div>
         )}
 
-        {isEditingMode && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              {ev.pasteHint}
-            </p>
-            <div className="flex items-center gap-2">
+        {isEditingMode && currentEnvVars.length > 0 && (
+          <div className="space-y-2 pt-1">
             <button
+              type="button"
               onClick={addEnvVar}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
             >
               <Plus className="size-3.5" />
               {ev.addVariable}
             </button>
-            </div>
+            <p className="text-[11px] text-muted-foreground">{ev.pasteHint}</p>
           </div>
         )}
       </div>

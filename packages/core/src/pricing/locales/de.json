@@ -1,0 +1,88 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Statische Websites kostenlos auf Openship Cloud deployen."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Für die erste echte App – Container, Datenbanken, alles dabei."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Für Produktions-Apps, die Platz zum Wachsen brauchen."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Für Teams mit hohem Traffic auf gemeinsamer Infrastruktur."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Individuelle Limits, dedizierte Infrastruktur und ein SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "Alles aus {inherited}, plus:",
+    "staticOnly": "Nur statische Websites – SSG, SPA und reines HTML",
+    "anyWorkload": "Beliebige Workloads – Container, Compose-Stacks und Worker",
+    "managedServices": "Managed Postgres, Redis und der komplette App-Katalog",
+    "buildMinutes": "{buildMinutes} Build-Minuten pro Monat",
+    "credits": "{credits} Compute-Credits pro Monat",
+    "freeSubdomains": "{freeSubdomains} kostenlose Subdomains unter {freeDomainSuffix}",
+    "freeSubdomainsUnlimited": "Unbegrenzt viele kostenlose Subdomains unter {freeDomainSuffix}",
+    "customDomains": "Unbegrenzt viele eigene Domains, TLS inklusive",
+    "unlimitedSeats": "Unbegrenzt viele Teammitglieder – nie Kosten pro Nutzer",
+    "previewDeploys": "Preview-Deploys bei jedem Push",
+    "backups": "Tägliche Backups mit Point-in-Time-Recovery",
+    "observability": "Live-Logs, Metriken und Health-Alerts",
+    "mailServer": "Integrierter Mailserver – SMTP, IMAP und Webmail",
+    "auditLog": "Audit-Log mit verlängerter Aufbewahrungsdauer",
+    "sharedChannel": "Gemeinsamer Slack- oder Discord-Channel",
+    "sso": "SSO und SAML",
+    "customLimits": "Individuelle Limits, vertraglich vereinbart",
+    "dedicatedInfra": "Dedizierte Infrastruktur und Regionen",
+    "onboarding": "Persönlich begleitetes Onboarding und Migration",
+    "communitySupport": "Community-Support",
+    "emailSupport": "E-Mail-Support",
+    "prioritySupport": "Priorisierter Support",
+    "dedicatedSupport": "Dedizierter Support mit SLA",
+    "selfHostedOpenSource": "Die komplette Plattform als Open Source (Apache 2.0)",
+    "selfHostedUnlimited": "Unbegrenzt viele Deploys, Projekte, Server und Domains",
+    "selfHostedServices": "Alle Managed Services – Postgres, Redis, Mail",
+    "selfHostedClients": "CLI, Web und Desktop – ein Backend",
+    "selfHostedFreeSubdomains": "{freeSubdomains} kostenlose Subdomains unter {freeDomainSuffix} bei Verbindung mit Openship Cloud",
+    "runningServices": "{runningServices} laufende Services – Apps, Datenbanken, Worker",
+    "power": "Bis zu {powerCpu} vCPU und {powerRamGb} GB RAM pro Service",
+    "projects": "{maxProjects} Projekte",
+    "projectsUnlimited": "Unbegrenzt viele Projekte",
+    "meteredCredits": "Compute, Datenübertragung und Speicher werden alle über die monatlichen Credits abgerechnet"
+  },
+  "selfHosted": {
+    "name": "Selbst gehostet",
+    "tagline": "Die komplette Plattform auf eigenen Maschinen betreiben. Jeder Linux-Server, jeder Anbieter, jede Region. Keine verbrauchsabhängige Abrechnung, keine Nutzerlimits, keine Telemetrie.",
+    "priceLabel": "Kostenlos",
+    "priceNote": "Apache 2.0 – für immer kostenlos, keine Kreditkarte",
+    "cta": "Self-Hosting starten"
+  },
+  "creditPacks": {
+    "pack_5k": "{credits} Credits",
+    "pack_25k": "{credits} Credits",
+    "pack_100k": "{credits} Credits"
+  },
+  "ui": {
+    "perMonth": "/Mon.",
+    "perYear": "/Jahr",
+    "custom": "Individuell",
+    "free": "Kostenlos",
+    "unlimited": "Unbegrenzt",
+    "mostPopular": "Am beliebtesten",
+    "monthsFree": "{months} Monate kostenlos",
+    "ctaStart": "Kostenlos starten",
+    "ctaChoose": "{name} wählen",
+    "ctaContact": "Vertrieb kontaktieren",
+    "billedMonthly": "monatliche Abrechnung, jederzeit kündbar",
+    "campaignBadge": "{percentOff} % Rabatt",
+    "campaignEnds": "Angebot endet am {date}",
+    "wasPrice": "vorher {price}"
+  }
+}

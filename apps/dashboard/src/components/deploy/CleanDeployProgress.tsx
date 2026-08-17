@@ -77,7 +77,13 @@ export interface DeploySummaryRow {
 type PhaseRow = { id: InstallPhaseId; label: string; status: StepStatus; subs: StepStatus[] };
 
 /** Statuses that mean a step will not advance again. */
-const SETTLED: ReadonlySet<StepStatus> = new Set<StepStatus>(["done", "skipped", "failed", "error"]);
+const SETTLED: ReadonlySet<StepStatus> = new Set<StepStatus>([
+  "done",
+  "skipped",
+  "failed",
+  "error",
+  "stopped",
+]);
 
 /**
  * Completion percent for the install bar, derived from the phase rows the
@@ -211,34 +217,46 @@ function ConfigSummaryCard({ title, rows }: { title: string; rows: DeploySummary
 }
 
 /**
+ * The renderable lines of a log blob — trailing whitespace trimmed, blanks
+ * dropped, capped at the last 400. Shared with the callers so a settled screen
+ * can decide whether the panel is worth mounting AT ALL before mounting it: an
+ * empty console is worse than no console, and the old `logs != null` guard let
+ * `""` through (the wizard seeds `logs` with an empty string, never null).
+ */
+export function logLines(logs: string): string[] {
+  return logs
+    .split("\n")
+    .map((l) => l.replace(/\s+$/, ""))
+    .filter((l) => l.length > 0)
+    .slice(-400);
+}
+
+/**
  * Live log panel — a clean, theme-aware monospace console (an elevated surface
  * that adapts to light/dark, not a hardcoded black box) with a titlebar, a
- * "live" pulse while streaming, and auto-scroll to the newest line. Renders a
- * waiting placeholder until the build emits output so early phases read as
- * "working". All colors are semantic tokens.
+ * "live" pulse while streaming, and auto-scroll to the newest line. All colors
+ * are semantic tokens.
  */
 function TerminalLogs({
   logs,
   live,
   label,
+  emptyLabel,
   noTopMargin,
 }: {
   logs: string;
   live: boolean;
   label: string;
+  /** Placeholder for a panel with no lines yet. The caller picks the wording,
+   *  because "waiting" is only true while something is still streaming — a
+   *  settled install saying "Waiting for output…" is a promise nothing will
+   *  keep. */
+  emptyLabel: string;
   /** Drop the default top margin — the two-column install layout spaces it. */
   noTopMargin?: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
-  const lines = useMemo(
-    () =>
-      logs
-        .split("\n")
-        .map((l) => l.replace(/\s+$/, ""))
-        .filter((l) => l.length > 0)
-        .slice(-400),
-    [logs],
-  );
+  const lines = useMemo(() => logLines(logs), [logs]);
 
   useEffect(() => {
     if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
@@ -267,7 +285,7 @@ function TerminalLogs({
         className="max-h-72 overflow-auto p-3.5 font-mono text-[11.5px] leading-relaxed"
       >
         {lines.length === 0 ? (
-          <span className="text-muted-foreground/70">Waiting for output…</span>
+          <span className="text-muted-foreground/70">{emptyLabel}</span>
         ) : (
           lines.map((l, i) => (
             <div key={i} className="flex gap-3">
@@ -290,12 +308,14 @@ function CollapsibleLogs({
   logs,
   live,
   label,
+  emptyLabel,
   showLabel,
   hideLabel,
 }: {
   logs: string;
   live: boolean;
   label: string;
+  emptyLabel: string;
   showLabel: string;
   hideLabel: string;
 }) {
@@ -312,7 +332,9 @@ function CollapsibleLogs({
           {open ? hideLabel : showLabel}
         </button>
       </div>
-      {open && <TerminalLogs logs={logs} live={live} label={label} noTopMargin />}
+      {open && (
+        <TerminalLogs logs={logs} live={live} label={label} emptyLabel={emptyLabel} noTopMargin />
+      )}
     </div>
   );
 }
@@ -471,14 +493,24 @@ export function CleanDeployProgressCard({
   // empty → all-pending preview); the mail wizard passes nothing.
   const hasStepper = phases !== undefined;
 
+  // ── The settled verdict, stated ONCE. Computed above the legacy early-return so
+  // BOTH layouts get it — the mail wizard had the same stutter.
+  //
+  // The heading is the verdict; `errorMsg` is meant to be the reason under it. But
+  // the wizard's own fallbacks hand the verdict straight back as the reason —
+  // `stopInstall` used to set it to `installCancelled`, and a cancelled row whose
+  // `failureMessage` the API blanked fell through to `installFailed`. That is how
+  // "Install cancelled" came to sit over "Install failed". A reason that only
+  // repeats the heading — or contradicts it — is not a reason: it's dropped, and
+  // the body copy speaks instead.
+  const settledHeading = cancelled ? w.installCancelled : w.installFailed;
+  const serverReason =
+    errorMsg && errorMsg.trim() !== w.installFailed && errorMsg.trim() !== w.installCancelled
+      ? errorMsg
+      : "";
+
   const statusLine =
-    phase === "installing"
-      ? phaseLabel
-      : phase === "done"
-        ? w.progressLive
-        : cancelled
-          ? w.installCancelled
-          : w.installFailed;
+    phase === "installing" ? phaseLabel : phase === "done" ? w.progressLive : settledHeading;
 
   // Header status glyph — spinner while working, then a terminal-state mark.
   const statusIcon =
@@ -518,7 +550,14 @@ export function CleanDeployProgressCard({
                   style={{ width: `${Math.max(5, progress)}%` }}
                 />
               </div>
-              {logs != null && <TerminalLogs logs={logs} live label={w.deployLogs} />}
+              {logs != null && (
+                <TerminalLogs
+                  logs={logs}
+                  live
+                  label={w.deployLogs}
+                  emptyLabel={w.logsWaiting}
+                />
+              )}
             </>
           )}
 
@@ -573,12 +612,33 @@ export function CleanDeployProgressCard({
 
           {phase === "error" && (
             <div className="mt-6 rounded-2xl border border-border/50 bg-card p-6">
-              <div className="flex size-10 items-center justify-center rounded-full bg-danger-bg ring-4 ring-danger/10">
-                <AlertTriangle className="size-5 text-danger" />
+              {/* Tone follows the verdict, so a caller that starts passing
+                  `cancelled` can't get a danger disc over neutral copy. */}
+              <div
+                className={`flex size-10 items-center justify-center rounded-full ${
+                  cancelled ? "bg-muted ring-4 ring-border/30" : "bg-danger-bg ring-4 ring-danger/10"
+                }`}
+              >
+                {cancelled ? (
+                  <Ban className="size-5 text-muted-foreground" />
+                ) : (
+                  <AlertTriangle className="size-5 text-danger" />
+                )}
               </div>
-              <h2 className="mt-4 text-base font-semibold text-foreground">{w.installFailed}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{errorMsg}</p>
-              {logs != null && <TerminalLogs logs={logs} live={false} label={w.deployLogs} />}
+              <h2 className="mt-4 text-base font-semibold text-foreground">{settledHeading}</h2>
+              {/* Same rule as the stepper layout: a reason that merely repeats the
+                  verdict is dropped rather than printed under it. */}
+              {serverReason && <p className="mt-1 text-sm text-muted-foreground">{serverReason}</p>}
+              {/* Same rule as the stepper layout: a settled console with nothing in
+                  it is mounted only when there is something to read. */}
+              {logs != null && logLines(logs).length > 0 && (
+                <TerminalLogs
+                  logs={logs}
+                  live={false}
+                  label={w.deployLogs}
+                  emptyLabel={w.logsEmpty}
+                />
+              )}
               <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                 {deploymentId && (
                   <button
@@ -643,17 +703,68 @@ export function CleanDeployProgressCard({
           ? appSetupItems.map((s) => s.status)
           : [],
   }));
-  const stepItems: StepItem[] = phaseRows.map((p) => ({
+  /**
+   * How a LEAF step (a service, an app-setup step) reads once the install has
+   * stopped for good.
+   *
+   * A step left `active` must not keep spinning on a settled screen — that was the
+   * same lie as a log panel still saying "Waiting for output…". What it becomes
+   * depends on WHY the install stopped: on a failure the in-flight step is the one
+   * that broke (`failed`, danger); on a cancel it is merely unfinished (`stopped`,
+   * neutral) — a red step under "Install cancelled" reports a fault nobody caused.
+   *
+   * Cancels need the extra neutralising below: the SSE service union has no
+   * `cancelled` member, so the API reports every torn-down service as `failed`,
+   * which would paint a stopped install red from top to bottom.
+   */
+  const settleLeaf = (s: StepStatus): StepStatus => {
+    if (s === "active" || s === "running") return cancelled ? "stopped" : "failed";
+    if (cancelled && (s === "failed" || s === "error")) return "stopped";
+    return s;
+  };
+  /**
+   * How a PHASE reads once the install has stopped — `settleLeaf` plus the two
+   * places the backend's own phase stream is more optimistic than the outcome:
+   *
+   *  - `ready` is broadcast `done` by the compose pipeline BEFORE the
+   *    partial-failure roll-up is written, so a failed install rendered a green
+   *    "Live" check directly under the heading "Install failed".
+   *  - `services` closes `done` as soon as ONE service came up, so a partial
+   *    failure showed a green check sitting above its own red child.
+   *
+   * Neither can stand on a screen whose verdict is "this did not finish".
+   */
+  const settlePhase = (row: PhaseRow): StepStatus => {
+    const s = settleLeaf(row.status);
+    if (s !== "done") return s;
+    // The install never reached live, so the terminal phase is unreached, not done.
+    if (row.id === "ready") return "stopped";
+    if (row.subs.some((x) => x === "failed" || x === "error")) return cancelled ? "stopped" : "failed";
+    return s;
+  };
+  const settled = phase === "error";
+  const asSteps = (items: StepItem[]): StepItem[] =>
+    items.map((i) => ({ ...i, status: settled ? settleLeaf(i.status) : i.status }));
+  const settledRows: PhaseRow[] = phaseRows.map((p) => ({
+    ...p,
+    status: settled ? settlePhase(p) : p.status,
+  }));
+  const stepItems: StepItem[] = settledRows.map((p) => ({
     id: p.id,
     label: p.label,
     status: p.status,
     children:
       p.id === "services" && serviceItems.length > 0 ? (
-        <InstallStepper steps={serviceItems} />
+        <InstallStepper steps={asSteps(serviceItems)} />
       ) : p.id === "app-setup" && appSetupItems.length > 0 ? (
-        <InstallStepper steps={appSetupItems} />
+        <InstallStepper steps={asSteps(appSetupItems)} />
       ) : undefined,
   }));
+  // Whether the install got far enough for the checklist to say anything. All
+  // -pending means it never started, or (on a resumed install) that the phase
+  // stream was never replayed — either way an all-blank checklist is filler, and
+  // the terminal screen is better short than padded.
+  const anyPhaseMoved = phaseRows.some((p) => p.status !== "pending");
 
   // Aside status pill — theme tokens only, mirrors PROJECT_STATUS_META. Carries a
   // glyph rather than a bare dot: a coloured dot beside a word the header already
@@ -712,6 +823,57 @@ export function CleanDeployProgressCard({
       />
     ) : null;
   const summaryRows = summary ?? [];
+
+  // With no server-side reason, a cancel was the user's own Stop — say so. With
+  // one, it was NOT: the boot sweep writes "Interrupted by a server restart" and a
+  // superseded release writes why. Attributing either to the operator would be a
+  // fresh version of the lie this screen exists to stop telling.
+  const settledDetail = serverReason || (cancelled ? w.installCancelledSelf : "");
+  /**
+   * The stand-in shown when we have no real reason to show.
+   *
+   * The cancel copy states what a cancel cleans up — and that is only true of the
+   * teardown `cancelBuildSession` runs for a user's Stop. The system-side cancels
+   * (the boot sweep, a superseded release) are a bare DB write that tears nothing
+   * down, and those are exactly the ones that carry a `serverReason`. So the
+   * presence of a reason is also the signal that the cleanup claim would be false,
+   * and one condition correctly gates both.
+   */
+  const settledBody = serverReason ? "" : cancelled ? w.installCancelledBody : w.installFailedBody;
+  /**
+   * "Stopped at Starting services · 3 of 21 services ready" — where it stopped,
+   * plus how many services made it. Neutral wording in both readings: on a cancel
+   * nothing failed, and on a failure the checklist's own danger-toned row already
+   * carries the fault.
+   *
+   * Only rendered when there IS a single stopping point. A compose pipeline can
+   * carry on past a failed phase (a partial image build still deploys what built),
+   * and naming the first failure then contradicts the checklist right beside it —
+   * "Stopped at Preparing images" over a completed "Starting services". When
+   * something succeeded after the break, the checklist alone tells the truth.
+   */
+  // `ready` is excluded: it's the "we got there" marker, never a phase you get
+  // stuck inside, and settling always demotes it — naming it would read as
+  // "Stopped at Live" on an install that plainly is not live.
+  const stoppedIndex = settledRows.findIndex(
+    (p) => p.id !== "ready" && (p.status === "failed" || p.status === "stopped"),
+  );
+  const ranPastTheBreak =
+    stoppedIndex >= 0 && settledRows.slice(stoppedIndex + 1).some((p) => p.status === "done");
+  const stoppedAtLine =
+    phase === "error" && stoppedIndex >= 0 && !ranPastTheBreak
+      ? [
+          interpolate(w.settledAtPhase, { phase: settledRows[stoppedIndex].label }),
+          serviceItems.length > 0
+            ? interpolate(w.progressServicesReady, {
+                done: String(servicesDone),
+                total: String(serviceItems.length),
+              })
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "";
 
   const btnPrimary =
     "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90";
@@ -781,6 +943,7 @@ export function CleanDeployProgressCard({
           logs={logs ?? ""}
           live
           label={w.deployLogs}
+          emptyLabel={w.logsWaiting}
           showLabel={w.showLogs}
           hideLabel={w.hideLogs}
         />
@@ -832,12 +995,45 @@ export function CleanDeployProgressCard({
               <AlertTriangle className="size-5 text-danger" />
             )}
           </div>
-          <h2 className="mt-4 text-base font-semibold text-foreground">
-            {cancelled ? w.installCancelled : w.installFailed}
-          </h2>
-          {errorMsg && <p className="mt-1 text-sm text-muted-foreground">{errorMsg}</p>}
+          <h2 className="mt-4 text-base font-semibold text-foreground">{settledHeading}</h2>
+          {settledDetail && (
+            <p className="mt-1 text-sm text-muted-foreground">{settledDetail}</p>
+          )}
+          {settledBody && (
+            <p
+              className={`text-[13px] leading-relaxed text-muted-foreground/80 ${
+                settledDetail ? "mt-2" : "mt-1"
+              }`}
+            >
+              {settledBody}
+            </p>
+          )}
+          {stoppedAtLine && (
+            <p className="mt-4 border-t border-border/40 pt-3 text-xs text-muted-foreground">
+              {stoppedAtLine}
+            </p>
+          )}
         </div>
-        {logs != null && <TerminalLogs logs={logs} live={false} label={w.deployLogs} />}
+        {/* How far it got. This is the checklist the install was already showing
+            when it stopped — dropping it on the terminal screen threw away the one
+            thing that says WHERE it stopped, at the moment that matters most. */}
+        {anyPhaseMoved && (
+          <div className="rounded-2xl border border-border/50 bg-card p-5">
+            <h2 className="text-sm font-semibold text-foreground">{w.stepperTitle}</h2>
+            <div className="mt-4">
+              <InstallStepper steps={stepItems} />
+            </div>
+          </div>
+        )}
+        {/* Mounted only when there is something to read — see `logLines`. */}
+        {logs != null && logLines(logs).length > 0 && (
+          <TerminalLogs
+            logs={logs}
+            live={false}
+            label={w.deployLogs}
+            emptyLabel={w.logsEmpty}
+          />
+        )}
       </>
     );
 

@@ -47,7 +47,9 @@ import type Stripe from "stripe";
 import {
   AppError,
   PLANS,
+  PLAN_IDS,
   CREDIT_PACKS,
+  resolveStripePriceId,
   safeErrorMessage,
   type PlanTierId,
 } from "@repo/core";
@@ -747,13 +749,23 @@ function resolveIntervalFromSub(sub: Stripe.Subscription): "monthly" | "annual" 
   return "monthly";
 }
 
+/**
+ * Reverse-map a Stripe price id back to a tier.
+ *
+ * Iterates PLAN_IDS — the catalog's own list — rather than a hand-written tuple.
+ * The tuple this replaced was `["pro", "team", "enterprise"]`, so a tier added to
+ * the catalog was invisible here and every `subscription.updated` / `invoice.paid`
+ * for it resolved to the `"free"` fallback: a silent downgrade of a paying
+ * customer, with the quota push to match. Anything the catalog can sell, this
+ * must be able to read back.
+ */
 function resolvePlanFromPriceId(sub: Stripe.Subscription): PlanTierId {
   const priceId = resolvePriceIdFromSub(sub);
-  for (const tier of ["pro", "team", "enterprise"] as const) {
-    const plan = PLANS[tier];
+  if (!priceId) return "free";
+  for (const tier of PLAN_IDS) {
     if (
-      plan.stripePriceId.monthly === priceId ||
-      plan.stripePriceId.annual === priceId
+      resolveStripePriceId(tier, "monthly") === priceId ||
+      resolveStripePriceId(tier, "annual") === priceId
     ) {
       return tier;
     }

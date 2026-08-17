@@ -17,6 +17,7 @@
  */
 
 import { Oblien } from "@repo/adapters";
+import { repos } from "@repo/db";
 import { env } from "../config/env";
 import { safeErrorMessage } from "@repo/core";
 import { cacheStore } from "./cache-store";
@@ -136,13 +137,39 @@ function namespaceSlugForOrg(orgId: string): string {
 }
 
 /**
- * Ensure an Oblien namespace exists for an org. Idempotent via
- * Oblien's `namespaces.ensure`.
+ * Ensure an Oblien namespace exists for an org, and PERSIST the slug.
+ *
+ * Resolution order is DB → cache → Oblien, and the write order is DB before
+ * cache. Both directions matter:
+ *
+ *   - Reading the DB first means the namespace survives a cache eviction and a
+ *     restart. It previously lived in `cacheStore` ONLY, so `organization
+ *     .oblien_namespace` stayed NULL forever — and every consumer of that column
+ *     opens with `if (!org.oblienNamespace) return`. The whole entitlement path
+ *     (setQuota, resource_limits, credit top-ups, the `credits.usage` webhook
+ *     match) was therefore a silent no-op.
+ *   - Writing the DB BEFORE the cache means a failed DB write retries on the next
+ *     call instead of being masked by a cache hit for the TTL.
+ *
+ * Idempotent via Oblien's own `namespaces.ensure`, so adopting a namespace that
+ * already exists is the normal path, not an error.
  */
 export async function ensureNamespace(organizationId: string): Promise<string> {
+  const existing = await repos.organization
+    .findById(organizationId)
+    .catch(() => null);
+  if (existing?.oblienNamespace) return existing.oblienNamespace;
+
   const store = await cacheStore<string>("oblien-namespaces");
   const cached = await store.get(organizationId);
-  if (cached) return cached;
+  if (cached) {
+    // Cache hit with no DB row: a previous run persisted only to the cache.
+    // Heal the row rather than leaving the column NULL.
+    await repos.organization
+      .setOblienNamespace(organizationId, cached)
+      .catch(() => {});
+    return cached;
+  }
 
   const client = getOblienClient();
   const slug = namespaceSlugForOrg(organizationId);
@@ -153,6 +180,7 @@ export async function ensureNamespace(organizationId: string): Promise<string> {
   });
 
   const namespace = ensured.data.slug || slug;
+  await repos.organization.setOblienNamespace(organizationId, namespace);
   await store.set(organizationId, namespace, NAMESPACE_CACHE_TTL_S);
   return namespace;
 }

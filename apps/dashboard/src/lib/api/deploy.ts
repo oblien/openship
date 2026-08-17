@@ -62,6 +62,10 @@ export type PrepareProjectSource =
     };
 
 export interface PrepareComposeService {
+  /** Set only when this service was hydrated from a PERSISTED row (an edit / redeploy
+   *  of a project that already exists), never by a fresh compose scan. Its presence is
+   *  what tells the env editor a stored-env reveal is possible for this service. */
+  serviceId?: string;
   name: string;
   image?: string;
   build?: string;

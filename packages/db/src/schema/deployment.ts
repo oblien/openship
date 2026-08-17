@@ -3,6 +3,7 @@ import {
   text,
   timestamp,
   integer,
+  index,
   jsonb,
   boolean,
   uniqueIndex,
@@ -212,6 +213,9 @@ export const deployment = pgTable("deployment", {
   uniqueIndex("uq_deployment_one_active_per_project")
     .on(t.projectId)
     .where(sql`status IN ('queued', 'building', 'deploying')`),
+  // Org scoping for the build-minute sum (which joins build_session → deployment
+  // and filters here) and for org-wide deployment listings. See migration 0107.
+  index("idx_deployment_org").on(t.organizationId),
 ]);
 
 // ─── Build sessions ──────────────────────────────────────────────────────────
@@ -240,4 +244,9 @@ export const buildSession = pgTable("build_session", {
   startedAt: timestamp("started_at"),
   finishedAt: timestamp("finished_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  // The build-minute allowance windows on started_at and joins to deployment by
+  // organization; the plan gate runs that query on every deploy, so both sides of
+  // the join need covering (see migration 0107).
+  index("idx_build_session_started_at").on(t.startedAt),
+]);

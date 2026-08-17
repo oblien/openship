@@ -23,7 +23,9 @@ vi.mock("../../src/lib/loopback-api", () => ({
   },
   waitHealthy: async () => true,
   bootstrapAdmin: async () => ({ ok: true, message: "created" }),
-  ensureInternalToken: () => "tok",
+  // The provision-stream reader goes through this; unreachable here (the stubbed
+  // self-register returns no sessionId), but the module imports it.
+  internalFetch: async () => ({ kind: "unreachable", detail: "not stubbed" }),
 }));
 
 import { headlessProvision } from "../../src/lib/instance-provision";

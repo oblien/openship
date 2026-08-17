@@ -123,7 +123,17 @@ export function EnvVarsEditor({
     const { upserts, deletes } = result.diff;
 
     if (upserts.length === 0 && deletes.length === 0) {
-      onClose(); // nothing changed
+      // Say so, rather than just closing. An untouched masked secret is deliberately
+      // absent from the diff (we never hold its value), so re-entering the SAME `.env`
+      // over a set of saved secrets produces an empty diff — and a dialog that shut
+      // itself with no word read as "Save did nothing", so operators retried and
+      // concluded env saving was broken (#587).
+      showToast(
+        t.projectSettings.envVars.toast.noChanges,
+        "info",
+        t.projectSettings.envVars.toast.noChangesTitle,
+      );
+      onClose();
       return;
     }
 

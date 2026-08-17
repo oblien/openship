@@ -6,7 +6,6 @@
  * Tabs are URL-driven via the `tab` query param so deep-linking works:
  *   /settings              → general (default)
  *   /settings?tab=team     → team / workspace management
- *   /settings?tab=audit    → audit log
  *   /settings?tab=cloud    → cloud connection (self-hosted only)
  *   /settings?tab=instance → instance info
  *
@@ -17,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Settings as SettingsIcon, Users, ClipboardList, Cloud, Server, Bell, KeyRound, Boxes, Mail, Globe } from "lucide-react";
+import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useSession, authClient } from "@/lib/auth-client";
 import { useI18n } from "@/components/i18n-provider";
@@ -49,7 +48,7 @@ function useInfraIssuesCount(): number {
   return enabled ? count : 0;
 }
 
-export type SettingsTabId = "general" | "tokens" | "mcp" | "team" | "notifications" | "email" | "dns" | "audit" | "cloud" | "infrastructure" | "instance";
+export type SettingsTabId = "general" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -67,10 +66,24 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
   const localOnly = deployMode === "desktop";
+  // `dns` is still accepted, though the DNS tab is gone: AutoDnsPanel deep-links to
+  // `/settings?tab=dns` in two places (and a render test pins that string), and a value
+  // missing from this list silently falls back to "general".
+  const allowedTabs: SettingsTabId[] = ["general", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
+  const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
+  // DNS credentials moved into Credentials — one screen for every third-party secret
+  // instead of three. The old link lands on the screen that now owns them.
+  const activeTab: SettingsTabId = requested === "dns" ? "credentials" : requested;
 
   const tabs: SettingsTab[] = [
     { id: "general", label: t.settings.sidebar.tabs.general, icon: SettingsIcon, visible: true },
-    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: KeyRound, visible: true },
+    // Git sources, as their own domain rather than a card on General: the App install, the
+    // clone PAT and per-server auth are one subject with several shapes, and more providers
+    // (GitLab, Bitbucket) land here rather than widening anything else. Hidden in the
+    // mail-only shell, which deploys nothing from source.
+    { id: "git", label: t.settings.sidebar.tabs.git, icon: GitBranch, visible: productView !== "mail" },
+    { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: KeyRound, visible: true, requiresRole: "admin" },
+    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: Terminal, visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },
     { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: !localOnly },
     { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: Bell, visible: true },
@@ -87,11 +100,6 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
       visible: selfHosted,
       requiresRole: "admin",
     },
-    // DNS provider credentials — one org-wide record that lets Openship write a
-    // domain's records. Every mode: the cloud target automates its CNAME + TXT
-    // exactly like a self-hosted box automates its A record.
-    { id: "dns", label: t.settings.sidebar.tabs.dns, icon: Globe, visible: true, requiresRole: "admin" },
-    { id: "audit", label: t.settings.sidebar.tabs.audit, icon: ClipboardList, visible: true, requiresRole: "admin" },
     { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted && !localOnly },
     // The servers this install runs — edge/mail container versions + global scan
     // + untracked edge routes. Self-hosted/desktop only (the SaaS has no
@@ -101,8 +109,8 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   ];
 
   const visibleTabs = tabs.filter((tab) => tab.visible);
-  const activeTab = visibleTabs.some((tab) => tab.id === raw) ? raw : "general";
-  return { tabs: visibleTabs, activeTab };
+  const visibleActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "general";
+  return { tabs: visibleTabs, activeTab: visibleActiveTab };
 }
 
 export function SettingsSidebar() {

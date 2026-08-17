@@ -13,6 +13,7 @@
     "queued": "En file d'attente",
     "building": "Compilation",
     "deploying": "Déploiement",
+    "migrating": "Migration",
     "failed": "Échec",
     "cancelled": "Annulé",
     "deleting": "Suppression",
@@ -336,12 +337,12 @@
     "unknown": "Inconnu"
   },
   "routingRetry": {
-    "title": "Le routage du domaine gratuit nécessite votre attention",
-    "description": "L'application est en ligne sur le serveur, mais son URL gratuite .opsh.io n'a pas été routée via l'edge d'Openship Cloud. Réessayez une fois que le serveur est accessible depuis le cloud sur le port 80.",
+    "title": "Le routage du domaine demande votre attention",
+    "description": "L'app tourne sur le serveur, mais les routes en amont ne se sont pas synchronisées. Relancez la réparation, ou vérifiez le DNS et l'edge de ce serveur.",
     "retry": "Réessayer le routage",
     "retrying": "Nouvelle tentative…",
-    "success": "Routage du domaine gratuit synchronisé.",
-    "failed": "Impossible de synchroniser le routage du domaine gratuit."
+    "success": "Routage du domaine synchronisé.",
+    "failed": "Impossible de synchroniser le routage du domaine."
   },
   "deployBlocked": {
     "redeploy": "Redéployer"
@@ -510,5 +511,6 @@
       "unhealthy": "Défaillant",
       "server_unreachable": "Serveur inaccessible"
     }
-  }
+  },
+  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans l'onglet Avancé du projet"
 }

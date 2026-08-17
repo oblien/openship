@@ -95,7 +95,12 @@
     "installing": "Instalando",
     "running": "En ejecución",
     "incomplete": "Incompleto",
-    "stoppedAt": "Detenido · paso {step}"
+    "stoppedAt": "Detenido · paso {step}",
+    "open": "Abrir",
+    "openAria": "Abrir {name}",
+    "actionsAria": "Acciones para {name}",
+    "overviewTitle": "Resumen de correo",
+    "hint": "Eliminar un servidor solo lo desvincula de esta lista: la instalación sigue funcionando y puede volver a adoptarse."
   },
   "setup": {
     "title": "Configuración del servidor de correo",

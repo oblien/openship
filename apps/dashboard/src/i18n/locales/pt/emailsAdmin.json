@@ -4,25 +4,27 @@
       "overview": "Visão geral",
       "domains": "Domínios",
       "mailboxes": "Caixas de correio",
-      "inbound": "Entrada",
+      "notifications": "Notificações",
+      "sending": "Envio",
       "dns": "DNS",
       "health": "Saúde",
-      "test": "Teste",
       "backup": "Backup",
       "advanced": "Avançado"
     },
     "ariaLabel": "Seções de administração de e-mail"
   },
-  "inbound": {
-    "heading": "Regras de entrada",
+  "notifications": {
+    "heading": "Regras de notificação",
     "description": "Receba um aviso em um canal de notificação quando um e-mail chegar a um endereço deste servidor.",
     "newRule": "Nova regra",
-    "newTitle": "Nova regra de entrada",
-    "editTitle": "Editar regra de entrada",
+    "newTitle": "Nova regra de notificação",
+    "editTitle": "Editar regra de notificação",
     "edit": "Editar",
-    "emptyTitle": "Nenhuma regra de entrada ainda",
+    "emptyTitle": "Nenhuma regra de notificação ainda",
     "emptyBody": "Adicione uma regra para ser notificado no Slack, Telegram, Discord ou em um webhook quando um e-mail chegar a uma caixa de correio ou a um domínio deste servidor.",
     "noChannels": "Você ainda não tem canais de notificação verificados. Adicione e verifique um em Configurações → Notificações e depois volte aqui para criar uma regra.",
+    "addChannel": "Adicionar um canal de notificação",
+    "manageChannels": "Gerenciar canais",
     "fieldName": "Nome",
     "namePlaceholder": "Caixa de suporte → #support",
     "fieldScope": "Monitorar",
@@ -47,7 +49,7 @@
     "active": "Ativa",
     "disabled": "Desativada",
     "paused": "Pausada",
-    "deleteTitle": "Excluir regra de entrada",
+    "deleteTitle": "Excluir regra de notificação",
     "deleteConfirm": "Excluir regra",
     "deleting": "Excluindo…",
     "deleteHint": "As notificações já enviadas não são afetadas. O e-mail que já foi capturado, mas ainda não processado, é descartado.",
@@ -58,10 +60,13 @@
     "testing": "Testando…",
     "testResult": "{read} mensagem(ns) capturada(s) lida(s): {matched} corresponderam a uma regra, {dropped} foram filtradas. Nada foi enviado nem excluído.",
     "testFailed": "Não foi possível executar o teste.",
-    "loadFailed": "Não foi possível carregar as regras de entrada.",
+    "loadFailed": "Não foi possível carregar as regras de notificação.",
     "saveFailed": "Não foi possível salvar a regra.",
     "deleteFailed": "Não foi possível excluir a regra.",
     "confirmDelete": "Excluir a regra “{name}”? A captura do endereço dela é interrompida, a menos que outra regra ainda precise dela."
+  },
+  "sending": {
+    "testLiveNote": "Envia pelo caminho ativo agora, não pelas alterações não salvas acima."
   },
   "overview": {
     "mailServer": "Servidor de e-mail",
@@ -617,6 +622,7 @@
     "close": "Fechar",
     "logsLoadFailed": "Falha ao carregar os logs",
     "loadingLogs": "Carregando logs…",
-    "noLogLines": "Ainda não há linhas de log para este componente."
+    "noLogLines": "Ainda não há linhas de log para este componente.",
+    "rowActions": "Ações para {name}"
   }
 }

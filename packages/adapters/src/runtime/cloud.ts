@@ -457,6 +457,11 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     // network with nothing having said so (#533).
     "networkMode",
     "pidMode",
+    // A workspace is not a container whose ENTRYPOINT we compose: Oblien resolves its
+    // own workload command, so an override (or a clearing `[]`) has nowhere to land
+    // here. Declared so the deploy says so once per service and continues, rather
+    // than the image's own launcher running with nothing having mentioned it (#575).
+    "entrypoint",
   ]);
 
   private readonly client: Oblien;

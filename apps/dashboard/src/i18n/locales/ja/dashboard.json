@@ -67,6 +67,7 @@
     "emails": "メール",
     "settings": "設定",
     "billing": "請求と使用状況",
+    "audit": "監査ログ",
     "mailSetup": "メールをセットアップ",
     "mailSetupProgress": "セットアップの進行状況",
     "addMailbox": "メールボックスを追加",

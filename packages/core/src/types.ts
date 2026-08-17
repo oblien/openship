@@ -302,6 +302,26 @@ export type ComposeAdvanced = {
    */
   alias?: string;
   /**
+   * Compose `entrypoint` — the container's ENTRYPOINT, as argv.
+   *
+   * The other half of container shape, and it has to distinguish three states that
+   * a plain `string[]` expresses exactly:
+   *
+   *   absent  ⇒ the image's own ENTRYPOINT runs (unchanged).
+   *   `[]`    ⇒ CLEAR it (`Entrypoint: []`). This is the deliberate form — pairing
+   *             `entrypoint: []` with a `command` is how you run a binary directly
+   *             in an image whose ENTRYPOINT is a wrapper — and it used to be the
+   *             most silent failure of the lot: `requestsSomething` reads an empty
+   *             array as "asks for nothing", so it produced no warning either (#575).
+   *   argv    ⇒ replace it (a debug shim, `wait-for-it.sh`, a privilege dropper).
+   *
+   * No implicit `sh -c`, matching what #332 settled for `command`: a compose string
+   * is shell-WORD-SPLIT into argv (`commandToArgv`), so running a shell takes an
+   * explicit `sh -c`. Unlike `command` there is no companion text column to keep in
+   * step — nothing predates this field, so argv is the only representation.
+   */
+  entrypoint?: string[];
+  /**
    * Compose `stop_signal` — the signal Docker sends to ask this container to shut
    * down (`"SIGINT"`, `"SIGQUIT"`, a bare number). Absent ⇒ Docker's default
    * `SIGTERM`. Maps to the container's top-level `StopSignal`.

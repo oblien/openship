@@ -452,6 +452,37 @@ export function syncStoredPublicEndpoints(opts: {
   };
 }
 
+/**
+ * The Cloud-managed hostname a stored endpoint will occupy, or null when it will
+ * occupy none.
+ *
+ * Classify by the HOSTNAME's physical truth, never a bare `domainType` string.
+ * Only a subdomain of the CLOUD domain resolves behind the Cloud edge. A real
+ * custom host routes on our OWN edge — even when a migrated/stale row left its
+ * domainType unset or wrong (which is exactly what made removing a custom-domain
+ * route demand Cloud) — and so does a managed subdomain of the operator's own
+ * HOST_DOMAIN.
+ *
+ * Returns the hostname rather than a boolean because two callers need it: the
+ * Cloud requirement (does ANY endpoint need Cloud) and the per-org free-subdomain
+ * allowance (WHICH hostnames does this write claim). `endpoint.domain` holds a
+ * bare SLUG, so the allowance count cannot skip the suffix composition below —
+ * testing the raw field would silently match nothing.
+ */
+export function cloudManagedHostnameOf(
+  endpoint: Partial<Pick<StoredPublicEndpoint, "domainType" | "domain" | "customDomain">>,
+): string | null {
+  const custom = normalizeCustomDomain(endpoint.customDomain);
+  if (custom) return isCloudManagedHostname(custom) ? custom : null;
+  const slug = normalizeSlug(endpoint.domain);
+  if (!slug) return null; // nothing routable → nothing to gate
+  // A bare slug is a managed subdomain of the ROUTING base (that's where it will
+  // actually be registered); a dotted value here is a misfiled custom host
+  // (e.g. a migrated api.example.com) that routes on our edge either way.
+  const hostname = slug.includes(".") ? slug : `${slug}${managedHostnameSuffix()}`;
+  return isCloudManagedHostname(hostname) ? hostname : null;
+}
+
 export function storedPublicEndpointsNeedCloud(
   // `domainType` is intentionally NOT read below — classification is purely by
   // hostname truth (customDomain / domain). Accepting it as OPTIONAL lets deploy
@@ -461,23 +492,7 @@ export function storedPublicEndpointsNeedCloud(
     | null,
 ): boolean {
   if (!endpoints?.length) return false;
-  // Classify by the HOSTNAME's physical truth, never a bare `domainType` string.
-  // Only a subdomain of the CLOUD domain resolves behind the Cloud edge, so only
-  // that actually needs Cloud. A real custom host routes on our OWN edge and never
-  // does — even when a migrated/stale row left its domainType unset or wrong
-  // (which is exactly what made removing a custom-domain route demand Cloud) — and
-  // neither does a managed subdomain of the operator's own HOST_DOMAIN.
-  return endpoints.some((endpoint) => {
-    const custom = normalizeCustomDomain(endpoint.customDomain);
-    if (custom) return isCloudManagedHostname(custom);
-    const slug = normalizeSlug(endpoint.domain);
-    if (!slug) return false; // nothing routable → nothing to gate
-    // A bare slug is a managed subdomain of the ROUTING base (that's where it will
-    // actually be registered); a dotted value here is a misfiled custom host
-    // (e.g. a migrated api.example.com) that routes on our edge either way.
-    const hostname = slug.includes(".") ? slug : `${slug}${managedHostnameSuffix()}`;
-    return isCloudManagedHostname(hostname);
-  });
+  return endpoints.some((endpoint) => cloudManagedHostnameOf(endpoint) !== null);
 }
 
 /**

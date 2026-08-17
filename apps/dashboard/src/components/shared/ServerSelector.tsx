@@ -45,6 +45,22 @@ export interface ServerSelectorProps {
    * picked. Off by default — flows that must not guess (adopt / migrate) skip it.
    */
   autoSelectFirst?: boolean;
+  /**
+   * Server ids to leave OUT of the list — a destination picker for a flow that already
+   * involves a server ("move this project to another server" must not offer the one it is
+   * already on, and the API refuses that anyway).
+   *
+   * Filtered after the fetch, so the auto-select rules below count only what remains: with
+   * one other server left, that one still auto-selects.
+   */
+  excludeIds?: string[];
+  /**
+   * Replaces the empty state's second line. With {@link excludeIds} the list can be empty
+   * while servers DO exist, and "No server connected" would then be a lie — the caller says
+   * what is actually missing ("Add a second server to move this project to one"). The
+   * action is unchanged: adding one is still the way out.
+   */
+  emptyHint?: string;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -70,6 +86,8 @@ export default function ServerSelector({
   compact = false,
   dropUp = false,
   autoSelectFirst = false,
+  excludeIds,
+  emptyHint,
 }: ServerSelectorProps) {
   const { t } = useI18n();
   const w = t.widgets.shared.serverSelector;
@@ -89,7 +107,10 @@ export default function ServerSelector({
   const fetchServers = useCallback(async () => {
     try {
       setLoading(true);
-      const list = await systemApi.listServers();
+      const all = await systemApi.listServers();
+      // Excluded BEFORE the auto-select below, so "one server" means one CHOOSABLE server.
+      const skip = new Set(excludeIds ?? []);
+      const list = skip.size > 0 ? all.filter((s) => !skip.has(s.id)) : all;
       if (list.length > 0) {
         const opts = list.map(serverInfoToOption);
         setServers(opts);
@@ -111,8 +132,12 @@ export default function ServerSelector({
     } finally {
       setLoading(false);
     }
+  // `onSelect` stays out (same-callback-identity contract as before), but the exclusion
+  // must be in: a host that changes it and keeps the old list would offer a server the
+  // flow has just ruled out. Joined rather than passed by reference — callers build the
+  // array inline, so a fresh identity every render would refetch forever.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // onSelect intentionally excluded - same-cb identity contract as before
+  }, [(excludeIds ?? []).join(",")]);
 
   useEffect(() => {
     fetchServers();
@@ -168,29 +193,48 @@ export default function ServerSelector({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground">{w.addServer}</p>
-            <p className="text-xs text-muted-foreground truncate">{w.noServerConnected}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {emptyHint ?? w.noServerConnected}
+            </p>
           </div>
         </button>
       );
     }
 
+    // Full hosts are FORMS, not empty pages: this sits in a column of labelled
+    // full-width fields, so it renders as one of them — same label, same width,
+    // same left edge. It used to be a centered `max-w-sm` hero padded with
+    // py-16, which in a wide card was a narrow island floating in dead space
+    // above left-aligned inputs.
     return (
-      <div className="flex items-center justify-center py-16">
-        <div className="max-w-sm w-full text-center">
-          <div className="mx-auto w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mb-4">
-            <Server className="size-5 text-muted-foreground/60" />
+      <div className="mb-5">
+        <label className="block text-sm font-medium text-foreground mb-1.5">
+          {labelText}
+        </label>
+        <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/[0.15] p-4 sm:flex-row sm:items-center sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+              <Server className="size-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              {/* With `emptyHint` servers DO exist (they were excluded), so the
+                  "no server connected" headline would be a lie — the caller's
+                  sentence takes the headline slot instead of trailing one. */}
+              <p className="text-sm font-medium text-foreground">
+                {emptyHint ?? w.noServerConnected}
+              </p>
+              {!emptyHint && (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {w.connectServerFirst}
+                </p>
+              )}
+            </div>
           </div>
-          <h3 className="text-base font-medium text-foreground mb-1.5">
-            {w.noServerConnected}
-          </h3>
-          <p className="text-sm text-muted-foreground leading-relaxed mb-5">
-            {w.connectServerFirst}
-          </p>
           <button
             type="button"
             onClick={addServer}
             disabled={disabled}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex w-full sm:w-auto shrink-0 items-center justify-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="size-4" />
             {w.addServer}

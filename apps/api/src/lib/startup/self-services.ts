@@ -145,8 +145,10 @@ export async function linkSelfAppServices(
     // "Stopped") and carries a stray {slug}-{slug} free-subdomain route. The
     // self-app's only real units are the compose rows linked above, so drop any
     // monorepo leftover. (The dashboard can't: assertNotControlPlane blocks
-    // mutating control-plane services.) Prevention lives in
-    // materializeAppServiceRow; this clears instances that predate that guard.
+    // mutating control-plane services.) Prevention lives in the appTemplateId
+    // guard in reconcileAppServiceRow; this clears instances that predate it.
+    // Unconditional here, unlike that helper's own #589 repair, because the
+    // control plane's units are known: none of them is ever a monorepo row.
     const stale = await repos.service.listByProjectKind(projectId, "monorepo").catch(() => []);
     for (const row of stale) {
       await repos.service.remove(row.id).catch(() => {});

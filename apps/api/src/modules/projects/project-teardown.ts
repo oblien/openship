@@ -725,7 +725,16 @@ async function stepRuntimeCleanup(
     return orphans;
   }
 
-  const result = await executeCleanup({ projectId: manifest.projectId, resources: destroyable });
+  // `organizationId` must be carried through: this call REBUILDS the manifest
+  // object from a filtered resource list, and dropping the field silently skipped
+  // the Cloud edge-route release for every torn-down project — leaving the free
+  // `*.opsh.io` URL resolving and its globally-unique slug reserved against an org
+  // that no longer has the project.
+  const result = await executeCleanup({
+    projectId: manifest.projectId,
+    organizationId: manifest.organizationId,
+    resources: destroyable,
+  });
   const realFailures = result.failed;
   const details =
     `${result.succeeded}/${result.total} ok` + (wipeVolumes ? " (volumes wiped)" : "") + orphanNote;

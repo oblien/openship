@@ -4,25 +4,27 @@
       "overview": "概要",
       "domains": "ドメイン",
       "mailboxes": "メールボックス",
-      "inbound": "受信ルール",
+      "notifications": "通知",
+      "sending": "送信",
       "dns": "DNS",
       "health": "ヘルス",
-      "test": "テスト",
       "backup": "バックアップ",
       "advanced": "詳細設定"
     },
     "ariaLabel": "メール管理セクション"
   },
-  "inbound": {
-    "heading": "受信ルール",
+  "notifications": {
+    "heading": "通知ルール",
     "description": "このサーバー上のアドレスにメールが届いたときに、通知チャンネルでお知らせします。",
     "newRule": "新しいルール",
-    "newTitle": "新しい受信ルール",
-    "editTitle": "受信ルールを編集",
+    "newTitle": "新しい通知ルール",
+    "editTitle": "通知ルールを編集",
     "edit": "編集",
-    "emptyTitle": "受信ルールがまだありません",
+    "emptyTitle": "通知ルールがまだありません",
     "emptyBody": "このサーバー上のメールボックスまたはドメインにメールが届いたときに Slack、Telegram、Discord、webhook で通知を受け取るには、ルールを追加してください。",
     "noChannels": "検証済みの通知チャンネルがまだありません。設定 → 通知 で追加して検証したうえで、ここに戻ってルールを作成してください。",
+    "addChannel": "通知チャンネルを追加",
+    "manageChannels": "チャンネルを管理",
     "fieldName": "名前",
     "namePlaceholder": "サポート受信トレイ → #support",
     "fieldScope": "監視対象",
@@ -47,7 +49,7 @@
     "active": "オン",
     "disabled": "オフ",
     "paused": "一時停止中",
-    "deleteTitle": "受信ルールを削除",
+    "deleteTitle": "通知ルールを削除",
     "deleteConfirm": "ルールを削除",
     "deleting": "削除中…",
     "deleteHint": "既存の通知には影響しません。取り込み済みでまだ処理されていないメールは破棄されます。",
@@ -58,10 +60,13 @@
     "testing": "テスト中…",
     "testResult": "取り込んだメッセージ {read} 件を読み取りました: {matched} 件がルールに一致し、{dropped} 件は除外されました。送信も削除も行っていません。",
     "testFailed": "テストを実行できませんでした。",
-    "loadFailed": "受信ルールを読み込めませんでした。",
+    "loadFailed": "通知ルールを読み込めませんでした。",
     "saveFailed": "ルールを保存できませんでした。",
     "deleteFailed": "ルールを削除できませんでした。",
     "confirmDelete": "ルール「{name}」を削除しますか? ほかのルールがまだ必要としている場合を除き、そのアドレスの取り込みは停止します。"
+  },
+  "sending": {
+    "testLiveNote": "現在有効な経路で送信します。上の未保存の変更は使われません。"
   },
   "overview": {
     "mailServer": "メールサーバー",
@@ -617,6 +622,7 @@
     "close": "閉じる",
     "logsLoadFailed": "ログの読み込みに失敗しました",
     "loadingLogs": "ログを読み込み中…",
-    "noLogLines": "このコンポーネントのログ行はまだありません。"
+    "noLogLines": "このコンポーネントのログ行はまだありません。",
+    "rowActions": "{name} の操作"
   }
 }

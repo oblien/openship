@@ -1,17 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_MASK } from "@repo/core";
 
-const dnsCredentialRepo = vi.hoisted(() => ({
+/**
+ * DNS credentials now live in the generic `credential` table — `dns_credential` was one of
+ * three places Openship kept a third-party secret. These cases still describe DNS
+ * behaviour (zone matching, auth-failure handling, "re-connect" on an undecryptable token);
+ * only the store underneath them changed, so the mock moved with it.
+ */
+const credentialRepo = vi.hoisted(() => ({
   listByOrg: vi.fn(),
   findById: vi.fn(),
-  findByName: vi.fn(),
-  findActiveByOrg: vi.fn(),
+  findActive: vi.fn(),
+  listActiveByProvider: vi.fn(),
   create: vi.fn(),
-  update: vi.fn(),
-  delete: vi.fn(),
+  update: vi.fn(async () => {}),
+  markVerified: vi.fn(async () => {}),
+  markInvalid: vi.fn(async () => {}),
+  remove: vi.fn(async () => {}),
+  nameTaken: vi.fn(async () => false),
 }));
 
-vi.mock("@repo/db", () => ({ repos: { dnsCredential: dnsCredentialRepo } }));
+vi.mock("@repo/db", () => ({ repos: { credential: credentialRepo } }));
 
 const decrypt = vi.hoisted(() => vi.fn());
 vi.mock("../../../src/lib/credential-encryption", () => ({
@@ -55,7 +64,11 @@ const row = (over: Record<string, unknown> = {}) => ({
   organizationId: "org_1",
   provider: "cloudflare",
   name: "Cloudflare production",
-  apiTokenEnc: "enc1:cf-token",
+  // One `enc1:` envelope over a JSON object, keyed by the provider's field name — the
+  // shape that lets a provider hold several secrets without new columns.
+  secretsEnc: `enc1:${JSON.stringify({ apiToken: "cf-token" })}`,
+  publicFields: {},
+  selector: null,
   status: "active",
   lastVerifiedAt: new Date("2026-01-01"),
   createdAt: new Date("2026-01-01"),
@@ -83,7 +96,7 @@ beforeEach(() => {
 
 describe("credential sanitization", () => {
   it("returns a constant mask and never decrypts on a read path", async () => {
-    dnsCredentialRepo.listByOrg.mockResolvedValue([row()]);
+    credentialRepo.listByOrg.mockResolvedValue([row()]);
 
     const [out] = await listCredentials("org_1");
 
@@ -103,7 +116,7 @@ describe("credential sanitization", () => {
     decrypt.mockImplementation(() => {
       throw new Error("Unsupported state or unable to authenticate data");
     });
-    dnsCredentialRepo.listByOrg.mockResolvedValue([row()]);
+    credentialRepo.listByOrg.mockResolvedValue([row()]);
 
     await expect(listCredentials("org_1")).resolves.toHaveLength(1);
   });
@@ -111,12 +124,12 @@ describe("credential sanitization", () => {
 
 describe("resolveDnsManager", () => {
   it("reports 'none' when the org has no credentials", async () => {
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([]);
+    credentialRepo.listActiveByProvider.mockResolvedValue([]);
     expect(await resolveDnsManager("org_1", "app.example.com")).toEqual({ status: "none" });
   });
 
   it("matches the credential whose zone hosts the name", async () => {
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([row()]);
+    credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
     const out = await resolveDnsManager("org_1", "app.example.com");
     expect(out.status).toBe("matched");
     if (out.status === "matched") expect(out.manager.zone.name).toBe("example.com");
@@ -125,7 +138,7 @@ describe("resolveDnsManager", () => {
   it("distinguishes 'unavailable' from 'none' on a rate limit", async () => {
     // A 429 reported as "no provider manages this" reads as a config mistake the
     // operator did not make, and silently skips provisioning.
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([row()]);
+    credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
     provider.findZone.mockRejectedValue(new DnsApiError("cloudflare", 429, "Rate limited"));
 
     const out = await resolveDnsManager("org_1", "app.example.com");
@@ -133,7 +146,7 @@ describe("resolveDnsManager", () => {
   });
 
   it("reports 'unauthorized' with the credential id on a 401", async () => {
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([row()]);
+    credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
     provider.findZone.mockRejectedValue(new DnsApiError("cloudflare", 401, "Invalid token"));
 
     const out = await resolveDnsManager("org_1", "app.example.com");
@@ -142,7 +155,7 @@ describe("resolveDnsManager", () => {
   });
 
   it("treats an undecryptable token as unauthorized, not as a crash", async () => {
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([row()]);
+    credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
     decrypt.mockImplementation(() => {
       throw new Error("bad key");
     });
@@ -152,7 +165,7 @@ describe("resolveDnsManager", () => {
   });
 
   it("keeps looking past one broken credential to a working one", async () => {
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([
+    credentialRepo.listActiveByProvider.mockResolvedValue([
       row({ id: "dns_broken" }),
       row({ id: "dns_good" }),
     ]);
@@ -167,7 +180,7 @@ describe("resolveDnsManager", () => {
 });
 
 describe("planRecords", () => {
-  beforeEach(() => dnsCredentialRepo.findActiveByOrg.mockResolvedValue([row()]));
+  beforeEach(() => credentialRepo.listActiveByProvider.mockResolvedValue([row()]));
 
   const plan1 = (over: Record<string, unknown> = {}) =>
     planRecords("org_1", "app.example.com", [
@@ -215,7 +228,7 @@ describe("planRecords", () => {
   });
 
   it("returns 'none' with no records when no connected provider hosts the zone", async () => {
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([]);
+    credentialRepo.listActiveByProvider.mockResolvedValue([]);
     const out = await plan1();
     expect(out).toEqual({ status: "none", records: [] });
     expect(provider.listRecords).not.toHaveBeenCalled();
@@ -231,7 +244,7 @@ describe("planRecords", () => {
 
   it("collapses an auth failure during the check to 'unauthorized', not a half-plan", async () => {
     provider.listRecords.mockRejectedValue(new DnsApiError("cloudflare", 401, "Invalid token"));
-    dnsCredentialRepo.update.mockResolvedValue(row({ status: "invalid" }));
+    credentialRepo.markInvalid.mockResolvedValue(undefined);
     const out = await plan1();
     expect(out.status).toBe("unauthorized");
     expect(out.records).toEqual([]);
@@ -240,7 +253,7 @@ describe("planRecords", () => {
 
 describe("provisionRecords", () => {
   beforeEach(() => {
-    dnsCredentialRepo.findActiveByOrg.mockResolvedValue([row()]);
+    credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
     // Default: the zone is empty, so every desired record classifies as "create"
     // and reaches the check-before-set upsert. Cases that need an existing record
     // override this per-test.
@@ -321,13 +334,17 @@ describe("provisionRecords", () => {
 
   it("marks the credential invalid when the provider rejects the token", async () => {
     provider.findZone.mockRejectedValue(new DnsApiError("cloudflare", 403, "Forbidden"));
-    dnsCredentialRepo.update.mockResolvedValue(row({ status: "invalid" }));
+    credentialRepo.markInvalid.mockResolvedValue(undefined);
 
     const out = await provisionRecords("org_1", "app.example.com", [
       { type: "A", name: "app.example.com", content: "192.0.2.1" },
     ]);
 
-    expect(dnsCredentialRepo.update).toHaveBeenCalledWith("org_1", "dns_1", { status: "invalid" });
+    expect(credentialRepo.markInvalid).toHaveBeenCalledWith(
+      "org_1",
+      "dns_1",
+      expect.stringContaining("rejected"),
+    );
     expect(out.provisioned).toBe(false);
   });
 
@@ -338,12 +355,12 @@ describe("provisionRecords", () => {
       { type: "A", name: "app.example.com", content: "192.0.2.1" },
     ]);
 
-    expect(dnsCredentialRepo.update).not.toHaveBeenCalled();
+    expect(credentialRepo.markInvalid).not.toHaveBeenCalled();
   });
 
   it("does not reject when marking the credential invalid fails", async () => {
     provider.findZone.mockRejectedValue(new DnsApiError("cloudflare", 401, "nope"));
-    dnsCredentialRepo.update.mockRejectedValue(new Error("db gone"));
+    credentialRepo.markInvalid.mockRejectedValue(new Error("db gone"));
 
     await expect(
       provisionRecords("org_1", "app.example.com", [
@@ -354,7 +371,7 @@ describe("provisionRecords", () => {
 });
 
 describe("releaseRecords", () => {
-  beforeEach(() => dnsCredentialRepo.findActiveByOrg.mockResolvedValue([row()]));
+  beforeEach(() => credentialRepo.listActiveByProvider.mockResolvedValue([row()]));
 
   it("deletes ONLY records carrying our ownership marker", async () => {
     // The apex of a custom domain IS the zone apex. Name-matching alone would

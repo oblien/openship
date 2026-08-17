@@ -69,7 +69,25 @@ export async function reportHostChannelAtBoot(
 
   // `ok` covers a bare install (not_applicable) as well as a working channel.
   // `disabled` is a deliberate --no-host-control opt-out: don't nag every restart.
-  if (health.ok || health.code === "disabled") return health.code;
+  if (health.ok || health.code === "disabled") {
+    // One narrow advisory on an otherwise healthy channel: it execs fine but refuses TCP
+    // forwards, which breaks exactly one thing — the deploy-time readiness probe, whose
+    // published-port candidate can only be dialed from the host. Said here so an operator
+    // learns it BEFORE a deploy rather than from a health check that falls back to `curl`
+    // (or, on an install predating that fallback, from "the app never answered" about an
+    // app that was answering all along — GH-583).
+    //
+    // Deliberately not the full !!! banner: nothing is broken yet, and the block above
+    // owns the "this box cannot drive its host" story.
+    if (health.forwarding === "blocked") {
+      deps.log(
+        `[host-channel] ${health.target ?? "the host channel"} refuses TCP forwarding, so ` +
+          `deploy health checks fall back to \`curl\` on the host (and are skipped if it ` +
+          `has none). Re-run \`openship up\` to re-provision the channel with forwarding.`,
+      );
+    }
+    return health.code;
+  }
 
   const title = TITLES[health.code] ?? "HOST CONTROL UNAVAILABLE";
   const headline = health.target ? `${title} — ${health.target}` : title;

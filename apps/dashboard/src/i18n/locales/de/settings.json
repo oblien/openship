@@ -48,12 +48,12 @@
     "title": "Einstellungen",
     "tabs": {
       "general": "Allgemein",
-      "tokens": "Tokens",
+      "git": "Git",
+      "tokens": "API-Tokens",
       "mcp": "MCP",
       "team": "Team",
       "notifications": "Benachrichtigungen",
-      "dns": "DNS",
-      "audit": "Audit-Protokoll",
+      "credentials": "Zugangsdaten",
       "cloud": "Cloud",
       "infrastructure": "Infrastruktur",
       "instance": "Instanz"
@@ -782,40 +782,34 @@
       "failed": "Routing-Strategie konnte nicht aktualisiert werden"
     }
   },
-  "dns": {
-    "title": "DNS-Anbieter",
-    "description": "Openship die DNS-Einträge deiner Domains schreiben lassen",
-    "explainer": "Ist ein Anbieter verbunden, werden die Einträge einer neuen eigenen Domain sofort geschrieben — die Domain wird verifiziert und erhält ihr Zertifikat, ohne dass du etwas einfügen musst.",
-    "explainerOwnership": "Openship entfernt ausschließlich Einträge, die es selbst erstellt hat.",
-    "addProvider": "Anbieter verbinden",
-    "connect": "Verbinden",
-    "namePlaceholder": "Bezeichnung, z. B. Cloudflare Produktion",
-    "tokenPlaceholder": "Cloudflare-API-Token",
-    "scopesHint": "Benötigt ein Token mit den Berechtigungen {scopes}.",
-    "createTokenLink": "Token erstellen",
-    "noneConnected": "Kein DNS-Anbieter verbunden. Domains zeigen die Einträge an, die du selbst hinzufügen musst.",
-    "badgeActive": "Aktiv",
+  "credentials": {
+    "title": "Zugangsdaten",
+    "description": "Tokens und Logins, die Openship für Sie nutzt — private Registry-Pulls, DNS-Einträge schreiben. Verschlüsselt gespeichert und nach dem Speichern nie wieder angezeigt.",
+    "noProviders": "Auf dieser Instanz sind keine Anbieter verfügbar.",
+    "noneForProvider": "Noch keine hinzugefügt.",
+    "add": "Hinzufügen",
+    "edit": "Bearbeiten",
+    "save": "Änderungen speichern",
+    "connect": "Zugangsdaten hinzufügen",
+    "delete": "Löschen",
+    "verify": "Beim Anbieter erneut prüfen",
+    "badgeActive": "Funktioniert",
     "badgeInvalid": "Erfordert Aufmerksamkeit",
-    "invalidHint": "Der Anbieter hat dieses Token abgelehnt. Verbinde es neu, um automatische Einträge fortzusetzen.",
-    "metaLine": " · {provider} · zuletzt geprüft {verified}",
-    "zoneCheck": {
-      "title": "Domain prüfen",
-      "description": "Prüfe vor dem Hinzufügen, ob ein verbundener Anbieter die Zone eines Hostnamens verwaltet.",
-      "placeholder": "app.example.com",
-      "check": "Prüfen",
-      "matched": "Hier verwaltet — Zone {zone}. Die Einträge dieser Domain werden automatisch geschrieben.",
-      "none": "Kein verbundener Anbieter verwaltet die Zone dieser Domain. Du fügst die Einträge selbst hinzu.",
-      "unauthorized": "Ein gespeichertes Token wurde abgelehnt. Verbinde es neu und versuche es erneut.",
-      "unavailable": "Der DNS-Anbieter war nicht erreichbar, daher ist das unbekannt — es bedeutet nicht, dass etwas falsch konfiguriert ist."
-    },
+    "fieldName": "Bezeichnung",
+    "namePlaceholder": "z. B. GHCR nur lesen",
+    "secretKeptPlaceholder": "•••••••• (gespeichert — leer lassen zum Beibehalten)",
+    "selectPlaceholder": "Auswählen…",
+    "verifyNote": "Openship prüft die Zugangsdaten beim Anbieter, bevor sie gespeichert werden.",
+    "confirmDelete": "\"{name}\" löschen? Alles, was darauf angewiesen ist, funktioniert nicht mehr.",
     "toast": {
-      "loadFailed": "DNS-Anbieter konnten nicht geladen werden",
-      "needBoth": "Bezeichnung und API-Token eingeben",
-      "connected": "{name} verbunden",
-      "connectFailed": "Anbieter konnte nicht verbunden werden",
-      "disconnected": "{name} getrennt",
-      "disconnectFailed": "Anbieter konnte nicht getrennt werden",
-      "checkFailed": "Domain konnte nicht geprüft werden"
+      "loadFailed": "Zugangsdaten konnten nicht geladen werden",
+      "created": "Zugangsdaten hinzugefügt",
+      "updated": "Zugangsdaten aktualisiert",
+      "deleted": "Zugangsdaten gelöscht",
+      "saveFailed": "Zugangsdaten konnten nicht gespeichert werden",
+      "deleteFailed": "Zugangsdaten konnten nicht gelöscht werden",
+      "verifyOk": "Der Anbieter hat die Zugangsdaten akzeptiert",
+      "verifyFailed": "Der Anbieter hat die Zugangsdaten abgelehnt"
     }
   }
 }

@@ -133,7 +133,7 @@
     "valuePlaceholder": "valeur",
     "dropHere": "Déposez le fichier .env ici",
     "noneTitle": "Aucune variable d'environnement",
-    "emptyHintEditing": "Cliquez sur « Ajouter une variable », utilisez « Coller .env », téléversez un fichier ou collez n'importe où à l'intérieur de cette zone",
+    "emptyHintEditing": "Collez un bloc .env n'importe où dans cette zone ou déposez-y un fichier .env.",
     "emptyHintReadonly": "Cliquez sur « Modifier » pour gérer les variables d'environnement",
     "pasteHint": "Collez un bloc .env complet n'importe où à l'intérieur de cette zone.",
     "addVariable": "Ajouter une variable",
@@ -369,9 +369,6 @@
       "successful": "Déploiement réussi",
       "deploying": "Déploiement des services…"
     },
-    "running": "en cours d'exécution",
-    "buildingSuffix": "· {count} en compilation",
-    "failedSuffix": "· {count} échoué(s)",
     "decisionBannerTitle": "Action requise — certains services ont échoué",
     "decisionBannerDefaultMsg": "Ce déploiement s'est terminé avec des services en échec. Conservez-le et corrigez-les plus tard, ou rejetez-le pour restaurer la version précédente.",
     "review": "Examiner",
@@ -411,6 +408,12 @@
       "retryOther": "Réessayer {count} services en échec"
     }
   },
+  "composeServiceTally": {
+    "running": "en cours d'exécution",
+    "builtSuffix": "· {count} compilé(s)",
+    "buildingSuffix": "· {count} en compilation",
+    "failedSuffix": "· {count} échoué(s)"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Annulé",
@@ -421,12 +424,11 @@
     },
     "detailsTitle": "Détails du déploiement",
     "rowStatus": "Statut",
+    "rowTarget": "Cible",
+    "rowBuild": "Compilation",
     "rowBuildTime": "Durée de compilation",
     "rowServices": "Services",
     "rowProject": "Projet",
-    "rowType": "Type",
-    "running": "en cours d'exécution",
-    "buildingSuffix": "· {count} en compilation",
-    "failedSuffix": "· {count} échoué(s)"
+    "rowType": "Type"
   }
 }

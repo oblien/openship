@@ -23,7 +23,8 @@ import {
   storedApiPort as apiPort,
   storedDashboardPort as dashboardPort,
 } from "./ports";
-import { startService, ensureInternalToken } from "../commands/up";
+import { startService } from "../commands/up";
+import { internalFetch } from "./loopback-api";
 import {
   summarizeHostChannelCause,
   HOST_CHANNEL_AUTH_REJECTED_SHORT,
@@ -57,18 +58,20 @@ export function ensure<T>(value: T | symbol): T {
 // them from this module; they are NOT a second implementation.
 export { storedPorts, apiPort, dashboardPort };
 
-/** Internal-token-gated GET against the loopback API. null on any failure. */
+/**
+ * Internal-token-gated GET against the loopback API. null on any failure.
+ *
+ * Goes through internalFetch so the token matches the install: this reader used to name
+ * the bare token file, so on a compose box every `/api/system/health` call 401'd and
+ * gatherStatus reported the database, project counts and host channel as unknown on a
+ * perfectly healthy stack — with `doctor --fix` then reading that as "db not ok".
+ */
 export async function internalGet(path: string, timeoutMs = 8000): Promise<any | null> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${apiPort()}${path}`, {
-      headers: { "X-Internal-Token": ensureInternalToken() },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  const call = await internalFetch(String(apiPort()), path, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (call.kind !== "response" || !call.res.ok) return null;
+  return await call.res.json().catch(() => null);
 }
 
 /** Is the local API answering its liveness stub right now? */

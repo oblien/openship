@@ -38,6 +38,7 @@ import {
 import { DnsRecordsView } from "@/components/shared/DnsRecordsView";
 import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
 import { SectionCard } from "./_shared/section-card";
+import { DomainPicker } from "./_shared/domain-picker";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 
@@ -155,34 +156,24 @@ export function DnsTab({
     <div className="space-y-5">
       {!hoisted && <Header />}
 
-      {/* Domain picker */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-muted-foreground">{t.emailsAdmin.dns.domainLabel}</span>
-        {loadingDomains ? (
-          <div className="px-3 py-2 rounded-xl border border-border bg-muted/30 flex items-center gap-2">
-            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">{t.emailsAdmin.dns.loading}</span>
-          </div>
-        ) : (
-          <select
-            value={activeDomain}
-            onChange={(e) => onSelectDomain(e.target.value)}
-            className="px-3 py-2 text-sm rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors min-w-[200px]"
-          >
-            {domains.length === 0 && primaryDomain && (
-              <option value={primaryDomain}>{primaryDomain}</option>
-            )}
-            {domains.map((d) => (
-              <option key={d.domain} value={d.domain}>
-                {d.domain}
-              </option>
-            ))}
-          </select>
-        )}
+      {/* Domain picker. Falls back to the install domain while the list is
+          still empty, so the tab always has a scope to render. */}
+      <DomainPicker
+        label={t.emailsAdmin.dns.domainLabel}
+        value={activeDomain}
+        domains={
+          domains.length === 0 && primaryDomain
+            ? [primaryDomain]
+            : domains.map((d) => d.domain)
+        }
+        onChange={onSelectDomain}
+        loading={loadingDomains}
+        loadingLabel={t.emailsAdmin.dns.loading}
+      >
         {isPrimary && (
           <span className="text-xs text-muted-foreground/70">{t.emailsAdmin.dns.primary}</span>
         )}
-      </div>
+      </DomainPicker>
 
       {/* On-demand auto-configure via a connected DNS provider (Settings→DNS). */}
       {activeDomain ? (

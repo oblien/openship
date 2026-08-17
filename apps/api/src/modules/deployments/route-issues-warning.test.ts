@@ -57,4 +57,37 @@ describe("routeIssuesWarning", () => {
     const msg = routeIssuesWarning(issues);
     for (const issue of issues) expect(msg).toContain(issue);
   });
+
+  // A routed domain with no certificate is a DIFFERENT outcome with a DIFFERENT
+  // remedy: the vhost exists and answers on :80, it just has no cert, so "fix
+  // routing and Retry" would send the operator after the wrong thing.
+  it("tells a routed-but-uncertified domain to point DNS and Verify, not to retry routing", () => {
+    const msg = routeIssuesWarning([], [
+      "api.example.com: DNS is not pointing at this server yet, so no HTTPS certificate could be issued",
+    ]);
+    expect(msg).toMatch(/routed but has no HTTPS certificate yet/);
+    expect(msg).toMatch(/point DNS at this server, then Verify/);
+    expect(msg).not.toMatch(/aren't routed yet/);
+    expect(msg).toContain("api.example.com");
+  });
+
+  it("states both outcomes when a deploy hit each, without blurring them together", () => {
+    const msg = routeIssuesWarning(
+      ["a.example.com: NXDOMAIN"],
+      ["b.example.com: no HTTPS certificate yet"],
+    );
+    expect(msg).toMatch(/fix DNS\/routing and Retry from the Domains tab/);
+    expect(msg).toMatch(/1 domain is routed but has no HTTPS certificate yet/);
+    expect(msg).toContain("a.example.com");
+    expect(msg).toContain("b.example.com");
+  });
+
+  it("pluralises the uncertified count", () => {
+    const msg = routeIssuesWarning([], ["a.example.com: x", "b.example.com: y"]);
+    expect(msg).toMatch(/2 domains are routed but have no HTTPS certificate yet/);
+  });
+
+  it("returns nothing when there is nothing to report", () => {
+    expect(routeIssuesWarning([])).toBe("");
+  });
 });

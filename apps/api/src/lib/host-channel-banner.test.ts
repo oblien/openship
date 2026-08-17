@@ -92,6 +92,50 @@ describe("reportHostChannelAtBoot — when it stays quiet", () => {
     expect(await reportHostChannelAtBoot({ health, log })).toBe("disabled");
     expect(out).toEqual([]);
   });
+
+  it("stays quiet when forwarding is fine, or when we couldn't establish it", async () => {
+    for (const forwarding of ["ok", "unknown"] as const) {
+      const { out, log } = lines();
+      const health = async () => ({ ok: true, code: "ok" as const, forwarding });
+      expect(await reportHostChannelAtBoot({ health, log })).toBe("ok");
+      expect(out, forwarding).toEqual([]);
+    }
+  });
+});
+
+/**
+ * GH-583. A channel that execs but refuses TCP forwards is HEALTHY for everything except
+ * the deploy readiness probe, whose published-port candidate only exists on the host. So
+ * this is an advisory on an `ok` channel — the state that previously had no voice at all,
+ * and the reason "host control reachable" was true while every readiness-gated deploy
+ * failed claiming the app never answered.
+ */
+describe("reportHostChannelAtBoot — forwarding blocked on an otherwise healthy channel", () => {
+  const BLOCKED = {
+    ok: true,
+    code: "ok" as const,
+    target: "root@host.docker.internal:22",
+    forwarding: "blocked" as const,
+  };
+
+  it("names the one thing it breaks and the remedy", async () => {
+    const { out, log } = lines();
+    expect(await reportHostChannelAtBoot({ health: async () => BLOCKED, log })).toBe("ok");
+    const said = out.join("\n");
+    expect(said).toContain("root@host.docker.internal:22");
+    expect(said).toContain("refuses TCP forwarding");
+    expect(said).toContain("deploy health checks");
+    expect(said).toContain("openship up");
+  });
+
+  // Nothing is broken yet, so it must not wear the "this box cannot drive its host"
+  // banner — an operator who reads that tears down a box whose deploys are fine.
+  it("is an advisory line, not the !!! banner", async () => {
+    const { out, log } = lines();
+    await reportHostChannelAtBoot({ health: async () => BLOCKED, log });
+    expect(out.some((line) => line.startsWith("!!!"))).toBe(false);
+    expect(out).toHaveLength(1);
+  });
 });
 
 describe("reportHostChannelAtBoot — a blocked channel", () => {

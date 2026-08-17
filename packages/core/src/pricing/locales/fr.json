@@ -1,0 +1,88 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Déployez des sites statiques sur Openship Cloud, gratuitement."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Pour votre première vraie application — conteneurs, bases de données et tout le reste."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Pour les applications en production qui ont besoin de marge pour grandir."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Pour les équipes qui encaissent un trafic sérieux sur une infrastructure partagée."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Limites sur mesure, infrastructure dédiée et un SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "Tout ce que contient {inherited}, plus :",
+    "staticOnly": "Sites statiques uniquement — SSG, SPA et HTML brut",
+    "anyWorkload": "Exécutez ce que vous voulez — conteneurs, stacks Compose et workers",
+    "managedServices": "Postgres et Redis managés, et tout le catalogue d'applications",
+    "buildMinutes": "{buildMinutes} minutes de build par mois",
+    "credits": "{credits} crédits de calcul par mois",
+    "freeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits",
+    "freeSubdomainsUnlimited": "Sous-domaines {freeDomainSuffix} gratuits en illimité",
+    "customDomains": "Domaines personnalisés illimités, TLS inclus",
+    "unlimitedSeats": "Membres d'équipe illimités — jamais de facturation par utilisateur",
+    "previewDeploys": "Déploiements de prévisualisation à chaque push",
+    "backups": "Sauvegardes quotidiennes avec restauration à un instant précis",
+    "observability": "Logs en direct, métriques et alertes de santé",
+    "mailServer": "Serveur mail intégré — SMTP, IMAP et webmail",
+    "auditLog": "Journal d'audit avec rétention étendue",
+    "sharedChannel": "Canal Slack ou Discord partagé",
+    "sso": "SSO et SAML",
+    "customLimits": "Limites sur mesure, négociées par contrat",
+    "dedicatedInfra": "Infrastructure et régions dédiées",
+    "onboarding": "Mise en route et migration accompagnées",
+    "communitySupport": "Support communautaire",
+    "emailSupport": "Support par e-mail",
+    "prioritySupport": "Support prioritaire",
+    "dedicatedSupport": "Support dédié avec SLA",
+    "selfHostedOpenSource": "Toute la plateforme, en open source (Apache 2.0)",
+    "selfHostedUnlimited": "Déploiements, projets, serveurs et domaines illimités",
+    "selfHostedServices": "Tous les services managés — Postgres, Redis, mail",
+    "selfHostedClients": "CLI, web et desktop — un seul backend",
+    "selfHostedFreeSubdomains": "{freeSubdomains} sous-domaines {freeDomainSuffix} gratuits en vous connectant au Cloud",
+    "runningServices": "{runningServices} services actifs — applications, bases de données, workers",
+    "power": "Jusqu'à {powerCpu} vCPU et {powerRamGb} GB de RAM par service",
+    "projects": "{maxProjects} projets",
+    "projectsUnlimited": "Projets illimités",
+    "meteredCredits": "Le calcul, la bande passante et le stockage sont tous déduits de vos crédits mensuels"
+  },
+  "selfHosted": {
+    "name": "Auto-hébergé",
+    "tagline": "Faites tourner toute la plateforme sur vos propres machines. N'importe quelle machine Linux, n'importe quel fournisseur, n'importe quelle région. Pas de comptage à l'usage, pas de limite d'utilisateurs, pas de télémétrie.",
+    "priceLabel": "Gratuit",
+    "priceNote": "Apache 2.0 — gratuit à vie, sans carte bancaire",
+    "cta": "Commencer l'auto-hébergement"
+  },
+  "creditPacks": {
+    "pack_5k": "{credits} crédits",
+    "pack_25k": "{credits} crédits",
+    "pack_100k": "{credits} crédits"
+  },
+  "ui": {
+    "perMonth": "/mois",
+    "perYear": "/an",
+    "custom": "Sur mesure",
+    "free": "Gratuit",
+    "unlimited": "Illimité",
+    "mostPopular": "Le plus populaire",
+    "monthsFree": "{months} mois offerts",
+    "ctaStart": "Commencer gratuitement",
+    "ctaChoose": "Choisir {name}",
+    "ctaContact": "Contacter l'équipe commerciale",
+    "billedMonthly": "facturé mensuellement, résiliable à tout moment",
+    "campaignBadge": "{percentOff} % de remise",
+    "campaignEnds": "L'offre se termine le {date}",
+    "wasPrice": "avant {price}"
+  }
+}

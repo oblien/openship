@@ -8,6 +8,7 @@ import type { PrepareProjectResponse, PrepareComposeService, PrepareMonorepoApp 
 import type { Service } from "@/lib/api/services";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
+import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
 import { STACKS, getBuildImage, toWorkloadType, type DeployTarget, type StackDefinition, type StackId, type WorkloadType } from "@repo/core";
 import type { BuildStrategy, DeploymentConfig, DeploymentModeSnapshot, MonorepoAppConfig, MonorepoWorkspaceConfig, PublicEndpoint } from "./types";
@@ -621,6 +622,40 @@ export function useDeploymentConfig() {
     }).catch(() => { /* non-critical - fall back to stack default */ });
   }, []);
 
+  /**
+   * Name the target machine from its ID, whenever nothing else has.
+   *
+   * `serverId` is the truth and the name is derived from it — but the derivation lived in three
+   * places that each only cover their own entry path: the target step publishes it after picking,
+   * a saved project carries `project.serverName`, and the build-status payload resolves it for a
+   * loaded deploy. A deploy that reaches the progress screen by any OTHER route — redeploy, a
+   * migration's deploy, a wizard step whose server list hadn't resolved before the deploy
+   * started — arrived with an id and no name, and the panel showed the bare word "Server". Which
+   * is exactly the fact an operator most wants on a screen that is about to change a machine.
+   *
+   * Here rather than a fourth call site: this is the one place that sees every config, whatever
+   * produced it. It only ever FILLS a gap — never overwrites a name someone already resolved —
+   * so it cannot fight the other three.
+   */
+  useEffect(() => {
+    if (config.deployTarget !== "server" || !config.serverId || config.serverName) return;
+    let live = true;
+    void systemApi
+      .listServers()
+      .then((list) => {
+        if (!live) return;
+        const match = list.find((srv) => srv.id === config.serverId);
+        const name = match?.name || match?.sshHost;
+        // A server we can't find is not evidence of "no name" — leave the fallback wording
+        // rather than writing an empty string that would look resolved.
+        if (name) setConfig((prev) => (prev.serverName ? prev : { ...prev, serverName: name }));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [config.deployTarget, config.serverId, config.serverName]);
+
   const updateConfig = useCallback((updates: Partial<DeploymentConfig>) => {
     setConfig((prev) => {
       const next = { ...prev, ...updates };
@@ -1134,6 +1169,12 @@ export function useDeploymentConfig() {
             ? rawTarget
             : null;
         const savedServerId = typeof project.serverId === "string" ? project.serverId : null;
+        // Carried with the id, not derived later: the progress screens name the target
+        // machine, and with only an id they fell back to the bare word "Server" — which
+        // is the one fact a wizard-driven deploy can't recover from anything else on the
+        // page. The API already resolves it (`server.name || server.sshHost`).
+        const savedServerName =
+          typeof project.serverName === "string" && project.serverName ? project.serverName : null;
 
         setConfig((prev) => {
           // Guard: don't let an EMPTY service-row fetch collapse an already-loaded
@@ -1155,6 +1196,8 @@ export function useDeploymentConfig() {
                 ? {
                     deployTarget: savedTarget,
                     serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
+                    serverName:
+                      savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
                   }
                 : null),
             };
@@ -1190,6 +1233,8 @@ export function useDeploymentConfig() {
               ? {
                   deployTarget: savedTarget,
                   serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
+                  serverName:
+                    savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
                 }
               : null),
           };

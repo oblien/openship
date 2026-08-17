@@ -19,7 +19,7 @@ import {
 import { useModal } from "@/context/ModalContext";
 import {
   DataTable,
-  RowIconButton,
+  RowActionsMenu,
   type DataTableColumn,
 } from "./_shared/data-table";
 import { StatusPill } from "./_shared/status-pill";
@@ -30,6 +30,7 @@ import {
 } from "./_shared/form-modal-content";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 import type { DnsRecords } from "@/lib/api";
 import { DnsHoldBanner } from "../dns-hold-banner";
@@ -244,7 +245,7 @@ export function DomainsTab({
       width: "minmax(220px, 1.5fr)",
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
             <Globe className="size-4 text-muted-foreground" strokeWidth={2} />
           </div>
           <div className="min-w-0">
@@ -305,11 +306,11 @@ export function DomainsTab({
       cell: (r) => (
         <div className="flex items-center gap-1.5 flex-wrap">
           {r.active ? (
-            <StatusPill tone="success" dot>
+            <StatusPill tone="success">
               {t.emailsAdmin.domains.active}
             </StatusPill>
           ) : (
-            <StatusPill tone="neutral" dot>
+            <StatusPill tone="neutral">
               {t.emailsAdmin.domains.disabled}
             </StatusPill>
           )}
@@ -389,20 +390,27 @@ export function DomainsTab({
         rowKey={(r) => r.domain}
         loading={loading}
         rowActions={(row) => (
-          <>
-            <RowIconButton
-              icon={Pencil}
-              label={t.emailsAdmin.domains.editAction}
-              onClick={() => openEdit(row)}
-            />
-            <RowIconButton
-              icon={Trash2}
-              label={t.emailsAdmin.domains.deleteAction}
-              variant="danger"
-              disabled={row.domain === primaryDomain && row.mailboxes > 0}
-              onClick={() => openDelete(row)}
-            />
-          </>
+          <RowActionsMenu
+            label={interpolate(t.emailsAdmin.shared.rowActions, { name: row.domain })}
+            actions={[
+              {
+                id: "edit",
+                label: t.emailsAdmin.domains.editAction,
+                icon: <Pencil className="size-4" />,
+                onClick: () => openEdit(row),
+              },
+              { id: "sep", divider: true },
+              {
+                id: "delete",
+                label: t.emailsAdmin.domains.deleteAction,
+                icon: <Trash2 className="size-4" />,
+                variant: "danger",
+                // The install domain can't be dropped while it still holds mail.
+                disabled: row.domain === primaryDomain && row.mailboxes > 0,
+                onClick: () => openDelete(row),
+              },
+            ]}
+          />
         )}
         empty={{
           icon: Globe,
@@ -570,13 +578,8 @@ function EditDomainForm({
           className={inputClassName}
         />
       </Field>
-      <label className="flex items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl hover:bg-muted/30 transition-colors">
-        <input
-          type="checkbox"
-          checked={active}
-          onChange={(e) => setActive(e.target.checked)}
-          className="rounded border-border mt-0.5"
-        />
+      <button type="button" onClick={() => setActive(!active)} aria-pressed={active} className="flex w-full items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl text-start hover:bg-muted/30 transition-colors">
+        <Checkbox checked={active} className="pointer-events-none mt-0.5" />
         <span>
           <span className="block text-sm font-medium text-foreground">
             {t.emailsAdmin.domains.editForm.activeLabel}
@@ -585,7 +588,7 @@ function EditDomainForm({
             {t.emailsAdmin.domains.editForm.activeDesc}
           </span>
         </span>
-      </label>
+      </button>
     </FormModalContent>
   );
 }
@@ -654,13 +657,13 @@ function DeleteDomainConfirm({
       disabled={hasDependents && !cascade}
     >
       {hasDependents ? (
-        <label className="flex items-start gap-2.5 cursor-pointer rounded-lg border border-danger-border bg-danger-bg px-3 py-2.5">
-          <input
-            type="checkbox"
-            checked={cascade}
-            onChange={(e) => setCascade(e.target.checked)}
-            className="mt-0.5 size-4 rounded border-danger-border text-danger focus:ring-danger-border"
-          />
+        <button
+          type="button"
+          onClick={() => setCascade(!cascade)}
+          aria-pressed={cascade}
+          className="flex w-full items-start gap-2.5 cursor-pointer rounded-lg border border-danger-border bg-danger-bg px-3 py-2.5 text-start"
+        >
+          <Checkbox checked={cascade} tone="destructive" className="pointer-events-none mt-0.5" />
           <span className="text-sm leading-snug">
             <span className="font-medium text-foreground">
               {interpolate(dt.alsoDelete, { parts: partsLabel })}
@@ -669,7 +672,7 @@ function DeleteDomainConfirm({
               {dt.alsoDeleteDesc}
             </span>
           </span>
-        </label>
+        </button>
       ) : (
         <div />
       )}

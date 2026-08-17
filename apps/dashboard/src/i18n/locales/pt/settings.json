@@ -48,12 +48,12 @@
     "title": "Configurações",
     "tabs": {
       "general": "Geral",
-      "tokens": "Tokens",
+      "git": "Git",
+      "tokens": "Tokens de API",
       "mcp": "MCP",
       "team": "Equipe",
       "notifications": "Notificações",
-      "dns": "DNS",
-      "audit": "Registro de auditoria",
+      "credentials": "Credenciais",
       "cloud": "Cloud",
       "infrastructure": "Infraestrutura",
       "instance": "Instância"
@@ -782,40 +782,34 @@
       "failed": "Falha ao atualizar a estratégia de roteamento"
     }
   },
-  "dns": {
-    "title": "Provedores de DNS",
-    "description": "Deixe o Openship escrever os registos DNS dos seus domínios",
-    "explainer": "Com um provedor ligado, adicionar um domínio próprio escreve os registos de imediato, pelo que o domínio é verificado e recebe o certificado sem que cole nada.",
-    "explainerOwnership": "O Openship só remove registos que ele próprio criou.",
-    "addProvider": "Ligar um provedor",
-    "connect": "Ligar",
-    "namePlaceholder": "Etiqueta, p. ex. Cloudflare produção",
-    "tokenPlaceholder": "Token de API da Cloudflare",
-    "scopesHint": "Precisa de um token com as permissões {scopes}.",
-    "createTokenLink": "Criar um",
-    "noneConnected": "Nenhum provedor de DNS ligado. Os domínios mostrarão os registos para adicionar manualmente.",
-    "badgeActive": "Ativo",
+  "credentials": {
+    "title": "Credenciais",
+    "description": "Tokens e logins que o Openship usa em seu nome — transferência de imagens privadas e escrita de registos DNS. Guardados cifrados e nunca mostrados de novo.",
+    "noProviders": "Não há fornecedores de credenciais disponíveis nesta instância.",
+    "noneForProvider": "Ainda não adicionou nenhuma.",
+    "add": "Adicionar",
+    "edit": "Editar",
+    "save": "Guardar alterações",
+    "connect": "Adicionar credencial",
+    "delete": "Eliminar",
+    "verify": "Verificar novamente com o fornecedor",
+    "badgeActive": "A funcionar",
     "badgeInvalid": "Requer atenção",
-    "invalidHint": "O provedor rejeitou este token. Ligue-o novamente para retomar os registos automáticos.",
-    "metaLine": " · {provider} · verificado por último {verified}",
-    "zoneCheck": {
-      "title": "Verificar um domínio",
-      "description": "Veja se um provedor ligado gere a zona de um nome de host antes de o adicionar.",
-      "placeholder": "app.example.com",
-      "check": "Verificar",
-      "matched": "Gerido aqui — zona {zone}. Os registos deste domínio serão escritos automaticamente.",
-      "none": "Nenhum provedor ligado gere a zona deste domínio. Vai adicionar os registos manualmente.",
-      "unauthorized": "Um token guardado foi rejeitado. Ligue-o novamente e tente outra vez.",
-      "unavailable": "Não foi possível contactar o provedor de DNS, por isso isto é desconhecido — não significa que algo esteja mal configurado."
-    },
+    "fieldName": "Etiqueta",
+    "namePlaceholder": "ex.: GHCR só leitura",
+    "secretKeptPlaceholder": "•••••••• (guardado — deixe vazio para manter)",
+    "selectPlaceholder": "Escolher…",
+    "verifyNote": "O Openship verifica a credencial com o fornecedor antes de a guardar.",
+    "confirmDelete": "Eliminar \"{name}\"? Tudo o que depende dela deixa de funcionar.",
     "toast": {
-      "loadFailed": "Não foi possível carregar os provedores de DNS",
-      "needBoth": "Introduza uma etiqueta e um token de API",
-      "connected": "{name} ligado",
-      "connectFailed": "Não foi possível ligar o provedor",
-      "disconnected": "{name} desligado",
-      "disconnectFailed": "Não foi possível desligar o provedor",
-      "checkFailed": "Não foi possível verificar esse domínio"
+      "loadFailed": "Não foi possível carregar as credenciais",
+      "created": "Credencial adicionada",
+      "updated": "Credencial atualizada",
+      "deleted": "Credencial eliminada",
+      "saveFailed": "Não foi possível guardar a credencial",
+      "deleteFailed": "Não foi possível eliminar a credencial",
+      "verifyOk": "O fornecedor aceitou a credencial",
+      "verifyFailed": "O fornecedor rejeitou a credencial"
     }
   }
 }

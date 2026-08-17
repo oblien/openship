@@ -1,6 +1,6 @@
 {
   "available": true,
-  "verified": true,
+  "verified": false,
   "id": "mongodb",
   "name": "MongoDB",
   "description": "MongoDB document database with the Mongo Express web admin UI.",

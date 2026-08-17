@@ -158,15 +158,19 @@ server. It's organized into tabs:
   points at this server.
 - **Mailboxes** — create email accounts under a domain. Each one is a login (`name@domain`) with its own
   password and quota. This is also where you change the `postmaster` password later.
+- **Aliases** — forwarding addresses, and a catch-all for everything else at a domain.
+- **Notifications** — get told in a notification channel (Slack, Telegram, Discord, a webhook) when mail
+  arrives at one of these addresses.
+- **Sending** — how outbound mail leaves: direct, or relayed through a provider. **Send test email** lives
+  here too.
 - **DNS** — a reference copy of every record each domain needs, with a **Verify** button that checks whether
   they're actually published.
 - **Health** — live status of each mail process, refreshed automatically.
-- **Test** — send a real test email to confirm delivery.
 - **Backup** — snapshot the mail server (accounts, messages, keys) to one of your backup destinations.
 - **Advanced** — the IMAP/SMTP connection settings for wiring up a mail app by hand, plus power-user actions
   like restarting the stack or re-running the wizard.
 
-<Callout title="Screenshot">The mail admin panel on the Emails page: the tab bar (Overview, Domains, Mailboxes, DNS, Health, Test, Backup, Advanced) with the Overview tab open. *(screenshot pending)*</Callout>
+<Callout title="Screenshot">The mail admin panel on the Emails page: the tab bar (Overview, Domains, Mailboxes, Aliases, Notifications, Sending, DNS, Health, Backup, Advanced) with the Overview tab open. *(screenshot pending)*</Callout>
 
 <Callout title="Adding a second domain" type="info">
 When you add a domain under the **Domains** tab, Openship generates its DNS records (including a fresh DKIM
@@ -267,7 +271,8 @@ plan it's hidden on purpose.
 <Callout title="The “Check Port 25” step warns that port 25 is blocked" type="warn">
 This step is a check, not a wall — the install keeps going even when it warns. But outbound mail won't actually
 send until port 25 is open. Many hosting providers block it by default (some need a support request to open it).
-Ask your provider to open it, then use the **Test** tab to confirm mail flows once setup has finished.
+Ask your provider to open it, then use **Sending → Send test email** to confirm mail flows once setup has
+finished.
 </Callout>
 
 <Callout title="Mail sends but lands in spam" type="warn">

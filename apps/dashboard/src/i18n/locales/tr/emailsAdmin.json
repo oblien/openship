@@ -4,26 +4,27 @@
       "overview": "Genel Bakış",
       "domains": "Alan Adları",
       "mailboxes": "Posta Kutuları",
-      "inbound": "Gelen",
+      "notifications": "Bildirimler",
       "dns": "DNS",
       "health": "Sistem Sağlığı",
-      "test": "Test",
       "backup": "Yedekleme",
       "sending": "Gönderim",
       "advanced": "Gelişmiş"
     },
     "ariaLabel": "E-posta yönetim bölümleri"
   },
-  "inbound": {
-    "heading": "Gelen posta kuralları",
+  "notifications": {
+    "heading": "Bildirim kuralları",
     "description": "Bu sunucudaki bir adrese posta geldiğinde bir bildirim kanalından haberdar olun.",
     "newRule": "Yeni kural",
-    "newTitle": "Yeni gelen posta kuralı",
-    "editTitle": "Gelen posta kuralını düzenle",
+    "newTitle": "Yeni bildirim kuralı",
+    "editTitle": "Bildirim kuralını düzenle",
     "edit": "Düzenle",
-    "emptyTitle": "Henüz gelen posta kuralı yok",
+    "emptyTitle": "Henüz bildirim kuralı yok",
     "emptyBody": "Bu sunucudaki bir posta kutusuna veya alan adına posta geldiğinde Slack, Telegram, Discord ya da bir webhook üzerinden bildirim almak için bir kural ekleyin.",
     "noChannels": "Henüz doğrulanmış bildirim kanalınız yok. Ayarlar → Bildirimler kısmından bir kanal ekleyip doğrulayın, ardından kural oluşturmak için buraya dönün.",
+    "addChannel": "Bildirim kanalı ekle",
+    "manageChannels": "Kanalları yönet",
     "fieldName": "Ad",
     "namePlaceholder": "Destek gelen kutusu → #destek",
     "fieldScope": "İzlenecek",
@@ -48,7 +49,7 @@
     "active": "Aktif",
     "disabled": "Kapalı",
     "paused": "Duraklatıldı",
-    "deleteTitle": "Gelen posta kuralını sil",
+    "deleteTitle": "Bildirim kuralını sil",
     "deleteConfirm": "Kuralı sil",
     "deleting": "Siliniyor…",
     "deleteHint": "Gönderilmiş bildirimler etkilenmez. Yakalanmış ancak henüz işlenmemiş postalar silinir.",
@@ -59,7 +60,7 @@
     "testing": "Test ediliyor…",
     "testResult": "Yakalanan {read} mesaj okundu: {matched} tanesi bir kuralla eşleşti, {dropped} tanesi filtrelendi. Hiçbir şey gönderilmedi veya silinmedi.",
     "testFailed": "Test çalıştırılamadı.",
-    "loadFailed": "Gelen posta kuralları yüklenemedi.",
+    "loadFailed": "Bildirim kuralları yüklenemedi.",
     "saveFailed": "Kural kaydedilemedi.",
     "deleteFailed": "Kural silinemedi.",
     "confirmDelete": "“{name}” kuralı silinsin mi? Başka bir kural hâlâ ihtiyaç duymadığı sürece bu adres için yakalama durur."
@@ -119,7 +120,8 @@
     "disabled": "Aktarım devre dışı bırakıldı — doğrudan teslimata dönüldü.",
     "saveFailed": "Aktarım güncellenemedi.",
     "disableFailed": "Aktarım devre dışı bırakılamadı.",
-    "dnsHint": "Sağlayıcının aktarım kayıtları artık DNS sekmesinde görünüyor. En iyi teslim edilebilirlik için bunları yayınlayıp doğrulayın."
+    "dnsHint": "Sağlayıcının aktarım kayıtları artık DNS sekmesinde görünüyor. En iyi teslim edilebilirlik için bunları yayınlayıp doğrulayın.",
+    "testLiveNote": "Şu anda etkin olan yol üzerinden gönderir; yukarıdaki kaydedilmemiş değişiklikler kullanılmaz."
   },
   "overview": {
     "mailServer": "E-posta sunucusu",
@@ -677,6 +679,7 @@
     "close": "Kapat",
     "logsLoadFailed": "Günlükler yüklenemedi",
     "loadingLogs": "Günlükler yükleniyor…",
-    "noLogLines": "Bu bileşen için henüz günlük satırı yok."
+    "noLogLines": "Bu bileşen için henüz günlük satırı yok.",
+    "rowActions": "{name} için işlemler"
   }
 }

@@ -95,7 +95,12 @@
     "installing": "インストール中",
     "running": "稼働中",
     "incomplete": "未完了",
-    "stoppedAt": "停止 · ステップ {step}"
+    "stoppedAt": "停止 · ステップ {step}",
+    "open": "開く",
+    "openAria": "{name} を開く",
+    "actionsAria": "{name} の操作",
+    "overviewTitle": "メールの概要",
+    "hint": "削除してもこの一覧から切り離すだけです。インストールは動作し続け、いつでも再取り込みできます。"
   },
   "setup": {
     "title": "メールサーバーのセットアップ",

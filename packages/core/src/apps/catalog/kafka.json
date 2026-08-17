@@ -1,6 +1,6 @@
 {
   "available": true,
-  "verified": true,
+  "verified": false,
   "id": "kafka",
   "name": "Apache Kafka",
   "description": "Apache Kafka event-streaming broker (KRaft mode — no ZooKeeper) with the Kafbat Kafka UI web console for topics, messages, and consumer groups.",

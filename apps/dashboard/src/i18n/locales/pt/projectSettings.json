@@ -69,7 +69,43 @@
       "liveAccessible": "Ativo e acessível",
       "pausedInaccessible": "Em pausa e inacessível",
       "disable": "Desativar",
-      "enable": "Ativar"
+      "enable": "Ativar",
+      "migrating": "Migrando",
+      "migratingHint": "Está sendo movido para outro servidor"
+    },
+    "migration": {
+      "title": "Migração",
+      "description": "Mova este projeto para outro servidor",
+      "currentServer": "Servidor atual",
+      "migrate": "Migrar",
+      "noOtherServers": "Adicione um segundo servidor para mover este projeto para lá.",
+      "cloudLater": "De servidor para servidor. Mover para ou do Openship Cloud ainda não é suportado.",
+      "startFailed": "Não foi possível iniciar a migração",
+      "confirmTitle": "Mover {project} para {server}",
+      "confirmSubtitle": "Nada muda até você iniciar a mudança.",
+      "svcVolumes": "{count} volume(s) de dados",
+      "downtimeNote": "O projeto fica fora do ar enquanto os dados são copiados e o novo servidor o inicia. Serviços com estado ficam indisponíveis durante toda a transferência.",
+      "dnsNote": "O DNS ainda aponta para o servidor antigo — mude seus registros quando o novo estiver atendendo.",
+      "cancel": "Cancelar",
+      "confirmStart": "Iniciar mudança",
+      "duplicate": "Duplicar",
+      "intentMove": "Mover",
+      "intentCopy": "Duplicar",
+      "intentMoveHint": "O projeto muda de casa. Seus contêineres e volumes são removidos do servidor antigo quando você confirmar.",
+      "intentCopyHint": "O original continua rodando. Um segundo projeto é criado no novo servidor com uma cópia dos dados.",
+      "confirmTitleCopy": "Duplicar {project} no {server}",
+      "confirmStartCopy": "Iniciar duplicação",
+      "downtimeNoteCopy": "O projeto fica brevemente fora do ar enquanto os dados são copiados — os volumes precisam estar parados para copiar corretamente. Ele volta a subir no servidor antigo assim que a cópia terminar.",
+      "copyNoDomainsNote": "A cópia começa sem domínios — os originais ficam com o projeto que os atende.",
+      "fromLabel": "De",
+      "toLabel": "Para",
+      "modeLabel": "Modo",
+      "scopeLabel": "O que duplicar",
+      "scopeAll": "Selecionar tudo",
+      "scopeHintAll": "Todos os serviços, com seus dados.",
+      "scopeHintSome": "{count} serviço(s) — o resto fica apenas no original.",
+      "sourceServices": "{count} serviço(s)",
+      "runningStatus": "Em andamento — {status}"
     },
     "cache": {
       "title": "Cache",
@@ -289,7 +325,9 @@
       "saved": "Variáveis de ambiente guardadas",
       "savedTitle": "Guardado",
       "saveFailed": "Falha ao guardar as variáveis de ambiente",
-      "saveFailedTitle": "Falha ao guardar"
+      "saveFailedTitle": "Falha ao guardar",
+      "noChanges": "Nenhuma alteração para guardar — os valores guardados foram mantidos.",
+      "noChangesTitle": "Nada para guardar"
     },
     "linkedBadge": "Vinculado",
     "linkedManaged": "via {app}",
@@ -494,6 +532,10 @@
       "high": {
         "name": "Alta",
         "description": "Aplicações de alto tráfego"
+      },
+      "xlarge": {
+        "name": "Extragrande",
+        "description": "Bases de dados e cargas intensivas"
       }
     },
     "custom": {
@@ -756,6 +798,10 @@
       "noneYet": "Nenhuma verificação foi executada ainda, portanto não há resultado. Adicione os registros DNS exibidos e depois clique em Verificar.",
       "attempts": "{count} tentativa(s) com falha até agora.",
       "pillHint": "Ver o motivo"
+    },
+    "records": {
+      "failed": "Não foi possível carregar os registros DNS deste domínio.",
+      "retry": "Tentar novamente"
     }
   }
 }

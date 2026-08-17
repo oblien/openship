@@ -48,12 +48,12 @@
     "title": "設定",
     "tabs": {
       "general": "一般",
-      "tokens": "トークン",
+      "git": "Git",
+      "tokens": "API トークン",
       "mcp": "MCP",
       "team": "チーム",
       "notifications": "通知",
-      "dns": "DNS",
-      "audit": "監査ログ",
+      "credentials": "認証情報",
       "cloud": "クラウド",
       "infrastructure": "インフラ",
       "instance": "インスタンス"
@@ -782,40 +782,34 @@
       "failed": "ルーティング方式の更新に失敗しました"
     }
   },
-  "dns": {
-    "title": "DNS プロバイダー",
-    "description": "ドメインの DNS レコードを Openship に書き込ませます",
-    "explainer": "プロバイダーを接続しておくと、カスタムドメインを追加した時点でレコードが書き込まれます。何も貼り付けなくてもドメインが検証され、証明書が発行されます。",
-    "explainerOwnership": "Openship が削除するのは、自身が作成したレコードだけです。",
-    "addProvider": "プロバイダーを接続",
-    "connect": "接続",
-    "namePlaceholder": "ラベル（例: Cloudflare 本番）",
-    "tokenPlaceholder": "Cloudflare API トークン",
-    "scopesHint": "{scopes} の権限を持つトークンが必要です。",
-    "createTokenLink": "作成する",
-    "noneConnected": "接続済みの DNS プロバイダーはありません。ドメインには手動で追加するレコードが表示されます。",
+  "credentials": {
+    "title": "認証情報",
+    "description": "Openship があなたの代わりに使うトークンとログイン情報です（プライベートイメージの取得、DNS レコードの書き込みなど）。暗号化して保存され、保存後に再表示されることはありません。",
+    "noProviders": "このインスタンスで利用できるプロバイダーはありません。",
+    "noneForProvider": "まだ追加されていません。",
+    "add": "追加",
+    "edit": "編集",
+    "save": "変更を保存",
+    "connect": "認証情報を追加",
+    "delete": "削除",
+    "verify": "プロバイダーで再確認",
     "badgeActive": "有効",
-    "badgeInvalid": "対応が必要",
-    "invalidHint": "プロバイダーがこのトークンを拒否しました。自動レコードを再開するには再接続してください。",
-    "metaLine": " · {provider} · 最終確認 {verified}",
-    "zoneCheck": {
-      "title": "ドメインを確認",
-      "description": "追加する前に、接続済みのプロバイダーがそのホスト名のゾーンを管理しているか確認します。",
-      "placeholder": "app.example.com",
-      "check": "確認",
-      "matched": "ここで管理されています — ゾーン {zone}。このドメインのレコードは自動で書き込まれます。",
-      "none": "このドメインのゾーンを管理している接続済みプロバイダーはありません。レコードは手動で追加します。",
-      "unauthorized": "保存されているトークンが拒否されました。再接続してからもう一度お試しください。",
-      "unavailable": "DNS プロバイダーに接続できなかったため不明です。設定に問題があるという意味ではありません。"
-    },
+    "badgeInvalid": "確認が必要",
+    "fieldName": "ラベル",
+    "namePlaceholder": "例: GHCR 読み取り専用",
+    "secretKeptPlaceholder": "••••••••（保存済み — 空のままで維持）",
+    "selectPlaceholder": "選択…",
+    "verifyNote": "保存する前に、Openship がプロバイダーへ認証情報を確認します。",
+    "confirmDelete": "「{name}」を削除しますか？これに依存しているものは動作しなくなります。",
     "toast": {
-      "loadFailed": "DNS プロバイダーを読み込めませんでした",
-      "needBoth": "ラベルと API トークンを入力してください",
-      "connected": "{name} を接続しました",
-      "connectFailed": "プロバイダーを接続できませんでした",
-      "disconnected": "{name} を切断しました",
-      "disconnectFailed": "プロバイダーを切断できませんでした",
-      "checkFailed": "そのドメインを確認できませんでした"
+      "loadFailed": "認証情報を読み込めませんでした",
+      "created": "認証情報を追加しました",
+      "updated": "認証情報を更新しました",
+      "deleted": "認証情報を削除しました",
+      "saveFailed": "認証情報を保存できませんでした",
+      "deleteFailed": "認証情報を削除できませんでした",
+      "verifyOk": "プロバイダーが認証情報を受け入れました",
+      "verifyFailed": "プロバイダーが認証情報を拒否しました"
     }
   }
 }

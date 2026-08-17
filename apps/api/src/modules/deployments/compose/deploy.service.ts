@@ -61,11 +61,13 @@ import {
   writeAppConfigFile,
 } from "./app-config-host";
 import {
+  auditRoutedDomainTls,
   buildServiceRouteDomains,
   createTrackedSslProvider,
   ensureRouteDomainRecord,
   hostTerminatesTlsLocally,
   toRoutedDomainInputs,
+  withEnsuredDomainRecord,
   type PlannedRouteDomain,
 } from "../../../lib/routing-domains";
 import {
@@ -82,9 +84,11 @@ import { auditPorts } from "../port-audit.service";
 import {
   recordUnstableServices,
   verifyDeployedContainers,
+  type StabilityFinding,
   type StabilityTarget,
 } from "../stability-audit.service";
 import { resolveReadinessGate, type ResolvedReadinessGate } from "../readiness-gate";
+import { probeDeployedReadiness } from "../readiness-probe";
 import {
   hostChannelDeployNotice,
   type PortCheckResult,
@@ -94,6 +98,11 @@ import { resolveServicePort } from "./domain-helpers";
 import { compileProjectRoutingFields } from "../../../lib/project-routing-fields";
 import { buildCompositeRegistration, buildDomainFanoutRegistrations } from "./composite-route";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
+import {
+  OUT_OF_SCOPE_SKIP_REASON,
+  isUntargetedAndUndeployable,
+  resolveDeployImage,
+} from "./service-scope";
 import { buildUpstreamUrl, resolveRouteStrategy } from "../../../lib/upstream-url";
 import {
   withLoopbackPublishAll,
@@ -152,6 +161,13 @@ export interface ComposeDeployResult {
    *  optional — a routing failure never fails a compose deploy). Surfaced as the
    *  project "routing action required" signal. Empty/absent = all routes OK. */
   routeWarnings?: string[];
+  /**
+   * Domains that ARE routed but hold no certificate — `registerRoute` succeeds
+   * without one (the edge keeps a bootstrap self-signed cert on :443), so these
+   * never appear in `routeWarnings`. Kept as their own list because the remedy is
+   * different: point DNS, then Verify — not "retry routing".
+   */
+  tlsPendingDomains?: string[];
   error?: string;
   publicUrl?: string;
   /** Advisory per-service port-probe results (exposed services only). */
@@ -734,7 +750,14 @@ async function prepareServiceRoutes(opts: {
           serviceName: service.name,
         });
       }
-      ensured.push(route);
+      // Re-resolve the SSL gate against the row that exists NOW. The plan above
+      // was built from the rows read BEFORE this loop, so a hostname this deploy
+      // mints itself was planned with no row at all and came out
+      // `provisionSsl: false` — see withEnsuredDomainRecord. A compose service's
+      // row is ALWAYS minted here (syncFromCompose writes routing columns and no
+      // domain row), so without this a compose custom domain never attempted a
+      // certificate on the deploy that created it.
+      ensured.push(withEnsuredDomainRecord(route, domainRecord));
     } catch (err) {
       // Owned by another project / unclaimable → skip it entirely (NOT routed,
       // or we'd hijack their hostname). Domains are optional — never fatal.
@@ -1098,11 +1121,33 @@ export async function deployComposeServices(
   // never fatal). Aggregated into the deployment's routing action-required signal.
   const composeRouteWarnings: string[] = [];
   let successful = 0;
+  /**
+   * Names of services a scoped deploy left alone because it did not target them and they
+   * have no image to bring up (#585). Not failures — but not silent either: they are
+   * folded into the deploy's `warning` below, so an operator who added a service and then
+   * pushed a change to a DIFFERENT one still learns it never came up, without the
+   * untargeted service hijacking the deployment's status.
+   */
+  const skippedOutOfScope: string[] = [];
   /** Set by the state this pass changed OUTSIDE the per-service deploy branch — a
    *  reaped container, persisted env. See `ComposeDeployResult.summary.mutated`. */
   let mutated = false;
   let firstPublicUrl: string | undefined;
   const seenRouteDomains = new Set<string>();
+  /**
+   * Routes this pass really put on the edge, across all services. Read once at the
+   * end by the TLS audit — a registered route with no certificate is the one
+   * routing outcome nothing used to report.
+   *
+   * Only ever appended AFTER the registration it describes succeeded, because the
+   * audit's claim ("this IS routed, and has no cert") is false for anything else.
+   * The proxied path registers inside `runDeployPipeline`, which throws on a failed
+   * health gate with `routeWarnings` unset — so a pre-emptive push there produced
+   * exactly that false claim, with no warning for the audit's exclusion to
+   * subtract. `auditRoutedDomainTls` still subtracts warned hostnames on top, for
+   * the per-domain failures the pipeline DOES report while its other routes land.
+   */
+  const registeredRoutes: PlannedRouteDomain[] = [];
   const unavailableServiceNames = new Set<string>();
   /**
    * serviceName → the container id currently backing it, for resolving a sibling's
@@ -1346,6 +1391,68 @@ export async function deployComposeServices(
       continue;
     }
 
+    // Prefer a freshly-built image; else the service's configured image
+    // (pulled/external); else — for an env-only REFRESH (recreated but not
+    // rebuilt) or the revive of a dead container above — reuse the previous
+    // deployment's image so it comes back with fresh env and no build.
+    //
+    // Resolved HERE rather than at the create site further down so the scope gate
+    // immediately below and the "no image available" failure it guards read the same
+    // answer. They are two verdicts on one question and must not drift.
+    const image = resolveDeployImage({
+      builtImage: opts?.builtImages?.get(svc.id),
+      rowImage: svc.image,
+      previousImageRef: previousByServiceId.get(svc.id)?.imageRef,
+    });
+
+    // Out of a scoped deploy's subset AND nothing to bring it up with (#585). Record it
+    // SKIPPED and move on: this deploy was never asked to touch it, and failing it here
+    // rolled the whole deployment up to `partial_failure` ("Action Required") over a
+    // service the operator never targeted — and, because a failure also lands in
+    // `unavailableServiceNames`, blocked any TARGETED service that `depends_on` it, so
+    // the one service `--service-ids` named never deployed at all.
+    //
+    // Deliberately NOT added to `unavailableServiceNames`: a dependent must not be
+    // blocked by a sibling this pass declined to consider. A `service:` namespace
+    // dependent still self-guards — it resolves through `containerIdByServiceName`, which
+    // has no entry for a service that produced no container.
+    //
+    // Nothing is pushed to `results`, matching the strictScope skip above: `deployed`
+    // counts non-carried result entries, so a phantom entry here would make an otherwise
+    // all-carried pass look like it changed something and defeat the #498 no-op guard.
+    if (
+      isUntargetedAndUndeployable({
+        serviceId: svc.id,
+        image,
+        targetServiceIds: opts?.targetServiceIds,
+      })
+    ) {
+      logger.log(
+        `Service "${svc.name}" is not part of this deploy and has no image to start from — ` +
+          `leaving it untouched.\n`,
+        "info",
+        { serviceName: svc.name },
+      );
+      await repos.service
+        .markServiceDeploymentSkipped({
+          deploymentId: dep.id,
+          serviceId: svc.id,
+          serviceName: svc.name,
+          reason: OUT_OF_SCOPE_SKIP_REASON,
+        })
+        .catch((err) => {
+          // Bookkeeping for a service we are deliberately not touching must never be the
+          // thing that fails the deploy — that is the whole shape of the bug this closes.
+          logger.log(
+            `Warning: could not record "${svc.name}" as skipped: ${safeErrorMessage(err)}\n`,
+            "warn",
+            { serviceName: svc.name },
+          );
+        });
+      skippedOutOfScope.push(svc.name);
+      continue;
+    }
+
     // Includes the namespace provider: a service whose netns/pidns host failed is
     // not "degraded", it cannot be created at all.
     const blockedDependencies = effectiveDependencies(svc).filter((dependency) =>
@@ -1443,15 +1550,8 @@ export async function deployComposeServices(
       continue;
     }
 
-    // Prefer a freshly-built image; else the service's configured image
-    // (pulled/external); else — for an env-only REFRESH (recreated but not
-    // rebuilt) — reuse the previous deployment's image so the container comes
-    // back with fresh env and no build.
-    const image =
-      opts?.builtImages?.get(svc.id) ??
-      svc.image ??
-      previousByServiceId.get(svc.id)?.imageRef ??
-      "";
+    // `image` was resolved before the scope gate above. Reaching here with none means this
+    // service IS in scope (or this is a full deploy) and genuinely cannot be brought up.
     if (!image) {
       const message = `No image available for service "${svc.name}"`;
       logger.log(`${message}\n`, "error", { serviceName: svc.name });
@@ -1511,8 +1611,8 @@ export async function deployComposeServices(
           const routeKey = route.hostname.toLowerCase();
           if (seenRouteDomains.has(routeKey)) continue;
           seenRouteDomains.add(routeKey);
-          await routeContext.routing
-            .registerRoute({
+          try {
+            await routeContext.routing.registerRoute({
               domain: route.hostname,
               staticRoot: image,
               tls: true,
@@ -1526,16 +1626,53 @@ export async function deployComposeServices(
               // ever gets cleanUrls/trailingSlash, so without it the flags never applied.
               ...routingFields,
               ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
-            })
-            .catch((err) => {
-              composeRouteWarnings.push(
-                `${route.hostname}: ${err instanceof Error ? err.message : "route registration failed"}`,
+            });
+          } catch (err) {
+            composeRouteWarnings.push(
+              `${route.hostname}: ${err instanceof Error ? err.message : "route registration failed"}`,
+            );
+            // No vhost → nothing for ACME to answer the challenge on. Attempting a
+            // cert here would burn a guaranteed-failed Let's Encrypt attempt.
+            continue;
+          }
+          // Past the register: this route really is on the edge, so the TLS audit
+          // may ask about it.
+          registeredRoutes.push(route);
+
+          // SSL parity with a PROXIED service. A proxied route goes through
+          // `registerResolvedRoutes`, which owns the `provisionSsl` step; this
+          // branch calls `registerRoute` directly, so it owned no SSL step at all —
+          // a static compose sub-app on a custom domain got a vhost and never a
+          // certificate, on this deploy or any later one.
+          //
+          // Same contract as the proxied path: the HTTP route is already on disk and
+          // is what answers the ACME challenge, so a failed cert is a follow-up (the
+          // tracked provider records it as Action Required), never a failed deploy.
+          // Kept OUT of the try above so a cert failure can never be reported as a
+          // route-registration failure.
+          if (route.provisionSsl) {
+            logger.log(`Checking SSL for ${route.hostname}...\n`, "info", {
+              serviceName: svc.name,
+            });
+            await routeContext.trackedSsl.provisionCert(route.hostname).catch((err) => {
+              logger.log(
+                `SSL provisioning failed for ${route.hostname} (route is up on HTTP, retry from ` +
+                  `the Domains tab): ${safeErrorMessage(err)}\n`,
+                "warn",
+                { serviceName: svc.name },
               );
             });
+          }
         }
       }
 
-      await repos.service.createServiceDeployment({
+      // UPSERT, not insert: a scoped deploy pre-creates a `skipped` row for every service
+      // it did not target (service-checks.ts), and a static service is never carried
+      // forward — it owns no container, so the carry branch above can't keep it — which
+      // means an untargeted static sub-app ALWAYS arrives here and a plain insert violated
+      // UNIQUE(deploymentId, serviceId), throwing out of this function to kill the whole
+      // deploy on its own bookkeeping (#585).
+      await repos.service.upsertServiceDeployment({
         deploymentId: dep.id,
         serviceId: svc.id,
         serviceName: svc.name,
@@ -1799,23 +1936,42 @@ export async function deployComposeServices(
           containerPort === primaryRoutedPort
             ? previousByServiceId.get(svc.id)?.hostPort
             : undefined;
-        let hostPort: number;
-        if (carried) {
-          hostPort = carried;
-        } else {
-          const allocation = await allocateHostPort(opts.executor, { avoid: usedHostPorts });
-          hostPort = allocation.port;
-          // "Couldn't read occupancy" is not "nothing is listening" — without this the
-          // bind failure that follows blames Docker for an unreachable host (#490).
-          if (!allocation.scanned) {
-            logger.log(
-              `Couldn't read live port occupancy on the target, so ${allocation.port} for ` +
-                `${svc.name} avoids only ports this deploy already took. If publishing it fails ` +
-                `as "already allocated", check that Openship can reach this host ` +
-                `(Servers → this box).\n`,
-              "warn",
-            );
-          }
+        /**
+         * A carried port is a PREFERENCE, never a given.
+         *
+         * It used to be taken verbatim whenever one existed, which is right for the case it was
+         * written for — a redeploy on the same host, where the port was ours and still is. It is
+         * wrong the moment the host changes: a MIGRATION carries the source's port to a target
+         * that knows nothing about it, and if anything there holds it Docker refuses the bind
+         * with "port is already allocated" and the service (plus everything depending on it)
+         * fails. A host port is a property of the HOST, not of the project, so it cannot travel
+         * with one.
+         *
+         * `preferred` is the allocator's own word for exactly this: keep it if it's free, pick
+         * another if it isn't. Passing it there rather than branching around the allocator means
+         * one rule for both cases and no second place that decides what a free port is.
+         */
+        const allocation = await allocateHostPort(opts.executor, {
+          preferred: carried,
+          avoid: usedHostPorts,
+        });
+        const hostPort = allocation.port;
+        if (carried && hostPort !== carried) {
+          logger.log(
+            `Host port ${carried} for ${svc.name} is taken on this server — using ${hostPort}. ` +
+              `(Expected when a project moves to a different host.)\n`,
+          );
+        }
+        // "Couldn't read occupancy" is not "nothing is listening" — without this the
+        // bind failure that follows blames Docker for an unreachable host (#490).
+        if (!allocation.scanned) {
+          logger.log(
+            `Couldn't read live port occupancy on the target, so ${allocation.port} for ` +
+              `${svc.name} avoids only ports this deploy already took. If publishing it fails ` +
+              `as "already allocated", check that Openship can reach this host ` +
+              `(Servers → this box).\n`,
+            "warn",
+          );
         }
         usedHostPorts.add(hostPort);
         pinnedHostPortByContainerPort.set(containerPort, hostPort);
@@ -1897,6 +2053,16 @@ export async function deployComposeServices(
         composeRouteWarnings.push(...deployResult.routeWarnings);
       }
 
+      // Recorded as attempted ONLY now. `registerResolvedRoutes` runs inside the
+      // pipeline, after activate + the health gate — so a service that fails the
+      // health gate throws below with `routeWarnings` UNSET and no vhost written.
+      // Pushing before the call meant the TLS audit saw that hostname as routed and
+      // reported "routed but no HTTPS" for a domain that was never routed at all,
+      // with no route warning for the audit's exclusion to subtract.
+      if (deployResult.status !== "failed") {
+        registeredRoutes.push(...proxyRoutes);
+      }
+
       if (deployResult.status === "failed") {
         // A CONNECTION-LOSS failure means the container STARTED but a post-start
         // step (health / route) couldn't reach the host (e.g. a stale-connection
@@ -1932,33 +2098,26 @@ export async function deployComposeServices(
       // and the next redeploy reuses the same target.
       const persistedHostPort = servicePinnedHostPort ?? result.hostPort ?? null;
 
-      if (opts?.strictScope) {
-        // Reused (active) deployment id → a row for this service may already
-        // exist; upsert instead of INSERT to avoid a UNIQUE violation.
-        await repos.service.upsertServiceDeployment({
-          deploymentId: dep.id,
-          serviceId: svc.id,
-          serviceName: svc.name,
-          containerId: result.containerId,
-          status: "success",
-          imageRef: image,
-          imageDigest: result.imageDigest ?? null,
-          hostPort: persistedHostPort,
-          ip: result.ip ?? null,
-        });
-      } else {
-        await repos.service.createServiceDeployment({
-          deploymentId: dep.id,
-          serviceId: svc.id,
-          serviceName: svc.name,
-          containerId: result.containerId,
-          status: "success",
-          imageRef: image,
-          imageDigest: result.imageDigest ?? null,
-          hostPort: persistedHostPort,
-          ip: result.ip ?? null,
-        });
-      }
+      // UPSERT, never a plain insert — a row for this (deployment, service) pair may
+      // already exist by the time we get here, from either of two writers:
+      //   • strictScope reuses the ACTIVE deployment id, which can already carry one;
+      //   • a scoped deploy pre-creates a `skipped` row for every UNTARGETED service
+      //     (service-checks.ts), and an untargeted service still reaches this create site
+      //     when its container turned out to be gone and the carry above revived it.
+      // A plain insert there violated UNIQUE(deploymentId, serviceId) and threw out of
+      // this function, failing the whole deploy on its own bookkeeping (#585). Passing the
+      // full runtime picture is what makes the full-row upsert the right writer here.
+      await repos.service.upsertServiceDeployment({
+        deploymentId: dep.id,
+        serviceId: svc.id,
+        serviceName: svc.name,
+        containerId: result.containerId,
+        status: "success",
+        imageRef: image,
+        imageDigest: result.imageDigest ?? null,
+        hostPort: persistedHostPort,
+        ip: result.ip ?? null,
+      });
 
       results.push({
         serviceId: svc.id,
@@ -2103,7 +2262,10 @@ export async function deployComposeServices(
           serviceId: svc.id,
           status: "deploying",
         });
-        await repos.service.createServiceDeployment({
+        // Upsert for the same reason as the success write above: this pair may already
+        // carry a pre-created `skipped` row, and a unique violation here would replace an
+        // unknown-but-probably-fine outcome with a hard deploy failure.
+        await repos.service.upsertServiceDeployment({
           deploymentId: dep.id,
           serviceId: svc.id,
           serviceName: svc.name,
@@ -2225,6 +2387,34 @@ export async function deployComposeServices(
     (t) => t.serviceId && readinessByServiceId.get(t.serviceId)?.stabilization.enabled,
   );
   const stabilityWarnings: string[] = [];
+
+  /**
+   * Turn vetoing post-start findings into failures: rows + SSE through
+   * `recordUnstableServices`, then reconcile the in-memory result set the summary
+   * below is computed from.
+   *
+   * Shared by both halves of the gate (the stabilization watch and the readiness
+   * probe) so a veto means the identical thing either way — the second caller is
+   * where a hand-copied version would have started drifting.
+   */
+  const demoteVetoedServices = async (findings: StabilityFinding[]): Promise<void> => {
+    const demoted = await recordUnstableServices({
+      deploymentId: dep.id,
+      findings,
+      logger,
+    });
+    for (const result of results) {
+      const finding = result.serviceId ? demoted.get(result.serviceId) : undefined;
+      if (!finding || result.status === "failed") continue;
+      result.status = "failed";
+      // `detail` (headline + log tail), not the headline alone: when every
+      // service crash-loops this becomes the DEPLOYMENT's errorMessage, and the
+      // whole point is that it answers "why" without an SSH session.
+      result.error = finding.detail;
+      successful = Math.max(0, successful - 1);
+      unavailableServiceNames.add(finding.target.serviceName);
+    }
+  };
   if (watched.length > 0) {
     // One wall-clock window covers every container (verifyDeployedContainers
     // watches them concurrently), so take the longest any watched service asked
@@ -2256,26 +2446,94 @@ export async function deployComposeServices(
       stabilityWarnings.push(`${finding.target.serviceName}: ${finding.verdict.reason}`);
     }
 
-    if (vetoing.length > 0) {
-      // Rows + SSE are the audit's business; this loop only reconciles the
-      // in-memory result set the summary below is computed from.
-      const demoted = await recordUnstableServices({
-        deploymentId: dep.id,
-        findings: vetoing,
-        logger,
-      });
-      for (const result of results) {
-        const finding = result.serviceId ? demoted.get(result.serviceId) : undefined;
-        if (!finding || result.status === "failed") continue;
-        result.status = "failed";
-        // `detail` (headline + log tail), not the headline alone: when every
-        // service crash-loops this becomes the DEPLOYMENT's errorMessage, and the
-        // whole point is that it answers "why" without an SSH session.
-        result.error = finding.detail;
-        successful = Math.max(0, successful - 1);
-        unavailableServiceNames.add(finding.target.serviceName);
+    if (vetoing.length > 0) await demoteVetoedServices(vetoing);
+  }
+
+  // ── Readiness PROBE, per service ─────────────────────────────────────────────
+  // The other half of the same opt-in gate, and it was missing entirely: this path
+  // read `stabilization` and `onFailure` out of `readinessByServiceId` and never
+  // looked at `probe`, so a compose project that set `readiness: { enabled: true,
+  // path: "/ready" }` got a silent no-op while the identical config on a single-app
+  // project was enforced. Found alongside GH-583.
+  //
+  // After the stabilization watch, for the same reason that runs after the whole
+  // stack is up: a service that depends on a sibling isn't expected to answer until
+  // the sibling exists, and probing inline as each container was created would fail
+  // a stack that converges seconds later.
+  const probed = stabilityTargets.filter(
+    (t) => t.serviceId && readinessByServiceId.get(t.serviceId)?.probe.enabled,
+  );
+  if (probed.length > 0) {
+    // Concurrently: these are independent waits on a timeout each, so running them
+    // in sequence would make a 3-service stack wait 3 × the window it asked for.
+    const verdicts = await Promise.all(
+      probed.map(async (target) => {
+        const gate = readinessByServiceId.get(target.serviceId!)!;
+        const svc = enabled.find((s) => s.id === target.serviceId);
+        // The service's OWN port — `resolveReadinessTarget` maps it to whatever the
+        // container actually published. An explicit `readiness.port` wins; otherwise
+        // the row's exposed/first port.
+        const primaryPort = gate.probe.port ?? (svc ? resolveServicePort(svc) : null);
+        if (!primaryPort) {
+          // Nothing to dial and nothing declared to dial: report it through the same
+          // "couldn't ask" channel a refused forward uses, so it warns instead of
+          // failing a service whose config simply names no port.
+          return {
+            target,
+            gate,
+            verdict: {
+              failure: null,
+              skipped:
+                "this service declares no port, and its health check does not name one, " +
+                "so there is no address to dial.",
+            },
+          };
+        }
+        const verdict = await probeDeployedReadiness({
+          runtime,
+          containerId: target.containerId,
+          primaryPort,
+          probe: gate.probe,
+          targetExecutor: opts?.executor ?? null,
+          log: (message, level) => logger.log(message, level, { serviceName: target.serviceName }),
+          subject: `"${target.serviceName}"`,
+        });
+        return { target, gate, verdict };
+      }),
+    );
+
+    const probeVetoes: StabilityFinding[] = [];
+    for (const { target, gate, verdict } of verdicts) {
+      if (verdict.skipped) {
+        // Could not ASK. Never a veto — see probeDeployedReadiness.
+        logger.log(
+          `Health check SKIPPED for "${target.serviceName}": ${verdict.skipped} ` +
+            `The service is left live and unverified.\n`,
+          "warn",
+          { serviceName: target.serviceName },
+        );
+        continue;
       }
+      if (!verdict.failure) continue;
+      if (gate.onFailure !== "fail") {
+        stabilityWarnings.push(`${target.serviceName}: ${verdict.failure}`);
+        continue;
+      }
+      // Reusing the stabilization recorder: despite the name it is the generic
+      // "this service failed a post-start check" writer (failure row + SSE), and a
+      // probe failure is exactly that. `summary` is the headline, `detail` becomes
+      // the deployment's errorMessage when nothing came up.
+      probeVetoes.push({
+        target,
+        // `unhealthy` out of the StabilityStatus vocabulary, and it is the accurate
+        // one: the container is up, it just isn't answering. Not `exited`/`dead`
+        // (it's running) and not `missing` (we found it).
+        verdict: { status: "unhealthy", ok: false, reason: verdict.failure },
+        summary: `Health check failed for "${target.serviceName}"`,
+        detail: verdict.failure,
+      });
     }
+    if (probeVetoes.length > 0) await demoteVetoedServices(probeVetoes);
   }
 
   // Services phase closes here (before app-setup) so the stepper never marks
@@ -2648,17 +2906,43 @@ export async function deployComposeServices(
     }
   }
 
+  // Routed, but is it actually serving HTTPS? One shared auditor with the
+  // single-app pipeline — `composeRouteWarnings` is passed so a host already
+  // reported as UNROUTED isn't also reported as routed-without-a-cert.
+  const tlsPendingDomains = await auditRoutedDomainTls({
+    projectId: project.id,
+    routes: registeredRoutes,
+    routeWarnings: composeRouteWarnings,
+    log: (message) => logger.log(`${message}\n`, "warn"),
+  });
+
   const failed = results.filter((r) => r.status === "failed");
   const failedNames = failed.map((r) => r.serviceName);
   const indeterminate = results.filter((r) => r.status === "indeterminate");
+  const skipped = skippedOutOfScope.length;
+  // A service this pass declined to consider is not a failure — but it isn't nothing
+  // either. Saying so here is what keeps the skip from being silent: an operator who adds
+  // a service and then pushes a change to a DIFFERENT one still learns the new one never
+  // came up, without it hijacking the deployment's status the way a `failure` row did.
+  const skipNotice =
+    skipped > 0
+      ? `${skipped} service${skipped === 1 ? " was" : "s were"} left out of this deploy and ` +
+        `${skipped === 1 ? "has" : "have"} no image to start from: ${skippedOutOfScope.join(", ")}. ` +
+        `Redeploy ${skipped === 1 ? "it" : "them"} to bring ${skipped === 1 ? "it" : "them"} up.`
+      : undefined;
   const warning =
-    failed.length > 0
-      ? `${failed.length}/${ordered.length} services failed: ${failedNames.join(", ")}`
-      : // Nothing failed, but something bounced on its way up — worth saying,
-        // since a service that restarted twice at boot often restarts in prod.
-        stabilityWarnings.length > 0
-        ? stabilityWarnings.join("; ")
-        : undefined;
+    [
+      failed.length > 0
+        ? `${failed.length}/${ordered.length} services failed: ${failedNames.join(", ")}`
+        : // Nothing failed, but something bounced on its way up — worth saying,
+          // since a service that restarted twice at boot often restarts in prod.
+          stabilityWarnings.length > 0
+          ? stabilityWarnings.join("; ")
+          : undefined,
+      skipNotice,
+    ]
+      .filter(Boolean)
+      .join("; ") || undefined;
   const firstFailure = failed.find((service) => service.error?.trim())?.error;
 
   // Any unverified service → the deploy's outcome is UNKNOWN. Resolve to
@@ -2696,21 +2980,39 @@ export async function deployComposeServices(
     };
   }
 
-  if (successful === ordered.length) {
-    logger.step("deploy", "completed", `All ${ordered.length} services deployed.`);
+  // `successful + skipped` accounts for the whole enabled set: a service left out of a
+  // scoped deploy is accounted for, just not deployed, so it must not read as a shortfall
+  // that "needs attention".
+  if (failed.length === 0 && successful + skipped === ordered.length) {
+    logger.step(
+      "deploy",
+      "completed",
+      skipped > 0
+        ? `Deployed ${successful}/${ordered.length} services (${skipped} not part of this deploy).`
+        : `All ${ordered.length} services deployed.`,
+    );
   } else if (successful > 0) {
     logger.step(
       "deploy",
       "completed",
       `Deployed ${successful}/${ordered.length} services. ${failed.length} service${failed.length === 1 ? "" : "s"} still need attention.`,
     );
-    logger.log(`Deployment completed with warnings: ${warning}\n`, "warn");
   } else {
     logger.step(
       "deploy",
       "failed",
       `${failed.length}/${ordered.length} services failed to deploy.`,
     );
+  }
+  // Lifted out of the partial branch it used to live in, because that branch is no longer
+  // the only one that can carry a warning: an all-successful deploy can have a stability
+  // warning (which reached the deployment's meta while the persisted log said nothing), and
+  // a skip notice belongs on an otherwise clean pass. Guarded on `warning` because the
+  // shortfall may now be skips rather than failures — unguarded it interpolated a literal
+  // `undefined` — and on `successful > 0` because nothing "completed" on a total failure
+  // (the step above already says so, and `error` carries the reason).
+  if (warning && successful > 0) {
+    logger.log(`Deployment completed with warnings: ${warning}\n`, "warn");
   }
 
   return {
@@ -2728,7 +3030,14 @@ export async function deployComposeServices(
     primaryContainerId,
     warning,
     ...(composeRouteWarnings.length ? { routeWarnings: composeRouteWarnings } : {}),
-    error: successful > 0 ? undefined : (firstFailure ?? "No services deployed successfully"),
+    ...(tlsPendingDomains.length ? { tlsPendingDomains } : {}),
+    // `skipNotice` before the generic: when a scoped deploy named no enabled service, every
+    // service is out of scope and nothing failed — so "No services deployed successfully"
+    // is true but useless, while the notice names what was left out and what to do.
+    error:
+      successful > 0
+        ? undefined
+        : (firstFailure ?? skipNotice ?? "No services deployed successfully"),
     publicUrl: firstPublicUrl,
     portChecks,
   };

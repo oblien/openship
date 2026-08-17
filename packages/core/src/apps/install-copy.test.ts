@@ -102,7 +102,16 @@ describe("Neon ships as one bundle with a console AND a connection", () => {
     const neon = getAppTemplate("neon");
     expect(neon).toBeDefined();
     expect(neon!.kind).toBe("template");
-    expect(neon!.hosting).toBe("experimental");
+    // No longer badged experimental: it was booted end to end — console served,
+    // bootstrap ran at the earliest install timing, and the advertised URL
+    // reached Postgres. Absent `hosting` defaults to "self-hosted".
+    expect(neon!.hosting).toBeUndefined();
+    // But NOT `verified`, which means official image + reviewed pipeline. neond
+    // is a single-maintainer community control plane whose image build workflow
+    // was deleted from its repo, so its provenance is unreviewable no matter how
+    // well it runs. "We tested it" and "we vouch for the publisher" are separate
+    // claims and only the first one is true here.
+    expect(neon!.verified).toBe(false);
     expect(neon!.services).toHaveLength(1);
     const svc = neon!.services![0];
     expect(svc.name).toBe("neond");

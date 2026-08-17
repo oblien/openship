@@ -247,6 +247,9 @@ export const serviceDeployment = pgTable(
      *   - `"shared-touched"` — a monorepo `monorepoSharedPaths` glob hit.
      *   - `"manual"`         — single-service redeploy from the dashboard.
      *   - `"unchanged"`      — no signals matched; service was skipped.
+     *   - `"out-of-scope"`   — a scoped deploy (`--service-ids` / smart routing) did not
+     *                          target it AND it has no image to bring up, so this deploy
+     *                          left it alone rather than failing it (#585).
      */
     reason: text("reason"),
     /**

@@ -23,8 +23,10 @@ import {
   imageRefKey,
   toDiscoveredService,
   type DiscoveredStack,
+  declaredKey,
 } from "./docker-reconcile";
 import { scanProxyRoutes } from "./proxy-route-scan";
+import { findOwnStack } from "../../lib/startup/self-services";
 
 /** Openship project-id shape — used to reject crafted `openship.project` labels
  *  before they reach the remote snapshot probe (same shape migrate.service uses). */
@@ -74,15 +76,20 @@ async function readComposeDeclarations(
   serverId: string,
   groups: Map<string, DockerContainerDetail[]>,
 ): Promise<Map<string, ComposeService>> {
-  // Resolve absolute compose paths (relative ones join the project working dir).
-  const paths = new Set<string>();
-  for (const details of groups.values()) {
+  // Resolve absolute compose paths (relative ones join the project working dir),
+  // remembering which COMPOSE PROJECT each file belongs to. A service name is unique
+  // only within its project, so a flat name→declaration map let the first stack read
+  // win for every stack: on a host running Openship plus anything with a `postgres`,
+  // the user's container was reconciled against OUR declaration — importing our
+  // depends_on, build and env provenance onto their service (same root cause as #584).
+  const paths = new Map<string, string>(); // absolute path → compose project key
+  for (const [project, details] of groups) {
     for (const d of details) {
       for (const raw of d.composeConfigFiles ?? []) {
         const abs = raw.startsWith("/")
           ? raw
           : `${(d.composeWorkingDir ?? "").replace(/\/$/, "")}/${raw}`;
-        if (abs.startsWith("/")) paths.add(abs);
+        if (abs.startsWith("/") && !paths.has(abs)) paths.set(abs, project);
       }
     }
   }
@@ -90,24 +97,25 @@ async function readComposeDeclarations(
 
   const contents = await sshManager.withExecutor(serverId, async (executor) => {
     return Promise.all(
-      [...paths].map(async (p) => {
+      [...paths].map(async ([p, project]) => {
         try {
-          return [p, await executor.readFile(p)] as const;
+          return [project, await executor.readFile(p)] as const;
         } catch {
-          return [p, undefined] as const;
+          return [project, undefined] as const;
         }
       }),
     );
   });
 
   const declared = new Map<string, ComposeService>();
-  for (const [, content] of contents) {
+  for (const [project, content] of contents) {
     if (!content) continue;
     try {
       for (const svc of parseComposeFile(content).services) {
-        // First declaration wins; overrides across multiple files are rare and
-        // reconciled against inspect truth anyway.
-        if (!declared.has(svc.name)) declared.set(svc.name, svc);
+        // First declaration wins WITHIN a compose project; overrides across that
+        // project's own files are rare and reconciled against inspect truth anyway.
+        const key = declaredKey(project, svc.name);
+        if (!declared.has(key)) declared.set(key, svc);
       }
     } catch {
       // Invalid YAML — skip; inspect data still reconstructs the service.
@@ -125,10 +133,34 @@ export async function discoverServerStack(
      *  deploy containers are adopted as PLAIN compose/standalone (no re-import,
      *  no snapshot restore). The one filter (`isOpenshipOwned`) is bypassed. */
     flatDocker?: boolean;
+    /**
+     * PRE-SET SELECTION: consider only these container ids.
+     *
+     * The scan exists to answer "what is on this box?", which is the right question when the
+     * operator is about to choose from a grid. A project move already knows its answer — the
+     * `openship.project` label names its containers exactly — so scanning the whole host to
+     * throw most of it away is work the operator waits through ("Inspecting 20 container(s)…"
+     * to keep 5), and on a busy box most of the elapsed time.
+     *
+     * Narrowing here rather than in the caller is what makes it cheap: it lands before the
+     * inspect fan-out, so the compose-file reads and the per-image env/CMD lookups are scoped
+     * for free, and the derivation of each `DiscoveredService` stays the SAME code the scan
+     * flow uses — a project move must not get its own dialect of "what is this container".
+     *
+     * NOT an authorisation boundary. It is a performance scope; the caller still filters by
+     * label afterwards (see `planProjectMove`), because a scan option must never be the thing
+     * that decides which containers are ours.
+     */
+    onlyContainerIds?: string[];
   },
 ): Promise<DiscoveredStack> {
   const step = (m: string) => onProgress?.(m);
   const flatDocker = opts?.flatDocker === true;
+  // `undefined` = unscoped (scan the box). `[]` = an EMPTY scope, and therefore no candidates —
+  // not "everything", which is the tempting `length > 0` reading and would turn a caller's
+  // "these zero containers" into a full-host scan.
+  const only = opts?.onlyContainerIds;
+  const scoped = Array.isArray(only) ? new Set(only.filter(Boolean)) : null;
   step("Connecting to Docker…");
   const rt = await createServerDockerRuntime(serverId, organizationId);
   try {
@@ -161,11 +193,45 @@ export async function discoverServerStack(
     return await withTimeout(
       (async (): Promise<DiscoveredStack> => {
         step("Listing containers, volumes and networks…");
-        const [containers, volumes, networks] = await Promise.all([
+        const [allContainers, volumes, networks] = await Promise.all([
           rt.listAllContainers(),
           rt.listAllVolumes(),
           rt.listAllNetworks(),
         ]);
+
+        // Narrow to the pre-set selection BEFORE anything expensive. Everything downstream —
+        // the ownership split, the inspect fan-out, the compose reads, the image lookups — is
+        // driven off this list, so one filter here scopes the whole scan. The volume and
+        // network lists stay whole: reconciliation matches mounts against them by name, and a
+        // filtered volume list would make a moved volume look like it does not exist.
+        const containers = scoped
+          ? allContainers.filter((c) => scoped.has(c.id))
+          : allContainers;
+
+        // OPENSHIP'S OWN STACK IS NEVER A CANDIDATE — structurally, not because the
+        // database happens to remember it.
+        //
+        // `openship up` runs the control plane as a compose stack (api, dashboard,
+        // edge, postgres, redis) and its template sets NO labels, so the label split
+        // below cannot see it and offered Openship's own database as adoptable. The
+        // only thing that kept it out of a user's project was a service_deployment row
+        // written best-effort at boot by `linkSelfAppServices` — absent if Docker was
+        // unreachable then, or the box was never self-registered — and a name-based
+        // selection swept it in regardless (#584).
+        //
+        // Identified with the SAME predicate `linkSelfAppServices` uses to find its own
+        // stack, gated on the SAME fact that makes that predicate sound: the scanned
+        // server is this machine. `findOwnStack` keys on `api` + `dashboard` living in
+        // one compose project, which is only conclusive about OUR host — on a remote
+        // server that shape could be a user's app, and greying out their stack would be
+        // its own bug. Not this machine ⇒ our stack is not in this list ⇒ exclude
+        // nothing. Applies in FLAT mode too: flat exists to adopt an Openship-managed
+        // WORKLOAD as a plain project, and the control plane is not a workload.
+        const self = await repos.server.get(serverId).catch(() => undefined);
+        const ownIds =
+          self?.isLocal === true ? new Set(findOwnStack(containers).map((c) => c.id)) : new Set<string>();
+        if (ownIds.size > 0) step(`Excluding Openship's own ${ownIds.size} container(s)…`);
+        const adoptable = ownIds.size > 0 ? containers.filter((c) => !ownIds.has(c.id)) : containers;
 
         // Split by ownership. GENERIC candidates (no openship.* label) feed the
         // normal adopt grid. OPENSHIP-owned deploy containers are recovered as their
@@ -176,15 +242,22 @@ export async function discoverServerStack(
         // workloads adopt as plain compose/standalone — no managed set, no re-import.
         const isOpenshipOwned = (labels: Record<string, string>) =>
           Object.keys(labels).some((k) => k === "openship" || k.startsWith("openship."));
-        const managed = flatDocker ? [] : containers.filter((c) => isOpenshipOwned(c.labels));
+        const managed = flatDocker ? [] : adoptable.filter((c) => isOpenshipOwned(c.labels));
         const candidates = flatDocker
-          ? containers.filter((c) => !isBuildHelper(c.labels))
-          : containers.filter((c) => !isOpenshipOwned(c.labels));
+          ? adoptable.filter((c) => !isBuildHelper(c.labels))
+          : adoptable.filter((c) => !isOpenshipOwned(c.labels));
         const managedApp = managed.filter(
           (c) => c.labels["openship.project"] && !isBuildHelper(c.labels),
         );
 
-        step(`Inspecting ${candidates.length} container(s)…`);
+        // Say WHICH containers, not just how many. A pre-set selection reporting a bare
+        // "Inspecting 5 container(s)…" on a 20-container box reads like the scan missed
+        // fifteen; naming the scope is the difference between a narrowed scan and a broken one.
+        step(
+          scoped
+            ? `Inspecting ${candidates.length} of ${allContainers.length} container(s) (this project's)…`
+            : `Inspecting ${candidates.length} container(s)…`,
+        );
         const [details, managedDetails] = await Promise.all([
           mapLimit(candidates, 5, (c) => rt.inspectContainer(c.id)).then((d) =>
             d.filter((x): x is DockerContainerDetail => x !== null),
@@ -256,19 +329,30 @@ export async function discoverServerStack(
         // unbounded. Drop THIS org's entries that are neither a live DB project nor
         // backed by a running container — i.e. true orphans. A running container's
         // id is kept so a soft-deleted (record-only) workload stays re-importable.
-        try {
-          const liveDb = await repos.project.listByOrganization(organizationId, {
-            page: 1,
-            perPage: 1000,
-          });
-          const liveProjectIds = new Set<string>([...liveDb.rows.map((p) => p.id), ...projectIds]);
-          await sshManager
-            .withExecutor(serverId, (exec) =>
-              pruneOrphanManifestArtifacts(exec, { organizationId, liveProjectIds }),
-            )
-            .catch(() => {});
-        } catch {
-          /* best-effort — never fail discovery on a prune hiccup */
+        //
+        // Housekeeping for the RECOVERY path below, so it is skipped when that path cannot
+        // run: a pre-set selection has nothing to recover (it already knows its project), and
+        // this costs a 1000-row project read plus its own SSH session. Pruning a whole box's
+        // manifest from a scan that deliberately looked at five containers would also be
+        // deciding "orphan" from an incomplete picture.
+        if (!scoped) {
+          try {
+            const liveDb = await repos.project.listByOrganization(organizationId, {
+              page: 1,
+              perPage: 1000,
+            });
+            const liveProjectIds = new Set<string>([
+              ...liveDb.rows.map((p) => p.id),
+              ...projectIds,
+            ]);
+            await sshManager
+              .withExecutor(serverId, (exec) =>
+                pruneOrphanManifestArtifacts(exec, { organizationId, liveProjectIds }),
+              )
+              .catch(() => {});
+          } catch {
+            /* best-effort — never fail discovery on a prune hiccup */
+          }
         }
 
         if (projectIds.length > 0) {
@@ -379,7 +463,7 @@ export async function revealContainerEnv(
           ref ? rt.inspectImageEnv(ref) : Promise.resolve([]),
         ]);
         const declaredSvc = detail.composeService
-          ? declared.get(detail.composeService)
+          ? declared.get(declaredKey(detail.composeProject ?? "", detail.composeService))
           : undefined;
         return toDiscoveredService(detail, declaredSvc, imageEnv).env;
       })(),

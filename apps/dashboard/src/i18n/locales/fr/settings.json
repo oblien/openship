@@ -48,12 +48,12 @@
     "title": "Paramètres",
     "tabs": {
       "general": "Général",
-      "tokens": "Jetons",
+      "git": "Git",
+      "tokens": "Jetons d'API",
       "mcp": "MCP",
       "team": "Équipe",
       "notifications": "Notifications",
-      "dns": "DNS",
-      "audit": "Journal d'audit",
+      "credentials": "Identifiants",
       "cloud": "Cloud",
       "infrastructure": "Infrastructure",
       "instance": "Instance"
@@ -806,40 +806,34 @@
       "failed": "Échec de la mise à jour de la stratégie de routage"
     }
   },
-  "dns": {
-    "title": "Fournisseurs DNS",
-    "description": "Laissez Openship écrire les enregistrements DNS de vos domaines",
-    "explainer": "Avec un fournisseur connecté, l'ajout d'un domaine personnalisé écrit ses enregistrements immédiatement : le domaine est vérifié et obtient son certificat sans que vous ayez à coller quoi que ce soit.",
-    "explainerOwnership": "Openship ne supprime que les enregistrements qu'il a créés.",
-    "addProvider": "Connecter un fournisseur",
-    "connect": "Connecter",
-    "namePlaceholder": "Libellé, par ex. Cloudflare production",
-    "tokenPlaceholder": "Jeton d'API Cloudflare",
-    "scopesHint": "Nécessite un jeton avec les autorisations {scopes}.",
-    "createTokenLink": "En créer un",
-    "noneConnected": "Aucun fournisseur DNS connecté. Les domaines afficheront les enregistrements à ajouter vous-même.",
-    "badgeActive": "Actif",
-    "badgeInvalid": "Nécessite une action",
-    "invalidHint": "Le fournisseur a rejeté ce jeton. Reconnectez-le pour reprendre les enregistrements automatiques.",
-    "metaLine": " · {provider} · dernière vérification {verified}",
-    "zoneCheck": {
-      "title": "Vérifier un domaine",
-      "description": "Voyez si un fournisseur connecté gère la zone d'un nom d'hôte avant de l'ajouter.",
-      "placeholder": "app.example.com",
-      "check": "Vérifier",
-      "matched": "Géré ici — zone {zone}. Les enregistrements de ce domaine seront écrits automatiquement.",
-      "none": "Aucun fournisseur connecté ne gère la zone de ce domaine. Vous ajouterez ses enregistrements vous-même.",
-      "unauthorized": "Un jeton enregistré a été rejeté. Reconnectez-le puis réessayez.",
-      "unavailable": "Le fournisseur DNS était injoignable, donc le résultat est inconnu — cela ne signifie pas qu'une configuration est erronée."
-    },
+  "credentials": {
+    "title": "Identifiants",
+    "description": "Jetons et connexions qu'Openship utilise pour vous — récupération d'images privées, écriture d'enregistrements DNS. Stockés chiffrés et jamais réaffichés.",
+    "noProviders": "Aucun fournisseur d'identifiants n'est disponible sur cette instance.",
+    "noneForProvider": "Aucun ajouté pour le moment.",
+    "add": "Ajouter",
+    "edit": "Modifier",
+    "save": "Enregistrer",
+    "connect": "Ajouter un identifiant",
+    "delete": "Supprimer",
+    "verify": "Revérifier auprès du fournisseur",
+    "badgeActive": "Fonctionne",
+    "badgeInvalid": "À vérifier",
+    "fieldName": "Libellé",
+    "namePlaceholder": "ex. GHCR lecture seule",
+    "secretKeptPlaceholder": "•••••••• (enregistré — laisser vide pour conserver)",
+    "selectPlaceholder": "Choisir…",
+    "verifyNote": "Openship vérifie l'identifiant auprès du fournisseur avant de l'enregistrer.",
+    "confirmDelete": "Supprimer « {name} » ? Tout ce qui en dépend cessera de fonctionner.",
     "toast": {
-      "loadFailed": "Impossible de charger les fournisseurs DNS",
-      "needBoth": "Saisissez un libellé et un jeton d'API",
-      "connected": "{name} connecté",
-      "connectFailed": "Impossible de connecter le fournisseur",
-      "disconnected": "{name} déconnecté",
-      "disconnectFailed": "Impossible de déconnecter le fournisseur",
-      "checkFailed": "Impossible de vérifier ce domaine"
+      "loadFailed": "Impossible de charger les identifiants",
+      "created": "Identifiant ajouté",
+      "updated": "Identifiant mis à jour",
+      "deleted": "Identifiant supprimé",
+      "saveFailed": "Impossible d'enregistrer l'identifiant",
+      "deleteFailed": "Impossible de supprimer l'identifiant",
+      "verifyOk": "Le fournisseur a accepté l'identifiant",
+      "verifyFailed": "Le fournisseur a refusé l'identifiant"
     }
   }
 }

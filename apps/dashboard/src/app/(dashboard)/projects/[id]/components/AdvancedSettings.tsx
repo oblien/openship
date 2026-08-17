@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -32,10 +32,14 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { projectsApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
+import { migrationNeedsOperator } from "@/utils/project-status";
 import type { RouteStrategy } from "@/lib/api/settings";
 import type { OpenshipReadiness } from "@repo/core";
 import { workloadOf } from "@/context/deployment/types";
 import ReadinessSection from "@/components/project-settings/ReadinessSection";
+import { ProjectMigrationCard } from "@/components/migration/ProjectMigrationCard";
+import { ProjectMigrationHistory } from "@/components/migration/ProjectMigrationHistory";
+import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 
 interface Props {
   onDeleteProject: (deleteApp?: boolean, wipeVolumes?: boolean, recordOnly?: boolean) => void;
@@ -59,6 +63,7 @@ function SectionCard({
   children,
   collapsible = false,
   defaultOpen = false,
+  allowOverflow = false,
 }: {
   title: string;
   description: string;
@@ -69,6 +74,17 @@ function SectionCard({
    *  the collapsible settings sections. */
   collapsible?: boolean;
   defaultOpen?: boolean;
+  /**
+   * Drop the corner clip, for a card whose content opens something that has to ESCAPE it —
+   * a dropdown, a popover, a menu. `overflow-hidden` is what keeps ordinary children inside
+   * the 2xl radius, but it also cuts an absolutely-positioned menu off at the card's edge,
+   * so a server picker near the bottom of a card renders half a list.
+   *
+   * The Project Info card above has always omitted the class for exactly this reason (its
+   * ⋮ menu), and there is a test pinning that. This makes the same escape hatch available
+   * to the cards that go through here instead of forcing them to be hand-rolled.
+   */
+  allowOverflow?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const expanded = collapsible ? open : true;
@@ -91,7 +107,11 @@ function SectionCard({
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+    <div
+      className={`flex h-full flex-col rounded-2xl border border-border/50 bg-card ${
+        allowOverflow ? "" : "overflow-hidden"
+      }`}
+    >
       {collapsible ? (
         <button
           type="button"
@@ -104,7 +124,7 @@ function SectionCard({
       ) : (
         <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">{header}</div>
       )}
-      {expanded && <div className="space-y-4 px-5 py-4">{children}</div>}
+      {expanded && <div className="flex-1 space-y-4 px-5 py-4">{children}</div>}
     </div>
   );
 }
@@ -125,6 +145,46 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   useEffect(() => {
     if (typeof projectData?.enabled === "boolean") setIsProjectActive(projectData.enabled);
   }, [projectData?.enabled]);
+
+  const projectId = projectData?.id ? String(projectData.id) : "";
+
+  /**
+   * The live migration — read from the PROJECT, not fetched from the migration API.
+   *
+   * `activeMigration` is part of the project payload (API `readActiveMigration`), which is the
+   * same field the status pill on every card, the sidebar and the page header now read. So a
+   * run is not something this tab discovers by asking on mount: it is part of what the project
+   * IS, and every surface learns it from the payload it already loads. The tab-local fetch this
+   * replaced knew about a run only while mounted — a reload restarted that clock, and no other
+   * surface knew anything at all.
+   */
+  const activeRun = projectData?.activeMigration ?? null;
+  // Parked (awaiting cutover / partial) vs advancing. Asked through the shared predicate so
+  // this panel and the status pills can't disagree about which phases mean "your move".
+  const runNeedsOperator = migrationNeedsOperator(activeRun);
+
+  // The run whose SESSION this tab is showing, and the two things that can override the
+  // payload — in both directions.
+  //
+  // `startedRunId` opens the session the instant a run starts, without waiting for the payload
+  // refetch that will also report it, and keeps it open once the run goes terminal: having just
+  // confirmed a move, you should land on its result, not be dropped back into settings.
+  //
+  // `dismissedRunId` is the other direction: Back means "let me at the settings", and without
+  // it the payload would immediately reopen the session it just closed. By run ID, not a
+  // boolean, so dismissing one run does not suppress the next.
+  const [startedRunId, setStartedRunId] = useState<string | null>(null);
+  const [dismissedRunId, setDismissedRunId] = useState<string | null>(null);
+  const openRunId = startedRunId ?? activeRun?.id ?? null;
+  const sessionRunId = openRunId && openRunId !== dismissedRunId ? openRunId : null;
+
+  const leaveSession = useCallback(() => {
+    setDismissedRunId(openRunId);
+    setStartedRunId(null);
+    // The run may have finished (or been cut over / rolled back) while the panel was open, and
+    // the payload is what every surface reads for that. Re-read it on the way out.
+    if (projectId) invalidateProjectCaches(projectId);
+  }, [openRunId, projectId]);
 
   const [loading, setLoading] = useState({
     disableProject: false,
@@ -242,13 +302,41 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
     },
   ];
 
+  // A started move takes over the whole tab: the run panel is a full flow (phases, logs,
+  // cutover confirmation, rollback), not something to nest inside a third-width card. The
+  // panel below is the SAME component the server's Migrations tab opens a row into, reached
+  // by run id — so there is no second progress implementation to keep in step.
+  if (sessionRunId) {
+    return (
+      <ServerMigrationWizard
+        variant="tab"
+        // A PROJECT entry point: the workload is this project's own containers, so the panel
+        // must never fall through to the server scan/select flow — which is what a failed
+        // run's retry used to do, offering to adopt containers from the whole box.
+        origin="project"
+        serverId={projectData?.serverId ?? undefined}
+        initialRunId={sessionRunId}
+        onClose={leaveSession}
+        onBack={leaveSession}
+      />
+    );
+  }
+
+  const canMoveProject =
+    projectData?.deployTarget === "server" && Boolean(projectData?.serverId) && !projectData?.isApp;
+
   return (
     <div className="space-y-5">
+      {/* Top row — Info · Status, two up. Three across was the mistake: each card then got
+          a third of the width, which is narrower than their own content wants, and the
+          Migration card needs the most room of the three (a picker, a mode switch and a
+          button). It moved below as a collapsed row instead. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
       {/* Project Info — no `overflow-hidden` (unlike the SectionCards below): the
           header's ⋮ opens an absolutely-positioned menu, which a clipping ancestor
           would cut off. Nothing here needs the clip — the header's rule sits well
           below the corner radius. */}
-      <div className="rounded-2xl border border-border/50 bg-card">
+      <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card">
         <div className="flex items-start gap-3 rounded-t-2xl border-b border-border/40 px-5 py-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
             <Settings2 className="size-4 text-primary" />
@@ -265,7 +353,11 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             className="shrink-0"
           />
         </div>
-        <div className="flex items-center gap-6 px-5 py-4">
+        {/* STACKED, not a horizontal row. `MetricRow` is a full-width label↔value pair
+            (`justify-between`), so three of them side by side each tried to span the card
+            and collided — and since this card has no `overflow-hidden` (the ⋮ menu needs
+            to escape it), the collision spilled into the neighbouring card. */}
+        <div className="space-y-2.5 px-5 py-4">
           <MetricRow label={t.projectSettings.advanced.metric.status} value={isProjectActive ? t.projectSettings.advanced.statusActive : t.projectSettings.advanced.statusDisabled} />
           <MetricRow
             label={t.projectSettings.advanced.metric.project}
@@ -304,27 +396,49 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
         icon={Settings2}
         iconTone="primary"
       >
-          <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-            <div className="flex items-center gap-3">
-              <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isProjectActive ? "bg-success-bg" : "bg-warning-bg"}`}>
-                {isProjectActive ? (
+          {/* Wraps rather than squeezing: in a third-width card the label pair and the
+              button can't share a line, and `justify-between` with no wrap is what forced
+              "Live and accessible" onto three lines beside a crushed button. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                  activeRun ? "bg-warning-bg" : isProjectActive ? "bg-success-bg" : "bg-warning-bg"
+                }`}
+              >
+                {activeRun ? (
+                  <ArrowRightLeft className="size-4 animate-pulse text-warning" />
+                ) : isProjectActive ? (
                   <Pause className="size-4 text-success" />
                 ) : (
                   <Play className="size-4 text-warning" />
                 )}
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-[13px] font-medium text-foreground">
-                  {isProjectActive ? t.projectSettings.advanced.projectStatus.active : t.projectSettings.advanced.projectStatus.disabled}
+                  {activeRun
+                    ? t.projectSettings.advanced.projectStatus.migrating
+                    : isProjectActive
+                      ? t.projectSettings.advanced.projectStatus.active
+                      : t.projectSettings.advanced.projectStatus.disabled}
                 </p>
-                <p className="text-[12px] text-muted-foreground">
-                  {isProjectActive ? t.projectSettings.advanced.projectStatus.liveAccessible : t.projectSettings.advanced.projectStatus.pausedInaccessible}
+                <p className="text-[12px] leading-snug text-muted-foreground">
+                  {/* A migrating project is neither "live and accessible" nor "paused": its
+                      containers are being quiesced and streamed to another host, so saying
+                      either would be wrong. */}
+                  {activeRun
+                    ? t.projectSettings.advanced.projectStatus.migratingHint
+                    : isProjectActive
+                      ? t.projectSettings.advanced.projectStatus.liveAccessible
+                      : t.projectSettings.advanced.projectStatus.pausedInaccessible}
                 </p>
               </div>
             </div>
             <button
               onClick={handleDisableProject}
-              disabled={loading.disableProject}
+              // Disabled during a migration: pause stops containers, which is exactly what the
+              // run is orchestrating — the two would fight over the same containers.
+              disabled={loading.disableProject || Boolean(activeRun)}
               className={`inline-flex h-9 items-center gap-1.5 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                 isProjectActive
                   ? "bg-warning-bg text-warning hover:bg-warning-solid/20"
@@ -341,6 +455,78 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             </button>
           </div>
         </SectionCard>
+
+      </div>
+
+        {/* Migration — a COLLAPSED full-width row, like Routing and Health checks below.
+            Collapsed because you migrate a project rarely and read this tab often, and
+            full-width because expanded it needs to lay a server picker, a move/duplicate
+            switch and a service scope out side by side without wrapping. Self-hosted,
+            server-bound projects only: Cloud (either direction) is later work, and a
+            catalog app has no source host to move from. */}
+        {canMoveProject && projectData && (
+          <SectionCard
+            title={t.projectSettings.advanced.migration.title}
+            // A live run takes over the description: collapsed-and-silent is right when
+            // nothing is happening and wrong when something is, and this row is the only
+            // place on the tab that can say so.
+            description={
+              runNeedsOperator
+                ? // NOT "In progress — Awaiting cutover", which is what phrasing every live run
+                  // the same way produced: a parked run is the opposite of in progress. Same
+                  // sentence the status pill's own hint uses, so the row and the pill agree.
+                  t.projects.migrationAwaitingHint
+                : activeRun
+                  ? interpolate(t.projectSettings.advanced.migration.runningStatus, {
+                      status:
+                        t.migration.tab.status[
+                          activeRun.status as keyof typeof t.migration.tab.status
+                        ] ?? activeRun.status,
+                    })
+                  : t.projectSettings.advanced.migration.description
+            }
+            icon={ArrowRightLeft}
+            // Amber only when the run has STOPPED and wants something: an advancing transfer
+            // needs nothing from the operator, and amber that means "in progress" here would
+            // clash with amber meaning "act now" everywhere else in the app.
+            iconTone={runNeedsOperator ? "amber" : "primary"}
+            collapsible
+            // Open on arrival when a run is in flight — a migration in progress is not
+            // something to hide behind a chevron.
+            defaultOpen={Boolean(activeRun)}
+            // The server picker's menu opens downward from near the card's lower edge, so a
+            // clipped card shows a truncated list you can't select from.
+            allowOverflow
+          >
+            <ProjectMigrationCard
+              projectId={projectData.id}
+              projectName={projectData.name}
+              sourceServerId={projectData.serverId as string}
+              sourceServerName={projectData.serverName}
+              onStarted={(runId) => {
+                setDismissedRunId(null);
+                setStartedRunId(runId);
+                // Every OTHER surface reads the run off the project payload, so the pill on
+                // the cards list and in the page header only says "Migrating" once that
+                // payload is re-read. This is the one moment the client knows a run began
+                // before the server has been asked again.
+                if (projectId) invalidateProjectCaches(projectId);
+              }}
+            />
+            {/* Past migrations of THIS project, including a duplicate taken from it. Same rows
+                the server's Migrations tab shows, and clicking one reopens its session through
+                the same state a fresh run uses — so a parked run is reachable from the project
+                it belongs to, not only from whichever server it happened to touch. Renders
+                nothing until there is history. */}
+            <ProjectMigrationHistory
+              projectId={projectData.id}
+              onOpenRun={(runId) => {
+                setDismissedRunId(null);
+                setStartedRunId(runId);
+              }}
+            />
+          </SectionCard>
+        )}
 
         {/* Routing (edge → app upstream) — self-hosted only; cloud handles its
             own ingress. Advanced opt-in; loopback-port is the safe default. */}

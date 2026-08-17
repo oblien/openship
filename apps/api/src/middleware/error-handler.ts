@@ -32,6 +32,21 @@ export function handleApiError(err: unknown, c: Context) {
 
   if (err instanceof AppError) {
     const { message, code, statusCode } = err;
+    /** Extra fields a plan-gate refusal contributes to the JSON body. Kept local
+     *  and duck-typed so the error handler doesn't import the billing layer. */
+    function planErrorDetail(e: AppError): Record<string, unknown> {
+      if (e.code !== "PLAN_UPGRADE_REQUIRED") return {};
+      const withDetail = e as AppError & {
+        reason?: string;
+        planTierId?: string;
+        slots?: unknown[];
+      };
+      return {
+        ...(withDetail.reason ? { reason: withDetail.reason } : {}),
+        ...(withDetail.planTierId ? { planTierId: withDetail.planTierId } : {}),
+        ...(withDetail.slots ? { slots: withDetail.slots } : {}),
+      };
+    }
     // A 5xx is a SERVER fault and must leave a trace, even when it arrives as a typed
     // AppError carrying its own message. `AppError`'s statusCode defaults to 500, so
     // a bare `new AppError(msg)` used to answer 500 and log NOTHING — the "500 with no
@@ -39,7 +54,16 @@ export function handleApiError(err: unknown, c: Context) {
     // are client outcomes, and logging them turns ordinary validation into noise.
     if (statusCode >= 500) console.error(`[API ERROR] ${requestTag(c)}`, err);
     return c.json(
-      { error: message, code },
+      {
+        error: message,
+        code,
+        // A plan refusal carries structured detail the client needs to be
+        // ACTIONABLE: `reason` picks the right upgrade CTA, and a
+        // free-subdomain refusal carries the slots already in use so the UI can
+        // offer Release next to each hostname. A message string alone leaves the
+        // user knowing they're at a limit and not where it went.
+        ...planErrorDetail(err),
+      },
       // 502/503 included: an AppError can legitimately mean "an upstream we
       // depend on failed" (HostUnreachableError, ManagedEdgeError), and casting
       // those away made this the one place that couldn't express the status the

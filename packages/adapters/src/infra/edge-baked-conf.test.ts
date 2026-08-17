@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+
+import { EDGE_CLIENT_MAX_BODY_SIZE } from "./openresty-lua";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +38,23 @@ describe("baked edge nginx.conf", () => {
     // If this fails: `bun run edge:conf` in packages/adapters. Never hand-edit
     // apps/edge/nginx.conf — the next regeneration silently reverts it.
     expect(onDisk).toBe(conf);
+  });
+
+  test("raises the upload ceiling off nginx's 1 MB default, at http scope", () => {
+    // The reported bug: `client_max_body_size` was a per-project tunable with no DEFAULT,
+    // so any project that never opened that panel served nginx's built-in 1 MB and 413'd
+    // uploads before the app saw them.
+    expect(conf).toContain(`client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};`);
+    expect(EDGE_CLIENT_MAX_BODY_SIZE).toBe("50m");
+  });
+
+  test("sets it in http scope, so a project's own value still wins", () => {
+    // nginx resolves `server` over `http`. If this line ever moved inside a server block it
+    // would stop being a floor and start being a ceiling a project could not raise.
+    const line = conf.indexOf("client_max_body_size");
+    const firstServer = conf.indexOf("server {");
+    expect(line).toBeGreaterThan(-1);
+    expect(line).toBeLessThan(firstServer);
   });
 
   test("owns the 443 default_server", () => {

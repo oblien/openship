@@ -4,7 +4,7 @@
  * transition / sweepStaleRuns).
  */
 
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { dockerMigrationRun } from "../schema";
 
@@ -36,6 +36,49 @@ export const IN_FLIGHT_MIGRATION_STATUSES: DockerMigrationStatus[] = [
   // second migration on the server; boot recovery leaves it untouched.
   "partial",
 ];
+
+/**
+ * A run can be about TWO projects, and both need to know.
+ *
+ * `project_id` is the run's subject: the project being moved, or — for a DUPLICATE — the new
+ * project the run creates (the column is repointed at it when the adopt step mints it, because
+ * that is the project whose service rows the resume path restarts). A duplicate also has a
+ * SOURCE project, which keeps running and is briefly stopped while its volumes stream across.
+ * That project is where the operator started the run, so it is the one whose panel has to
+ * survive a reload and whose pill has to say what is happening to it.
+ *
+ * The source id is read out of `input_snapshot` rather than a column of its own: the snapshot
+ * already persists the start request verbatim, so there is nothing to migrate and no second
+ * value that can disagree with the first.
+ *
+ * Two readers need that path — one asks Postgres, one walks a row already in memory — and the
+ * KEYS below are the single definition both derive from. They were briefly two copies of the
+ * same literal, which is a divergence waiting to happen: changing one would leave the SQL
+ * finding runs the in-memory walk then discards, i.e. a project that reads "migrating" from a
+ * list and "live" from its own page.
+ */
+const SOURCE_PROJECT_PATH_KEYS = ["projectMove", "projectId"] as const;
+/** The same path in Postgres' `#>>` notation. */
+const SOURCE_PROJECT_PATH = `{${SOURCE_PROJECT_PATH_KEYS.join(",")}}`;
+
+/** SQL predicate: this run is about `projectId`, as subject OR as a duplicate's source. */
+function runTouchesProject(projectId: string) {
+  return or(
+    eq(dockerMigrationRun.projectId, projectId),
+    sql`${dockerMigrationRun.inputSnapshot} #>> ${SOURCE_PROJECT_PATH} = ${projectId}`,
+  );
+}
+
+/** Every project id a fetched run is about — the in-memory twin of the predicate above. */
+function runProjectIds(row: DockerMigrationRun): string[] {
+  let node: unknown = row.inputSnapshot;
+  for (const key of SOURCE_PROJECT_PATH_KEYS) {
+    node = node && typeof node === "object" ? (node as Record<string, unknown>)[key] : undefined;
+  }
+  return [row.projectId, typeof node === "string" ? node : null].filter((id): id is string =>
+    Boolean(id),
+  );
+}
 
 const TERMINAL_MIGRATION_STATUSES: DockerMigrationStatus[] = [
   "succeeded",
@@ -106,6 +149,30 @@ export function createDockerMigrationRunRepo(db: Database) {
       });
     },
 
+    /**
+     * Runs about ONE project, newest first — the project's own migration history, listed the
+     * same way a server lists its runs and a project lists its deployments.
+     *
+     * Uses the same "touches this project" predicate as {@link findActiveForProject}, so a
+     * duplicate appears in BOTH histories: under the source it reads as "a copy was taken from
+     * this", and under the copy as "this is where it came from". Two views of one row, which is
+     * the point of not duplicating the row.
+     */
+    async listForProject(
+      organizationId: string,
+      projectId: string,
+      opts?: { limit?: number },
+    ): Promise<DockerMigrationRun[]> {
+      return db.query.dockerMigrationRun.findMany({
+        where: and(
+          eq(dockerMigrationRun.organizationId, organizationId),
+          runTouchesProject(projectId),
+        ),
+        orderBy: (t, { desc }) => [desc(t.startedAt)],
+        limit: opts?.limit ?? 50,
+      });
+    },
+
     /** Delete a run row (history cleanup). Caller must ensure it's terminal —
      *  deleting an in-flight run would orphan the running pipeline. */
     async remove(id: string): Promise<void> {
@@ -162,6 +229,63 @@ export function createDockerMigrationRunRepo(db: Database) {
           ),
         ),
       });
+    },
+
+    /**
+     * The in-flight run for ONE project, if any — what makes a project read "migrating"
+     * everywhere, and what lets the project's own migration panel come back after a reload
+     * instead of losing the session with the page.
+     *
+     * `awaiting_cutover` counts as in-flight (it is in {@link IN_FLIGHT_MIGRATION_STATUSES}),
+     * which is the point: a run parked there is exactly the one the operator has to come
+     * back to. Newest first, so a stale row can never shadow the live one.
+     */
+    async findActiveForProject(projectId: string): Promise<DockerMigrationRun | null> {
+      const rows = await db.query.dockerMigrationRun.findMany({
+        where: and(
+          runTouchesProject(projectId),
+          inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
+          isNull(dockerMigrationRun.finishedAt),
+        ),
+        orderBy: (t, { desc }) => [desc(t.startedAt)],
+        limit: 1,
+      });
+      return rows[0] ?? null;
+    },
+
+    /**
+     * {@link findActiveForProject} for MANY projects in one query — what the batched project
+     * read (`enrichProjectsBatch`, i.e. the home page and every project list) uses so a
+     * "migrating" pill costs one statement for N projects instead of N.
+     *
+     * Newest-first with a first-write-wins fill, which reproduces the single-project
+     * `limit: 1`: for a project with two in-flight rows both answer the same run.
+     */
+    async findActiveForProjects(projectIds: string[]): Promise<Map<string, DockerMigrationRun>> {
+      const byProject = new Map<string, DockerMigrationRun>();
+      if (projectIds.length === 0) return byProject;
+      const rows = await db.query.dockerMigrationRun.findMany({
+        where: and(
+          or(
+            inArray(dockerMigrationRun.projectId, projectIds),
+            // `inArray` over the extracted path, not a hand-written `= ANY(...)`: it renders a
+            // bound list drizzle already knows how to parameterise for both Postgres and PGlite.
+            inArray(sql`${dockerMigrationRun.inputSnapshot} #>> ${SOURCE_PROJECT_PATH}`, projectIds),
+          ),
+          inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
+          isNull(dockerMigrationRun.finishedAt),
+        ),
+        orderBy: (t, { desc }) => [desc(t.startedAt)],
+      });
+      // Filled per project id ASKED FOR, not per row: a duplicate's row answers for two
+      // projects (its subject and its source), so keying only on `row.projectId` would lose
+      // the source — the very project whose Advanced tab started the run.
+      for (const row of rows) {
+        for (const id of runProjectIds(row)) {
+          if (projectIds.includes(id) && !byProject.has(id)) byProject.set(id, row);
+        }
+      }
+      return byProject;
     },
 
     /** Mark every in-flight run as failed. Called at boot to reconcile a crash. */

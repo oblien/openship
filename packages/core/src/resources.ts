@@ -16,7 +16,7 @@
  */
 
 /** Cloud-metered tiers + the two self-hosted-only selections. */
-export type ResourceTier = "unlimited" | "micro" | "low" | "medium" | "high" | "custom";
+export type ResourceTier = "unlimited" | "micro" | "low" | "medium" | "high" | "xlarge" | "custom";
 
 /** Tiers that map to a fixed spec (i.e. everything the caller can't type into). */
 export type FixedResourceTier = Exclude<ResourceTier, "custom" | "unlimited">;
@@ -39,11 +39,17 @@ export const RESOURCE_TIER_SPECS: Record<FixedResourceTier, ResourceValues> = {
   low: { cpuCores: 0.5, memoryMb: 512, diskMb: 8192 },
   medium: { cpuCores: 1, memoryMb: 1024, diskMb: 16384 },
   high: { cpuCores: 2, memoryMb: 2048, diskMb: 32768 },
+  // The table stopped at `high` (2 vCPU), which meant the top paid plan could
+  // offer no more POWER per service than the one below it — only more services —
+  // and anything larger was reachable only through `custom`, the one path with no
+  // bounds at all. 4 vCPU / 8 GB matches the build machine and the
+  // resource-schema ceiling, so it needs no new limits anywhere.
+  xlarge: { cpuCores: 4, memoryMb: 8192, diskMb: 65536 },
 };
 
 /** Ordered for pickers (cheapest → largest). `unlimited`/`custom` are appended
  *  by the UI because their placement differs per surface. */
-export const RESOURCE_TIER_ORDER: FixedResourceTier[] = ["micro", "low", "medium", "high"];
+export const RESOURCE_TIER_ORDER: FixedResourceTier[] = ["micro", "low", "medium", "high", "xlarge"];
 
 /** Every selectable tier, self-hosted included. Request validators derive their
  *  accepted set from this so adding a tier can't leave one schema behind. */

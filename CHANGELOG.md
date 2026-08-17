@@ -3,7 +3,159 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
-## 0.6.2
+## 0.6.6
+
+Mail learns to receive, and third-party secrets get one home. Openship Mail now
+captures, filters and reads inbound messages, and an arriving message can raise a
+notification. Alongside it, a single org-scoped credential store replaces the
+one-off DNS token table and unlocks private image pulls on any host. The app
+catalog is installable end to end, the audit log moves out of Settings onto its
+own page, and uploads stop failing at 1 MB.
+
+### Security
+
+- **Job writes are authorized against the job's own target servers** — jobs are
+  instance-wide, so the `job:write` permission (which checks organization
+  membership) is not by itself authority over the servers a command job runs on.
+  Editing and deleting a job now go through the same per-target server check that
+  creating and running one already did, and a denial is indistinguishable from a
+  job that doesn't exist. Reported externally; regression tests added.
+  Self-hosted instances with more than one trust level should upgrade; Openship
+  Cloud was never affected (the Jobs API is `localOnly`).
+
+### Credentials
+
+- **One store for third-party secrets** — a provider registry (container
+  registries, Cloudflare, and room for what comes next) behind one table, with
+  every secret sealed in a single `enc1:` envelope rather than a column per field.
+  A credential is verified against its provider *before* it is stored, so a bad
+  token is rejected where you paste it instead of where a deploy needs it.
+- **Private images pull on every host** — registry auth is resolved per image from
+  that store (#581). On a remote host the config goes to a temporary
+  `DOCKER_CONFIG` directory (`0700`, file `0600`) removed whether the pull
+  succeeds or fails, so a pull never edits the operator's own
+  `~/.docker/config.json`. Local pulls still go through the daemon's own
+  credential store, which is what keeps a Docker Desktop `credsStore` working.
+- **DNS credentials fold into it** — existing Cloudflare tokens are re-wrapped at
+  boot. A token that cannot be decrypted (a rotated `BETTER_AUTH_SECRET`) is left
+  exactly where it is, and the legacy row is deleted only once the new one exists
+  — a crash mid-move leaves a duplicate, never zero credentials.
+- **Git credentials get their own tab** — clone credentials were filed under API
+  tokens, which is neither where you look for them nor somewhere a second Git
+  provider could go. "API tokens" now means only that.
+
+### Inbound mail
+
+- **A mailbox can be read** — inbound capture, read and watch, so mail that
+  arrives is stored and retrievable rather than merely delivered.
+- **Inbound filtering fails closed** — loop guards, a spam gate, and scope
+  matching that drops a message it cannot confidently attribute instead of
+  guessing an owner for it.
+- **`mail.inbound_received` is a notification** — inbound mail can drive a
+  channel, in a mail group that appears only on self-hosted instances.
+
+### Openship Mail
+
+- **Mailbox creation runs in the engine, not on the host** — `doveadm` and `chown`
+  ran on the host, where they don't exist, so creating a mailbox returned a 500
+  (GH-562).
+- **The database bootstrap fails loudly** — the script had no `set -e`, so a failed
+  step still reported success and left a half-provisioned engine looking healthy
+  (GH-562).
+- **The mail screens look like the product** — the channel picker is now the same
+  component the notification and job screens use, with real brand marks in place
+  of a native checkbox that renders in the browser's colours rather than the
+  theme's, and the admin tabs drop the borders and status dots that matched no
+  pattern here.
+
+### App catalog
+
+- **Every app installs** — each catalog app now ships a UI and a connection,
+  rather than installing into something you couldn't open.
+- **`verified` means upstream-published** — the badge is reserved for bundles
+  published upstream, so it stops implying a review it never represented. Neon is
+  no longer marked verified (neond is a community control plane), and the
+  experimental badge is off both Neon and PostHog.
+- **Neon survives real install timing** — its bootstrap assumed a readiness it
+  never waited for.
+
+### Migration
+
+- **A selection resolves by identity, not by name** — the wizard sent names and the
+  server matched on them (#584), so two containers sharing a name collapsed into
+  one pick, and a name matching something outside the selection could be adopted.
+  A selection now carries container ids, falling back to names only for a service
+  that has none.
+- **Openship's own stack is excluded, not a blocker** — the containers running
+  Openship are skipped with the reason named, instead of the whole migration
+  refusing to start.
+- **Two fixes to what a vhost scan imports** — nginx's own default vhost is skipped
+  rather than adopted as a site, and prefix-relative document roots resolve
+  against their prefix.
+
+### Edge
+
+- **Uploads default to 50 MB** — nginx's built-in limit is 1 MB, and a project
+  that never opened the proxy panel inherited it, so any real upload died with a
+  413 the app never saw. `client_max_body_size 50m` now ships at `http` scope in
+  every edge config, which leaves a project's own value winning wherever one is
+  set. Hosts installed before this are healed in place, and a value an operator
+  tuned themselves is never overwritten.
+
+### Audit log
+
+- **Its own page** — nothing on it is a setting: you never change anything there,
+  you read what already happened. It sat three clicks inside Settings, which is
+  how a review surface goes unread.
+- **Every filter is in the URL** — filters and pagination are query parameters, so
+  a view can be linked, shared and reloaded.
+- **The uncatalogued events are catalogued** — events emitted without a taxonomy
+  entry now have one.
+
+### Fixes
+
+- **`openship reset-admin-password` works on a Compose install** — it
+  authenticated with `~/.openship/internal-token`, a file the Compose path never
+  writes: the api container is booted with the `INTERNAL_TOKEN` from
+  `~/.openship/compose/.env`. So on a Compose box the command *minted* a brand-new
+  random token, sent that, and reported `Unauthorized` — the lockout-recovery
+  command was unusable on exactly the install that needed it. Which token this box
+  is running with is now resolved in one place, readers never mint, and a
+  root-owned `.env` this user can't open says so (re-run with sudo) instead of
+  reporting an authorization failure. Same fix reaches the control panel's "Reset
+  admin password", `openship doctor` (whose health readout came back empty on
+  every Compose stack), and a bare box's `:80/:443` takeover, which looked for the
+  Compose token and skipped importing the migrated sites after stopping the
+  operator's proxy.
+- **A password reset uses a 6-digit code** — rather than an emailed link.
+- **A cancelled deployment keeps its reason** — the failure message was gated on
+  `failed` alone, which blanked the reason on every cancelled row. But a cancel is
+  not always your Stop: the boot sweep cancels with "Interrupted by a server
+  restart", and a superseded partial failure records why. With the reason
+  discarded, the install wizard had only its generic "Install failed" left to
+  print over a row that said `cancelled`.
+- **An install's verdict and its reason agree** — the wizard decided "was this a
+  cancel?" and "what do I show?" independently, so a stopped install could print
+  "Install failed" underneath the heading "Install cancelled".
+- **Verify appears only once a domain row exists** — the optimistic row fell back
+  to the bare hostname as its id, and every guard downstream reads that id as
+  proof the server row exists. So a hostname with no row yet rendered a live
+  Verify button that 404'd, along with a DNS-records panel that couldn't load.
+- **An abbreviated commit is not a new commit** — `POST /deployments` takes
+  `commitSha` as whatever the caller sends (`openship deploy --commit 1eeaf76`, the
+  MCP deploy tool, a CI script), and git checks an abbreviation out happily: the
+  right code shipped while the row recorded a name no comparison could match. The
+  drift check compared it against the 40-char branch HEAD, and since both sides
+  render seven characters, the project page advertised "New commit available
+  1eeaf76 … you're deployed on 1eeaf76" — permanently, with a Redeploy that could
+  never clear it. Two shas now name the same commit when one is a prefix of the
+  other at git's own abbreviation floor, a ref that is not a sha at all (a tag,
+  `HEAD`) reads as "can't tell" rather than as drift, and a caller's ref is
+  resolved to the full sha before anything stores or compares it — which also
+  unbreaks the per-service commit checks GitHub rejects a short sha for, and the
+  webhook's already-deploying dedupe.
+
+## 0.6.5
 
 A hardening and reach release. Reported security issues are fixed (see Security
 below), the container→host control channel is provisioned and diagnosed end to end
@@ -212,6 +364,17 @@ ordinary catalog app, and five new one-click apps.
 - **Route rules have an end-to-end suite** — per-route rate limits, bans and
   access rules are covered by an e2e test that drives the real proxy.
 
+### DNS
+
+- **Cloudflare DNS, wired in** — connect a Cloudflare token and Openship writes the
+  records a domain needs itself (#37), issues wildcard certificates over the
+  DNS-01 challenge, and can route a domain through a tunnel instead of an open
+  port.
+- **We only touch records we created** — the provider claims a record it wrote and
+  leaves everything else in the zone alone, and it refuses to write a hostname it
+  hasn't claimed. Deleting a domain in Openship therefore cannot remove a record
+  that was already there.
+
 ### Servers
 
 - **One add-server form** — the page and the modal were two 400-line forks that
@@ -350,6 +513,21 @@ ordinary catalog app, and five new one-click apps.
 - **A migrated container joins the network it's routed on** — a same-server
   migration attached a container that was never published, leaving it unreachable
   behind a verified domain.
+- **Cancelling a build stops every build path** — cancellation reached some paths
+  and not others, so a cancelled build could still be deployed: remote Docker
+  builds kept running, and the static extract went on to publish the output of a
+  build you had already stopped. A cancelled deployment is now terminal.
+- **A no-op compose redeploy doesn't take over the active release** — a redeploy
+  where every service was carried forward unchanged settled without advancing, so
+  it no longer displaces the release that is actually running.
+- **A stored healthcheck survives the settings form** — editing project settings
+  preserved the healthcheck test rather than dropping it, and a `NONE` test array
+  reads as disabled instead of as a command.
+- **A finished dump stops hanging** — exec-stream sinks close on EOF, and the
+  upload stall bound matches the producer's idle budget, so a completed backup
+  can't wait forever on a stream that already ended.
+- **A Dockerfile project needs no command** — projects that rely on the image's
+  own entrypoint deploy without one.
 - **Every new string is translated** — the release's new copy landed across all
   shipped languages, with the parity test extended to the new namespaces.
 
@@ -733,7 +911,7 @@ self-hosted, open the new Infrastructure view to update each server's edge and m
 container onto the pinned image — or turn on instance-wide auto-update to have the
 control plane do it on every upgrade.
 
-## 0.4.9
+## 0.5.0
 
 Rollback is rebuilt so it actually restores a release, plus a round of fixes
 across the MCP integration and custom domains.
@@ -962,7 +1140,7 @@ and a batch of routing/reliability fixes.
 
 <!-- editors: highlights only, trim/adjust before tagging — not rendered on the website -->
 
-## 0.2.4
+## 0.3.0
 
 Native Apple Silicon builds, drop-in compatibility with other platforms' deploy
 config, and a batch of self-hosting and reliability fixes.

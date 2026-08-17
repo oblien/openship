@@ -69,7 +69,43 @@
       "liveAccessible": "运行中且可访问",
       "pausedInaccessible": "已暂停且无法访问",
       "disable": "禁用",
-      "enable": "启用"
+      "enable": "启用",
+      "migrating": "迁移中",
+      "migratingHint": "正在迁移到另一台服务器"
+    },
+    "migration": {
+      "title": "迁移",
+      "description": "将此项目迁移到另一台服务器",
+      "currentServer": "当前服务器",
+      "migrate": "迁移",
+      "noOtherServers": "请先添加第二台服务器作为迁移目标。",
+      "cloudLater": "服务器之间迁移。暂不支持与 Openship Cloud 之间的迁移。",
+      "startFailed": "无法开始迁移",
+      "confirmTitle": "将 {project} 迁移到 {server}",
+      "confirmSubtitle": "在你开始迁移前，不会有任何更改。",
+      "svcVolumes": "{count} 个数据卷",
+      "downtimeNote": "在数据复制完成并由新服务器启动之前，项目将处于离线状态。有状态服务在整个传输过程中都不可用。",
+      "dnsNote": "DNS 仍指向旧服务器 —— 新服务器开始提供服务后，请更新解析记录。",
+      "cancel": "取消",
+      "confirmStart": "开始迁移",
+      "duplicate": "复制",
+      "intentMove": "迁移",
+      "intentCopy": "复制",
+      "intentMoveHint": "项目整体迁移。确认后，其容器和数据卷将从旧服务器上移除。",
+      "intentCopyHint": "原项目继续运行。将在新服务器上创建第二个项目，并复制一份数据。",
+      "confirmTitleCopy": "将 {project} 复制到 {server}",
+      "confirmStartCopy": "开始复制",
+      "downtimeNoteCopy": "复制数据期间项目会短暂离线 —— 数据卷必须静止才能完整复制。复制完成后会立即在旧服务器上重新启动。",
+      "copyNoDomainsNote": "副本初始没有域名 —— 现有域名仍归正在提供服务的那个项目。",
+      "fromLabel": "源",
+      "toLabel": "目标",
+      "modeLabel": "模式",
+      "scopeLabel": "复制哪些内容",
+      "scopeAll": "全选",
+      "scopeHintAll": "所有服务及其数据。",
+      "scopeHintSome": "{count} 个服务 —— 其余仅保留在原项目中。",
+      "sourceServices": "{count} 个服务",
+      "runningStatus": "进行中 — {status}"
     },
     "cache": {
       "title": "缓存",
@@ -289,7 +325,9 @@
       "saved": "环境变量已保存",
       "savedTitle": "已保存",
       "saveFailed": "保存环境变量失败",
-      "saveFailedTitle": "保存失败"
+      "saveFailedTitle": "保存失败",
+      "noChanges": "没有需要保存的更改——已保留已保存的值。",
+      "noChangesTitle": "无需保存"
     },
     "linkedBadge": "已链接",
     "linkedManaged": "通过 {app}",
@@ -494,6 +532,10 @@
       "high": {
         "name": "高",
         "description": "高流量应用"
+      },
+      "xlarge": {
+        "name": "超大",
+        "description": "数据库与高负载工作负载"
       }
     },
     "custom": {
@@ -756,6 +798,10 @@
       "noneYet": "尚未执行任何检查，因此没有可显示的结果。请添加此域名所需的 DNS 记录，然后运行“验证”。",
       "attempts": "目前已失败 {count} 次。",
       "pillHint": "查看原因"
+    },
+    "records": {
+      "failed": "无法加载此域名的 DNS 记录。",
+      "retry": "重试"
     }
   }
 }

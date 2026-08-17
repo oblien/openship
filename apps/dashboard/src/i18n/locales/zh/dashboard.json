@@ -67,6 +67,7 @@
     "emails": "邮件",
     "settings": "设置",
     "billing": "账单与用量",
+    "audit": "审计日志",
     "mailSetup": "设置邮件",
     "mailSetupProgress": "设置进度",
     "addMailbox": "添加邮箱",

@@ -126,6 +126,22 @@ const AdvancedSchema = Type.Object(
      */
     networkMode: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
     pidMode: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
+    /**
+     * Container ENTRYPOINT as argv (compose `entrypoint`). Same round-trip-only
+     * reasoning as the two above: the compose file owns it, so this exists so a
+     * client that PATCHes a whole read-back `advanced` blob isn't 400'd by the
+     * strict object.
+     *
+     * An EMPTY array is meaningful and must survive validation — it is how compose
+     * clears the image's ENTRYPOINT, so no `minItems` here. `null` removes the key
+     * (back to the image default).
+     */
+    entrypoint: Type.Optional(
+      Type.Union([
+        Type.Array(Type.String({ maxLength: 2000 }), { maxItems: 100 }),
+        Type.Null(),
+      ]),
+    ),
   },
   { additionalProperties: false },
 );

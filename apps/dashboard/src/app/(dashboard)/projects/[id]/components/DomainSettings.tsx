@@ -50,6 +50,7 @@ import {
   resolvePublicEndpointHostname,
   validatedPublicEndpointPayload,
 } from "@/lib/public-endpoint-payload";
+import { buildOptimisticDomainRow, findLoadedDomainRow } from "./optimistic-domain-row";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -1208,33 +1209,21 @@ export const DomainSettings = () => {
         },
       }));
 
+      // Optimistic rows for the cards, built by the shared rule in
+      // optimistic-domain-row.ts — which is where the "never invent a row id"
+      // invariant lives, and why: a fabricated id renders a Verify button that
+      // 404s. The real rows arrive from the refetch triggered just below.
       await updateDomains(payload.map((endpoint, index) => {
-        const hostname = endpoint.domainType === "custom"
-          ? endpoint.customDomain || ""
-          : `${endpoint.domain}.${baseDomain}`;
-        const existing = domainsData.domains.find((domain) => (
-          (typeof domain?.id === "string" && domain.id === endpoints[index]?.id) ||
-          domain?.hostname === hostname
-        ));
-
-        // Custom domains are pending until DNS-verified (matches the backend);
-        // free/managed domains are host-verified immediately. Don't optimistically
-        // flash a new custom domain as "Verified".
-        const isCustom = endpoint.domainType === "custom";
-        return {
-          ...existing,
-          id: existing?.id || endpoints[index]?.id || hostname,
+        // The SHARED resolver, not a second copy — the same answer the redirect
+        // target list and the save itself are built from, so a hostname can't be
+        // resolved one way here and another way there.
+        const hostname = resolvePublicEndpointHostname(endpoint, baseDomain);
+        return buildOptimisticDomainRow({
+          endpoint,
           hostname,
-          domain: hostname,
-          primary: index === 0,
-          isPrimary: index === 0,
-          verified: existing?.verified ?? !isCustom,
-          status: existing?.status ?? (isCustom ? "pending" : "active"),
-          sslStatus: existing?.sslStatus ?? (endpoint.domainType === "free" ? "active" : "none"),
-          targetPort: endpoint.port ?? null,
-          targetPath: endpoint.targetPath ?? null,
-          domainType: endpoint.domainType,
-        };
+          existing: findLoadedDomainRow(domainsData.domains, hostname, endpoints[index]?.id),
+          index,
+        }) as (typeof domainsData.domains)[number];
       }));
 
       // Drop the cached project info so the next mount of Overview /
@@ -2715,24 +2704,44 @@ function DomainOverviewCard({
   const [recordsOpen, setRecordsOpen] = useState(false);
   const [records, setRecords] = useState<DnsRecord[] | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
+  /**
+   * The fetch FAILED, as opposed to succeeding with nothing to add.
+   *
+   * `catch { setRecords([]) }` collapsed those two into one, and the empty state
+   * reads "No records to add for this domain." — so a 404/500/offline told the
+   * operator their DNS was already fine while the panel had simply failed to
+   * load. That is the worst possible lie for this particular panel: its whole job
+   * is to say what to go and add.
+   */
+  const [recordsError, setRecordsError] = useState(false);
 
   const openRecords = useCallback(async () => {
     setRecordsOpen(true);
     if (records !== null || !loadRecords) return;
     setRecordsLoading(true);
+    setRecordsError(false);
     try {
       setRecords(await loadRecords());
     } catch {
-      setRecords([]);
+      setRecordsError(true);
     } finally {
       setRecordsLoading(false);
     }
   }, [records, loadRecords]);
 
   // A just-failed verify opens the records so the fix is right there.
+  //
+  // Gated on `!recordsError` because making the failure non-terminal reopened a
+  // loop the old `setRecords([])` had closed by accident: `openRecords` is
+  // memoised on `[records, loadRecords]`, `loadRecords` is a fresh arrow on every
+  // parent render, and this card isn't memoised — so every keystroke in the
+  // Domains editor re-ran this effect, and with `records` still null the guard
+  // inside `openRecords` no longer stopped it. That fired one failing request per
+  // keystroke. A failure now auto-opens exactly once; the explicit Retry below is
+  // the way back.
   useEffect(() => {
-    if (autoOpenRecords) void openRecords();
-  }, [autoOpenRecords, openRecords]);
+    if (autoOpenRecords && !recordsError) void openRecords();
+  }, [autoOpenRecords, recordsError, openRecords]);
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card">
@@ -2896,6 +2905,22 @@ function DomainOverviewCard({
                 {recordsLoading ? (
                   <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin" /> {d.records.loading}
+                  </div>
+                ) : recordsError ? (
+                  <div className="flex flex-wrap items-center gap-2 py-2 text-[12px] text-warning">
+                    <span>{d.records.failed}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Clears the error so the guard above lets one more attempt
+                        // through; `records` is already null on the failure path.
+                        setRecordsError(false);
+                        void openRecords();
+                      }}
+                      className="font-medium underline underline-offset-2 hover:no-underline"
+                    >
+                      {d.records.retry}
+                    </button>
                   </div>
                 ) : records && records.length > 0 ? (
                   records.map((record, i) => (

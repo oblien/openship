@@ -13,6 +13,7 @@
     "queued": "排队中",
     "building": "构建中",
     "deploying": "部署中",
+    "migrating": "迁移中",
     "failed": "失败",
     "cancelled": "已取消",
     "deleting": "删除中",
@@ -336,12 +337,12 @@
     "unknown": "未知"
   },
   "routingRetry": {
-    "title": "免费域名路由需要处理",
-    "description": "应用已在服务器上运行，但其免费的 .opsh.io URL 未通过 Openship Cloud 的边缘节点进行路由。请在服务器可从云端经 80 端口访问后重试。",
+    "title": "域名路由需要处理",
+    "description": "应用已在服务器上运行，但其前面的路由未同步。请重试修复，或检查该服务器的 DNS 与 edge。",
     "retry": "重试路由",
     "retrying": "重试中……",
-    "success": "免费域名路由已同步。",
-    "failed": "无法同步免费域名路由。"
+    "success": "域名路由已同步。",
+    "failed": "无法同步域名路由。"
   },
   "deployBlocked": {
     "redeploy": "重新部署"
@@ -510,5 +511,6 @@
       "unhealthy": "不健康",
       "server_unreachable": "服务器不可达"
     }
-  }
+  },
+  "migrationAwaitingHint": "迁移正在等待你处理 —— 在项目的「高级」标签页中完成切换或回滚"
 }

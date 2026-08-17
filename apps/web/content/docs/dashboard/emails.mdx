@@ -1,6 +1,6 @@
 ---
 title: Emails
-description: Run your own mail server from the dashboard — provision or adopt a server, walk the setup wizard, and manage domains and mailboxes from the eight-tab admin panel.
+description: Run your own mail server from the dashboard — provision or adopt a server, walk the setup wizard, and manage domains and mailboxes from the ten-tab admin panel.
 ---
 
 The **Email Server** screen (route `/emails`) is where you stand up a complete, self-hosted mail
@@ -50,7 +50,7 @@ supported.
 The screen adapts to how many mail servers you already have:
 
 - **None yet** → the **setup wizard** (or the [adopt](#adopt-an-existing-mail-server) flow).
-- **Exactly one** → it opens straight into that server's [admin panel](#the-admin-panel-eight-tabs).
+- **Exactly one** → it opens straight into that server's [admin panel](#the-admin-panel-ten-tabs).
 - **More than one** → the **Mail servers** list, so you pick which one to open.
 
 The server you're acting on is remembered in the URL (`?serverId=…`), so a refresh reopens the same one.
@@ -142,10 +142,10 @@ mail server** dialog, pick the server and press **Scan server** — Openship rea
 stack and its on-server state file) without changing anything. If a mail stack is found, **Adopt** brings it
 back under management with no reinstall and no data loss.
 
-## The admin panel (eight tabs)
+## The admin panel (ten tabs)
 
 Once a server is fully provisioned, `/emails` becomes its admin panel. A horizontal tab bar (icon beside
-label, the active tab marked with a primary-colored underline) switches between eight tabs; the active tab is
+label, the active tab marked with a primary-colored underline) switches between ten tabs; the active tab is
 stored in the URL so refresh and back/forward keep your place. For the primary domain, a **Reputation warm-up** banner sits above the tabs
 during the first days of sending.
 
@@ -154,9 +154,11 @@ during the first days of sending.
 | **Overview** | Hostname, webmail, mail stats, and quick actions. |
 | **Domains** | Add and manage the domains this server hosts. |
 | **Mailboxes** | Create and manage accounts, scoped to one domain. |
+| **Aliases** | Forwarding addresses, and a catch-all for a domain. |
+| **Notifications** | Get told in a notification channel when mail arrives at an address here. |
+| **Sending** | Deliver direct or relay through a provider — and send a test email. |
 | **DNS** | Per-domain record reference plus a "are they published?" check. |
 | **Health** | Live daemon status and a DNS scan. |
-| **Test** | Send a real test email through the server. |
 | **Backup** | Snapshot and restore/migrate the mail server. |
 | **Advanced** | Protocol settings, recovery tools, and the danger zone. |
 
@@ -196,6 +198,44 @@ rows and the Maildir immediately); the postmaster account is protected from hard
 
 <Callout title="Screenshot">Mailboxes tab — domain picker, the mailboxes table, and the Add mailbox modal. *(screenshot pending)*</Callout>
 
+### Aliases
+
+Also scoped to one domain. An alias forwards mail from one address to another — internal or external — and a
+**catch-all** takes every address at the domain that no mailbox or alias matched. Changes are live the moment
+you save; nothing restarts.
+
+### Notifications
+
+Rules of the shape "mail arrives here → tell me in this channel", for the addresses on this server. Each rule
+watches **one mailbox**, **a whole domain**, or **every domain on the server**, can narrow further on *From
+contains* / *Subject contains*, and fans out to one or more notification channels.
+
+Channels themselves live in **Settings → Notifications** (they're shared with jobs, deploys and health alerts),
+and only channels that are enabled *and* verified can be picked — an unverified one is dropped by the
+dispatcher, so it would be a rule that never delivers. **Add a notification channel** links straight there when
+you have none. **Test now** replays already-captured mail against your rules and reports how many matched,
+without sending or deleting anything.
+
+<Callout title="A mailbox rule can't see Bcc" type="info">
+Mailbox-scoped rules match the To and Cc headers, so mail that reached the mailbox by Bcc or through an alias
+won't match. Watch the whole domain if you need every message.
+</Callout>
+
+### Sending
+
+Receiving always stays on this server; this tab only decides how outbound mail **leaves** it:
+
+- **Direct delivery** (default) — this server delivers to each recipient's MX itself. Simplest, but fresh-VPS
+  IPs are often blocklisted and many hosts block outbound port 25.
+- **Relay through a provider** — hand outbound mail to a smarthost (SES, SendGrid, Mailgun, Postmark, Resend,
+  or any SMTP server). You choose whether **all senders** relay or only **selected** domains and addresses, and
+  the DNS tab then gains that provider's SPF include and DKIM records.
+
+Nothing is applied until you press **Save**; the right-hand column shows a live summary of what it will apply.
+**Test sending** sits at the bottom of that column: press **Send test email**, choose a recipient (and the
+sending domain), and check the destination inbox — and its spam folder. It tests the path that is live right
+now, so save first if you just changed one.
+
 ### DNS
 
 A per-domain reference plus a live check. Pick a domain, and **Records for publishing** shows exactly what to
@@ -214,12 +254,6 @@ The single "is everything working?" screen. A banner at the top aggregates a ver
 - **DNS scan** — a live public-DNS check of every expected record, with a **Rescan** button.
 
 <Callout title="Screenshot">Health tab — the summary banner, the Daemons list with per-row Logs/actions, and the DNS scan section. *(screenshot pending)*</Callout>
-
-### Test
-
-**Test sending** sends a real test email through the server to confirm delivery, DKIM, and SPF. Press
-**Send test email**, choose a recipient (and the sending domain), and check the destination inbox — and its
-spam folder.
 
 ### Backup
 

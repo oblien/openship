@@ -13,7 +13,8 @@ import chalk from "chalk";
 import ora from "ora";
 import { EDGE_CONTAINER_NAME, edgeCrashReason, type ImportedSite } from "@repo/adapters/proxy";
 import { LocalExecutor } from "@repo/adapters";
-import { composeInternalToken } from "./compose";
+import { internalTokenProblem, resolveInternalToken } from "./internal-token";
+import { internalFetch } from "./loopback-api";
 import { startUnitHint } from "./this-host";
 
 /** Wait for the compose api container to answer its health stub. */
@@ -61,9 +62,14 @@ export interface EdgeImportOutcome {
 
 /**
  * POST the parsed sites + host-read cert PEMs to the api's internal edge-import
- * endpoint. Uses the compose stack's INTERNAL_TOKEN (from compose/.env — NOT the
- * bare-mode token file). Never throws; the outcome tells the caller whether the
- * migrated hostnames are actually being served.
+ * endpoint. Never throws; the outcome tells the caller whether the migrated hostnames
+ * are actually being served.
+ *
+ * The token is RESOLVED, not read from compose/.env: the edge is a container on every
+ * install now (see edge-container-everywhere), so a BARE box reaches this too — through
+ * the control panel's "Take over :80/:443 & migrate its sites" → repairEdgeConflict.
+ * Naming the compose store meant that box found no token and skipped the import with
+ * the operator's nginx already stopped, i.e. every migrated hostname dark.
  */
 export async function importMigratedSites(
   apiPort: string,
@@ -71,9 +77,10 @@ export async function importMigratedSites(
   certPems?: Record<string, { certPem: string; keyPem: string }>,
   staticRootOverrides?: Record<string, string>,
 ): Promise<EdgeImportOutcome> {
-  const token = composeInternalToken();
-  if (!token) {
-    const error = "couldn't read the stack's internal token";
+  // Checked up front, before the health/edge waits below: there is no point stopping
+  // anything (or making the operator watch 60s of polling) for a call we can't authenticate.
+  if (!resolveInternalToken()) {
+    const error = internalTokenProblem();
     console.log(chalk.yellow(`  Skipping site import — ${error}. Re-run to retry.\n`));
     return { ok: false, registered: [], error };
   }
@@ -94,12 +101,20 @@ export async function importMigratedSites(
     return { ok: false, registered: [], error };
   }
   try {
-    const r = await fetch(`http://127.0.0.1:${apiPort}/api/system/edge/import-sites`, {
+    // internalFetch, not a bare fetch with the token above: on a box that has BOTH
+    // stores (bare install, then compose) the first candidate can be the stale one, and
+    // these hostnames are dark until the import lands — worth the 401 retry.
+    const call = await internalFetch(apiPort, "/api/system/edge/import-sites", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Internal-Token": token },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sites, certPems, staticRootOverrides }),
       signal: AbortSignal.timeout(120000),
     });
+    if (call.kind !== "response") {
+      spinner.warn(`Site import failed: ${call.detail}. Re-run to retry.`);
+      return { ok: false, registered: [], error: call.detail };
+    }
+    const r = call.res;
     const data = (await r.json().catch(() => ({}))) as {
       registered?: string[];
       warnings?: string[];

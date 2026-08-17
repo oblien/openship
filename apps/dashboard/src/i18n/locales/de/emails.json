@@ -95,7 +95,12 @@
     "installing": "Wird installiert",
     "running": "Läuft",
     "incomplete": "Unvollständig",
-    "stoppedAt": "Gestoppt · Schritt {step}"
+    "stoppedAt": "Gestoppt · Schritt {step}",
+    "open": "Öffnen",
+    "openAria": "{name} öffnen",
+    "actionsAria": "Aktionen für {name}",
+    "overviewTitle": "Mail-Überblick",
+    "hint": "Das Entfernen löst den Server nur aus dieser Liste — die Installation läuft weiter und kann erneut übernommen werden."
   },
   "setup": {
     "title": "Mailserver-Einrichtung",

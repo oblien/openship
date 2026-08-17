@@ -133,7 +133,7 @@
     "valuePlaceholder": "value",
     "dropHere": "Drop .env file here",
     "noneTitle": "No environment variables",
-    "emptyHintEditing": "Click \"Add Variable\", use \"Paste .env\", upload a file, or paste anywhere inside this box",
+    "emptyHintEditing": "Paste a .env block anywhere in this box, or drop a .env file here.",
     "emptyHintReadonly": "Click \"Edit\" to manage environment variables",
     "pasteHint": "Paste a full .env block anywhere inside this box.",
     "addVariable": "Add Variable",
@@ -369,9 +369,6 @@
       "successful": "Deployment Successful",
       "deploying": "Deploying Services…"
     },
-    "running": "running",
-    "buildingSuffix": "· {count} building",
-    "failedSuffix": "· {count} failed",
     "decisionBannerTitle": "Action required — some services failed",
     "decisionBannerDefaultMsg": "This deployment finished with failed services. Keep it and fix them later, or reject it to restore the previous version.",
     "review": "Review",
@@ -411,6 +408,12 @@
       "retryOther": "Retry {count} Failed Services"
     }
   },
+  "composeServiceTally": {
+    "running": "running",
+    "builtSuffix": "· {count} built",
+    "buildingSuffix": "· {count} building",
+    "failedSuffix": "· {count} failed"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Cancelled",
@@ -421,12 +424,11 @@
     },
     "detailsTitle": "Deployment Details",
     "rowStatus": "Status",
+    "rowTarget": "Target",
+    "rowBuild": "Build",
     "rowBuildTime": "Build Time",
     "rowServices": "Services",
     "rowProject": "Project",
-    "rowType": "Type",
-    "running": "running",
-    "buildingSuffix": "· {count} building",
-    "failedSuffix": "· {count} failed"
+    "rowType": "Type"
   }
 }

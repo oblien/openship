@@ -3,6 +3,9 @@
 /**
  * Audit log — a readable history of who did what in this organization.
  *
+ * A PAGE (/audit), not a settings tab: nothing here is a setting. Recording and retention
+ * live in the aside; the feed owns the main column.
+ *
  * The feed renders sentences, not table rows: the shared taxonomy in
  * `@repo/core` turns `deployment.succeeded` into a past-tense verb and the API
  * resolves resource ids into names, so a row reads "Sarah deployed api-gateway"
@@ -19,6 +22,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+import { PageContainer } from "@/components/ui/PageContainer";
 import {
   Activity,
   Bell,
@@ -70,6 +75,10 @@ const RETENTION_CHOICES = [7, 30, 90, 180, 365];
 type CategoryKey = "all" | AuditCategoryId;
 type SourceKey = "all" | AuditSource;
 type PeriodKey = "all" | "today" | "7d" | "30d" | "90d";
+
+/** The same values at runtime, to validate `?period=` — a hand-typed one must not reach
+ *  `periodStart` and silently produce an undefined lower bound. */
+const PERIOD_KEYS: readonly PeriodKey[] = ["all", "today", "7d", "30d", "90d"];
 
 const CATEGORY_ICONS: Record<AuditCategoryId, React.ComponentType<{ className?: string }>> = {
   deployments: Rocket,
@@ -461,7 +470,7 @@ function FeedSkeleton() {
 /*  Page                                                                */
 /* ──────────────────────────────────────────────────────────────────── */
 
-export function AuditTab() {
+export function AuditLog() {
   const { t } = useI18n();
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
@@ -485,11 +494,49 @@ export function AuditTab() {
   );
   const client = searchParams.get("client") ?? "";
 
-  const [actorUserId, setActorUserId] = useState("");
-  const [period, setPeriod] = useState<PeriodKey>("all");
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [page, setPage] = useState(1);
+  // Every filter and the offset live in the URL, not in component state. This view is
+  // something people LINK to — "what has this agent been doing", "the deploy that broke it
+  // last Tuesday" — and state-held filters make those links land on an unfiltered page 1.
+  // It also makes browser back/forward step through the reader's own history, which for a
+  // log is the navigation people reach for first.
+  const actorUserId = searchParams.get("actor") ?? "";
+  const periodParam = searchParams.get("period");
+  const period: PeriodKey = PERIOD_KEYS.includes(periodParam as PeriodKey)
+    ? (periodParam as PeriodKey)
+    : "all";
+  const urlQuery = searchParams.get("q") ?? "";
+  const pageParam = Number(searchParams.get("page") ?? "1");
+  // Guard the parse: `?page=abc` and `?page=-3` are reachable by hand-editing and would
+  // otherwise send a NaN/negative offset to the API.
+  const page = Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : 1;
+
+  /**
+   * The audit URL with some filters changed and the rest kept. Merging rather
+   * than rebuilding is what stops a category tab from silently dropping the
+   * source/client filter the reader already chose.
+   */
+  const hrefWith = useCallback(
+    (patch: Record<string, string | undefined>) => {
+      const next = new URLSearchParams(searchParams.toString());
+      // Any filter change invalidates the offset: page 3 of the old result set has nothing
+      // to do with the new one. Cleared HERE rather than in each setter, so it cannot be
+      // forgotten by a future one — and so the reset happens in the SAME navigation, which
+      // is what stops a fetch of the stale page firing before page 1.
+      if (!("page" in patch)) next.delete("page");
+      for (const [key, value] of Object.entries(patch)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      const qs = next.toString();
+      return qs ? `/audit?${qs}` : "/audit";
+    },
+    [searchParams],
+  );
+
+  // The input is the ONE piece of local state: it echoes keystrokes immediately while the
+  // URL (and the query) only follow once typing settles.
+  const [search, setSearch] = useState(urlQuery);
+  const debouncedSearch = urlQuery;
 
   const [events, setEvents] = useState<AuditEventRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -497,12 +544,25 @@ export function AuditTab() {
   const [facets, setFacets] = useState<AuditFacets | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Typing shouldn't fire a query per keystroke — `q` resolves names across
-  // three tables server-side.
+  // Back/forward changes `q` in the URL without touching the input, which would leave the
+  // box showing a word the results no longer reflect. Re-seed it when the URL moves on its
+  // own; the guard keeps this from fighting the debounce below (which is the opposite
+  // direction) while the reader is mid-word.
   useEffect(() => {
-    const id = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    setSearch((current) => (current.trim() === urlQuery ? current : urlQuery));
+  }, [urlQuery]);
+
+  // Typing shouldn't fire a query per keystroke — `q` resolves names across three tables
+  // server-side. `replace`, never `push`: one history entry per SETTLED search, so Back
+  // leaves the log rather than replaying the word letter by letter.
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (trimmed === urlQuery) return;
+    const id = setTimeout(() => {
+      router.replace(hrefWith({ q: trimmed || undefined }), { scroll: false });
+    }, 350);
     return () => clearTimeout(id);
-  }, [search]);
+  }, [search, urlQuery, router, hrefWith]);
 
   const query = useMemo(
     () => ({
@@ -586,7 +646,10 @@ export function AuditTab() {
         const res = await auditApi.list({ ...query, page: 1, perPage: PER_PAGE });
         setEvents(res.data);
         setTotal(res.total);
-        setPage(1);
+        // The rows just fetched ARE page 1, so the URL has to agree — otherwise a reader who
+        // toggled recording while on page 7 sees page 1's rows under `?page=7` and the next
+        // refetch swaps them out from under them.
+        if (page !== 1) router.replace(hrefWith({ page: undefined }), { scroll: false });
       } catch (err) {
         showToast(
           getApiErrorMessage(err) || t.settings.audit.recording.saveFailed,
@@ -599,34 +662,15 @@ export function AuditTab() {
         setSavingSettings(false);
       }
     },
-    [query, showToast, t],
+    [query, showToast, t, page, router, hrefWith],
   );
 
-  /**
-   * The audit URL with some filters changed and the rest kept. Merging rather
-   * than rebuilding is what stops a category tab from silently dropping the
-   * source/client filter the reader already chose.
-   */
-  const hrefWith = useCallback(
-    (patch: Record<string, string | undefined>) => {
-      const next = new URLSearchParams(searchParams.toString());
-      next.set("tab", "audit");
-      for (const [key, value] of Object.entries(patch)) {
-        if (value) next.set(key, value);
-        else next.delete(key);
-      }
-      return `/settings?${next.toString()}`;
-    },
-    [searchParams],
-  );
 
-  // Every filter change invalidates the offset — page 3 of the old result set
-  // has nothing to do with the new one, so each setter resets it rather than an
-  // effect on `query` (which would fetch the stale page first, then page 1).
+  // Each setter patches its own key and nothing else; `hrefWith` drops `page` for all of
+  // them, so no setter can forget to.
   const setCategory = useCallback(
     (next: CategoryKey) => {
       router.replace(hrefWith({ category: next === "all" ? undefined : next }), { scroll: false });
-      setPage(1);
     },
     [router, hrefWith],
   );
@@ -634,7 +678,6 @@ export function AuditTab() {
   const pickSource = useCallback(
     (next: SourceKey) => {
       router.replace(hrefWith({ source: next === "all" ? undefined : next }), { scroll: false });
-      setPage(1);
     },
     [router, hrefWith],
   );
@@ -642,25 +685,39 @@ export function AuditTab() {
   const pickClient = useCallback(
     (next: string) => {
       router.replace(hrefWith({ client: next || undefined }), { scroll: false });
-      setPage(1);
     },
     [router, hrefWith],
   );
 
-  const pickActor = useCallback((next: string) => {
-    setActorUserId(next);
-    setPage(1);
-  }, []);
+  const pickActor = useCallback(
+    (next: string) => {
+      router.replace(hrefWith({ actor: next || undefined }), { scroll: false });
+    },
+    [router, hrefWith],
+  );
 
-  const pickPeriod = useCallback((next: PeriodKey) => {
-    setPeriod(next);
-    setPage(1);
-  }, []);
+  const pickPeriod = useCallback(
+    (next: PeriodKey) => {
+      router.replace(hrefWith({ period: next === "all" ? undefined : next }), { scroll: false });
+    },
+    [router, hrefWith],
+  );
 
-  const typeSearch = useCallback((next: string) => {
-    setSearch(next);
-    setPage(1);
-  }, []);
+  /**
+   * Paging is a PUSH, unlike every filter above.
+   *
+   * Moving through pages is the reader's own trail — Back should step to the previous page,
+   * which is what they mean by it. A filter change is a new question, so it replaces.
+   */
+  const goToPage = useCallback(
+    (next: number) => {
+      router.push(hrefWith({ page: next <= 1 ? undefined : String(next) }), { scroll: false });
+    },
+    [router, hrefWith],
+  );
+
+  // The input only tracks keystrokes; the debounce above promotes it into the URL.
+  const typeSearch = useCallback((next: string) => setSearch(next), []);
 
   const tabs: TabDef<CategoryKey>[] = useMemo(() => {
     const counts = new Map(facets?.categories.map((c) => [c.id, c.count]) ?? []);
@@ -807,44 +864,46 @@ export function AuditTab() {
     !!debouncedSearch;
 
   const clearFilters = useCallback(() => {
-    setActorUserId("");
-    setPeriod("all");
+    // Only the input is local state; every filter itself clears via the URL below.
     setSearch("");
-    // One navigation for all three URL-held filters — clearing them separately
-    // would race, each push overwriting the previous one's params.
-    router.replace(hrefWith({ category: undefined, source: undefined, client: undefined }), {
-      scroll: false,
-    });
-    setPage(1);
+    // ONE navigation for every filter — clearing them separately would race, each
+    // replace overwriting the previous one's params. `page` goes with them (hrefWith drops
+    // it), which is the point: "clear filters" landing on page 7 of the unfiltered log is
+    // not what anyone means by it.
+    router.replace(
+      hrefWith({
+        category: undefined,
+        source: undefined,
+        client: undefined,
+        actor: undefined,
+        period: undefined,
+        q: undefined,
+      }),
+      { scroll: false },
+    );
   }, [router, hrefWith]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
+    <PageContainer>
+      {/* ── Header ──────────────────────────────────────────── */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
           {t.settings.audit.heading}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">{t.settings.audit.subtitle}</p>
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground/70">{t.settings.audit.subtitle}</p>
       </div>
 
-      <RecordingCard
-        enabled={settings.enabled}
-        retentionDays={settings.retentionDays}
-        canManage={canManage}
-        saving={savingSettings}
-        onToggle={(next) => void saveSettings({ enabled: next })}
-        onRetentionChange={(days) => void saveSettings({ retentionDays: days })}
-      />
-
-      {!settings.enabled && (
-        <div className="rounded-xl bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-          {t.settings.audit.recording.paused}
-        </div>
-      )}
-
+      {/* Categories span the full width, above the split: they are how you navigate the
+          feed, and there are enough of them that a 1fr column would scroll them out of
+          reach on the very screens that have room. */}
       <Tabs tabs={tabs} value={category} onChange={setCategory} />
 
-      <div className="space-y-3">
+      {/* The page is for READING. Recording + retention are settings you touch once, so
+          they sit in the aside rather than pushing the feed below the fold — the layout
+          every other native page with a config panel already uses. */}
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
+        <div className="min-w-0 space-y-6">
+          <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[220px] flex-1">
             <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -989,7 +1048,7 @@ export function AuditTab() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => goToPage(Math.max(1, page - 1))}
               disabled={page === 1 || loading}
               className="rounded-lg border border-border/50 px-3 py-1.5 transition-colors hover:bg-muted/40 disabled:opacity-50"
             >
@@ -997,7 +1056,7 @@ export function AuditTab() {
             </button>
             <button
               type="button"
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => goToPage(page + 1)}
               disabled={page * PER_PAGE >= total || loading}
               className="rounded-lg border border-border/50 px-3 py-1.5 transition-colors hover:bg-muted/40 disabled:opacity-50"
             >
@@ -1006,6 +1065,29 @@ export function AuditTab() {
           </div>
         </div>
       )}
-    </div>
+        </div>
+
+        {/* Config, in the aside. `lg:sticky` so it stays reachable while a long feed
+            scrolls — the toggle is the one control an operator comes back for. */}
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <RecordingCard
+            enabled={settings.enabled}
+            retentionDays={settings.retentionDays}
+            canManage={canManage}
+            saving={savingSettings}
+            onToggle={(next) => void saveSettings({ enabled: next })}
+            onRetentionChange={(days) => void saveSettings({ retentionDays: days })}
+          />
+
+          {/* Beside the switch that caused it, not above the feed: "recording is off" is
+              an explanation of the control, and the feed below is simply what exists. */}
+          {!settings.enabled && (
+            <div className="rounded-xl bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+              {t.settings.audit.recording.paused}
+            </div>
+          )}
+        </aside>
+      </div>
+    </PageContainer>
   );
 }

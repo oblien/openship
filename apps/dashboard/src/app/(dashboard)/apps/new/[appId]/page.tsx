@@ -71,6 +71,7 @@ import { useModal } from "@/context/ModalContext";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import { defaultDomainType } from "@/lib/default-domain-type";
+import { installSettledMessage } from "@/lib/install-settled-message";
 import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import { AppLogo } from "@/components/AppLogo";
 import { VerifiedBadge } from "@/components/apps/VerifiedBadge";
@@ -587,7 +588,14 @@ export default function AppInstallPage() {
   // `action_required` / `reconciling` into a plain success/failure, so the true
   // DB status (and the precise liveUrl) comes from the read, not the stream.
   const settledRef = useRef(false);
-  const resolveTerminal = async (fallback: { ok: boolean; message?: string }) => {
+  const resolveTerminal = async (fallback: {
+    ok: boolean;
+    message?: string;
+    /** This resolution is a CANCEL (the user's Stop, or an SSE `cancelled`), even
+     *  if the DB row hasn't caught up yet. Load-bearing: a cancel must never
+     *  inherit the generic failure message — see `settledMessage`. */
+    cancelled?: boolean;
+  }) => {
     if (settledRef.current || !deploymentId) return;
     settledRef.current = true;
     let status = "";
@@ -596,14 +604,24 @@ export default function AppInstallPage() {
       const res = await deployApi.getBuildStatus(deploymentId);
       s = res?.data ?? res ?? {};
       status = s.deploymentStatus ?? s.status ?? "";
-      // A cancelled deploy (user Stop, or resuming one) is a neutral outcome, not
-      // a failure — flag it so the error screen reads as "cancelled".
-      if (status === "cancelled") setCancelled(true);
       // Prefer the server's full accumulated log over the streamed fragments.
       if (typeof s.logs === "string" && s.logs.length >= logs.length) setLogs(s.logs);
     } catch {
       /* fall back to the SSE outcome below */
     }
+    // A cancelled deploy (user Stop, or resuming one) is a neutral outcome, not a
+    // failure — flag it so the error screen reads as "cancelled".
+    const isCancel = status === "cancelled" || fallback.cancelled === true;
+    if (isCancel) setCancelled(true);
+    // The reason under the verdict — or nothing. A cancel never inherits the
+    // failure fallback; see `installSettledMessage` for why.
+    const settledMessage = () =>
+      installSettledMessage({
+        isCancel,
+        serverMessage: s.failureMessage,
+        streamMessage: fallback.message,
+        failedFallback: w.installFailed,
+      });
     const failed = ["failed", "cancelled", "partial_failure", "action_required", "rejected"];
     // `no_changes` is a SUCCESS: every service was already up to date and the live
     // stack is the one this install wanted. Treating it as terminal-but-unhandled
@@ -612,7 +630,7 @@ export default function AppInstallPage() {
       await deriveLiveUrl(s?.config);
       setPhase("done");
     } else if (failed.includes(status) || (status === "" && !fallback.ok)) {
-      setErrorMsg(s.failureMessage || fallback.message || w.installFailed);
+      setErrorMsg(settledMessage());
       setPhase("error");
     } else {
       // Still not settled in the DB but SSE said it's over — trust the stream.
@@ -620,7 +638,7 @@ export default function AppInstallPage() {
         await deriveLiveUrl(s?.config);
         setPhase("done");
       } else {
-        setErrorMsg(fallback.message || w.installFailed);
+        setErrorMsg(settledMessage());
         setPhase("error");
       }
     }
@@ -650,9 +668,12 @@ export default function AppInstallPage() {
       },
       onSuccess: () => void resolveTerminal({ ok: true }),
       onFailure: (message) => void resolveTerminal({ ok: false, message }),
-      onCanceled: (message) => {
+      onCanceled: () => {
         setCancelled(true);
-        void resolveTerminal({ ok: false, message: message || w.installCancelled });
+        // The stream's cancel message is a fixed "Build cancelled" — the verdict
+        // again, not a reason — so it is dropped rather than echoed under the
+        // heading. A real reason, when one exists, comes off the row.
+        void resolveTerminal({ ok: false, cancelled: true });
       },
     },
   });
@@ -686,6 +707,7 @@ export default function AppInstallPage() {
           await resolveTerminal({
             ok: status === "ready" || status === "no_changes",
             message: s.failureMessage,
+            cancelled: status === "cancelled",
           });
           return;
         }
@@ -712,7 +734,7 @@ export default function AppInstallPage() {
     try {
       await deployApi.cancel(deploymentId);
       disconnect();
-      await resolveTerminal({ ok: false, message: w.installCancelled });
+      await resolveTerminal({ ok: false, cancelled: true });
     } catch (err) {
       // The build likely already finished in the race — let the stream/terminal
       // read settle it, and undo the optimistic cancel flag.

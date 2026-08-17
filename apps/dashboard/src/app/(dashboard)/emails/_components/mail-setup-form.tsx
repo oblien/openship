@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   Mail,
   Play,
@@ -190,18 +191,18 @@ export function MailSetupForm({
               Provider choice + fields are registry-driven — the same model as
               the post-install Sending tab, no provider hardcoded here. */}
           <div className="rounded-xl border border-border/50 bg-muted/[0.15] p-4">
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={relay.enabled}
-                onChange={(e) => onRelayChange({ ...relay, enabled: e.target.checked })}
-                className="mt-0.5 size-4 accent-primary"
-              />
+            <button
+              type="button"
+              onClick={() => onRelayChange({ ...relay, enabled: !relay.enabled })}
+              aria-pressed={relay.enabled}
+              className="flex w-full cursor-pointer items-start gap-3 text-start"
+            >
+              <Checkbox checked={relay.enabled} className="pointer-events-none mt-0.5" />
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-foreground">{rl.toggle}</span>
                 <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{rl.hint}</span>
               </span>
-            </label>
+            </button>
             {relay.enabled && (
               <div className="mt-3 space-y-3">
                 {/* Provider picker */}

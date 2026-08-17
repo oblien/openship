@@ -19,6 +19,7 @@ import { slugify, safeErrorMessage, type ComposeAdvanced } from "@repo/core";
 import { buildNetworkAliases, type ContainerStatus } from "@repo/adapters";
 import { serviceAliasExtras } from "../../lib/deployable-service";
 import { COMPOSE_SENTINEL } from "../../lib/container-ref";
+import { isControlPlaneProject } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { ensureProject, createServicesProjectWithId } from "../projects/project-crud.service";
 import { getFileContent } from "../github/github.service";
@@ -28,6 +29,8 @@ import { createServerDockerRuntime } from "../../lib/deployment-runtime";
 import { sshManager } from "../../lib/ssh-manager";
 import { readProjectSnapshot } from "../../lib/openship-manifest";
 import { discoverServerStack } from "./docker-inspect.service";
+import { excludeAlreadyManaged } from "./managed-containers";
+import { perService, selectDiscoveredServices, serviceUid } from "./select-services";
 import {
   EDGE_PORTS,
   parseComposePort,
@@ -231,7 +234,11 @@ function normalizeHostPorts(ports: string[]): {
  */
 export function buildAdoptedServiceRows(
   chosen: DiscoveredService[],
-  selected: Set<string>,
+  /** Discovered names that count as part of this adopt set — used only to drop
+   *  `depends_on` edges pointing at services that are NOT being adopted. Omit to
+   *  derive it from `chosen`, which is the only correct value: passing the user's
+   *  raw request instead keeps an edge to a service that was never found. */
+  selected?: Set<string>,
   serviceEnv?: Record<string, Record<string, string>>,
   /** DISCOVERED service name → the repo compose service name to adopt AS. When
    *  the wizard mapped a moved container to a repo compose service, name the row
@@ -251,16 +258,22 @@ export function buildAdoptedServiceRows(
   renames: Record<string, string>;
   handover: Record<string, string>;
 } {
+  const adoptedNames = selected ?? new Set(chosen.map((s) => s.name));
   const nameCounts = new Map<string, number>();
   const firstUnique = new Map<string, string>(); // discovered name → FINAL row name
   const renames: Record<string, string> = {};
   const uniqueNames = chosen.map((s) => {
-    const desired = serviceRenames?.[s.name]?.trim() || s.name;
+    const desired = perService(serviceRenames, s)?.trim() || s.name;
     const n = (nameCounts.get(desired) ?? 0) + 1;
     nameCounts.set(desired, n);
     const unique = n === 1 ? desired : `${desired}-${n}`;
     if (!firstUnique.has(s.name)) firstUnique.set(s.name, unique);
-    renames[s.name] = unique;
+    // Keyed by IDENTITY, not name: this map is exactly where two same-named picks
+    // used to overwrite each other, and it decides row resolution, the attach/join
+    // container match and the route remap — so one collision here mis-assigned all
+    // four. `serviceUid` falls back to the name, so a service with no container (and
+    // every existing caller/test that passes none) is unaffected.
+    renames[serviceUid(s)] = unique;
     return unique;
   });
 
@@ -295,7 +308,7 @@ export function buildAdoptedServiceRows(
     //  • No mapping (no repo linked / unmapped) → adopt the running image as-is
     //    (legacy: we have no build source, so reuse the image). Cross-server the
     //    image is transferred (docker save|load) so the target has it.
-    const repo = repoServices?.get(uniqueNames[i]) ?? repoServices?.get(serviceRenames?.[s.name] ?? s.name);
+    const repo = repoServices?.get(uniqueNames[i]) ?? repoServices?.get(perService(serviceRenames, s) ?? s.name);
     const native = repo && (repo.build || repo.image);
     const source = native
       ? { image: repo.image, build: repo.build, dockerfile: repo.dockerfile }
@@ -312,11 +325,14 @@ export function buildAdoptedServiceRows(
       dockerfile: source.dockerfile,
       ports,
       // Only keep dependencies on services we're also adopting.
-      dependsOn: s.dependsOn.filter((d) => selected.has(d)).map((d) => firstUnique.get(d) ?? d),
+      dependsOn: s.dependsOn.filter((d) => adoptedNames.has(d)).map((d) => firstUnique.get(d) ?? d),
       // Env override (edited in the wizard) keyed by the DISCOVERED name; default
       // = the container's live env. #336: the wizard sees env masked, so restore
       // any echoed mask sentinel from the freshly-discovered live env (server truth).
-      environment: serviceEnv?.[s.name] ? unmaskEnv(serviceEnv[s.name], s.env) : s.env,
+      environment: (() => {
+        const override = perService(serviceEnv, s);
+        return override ? unmaskEnv(override, s.env) : s.env;
+      })(),
       volumes: s.volumes.map(volumeToComposeString).filter((v): v is string => v !== null),
       command: s.command,
       commandArgv: s.commandArgv ?? null, // #332: adopt the real argv, not sh -c
@@ -364,6 +380,11 @@ export async function adoptServerStack(opts: {
    *  wizard's step-2 map). Names the adopted row after the repo service so a
    *  later reconcile matches it in place instead of duplicating. */
   serviceRenames?: Record<string, string>;
+  /** Container ids of the selected services — the wizard's `svcUid`. Preferred over
+   *  `serviceNames`: a name is unique only within a compose project, so a name match
+   *  over the whole server also picked up the control plane's own same-named
+   *  containers (#584). See {@link selectDiscoveredServices}. */
+  serviceContainerIds?: string[];
   /** Adopt in flat-docker mode — must match the scan the user selected from, or
    *  openship-labeled containers are treated as managed and none are found. */
   flatDocker?: boolean;
@@ -382,10 +403,9 @@ export async function adoptServerStack(opts: {
    *  and the returned `handover` lets the first deploy reuse the running image. */
   repoServices?: Map<string, RepoComposeService>;
 }): Promise<AdoptResult> {
-  const { serverId, organizationId, projectName, serviceNames, sameServer, volumeStrategies, serviceSubpaths, serviceEnv, serviceRenames, flatDocker, repoServices } = opts;
+  const { serverId, organizationId, projectName, serviceNames, serviceContainerIds, sameServer, volumeStrategies, serviceSubpaths, serviceEnv, serviceRenames, flatDocker, repoServices } = opts;
 
   const stack = await discoverServerStack(serverId, organizationId, undefined, { flatDocker });
-  const selected = new Set(serviceNames);
   // Resolve names within ONE group when the caller scoped the adopt — a bare
   // service name is ambiguous across compose projects (see `composeProject`).
   let pool = stack.services;
@@ -402,35 +422,18 @@ export async function adoptServerStack(opts: {
   // Drop the edge proxy (traefik/nginx/… on 80/443): OpenResty replaces it, so
   // adopting it would just replay the 80/443 conflict. Defense-in-depth — the
   // wizard already marks it non-importable and the orchestrator filters it too.
-  const chosen = pool.filter((s) => selected.has(s.name) && !s.proxyKind);
+  // Identity-first (see select-services): matching a selection by bare NAME against
+  // a server-wide pool pulled in same-named containers from every other stack on the
+  // host — including the control plane's own `postgres` (#584).
+  let chosen = selectDiscoveredServices(pool, {
+    containerIds: serviceContainerIds,
+    names: serviceNames,
+  }).filter((s) => !s.proxyKind);
   if (chosen.length === 0) {
     throw new Error("None of the selected services were found on the server.");
   }
 
-  // IDEMPOTENCY GATE: refuse to RE-ADOPT containers this instance already
-  // manages as a project. Without it, re-importing the same running stack mints
-  // a SECOND project on the SAME containers → duplicate `-2` services, routes
-  // bound to the wrong (duplicate) service's port, and phantom domain claims.
-  // A first-time adopt has no matching service_deployment rows, so this only
-  // ever blocks a genuine re-import (redeploy/edit the existing project instead).
-  const chosenContainerIds = chosen
-    .map((s) => s.containerId)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-  if (chosenContainerIds.length > 0) {
-    const managed = await repos.service.findByContainerIds(chosenContainerIds);
-    for (const sd of managed) {
-      const dep = await repos.deployment.findById(sd.deploymentId).catch(() => null);
-      if (!dep || dep.organizationId !== organizationId) continue; // other org / stale row
-      const proj = await repos.project.findById(dep.projectId).catch(() => null);
-      if (proj && !proj.deletedAt) {
-        throw new Error(
-          `These containers are already managed here by project "${proj.name}". ` +
-            `Redeploy or edit that project instead of re-importing — a re-import would ` +
-            `duplicate its services and routes.`,
-        );
-      }
-    }
-  }
+  chosen = await excludeAlreadyManaged(chosen, organizationId);
 
   // Cross-server DOES move locally-built images now: moving_data streams the
   // running image A→B as data (docker save | docker load), so the target adopts
@@ -451,9 +454,23 @@ export async function adoptServerStack(opts: {
   };
   const { project_id, created } = await ensureProject(ensureBody, organizationId);
 
+  // `ensureProject` REUSES a project whose slug matches the name, and
+  // slugify("Openship") is the control-plane self-app's own slug — so naming a
+  // migration "Openship" adopted the user's foreign containers INTO Openship's own
+  // project, with `created:false` so a rollback would not even remove it. Refuse the
+  // name instead. Checked on the result rather than by re-deriving the slug: the
+  // matching rules live in ensureProject and must not be duplicated here.
+  if (!created && isControlPlaneProject(await repos.project.findById(project_id))) {
+    throw new Error(
+      `"${projectName}" is reserved — that is Openship's own project on this instance. ` +
+        `Pick a different project name.`,
+    );
+  }
+
   const { rows: parsed, renames, handover } = buildAdoptedServiceRows(
     chosen,
-    selected,
+    // Derived from `chosen`, which is post-scope and post-control-plane-exclusion.
+    undefined,
     serviceEnv,
     serviceRenames,
     repoServices,
@@ -510,7 +527,7 @@ export async function adoptServerStack(opts: {
   // are keyed by discovered name).
   const rowByFinalName = new Map(createdServices.map((svc) => [svc.name, svc]));
   for (const s of chosen) {
-    const svc = rowByFinalName.get(renames[s.name]);
+    const svc = rowByFinalName.get(perService(renames, s) ?? s.name);
     if (!svc) continue;
     // Volume ownership: reuse the original bare-named volumes in place
     // (namespaceVolumes=false) — EXCEPT same-server services the user marked
@@ -524,7 +541,7 @@ export async function adoptServerStack(opts: {
     // Per-service build subpath: point the adopted service at a folder inside the
     // project's linked repo. Pure metadata (rootDirectory only) — does NOT flip
     // the row to build-from-source; the running image is still reused.
-    const sub = serviceSubpaths?.[s.name]?.trim();
+    const sub = perService(serviceSubpaths, s)?.trim();
     if (sub && svc.rootDirectory !== sub) {
       await repos.service.update(svc.id, { rootDirectory: sub });
     }
@@ -672,7 +689,10 @@ export async function attachLiveRuntime(opts: {
   try {
     // Key the discovered containers by their ADOPTED ROW name so they join the
     // (possibly-renamed) rows. disc.containerId is used downstream — rename-safe.
-    const discByName = new Map(attach.map((c) => [renames?.[c.name] ?? c.name, c]));
+    // `perService`, not a bare uid lookup: adopt builds this map keyed by identity, but a
+    // caller may still hand over a NAME-keyed one, and resolving only by uid silently
+    // matched nothing — the renamed row then never joined the network / re-attached.
+    const discByName = new Map(attach.map((c) => [perService(renames, c) ?? c.name, c]));
     const attachRows = serviceRows.filter((s) => discByName.has(s.name));
     const placements = await Promise.all(
       attachRows.map(async (service) => {
@@ -750,7 +770,10 @@ export async function joinReusedContainersToGroup(opts: {
   const rt = await createServerDockerRuntime(serverId, organizationId);
   try {
     if (!rt.joinServiceGroupContainers) return; // non-docker runtime → skip
-    const discByName = new Map(attach.map((c) => [renames?.[c.name] ?? c.name, c]));
+    // `perService`, not a bare uid lookup: adopt builds this map keyed by identity, but a
+    // caller may still hand over a NAME-keyed one, and resolving only by uid silently
+    // matched nothing — the renamed row then never joined the network / re-attached.
+    const discByName = new Map(attach.map((c) => [perService(renames, c) ?? c.name, c]));
     const members = serviceRows
       .filter((s) => discByName.has(s.name))
       .map((s) => ({

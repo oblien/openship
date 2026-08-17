@@ -40,6 +40,7 @@ export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps"
 export { deployApi } from "./deploy";
 export type { RestorePlanUI } from "./deploy";
 export { domainsApi } from "./domains";
+export { credentialsApi, type Credential } from "./credentials";
 export { dnsApi, type DnsProviderDescriptor, type SanitizedDnsCredential, type AddDnsCredentialInput, type VerifyZoneResult } from "./dns";
 export {
   jobsApi,
@@ -85,7 +86,7 @@ export type {
   RescanResult,
 } from "./issues";
 export { migrationApi } from "./migration";
-export { dockerMigrationApi } from "./server-migration";
+export { dockerMigrationApi, isScanStreamStalled } from "./server-migration";
 export type {
   DiscoveredStack,
   DiscoveredGroup,

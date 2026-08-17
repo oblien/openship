@@ -640,6 +640,22 @@ export const auth = betterAuth({
               },
             },
           );
+
+          // Give the org its Oblien namespace and push its tier's ceilings.
+          // Cloud only, and fire-and-forget: a slow or unreachable Oblien must
+          // not fail org creation (the boot backfill re-attempts anything that
+          // fails here). Without this a free org had no namespace recorded and
+          // therefore no credit quota and no resource ceiling — metered,
+          // joinable, and uncapped.
+          if (env.CLOUD_MODE) {
+            void import("../modules/billing/billing-namespace.provision")
+              .then(({ provisionOrgNamespace }) => provisionOrgNamespace(organization.id))
+              .catch((err) =>
+                console.warn(
+                  `[auth] namespace provisioning failed for org ${organization.id}: ${err instanceof Error ? err.message : String(err)}`,
+                ),
+              );
+          }
         },
 
         beforeDeleteOrganization: async ({ organization, user }) => {

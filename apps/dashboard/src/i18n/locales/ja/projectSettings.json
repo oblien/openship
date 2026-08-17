@@ -69,7 +69,43 @@
       "liveAccessible": "稼働中でアクセス可能",
       "pausedInaccessible": "一時停止中でアクセス不可",
       "disable": "無効にする",
-      "enable": "有効にする"
+      "enable": "有効にする",
+      "migrating": "移行中",
+      "migratingHint": "別のサーバーへ移動しています"
+    },
+    "migration": {
+      "title": "移行",
+      "description": "このプロジェクトを別のサーバーへ移動します",
+      "currentServer": "現在のサーバー",
+      "migrate": "移行",
+      "noOtherServers": "移動先にするため、2 台目のサーバーを追加してください。",
+      "cloudLater": "サーバー間の移行です。Openship Cloud との相互移行はまだ対応していません。",
+      "startFailed": "移行を開始できませんでした",
+      "confirmTitle": "{project} を {server} へ移動",
+      "confirmSubtitle": "移動を開始するまで、何も変更されません。",
+      "svcVolumes": "ボリューム {count} 個",
+      "downtimeNote": "データのコピーと新サーバーでの起動が終わるまで、プロジェクトは停止します。ステートフルなサービスは転送中ずっと停止したままです。",
+      "dnsNote": "DNS はまだ旧サーバーを指しています。新サーバーが応答し始めたらレコードを変更してください。",
+      "cancel": "キャンセル",
+      "confirmStart": "移動を開始",
+      "duplicate": "複製",
+      "intentMove": "移動",
+      "intentCopy": "複製",
+      "intentMoveHint": "プロジェクトそのものが移動します。確認後、旧サーバーからコンテナとボリュームが削除されます。",
+      "intentCopyHint": "元のプロジェクトはそのまま稼働します。新サーバーにデータを複製した 2 つ目のプロジェクトが作られます。",
+      "confirmTitleCopy": "{project} を {server} に複製",
+      "confirmStartCopy": "複製を開始",
+      "downtimeNoteCopy": "データ複製中はプロジェクトが短時間停止します（正しく複製するにはボリュームを静止させる必要があります）。複製が終わり次第、旧サーバーで再び起動します。",
+      "copyNoDomainsNote": "複製にはドメインが付きません。既存のドメインは、それを配信しているプロジェクトに残ります。",
+      "fromLabel": "移行元",
+      "toLabel": "移行先",
+      "modeLabel": "モード",
+      "scopeLabel": "複製する対象",
+      "scopeAll": "すべて選択",
+      "scopeHintAll": "すべてのサービスとそのデータ。",
+      "scopeHintSome": "{count} 個のサービス — 残りは元のプロジェクトにのみ残ります。",
+      "sourceServices": "サービス {count} 個",
+      "runningStatus": "実行中 — {status}"
     },
     "cache": {
       "title": "キャッシュ",
@@ -289,7 +325,9 @@
       "saved": "環境変数を保存しました",
       "savedTitle": "保存しました",
       "saveFailed": "環境変数の保存に失敗しました",
-      "saveFailedTitle": "保存に失敗しました"
+      "saveFailedTitle": "保存に失敗しました",
+      "noChanges": "保存する変更はありません — 保存済みの値はそのまま維持されます。",
+      "noChangesTitle": "保存する変更なし"
     },
     "linkedBadge": "リンク済み",
     "linkedManaged": "{app} 経由",
@@ -494,6 +532,10 @@
       "high": {
         "name": "High",
         "description": "高トラフィックのアプリケーション"
+      },
+      "xlarge": {
+        "name": "特大",
+        "description": "データベースと高負荷ワークロード"
       }
     },
     "custom": {
@@ -756,6 +798,10 @@
       "noneYet": "まだチェックが実行されていないため、表示できる結果がありません。表示されている DNS レコードを追加してから「検証」を実行してください。",
       "attempts": "これまでに {count} 回失敗しています。",
       "pillHint": "理由を表示"
+    },
+    "records": {
+      "failed": "このドメインの DNS レコードを読み込めませんでした。",
+      "retry": "再試行"
     }
   }
 }

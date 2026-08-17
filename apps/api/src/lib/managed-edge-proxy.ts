@@ -3,6 +3,7 @@ import { safeErrorMessage } from "@repo/core";
 import { cloudClient } from "./cloud/client";
 import { isTargetUnverified } from "./cloud/request-error";
 import { canonicalEdgeTarget, resolveEdgeTargetHost } from "./edge-target";
+import { isCloudManagedHostname, managedHostnameToSlug } from "./public-endpoints";
 import { ensureTargetVerified } from "./edge-target-verify";
 
 const NO_CLOUD_MEMBER =
@@ -181,6 +182,43 @@ export async function deregisterManagedEdgeRoutes(
     }
   }
   return { failures };
+}
+
+/**
+ * Release the managed edge routes for a set of HOSTNAMES.
+ *
+ * The hostname-taking counterpart to `deregisterManagedEdgeRoutes`, which takes
+ * slugs. Callers hold hostnames (a `domain` row, a project's endpoints) and every
+ * one of them deriving the slug itself is how the deregister ended up wired into
+ * exactly ONE of the ~4 paths that free a free subdomain: a deleted project, a
+ * deleted domain and a torn-down project all left the route live on Oblien's edge,
+ * so the old `*.opsh.io` URL kept resolving and — because slugs are globally
+ * unique — the org could later be REFUSED when re-claiming its own slug.
+ *
+ * Non-managed hostnames (a custom domain, a subdomain of the operator's own
+ * HOST_DOMAIN) are skipped: they never had a Cloud edge route to release. The
+ * suffix test is `isCloudManagedHostname`, the same predicate the quota counts on.
+ *
+ * SECURITY: the delete is namespace-scoped upstream — the SaaS resolves the
+ * caller's own namespace token, lists the proxies IN it, and deletes by the id it
+ * found there. A slug belonging to another org is simply not found, so passing a
+ * foreign hostname here cannot remove anyone else's route. Unknown slugs report
+ * `removed: false` rather than erroring, which is what makes retrying safe.
+ */
+export async function releaseManagedHostnames(
+  hostnames: readonly (string | null | undefined)[],
+  opts: { organizationId: string },
+): Promise<{ failures: string[] }> {
+  const slugs = [
+    ...new Set(
+      hostnames
+        .filter((h): h is string => !!h && isCloudManagedHostname(h))
+        .map((h) => managedHostnameToSlug(h))
+        .filter((s): s is string => !!s),
+    ),
+  ];
+  if (slugs.length === 0) return { failures: [] };
+  return deregisterManagedEdgeRoutes(slugs, opts);
 }
 
 /** The user-facing "free routing didn't sync" message. `retryHint` is the

@@ -43,6 +43,7 @@ const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> =
   "backup_destination.sftpPrivateKeyEnc": { table: schema.backupDestination, scheme: "enc1" },
   "backup_destination.sftpKeyPassphraseEnc": { table: schema.backupDestination, scheme: "enc1" },
   "dns_credential.apiTokenEnc": { table: schema.dnsCredential, scheme: "enc1" },
+  "credential.secretsEnc": { table: schema.credential, scheme: "enc1" },
   "servers.sshPassword": { table: schema.servers, scheme: "enc1" },
   "servers.sshPrivateKey": { table: schema.servers, scheme: "enc1" },
   "servers.sshKeyPassphrase": { table: schema.servers, scheme: "enc1" },

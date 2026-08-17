@@ -132,7 +132,7 @@
     "valuePlaceholder": "值",
     "dropHere": "将 .env 文件拖放到此处",
     "noneTitle": "没有环境变量",
-    "emptyHintEditing": "点击“添加变量”、使用“粘贴 .env”、上传文件，或在此框内任意位置粘贴",
+    "emptyHintEditing": "在此框内任意位置粘贴 .env 内容块，或将 .env 文件拖放到这里。",
     "emptyHintReadonly": "点击“编辑”以管理环境变量",
     "pasteHint": "在此框内任意位置粘贴完整的 .env 内容块。",
     "addVariable": "添加变量",
@@ -353,9 +353,6 @@
       "successful": "部署成功",
       "deploying": "正在部署服务……"
     },
-    "running": "运行中",
-    "buildingSuffix": "· {count} 个构建中",
-    "failedSuffix": "· {count} 个失败",
     "decisionBannerTitle": "需要操作 —— 部分服务失败",
     "decisionBannerDefaultMsg": "本次部署完成时存在失败的服务。您可以保留它并稍后修复，或拒绝它以恢复到之前的版本。",
     "review": "审查",
@@ -395,6 +392,12 @@
       "retryOther": "重试 {count} 个失败的服务"
     }
   },
+  "composeServiceTally": {
+    "running": "运行中",
+    "builtSuffix": "· {count} 个已构建",
+    "buildingSuffix": "· {count} 个构建中",
+    "failedSuffix": "· {count} 个失败"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "已取消",
@@ -405,12 +408,11 @@
     },
     "detailsTitle": "部署详情",
     "rowStatus": "状态",
+    "rowTarget": "目标",
+    "rowBuild": "构建",
     "rowBuildTime": "构建时间",
     "rowServices": "服务",
     "rowProject": "项目",
-    "rowType": "类型",
-    "running": "运行中",
-    "buildingSuffix": "· {count} 个构建中",
-    "failedSuffix": "· {count} 个失败"
+    "rowType": "类型"
   }
 }

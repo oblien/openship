@@ -6,6 +6,7 @@
  * routing configs, and SSL results.
  */
 
+import { PRICING } from "@repo/core";
 import type { BuildStrategy, ProxySettings } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
@@ -53,13 +54,22 @@ export const DEFAULT_RESOURCE_CONFIG: ResourceConfig = {
   diskMb: 5120,
 };
 
-/** Single source of truth - build resources. Sized for memory-hungry
- *  production builds (Next.js / webpack routinely need several GB); 4 cores +
- *  8GB is the resource-schema ceiling (project.schema.ts UpdateResourcesBody). */
+/**
+ * Build resources. Sized for memory-hungry production builds (Next.js / webpack
+ * routinely need several GB); 4 cores + 8 GB is the resource-schema ceiling
+ * (project.schema.ts UpdateResourcesBody).
+ *
+ * DERIVED from the pricing catalog rather than typed here, because every plan's
+ * Oblien ceiling is computed to fit this machine: `max_vcpus`/`max_ram_mb`/
+ * `max_disk_gb` are per-WORKSPACE caps and a build gets its own workspace, so a
+ * tier sized below this number cannot build at all — Oblien 409s the create. Two
+ * independent copies of it meant a bump here could silently un-buildable the
+ * cheapest tier; now raising it raises every ceiling with it.
+ */
 export const DEFAULT_BUILD_RESOURCE_CONFIG: ResourceConfig = {
-  cpuCores: 4,
-  memoryMb: 8192,
-  diskMb: 10240,
+  cpuCores: PRICING.oblien.buildResources.cpuCores,
+  memoryMb: PRICING.oblien.buildResources.memoryMb,
+  diskMb: PRICING.oblien.buildResources.diskGb * 1024,
 };
 
 /** Normalize a tier's vCPU value for the Oblien workspace payload. Oblien

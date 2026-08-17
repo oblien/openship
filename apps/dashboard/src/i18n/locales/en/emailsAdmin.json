@@ -5,26 +5,27 @@
       "domains": "Domains",
       "mailboxes": "Mailboxes",
       "aliases": "Aliases",
-      "inbound": "Inbound",
+      "notifications": "Notifications",
       "dns": "DNS",
       "health": "Health",
-      "test": "Test",
       "backup": "Backup",
       "sending": "Sending",
       "advanced": "Advanced"
     },
     "ariaLabel": "Mail admin sections"
   },
-  "inbound": {
-    "heading": "Inbound rules",
+  "notifications": {
+    "heading": "Notification rules",
     "description": "Get told in a notification channel when mail arrives at an address on this server.",
     "newRule": "New rule",
-    "newTitle": "New inbound rule",
-    "editTitle": "Edit inbound rule",
+    "newTitle": "New notification rule",
+    "editTitle": "Edit notification rule",
     "edit": "Edit",
-    "emptyTitle": "No inbound rules yet",
+    "emptyTitle": "No notification rules yet",
     "emptyBody": "Add a rule to be notified in Slack, Telegram, Discord or a webhook when mail arrives at a mailbox or domain on this server.",
     "noChannels": "You have no verified notification channels yet. Add and verify one in Settings → Notifications, then come back to create a rule.",
+    "addChannel": "Add a notification channel",
+    "manageChannels": "Manage channels",
     "fieldName": "Name",
     "namePlaceholder": "Support inbox → #support",
     "fieldScope": "Watch",
@@ -49,7 +50,7 @@
     "active": "Active",
     "disabled": "Off",
     "paused": "Paused",
-    "deleteTitle": "Delete inbound rule",
+    "deleteTitle": "Delete notification rule",
     "deleteConfirm": "Delete rule",
     "deleting": "Deleting…",
     "deleteHint": "Existing notifications are unaffected. Mail already captured but not yet processed is discarded.",
@@ -60,7 +61,7 @@
     "testing": "Testing…",
     "testResult": "Read {read} captured message(s): {matched} matched a rule, {dropped} filtered out. Nothing was sent or deleted.",
     "testFailed": "Could not run the test.",
-    "loadFailed": "Could not load inbound rules.",
+    "loadFailed": "Could not load notification rules.",
     "saveFailed": "Could not save the rule.",
     "deleteFailed": "Could not delete the rule.",
     "confirmDelete": "Delete the rule “{name}”? Capture stops for its address unless another rule still needs it."
@@ -124,6 +125,7 @@
     "guidanceCreds": "Use SES SMTP credentials (an IAM SMTP user) — not your AWS access keys.",
     "guidanceDns": "Publish the DNS records on the DNS tab, then re-scan to confirm.",
     "guidanceSystem": "System mail (password resets, invites, notifications) also sends via this relay — unless you've set a separate sender in Settings → Email.",
+    "testLiveNote": "Sends over the path that is live now, not any unsaved changes above.",
     "save": "Enable relay",
     "update": "Save changes",
     "disable": "Disable relay",
@@ -735,6 +737,7 @@
     "close": "Close",
     "logsLoadFailed": "Failed to load logs",
     "loadingLogs": "Loading logs…",
-    "noLogLines": "No log lines for this component yet."
+    "noLogLines": "No log lines for this component yet.",
+    "rowActions": "Actions for {name}"
   }
 }

@@ -20,10 +20,11 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import {
   LocalExecutor,
@@ -47,6 +48,12 @@ import {
   wrapText,
 } from "@repo/core";
 
+import {
+  COMPOSE_DIR,
+  COMPOSE_ENV_FILE as ENV_FILE,
+  COMPOSE_FILE,
+  readComposeEnvFile,
+} from "./compose-env";
 import { OS_DIR } from "./paths";
 import {
   DEFAULT_API_PORT,
@@ -76,14 +83,57 @@ function edgeVolumeYaml(indent: string): string {
   return EDGE_CONTAINER_MOUNTS.map((m) => `${indent}- ${m.host}:${m.container}:z`).join("\n");
 }
 
+/** Marker the API service's volume list carries until {@link renderComposeYaml} fills it. */
+const DOCKER_CONFIG_MOUNT_MARKER = "__OPENSHIP_DOCKER_CONFIG_MOUNT__";
+
+/**
+ * The API's read-only Docker-config mount, or nothing when the host has none.
+ *
+ * `/root/.docker/config.json` because the API image declares no `USER` and so runs as
+ * root — `resolveDockerAuth` looks under `homedir()`, and the two must agree or the
+ * file is mounted somewhere nothing reads.
+ *
+ * LONG syntax, not `source:target:ro`: the host path comes from the environment and may
+ * contain a colon or a space, either of which makes the short form parse as a different
+ * mount (or not parse at all). `source` is JSON-quoted for the same reason.
+ *
+ * Only when the path is a REGULAR FILE. Docker happily bind-mounts a missing source by
+ * creating a DIRECTORY at it, which would leave `/root/.docker/config.json` a directory
+ * inside the container — every read then fails with EISDIR rather than "no credentials".
+ */
+function dockerConfigMountYaml(indent: string): string {
+  const path = resolve(process.env.DOCKER_CONFIG || join(homedir(), ".docker"), "config.json");
+  try {
+    if (!statSync(path).isFile()) return "";
+  } catch {
+    return ""; // no config on this host — mount nothing
+  }
+  return [
+    `${indent}- type: bind`,
+    `${indent}  source: ${JSON.stringify(path)}`,
+    `${indent}  target: /root/.docker/config.json`,
+    `${indent}  read_only: true`,
+  ].join("\n");
+}
+
+/**
+ * The compose file to write.
+ *
+ * Everything static lives in `COMPOSE_YAML`; only what depends on the host at RUN time
+ * is substituted here. Resolving the Docker config inside the module-level template
+ * would freeze it at import, which both hides a config created since startup and makes
+ * the generator untestable (a test setting DOCKER_CONFIG would never be observed).
+ */
+function renderComposeYaml(): string {
+  const mount = dockerConfigMountYaml("      ");
+  return COMPOSE_YAML.split(`${DOCKER_CONFIG_MOUNT_MARKER}\n`).join(mount ? `${mount}\n` : "");
+}
+
 declare const __CLI_VERSION__: string;
 
-const COMPOSE_DIR = join(OS_DIR, "compose");
 const INSTALL_METHOD_FILE = join(OS_DIR, "install-method");
-const COMPOSE_FILE = join(COMPOSE_DIR, "docker-compose.yml");
 /** From-source override: BUILDs api/dashboard/edge instead of pulling them. */
 const BUILD_FILE = join(COMPOSE_DIR, "docker-compose.build.yml");
-const ENV_FILE = join(COMPOSE_DIR, ".env");
 /** The `.env` this run replaced. See writeEnvFile — recovery for #488. */
 const ENV_BACKUP_FILE = join(COMPOSE_DIR, ".env.bak");
 const ENV_TMP_FILE = join(COMPOSE_DIR, ".env.tmp");
@@ -456,6 +506,13 @@ services:
       # the transport, naming neither the path nor the cause (#482). \`openship up\`
       # writes OPENSHIP_DOCKER_SOCKET when the detected path isn't this default.
       - \${OPENSHIP_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      # Registry credentials for private-image pulls. The API talks to the daemon over
+      # the socket above via dockerode, which — unlike the docker CLI — reads no
+      # config.json of its own, so a private pull went out anonymous on a logged-in
+      # host (#581). Mounted READ-ONLY and only into this service; absent entirely when
+      # the host has no config, so nothing is invented. Substituted at write time (the
+      # path depends on DOCKER_CONFIG and on the file existing), hence the marker.
+__OPENSHIP_DOCKER_CONFIG_MOUNT__
       # Routing state shared with the edge, as HOST BIND MOUNTS (generated from
       # EDGE_CONTAINER_MOUNTS): the vhost tree, /etc/letsencrypt, the ACME webroot
       # and the static doc-roots the API writes and the edge serves. Named volumes
@@ -681,31 +738,25 @@ function projectOfDbVolume(volume: string): string {
   return volume.replace(/_postgres_data$/, "");
 }
 
-/** Parse the existing .env so re-running `up` preserves generated secrets. */
+/**
+ * Parse the existing .env so re-running `up` preserves generated secrets.
+ *
+ * The read itself lives in lib/compose-env (shared with the internal-token resolver);
+ * what stays here is the install-time REPORTING of a file that exists and wouldn't
+ * open — a root-owned 0600 `.env` this user can't see is an install whose secrets are
+ * merely out of reach, and treating that as a first install is what #488 is.
+ * secretRotationRisk is what actually stops the run.
+ */
 function readEnvFile(): Record<string, string> {
-  const out: Record<string, string> = {};
-  let text: string;
-  try {
-    text = readFileSync(ENV_FILE, "utf8");
-  } catch (err) {
-    // "Not there" is a first install. Anything ELSE — a root-owned 0600 file this user
-    // can't open being the one that happens in practice — is an install whose secrets
-    // exist and are simply out of reach, and treating that as a first install is what
-    // #488 is. Say so; secretRotationRisk is what actually stops the run.
-    if ((err as { code?: string }).code !== "ENOENT") {
-      console.log(
-        `  ! Could not read ${ENV_FILE}: ${(err as Error).message}\n` +
-          `    Its contents are being treated as absent. If this install already exists,` +
-          ` fix the permissions and re-run rather than letting secrets be regenerated.`,
-      );
-    }
-    return out;
+  const { env, unreadable } = readComposeEnvFile();
+  if (unreadable) {
+    console.log(
+      `  ! Could not read ${ENV_FILE}: ${unreadable}\n` +
+        `    Its contents are being treated as absent. If this install already exists,` +
+        ` fix the permissions and re-run rather than letting secrets be regenerated.`,
+    );
   }
-  for (const line of text.split("\n")) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m) out[m[1]] = m[2];
-  }
-  return out;
+  return env;
 }
 
 /**
@@ -737,16 +788,29 @@ const HOST_KEY_FROM = "172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1";
  *
  * `restrict` (OpenSSH 7.2+) denies port forwarding, agent forwarding, X11 and user
  * rc, and is fail-closed: capabilities OpenSSH adds later stay off unless named
- * here. The no-forwarding part is what matters most — it stops a leaked key from
- * being turned into a tunnel into other services bound on the host.
+ * here. Two are then named back, and BOTH re-grants rest on the same observation:
+ * this key already authorizes arbitrary command execution on the host, so a
+ * capability that only changes how that execution is framed adds no privilege.
  *
- * `pty` is added back deliberately: `restrict` also implies `no-pty`, and the host
- * terminal (`SshExecutor.openShell` → `client.shell({ term, cols, rows })`) needs
- * one. It costs nothing in privilege — the key already grants command execution, so
- * a pty only changes how that execution is framed, not what it can do.
+ * `pty`: `restrict` implies `no-pty`, and the host terminal
+ * (`SshExecutor.openShell` → `client.shell({ term, cols, rows })`) needs one.
+ *
+ * `port-forwarding`: the deploy-time readiness probe reaches a published candidate
+ * at `127.0.0.1:<hostPort>` — an address that only means the right thing from the
+ * HOST — by opening an ssh2 `direct-tcpip` channel (`SshExecutor.forwardPort` →
+ * `client.forwardOut`). `restrict` denies exactly that, so the probe's channel open
+ * was refused "administratively prohibited", the refusal was indistinguishable from
+ * a closed port, and every readiness-gated deploy on a Compose install failed with
+ * "the app never answered" while `curl` on the host returned 200 — GH-583.
+ *
+ * Not the security regression it looks like: a leaked key that can run `curl` (or
+ * `nc`, or write and execute a file) on the host can already reach anything bound
+ * on it, with or without a tunnel. `permitopen=` is deliberately NOT used to narrow
+ * this — sshd matches it literally, with no CIDR support, and the probe's other
+ * target is a Docker bridge IP from a range that is only known at deploy time.
  */
 function hostKeyAuthLine(pub: string): string {
-  return `from="${HOST_KEY_FROM}",restrict,pty ${pub}`;
+  return `from="${HOST_KEY_FROM}",restrict,pty,port-forwarding ${pub}`;
 }
 
 /**
@@ -2497,7 +2561,7 @@ function materialize(opts: ComposeUpOpts): {
     /* first install — no previous env, so everything is "changed" */
   }
   const { text: rendered, carried } = renderEnvAndCarried(opts, host, cfg, prev);
-  writeFileSync(COMPOSE_FILE, COMPOSE_YAML);
+  writeFileSync(COMPOSE_FILE, renderComposeYaml());
   writeEnvFile(rendered, before);
   // #485: the old rewrite silently DROPPED operator-set keys. Now they survive — say so,
   // so a run that kept them doesn't look like it might have discarded them.
@@ -3058,7 +3122,12 @@ export function composeRestart(): boolean {
  * The stack's INTERNAL_TOKEN, read from the generated compose `.env` — NOT the
  * bare-mode `~/.openship/internal-token`. The compose api container is booted
  * with this value (renderEnv → keepSecret), so the CLI must use it to reach
- * internal-token-gated endpoints (e.g. edge/import-sites after a migrate).
+ * internal-token-gated endpoints.
+ *
+ * For "the token the API on this box is running with" — i.e. anything that isn't
+ * specifically provisioning a compose stack it just brought up — use
+ * `resolveInternalToken()` (lib/internal-token) instead. Choosing a store by hand is
+ * the mistake that made reset-admin-password 401 on every compose install.
  */
 export function composeInternalToken(): string | null {
   return readEnvFile().INTERNAL_TOKEN ?? null;

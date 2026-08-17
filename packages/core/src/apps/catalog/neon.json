@@ -1,14 +1,13 @@
 {
   "available": true,
-  "verified": true,
-  "hosting": "experimental",
+  "verified": false,
   "minResources": {
     "memoryMb": 4096,
     "cpuCores": 2
   },
   "id": "neon",
   "name": "Neon",
-  "description": "Self-hosted Neon — serverless Postgres with database branching, a web console and per-branch connection strings, in a single container. Built on the community `neond` control plane (Apache-2.0), which bundles Neon's pageserver, safekeeper, storage broker and storage controller behind a management API and dashboard. Neon's own cloud console is proprietary and the upstream neon repo ships no web UI at all, so a community control plane is the only way to run self-hosted Neon with a dashboard. EXPERIMENTAL: one container and no HA, a ~1.2 GB image, and it publishes fixed host ports for branch endpoints. Not for critical data.",
+  "description": "Self-hosted Neon — serverless Postgres with database branching, a web console and per-branch connection strings, in a single container. Built on the community `neond` control plane (Apache-2.0), which bundles Neon's pageserver, safekeeper, storage broker and storage controller behind a management API and dashboard. Neon's own cloud console is proprietary and the upstream neon repo ships no web UI, so a community control plane is the only way to run self-hosted Neon with a dashboard. One container with no HA, a ~1.2 GB image, and it publishes fixed host ports for branch endpoints — sized for development and preview databases rather than critical data.",
   "repository": "https://github.com/matisiekpl/neond",
   "kind": "template",
   "logo": "neon",

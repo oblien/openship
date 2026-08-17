@@ -40,46 +40,16 @@ import {
 import { getApiErrorMessage } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import {
+  ChannelLogo,
+  CHANNEL_ICONS,
+  CHANNEL_LABELS,
+  CHANNEL_LOGOS,
+} from "@/components/ui/ChannelLogo";
 
-const CHANNEL_ICONS: Record<ChannelKind, LucideIcon> = {
-  email: Mail,
-  webhook: Webhook,
-  slack: MessageSquare,
-  discord: MessageCircle,
-  msteams: MessagesSquare,
-  telegram: Send,
-  in_app: Smartphone,
-};
-
-/** Real brand mark per kind (simpleicons slug, brand-colored via AppLogo's CDN)
- *  — only the branded channels; generic kinds fall back to a lucide glyph. */
-const CHANNEL_LOGOS: Partial<Record<ChannelKind, string>> = {
-  slack: "slack",
-  discord: "discord",
-  msteams: "microsoftteams",
-  telegram: "telegram",
-};
-
-const CHANNEL_LABELS: Record<ChannelKind, string> = {
-  email: "Email",
-  webhook: "Webhook",
-  slack: "Slack",
-  discord: "Discord",
-  msteams: "Microsoft Teams",
-  telegram: "Telegram",
-  in_app: "In-app",
-};
-
-/** Real brand logo where the channel has one (Slack/Discord/Teams via
- *  simpleicons through AppLogo), lucide glyphs for the generic kinds
- *  (email/webhook/in-app have no brand mark). */
-function ChannelLogo({ kind, className = "size-4" }: { kind: ChannelKind; className?: string }) {
-  const slug = CHANNEL_LOGOS[kind];
-  if (slug) return <AppLogo slug={slug} icon={CHANNEL_ICONS[kind]} className={className} />;
-  const Icon = CHANNEL_ICONS[kind];
-  return <Icon className={`${className} text-foreground`} strokeWidth={1.7} />;
-}
-
+// Channel marks + labels come from the shared component: the mail server's rule modal
+// lists the same channels, and two copies is how one list shows brand logos while the
+// other shows a raw kind in parentheses.
 /** Channel kinds selectable as org-default destinations (in_app excluded — it's
  *  implicit, not a chosen destination). */
 const DEFAULT_KIND_CHOICES: ChannelKind[] = [

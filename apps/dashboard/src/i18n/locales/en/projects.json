@@ -13,6 +13,7 @@
     "queued": "Queued",
     "building": "Building",
     "deploying": "Deploying",
+    "migrating": "Migrating",
     "failed": "Failed",
     "cancelled": "Cancelled",
     "deleting": "Deleting",
@@ -384,12 +385,12 @@
     "unknown": "Unknown"
   },
   "routingRetry": {
-    "title": "Free domain routing needs attention",
-    "description": "The app is live on the server, but its free .opsh.io URL didn't route through Openship Cloud's edge. Retry once the server is reachable from the cloud on port 80.",
+    "title": "Domain routing needs attention",
+    "description": "The app is live on the server, but the routes in front of it didn't sync. Retry the repair, or check DNS and the edge on this server.",
     "retry": "Retry routing",
     "retrying": "Retrying…",
-    "success": "Free domain routing synced.",
-    "failed": "Couldn't sync the free domain routing."
+    "success": "Domain routing synced.",
+    "failed": "Couldn't sync the domain routing."
   },
   "deployBlocked": {
     "redeploy": "Redeploy"
@@ -510,5 +511,6 @@
       "unhealthy": "Unhealthy",
       "server_unreachable": "Server unreachable"
     }
-  }
+  },
+  "migrationAwaitingHint": "Migration waiting on you — finish the cutover or roll it back on the project's Advanced tab"
 }

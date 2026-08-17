@@ -133,7 +133,7 @@
     "valuePlaceholder": "القيمة",
     "dropHere": "أفلت ملف .env هنا",
     "noneTitle": "لا توجد متغيرات بيئة",
-    "emptyHintEditing": "انقر على \"إضافة متغير\"، أو استخدم \"لصق .env\"، أو ارفع ملفًا، أو الصق في أي مكان داخل هذا المربع",
+    "emptyHintEditing": "الصق كتلة .env في أي مكان داخل هذا المربع، أو أفلت ملف .env هنا.",
     "emptyHintReadonly": "انقر على \"تعديل\" لإدارة متغيرات البيئة",
     "pasteHint": "الصق كتلة .env كاملة في أي مكان داخل هذا المربع.",
     "addVariable": "إضافة متغير",
@@ -356,9 +356,6 @@
       "successful": "تم النشر بنجاح",
       "deploying": "جارٍ نشر الخدمات…"
     },
-    "running": "قيد التشغيل",
-    "buildingSuffix": "· {count} قيد البناء",
-    "failedSuffix": "· {count} فشل",
     "decisionBannerTitle": "إجراء مطلوب — فشلت بعض الخدمات",
     "decisionBannerDefaultMsg": "انتهى هذا النشر بخدمات فاشلة. احتفظ به وأصلحها لاحقًا، أو ارفضه لاستعادة الإصدار السابق.",
     "review": "مراجعة",
@@ -398,6 +395,12 @@
       "retryOther": "إعادة محاولة {count} خدمات فاشلة"
     }
   },
+  "composeServiceTally": {
+    "running": "قيد التشغيل",
+    "builtSuffix": "· {count} تم بناؤها",
+    "buildingSuffix": "· {count} قيد البناء",
+    "failedSuffix": "· {count} فشل"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "ملغى",
@@ -408,12 +411,11 @@
     },
     "detailsTitle": "تفاصيل النشر",
     "rowStatus": "الحالة",
+    "rowTarget": "الهدف",
+    "rowBuild": "البناء",
     "rowBuildTime": "وقت البناء",
     "rowServices": "الخدمات",
     "rowProject": "المشروع",
-    "rowType": "النوع",
-    "running": "قيد التشغيل",
-    "buildingSuffix": "· {count} قيد البناء",
-    "failedSuffix": "· {count} فشل"
+    "rowType": "النوع"
   }
 }

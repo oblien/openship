@@ -4,25 +4,27 @@
       "overview": "Aperçu",
       "domains": "Domaines",
       "mailboxes": "Boîtes aux lettres",
-      "inbound": "Entrant",
+      "notifications": "Notifications",
+      "sending": "Envoi",
       "dns": "DNS",
       "health": "État",
-      "test": "Test",
       "backup": "Sauvegarde",
       "advanced": "Avancé"
     },
     "ariaLabel": "Sections d'administration de la messagerie"
   },
-  "inbound": {
-    "heading": "Règles de courrier entrant",
+  "notifications": {
+    "heading": "Règles de notification",
     "description": "Soyez averti dans un canal de notification lorsqu'un courrier arrive à une adresse de ce serveur.",
     "newRule": "Nouvelle règle",
-    "newTitle": "Nouvelle règle de courrier entrant",
-    "editTitle": "Modifier la règle de courrier entrant",
+    "newTitle": "Nouvelle règle de notification",
+    "editTitle": "Modifier la règle de notification",
     "edit": "Modifier",
-    "emptyTitle": "Aucune règle de courrier entrant pour l'instant",
+    "emptyTitle": "Aucune règle de notification pour l'instant",
     "emptyBody": "Ajoutez une règle pour être averti dans Slack, Telegram, Discord ou par un webhook lorsqu'un courrier arrive dans une boîte aux lettres ou sur un domaine de ce serveur.",
     "noChannels": "Vous n'avez encore aucun canal de notification vérifié. Ajoutez-en un et vérifiez-le dans Paramètres → Notifications, puis revenez ici pour créer une règle.",
+    "addChannel": "Ajouter un canal de notification",
+    "manageChannels": "Gérer les canaux",
     "fieldName": "Nom",
     "namePlaceholder": "Boîte du support → #support",
     "fieldScope": "Surveiller",
@@ -47,7 +49,7 @@
     "active": "Active",
     "disabled": "Désactivée",
     "paused": "En pause",
-    "deleteTitle": "Supprimer la règle de courrier entrant",
+    "deleteTitle": "Supprimer la règle de notification",
     "deleteConfirm": "Supprimer la règle",
     "deleting": "Suppression…",
     "deleteHint": "Les notifications déjà envoyées ne sont pas affectées. Le courrier déjà capturé mais pas encore traité est supprimé.",
@@ -58,10 +60,13 @@
     "testing": "Test en cours…",
     "testResult": "{read} message(s) capturé(s) lu(s) : {matched} ont correspondu à une règle, {dropped} ont été filtrés. Rien n'a été envoyé ni supprimé.",
     "testFailed": "Impossible d'exécuter le test.",
-    "loadFailed": "Impossible de charger les règles de courrier entrant.",
+    "loadFailed": "Impossible de charger les règles de notification.",
     "saveFailed": "Impossible d'enregistrer la règle.",
     "deleteFailed": "Impossible de supprimer la règle.",
     "confirmDelete": "Supprimer la règle « {name} » ? La capture s'arrête pour son adresse, sauf si une autre règle en a encore besoin."
+  },
+  "sending": {
+    "testLiveNote": "Envoie par le chemin actuellement actif, pas par les modifications non enregistrées ci-dessus."
   },
   "overview": {
     "mailServer": "Serveur de messagerie",
@@ -617,6 +622,7 @@
     "close": "Fermer",
     "logsLoadFailed": "Échec du chargement des journaux",
     "loadingLogs": "Chargement des journaux…",
-    "noLogLines": "Aucune ligne de journal pour ce composant pour le moment."
+    "noLogLines": "Aucune ligne de journal pour ce composant pour le moment.",
+    "rowActions": "Actions pour {name}"
   }
 }

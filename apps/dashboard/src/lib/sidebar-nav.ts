@@ -18,6 +18,7 @@
 import {
   Activity,
   AppWindow,
+  Bell,
   Building2,
   Clock,
   CreditCard,
@@ -25,21 +26,22 @@ import {
   FileText,
   FolderKanban,
   Forward,
-  Inbox,
   Globe,
   HeartPulse,
   LayoutDashboard,
   Mail,
   MailPlus,
   Rocket,
-  Send,
   Server,
   Settings,
+  ClipboardList,
   ShieldAlert,
   SlidersHorizontal,
   UserRound,
   Waypoints,
 } from "lucide-react";
+
+import { canonicalMailTab, type MailTabKey } from "./mail-tabs";
 
 export type NavIcon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
 
@@ -105,6 +107,11 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
   if (isSaaS) {
     settingsItems.push({ key: "billing", href: "/billing", icon: CreditCard });
   }
+  // Audit log, last row of the rail. Promoted out of Settings: it is not a setting — you
+  // never change anything here, you READ what already happened, and burying a
+  // review surface three clicks deep behind a settings tab is how it goes unread.
+  // Last on purpose: it is consulted after the fact, never on the way to a task.
+  settingsItems.push({ key: "audit", href: "/audit", icon: ClipboardList });
 
   const infraItems: NavItem[] = [];
   if (selfHosted) {
@@ -140,11 +147,14 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
  * actually flowing, and the machine it runs on. That last group is shared with the
  * host rows (Servers, Jobs), which is what lifts them up the rail.
  *
- * Order inside each group follows the tab bar
- * (`emails/_components/admin/admin-panel.tsx`) — the rail and the tab bar are two
- * views of one thing, and the tab bar is still what platform view renders.
+ * Order inside each group follows `MAIL_TAB_KEYS` (`./mail-tabs`), which the tab
+ * bar also renders from — the rail and the tab bar are two views of one list, and
+ * the tab bar is still what platform view renders. Grouping is the only thing this
+ * file adds; the keys themselves are typed from there, so a section renamed without
+ * the rail following is a compile error rather than a row that quietly stops
+ * highlighting.
  */
-type MailTab = { key: string; icon: NavIcon };
+type MailTab = { key: MailTabKey; icon: NavIcon };
 
 /** Mail view's second home for the console — see `NavItem.alsoAt`. Every mail
  *  entry claims it, not just Overview, so `/?tab=domains` highlights Domains the
@@ -156,23 +166,24 @@ const MAIL_TABS_PRIMARY: MailTab[] = [
   { key: "domains", icon: Globe },
   { key: "mailboxes", icon: UserRound },
   { key: "aliases", icon: Forward },
-  // Inbound rules sit with the address space rather than with Delivery: Delivery is
-  // about SENDING, and a rule is about what happens to mail arriving at one of the
-  // addresses above it.
-  { key: "inbound", icon: Inbox },
+  // Notification rules sit with the address space rather than with Delivery:
+  // Delivery is about SENDING, and a rule is about what happens to mail arriving
+  // at one of the addresses above it.
+  { key: "notifications", icon: Bell },
 ];
 
 /**
  * Sending leads: it's the only DECISION in this group (deliver direct, or relay
- * through a provider), and the other three are checks on whatever it decided —
- * DNS carries the SPF include and send-hop records the relay adds, Health and
- * Test verify the result. Configure, publish, check, verify.
+ * through a provider), and the other two are checks on whatever it decided — DNS
+ * carries the SPF include and send-hop records the relay adds, Health verifies the
+ * result. Configure, publish, check. Sending a test email is a check too, and it
+ * lives inside Sending rather than as a fourth entry here (see
+ * `./mail-tabs`, which still resolves the old `?tab=test`).
  */
 const MAIL_TABS_DELIVERY: MailTab[] = [
   { key: "sending", icon: Waypoints },
   { key: "dns", icon: FileText },
   { key: "health", icon: HeartPulse },
-  { key: "test", icon: Send },
 ];
 
 /** No heading of its own — these ride the infrastructure group under the host
@@ -279,7 +290,7 @@ export function getMailNavSections(i: MailNavInput): NavSection[] {
   }
   infraItems.push(...tabs(MAIL_TABS_SERVER));
 
-  // Webmail closes the MAIL group: the four tabs above are what you administer,
+  // Webmail closes the MAIL group: the five tabs above are what you administer,
   // this is the client your users actually open. Only once the server is
   // installed — before that the mail rail is a single setup entry, and offering
   // to deploy a webmail for a mail server that doesn't serve mail yet is a
@@ -329,8 +340,11 @@ export function isNavItemActive(
   const owns = (path: string) => pathname === path || !!item.alsoAt?.includes(pathname);
 
   if (item.tab) {
-    // /emails with no ?tab= renders Overview, so Overview owns the bare URL.
-    return owns(item.href.split("?")[0]) && (currentTab ?? "overview") === item.tab;
+    // Compared canonical, not raw: the panel resolves a retired `?tab=` to the
+    // section that absorbed it, and an exact compare against the raw value would
+    // render that section with nothing in the rail lit. Bare /emails renders
+    // Overview, which is the null case `canonicalMailTab` already answers.
+    return owns(item.href.split("?")[0]) && canonicalMailTab(currentTab) === item.tab;
   }
   // Home is an exact match or it would swallow every route below it.
   if (item.href === "/") return pathname === "/";

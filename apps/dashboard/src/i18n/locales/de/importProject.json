@@ -132,7 +132,7 @@
     "valuePlaceholder": "Wert",
     "dropHere": ".env-Datei hier ablegen",
     "noneTitle": "Keine Umgebungsvariablen",
-    "emptyHintEditing": "Klicke auf \"Variable hinzufügen\", verwende \".env einfügen\", lade eine Datei hoch oder füge etwas an beliebiger Stelle in diesem Feld ein",
+    "emptyHintEditing": "Füge einen .env-Block an beliebiger Stelle in diesem Feld ein oder lege hier eine .env-Datei ab.",
     "emptyHintReadonly": "Klicke auf \"Bearbeiten\", um Umgebungsvariablen zu verwalten",
     "pasteHint": "Füge einen vollständigen .env-Block an beliebiger Stelle in diesem Feld ein.",
     "addVariable": "Variable hinzufügen",
@@ -353,9 +353,6 @@
       "successful": "Bereitstellung erfolgreich",
       "deploying": "Services werden bereitgestellt…"
     },
-    "running": "laufend",
-    "buildingSuffix": "· {count} werden gebaut",
-    "failedSuffix": "· {count} fehlgeschlagen",
     "decisionBannerTitle": "Aktion erforderlich – einige Services sind fehlgeschlagen",
     "decisionBannerDefaultMsg": "Diese Bereitstellung wurde mit fehlgeschlagenen Services abgeschlossen. Behalte sie und behebe sie später, oder verwirf sie, um die vorherige Version wiederherzustellen.",
     "review": "Prüfen",
@@ -395,6 +392,12 @@
       "retryOther": "{count} fehlgeschlagene Services erneut versuchen"
     }
   },
+  "composeServiceTally": {
+    "running": "laufend",
+    "builtSuffix": "· {count} gebaut",
+    "buildingSuffix": "· {count} werden gebaut",
+    "failedSuffix": "· {count} fehlgeschlagen"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Abgebrochen",
@@ -405,12 +408,11 @@
     },
     "detailsTitle": "Bereitstellungsdetails",
     "rowStatus": "Status",
+    "rowTarget": "Ziel",
+    "rowBuild": "Build",
     "rowBuildTime": "Build-Zeit",
     "rowServices": "Services",
     "rowProject": "Projekt",
-    "rowType": "Typ",
-    "running": "laufend",
-    "buildingSuffix": "· {count} werden gebaut",
-    "failedSuffix": "· {count} fehlgeschlagen"
+    "rowType": "Typ"
   }
 }

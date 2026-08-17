@@ -67,6 +67,7 @@
     "emails": "Correos",
     "settings": "Configuración",
     "billing": "Facturación y uso",
+    "audit": "Registro de auditoría",
     "mailSetup": "Configurar el correo",
     "mailSetupProgress": "Progreso de la configuración",
     "addMailbox": "Añadir buzón",

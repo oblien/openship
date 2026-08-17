@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { folderApi } from "@/lib/api/folder";
+import { servicesApi } from "@/lib/api/services";
+import { envRevealSource } from "./env-reveal-source";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -708,15 +710,38 @@ const ServiceCard: React.FC<{
   const missingCount = missingEnvCount(service);
   const envCount = Object.keys(service.environment).length;
   const [envModalOpen, setEnvModalOpen] = useState(false);
-  // #336: in the folder-upload flow the scan masks env — reveal the opened keys of
-  // THIS service from the upload session (write-gated on the API, and scoped to one
-  // service so a sibling's secrets never come along). Only wired when an upload
-  // session exists; git/edit flows have no session-scoped source.
-  const uploadSessionId = config.uploadSessionId;
-  const onReveal = uploadSessionId
-    ? async (keys: string[]) =>
-        (await folderApi.reveal(uploadSessionId, service.name, keys)).environment
-    : undefined;
+  // #336: env arrives masked, and a masked row the editor can't reveal is a dead end —
+  // unreadable AND unrevealable, which is what "no show button on some rows" was. So
+  // there are two sources, by where the values came from:
+  //   upload scan  → the upload session, scoped to THIS service so a sibling's secrets
+  //                  never ride along.
+  //   saved rows   → the service's own stored env, once we know its persisted id.
+  // Both are write-gated on the API, so a read-only member reveals nothing either way.
+  // Still undefined for a FIRST compose deploy off git: nothing is stored yet, so the
+  // values in hand are the compose file's own and were never masked.
+  // Memoized on the primitives, not rebuilt per render: `onReveal`'s identity is a
+  // dependency of the editor's one-shot `revealOnOpen` fetch, so a fresh function every
+  // render would be a fresh reason to re-run it.
+  const revealSource = useMemo(
+    () =>
+      envRevealSource({
+        uploadSessionId: config.uploadSessionId,
+        projectId: config.projectId,
+        serviceId: service.serviceId,
+        serviceName: service.name,
+      }),
+    [config.uploadSessionId, config.projectId, service.serviceId, service.name],
+  );
+  const onReveal = useMemo(() => {
+    if (!revealSource) return undefined;
+    if (revealSource.kind === "upload") {
+      const { sessionId, service: name } = revealSource;
+      return async (keys: string[]) => (await folderApi.reveal(sessionId, name, keys)).environment;
+    }
+    const { projectId, serviceId } = revealSource;
+    return async (keys: string[]) =>
+      (await servicesApi.revealEnv(projectId, serviceId, keys)).environment;
+  }, [revealSource]);
   const [envRows, setEnvRows] = useState<EnvVarRow[]>(() =>
     envToArray(service.environment, {}, service.environmentMeta),
   );
@@ -906,10 +931,13 @@ const ServiceCard: React.FC<{
             isEditingMode={true}
             showSettingsActions={false}
             borderless
+            hideTitle
             envVars={envRows}
             envMeta={service.environmentMeta}
             onEnvVarsChange={handleEnvChange}
             onReveal={onReveal}
+            // You got here by pressing Edit on this service's env: show the values.
+            revealOnOpen
           />
         </div>
       </Modal>

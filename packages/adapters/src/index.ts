@@ -77,6 +77,8 @@ export type {
 } from "./runtime/types";
 export { assertCapability, isMultiServiceRuntime } from "./runtime/types";
 export { DockerRuntime, buildNetworkAliases, type DockerConnectionOptions } from "./runtime/docker";
+// The pull-auth shape, so the API can type the credential resolver it injects (#581).
+export type { DockerRegistryAuth } from "./runtime/docker-auth";
 export {
   resolveLocalDockerSocketPath,
   DEFAULT_DOCKER_SOCKET_PATH,
@@ -405,6 +407,7 @@ export {
   containerBridgeCidr,
   type HostChannelHealth,
   type HostChannelCode,
+  type HostChannelForwarding,
 } from "./system/executor";
 export { DockerEdgeExecutor } from "./system/docker-edge-executor";
 export {

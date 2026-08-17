@@ -10,11 +10,12 @@ import {
   Crown,
   LayoutDashboard,
   Receipt,
+  Rocket,
   Sparkles,
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { PLANS, type PlanTierId } from "@repo/core";
+import { PLAN_IDS, PLANS, type PlanTierId } from "@repo/core";
 import type { BillingState } from "@/lib/api/billing";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
@@ -48,6 +49,7 @@ export const BILLING_TABS: Array<{
 
 const PLAN_ICON: Record<PlanTierId, LucideIcon> = {
   free: Zap,
+  starter: Rocket,
   pro: Sparkles,
   team: Building2,
   enterprise: Crown,
@@ -55,6 +57,7 @@ const PLAN_ICON: Record<PlanTierId, LucideIcon> = {
 
 const PLAN_COLOR: Record<PlanTierId, string> = {
   free: "bg-muted text-muted-foreground",
+  starter: "bg-muted text-foreground",
   pro: "bg-primary/10 text-primary",
   team: "bg-muted text-foreground",
   enterprise: "bg-muted text-foreground",
@@ -81,13 +84,27 @@ function BillingCtaLink({
   );
 }
 
+/**
+ * The sidebar's plan price — LIST price, from the catalog, and it must stay that
+ * way here.
+ *
+ * `PLANS` is built at module load. This file is a client component, so a campaign
+ * folded into that constant would be evaluated once when the browser bundle is
+ * built and then frozen: the discount would keep rendering after the offer closed,
+ * and a `revalidate` wouldn't help because re-running the component re-reads the
+ * same frozen value. Campaign pricing is therefore only ever read from the API
+ * payload (see `effectivePrice` / `campaign` on ApiPlan), which is resolved
+ * per-request against a real `now`. If this line ever needs the discounted figure,
+ * plumb it in from that payload — do not reach for the catalog.
+ */
 function formatPlanPrice(tier: PlanTierId, bt: BillingStrings): string {
-  const plan = PLANS[tier];
-  const monthly = plan.price.monthly;
+  const monthly = PLANS[tier].price.monthly;
   if (monthly === 0) return bt.sidebar.freeForever;
-  if (tier === "enterprise") return bt.sidebar.contactSales;
-  if (monthly === null) return bt.pricing.comingSoon; // paid tier, price not finalized
-  return interpolate(bt.sidebar.perMonth, { price: (monthly / 100).toFixed(0) });
+  // No published price = a negotiated one (enterprise), never "not priced yet".
+  if (monthly === null) return bt.sidebar.contactSales;
+  return interpolate(bt.sidebar.perMonth, {
+    price: (monthly / 100).toFixed(monthly % 100 === 0 ? 0 : 2),
+  });
 }
 
 function formatStatusLabel(status: string, bt: BillingStrings): string {
@@ -101,16 +118,20 @@ function formatStatusLabel(status: string, bt: BillingStrings): string {
     .join(" ");
 }
 
-const NEXT_PLAN: Partial<Record<PlanTierId, PlanTierId>> = {
-  free: "pro",
-  pro: "team",
-};
+/** The tier one step up the published ladder, read from the catalog so a new
+ *  tier can't be skipped here. The negotiated top tier is not an "upgrade" —
+ *  its card on the plans tab is a sales conversation, so it ends the ladder. */
+function nextPlan(tier: PlanTierId): PlanTierId | undefined {
+  const at = PLAN_IDS.indexOf(tier);
+  const next = at < 0 ? undefined : PLAN_IDS[at + 1];
+  return next && !PLANS[next].contactSales ? next : undefined;
+}
 
 export function BillingSidebar({ state }: { state: BillingState }) {
   const { t } = useI18n();
   const bt = t.billing;
   const plan = PLANS[state.tier];
-  const nextPlan = NEXT_PLAN[state.tier];
+  const next = nextPlan(state.tier);
   const PlanIcon = PLAN_ICON[state.tier];
 
   return (
@@ -133,9 +154,9 @@ export function BillingSidebar({ state }: { state: BillingState }) {
           <span className="text-xs font-medium text-foreground">{formatStatusLabel(state.status, bt)}</span>
         </div>
 
-        {nextPlan && (
+        {next && (
           <BillingCtaLink href="/billing/plans" className="w-full justify-center">
-            {interpolate(bt.sidebar.upgradeTo, { name: PLANS[nextPlan].name })}
+            {interpolate(bt.sidebar.upgradeTo, { name: PLANS[next].name })}
             <ArrowUpRight className="size-3.5" />
           </BillingCtaLink>
         )}

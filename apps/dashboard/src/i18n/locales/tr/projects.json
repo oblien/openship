@@ -13,6 +13,7 @@
     "queued": "Sıraya Alındı",
     "building": "Derleniyor",
     "deploying": "Dağıtılıyor",
+    "migrating": "Taşınıyor",
     "failed": "Başarısız",
     "cancelled": "İptal Edildi",
     "deleting": "Siliniyor",
@@ -336,12 +337,12 @@
     "unknown": "Bilinmiyor"
   },
   "routingRetry": {
-    "title": "Ücretsiz alan adı yönlendirmesinin müdahaleye ihtiyacı var",
-    "description": "Uygulama sunucuda yayında ancak ücretsiz .opsh.io URL'si Openship Bulut'un edge servisi üzerinden yönlendirilmedi. Sunucuya buluttan 80 numaralı port üzerinden erişilebildiğinde tekrar deneyin.",
+    "title": "Alan adı yönlendirmesi ilgi bekliyor",
+    "description": "Uygulama sunucuda çalışıyor, ancak önündeki yönlendirmeler eşitlenmedi. Onarımı yeniden deneyin ya da bu sunucudaki DNS ve edge'i kontrol edin.",
     "retry": "Yönlendirmeyi tekrar dene",
     "retrying": "Tekrar deneniyor…",
-    "success": "Ücretsiz alan adı yönlendirmesi senkronize edildi.",
-    "failed": "Ücretsiz alan adı yönlendirmesi senkronize edilemedi."
+    "success": "Alan adı yönlendirmesi eşitlendi.",
+    "failed": "Alan adı yönlendirmesi eşitlenemedi."
   },
   "deployBlocked": {
     "redeploy": "Yeniden dağıt"
@@ -510,5 +511,6 @@
       "unhealthy": "Sağlıksız",
       "server_unreachable": "Sunucuya erişilemiyor"
     }
-  }
+  },
+  "migrationAwaitingHint": "Taşıma sizi bekliyor — projenin Gelişmiş sekmesinden geçişi tamamlayın ya da geri alın"
 }

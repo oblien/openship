@@ -48,13 +48,13 @@
     "title": "Ayarlar",
     "tabs": {
       "general": "Genel",
-      "tokens": "Jetonlar",
+      "git": "Git",
+      "tokens": "API jetonları",
       "mcp": "MCP",
       "team": "Ekip",
       "notifications": "Bildirimler",
       "email": "E-posta",
-      "dns": "DNS",
-      "audit": "Denetim günlüğü",
+      "credentials": "Kimlik bilgileri",
       "cloud": "Bulut",
       "infrastructure": "Altyapı",
       "instance": "Kurulum"
@@ -98,42 +98,6 @@
     "disable": "SMTP'yi devre dışı bırak ve temizle",
     "disabled": "SMTP devre dışı bırakıldı",
     "toastTitle": "E-posta"
-  },
-  "dns": {
-    "title": "DNS sağlayıcıları",
-    "description": "Alan adlarınızın DNS kayıtlarını Openship yazsın",
-    "explainer": "Bir sağlayıcı bağlıyken, özel bir alan adı eklediğinizde kayıtları hemen yazılır; böylece alan adı hiçbir şey yapıştırmanıza gerek kalmadan doğrulanır ve sertifikasını alır.",
-    "explainerOwnership": "Openship yalnızca kendi oluşturduğu kayıtları siler.",
-    "addProvider": "Sağlayıcı bağla",
-    "connect": "Bağla",
-    "namePlaceholder": "Etiket, örn. Cloudflare üretim",
-    "tokenPlaceholder": "Cloudflare API belirteci",
-    "scopesHint": "{scopes} izinlerine sahip bir belirteç gerekir.",
-    "createTokenLink": "Bir tane oluştur",
-    "noneConnected": "Bağlı DNS sağlayıcısı yok. Alan adları, elle eklemeniz için kayıtları gösterecek.",
-    "badgeActive": "Etkin",
-    "badgeInvalid": "İlgilenilmesi gerekiyor",
-    "invalidHint": "Sağlayıcı bu belirteci reddetti. Otomatik kayıtları sürdürmek için yeniden bağlayın.",
-    "metaLine": " · {provider} · son doğrulama {verified}",
-    "zoneCheck": {
-      "title": "Bir alan adını denetle",
-      "description": "Eklemeden önce bağlı bir sağlayıcının o ana makine adının bölgesini yönetip yönetmediğine bakın.",
-      "placeholder": "app.example.com",
-      "check": "Denetle",
-      "matched": "Burada yönetiliyor — {zone} bölgesi. Bu alan adının kayıtları otomatik yazılacak.",
-      "none": "Bağlı hiçbir sağlayıcı bu alan adının bölgesini yönetmiyor. Kayıtlarını elle ekleyeceksiniz.",
-      "unauthorized": "Kayıtlı bir belirteç reddedildi. Yeniden bağlayıp tekrar deneyin.",
-      "unavailable": "DNS sağlayıcısına ulaşılamadı, bu yüzden sonuç bilinmiyor — bir şeyin yanlış yapılandırıldığı anlamına gelmez."
-    },
-    "toast": {
-      "loadFailed": "DNS sağlayıcıları yüklenemedi",
-      "needBoth": "Bir etiket ve bir API belirteci girin",
-      "connected": "{name} bağlandı",
-      "connectFailed": "Sağlayıcı bağlanamadı",
-      "disconnected": "{name} bağlantısı kesildi",
-      "disconnectFailed": "Sağlayıcı bağlantısı kesilemedi",
-      "checkFailed": "Bu alan adı denetlenemedi"
-    }
   },
   "github": {
     "title": "GitHub",
@@ -886,6 +850,36 @@
     "toast": {
       "setTo": "Yönlendirme stratejisi {mode} olarak ayarlandı",
       "failed": "Yönlendirme stratejisi güncellenemedi"
+    }
+  },
+  "credentials": {
+    "title": "Kimlik bilgileri",
+    "description": "Openship'in sizin adınıza kullandığı belirteçler ve oturum bilgileri — özel imaj çekme, DNS kaydı yazma. Şifreli saklanır ve kaydedildikten sonra bir daha gösterilmez.",
+    "noProviders": "Bu örnekte kullanılabilir sağlayıcı yok.",
+    "noneForProvider": "Henüz eklenmedi.",
+    "add": "Ekle",
+    "edit": "Düzenle",
+    "save": "Değişiklikleri kaydet",
+    "connect": "Kimlik bilgisi ekle",
+    "delete": "Sil",
+    "verify": "Sağlayıcıyla yeniden denetle",
+    "badgeActive": "Çalışıyor",
+    "badgeInvalid": "İlgilenilmesi gerekiyor",
+    "fieldName": "Etiket",
+    "namePlaceholder": "örn. GHCR salt okunur",
+    "secretKeptPlaceholder": "•••••••• (kayıtlı — korumak için boş bırakın)",
+    "selectPlaceholder": "Seçin…",
+    "verifyNote": "Openship, kaydetmeden önce kimlik bilgisini sağlayıcıyla denetler.",
+    "confirmDelete": "\"{name}\" silinsin mi? Buna dayanan her şey çalışmayı bırakır.",
+    "toast": {
+      "loadFailed": "Kimlik bilgileri yüklenemedi",
+      "created": "Kimlik bilgisi eklendi",
+      "updated": "Kimlik bilgisi güncellendi",
+      "deleted": "Kimlik bilgisi silindi",
+      "saveFailed": "Kimlik bilgisi kaydedilemedi",
+      "deleteFailed": "Kimlik bilgisi silinemedi",
+      "verifyOk": "Sağlayıcı kimlik bilgisini kabul etti",
+      "verifyFailed": "Sağlayıcı kimlik bilgisini reddetti"
     }
   }
 }

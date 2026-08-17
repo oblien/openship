@@ -302,6 +302,20 @@ export const appTemplateSchema = z.object({
       cpuCores: z.number().positive().optional(),
     })
     .optional(),
+  /**
+   * Trust mark: official open-source image plus a reviewable pipeline.
+   *
+   * A claim about PROVENANCE, not about whether we got the app running. Booting a
+   * template proves it works; it does not make its publisher vouched for. Set it
+   * only when EVERY image is published by the project the app actually is, or is
+   * a composition upstream itself documents (Ghost + MySQL, Supabase's own
+   * compose, Convex's backend/dashboard pair).
+   *
+   * Leave it off when WE picked a third-party companion the upstream project
+   * neither ships nor endorses — ClickHouse + ch-ui, Kafka + kafbat-ui,
+   * MongoDB + mongo-express, Valkey + RedisInsight — or when the publisher is a
+   * single maintainer whose build pipeline cannot be reviewed (neond).
+   */
   verified: z.boolean().optional(),
   // Hidden from the browsable catalog while staying fully installable — for an app
   // reached through another app's wizard rather than the grid. NOT `available:

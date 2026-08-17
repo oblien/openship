@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   PROJECT_STATUS_META,
+  getProjectAttentionReason,
   getProjectStatus,
+  migrationNeedsOperator,
   projectDisplayDomain,
+  projectStatusHint,
   projectStatusLabel,
 } from "./project-status";
 import { baseDictionary as en } from "@/i18n";
@@ -220,5 +223,95 @@ describe("getProjectStatus — paused", () => {
   it("has presentation + a localized label like every other status", () => {
     expect(PROJECT_STATUS_META.paused).toBeDefined();
     expect(projectStatusLabel("paused", en as never)).toBe("Paused");
+  });
+});
+
+/**
+ * A live migration, as the project payload reports it (`activeMigration`).
+ *
+ * The point of putting it here — in the shared status source — is that a project being moved
+ * to another server is a fact about the PROJECT, so every surface that renders one reads it
+ * from the payload it already loads. Before this, only the project's own Advanced tab knew,
+ * because only that panel asked the migration API, and only while it was mounted.
+ */
+describe("a project with a live migration", () => {
+  const migrating = (status: string, mode = "project_move") => ({
+    activeMigration: { id: "dmr_1", status, mode },
+  });
+  // A healthy, serving project — so every assertion below is the migration overriding
+  // something that would otherwise read "Live".
+  const live = { enabled: true, activeDeploymentId: "d1", latestDeploymentStatus: "ready" };
+
+  it("reads Migrating through every phase that is making progress", () => {
+    for (const status of ["queued", "adopting", "moving_data", "deploying", "verifying", "cutover"]) {
+      expect(getProjectStatus({ ...live, ...migrating(status) }), status).toBe("migrating");
+    }
+  });
+
+  it("outranks the target deploy's own status, which says 'deploying' about the copy", () => {
+    // The run deploys onto the target, so the project's newest deployment row genuinely reads
+    // `deploying`. "Deploying" is true of that deploy and misleading about the project.
+    expect(
+      getProjectStatus({ ...live, latestDeploymentStatus: "deploying", ...migrating("moving_data") }),
+    ).toBe("migrating");
+  });
+
+  it("outranks a pause, because the run is what is touching the containers now", () => {
+    expect(getProjectStatus({ enabled: false, ...migrating("moving_data") })).toBe("migrating");
+  });
+
+  it("outranks an unrelated attention flag — one story at a time, the current one", () => {
+    expect(getProjectStatus({ ...live, routingUnsynced: true, ...migrating("verifying") })).toBe(
+      "migrating",
+    );
+  });
+
+  it("yields to teardown, the only thing more final than a move", () => {
+    expect(getProjectStatus({ ...live, deletionInProgress: true, ...migrating("moving_data") })).toBe(
+      "deleting",
+    );
+  });
+
+  it("reads Action Required — not Migrating — once the run PARKS for the operator", () => {
+    // `awaiting_cutover` and `partial` have stopped advancing: the target is up, the source is
+    // stopped-but-intact, and it stays that way until a human confirms or rolls back. A pill
+    // reading "Migrating" for three days while nothing migrates is the exact bug the other
+    // attention states in this module exist to avoid.
+    expect(getProjectStatus({ ...live, ...migrating("awaiting_cutover") })).toBe("attention");
+    expect(getProjectStatus({ ...live, ...migrating("partial") })).toBe("attention");
+  });
+
+  it("names the action in the pill's hint, so the amber is not a dead end", () => {
+    const hint = projectStatusHint({ ...live, ...migrating("awaiting_cutover") }, en as never);
+    expect(hint).toBe(en.projects.migrationAwaitingHint);
+    expect(getProjectAttentionReason({ ...live, ...migrating("partial") })).toBe("migrationCutover");
+  });
+
+  it("stops overriding anything the moment the run is terminal (payload drops the field)", () => {
+    expect(getProjectStatus({ ...live, activeMigration: null })).toBe("live");
+    expect(getProjectStatus(live)).toBe("live");
+  });
+
+  it("applies to a DUPLICATE too — its source is briefly stopped while volumes stream", () => {
+    expect(getProjectStatus({ ...live, ...migrating("moving_data", "project_copy") })).toBe(
+      "migrating",
+    );
+  });
+
+  it("exposes the parked question, so a panel need not re-list the phases", () => {
+    // Two copies of "which phases are parked" would drift, and the symptom would be a card
+    // calling a run "in progress" beside a pill saying it needs attention.
+    expect(migrationNeedsOperator({ id: "r", status: "awaiting_cutover", mode: "project_move" })).toBe(true);
+    expect(migrationNeedsOperator({ id: "r", status: "partial", mode: "project_move" })).toBe(true);
+    expect(migrationNeedsOperator({ id: "r", status: "moving_data", mode: "project_move" })).toBe(false);
+    expect(migrationNeedsOperator(null)).toBe(false);
+    expect(migrationNeedsOperator(undefined)).toBe(false);
+  });
+
+  it("has presentation + a localized label like every other status", () => {
+    expect(PROJECT_STATUS_META.migrating).toBeDefined();
+    // NOT amber: an advancing run needs nothing from the operator.
+    expect(PROJECT_STATUS_META.migrating.badge).not.toContain("warning");
+    expect(projectStatusLabel("migrating", en as never)).toBe("Migrating");
   });
 });

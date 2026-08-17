@@ -318,7 +318,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   },
   {
     key: "mail:inbound-watch",
-    label: "Inbound mail rules",
+    label: "Notification rules",
     // Reads each armed collector folder, matches captured mail against the operator's
     // inbound rules, emits notifications, and DELETES what it handled — the deletion is
     // both the cursor and the prune that keeps a second full copy of every watched
@@ -337,7 +337,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   },
   {
     key: "mail:inbound-reconcile",
-    label: "Inbound mail capture drift",
+    label: "Notification rule capture drift",
     // Brings each engine's armed BCC rows back in line with the rules that exist.
     // Separate from the one-minute read sweep above because it costs SSH per mail
     // server and repairs nothing latency-sensitive: a `scope: "all"` rule picking up

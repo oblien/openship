@@ -3,6 +3,8 @@
     "title": "容量と使用状況",
     "subtitle": "プランに含まれる容量と使用量です。ライブの数値は Openship Cloud から同期されます。",
     "routes": "無料ルート",
+    "runningServices": "稼働中のサービス",
+    "projects": "プロジェクト",
     "workspaces": "ワークスペース",
     "unlimited": "無制限",
     "used": "使用済み",

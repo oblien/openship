@@ -259,9 +259,13 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // deploy). Fold them into the SAME top-level "action required" signal the
   // single-app pipeline uses (`edgeUnsynced` + `deployWarning` → routingUnsynced
   // → project attention + Domains-tab dot), cleared by Retry routing / next deploy.
-  const routingWarning = composeResult.routeWarnings?.length
-    ? routeIssuesWarning(composeResult.routeWarnings)
-    : undefined;
+  const routingWarning =
+    composeResult.routeWarnings?.length || composeResult.tlsPendingDomains?.length
+      ? routeIssuesWarning(
+          composeResult.routeWarnings ?? [],
+          composeResult.tlsPendingDomains ?? [],
+        )
+      : undefined;
   const successWarning = routingWarning ?? composeResult.warning;
   sessionManager.broadcastInstallPhase(dep.id, { id: "ready", status: "done" });
 

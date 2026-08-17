@@ -318,6 +318,41 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     tone: "danger",
     description: "Automatic renewal failed — the certificate will expire unless this is fixed.",
   },
+  // Third-party credentials (the generic store: registry logins, DNS tokens, …).
+  // Category `system`: these are instance-wide settings, not a domain operation — unlike
+  // the dns_credential pair below, which stays under `domains` because that is where the
+  // operator was standing when they connected it.
+  "credential.created": {
+    category: "system",
+    action: "added a credential for",
+    label: "Credential added",
+    tone: "info",
+    description:
+      "A credential for a third-party service (a registry login, a DNS token) was stored. The secret itself is never recorded.",
+  },
+  "credential.updated": {
+    category: "system",
+    action: "updated the credential for",
+    label: "Credential updated",
+    tone: "info",
+    description:
+      "A stored credential's label, scope or secret was changed. Neither the old nor the new secret is recorded.",
+  },
+  "credential.deleted": {
+    category: "system",
+    action: "deleted the credential for",
+    label: "Credential deleted",
+    tone: "warning",
+    description:
+      "A stored credential was removed. Anything relying on it — a private image pull, a DNS record write — stops working until another is added.",
+  },
+  "credential.verified": {
+    category: "system",
+    action: "verified the credential for",
+    label: "Credential verified",
+    tone: "info",
+    description: "Openship asked the provider whether a stored credential still works.",
+  },
   "dns_credential.connected": {
     category: "domains",
     action: "connected the DNS provider",
@@ -423,8 +458,8 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
   // suite fails; with it, an operator who DOES surface these sees a real label.
   "mail.inbound_received": {
     category: "servers",
-    action: "received inbound mail matching an inbound rule on",
-    label: "Inbound email received",
+    action: "received mail matching a notification rule on",
+    label: "Mail arrived at a watched address",
     tone: "info",
   },
 
@@ -924,6 +959,7 @@ export const AUDIT_RESOURCE_LABELS: Record<string, string> = {
   deployment: "a deployment",
   domain: "a domain",
   dns_credential: "a DNS provider",
+  credential: "a credential",
   server: "a server",
   mail_server: "the mail server",
   job: "a job",

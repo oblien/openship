@@ -192,3 +192,45 @@ describe("buildAdoptedServiceRows — native rows from the mapped repo compose",
     expect(handover).toEqual({});
   });
 });
+
+describe("buildAdoptedServiceRows — two same-named picks stay distinct (#584 class)", () => {
+  // Selecting `postgres` from two different stacks into one project. The rows are
+  // de-duplicated by suffixing, but every per-service INPUT used to be keyed by name,
+  // so both rows read the first one's entry — and `renames` itself collapsed, which is
+  // what row resolution, the attach/join container match and the route remap all key on.
+  const OURS = svc({ name: "postgres", containerId: "c-a", image: "postgres:16" });
+  const THEIRS = svc({ name: "postgres", containerId: "c-b", image: "postgres:18" });
+
+  it("maps each container to its OWN row name", () => {
+    const { rows, renames } = buildAdoptedServiceRows([OURS, THEIRS]);
+    expect(rows.map((r) => r.name)).toEqual(["postgres", "postgres-2"]);
+    expect(renames["c-a"]).toBe("postgres");
+    expect(renames["c-b"]).toBe("postgres-2");
+  });
+
+  it("applies each service's env override to its own row", () => {
+    const { rows } = buildAdoptedServiceRows([OURS, THEIRS], undefined, {
+      "c-a": { WHICH: "ours" },
+      "c-b": { WHICH: "theirs" },
+    });
+    expect(rows[0]!.environment).toMatchObject({ WHICH: "ours" });
+    expect(rows[1]!.environment).toMatchObject({ WHICH: "theirs" });
+  });
+
+  it("renames only the service the operator mapped", () => {
+    const { rows, renames } = buildAdoptedServiceRows([OURS, THEIRS], undefined, undefined, {
+      "c-b": "db",
+    });
+    expect(rows.map((r) => r.name)).toEqual(["postgres", "db"]);
+    expect(renames["c-b"]).toBe("db");
+  });
+
+  it("still keys by name for a client that sends name keys", () => {
+    // One pick, no ambiguity — the legacy shape must keep working unchanged.
+    const { rows, renames } = buildAdoptedServiceRows([THEIRS], undefined, {
+      postgres: { WHICH: "legacy" },
+    });
+    expect(rows[0]!.environment).toMatchObject({ WHICH: "legacy" });
+    expect(renames["c-b"]).toBe("postgres");
+  });
+});

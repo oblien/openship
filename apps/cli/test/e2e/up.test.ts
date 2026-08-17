@@ -76,6 +76,17 @@ vi.mock("../../src/lib/compose", () => ({
   // its own unit test (compose-source-build.test.ts).
   sourceBuildDir: () => null,
 }));
+// The token the loopback calls authenticate with. Mocked because the resolver reads
+// real files (compose/.env, ~/.openship/internal-token) and this box's own install
+// must not decide what the site import sends — the resolution rules themselves are
+// pinned in unit/internal-token.test.ts.
+vi.mock("../../src/lib/internal-token", () => ({
+  resolveInternalToken: () => h.internalToken,
+  internalTokenSources: () => ({ tokens: h.internalToken ? [h.internalToken] : [], problems: [] }),
+  internalTokenProblem: () => "no internal token on this machine",
+  internalTokenRejectedProblem: () => "the API rejected this machine's internal token",
+  mintBareInternalToken: () => h.internalToken ?? "tok",
+}));
 
 const e = vi.hoisted(() => ({
   plan: { proceed: true } as any,

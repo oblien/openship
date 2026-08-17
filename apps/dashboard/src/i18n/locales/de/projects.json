@@ -13,6 +13,7 @@
     "queued": "In Warteschlange",
     "building": "Wird erstellt",
     "deploying": "Wird bereitgestellt",
+    "migrating": "Wird migriert",
     "failed": "Fehlgeschlagen",
     "cancelled": "Abgebrochen",
     "deleting": "Wird gelöscht",
@@ -336,12 +337,12 @@
     "unknown": "Unbekannt"
   },
   "routingRetry": {
-    "title": "Freie Domain-Weiterleitung erfordert Aufmerksamkeit",
-    "description": "Die App ist auf dem Server live, aber ihre kostenlose .opsh.io-URL wurde nicht über die Edge von Openship Cloud geleitet. Versuche es erneut, sobald der Server aus der Cloud über Port 80 erreichbar ist.",
+    "title": "Domain-Routing benötigt Aufmerksamkeit",
+    "description": "Die App läuft auf dem Server, aber die Routen davor wurden nicht synchronisiert. Wiederhole die Reparatur oder prüfe DNS und den Edge auf diesem Server.",
     "retry": "Weiterleitung erneut versuchen",
     "retrying": "Wird erneut versucht…",
-    "success": "Freie Domain-Weiterleitung synchronisiert.",
-    "failed": "Die freie Domain-Weiterleitung konnte nicht synchronisiert werden."
+    "success": "Domain-Routing synchronisiert.",
+    "failed": "Domain-Routing konnte nicht synchronisiert werden."
   },
   "deployBlocked": {
     "redeploy": "Erneut bereitstellen"
@@ -510,5 +511,6 @@
       "unhealthy": "Fehlerhaft",
       "server_unreachable": "Server nicht erreichbar"
     }
-  }
+  },
+  "migrationAwaitingHint": "Migration wartet auf dich — Umschaltung im Reiter „Erweitert“ des Projekts abschließen oder zurücknehmen"
 }

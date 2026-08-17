@@ -25,6 +25,12 @@
  * still receiving (IMAP) here. `@repo/core`'s relay-senders helpers are the same
  * ones the API validates with, so this form can't accept what the server rejects.
  * All backed by /mail/admin/:serverId/relay.
+ *
+ * Sending a real test email is an action here rather than a tab of its own: it is
+ * the check on the decision this screen makes, and as a sibling tab it read as a
+ * separate feature you had to know to go looking for. It stays offered in direct
+ * mode too — a fresh VPS delivering its own mail is exactly the case worth
+ * testing.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -46,6 +52,7 @@ import { AppLogo } from "@/components/AppLogo";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
+import { SendTestMailModal } from "./SendTestMailModal";
 
 // Smarthost-capable presets only: the send-only relays + a plain SMTP server.
 // Gmail/Fastmail are mailbox providers, not smarthosts.
@@ -79,10 +86,14 @@ const presetForRelay = (relay: OutboundRelayStatus): MailProviderId =>
 export function SendingTab({ serverId, primaryDomain }: { serverId: string; primaryDomain: string }) {
   const { t } = useI18n();
   const s = t.emailsAdmin.sending;
+  // The former Test tab's own strings, reused verbatim: same action, same words,
+  // one fewer place to keep translated.
+  const sendTest = t.emailsAdmin.test;
   const { showToast } = useToast();
   // Heading lives in the page header in mail view — see ../../_lib/mail-section.
   const hoisted = useMailRailOwnsTabs(serverId);
 
+  const [testOpen, setTestOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [current, setCurrent] = useState<OutboundRelayStatus | null>(null);
@@ -640,8 +651,33 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
               <p className="text-xs leading-relaxed text-muted-foreground">{s.directActive}</p>
             )}
           </div>
+
+          {/* Verify. Last card in the aside because it checks what the two above
+              decided and saved.
+              `testLiveNote` is stated unconditionally rather than derived from a
+              dirty check: the send goes over whatever Postfix is configured with
+              right now, and the form one card up can differ from that in ways no
+              cheap comparison catches (same provider, new credentials). A hint that
+              is right in every state beats one that is right in the states we
+              thought of — otherwise "the test worked" reads as "the credentials I
+              just typed work". */}
+          <div className="space-y-2 rounded-2xl border border-border/50 bg-card p-4">
+            <h4 className="text-sm font-semibold text-foreground">{sendTest.title}</h4>
+            <p className="text-xs leading-relaxed text-muted-foreground">{sendTest.description}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground/80">{s.testLiveNote}</p>
+            <button
+              type="button"
+              onClick={() => setTestOpen(true)}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-border/50 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+            >
+              <Send className="size-4" strokeWidth={1.8} />
+              {sendTest.sendButton}
+            </button>
+          </div>
         </div>
       </div>
+
+      <SendTestMailModal open={testOpen} onClose={() => setTestOpen(false)} serverId={serverId} />
     </div>
   );
 }

@@ -44,7 +44,7 @@ import {
   headlessProvision,
   HeadlessInputError,
 } from "../lib/instance-provision";
-import { ensureInternalToken } from "../lib/loopback-api";
+import { mintBareInternalToken } from "../lib/internal-token";
 import { AUTH_SECRET_FILE, DATA_DIR, LOG_DIR, OS_DIR } from "../lib/paths";
 import { startUnitHint } from "../lib/this-host";
 import type { ImportedSite } from "@repo/adapters/proxy";
@@ -168,10 +168,10 @@ declare const __CLI_VERSION__: string;
 const DIST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = join(DIST_DIR, "server");
 
-// ensureInternalToken lives in lib/loopback-api (shared with the wizard + headless
-// installer — single copy, imported above). Re-exported so existing importers of
-// `ensureInternalToken` from "./up" (reset-admin, repair) keep working.
-export { ensureInternalToken };
+// NOTE: startService below is the ONLY caller of mintBareInternalToken, and that is
+// deliberate — booting the service with the token is what makes the file authoritative.
+// Commands that TALK to a running API resolve the token instead (lib/internal-token);
+// minting one to authenticate is a guaranteed 401 (see that module's header).
 
 /** Persist a stable auth secret so sessions survive restarts. */
 function ensureAuthSecret(): string {
@@ -814,7 +814,7 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     // The admin is created by `openship` setup via the internal-token-gated
     // bootstrap endpoint; both processes share this token file.
     env.OPENSHIP_REQUIRE_AUTH = "true";
-    env.INTERNAL_TOKEN = ensureInternalToken();
+    env.INTERNAL_TOKEN = mintBareInternalToken();
     // Openship Mail. Only the DEFAULT shell: the instance setting (Settings →
     // Instance) is stored in the database and wins over this, so an operator who
     // has switched the box back isn't overridden on the next boot.

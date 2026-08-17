@@ -90,7 +90,16 @@ export function RollbackRetentionCards({
       : g.rollbackHistory.descGit;
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    // STACKED, not side by side — and it comes out SHORTER, which is the counter-intuitive part.
+    // Two narrow columns forced both descriptions to wrap over four or five lines, and the grid
+    // takes the height of the taller one. Full width lets each description sit on one or two
+    // lines, so two stacked rows total less height than one row of two tall columns — and the
+    // number stepper stops competing with the text for the same ~200px.
+    //
+    // Rendered in three places (the deploy target step's Advanced panel, Backup settings, Git
+    // settings), each of which is a NARROW column, so there is no width at which the two-up was
+    // the better trade.
+    <div className="grid gap-3">
       <InfoCard
         icon={RotateCcw}
         title={g.rollbackStrategy.title}

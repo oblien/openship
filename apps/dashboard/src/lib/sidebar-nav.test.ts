@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { MAIL_TAB_KEYS } from "./mail-tabs";
 import { baseDictionary } from "../i18n";
 import {
   getMailNavSections,
@@ -46,19 +47,12 @@ const mailAt = (input: Partial<MailNavInput> = {}): NavSection[] =>
     ...input,
   });
 
-const ALL_TABS = [
-  "overview",
-  "domains",
-  "mailboxes",
-  "aliases",
-  "inbound",
-  "dns",
-  "health",
-  "test",
-  "backup",
-  "sending",
-  "advanced",
-];
+/**
+ * Not a hand-kept copy: the panel renders its tab bar from this same list
+ * (`./mail-tabs`), so a section added there and forgotten here can't
+ * make the "every tab is reachable" test below pass by asking about nine of ten.
+ */
+const ALL_TABS: readonly string[] = MAIL_TAB_KEYS;
 
 describe("getNavSections (the platform rail)", () => {
   it("is unchanged by mail mode: main + infrastructure + settings", () => {
@@ -72,26 +66,30 @@ describe("getNavSections (the platform rail)", () => {
       "issues",
     ]);
     expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "emails", "jobs"]);
-    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings"]);
+    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "audit"]);
   });
 
   it("adds Billing on the SaaS and drops the infrastructure section there", () => {
     const s = getNavSections(true, false);
-    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing"]);
+    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing", "audit"]);
     // Empty sections are filtered out, not rendered as a bare heading.
     expect(find(s, "infrastructure")).toBeUndefined();
   });
 
   it("keeps Billing at the very bottom, below Servers, on a cloud-linked self-hosted box", () => {
     // isSaaS goes true the moment a self-hosted install links a cloud account, which
-    // is the case that put Billing above Servers. Nothing in the rail may follow it,
-    // and the host rows must all precede it.
+    // is the case that put Billing above Servers. The invariant is that Billing does not
+    // OUTRANK the infrastructure — every host row must precede it.
     const s = getNavSections(true, true);
     const keys = s.flatMap((x) => keysOf(x));
-    expect(keys.at(-1)).toBe("billing");
     for (const host of ["servers", "emails", "jobs"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
     }
+    // Only the audit log follows it. That is a read-only review surface, consulted after
+    // the fact and never on the way to a task, so it is deliberately the last row — it
+    // cannot outrank anything by sitting there.
+    expect(keys.at(-1)).toBe("audit");
+    expect(keys.indexOf("billing")).toBe(keys.length - 2);
   });
 
   it("keeps /emails in the platform rail", () => {
@@ -137,12 +135,13 @@ describe("getMailNavSections (the Openship Mail rail)", () => {
       "domains",
       "mailboxes",
       "aliases",
-      "inbound",
+      "notifications",
       "webmail",
     ]);
-    // Sending leads — it's the decision the other three check. Same order as the
-    // tab bar's delivery run in emails/_components/admin/admin-panel.tsx.
-    expect(keysOf(find(s, "delivery"))).toEqual(["sending", "dns", "health", "test"]);
+    // Sending leads — it's the decision the other two check. Same order as the tab
+    // bar's delivery run in ./mail-tabs. Sending a test email used to
+    // close this group; it's an action inside Sending now.
+    expect(keysOf(find(s, "delivery"))).toEqual(["sending", "dns", "health"]);
     // Backups + Advanced ride the infrastructure group, below the host rows.
     expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "jobs", "backup", "advanced"]);
   });
@@ -192,9 +191,10 @@ describe("getMailNavSections (the Openship Mail rail)", () => {
     // The point of the grouping: ten flat mail entries buried Servers at row 11.
     const keys = mailAt().flatMap((x) => keysOf(x));
     expect(keys.indexOf("servers")).toBeLessThan(keys.indexOf("backup"));
-    // Index-pinned on purpose, and it moves whenever a mail tab is added ahead of the
-    // infrastructure group — Inbound (after Aliases) is what took it from 9 to 10.
-    expect(keys.indexOf("servers")).toBe(10);
+    // Index-pinned on purpose, and it moves whenever a mail tab is added or removed
+    // ahead of the infrastructure group — Notifications (after Aliases) took it from
+    // 9 to 10, and folding Test into Sending gave one back.
+    expect(keys.indexOf("servers")).toBe(9);
   });
 
   describe("Webmail — the one mail entry that is a project, not a tab", () => {
@@ -301,6 +301,21 @@ describe("isNavItemActive", () => {
     // there — the alternative is a rail with nothing highlighted on first land.
     expect(isNavItemActive(tabItem("overview"), "/emails", null)).toBe(true);
     expect(isNavItemActive(tabItem("domains"), "/emails", null)).toBe(false);
+  });
+
+  it("lights the section a retired tab resolved to", () => {
+    // `?tab=inbound` and `?tab=test` are still in bookmarks and in history. The
+    // panel renders the section that absorbed them, so an exact compare here would
+    // show that section with nothing lit in the rail — the one half of the rename
+    // no test and no type would have caught.
+    expect(isNavItemActive(tabItem("notifications"), "/emails", "inbound")).toBe(true);
+    expect(isNavItemActive(tabItem("sending"), "/emails", "test")).toBe(true);
+    // And a retired key lights ONLY its successor: not the section it named before,
+    // and not Overview, which owns the tab-less URL.
+    expect(isNavItemActive(tabItem("overview"), "/emails", "inbound")).toBe(false);
+    expect(isNavItemActive(tabItem("health"), "/emails", "test")).toBe(false);
+    // An unknown tab falls back to Overview, matching what the panel renders.
+    expect(isNavItemActive(tabItem("overview"), "/emails", "nope")).toBe(true);
   });
 
   it("matches non-tab items by path prefix, so detail pages keep the parent lit", () => {

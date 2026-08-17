@@ -95,7 +95,12 @@
     "installing": "A instalar",
     "running": "Em execução",
     "incomplete": "Incompleto",
-    "stoppedAt": "Parado · etapa {step}"
+    "stoppedAt": "Parado · etapa {step}",
+    "open": "Abrir",
+    "openAria": "Abrir {name}",
+    "actionsAria": "Ações para {name}",
+    "overviewTitle": "Resumo do email",
+    "hint": "Remover um servidor apenas o desliga desta lista — a instalação continua a correr e pode ser readotada."
   },
   "setup": {
     "title": "Configuração do Servidor de Email",

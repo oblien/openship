@@ -1436,6 +1436,27 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     ? (selectedServer.name || selectedServer.sshHost)
     : null;
 
+  // Publish that resolved name into the config, so the screens AFTER this step can
+  // name the machine too. Every place that picks a server (auto-seed, last-used,
+  // preferred, an explicit pick here, the sidebar's) sets only `serverId` — the id is
+  // the truth and the name is derived from it — so the progress screens had nothing
+  // but the bare word "Server" to show. Derived HERE, the one place holding both the
+  // id and the servers list, rather than appended to each of those call sites: that
+  // list only grows, and the next one added would forget.
+  useEffect(() => {
+    if (config.deployTarget !== "server") {
+      // Not a server deploy: a name left over from a previous pick would outlive the
+      // target it described.
+      if (config.serverName !== undefined) updateConfig({ serverName: undefined });
+      return;
+    }
+    // No resolution yet (list still loading, or an id we don't have a row for) is not
+    // evidence of "no name" — clearing here would wipe the one a saved project
+    // restored before this step's fetch landed.
+    if (!summaryServerName) return;
+    if (summaryServerName !== config.serverName) updateConfig({ serverName: summaryServerName });
+  }, [config.deployTarget, config.serverName, summaryServerName, updateConfig]);
+
   // What this step actually PICKED, in the vocabulary both memories below use: a
   // binding, or nothing. `config.deployTarget` can also be "local", which is not a
   // pick — it's what an unbound project derives — so neither the cross-device

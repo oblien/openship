@@ -37,6 +37,31 @@ const base: MailServerListItem = {
   active: false,
 };
 
+describe("MailServerList — row actions", () => {
+  // The trash icon used to sit bare in the row, one stray click from "open".
+  // Removal now lives behind the row's ⋯ menu, which renders only on open.
+  it("keeps removal out of the row itself, behind the actions menu", () => {
+    const html = render([{ ...base, completed: true }]);
+    expect(html).not.toContain('aria-label="Remove hekai.org from the mail list"');
+    expect(html).toContain('aria-label="Actions for hekai.org"');
+    expect(html).toContain('aria-label="Open hekai.org"');
+  });
+});
+
+describe("MailServerList — registry roll-up", () => {
+  it("counts running servers against the total", () => {
+    const out = text(
+      render([
+        { ...base, id: "a", domain: "oblien.com", completed: true },
+        { ...base, id: "b", domain: "hekai.org", completed: true },
+        { ...base, id: "c", domain: "half.dev", resumeStep: 4 },
+      ]),
+    );
+    expect(out).toContain("2 / 3 Running");
+    expect(out).toContain("67%");
+  });
+});
+
 describe("MailServerList — status/issue line", () => {
   it("shows where an incomplete install stopped, with the step label", () => {
     const out = text(render([{ ...base, resumeStep: 6, resumeStepLabel: "Retrieve DKIM Keys" }]));

@@ -15,7 +15,7 @@
  */
 
 import { repos, normalizeRoutingFields, type Domain, type Project } from "@repo/db";
-import { NotFoundError, ConflictError, ValidationError, safeErrorMessage, normalizeCustomHostname, isValidCustomHostname, wwwSiblingHostname, SYSTEM } from "@repo/core";
+import { AppError, NotFoundError, ConflictError, ValidationError, safeErrorMessage, normalizeCustomHostname, isValidCustomHostname, wwwSiblingHostname, SYSTEM } from "@repo/core";
 import { platform, assertResourceInOrg } from "../../lib/controller-helpers";
 import { buildBackgroundContext, type RequestContext } from "../../lib/request-context";
 import {
@@ -29,6 +29,7 @@ import { getRoutingBaseDomain } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
 import { resolveProjectServerHost, resolveLocalServerHost, resolveInstancePublicIp, isLoopbackHost } from "../../lib/server-target";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
+import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
 import { generateToken } from "../../lib/domain-token";
 import { routableWithoutOwnership } from "../../lib/domain-claims";
 import { untrackedSiteFor } from "../../lib/edge-orphans.service";
@@ -1059,6 +1060,34 @@ export async function removeDomain(ctx: RequestContext, domainId: string) {
     console.warn(
       `[dns] could not fully clean up records for ${domain.hostname}:`,
       released.reason,
+    );
+  }
+
+  // ── Release the Cloud edge route BEFORE dropping the row ─────────────────────
+  //
+  // `reconcileProjectRoutes` above only tears down the route on the HOST (the
+  // server's OpenResty, or a static page's custom domain); for a managed
+  // `*.opsh.io` hostname the Cloud edge proxy is a separate record, and
+  // `removeCloudProjectRoute` explicitly no-ops on it. So this used to drop the
+  // domain row while leaving the edge route live: the old free URL kept resolving
+  // to a project that no longer exists, and because managed slugs are globally
+  // unique the org could later be REFUSED when re-claiming its own slug.
+  //
+  // Ordered edge-first, and it THROWS on failure, which is what makes the pair
+  // effectively atomic: either the slot is genuinely free (route gone, row gone)
+  // or nothing changed and the user can retry. Dropping the row first and failing
+  // here would orphan the slug with nothing left to retry against — the one
+  // outcome that is unrecoverable for the user. Idempotent upstream (an unknown
+  // slug reports removed:false), so a retry after a partial failure is safe.
+  const { failures: edgeFailures } = await releaseManagedHostnames([domain.hostname], {
+    organizationId: ctx.organizationId,
+  });
+  if (edgeFailures.length > 0) {
+    throw new AppError(
+      `Couldn't release the free ${domain.hostname} route on Openship Cloud (${edgeFailures.join(", ")}). ` +
+        `The domain was kept so you can retry — removing it now would leave the URL resolving and the name reserved.`,
+      502,
+      "MANAGED_EDGE_RELEASE_FAILED",
     );
   }
 

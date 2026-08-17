@@ -1,0 +1,88 @@
+{
+  "plans": {
+    "free": {
+      "name": "مجاني",
+      "tagline": "انشر المواقع الثابتة على Openship Cloud دون أي تكلفة."
+    },
+    "starter": {
+      "name": "البداية",
+      "tagline": "لأول تطبيق حقيقي لك — حاويات وقواعد بيانات وكل ما تحتاجه."
+    },
+    "pro": {
+      "name": "احترافي",
+      "tagline": "لتطبيقات الإنتاج التي تحتاج مساحة للنمو."
+    },
+    "team": {
+      "name": "التوسّع",
+      "tagline": "للفرق التي تدير حركة مرور كثيفة على بنية تحتية مشتركة."
+    },
+    "enterprise": {
+      "name": "المؤسسات",
+      "tagline": "حدود مخصّصة وبنية تحتية مخصّصة واتفاقية SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "كل ما في خطة «{inherited}»، بالإضافة إلى:",
+    "staticOnly": "المواقع الثابتة فقط — SSG وSPA وHTML عادي",
+    "anyWorkload": "شغّل أي شيء — حاويات وحِزم Compose وعمليات خلفية",
+    "managedServices": "خدمات Postgres وRedis مُدارة، مع كتالوج التطبيقات الكامل",
+    "buildMinutes": "{buildMinutes} دقيقة بناء شهريًا",
+    "credits": "{credits} وحدة رصيد حوسبة شهريًا",
+    "freeSubdomains": "{freeSubdomains} نطاق فرعي مجاني على {freeDomainSuffix}",
+    "freeSubdomainsUnlimited": "نطاقات فرعية مجانية غير محدودة على {freeDomainSuffix}",
+    "customDomains": "نطاقات مخصّصة غير محدودة، مع TLS",
+    "unlimitedSeats": "أعضاء فريق غير محدودين — بلا رسوم على كل مستخدم",
+    "previewDeploys": "نشر معاينة عند كل دفع للكود",
+    "backups": "نسخ احتياطي يومي مع استعادة إلى لحظة زمنية محدّدة",
+    "observability": "سجلات حيّة ومقاييس وتنبيهات لصحة الخدمة",
+    "mailServer": "خادم بريد مدمج — SMTP وIMAP وبريد على الويب",
+    "auditLog": "سجل تدقيق بمدة حفظ ممتدة",
+    "sharedChannel": "قناة مشتركة على Slack أو Discord",
+    "sso": "SSO وSAML",
+    "customLimits": "حدود مخصّصة يُتفق عليها في العقد",
+    "dedicatedInfra": "بنية تحتية ومناطق مخصّصة",
+    "onboarding": "إعداد وترحيل بمتابعة كاملة من فريقنا",
+    "communitySupport": "دعم من المجتمع",
+    "emailSupport": "دعم عبر البريد الإلكتروني",
+    "prioritySupport": "دعم ذو أولوية",
+    "dedicatedSupport": "دعم مخصّص مع اتفاقية SLA",
+    "selfHostedOpenSource": "المنصّة كاملة، مفتوحة المصدر (Apache 2.0)",
+    "selfHostedUnlimited": "عمليات نشر ومشاريع وخوادم ونطاقات غير محدودة",
+    "selfHostedServices": "كل الخدمات المُدارة — Postgres وRedis والبريد",
+    "selfHostedClients": "CLI وواجهة ويب وتطبيق سطح مكتب — خدمة خلفية واحدة",
+    "selfHostedFreeSubdomains": "{freeSubdomains} نطاق فرعي مجاني على {freeDomainSuffix} عند الربط مع Openship Cloud",
+    "runningServices": "{runningServices} خدمة قيد التشغيل — تطبيقات وقواعد بيانات وعمليات خلفية",
+    "power": "حتى {powerCpu} vCPU و{powerRamGb} GB RAM لكل خدمة",
+    "projects": "{maxProjects} مشروع",
+    "projectsUnlimited": "مشاريع غير محدودة",
+    "meteredCredits": "الحوسبة والنطاق الترددي والتخزين تُخصم كلها من رصيدك الشهري"
+  },
+  "selfHosted": {
+    "name": "استضافة ذاتية",
+    "tagline": "شغّل المنصّة كاملة على أجهزة تملكها. أي جهاز Linux، وأي مزوّد، وأي منطقة. بلا قياس استهلاك، وبلا حد لعدد المستخدمين، وبلا تتبّع.",
+    "priceLabel": "مجاني",
+    "priceNote": "Apache 2.0 — مجاني دائمًا، دون بطاقة ائتمان",
+    "cta": "ابدأ الاستضافة الذاتية"
+  },
+  "creditPacks": {
+    "pack_5k": "{credits} وحدة رصيد",
+    "pack_25k": "{credits} وحدة رصيد",
+    "pack_100k": "{credits} وحدة رصيد"
+  },
+  "ui": {
+    "perMonth": "/شهر",
+    "perYear": "/سنة",
+    "custom": "مخصّص",
+    "free": "مجانًا",
+    "unlimited": "غير محدود",
+    "mostPopular": "الأكثر شيوعًا",
+    "monthsFree": "{months} شهر مجانًا",
+    "ctaStart": "ابدأ مجانًا",
+    "ctaChoose": "اختر خطة {name}",
+    "ctaContact": "تواصل مع فريق المبيعات",
+    "billedMonthly": "فاتورة شهرية، والإلغاء متاح في أي وقت",
+    "campaignBadge": "خصم {percentOff}%",
+    "campaignEnds": "ينتهي العرض في {date}",
+    "wasPrice": "سابقًا {price}"
+  }
+}
