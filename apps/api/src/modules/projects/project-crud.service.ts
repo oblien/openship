@@ -1466,26 +1466,30 @@ export async function updateProject(
       }
       const relative = (value: string) => value.trim().replace(/^\/+|\/+$/g, "");
       const buildMode =
-        release.buildMode ?? (release.prepareCommand?.trim() ? "server" : "prebuilt");
+        release.buildMode === "upload"
+          ? "upload"
+          : (release.buildMode ?? (release.prepareCommand?.trim() ? "server" : "prebuilt"));
       const persisted = {
         ...release,
         buildMode,
+        runtimeInstall: release.runtimeInstall,
+        preset: release.preset,
         sourcePath: release.sourcePath ? relative(release.sourcePath) : undefined,
         sharedPaths: [...new Set((release.sharedPaths ?? []).map(relative).filter(Boolean))],
         containerPath: release.containerPath.trim().replace(/\/+$/, ""),
-        prepareCommand:
-          buildMode === "server" ? release.prepareCommand?.trim() || undefined : undefined,
-        builderImage:
-          buildMode === "server" ? release.builderImage?.trim() || undefined : undefined,
+        // Keep prepare/phases on prebuilt recipes (Laravel migrate/optimize; Composer on lock change).
+        prepareCommand: release.prepareCommand?.trim() || undefined,
+        builderImage: release.builderImage?.trim() || undefined,
         builderMemoryMb: release.builderMemoryMb ?? 1024,
         builderCpus: release.builderCpus ?? 1,
-        builderCachePaths:
-          buildMode === "server"
-            ? [...new Set((release.builderCachePaths ?? []).map(relative).filter(Boolean))]
-            : [],
+        builderCachePaths: [
+          ...new Set((release.builderCachePaths ?? []).map(relative).filter(Boolean)),
+        ],
         reloadCommand: release.reloadCommand?.trim() || undefined,
         healthPath: release.healthPath?.trim() || undefined,
         retain: release.retain ?? 5,
+        uid: release.uid,
+        gid: release.gid,
         serviceId: target?.id,
         serviceName: target?.name,
       };

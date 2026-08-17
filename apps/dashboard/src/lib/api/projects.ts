@@ -521,7 +521,7 @@ export const projectsApi = {
         code: {
           deploymentId: string | null;
           sha: string | null;
-          strategy: "prebuilt" | "server";
+          strategy: "prebuilt" | "server" | "upload";
           activatedAt: string | null;
         } | null;
         server: { id: string; name: string } | null;

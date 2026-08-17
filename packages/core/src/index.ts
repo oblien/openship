@@ -26,6 +26,7 @@ export * from "./edge-orphans";
 export * from "./service-status";
 export * from "./runtime-config";
 export * from "./edition";
+export * from "./release-presets";
 export * from "./project-config-export";
 export * from "./resources";
 export * from "./rollback-window";

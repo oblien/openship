@@ -232,6 +232,7 @@ async function deployProjectFromPush(
       name: s.name,
       rootDirectory: s.rootDirectory,
     })),
+    preset: p.mountedRelease?.preset,
     routedServiceIds: serviceIds,
     forceAll,
   });

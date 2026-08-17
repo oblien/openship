@@ -2,9 +2,13 @@ import type { Project } from "@repo/db";
 import { resolveServicePort, type DeployableService } from "../../lib/deployable-service";
 import { parseVolumeSpec } from "../services/volume-spec";
 
+export type MountedReleaseBuildMode = "prebuilt" | "server" | "upload";
+
 export interface MountedReleaseConfig {
   enabled: boolean;
-  buildMode?: "prebuilt" | "server";
+  buildMode?: MountedReleaseBuildMode;
+  runtimeInstall?: "image" | "dockerfile" | "compose";
+  preset?: string;
   serviceId?: string;
   serviceName?: string;
   sourcePath?: string;
@@ -19,6 +23,8 @@ export interface MountedReleaseConfig {
   healthPath?: string;
   healthPort?: number;
   retain?: number;
+  uid?: number;
+  gid?: number;
 }
 
 export type MountedReleaseServiceRef = {
@@ -79,8 +85,10 @@ export function mountedReleaseHealthPort(
   return resolveServicePort(target.service, fallbackPort) ?? fallbackPort;
 }
 
-export function mountedReleaseBuildMode(config: MountedReleaseConfig): "prebuilt" | "server" {
-  return config.buildMode ?? (config.prepareCommand?.trim() ? "server" : "prebuilt");
+export function mountedReleaseBuildMode(config: MountedReleaseConfig): MountedReleaseBuildMode {
+  if (config.buildMode === "upload") return "upload";
+  if (config.buildMode === "prebuilt" || config.buildMode === "server") return config.buildMode;
+  return config.prepareCommand?.trim() ? "server" : "prebuilt";
 }
 
 export function mountedReleaseConfig(

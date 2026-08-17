@@ -21,6 +21,9 @@ import { deployApi } from "@/lib/api";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { servicesApi } from "@/lib/api/services";
 import { projectsApi } from "@/lib/api/projects";
+import { ReleaseSpine } from "./ReleaseSpine";
+import { ReleaseRecipeSummary } from "./ReleaseRecipeSummary";
+import type { MountedReleaseConfigUI } from "./release-recipe";
 
 type LiveState = Awaited<ReturnType<typeof projectsApi.getLiveState>>["data"];
 
@@ -38,8 +41,9 @@ function ageLabel(iso: string | null | undefined): string {
   return `${day} day${day === 1 ? "" : "s"}`;
 }
 
-function strategyLabel(strategy: "prebuilt" | "server" | undefined): string {
+function strategyLabel(strategy: "prebuilt" | "server" | "upload" | undefined): string {
   if (strategy === "server") return "Prepared on server";
+  if (strategy === "upload") return "Built locally and uploaded";
   if (strategy === "prebuilt") return "Prebuilt in Git";
   return "";
 }
@@ -275,6 +279,11 @@ export function LiveReleaseHeader({
           />
         </div>
       </div>
+      <ReleaseSpine
+        hostname={hostname}
+        runtimeLabel={digestShort(live?.runtime.digest, live?.runtime.imageRef)}
+        codeLabel={live?.code?.sha?.slice(0, 7) ?? "Not deployed"}
+      />
       <div className="grid gap-px bg-border/40 sm:grid-cols-3">
         <div className="bg-card px-5 py-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Code</p>
@@ -307,6 +316,14 @@ export function LiveReleaseHeader({
           </p>
         </div>
       </div>
+      {projectData?.mountedRelease ? (
+        <div className="border-t border-border/40 px-5 py-4">
+          <ReleaseRecipeSummary
+            config={projectData.mountedRelease as MountedReleaseConfigUI}
+            compact
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

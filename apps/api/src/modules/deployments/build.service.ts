@@ -2192,6 +2192,7 @@ export async function triggerPlannedDeployment(
       name: s.name,
       rootDirectory: s.rootDirectory,
     })),
+    preset: project.mountedRelease?.preset,
     routedServiceIds: data.serviceIds,
     forceAll: data.forceAll,
     refreshRequested: data.refresh,

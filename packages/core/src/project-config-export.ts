@@ -10,7 +10,9 @@ export const OPERATOR_RECIPE_VERSION = 1 as const;
 
 export type ExportedMountedRelease = {
   enabled: boolean;
-  buildMode?: "prebuilt" | "server";
+  buildMode?: "prebuilt" | "server" | "upload";
+  runtimeInstall?: "image" | "dockerfile" | "compose";
+  preset?: string;
   serviceName?: string;
   sourcePath?: string;
   containerPath: string;
@@ -24,6 +26,8 @@ export type ExportedMountedRelease = {
   healthPath?: string;
   healthPort?: number;
   retain?: number;
+  uid?: number;
+  gid?: number;
 };
 
 export type ExportedServer = {

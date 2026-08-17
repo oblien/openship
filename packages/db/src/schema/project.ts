@@ -445,7 +445,9 @@ export const project = pgTable(
     deployLeaseId: text("deploy_lease_id"),
     mountedRelease: jsonb("mounted_release").$type<{
       enabled: boolean;
-      buildMode?: "prebuilt" | "server";
+      buildMode?: "prebuilt" | "server" | "upload";
+      runtimeInstall?: "image" | "dockerfile" | "compose";
+      preset?: string;
       serviceId?: string;
       serviceName?: string;
       sourcePath?: string;
@@ -460,6 +462,8 @@ export const project = pgTable(
       healthPath?: string;
       healthPort?: number;
       retain?: number;
+      uid?: number;
+      gid?: number;
     } | null>(),
     /** GitHub webhook ID registered on the repo */
     webhookId: integer("webhook_id"),

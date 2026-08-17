@@ -83,6 +83,20 @@ describe("planRelease", () => {
     expect(plan.serviceIds).toEqual(["svc_staff"]);
   });
 
+  it("Laravel preset lock change is deploy_code, not rebuild_runtime", () => {
+    const plan = planRelease({
+      mountedReleaseEnabled: true,
+      preset: "laravel",
+      services: PREFIXED_SERVICES,
+      changedPaths: ["apps/staff/composer.lock"],
+    });
+    expect(plan.action).toBe("deploy_code");
+    expect(plan.action).not.toBe("rebuild_runtime");
+    expect(plan.reason).toMatch(/composer\.lock/i);
+    expect(plan.serviceIds).toEqual(["svc_staff"]);
+    expect(plan.serviceIds).not.toContain("svc_mail");
+  });
+
   it("deploys git-tracked env or route files as code, not an env-table refresh", () => {
     const { plan, trigger } = planAndSelectTrigger({
       ...mounted,
