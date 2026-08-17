@@ -32,5 +32,16 @@ describe("writeJsonAtomic", () => {
     writeJsonAtomic(file, { api: 54777, dashboard: 54778 });
     expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ api: 54777, dashboard: 54778 });
     expect(existsSync(`${file}.${process.pid}.tmp`)).toBe(false);
+    expect(existsSync(`${file}.bak`)).toBe(false);
+  });
+
+  it("leaves dest valid after replacing an existing dest twice", () => {
+    const file = join(dir(), "config.json");
+    writeJsonAtomic(file, { n: 1 });
+    writeJsonAtomic(file, { n: 2 });
+    expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ n: 2 });
+    expect(readdirSync(join(file, "..")).filter((name) => name.endsWith(".tmp") || name.endsWith(".bak"))).toEqual(
+      [],
+    );
   });
 });

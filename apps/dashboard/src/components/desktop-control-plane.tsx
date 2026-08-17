@@ -92,6 +92,14 @@ export function DesktopControlPlanePanel() {
     setNote(null);
     try {
       const result = await action();
+      if (result === false) {
+        setNote("Failed");
+        return;
+      }
+      if (result === null) {
+        setNote("Cancelled");
+        return;
+      }
       setNote(typeof result === "string" ? `${ok} → ${result}` : ok);
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Action failed");

@@ -72,7 +72,11 @@ export class DesktopControlPlaneState {
       api: input.api,
       dashboard: input.dashboard,
       advertisedOrigin: input.advertisedOrigin,
-      preferred: input.preferred,
+      // Keep the original preferred pair across later fallbacks. resolvePortPair
+      // reports `preferred` from THIS start's stored input, so a normal start
+      // on the fallback would otherwise overwrite the pre-fallback pair and
+      // Repair would target the fallback.
+      preferred: retainPreferred(this.ports.preferred, input.api, input.dashboard, input.preferred),
       switched: input.switched,
     };
     writeJsonAtomic(this.portsFilePath, this.ports);
@@ -113,4 +117,20 @@ export class DesktopControlPlaneState {
       return {};
     }
   }
+}
+
+export function retainPreferred(
+  existing: { api?: number; dashboard?: number } | undefined,
+  boundApi: number,
+  boundDashboard: number,
+  resolverPreferred: { api: number; dashboard: number },
+): { api: number; dashboard: number } {
+  return {
+    api:
+      existing?.api != null && existing.api !== boundApi ? existing.api : resolverPreferred.api,
+    dashboard:
+      existing?.dashboard != null && existing.dashboard !== boundDashboard
+        ? existing.dashboard
+        : resolverPreferred.dashboard,
+  };
 }

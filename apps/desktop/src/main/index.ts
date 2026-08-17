@@ -143,7 +143,16 @@ class ConfigStore {
 
 const isPrimaryInstance = app.requestSingleInstanceLock();
 if (!isPrimaryInstance) {
-  app.quit();
+  app.exit(0);
+}
+
+// Focus the first window before any disk I/O so a double-launch during first
+// run still lands. Loser never constructs stores (exit + throw).
+app.on("second-instance", () => {
+  showMainWindow();
+});
+if (!isPrimaryInstance) {
+  throw new Error("openship: another instance is already running");
 }
 
 const store = new ConfigStore();
@@ -696,7 +705,34 @@ async function backupControlPlane(): Promise<string | null> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const dest = join(filePaths[0], `openship-control-plane-${stamp}`);
   mkdirSync(dest, { recursive: true });
-  cpSync(getControlPlaneSnapshot().dataPath, join(dest, "data"), { recursive: true });
+  // Stop the engine first so PGlite releases the data dir — a live cpSync can
+  // tear the cluster or throw EBUSY on Windows.
+  const cycle = app.isPackaged;
+  if (cycle) {
+    showLoading();
+    setLoadingStage("Backing up control plane", 0.4);
+    await stopLocalServicesAndWait();
+  }
+  try {
+    cpSync(getControlPlaneSnapshot().dataPath, join(dest, "data"), { recursive: true });
+  } catch (err) {
+    if (cycle) {
+      try {
+        await startLocalServices(internalToken);
+        loadDashboard();
+      } catch {
+        // copy failed; start failure is reported below
+      }
+    }
+    throw err;
+  }
+  if (cycle) {
+    setLoadingStage("Starting services", 0.75);
+    await startLocalServices(internalToken);
+    setLoadingStage("Opening dashboard", 1);
+    loadDashboard();
+    emitInstanceChanged();
+  }
   return dest;
 }
 
@@ -770,10 +806,6 @@ function requestQuit(): void {
 }
 
 // ─── App lifecycle ───────────────────────────────────────────────────────────
-
-app.on("second-instance", () => {
-  showMainWindow();
-});
 
 app.whenReady().then(async () => {
   if (!isPrimaryInstance) return;
@@ -977,8 +1009,7 @@ ipcMain.handle("window:toggle-maximize", () => {
 });
 
 ipcMain.handle("window:close", () => {
-  // close(), not destroy() — the existing "close" handler persists window bounds
-  // and decides hide-vs-quit per platform.
+  // close(), not destroy() — the close handler persists bounds and hides unless isQuitting.
   mainWindow?.close();
   return true;
 });
@@ -1025,11 +1056,8 @@ ipcMain.handle("window:nav-state", () => navState());
 /**
  * Toggle DevTools from the titlebar's ⋯ menu.
  *
- * This is the ONLY route on Windows/Linux: those run `frame: false`, so there is
- * no menu bar at all. macOS still has Electron's default application menu (main
- * never calls Menu.setApplicationMenu, so the built-in one with View → Toggle
- * Developer Tools stays), but it lives in the system menu bar — having it in the
- * window too costs nothing and keeps the two platforms behaving the same.
+ * This is the only clickable route on Windows/Linux (`frame: false` hides the
+ * menu bar). macOS also has View → Toggle Developer Tools in the app menu.
  */
 ipcMain.handle("window:toggle-devtools", () => {
   const wc = mainWindow?.webContents;

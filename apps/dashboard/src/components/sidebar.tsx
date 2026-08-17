@@ -416,7 +416,6 @@ export function Sidebar() {
       </div>
       )}
 
-      {/* Browser sessions are cookie jars, not accounts — they share one DB. */}
       {isDesktop && (
         <div className="px-3 pb-1 pt-1">
           <div className="mx-2 mb-3 h-px bg-border/60" />

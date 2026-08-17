@@ -35,6 +35,19 @@ describe("desktop host lifecycle (static)", () => {
     expect(readyAt).toBeGreaterThan(lockAt);
   });
 
+  it("exits immediately on lock failure before constructing stores", () => {
+    const lockAt = main.indexOf("requestSingleInstanceLock");
+    const exitAt = main.indexOf("app.exit(0)");
+    const storeAt = main.indexOf("new ConfigStore");
+    const profilesAt = main.indexOf("new DesktopProfileStore");
+    const secondAt = main.indexOf('app.on("second-instance"');
+    expect(exitAt).toBeGreaterThan(lockAt);
+    expect(secondAt).toBeGreaterThan(lockAt);
+    expect(secondAt).toBeLessThan(storeAt);
+    expect(exitAt).toBeLessThan(storeAt);
+    expect(exitAt).toBeLessThan(profilesAt);
+  });
+
   it("hides the window instead of quitting on close", () => {
     expect(main).toContain("window.hide()");
     expect(main).toContain("isQuitting");
