@@ -36,6 +36,7 @@ import { getRouteStrategy } from "../settings/settings.service";
 import { checkProjectPorts } from "./port-check.service";
 import { checkProjectOutput } from "./output-check.service";
 import { getProjectDrift } from "../updates/updates.service";
+import { resolveProjectLiveState } from "../deployments/project-live-state";
 import { AppError, resolveProjectVolumes, safeErrorMessage } from "@repo/core";
 import type {
   TCreateProjectBody,
@@ -1935,6 +1936,18 @@ export async function getCommitStatus(c: Context) {
   const ctx = getRequestContext(c);
   const status = await getProjectDrift(ctx, id);
   return c.json({ data: status });
+}
+
+/**
+ * GET /:id/live-state — independent runtime (image) and code (mounted SHA)
+ * pointers plus the bound server. Wave 4 skins the project header from this.
+ */
+export async function getLiveState(c: Context) {
+  const id = param(c, "id");
+  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "read" });
+  const ctx = getRequestContext(c);
+  const state = await resolveProjectLiveState(id, ctx.organizationId);
+  return c.json({ data: state });
 }
 
 /**

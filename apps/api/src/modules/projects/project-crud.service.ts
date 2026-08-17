@@ -78,6 +78,7 @@ import {
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
 import { getFolderSession } from "./folder/session-store";
+import { activeCodeReleaseDeploymentId } from "../deployments/mounted-release.config";
 import type {
   TCreateProjectBody,
   TCreateProjectEnvironmentBody,
@@ -2019,8 +2020,12 @@ export async function resolveDeployedDrift(
 ): Promise<DeployedDrift> {
   if (mode === "commit") {
     let deployedSha: string | null = null;
-    if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+    // Code and runtime pointers are independent. After a mounted code release the
+    // runtime row still holds the image-build SHA, so drift must read the code
+    // pointer or a successful release looks outdated forever.
+    const deploymentId = activeCodeReleaseDeploymentId(p) ?? p.activeDeploymentId;
+    if (deploymentId) {
+      const dep = await repos.deployment.findById(deploymentId).catch(() => null);
       deployedSha = dep?.commitSha ?? null;
     }
     return { mode: "commit", deployedSha };

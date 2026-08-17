@@ -456,6 +456,10 @@ export async function listOrganizationUpdates(
  * banner, where the operator is about to press the button and the answer has to
  * be current rather than merely recent. Always polls, and the write-back means
  * the visit also settles what the feed and the home card will say.
+ *
+ * Commit comparison uses the live code-release SHA when mounted releases are
+ * enabled (`activeReleaseDeploymentId`); otherwise the runtime deployment.
+ * Runtime and code pointers are independent live state.
  */
 export async function getProjectDrift(
   ctx: RequestContext,

@@ -317,4 +317,40 @@ describe("getProjectDrift (the project page banner)", () => {
     expect(await getProjectDrift(ctx, "proj_1")).toEqual({ supported: false });
     expect(resolveUpstreamDrift).not.toHaveBeenCalled();
   });
+
+  it("does not mark a project outdated after a successful code release", async () => {
+    const p = project({
+      activeDeploymentId: "dep_runtime",
+      activeReleaseDeploymentId: "dep_code",
+      mountedRelease: { enabled: true, containerPath: "/app" },
+    });
+    setup([p], []);
+    resolveUpstreamDrift.mockResolvedValue(upstream(p, NEWER));
+    deploymentRepo.findById.mockImplementation(async (id: string) => ({
+      id,
+      commitSha: id === "dep_code" ? NEWER : SHIPPED,
+    }));
+
+    const status = await getProjectDrift(ctx, "proj_1");
+
+    expect(status).toMatchObject({ supported: true, behind: false, deployedSha: NEWER });
+  });
+
+  it("still compares runtime-only projects against the runtime deployment", async () => {
+    const p = project({
+      activeDeploymentId: "dep_live",
+      activeReleaseDeploymentId: "dep_code",
+      mountedRelease: { enabled: false, containerPath: "/app" },
+    });
+    setup([p], []);
+    resolveUpstreamDrift.mockResolvedValue(upstream(p, NEWER));
+    deploymentRepo.findById.mockImplementation(async (id: string) => ({
+      id,
+      commitSha: id === "dep_code" ? NEWER : SHIPPED,
+    }));
+
+    const status = await getProjectDrift(ctx, "proj_1");
+
+    expect(status).toMatchObject({ supported: true, behind: true, deployedSha: SHIPPED });
+  });
 });

@@ -505,6 +505,27 @@ export const projectsApi = {
       };
     }>(`projects/${id}/commit-status`),
 
+  /** Independent runtime image and mounted code-release pointers. */
+  getLiveState: (id: string | number) =>
+    api.get<{
+      data: {
+        runtime: {
+          deploymentId: string | null;
+          imageRef: string | null;
+          digest: string | null;
+          commitSha: string | null;
+          builtAt: string | null;
+        };
+        code: {
+          deploymentId: string | null;
+          sha: string | null;
+          strategy: "prebuilt" | "server";
+          activatedAt: string | null;
+        } | null;
+        server: { id: string; name: string } | null;
+      };
+    }>(endpoints.projects.liveState(id)),
+
   /** Enable or disable a project */
   toggle: (id: string | number, enable: boolean) =>
     api.post<any>(endpoints.projects.toggle(id, enable ? "enable" : "disable")),
