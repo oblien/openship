@@ -52,6 +52,8 @@ import {
   type UpstreamDrift,
 } from "../projects/project-crud.service";
 import { redeployBuildSession } from "../deployments/build.service";
+import { triggerMountedRelease } from "../deployments/mounted-release.service";
+import { mountedReleaseConfig } from "../deployments/mounted-release.config";
 
 // ─── Display labels ──────────────────────────────────────────────────────────
 
@@ -457,9 +459,7 @@ export async function listOrganizationUpdates(
  * be current rather than merely recent. Always polls, and the write-back means
  * the visit also settles what the feed and the home card will say.
  *
- * Commit comparison uses the live code-release SHA when mounted releases are
- * enabled (`activeReleaseDeploymentId`); otherwise the runtime deployment.
- * Runtime and code pointers are independent live state.
+ * Commit comparison uses the live code-release SHA when that pointer exists.
  */
 export async function getProjectDrift(
   ctx: RequestContext,
@@ -473,25 +473,15 @@ export async function getProjectDrift(
 
 // ─── Applying ────────────────────────────────────────────────────────────────
 
-/**
- * Apply the available update to a project (app / git / release / self-app). Runs
- * a redeploy with the `update` trigger — which force-pulls image tags and
- * recreates every image service, and (for release/git projects) rolls forward
- * to the latest version/commit — after firing a pre-deploy backup. The existing
- * rollback-orchestrator auto-archive gives one-click revert. Returns the new
- * deployment id so the UI can follow build progress.
- *
- * Deliberately does not touch `update_status`: the upstream hasn't moved, and the
- * nudge stops the moment the deployment row exists, because `latestInProgress` is
- * computed live. (The previous rescan here re-armed the banner it had just
- * cleared — `redeployBuildSession` returns while the build is still queued, so a
- * rescan at this instant recomputed drift against the version being replaced.)
- */
+/** Apply the available update: code release when mounted, otherwise runtime rebuild. */
 export async function applyProjectUpdate(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!project.activeDeploymentId) {
     throw new ValidationError("Deploy this project before updating it.");
+  }
+  if (mountedReleaseConfig(project)) {
+    return triggerMountedRelease(ctx, projectId);
   }
   return redeployBuildSession(ctx, project.activeDeploymentId, {
     trigger: "update",

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const serviceRepo = vi.hoisted(() => ({ listByDeployment: vi.fn() }));
-const serverRepo = vi.hoisted(() => ({ get: vi.fn() }));
+const serverRepo = vi.hoisted(() => ({ getInOrganization: vi.fn(), get: vi.fn() }));
 
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
@@ -19,7 +19,7 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { resolveProjectLiveState } from "./project-live-state";
+import { resolveProjectLiveState, runtimeImageRef } from "./project-live-state";
 import type { Project } from "@repo/db";
 
 const RUNTIME_SHA = "13140747f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6";
@@ -36,6 +36,7 @@ const project = (over: Partial<Project> = {}) =>
     activeReleaseDeploymentId: null,
     mountedRelease: null,
     serverId: "srv_1",
+    cloudWorkspaceId: null,
     ...over,
   }) as Project;
 
@@ -72,7 +73,11 @@ beforeEach(() => {
       imageDigest: "sha256:deadbeef",
     },
   ]);
-  serverRepo.get.mockResolvedValue({ id: "srv_1", name: "contabo", sshHost: "10.0.0.8" });
+  serverRepo.getInOrganization.mockResolvedValue({
+    id: "srv_1",
+    name: "contabo",
+    sshHost: "10.0.0.8",
+  });
 });
 
 describe("resolveProjectLiveState", () => {
@@ -150,5 +155,96 @@ describe("resolveProjectLiveState", () => {
       activatedAt: null,
     });
     expect(state.runtime.deploymentId).toBe("dep_runtime");
+  });
+
+  it("never emits a host-path imageRef", async () => {
+    deploymentRepo.findById.mockImplementation(async (id: string) =>
+      id === "dep_runtime"
+        ? {
+            id,
+            commitSha: RUNTIME_SHA,
+            imageRef: "/var/lib/openship/mounted-releases/proj_1/current",
+            createdAt: BUILT_AT,
+            updatedAt: BUILT_AT,
+          }
+        : null,
+    );
+    serviceRepo.listByDeployment.mockResolvedValue([
+      { serviceId: "svc_1", imageRef: "/var/lib/openship/mounted-releases/proj_1/current" },
+    ]);
+
+    const state = await resolveProjectLiveState("proj_1", "org_1");
+
+    expect(state.runtime.imageRef).toBeNull();
+  });
+
+  it("prefers a service registry ref over a host-path deployment imageRef", async () => {
+    deploymentRepo.findById.mockImplementation(async (id: string) =>
+      id === "dep_runtime"
+        ? {
+            id,
+            commitSha: RUNTIME_SHA,
+            imageRef: "/var/lib/openship/mounted-releases/proj_1/current",
+            createdAt: BUILT_AT,
+            updatedAt: BUILT_AT,
+          }
+        : null,
+    );
+
+    const state = await resolveProjectLiveState("proj_1", "org_1");
+
+    expect(state.runtime.imageRef).toBe("ghcr.io/acme/staff:runtime");
+  });
+
+  it("resolves the server through the org-scoped project read rule", async () => {
+    await resolveProjectLiveState("proj_1", "org_1");
+
+    expect(serverRepo.getInOrganization).toHaveBeenCalledWith("srv_1", "org_1");
+    expect(serverRepo.get).not.toHaveBeenCalled();
+  });
+
+  it("uses the live-release meta serverId, not a leftover column", async () => {
+    deploymentRepo.findById.mockImplementation(async (id: string) =>
+      id === "dep_runtime"
+        ? {
+            id,
+            commitSha: RUNTIME_SHA,
+            imageRef: "ghcr.io/acme/staff:runtime",
+            meta: { serverId: "srv_meta" },
+            createdAt: BUILT_AT,
+            updatedAt: BUILT_AT,
+          }
+        : null,
+    );
+    serverRepo.getInOrganization.mockResolvedValue({ id: "srv_meta", name: "Meta Box" });
+    projectRepo.findById.mockResolvedValue(project({ serverId: "srv_col" }));
+
+    const state = await resolveProjectLiveState("proj_1", "org_1");
+
+    expect(serverRepo.getInOrganization).toHaveBeenCalledWith("srv_meta", "org_1");
+    expect(state.server).toEqual({ id: "srv_meta", name: "Meta Box" });
+  });
+
+  it("omits server when the derived deploy target is not server", async () => {
+    projectRepo.findById.mockResolvedValue(
+      project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }),
+    );
+
+    const state = await resolveProjectLiveState("proj_1", "org_1");
+
+    expect(state.server).toBeNull();
+    expect(serverRepo.getInOrganization).not.toHaveBeenCalled();
+  });
+});
+
+describe("runtimeImageRef", () => {
+  it("drops every host path, including the service fallback", () => {
+    expect(
+      runtimeImageRef(
+        "/var/lib/openship/mounted-releases/proj_1/current",
+        "/var/lib/openship/mounted-releases/proj_1/releases/dep_code",
+      ),
+    ).toBeNull();
+    expect(runtimeImageRef("/host/path", "ghcr.io/acme/app:1")).toBe("ghcr.io/acme/app:1");
   });
 });

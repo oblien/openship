@@ -1938,10 +1938,7 @@ export async function getCommitStatus(c: Context) {
   return c.json({ data: status });
 }
 
-/**
- * GET /:id/live-state — independent runtime (image) and code (mounted SHA)
- * pointers plus the bound server. Wave 4 skins the project header from this.
- */
+/** GET /:id/live-state — runtime image pointer, mounted code SHA, bound server. */
 export async function getLiveState(c: Context) {
   const id = param(c, "id");
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "read" });

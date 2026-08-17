@@ -142,7 +142,7 @@ type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[numb
  *  cloud gate in the dashboard, where `deployTarget === "cloud"` IS the cloud test. It
  *  also left the two fields disagreeing, since `serverId` already coalesced to its
  *  column while the target did not. */
-function readDeployMeta(
+export function readDeployMeta(
   p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
   dep: Deployment | null | undefined,
 ): { deployTarget: DeployTarget | null; serverId: string | null } {
@@ -2020,9 +2020,7 @@ export async function resolveDeployedDrift(
 ): Promise<DeployedDrift> {
   if (mode === "commit") {
     let deployedSha: string | null = null;
-    // Code and runtime pointers are independent. After a mounted code release the
-    // runtime row still holds the image-build SHA, so drift must read the code
-    // pointer or a successful release looks outdated forever.
+    // Enabled code pointer is the deployed SHA; otherwise the runtime row.
     const deploymentId = activeCodeReleaseDeploymentId(p) ?? p.activeDeploymentId;
     if (deploymentId) {
       const dep = await repos.deployment.findById(deploymentId).catch(() => null);

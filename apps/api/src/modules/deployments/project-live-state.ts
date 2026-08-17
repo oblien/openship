@@ -1,5 +1,6 @@
 import { repos, type Project } from "@repo/db";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
+import { readDeployMeta } from "../projects/project-crud.service";
 import {
   activeCodeReleaseDeploymentId,
   mountedReleaseBuildMode,
@@ -46,22 +47,21 @@ function serverLabel(server: { id: string; name?: string | null; sshHost?: strin
   return server.name?.trim() || server.sshHost?.trim() || server.id;
 }
 
-function runtimeImageRef(
+function isHostPath(ref?: string | null): boolean {
+  return Boolean(ref?.startsWith("/"));
+}
+
+/** Registry/image ref only — never a host path stored on a code-release row. */
+export function runtimeImageRef(
   depImageRef: string | null | undefined,
   sdImageRef: string | null | undefined,
 ): string | null {
-  // Code-release rows store a host path in imageRef; that is not the runtime image.
-  if (depImageRef && !depImageRef.startsWith("/")) return depImageRef;
-  return sdImageRef ?? depImageRef ?? null;
+  if (depImageRef && !isHostPath(depImageRef)) return depImageRef;
+  if (sdImageRef && !isHostPath(sdImageRef)) return sdImageRef;
+  return null;
 }
 
-/**
- * Independent runtime and code pointers for the project header.
- *
- * `activeDeploymentId` is the container/image. `activeReleaseDeploymentId` is
- * the mounted code SHA. They move on different schedules and must not be
- * collapsed into one "live" deployment.
- */
+/** Independent runtime image pointer and mounted code SHA. */
 export async function resolveProjectLiveState(
   projectId: string,
   organizationId: string,
@@ -76,12 +76,18 @@ export async function readProjectLiveState(project: Project): Promise<ProjectLiv
   const codeId = activeCodeReleaseDeploymentId(project);
   const config = mountedReleaseConfig(project);
 
-  const [runtimeDep, codeDep, runtimeSds, server] = await Promise.all([
+  const [runtimeDep, codeDep, runtimeSds] = await Promise.all([
     runtimeId ? repos.deployment.findById(runtimeId).catch(() => null) : Promise.resolve(null),
     codeId ? repos.deployment.findById(codeId).catch(() => null) : Promise.resolve(null),
     runtimeId ? repos.service.listByDeployment(runtimeId).catch(() => []) : Promise.resolve([]),
-    project.serverId ? repos.server.get(project.serverId).catch(() => null) : Promise.resolve(null),
   ]);
+
+  const { deployTarget, serverId } = readDeployMeta(project, runtimeDep);
+  const server =
+    deployTarget === "server" && serverId
+      ? ((await repos.server.getInOrganization(serverId, project.organizationId).catch(() => null)) ??
+        null)
+      : null;
 
   const sd = runtimeSds.find((row) => row.imageDigest || row.imageRef);
   const imageRef = runtimeImageRef(runtimeDep?.imageRef, sd?.imageRef);
@@ -103,9 +109,7 @@ export async function readProjectLiveState(project: Project): Promise<ProjectLiv
         }
       : null,
     server: server
-      ? { id: server.id, name: serverLabel(server) }
-      : project.serverId
-        ? { id: project.serverId, name: project.serverId }
-        : null,
+      ? { id: server.id || serverId!, name: serverLabel({ ...server, id: server.id || serverId! }) }
+      : null,
   };
 }
