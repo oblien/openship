@@ -445,7 +445,7 @@ export const project = pgTable(
     deployLeaseId: text("deploy_lease_id"),
     mountedRelease: jsonb("mounted_release").$type<{
       enabled: boolean;
-      buildMode?: "prebuilt" | "server";
+      buildMode?: "prebuilt" | "server" | "upload";
       serviceId?: string;
       serviceName?: string;
       sourcePath?: string;

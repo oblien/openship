@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Code2, ChevronDown, PackageCheck, Save, ServerCog } from "lucide-react";
+import { Code2, ChevronDown, PackageCheck, Save, ServerCog, Upload } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 
 export interface MountedReleaseConfigUI {
   enabled: boolean;
-  buildMode?: "prebuilt" | "server";
+  buildMode?: "prebuilt" | "server" | "upload";
   serviceId?: string;
   serviceName?: string;
   sourcePath?: string;
@@ -189,7 +189,7 @@ export function MountedReleaseSettings() {
             <div className="space-y-2 md:col-span-2">
               <p className="text-[12px] font-medium text-foreground">Release files</p>
               <div
-                className="grid gap-2 sm:grid-cols-2"
+                className="grid gap-2 sm:grid-cols-3"
                 role="radiogroup"
                 aria-label="Release files"
               >
@@ -199,6 +199,12 @@ export function MountedReleaseSettings() {
                     icon: PackageCheck,
                     title: "Prebuilt in Git",
                     copy: "Deploy exactly what was committed. No install or build runs on the server.",
+                  },
+                  {
+                    value: "upload" as const,
+                    icon: Upload,
+                    title: "Build locally and upload",
+                    copy: "Pack a deterministic artifact on the operator machine, then verify SHA-256 before switch.",
                   },
                   {
                     value: "server" as const,

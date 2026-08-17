@@ -19,6 +19,9 @@ export interface MountedReleaseContract {
   healthPort?: number;
   reloadCommand?: string;
   commitSha?: string;
+  lockHashes?: Record<string, string>;
+  artifactSha256?: string;
+  artifactSource?: "local-upload" | "git-prebuilt" | "server-prepared";
   runtimeDeploymentId: string;
   hostRoot: string;
   releaseDir: string;
@@ -96,6 +99,9 @@ function cloneConfig(config: MountedReleaseConfig): MountedReleaseConfig {
 export function freezeMountedReleaseContract(input: {
   config: MountedReleaseConfig;
   commitSha?: string;
+  lockHashes?: Record<string, string>;
+  artifactSha256?: string;
+  artifactSource?: "local-upload" | "git-prebuilt" | "server-prepared";
   runtimeDeploymentId: string;
   hostRoot: string;
   releaseDir: string;
@@ -111,6 +117,9 @@ export function freezeMountedReleaseContract(input: {
     healthPort: config.healthPort,
     reloadCommand: config.reloadCommand,
     commitSha: input.commitSha,
+    lockHashes: input.lockHashes ? { ...input.lockHashes } : undefined,
+    artifactSha256: input.artifactSha256,
+    artifactSource: input.artifactSource,
     runtimeDeploymentId: input.runtimeDeploymentId,
     hostRoot: input.hostRoot,
     releaseDir: input.releaseDir,
@@ -131,6 +140,22 @@ export function withSnapshotCommit(
   commitSha: string,
 ): MountedReleaseContract {
   return { ...contract, commitSha };
+}
+
+export function withSnapshotArtifact(
+  contract: MountedReleaseContract,
+  extra: {
+    lockHashes?: Record<string, string>;
+    artifactSha256?: string;
+    artifactSource?: "local-upload" | "git-prebuilt" | "server-prepared";
+    commitSha?: string;
+  },
+): MountedReleaseContract {
+  return {
+    ...contract,
+    ...extra,
+    lockHashes: extra.lockHashes ? { ...extra.lockHashes } : contract.lockHashes,
+  };
 }
 
 export function markReleaseTreeReadOnlyCommand(releaseDir: string): string {

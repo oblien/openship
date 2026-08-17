@@ -6,7 +6,7 @@ export const PROJECT_CONFIG_EXPORT_VERSION = 1 as const;
 
 export type ExportedMountedRelease = {
   enabled: boolean;
-  buildMode?: "prebuilt" | "server";
+  buildMode?: "prebuilt" | "server" | "upload";
   serviceName?: string;
   sourcePath?: string;
   containerPath: string;

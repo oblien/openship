@@ -328,7 +328,9 @@ const ReleaseSourceSchema = Type.Object({
  * are derived by OpenShip; operators only describe the container contract. */
 const MountedReleaseSchema = Type.Object({
   enabled: Type.Boolean(),
-  buildMode: Type.Optional(Type.Union([Type.Literal("prebuilt"), Type.Literal("server")])),
+  buildMode: Type.Optional(
+    Type.Union([Type.Literal("prebuilt"), Type.Literal("server"), Type.Literal("upload")]),
+  ),
   serviceId: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   serviceName: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   sourcePath: Type.Optional(Type.String({ maxLength: 300, pattern: NO_TRAVERSAL_PATTERN })),

@@ -193,11 +193,12 @@ describe("project config export serializers", () => {
     const recipe = serializeMountedRelease({
       enabled: true,
       containerPath: "/app",
+      buildMode: "upload",
       cloneTokenEncrypted: "enc1:NO",
       webhookSecret: "whsec",
       unknown: "drop-me",
     });
-    expect(recipe).toEqual({ enabled: true, containerPath: "/app" });
+    expect(recipe).toEqual({ enabled: true, containerPath: "/app", buildMode: "upload" });
     expect(recipe).not.toHaveProperty("cloneTokenEncrypted");
     expect(recipe).not.toHaveProperty("webhookSecret");
     expect(exportContainsSecretKeys(recipe)).toBe(false);

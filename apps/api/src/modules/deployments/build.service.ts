@@ -16,7 +16,7 @@
 
 import { repos, type Deployment, type Project } from "@repo/db";
 import { planAndSelectTrigger, type ReleasePlan } from "./release-planner";
-import { mountedReleaseConfig } from "./mounted-release.config";
+import { mountedReleaseBuildMode, mountedReleaseConfig } from "./mounted-release.config";
 import {
   abortMountedReleaseHostWork,
   claimDeployLease,
@@ -2184,9 +2184,11 @@ export async function triggerPlannedDeployment(
     throw new NotFoundError("Project", data.projectId);
   }
   const services = await repos.service.listByProject(project.id).catch(() => []);
+  const release = mountedReleaseConfig(project);
   const { plan, trigger } = planAndSelectTrigger({
     changedPaths: null,
-    mountedReleaseEnabled: Boolean(mountedReleaseConfig(project)),
+    mountedReleaseEnabled: Boolean(release),
+    buildMode: release ? mountedReleaseBuildMode(release) : undefined,
     services: services.map((s) => ({
       id: s.id,
       name: s.name,

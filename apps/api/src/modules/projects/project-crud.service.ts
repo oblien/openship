@@ -1466,7 +1466,11 @@ export async function updateProject(
       }
       const relative = (value: string) => value.trim().replace(/^\/+|\/+$/g, "");
       const buildMode =
-        release.buildMode ?? (release.prepareCommand?.trim() ? "server" : "prebuilt");
+        release.buildMode === "upload" || release.buildMode === "prebuilt" || release.buildMode === "server"
+          ? release.buildMode
+          : release.prepareCommand?.trim()
+            ? "server"
+            : "prebuilt";
       const persisted = {
         ...release,
         buildMode,

@@ -19,7 +19,7 @@ export type ProjectLiveRuntime = {
 export type ProjectLiveCode = {
   deploymentId: string | null;
   sha: string | null;
-  strategy: "prebuilt" | "server";
+  strategy: "prebuilt" | "server" | "upload";
   activatedAt: string | null;
 };
 

@@ -106,6 +106,9 @@ describe("mounted release contract snapshot", () => {
     const frozen = freezeMountedReleaseContract({
       config: live,
       commitSha: "abc123",
+      lockHashes: { "composer.lock": "aa".repeat(32) },
+      artifactSource: "local-upload",
+      artifactSha256: "bb".repeat(32),
       runtimeDeploymentId: "dep_runtime",
       hostRoot,
       releaseDir,
@@ -129,6 +132,9 @@ describe("mounted release contract snapshot", () => {
     expect(read?.reloadCommand).toBe("kill -HUP 1");
     expect(read?.sharedPaths).toEqual(["storage"]);
     expect(read?.runtimeDeploymentId).toBe("dep_runtime");
+    expect(read?.lockHashes).toEqual({ "composer.lock": "aa".repeat(32) });
+    expect(read?.artifactSource).toBe("local-upload");
+    expect(read?.artifactSha256).toBe("bb".repeat(32));
   });
 });
 

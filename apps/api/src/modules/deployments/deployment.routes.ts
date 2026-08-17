@@ -73,6 +73,18 @@ r.post(
   ctrl.mountedRelease,
 );
 r.post(
+  "/artifact",
+  {
+    tag: "deployment:write",
+    collection: true,
+    mcp: {
+      description:
+        "Upload a deterministic local artifact (multipart: projectId, sha256, file, optional commitSha). Verifies SHA-256 before activation. Not a webhook path.",
+    },
+  },
+  ctrl.uploadArtifact,
+);
+r.post(
   "/plan",
   {
     tag: "deployment:read",

@@ -1,8 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
+import { createGzip } from "node:zlib";
 
 import { PACKAGE_ROOT_ONLY_EXCLUDES } from "@repo/core";
 
@@ -159,4 +163,202 @@ export function getTarCreateArgs(
 
   args.push(".");
   return args;
+}
+
+/** Lockfiles whose hash decides whether a server-prepare step can be skipped. */
+export const LOCKFILE_BASENAMES = [
+  "composer.lock",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lock",
+  "Cargo.lock",
+  "go.sum",
+] as const;
+
+export type ArtifactSource = "local-upload" | "git-prebuilt" | "server-prepared";
+
+export interface ArtifactManifest {
+  version: 1;
+  sha256: string;
+  files: string[];
+  source: ArtifactSource;
+  commitSha?: string;
+  lockHashes?: Record<string, string>;
+  compression: "zstd" | "gzip";
+}
+
+export function artifactManifestPath(archivePath: string): string {
+  return archivePath.replace(/\.tar\.(zst|gz)$/i, "") + ".manifest.json";
+}
+
+export async function sha256File(filePath: string): Promise<string> {
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(filePath), hash);
+  return hash.digest("hex");
+}
+
+export async function hashLockfiles(root: string): Promise<Record<string, string>> {
+  const hashes: Record<string, string> = {};
+  for (const name of LOCKFILE_BASENAMES) {
+    const path = join(root, name);
+    try {
+      const info = await stat(path);
+      if (!info.isFile()) continue;
+      hashes[name] = await sha256File(path);
+    } catch {
+      // Lockfile not present in this tree.
+    }
+  }
+  return hashes;
+}
+
+export async function hasZstdBinary(): Promise<boolean> {
+  try {
+    await execFileAsync("zstd", ["-V"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Recursively list relative paths (posix) so two walks of the same tree match. */
+export async function listArtifactFiles(root: string): Promise<string[]> {
+  const files: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true });
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      const rel = relative(root, full).split("\\").join("/");
+      if (!rel || rel.split("/").includes("..")) continue;
+      if (entry.isDirectory()) {
+        await walk(full);
+        continue;
+      }
+      if (entry.isFile() || entry.isSymbolicLink()) files.push(rel);
+    }
+  }
+  await walk(root);
+  files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return files;
+}
+
+function normalizeGzipHeader(buffer: Buffer): void {
+  // Bytes 4-7 are mtime; byte 9 is OS. Zero both so Node/gzip builds match.
+  if (buffer.length >= 10 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    buffer.writeUInt32LE(0, 4);
+    buffer[9] = 255;
+  }
+}
+
+async function packTarToFile(sourceDir: string, files: string[], tarPath: string): Promise<void> {
+  const tmpDir = await mkdtemp(join(tmpdir(), "openship-artlist-"));
+  const listFile = join(tmpDir, "files.null");
+  await writeFile(listFile, files.join("\0"));
+  try {
+    await execFileAsync(
+      "tar",
+      [
+        "--sort=name",
+        "--mtime=@0",
+        "--owner=0",
+        "--group=0",
+        "--numeric-owner",
+        "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime",
+        "-cf",
+        tarPath,
+        "-C",
+        sourceDir,
+        "--null",
+        "-T",
+        listFile,
+      ],
+      { env: getTarCreateEnv() },
+    );
+  } catch {
+    // GNU --sort/--mtime flags are missing (bsdtar). tar-fs + header map is portable.
+    const { pack } = await import("tar-fs");
+    await pipeline(
+      pack(sourceDir, {
+        entries: files,
+        map(header) {
+          header.mtime = new Date(0);
+          header.uid = 0;
+          header.gid = 0;
+          header.uname = "";
+          header.gname = "";
+          header.mode = header.type === "directory" || ((header.mode ?? 0) & 0o111) ? 0o755 : 0o644;
+          return header;
+        },
+      }),
+      createWriteStream(tarPath),
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Pack `sourceDir` into a deterministic compressed archive. Prefers zstd when
+ * the `zstd` binary is on PATH; otherwise gzip with sorted files, mtime 0, and
+ * a normalized gzip header.
+ */
+export async function packDeterministicArtifact(opts: {
+  sourceDir: string;
+  destPath: string;
+  source: ArtifactSource;
+  commitSha?: string;
+  lockHashes?: Record<string, string>;
+}): Promise<ArtifactManifest & { archivePath: string; manifestPath: string }> {
+  const files = await listArtifactFiles(opts.sourceDir);
+  const lockHashes = opts.lockHashes ?? (await hashLockfiles(opts.sourceDir));
+  const useZstd = await hasZstdBinary();
+  const archivePath = opts.destPath.replace(/\.tar\.(zst|gz)$/i, "") + (useZstd ? ".tar.zst" : ".tar.gz");
+  const tarPath = `${archivePath}.partial.tar`;
+
+  try {
+    await packTarToFile(opts.sourceDir, files, tarPath);
+    if (useZstd) {
+      await execFileAsync("zstd", ["-T1", "-f", "-q", "-o", archivePath, tarPath]);
+    } else {
+      await pipeline(createReadStream(tarPath), createGzip({ level: 9 }), createWriteStream(archivePath));
+      const { readFile, writeFile: write } = await import("node:fs/promises");
+      const gzipped = await readFile(archivePath);
+      normalizeGzipHeader(gzipped);
+      await write(archivePath, gzipped);
+    }
+  } finally {
+    await rm(tarPath, { force: true });
+  }
+
+  const sha256 = await sha256File(archivePath);
+  const manifest: ArtifactManifest = {
+    version: 1,
+    sha256,
+    files,
+    source: opts.source,
+    compression: useZstd ? "zstd" : "gzip",
+    ...(opts.commitSha ? { commitSha: opts.commitSha } : {}),
+    ...(Object.keys(lockHashes).length ? { lockHashes } : {}),
+  };
+  const manifestPath = artifactManifestPath(archivePath);
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return { ...manifest, archivePath, manifestPath };
+}
+
+export async function extractArtifact(archivePath: string, destDir: string): Promise<void> {
+  const args = ["-xaf", archivePath, "-C", destDir];
+  try {
+    await execFileAsync("tar", args, { maxBuffer: 16 * 1024 * 1024 });
+  } catch (first) {
+    const zstd = archivePath.endsWith(".zst") || archivePath.endsWith(".tar.zst");
+    try {
+      await execFileAsync("tar", zstd ? ["-I", "zstd", "-xf", archivePath, "-C", destDir] : ["-xzf", archivePath, "-C", destDir], {
+        maxBuffer: 16 * 1024 * 1024,
+      });
+    } catch {
+      throw first;
+    }
+  }
 }

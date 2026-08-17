@@ -19,9 +19,14 @@ import { maskEnv, maskScanService } from "../../lib/secret-env";
 import { maybeProxyCloudProject, proxyToSaaS } from "../../lib/cloud/project-router";
 import { promoteProjectToCloud, TransferConflictError } from "../projects/transfer.service";
 import { env } from "../../config";
-import { isMountedRelease, restoreMountedRelease, triggerMountedRelease } from "./mounted-release.service";
-import { mountedReleaseConfig } from "./mounted-release.config";
+import { isMountedRelease, restoreMountedRelease, triggerMountedRelease, triggerUploadedArtifact } from "./mounted-release.service";
+import { mountedReleaseBuildMode, mountedReleaseConfig } from "./mounted-release.config";
 import { planRelease as classifyRelease } from "./release-planner";
+import { assertArtifactSha256, isSha256Hex, normalizeSha256 } from "./release-driver";
+import { sha256File } from "@repo/adapters";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export async function list(c: Context) {
   const ctx = getRequestContext(c);
@@ -115,6 +120,48 @@ export async function mountedRelease(c: Context) {
   return c.json({ data: { deployment_id: dep.id, deployment: deploymentService.presentDeployment(dep) } }, 202);
 }
 
+const ARTIFACT_MAX_BYTES = 512 * 1024 * 1024;
+
+export async function uploadArtifact(c: Context) {
+  const ctx = getRequestContext(c);
+  const form = await c.req.parseBody({ all: true });
+  const projectId = String(form.projectId ?? "");
+  const claimed = String(form.sha256 ?? "");
+  const commitSha = form.commitSha ? String(form.commitSha) : undefined;
+  const file = form.file ?? form.artifact;
+  if (!projectId) throw new AppError("projectId is required.", 400);
+  if (!isSha256Hex(claimed)) throw new AppError("sha256 must be a 64-character hex digest.", 400);
+  if (!file || typeof file === "string") throw new AppError("An artifact file is required.", 400);
+  await permission.assert(ctx, { resourceType: "project", resourceId: projectId, action: "write" });
+
+  const blob = file as File;
+  const size = typeof blob.size === "number" ? blob.size : 0;
+  if (size > ARTIFACT_MAX_BYTES) {
+    throw new AppError("Artifact exceeds the 512 MB upload limit.", 413, "ARTIFACT_TOO_LARGE");
+  }
+
+  const tmp = await mkdtemp(join(tmpdir(), "openship-artifact-"));
+  const localPath = join(tmp, "artifact");
+  try {
+    const bytes = Buffer.from(await blob.arrayBuffer());
+    await writeFile(localPath, bytes);
+    const actual = await sha256File(localPath);
+    assertArtifactSha256(actual, claimed);
+    const dep = await triggerUploadedArtifact(ctx, projectId, {
+      localPath,
+      sha256: normalizeSha256(claimed),
+      commitSha,
+    });
+    return c.json(
+      { data: { deployment_id: dep.id, deployment: deploymentService.presentDeployment(dep), sha256: actual } },
+      202,
+    );
+  } catch (error) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 async function loadPlannerProject(projectId: string, organizationId: string) {
   const project = await repos.project.findById(projectId);
   if (!project || project.organizationId !== organizationId) {
@@ -138,6 +185,9 @@ export async function planRelease(c: Context) {
   const plan = classifyRelease({
     changedPaths: body.changedPaths === undefined ? null : body.changedPaths,
     mountedReleaseEnabled: Boolean(mountedReleaseConfig(project)),
+    buildMode: mountedReleaseConfig(project)
+      ? mountedReleaseBuildMode(mountedReleaseConfig(project)!)
+      : undefined,
     services: services.map((s) => ({ id: s.id, name: s.name, rootDirectory: s.rootDirectory })),
     routedServiceIds: body.serviceIds,
     forceAll: body.forceAll,
