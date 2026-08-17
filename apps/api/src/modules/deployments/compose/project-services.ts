@@ -57,6 +57,7 @@ export function projectServicesToDeployableServices(
 ): DeployableService[] {
   return services.map((s): DeployableService => ({
     kind: serviceKind(s),
+    id: s.id,
     everDeployed: everDeployedByServiceId?.get(s.id),
     enabled: s.enabled,
     name: s.name,

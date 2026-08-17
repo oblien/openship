@@ -54,6 +54,11 @@ export interface MonorepoSubAppFields {
 export type DeployableService = ComposeService & MonorepoSubAppFields & {
   kind?: "compose" | "monorepo";
   /**
+   * Persistent `service` row id (`svc_...`). Present when projected from the
+   * table; absent on raw compose-parse / wizard snapshots.
+   */
+  id?: string;
+  /**
    * Whether this service is enabled. Defaults to true for new rows;
    * preflight / pipeline use this to skip disabled rows. The DB column
    * is non-nullable so it's always a real boolean once projected from

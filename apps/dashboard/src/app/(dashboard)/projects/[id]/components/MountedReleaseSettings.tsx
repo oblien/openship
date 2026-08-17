@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 export interface MountedReleaseConfigUI {
   enabled: boolean;
   buildMode?: "prebuilt" | "server";
+  serviceId?: string;
   serviceName?: string;
   sourcePath?: string;
   containerPath: string;
@@ -66,8 +67,14 @@ export function MountedReleaseSettings() {
   const buildMode = draft.buildMode ?? (draft.prepareCommand?.trim() ? "server" : "prebuilt");
 
   React.useEffect(() => {
-    setDraft(saved ?? emptyConfig);
-  }, [projectData.mountedRelease]);
+    const base = saved ?? emptyConfig;
+    const target =
+      servicesData.services.find((service) => service.id === base.serviceId) ??
+      servicesData.services.find((service) => service.name === base.serviceName);
+    setDraft(
+      target ? { ...base, serviceId: target.id, serviceName: target.name } : base,
+    );
+  }, [projectData.mountedRelease, servicesData.services]);
 
   const set = <K extends keyof MountedReleaseConfigUI>(key: K, value: MountedReleaseConfigUI[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -211,13 +218,21 @@ export function MountedReleaseSettings() {
             {servicesData.services.length > 0 ? (
               <Field label="App service" hint="Only this container receives the code mount.">
                 <select
-                  value={draft.serviceName ?? ""}
-                  onChange={(event) => set("serviceName", event.target.value || undefined)}
+                  value={draft.serviceId ?? ""}
+                  onChange={(event) => {
+                    const serviceId = event.target.value || undefined;
+                    const service = servicesData.services.find((row) => row.id === serviceId);
+                    setDraft((current) => ({
+                      ...current,
+                      serviceId,
+                      serviceName: service?.name,
+                    }));
+                  }}
                   className="h-11 w-full rounded-xl border border-input bg-background px-3.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40"
                 >
                   <option value="">Choose a service</option>
                   {servicesData.services.map((service) => (
-                    <option key={service.id} value={service.name}>
+                    <option key={service.id} value={service.id}>
                       {service.name}
                     </option>
                   ))}
@@ -389,7 +404,7 @@ export function MountedReleaseSettings() {
               disabled={
                 saving ||
                 !draft.containerPath.trim() ||
-                (servicesData.services.length > 0 && !draft.serviceName)
+                (servicesData.services.length > 0 && !draft.serviceId)
               }
               className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >

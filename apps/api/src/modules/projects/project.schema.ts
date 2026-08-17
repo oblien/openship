@@ -329,6 +329,7 @@ const ReleaseSourceSchema = Type.Object({
 const MountedReleaseSchema = Type.Object({
   enabled: Type.Boolean(),
   buildMode: Type.Optional(Type.Union([Type.Literal("prebuilt"), Type.Literal("server")])),
+  serviceId: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   serviceName: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   sourcePath: Type.Optional(Type.String({ maxLength: 300, pattern: NO_TRAVERSAL_PATTERN })),
   containerPath: Type.String({ minLength: 2, maxLength: 500, pattern: "^/[^\\0]*$" }),
