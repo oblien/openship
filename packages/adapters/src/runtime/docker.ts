@@ -2759,10 +2759,14 @@ export class DockerRuntime implements RuntimeAdapter {
     // same transport buildStaticToHost used (SSH exec, else local fs).
     if (containerId.startsWith("/")) {
       const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+      const wipe = `chmod -R u+w ${sq(containerId)} 2>/dev/null || true; rm -rf ${sq(containerId)}`;
       if (executor) {
-        await executor.exec(`rm -rf ${sq(containerId)}`).catch(() => { /* best effort */ });
+        await executor.exec(wipe).catch(() => { /* best effort */ });
       } else {
         const { rm } = await import("node:fs/promises");
+        const { execFile } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        await promisify(execFile)("chmod", ["-R", "u+w", containerId]).catch(() => {});
         await rm(containerId, { recursive: true, force: true }).catch(() => { /* best effort */ });
       }
       return;

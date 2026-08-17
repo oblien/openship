@@ -20,9 +20,10 @@ const project = {
 const mount = "/var/lib/openship/mounted-releases/proj_demo:/srv/demo";
 
 describe("mounted release config", () => {
-  it("derives one stable host root and does not duplicate the app mount", () => {
+  it("derives one stable host root and does not remount the root read-only", () => {
     expect(mountedReleaseHostRoot(project.id)).toBe("/var/lib/openship/mounted-releases/proj_demo");
     expect(mountedReleaseVolume(project as never)).toBe(mount);
+    expect(mountedReleaseVolume(project as never)).not.toMatch(/:ro$/);
     const once = withMountedReleaseVolume(project as never, ["data:/data"]);
     expect(withMountedReleaseVolume(project as never, once)).toEqual(once);
   });

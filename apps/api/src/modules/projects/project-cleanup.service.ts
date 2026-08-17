@@ -27,6 +27,13 @@ import { buildServiceRouteDomain } from "../../lib/routing-domains";
 import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { resolveLiveServiceState, type LiveMatchKind } from "../services/live-state";
+import { mountedReleaseConfig, mountedReleaseHostRoot } from "../deployments/mounted-release.config";
+import {
+  cleanupUsesRemoveImage,
+  isFilesystemArtifactRef,
+  isMountedReleaseRow,
+  mountedReleaseTreeRef,
+} from "../deployments/release-artifact";
 
 /** Identity keys a DELETE may act on: each one proves the container is this
  *  project's. Deliberately excludes `compose` (see ResolveLiveStateInput.tiers). */
@@ -199,6 +206,17 @@ export async function collectProjectManifest(
   const { rows: allDeps } = await repos.deployment.listByProject(project.id, { perPage: 1000 });
   const seenImages = new Set<string>();
 
+  const pushImageOrTree = (ref: string | null | undefined, runtime: RuntimeAdapter, label: string) => {
+    if (!ref || seenImages.has(ref)) return;
+    seenImages.add(ref);
+    if (isFilesystemArtifactRef(ref)) {
+      resources.push({ type: "artifact", ref, label, runtime });
+      return;
+    }
+    if (!(runtime instanceof DockerRuntime)) return;
+    resources.push({ type: "image", ref, label, runtime });
+  };
+
   for (const dep of allDeps) {
     // Fast-fail: if this deployment targets a server that's UNREACHABLE right
     // now, do NOT resolve/exec against it — that's the source of the ~81s
@@ -279,15 +297,7 @@ export async function collectProjectManifest(
       // These are the REAL images for a multi-service deployment — dep.imageRef
       // is only the "compose" sentinel — so without this they leak on project
       // deletion. Deduped via the shared seenImages set. Docker only.
-      if (sd.imageRef && !seenImages.has(sd.imageRef) && runtime instanceof DockerRuntime) {
-        seenImages.add(sd.imageRef);
-        resources.push({
-          type: "image",
-          ref: sd.imageRef,
-          label: `service image ${sd.imageRef.slice(0, 24)}`,
-          runtime,
-        });
-      }
+      pushImageOrTree(sd.imageRef, runtime, `service image ${(sd.imageRef ?? "").slice(0, 24)}`);
     }
 
     // Main deployment container - same order.
@@ -296,16 +306,9 @@ export async function collectProjectManifest(
       pushContainer(dep.containerId, runtime, "deployment container");
     }
 
-    // Docker images (deduplicated)
-    if (dep.imageRef && !seenImages.has(dep.imageRef) && runtime instanceof DockerRuntime) {
-      seenImages.add(dep.imageRef);
-      resources.push({
-        type: "image",
-        ref: dep.imageRef,
-        label: `image ${dep.imageRef.slice(0, 24)}`,
-        runtime,
-      });
-    }
+    pushImageOrTree(dep.imageRef, runtime, `image ${(dep.imageRef ?? "").slice(0, 24)}`);
+    const tree = mountedReleaseTreeRef(dep);
+    if (tree) pushImageOrTree(tree, runtime, `release tree ${tree.slice(0, 40)}`);
 
     // Bare runtime artifacts (release dirs stored as containerId paths)
     if (dep.containerId?.includes("/") && !(runtime instanceof DockerRuntime)) {
@@ -326,6 +329,17 @@ export async function collectProjectManifest(
   const sweepRuntimes = new Set<DockerRuntime>(dockerRuntimes);
   const localRuntime = platform().runtime;
   if (localRuntime instanceof DockerRuntime) sweepRuntimes.add(localRuntime);
+
+  const releaseRoot =
+    mountedReleaseConfig(project) || allDeps.some((dep) => isMountedReleaseRow(dep))
+      ? mountedReleaseHostRoot(project.id)
+      : null;
+  if (releaseRoot) {
+    const runtimeForRoot = [...dockerRuntimes][0] ?? localRuntime;
+    if (runtimeForRoot) {
+      pushImageOrTree(releaseRoot, runtimeForRoot, `mounted release root ${releaseRoot}`);
+    }
+  }
   for (const docker of sweepRuntimes) {
     if (!docker.supports("projectContainerSweep") || !docker.listProjectContainerIds) continue;
     const ids = await withTimeout(
@@ -749,22 +763,26 @@ export async function collectDeploymentManifest(
     });
   }
 
-  // Images - main deployment imageRef + per-service imageRef. Only Docker
-  // images need explicit removal (bare runtime artifacts are tied to the
-  // container destroy path). Deduplicated across the manifest.
-  if (runtime instanceof DockerRuntime) {
-    const seenImages = new Set<string>();
-    const pushImage = (ref: string | null | undefined, label: string) => {
-      if (!ref || seenImages.has(ref)) return;
-      seenImages.add(ref);
-      if (skip("image", ref)) return;
-      resources.push({ type: "image", ref, label, runtime });
-    };
-    pushImage(dep.imageRef, `image ${(dep.imageRef ?? "").slice(0, 24)}`);
-    for (const sd of serviceRows) {
-      pushImage(sd.imageRef, `service image ${(sd.imageRef ?? "").slice(0, 24)}`);
+  // Images and release trees. A `/` ref is a host directory — never `docker rmi`.
+  const seenImages = new Set<string>();
+  const pushImageOrTree = (ref: string | null | undefined, label: string) => {
+    if (!ref || seenImages.has(ref)) return;
+    seenImages.add(ref);
+    if (isFilesystemArtifactRef(ref)) {
+      if (skip("container", ref)) return;
+      resources.push({ type: "artifact", ref, label, runtime });
+      return;
     }
+    if (!(runtime instanceof DockerRuntime)) return;
+    if (skip("image", ref)) return;
+    resources.push({ type: "image", ref, label, runtime });
+  };
+  pushImageOrTree(dep.imageRef, `image ${(dep.imageRef ?? "").slice(0, 24)}`);
+  for (const sd of serviceRows) {
+    pushImageOrTree(sd.imageRef, `service image ${(sd.imageRef ?? "").slice(0, 24)}`);
   }
+  const tree = mountedReleaseTreeRef(dep);
+  if (tree) pushImageOrTree(tree, `release tree ${tree.slice(0, 40)}`);
 
   return { projectId: dep.projectId, organizationId: dep.organizationId, resources };
 }
@@ -907,7 +925,12 @@ async function destroyResourceOnce(
       throw new Error(`${resource.label}: unreachable — project kept, retry once reachable`);
     }
     case "image": {
-      if (!resource.runtime || !(resource.runtime instanceof DockerRuntime)) return;
+      if (!resource.runtime) return;
+      if (!cleanupUsesRemoveImage(resource.type, resource.ref)) {
+        await resource.runtime.destroy(resource.ref);
+        return;
+      }
+      if (!(resource.runtime instanceof DockerRuntime)) return;
       await resource.runtime.removeImage(resource.ref);
       return;
     }

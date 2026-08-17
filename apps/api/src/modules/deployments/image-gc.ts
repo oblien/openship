@@ -9,10 +9,12 @@
  * Safety model (see the audit): the ONLY images considered are those carrying
  * the `openship.project=<id>` label, which `labels()` stamps on FINAL build
  * images — base/third-party images (postgres, redis, mongo, …) are PULLED, never
- * labeled, and are therefore structurally unreachable here. The keep-set is the
- * exact imageRef of the active + pinned + newest-`rollbackWindow` deployments
- * (per deployment AND per compose service), so an in-use / rollback-target image
- * is never a candidate; the daemon's in-use 409 is a further backstop.
+ * labeled, and are therefore structurally unreachable here. Host paths and
+ * mounted-release rows are not Docker images and are omitted. The keep-set is
+ * the exact imageRef of the active + pinned + newest-`rollbackWindow` runtime
+ * deployments (per deployment AND per compose service), so an in-use /
+ * rollback-target image is never a candidate; the daemon's in-use 409 is a
+ * further backstop.
  *
  * Scheduled as the `images:gc` system job (see modules/jobs/job.registry.ts).
  */
@@ -27,6 +29,7 @@ import {
   resolveRollbackWindow,
   type RollbackWindowProject,
 } from "./release-retention";
+import { dockerImageGcRef, isMountedReleaseRow } from "./release-artifact";
 
 export interface ImageGcSummary {
   projectsScanned: number;
@@ -65,6 +68,7 @@ export async function computeKeepSet(
   const keepDeployments: Deployment[] = [];
   let unpinnedKept = 0;
   for (const dep of ready) {
+    if (isMountedReleaseRow(dep)) continue;
     if (dep.id === project.activeDeploymentId || dep.pinned) {
       keepDeployments.push(dep);
       continue;
@@ -86,9 +90,13 @@ export async function computeKeepSet(
   }
 
   for (const dep of keepDeployments) {
-    if (dep.imageRef) keep.add(dep.imageRef);
+    const imageRef = dockerImageGcRef(dep);
+    if (imageRef) keep.add(imageRef);
     const sds = await listSds(dep.id);
-    for (const sd of sds) if (sd.imageRef) keep.add(sd.imageRef);
+    for (const sd of sds) {
+      const serviceRef = dockerImageGcRef(dep, sd.imageRef);
+      if (serviceRef) keep.add(serviceRef);
+    }
   }
   return keep;
 }
@@ -255,6 +263,8 @@ export async function runImageGcSweep(): Promise<ImageGcSummary> {
       summary.imagesRemoved += r.removed;
       summary.bytesReclaimed += r.bytes;
       summary.skippedInUse += r.skippedInUse;
+      const { sweepMountedReleaseHostSafe } = await import("./mounted-release.cleanup");
+      await sweepMountedReleaseHostSafe(project);
     } catch (err) {
       summary.errors += 1;
       console.error(`[image-gc] project ${project.id} sweep failed:`, safeErrorMessage(err));
