@@ -3,7 +3,7 @@
  *
  * Public API: triggerDeployment, triggerPlannedDeployment, requestBuildAccess, redeployBuildSession,
  * startBuild, cancelBuildSession, respondToPrompt, createQueuedDeployment,
- * checkNoActiveBuild, buildConfigSnapshot, runDeploymentPreflight,
+ * checkNoActiveBuild, canonicalizeCommitRef, buildConfigSnapshot, runDeploymentPreflight,
  * encryptEnvVars, metaWithPrevious, loadDeployment.
  * (getBuildSessionStatus moved to ./build-status.service.)
  *
@@ -506,7 +506,7 @@ async function resolveLatestCommitInfo(ctx: RequestContext, project: Project, br
  * kept verbatim. The deploy still knows how to check it out; only the bookkeeping
  * is less precise, and that is not worth failing a deploy over.
  */
-async function canonicalizeCommitRef(
+export async function canonicalizeCommitRef(
   ctx: RequestContext,
   project: Project,
   ref: string | undefined,
@@ -2163,7 +2163,7 @@ export async function triggerPlannedDeployment(
     forceAll: data.forceAll,
     serviceIds: data.serviceIds ?? plan.serviceIds,
     smartRoute: data.smartRoute,
-    refresh: data.refresh || plan.action === "refresh_config",
+    refresh: data.refresh,
     trigger: data.trigger,
     plan,
   });

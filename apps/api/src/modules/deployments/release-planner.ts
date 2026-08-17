@@ -33,7 +33,7 @@ export interface PlanReleaseInput {
   changedPaths: string[] | null;
   mountedReleaseEnabled: boolean;
   services?: PlannerService[];
-  /** Override AE defaults (`apps/staff`, `apps/public`, `apps/mail`). */
+  /** Override default service path prefixes (`apps/staff`, `apps/public`, `apps/mail`). */
   servicePathPrefixes?: ServicePathPrefix[];
   /** Existing webhook/smart-route targets — composed with prefix matches. */
   routedServiceIds?: string[];
@@ -41,7 +41,7 @@ export interface PlanReleaseInput {
   refreshRequested?: boolean;
 }
 
-/** AE monorepo defaults. Override via `servicePathPrefixes` on the recipe later. */
+/** Default service path prefixes. Applied only when a project service binds them. */
 export const DEFAULT_SERVICE_PATH_PREFIXES: ServicePathPrefix[] = [
   { key: "staff", prefixes: ["apps/staff"] },
   { key: "public", prefixes: ["apps/public"] },
@@ -139,8 +139,10 @@ export function planRelease(input: PlanReleaseInput): ReleasePlan {
       ? "composer.lock changed; deploy code and prepare the Composer layer."
       : "Application, Blade, or tracked asset files changed; deploy code.";
   } else if (sawConfig) {
-    action = "refresh_config";
-    reason = "Environment or route files changed; refresh configuration.";
+    // Git-tracked env/route files must be checked out. `refresh: true` only
+    // reapplies the env-var table and never pulls the commit.
+    action = "deploy_code";
+    reason = "Environment or route files changed; deploy the new commit.";
   } else {
     action = "skip";
     reason = "Only documentation or unrelated monorepo paths changed.";
@@ -199,10 +201,6 @@ function resolveTargetServiceIds(
     }
   }
 
-  if (prefixIds.length && opts.routedServiceIds?.length) {
-    const inter = opts.routedServiceIds.filter((id) => prefixIds.includes(id));
-    return inter.length > 0 ? inter : prefixIds;
-  }
   if (prefixIds.length) return prefixIds;
   return opts.forceAll ? undefined : opts.routedServiceIds;
 }
@@ -211,13 +209,16 @@ function serviceMatchesPrefix(service: PlannerService, spec: ServicePathPrefix):
   if (service.id === spec.key) return true;
   const key = spec.key.trim().toLowerCase();
   const name = service.name.trim().toLowerCase();
-  if (name === key) return true;
   const root = normalizeRepoPath(service.rootDirectory ?? "").toLowerCase();
-  if (!root) return false;
-  return spec.prefixes.some((prefix) => {
+  if (spec.prefixes.some((prefix) => {
     const n = normalizeRepoPath(prefix).toLowerCase();
     return root === n || root.startsWith(`${n}/`);
-  });
+  })) {
+    return true;
+  }
+  // Name matches only when this service has no root of its own — a service
+  // named "public" rooted at "frontend" must not bind apps/public.
+  return !root && name === key;
 }
 
 function normalizeRepoPath(path: string): string {
@@ -248,17 +249,16 @@ function isComposerLock(path: string): boolean {
 
 function isPhpExtensionPath(path: string): boolean {
   if (/(^|\/)docker\/php(\/|$)/i.test(path)) return true;
-  if (/php[-_.]?ext/i.test(path)) return true;
-  if (/(^|\/)extensions\.ini$/i.test(path)) return true;
-  if (/php/i.test(path) && /\/conf\.d\/.+\.ini$/i.test(path)) return true;
+  if (/(^|\/)php\/conf\.d\/[^/]+\.ini$/i.test(path)) return true;
+  if (/(^|\/)php\/extensions\.ini$/i.test(path)) return true;
   return false;
 }
 
 function isRuntimePath(path: string): boolean {
   const base = path.split("/").pop() ?? path;
   if (/^Dockerfile(\.|$)/i.test(base)) return true;
-  if (/^docker-compose\.(ya?ml)$/i.test(base)) return true;
-  if (/^compose\.(ya?ml)$/i.test(base)) return true;
+  if (/^docker-compose[^/]*\.(ya?ml)$/i.test(base)) return true;
+  if (/^compose(\.[^/]+)?\.(ya?ml)$/i.test(base)) return true;
   if (base === ".dockerignore") return true;
   if (base.toLowerCase() === "php.ini") return true;
   if (isPhpExtensionPath(path)) return true;

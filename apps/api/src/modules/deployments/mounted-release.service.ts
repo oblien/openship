@@ -1,5 +1,5 @@
 import { assembleGitClone } from "@repo/adapters";
-import { shellQuote, safeErrorMessage, AppError } from "@repo/core";
+import { shellQuote, safeErrorMessage, AppError, compareCommitSha } from "@repo/core";
 import { repos, type Deployment, type Project } from "@repo/db";
 import type { RequestContext } from "../../lib/request-context";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
@@ -7,7 +7,12 @@ import { resolveServerExecutor } from "../../lib/deployment-runtime";
 import { livePrimaryContainerId } from "../services/service-container";
 import { resolveBuildGitToken } from "../github/clone-auth";
 import { assertGitHubRepoAccess } from "../github/github-access";
-import { createQueuedDeployment, buildConfigSnapshot, checkNoActiveBuild } from "./build.service";
+import {
+  createQueuedDeployment,
+  buildConfigSnapshot,
+  checkNoActiveBuild,
+  canonicalizeCommitRef,
+} from "./build.service";
 import * as sessionManager from "./session-manager";
 import {
   mountedReleaseBuildMode,
@@ -389,6 +394,22 @@ async function runMountedRelease(
   }
 }
 
+export async function existingWebhookRelease(
+  project: Pick<Project, "id" | "activeReleaseDeploymentId">,
+  commitSha: string,
+): Promise<Deployment | undefined> {
+  const inFlight = await repos.deployment
+    .findInProgressByCommit(project.id, commitSha)
+    .catch(() => undefined);
+  if (inFlight) return inFlight;
+  if (!project.activeReleaseDeploymentId) return undefined;
+  const active = await repos.deployment
+    .findById(project.activeReleaseDeploymentId)
+    .catch(() => null);
+  if (active && compareCommitSha(active.commitSha, commitSha) === "same") return active;
+  return undefined;
+}
+
 export async function triggerMountedRelease(
   ctx: RequestContext,
   projectId: string,
@@ -407,6 +428,17 @@ export async function triggerMountedRelease(
     throw new AppError("Mounted releases are not enabled for this project.", 409, RELEASE_ERROR);
   }
   await assertGitHubRepoAccess(ctx, { owner: project.gitOwner, repo: project.gitRepo });
+  const trigger = opts?.trigger ?? (opts?.commitSha ? "release-rollback" : "code-release");
+  const commitSha = await canonicalizeCommitRef(ctx, project, opts?.commitSha);
+  if (trigger === "webhook" && commitSha) {
+    const existing = await existingWebhookRelease(project, commitSha);
+    if (existing) {
+      console.log(
+        `[Deploy] project ${project.id}: webhook code release for ${commitSha} skipped — already ${existing.status === "ready" ? "live" : "in progress"} (${existing.id}).`,
+      );
+      return existing;
+    }
+  }
   await checkNoActiveBuild(project.id);
   const runtime = await activeRuntime(project);
   const meta = {
@@ -423,15 +455,15 @@ export async function triggerMountedRelease(
     framework: project.framework || "unknown",
     meta,
     envVars: null,
-    commitSha: opts?.commitSha,
-    trigger: opts?.trigger ?? (opts?.commitSha ? "release-rollback" : "code-release"),
+    commitSha,
+    trigger,
     rollbackStrategy: "snapshot",
     plan: opts?.plan,
     serviceIds: opts?.serviceIds,
     changedPaths: opts?.changedPaths ?? null,
   });
   sessionManager.createSession(dep.id, project.id);
-  void runMountedRelease(ctx, project, dep, opts?.commitSha);
+  void runMountedRelease(ctx, project, dep, commitSha);
   return dep;
 }
 

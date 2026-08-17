@@ -199,8 +199,8 @@ async function deployProjectFromPush(
       if (routed.mode === "services") {
         serviceIds = routed.serviceIds;
       }
-      // mode "skip" is not final — the planner also maps AE prefixes
-      // (apps/public/**) that compose services with a null rootDirectory miss.
+      // mode "skip" is not final — the planner also maps bound service
+      // prefixes that compose services with a null rootDirectory miss.
     }
   } else {
     // No payload was passed (manual trigger path going through this
@@ -272,7 +272,6 @@ async function deployProjectFromPush(
     // Let the compose-drift reconciler skip its repo scan when this push
     // didn't touch a compose file. Truncated → pass null (unknown → reconcile).
     changedPaths: persistablePaths,
-    refresh: plan.action === "refresh_config",
     plan,
   });
 
