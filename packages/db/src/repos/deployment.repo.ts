@@ -247,10 +247,16 @@ export function createDeploymentRepo(db: Database) {
       status: string,
       extra?: Partial<NewDeployment>,
     ): Promise<boolean> {
+      const guards = [eq(deployment.id, id), ne(deployment.status, "cancelled")];
+      // Ready must stay ready: cancel after a committed success must not
+      // overwrite the row or unlock a revert of `current`.
+      if (status === "cancelled") {
+        guards.push(inArray(deployment.status, ["queued", "building", "deploying"]));
+      }
       const rows = await db
         .update(deployment)
         .set({ status, ...extra, updatedAt: new Date() })
-        .where(and(eq(deployment.id, id), ne(deployment.status, "cancelled")))
+        .where(and(...guards))
         .returning();
       return rows.length > 0;
     },
@@ -309,16 +315,48 @@ export function createDeploymentRepo(db: Database) {
     },
 
     /**
-     * Boot sweep: a deploy runs as an in-process background task driven by the
-     * in-memory build session. A restart kills that session, so any deployment
-     * still `queued`/`building`/`deploying` at boot is ORPHANED — nothing will
-     * ever advance it, and the UI hangs on "Building" forever. Flip those (and
-     * finalize their build_session, which the detail view reads for status) to a
-     * terminal `cancelled` so the operator can just redeploy.
-     *
-     * `reconciling` is deliberately EXCLUDED — a connection-loss deploy may be
-     * running fine on the host; the reconcile scheduler settles it separately.
-     * Returns the number of deployments swept.
+     * In-flight row for a project, if any. Used by checkNoActiveBuild so a
+     * buried queued/building/deploying row is not missed when the newest page
+     * of history is already terminal.
+     */
+    async findInFlightByProject(projectId: string) {
+      return db.query.deployment.findFirst({
+        where: and(
+          eq(deployment.projectId, projectId),
+          inArray(deployment.status, ["queued", "building", "deploying"]),
+        ),
+        orderBy: [desc(deployment.createdAt)],
+      });
+    },
+
+    async listInFlight() {
+      return db
+        .select()
+        .from(deployment)
+        .where(inArray(deployment.status, ["queued", "building", "deploying"]));
+    },
+
+    /**
+     * Persist a named mounted-release phase. Refuses (returns false) when the
+     * row is already `cancelled` — same pin as updateStatus.
+     */
+    async setReleasePhase(
+      id: string,
+      phase: string,
+      extra?: Partial<NewDeployment>,
+    ): Promise<boolean> {
+      const rows = await db
+        .update(deployment)
+        .set({ releasePhase: phase, ...extra, updatedAt: new Date() })
+        .where(and(eq(deployment.id, id), ne(deployment.status, "cancelled")))
+        .returning();
+      return rows.length > 0;
+    },
+
+    /**
+     * Mark orphaned queued/building/deploying rows cancelled. `reconciling` is
+     * excluded — the reconcile scheduler settles those. Boot uses
+     * recoverInterruptedDeployments instead.
      */
     async sweepStaleInFlight(reason: string): Promise<number> {
       const swept = await db
@@ -564,6 +602,20 @@ export function createDeploymentRepo(db: Database) {
         .update(buildSession)
         .set(data)
         .where(eq(buildSession.id, id));
+    },
+
+    /** Incremental persist so a restart can replay mounted-release logs. */
+    async persistBuildSessionLogs(id: string, logs: unknown[]): Promise<void> {
+      try {
+        await db
+          .update(buildSession)
+          .set({ logs: logs as never })
+          .where(eq(buildSession.id, id));
+      } catch (err) {
+        console.error(
+          `[db] build_session ${id}: incremental log persist rejected (${detailOf(err)})`,
+        );
+      }
     },
 
     /**

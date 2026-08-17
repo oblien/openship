@@ -441,6 +441,8 @@ export const project = pgTable(
     activeDeploymentId: text("active_deployment_id"),
     /** Active mounted-code release; separate from the runtime container/image pointer. */
     activeReleaseDeploymentId: text("active_release_deployment_id"),
+    /** Deployment currently allowed to do host work. Cancel must not clear this. */
+    deployLeaseId: text("deploy_lease_id"),
     mountedRelease: jsonb("mounted_release").$type<{
       enabled: boolean;
       buildMode?: "prebuilt" | "server";

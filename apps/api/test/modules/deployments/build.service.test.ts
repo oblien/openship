@@ -22,15 +22,19 @@ const {
       findById: vi.fn(),
       getEnvMap: vi.fn(),
       update: vi.fn(),
+      claimDeployLease: vi.fn(),
+      releaseDeployLease: vi.fn(),
     },
     deployment: {
       findById: vi.fn(),
       listByProject: vi.fn(),
+      findInFlightByProject: vi.fn(),
       getLatestSuccessfulForBranch: vi.fn(),
       create: vi.fn(),
       createBuildSession: vi.fn(),
       supersedeReconciling: vi.fn(),
       supersedePendingDecisions: vi.fn(),
+      deleteDeployment: vi.fn(),
     },
     service: {
       listByProject: vi.fn(),
@@ -263,9 +267,12 @@ describe("triggerDeployment", () => {
 
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
+    repos.project.claimDeployLease.mockResolvedValue(true);
+    repos.project.releaseDeployLease.mockResolvedValue(true);
     // Only read by the best-effort compose-drift reconcile (git projects).
     repos.service.listByProject.mockResolvedValue([]);
     repos.deployment.listByProject.mockResolvedValue({ rows: [] });
+    repos.deployment.findInFlightByProject.mockResolvedValue(null);
     repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
     repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
     repos.deployment.createBuildSession.mockResolvedValue(undefined);

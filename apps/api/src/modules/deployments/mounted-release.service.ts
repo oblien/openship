@@ -1,4 +1,9 @@
-import { assembleGitClone, materializeGitTokenAuth, shellGitSshWriter } from "@repo/adapters";
+import {
+  assembleGitClone,
+  materializeGitTokenAuth,
+  shellGitSshWriter,
+  type CommandExecutor,
+} from "@repo/adapters";
 import { shellQuote, safeErrorMessage, AppError, compareCommitSha } from "@repo/core";
 import { repos, type Deployment, type Project } from "@repo/db";
 import type { RequestContext } from "../../lib/request-context";
@@ -14,6 +19,19 @@ import {
   canonicalizeCommitRef,
 } from "./build.service";
 import * as sessionManager from "./session-manager";
+import {
+  abortMountedReleaseHostWork,
+  assertReleaseNotCancelled,
+  beginDeployRun,
+  cancelledError,
+  endDeployRun,
+  execAndConfirm,
+  execUnlessCancelled,
+  isCancelledError,
+  releaseDeployLease,
+  revertIfIncompleteActivation,
+  type ReleasePhase,
+} from "./deploy-lease";
 import {
   mountedReleaseBuildMode,
   mountedReleaseConfig,
@@ -44,9 +62,29 @@ function validateRef(value: string, label: string): string {
 function releaseMeta(dep: Pick<Deployment, "meta">): {
   deploymentLane?: string;
   releaseRoot?: string;
+  releasePreviousCurrent?: string;
 } {
-  const meta = (dep.meta ?? {}) as { deploymentLane?: string; mountedReleaseRoot?: string };
-  return { deploymentLane: meta.deploymentLane, releaseRoot: meta.mountedReleaseRoot };
+  const meta = (dep.meta ?? {}) as {
+    deploymentLane?: string;
+    mountedReleaseRoot?: string;
+    releasePreviousCurrent?: string;
+  };
+  return {
+    deploymentLane: meta.deploymentLane,
+    releaseRoot: meta.mountedReleaseRoot,
+    releasePreviousCurrent: meta.releasePreviousCurrent,
+  };
+}
+
+export async function findActiveSameShaRelease(
+  project: Pick<Project, "activeReleaseDeploymentId">,
+  commitSha: string,
+): Promise<Deployment | null> {
+  if (!project.activeReleaseDeploymentId) return null;
+  const active = await repos.deployment.findById(project.activeReleaseDeploymentId);
+  if (!active || active.status !== "ready") return null;
+  if (compareCommitSha(active.commitSha, commitSha) !== "same") return null;
+  return active;
 }
 
 async function activeRuntime(
@@ -137,8 +175,10 @@ function builderRun(
   );
 }
 
+type HostExec = (command: string, opts?: { timeout?: number }) => Promise<string>;
+
 async function prepareBuilderCachePaths(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   hostRoot: string,
   paths: string[],
 ): Promise<void> {
@@ -147,26 +187,24 @@ async function prepareBuilderCachePaths(
     .filter((path) => path && !path.split("/").includes(".."))
     .map((path) => `${hostRoot}/builder-cache/paths/${path}`);
   if (directories.length > 0) {
-    await executor.exec(`mkdir -p ${directories.map(shellQuote).join(" ")}`);
+    await exec(`mkdir -p ${directories.map(shellQuote).join(" ")}`);
   }
 }
 
 async function runReload(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   containerId: string,
   config: MountedReleaseConfig,
 ): Promise<void> {
   if (config.reloadCommand?.trim()) {
-    await executor.exec(
-      dockerExec(containerId, `${config.containerPath}/current`, config.reloadCommand),
-    );
+    await exec(dockerExec(containerId, `${config.containerPath}/current`, config.reloadCommand));
   } else {
-    await executor.exec(`docker restart ${shellQuote(containerId)} >/dev/null`);
+    await exec(`docker restart ${shellQuote(containerId)} >/dev/null`);
   }
 }
 
 async function checkHealth(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   containerId: string,
   config: MountedReleaseConfig,
   fallbackPort: number,
@@ -180,11 +218,11 @@ async function checkHealth(
     `(command -v curl >/dev/null && curl -fsS --max-time 3 ${shellQuote(url)} >/dev/null) || ` +
     `(command -v wget >/dev/null && wget -q -T 3 -O /dev/null ${shellQuote(url)}) && exit 0; ` +
     `sleep 1; done; exit 1`;
-  await executor.exec(dockerExec(containerId, null, probe), { timeout: 30_000 });
+  await exec(dockerExec(containerId, null, probe), { timeout: 30_000 });
 }
 
 async function prepareSharedPaths(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   hostRoot: string,
   releaseDir: string,
   paths: string[],
@@ -196,7 +234,7 @@ async function prepareSharedPaths(
     const target = `${releaseDir}/${path}`;
     const parent = target.substring(0, target.lastIndexOf("/"));
     if (existingContainerTarget?.startsWith("/")) {
-      await executor.exec(
+      await exec(
         `mkdir -p ${shellQuote(parent)}; rm -rf ${shellQuote(target)}; ` +
           `ln -s ${shellQuote(existingContainerTarget)} ${shellQuote(target)}`,
       );
@@ -208,38 +246,61 @@ async function prepareSharedPaths(
       `rm -rf ${shellQuote(target)}; ` +
       `relative=$(realpath --relative-to=${shellQuote(parent)} ${shellQuote(shared)}); ` +
       `ln -s "$relative" ${shellQuote(target)}`;
-    await executor.exec(script);
+    await exec(script);
   }
+}
+
+async function persistReleaseLogs(depId: string): Promise<void> {
+  const session = sessionManager.getSession(depId);
+  const buildSession = await repos.deployment.findBuildSessionByDeploymentId(depId);
+  if (!buildSession || !session) return;
+  await repos.deployment.persistBuildSessionLogs(buildSession.id, session.logs);
+}
+
+async function persistReleasePhase(
+  dep: Deployment,
+  phase: ReleasePhase,
+  extra?: { meta?: Record<string, unknown> },
+): Promise<void> {
+  const applied = await repos.deployment.setReleasePhase(dep.id, phase, extra);
+  if (!applied) throw cancelledError();
+  dep.releasePhase = phase;
+  if (extra?.meta) dep.meta = extra.meta as Deployment["meta"];
+  await persistReleaseLogs(dep.id);
 }
 
 async function finish(
   dep: Deployment,
-  status: "ready" | "failed",
+  status: "ready" | "failed" | "cancelled" | "no_changes",
   startedAt: number,
   error?: unknown,
 ) {
   const session = sessionManager.getSession(dep.id);
   const duration = Date.now() - startedAt;
   const errorMessage = error ? safeErrorMessage(error).slice(0, 2000) : undefined;
-  await repos.deployment.updateStatus(dep.id, status, {
+  const applied = await repos.deployment.updateStatus(dep.id, status, {
     buildDurationMs: duration,
     ...(errorMessage ? { errorMessage, errorCode: RELEASE_ERROR } : {}),
   });
+  const settled = applied ? status : "cancelled";
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
+  const sseStatus = settled === "no_changes" ? "ready" : settled;
   if (buildSession) {
     await repos.deployment.finishBuildSession(
       buildSession.id,
-      status,
+      sseStatus,
       duration,
       session?.logs ?? [],
     );
   }
-  sessionManager.updateStatus(dep.id, status, {
-    ...(errorMessage ? { errorMessage, errorCode: RELEASE_ERROR } : {}),
-  });
+  if (applied || settled === "cancelled") {
+    sessionManager.updateStatus(dep.id, sseStatus, {
+      ...(errorMessage ? { errorMessage, errorCode: RELEASE_ERROR } : {}),
+    });
+  }
 }
 
-async function runMountedRelease(
+export async function runMountedRelease(
   ctx: RequestContext,
   project: Project,
   dep: Deployment,
@@ -251,24 +312,33 @@ async function runMountedRelease(
   const incoming = `${hostRoot}/.incoming-${dep.id}`;
   const releaseDir = `${hostRoot}/releases/${dep.id}`;
   const authDir = `${hostRoot}/.auth-${dep.id}`;
+  const signal = beginDeployRun(dep.id);
   let previous = "";
-  let activated = false;
+  let committed = false;
   let token: string | undefined;
+  let executor: CommandExecutor | null = null;
+
+  const exec = (command: string, opts?: { timeout?: number }) =>
+    execUnlessCancelled(executor!, signal, dep.id, command, opts);
 
   try {
-    await repos.deployment.updateStatus(dep.id, "building");
+    const building = await repos.deployment.updateStatus(dep.id, "building");
+    if (!building) throw cancelledError();
     sessionManager.updateStatus(dep.id, "building");
     log(dep.id, "Preparing mounted code release");
 
     const runtime = await activeRuntime(project);
     const serverId =
       project.serverId ?? (runtime.deployment.meta as { serverId?: string } | null)?.serverId;
-    const { executor } = await resolveServerExecutor(serverId ?? undefined, project.organizationId);
+    executor = (await resolveServerExecutor(serverId ?? undefined, project.organizationId)).executor;
     const repoUrl = project.gitUrl;
     if (!repoUrl)
       throw new AppError("Mounted releases require a linked Git repository.", 409, RELEASE_ERROR);
     const branch = validateRef(project.gitBranch || "main", "Git branch");
     const commit = requestedCommit ? validateRef(requestedCommit, "commit SHA") : null;
+
+    await persistReleasePhase(dep, "fetching");
+    await assertReleaseNotCancelled(dep.id);
 
     const credential = await resolveBuildGitToken({
       ctx,
@@ -293,7 +363,7 @@ async function runMountedRelease(
       await executor.mkdir(authDir);
       await executor.writeFile(`${authDir}/id`, credential.ssh.privateKey);
       await executor.writeFile(`${authDir}/known_hosts`, credential.ssh.knownHosts);
-      await executor.exec(
+      await exec(
         `chmod 700 ${shellQuote(authDir)} && chmod 600 ${shellQuote(`${authDir}/id`)} ${shellQuote(`${authDir}/known_hosts`)}`,
       );
     }
@@ -318,7 +388,7 @@ async function runMountedRelease(
         : undefined,
     });
 
-    await executor.exec(
+    await exec(
       `mkdir -p ${shellQuote(`${hostRoot}/releases`)} ${shellQuote(`${hostRoot}/shared`)} ${shellQuote(`${hostRoot}/builder-cache`)}; ` +
         `rm -rf ${shellQuote(incoming)} ${shellQuote(releaseDir)}; ` +
         `git init --bare ${shellQuote(`${hostRoot}/source.git`)} >/dev/null 2>&1 || true`,
@@ -327,7 +397,7 @@ async function runMountedRelease(
       ? `+${commit}:refs/openship/${dep.id}`
       : `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
     try {
-      await executor.exec(
+      await exec(
         `${clone.gitEnv} git ${clone.credFlag} --git-dir=${shellQuote(`${hostRoot}/source.git`)} ` +
           `fetch --force --prune --depth 50 ${shellQuote(clone.cloneUrl)} ${shellQuote(refspec)}`,
         { timeout: 120_000 },
@@ -336,76 +406,107 @@ async function runMountedRelease(
       await tokenAuth?.cleanup();
     }
     const resolvedSha = (
-      await executor.exec(
+      await exec(
         `git --git-dir=${shellQuote(`${hostRoot}/source.git`)} rev-parse ${shellQuote(commit ? `refs/openship/${dep.id}` : `refs/remotes/origin/${branch}`)}`,
       )
     ).trim();
+
+    const alreadyLive = await findActiveSameShaRelease(project, resolvedSha);
+    if (alreadyLive) {
+      log(dep.id, `Release ${resolvedSha.slice(0, 7)} is already live`);
+      await finish(dep, "no_changes", startedAt);
+      return;
+    }
+
     const tree = config.sourcePath?.replace(/^\/+|\/+$/g, "");
-    await executor.exec(
+    await exec(
       `mkdir -p ${shellQuote(incoming)}; ` +
         `git --git-dir=${shellQuote(`${hostRoot}/source.git`)} archive ${shellQuote(tree ? `${resolvedSha}:${tree}` : resolvedSha)} ` +
         `| tar -x -C ${shellQuote(incoming)}; mv ${shellQuote(incoming)} ${shellQuote(releaseDir)}`,
       { timeout: 120_000 },
     );
-    await prepareSharedPaths(executor, hostRoot, releaseDir, config.sharedPaths ?? []);
+    await prepareSharedPaths(exec, hostRoot, releaseDir, config.sharedPaths ?? []);
 
     const containerRelease = `${config.containerPath}/releases/${dep.id}`;
-    await executor
-      .exec(dockerExec(runtime.containerId, null, `test -d ${shellQuote(containerRelease)}`))
-      .catch(() => {
+    await exec(dockerExec(runtime.containerId, null, `test -d ${shellQuote(containerRelease)}`)).catch(
+      () => {
         throw new AppError(
           "The runtime does not have the mounted release root yet. Rebuild runtime once, then deploy code.",
           409,
           "MOUNTED_RELEASE_MOUNT_REQUIRED",
         );
-      });
+      },
+    );
+
+    await persistReleasePhase(dep, "preparing");
+    await assertReleaseNotCancelled(dep.id);
 
     if (mountedReleaseBuildMode(config) === "server" && config.prepareCommand?.trim()) {
       if (config.builderImage?.trim()) {
         log(dep.id, `Building release with ${config.builderImage}`);
-        await prepareBuilderCachePaths(executor, hostRoot, config.builderCachePaths ?? []);
-        await executor.exec(builderRun(hostRoot, releaseDir, dep.id, config), { timeout: 900_000 });
+        await prepareBuilderCachePaths(exec, hostRoot, config.builderCachePaths ?? []);
+        await exec(builderRun(hostRoot, releaseDir, dep.id, config), { timeout: 900_000 });
       } else {
         log(dep.id, "Preparing release in the app container");
-        await executor.exec(
-          dockerExec(runtime.containerId, containerRelease, config.prepareCommand),
-          { timeout: 300_000 },
-        );
+        await exec(dockerExec(runtime.containerId, containerRelease, config.prepareCommand), {
+          timeout: 300_000,
+        });
       }
     } else {
       log(dep.id, "Using deployable files committed to Git");
     }
 
-    await repos.deployment.updateStatus(dep.id, "deploying");
+    const deploying = await repos.deployment.updateStatus(dep.id, "deploying");
+    if (!deploying) throw cancelledError();
     sessionManager.updateStatus(dep.id, "deploying");
     previous = (
-      await executor.exec(`readlink ${shellQuote(`${hostRoot}/current`)} 2>/dev/null || true`)
+      await exec(`readlink ${shellQuote(`${hostRoot}/current`)} 2>/dev/null || true`)
     ).trim();
-    await executor.exec(
+    await persistReleasePhase(dep, "activating", {
+      meta: {
+        ...(dep.meta as Record<string, unknown>),
+        releasePreviousCurrent: previous || undefined,
+      },
+    });
+    await execAndConfirm(
+      executor,
+      dep.id,
       `ln -sfn ${shellQuote(`releases/${dep.id}`)} ${shellQuote(`${hostRoot}/current.next`)} && ` +
         `mv -Tf ${shellQuote(`${hostRoot}/current.next`)} ${shellQuote(`${hostRoot}/current`)}`,
     );
-    activated = true;
+
+    await persistReleasePhase(dep, "health");
+    await assertReleaseNotCancelled(dep.id);
     log(dep.id, "Activated release; reloading the application");
-    await runReload(executor, runtime.containerId, config);
-    await checkHealth(executor, runtime.containerId, config, runtime.healthPort);
+    await runReload(exec, runtime.containerId, config);
+    await assertReleaseNotCancelled(dep.id);
+    await checkHealth(exec, runtime.containerId, config, runtime.healthPort);
 
     const version =
       (await repos.deployment.findReadyVersionByCommit(project.id, resolvedSha)) ??
       (await repos.deployment.getNextReadyVersion(project.id));
-    await repos.deployment.updateStatus(dep.id, "ready", {
+    const readyMeta = {
+      ...(dep.meta as Record<string, unknown>),
+      deploymentLane: "release",
+      mountedReleaseRoot: releaseDir,
+      runtimeDeploymentId: runtime.deployment.id,
+      runtimeContainerId: runtime.containerId,
+      releasePreviousCurrent: previous || undefined,
+    };
+    const applied = await repos.deployment.updateStatus(dep.id, "ready", {
       commitSha: resolvedSha,
       version,
       imageRef: releaseDir,
-      meta: {
-        ...(dep.meta as Record<string, unknown>),
-        deploymentLane: "release",
-        mountedReleaseRoot: releaseDir,
-        runtimeDeploymentId: runtime.deployment.id,
-        runtimeContainerId: runtime.containerId,
-      },
+      meta: readyMeta,
     });
-    await repos.project.setActiveReleaseDeployment(project.id, dep.id);
+    if (!applied) {
+      throw cancelledError();
+    }
+    const live = await repos.deployment.findById(dep.id);
+    if (live?.status !== "ready") throw cancelledError();
+    const advanced = await repos.project.setActiveReleaseDeploymentIfReady(project.id, dep.id);
+    if (!advanced) throw cancelledError();
+    committed = true;
     log(dep.id, `Code release ${resolvedSha.slice(0, 7)} is live`);
     await finish(dep, "ready", startedAt);
 
@@ -419,30 +520,18 @@ async function runMountedRelease(
     }
     await executor.rm(authDir).catch(() => {});
   } catch (error) {
-    const runtime = await activeRuntime(project).catch(() => null);
-    const serverId =
-      project.serverId ?? (runtime?.deployment.meta as { serverId?: string } | null)?.serverId;
-    const resolved = await resolveServerExecutor(
-      serverId ?? undefined,
-      project.organizationId,
-    ).catch(() => null);
-    if (activated && resolved && runtime) {
-      if (previous) {
-        await resolved.executor
-          .exec(
-            `ln -sfn ${shellQuote(previous)} ${shellQuote(`${hostRoot}/current.next`)} && ` +
-              `mv -Tf ${shellQuote(`${hostRoot}/current.next`)} ${shellQuote(`${hostRoot}/current`)}`,
-          )
-          .catch(() => {});
-        await runReload(resolved.executor, runtime.containerId, config).catch(() => {});
-      } else {
-        await resolved.executor.rm(`${hostRoot}/current`).catch(() => {});
-      }
+    const live = await repos.deployment.findById(dep.id);
+    const cancelled = isCancelledError(error) || !live || live.status === "cancelled";
+    if (executor && !committed && live?.status !== "ready") {
+      await revertIfIncompleteActivation(executor, project.id, live ?? dep).catch(() => {});
+      await abortMountedReleaseHostWork(executor, project.id, dep.id);
     }
-    await resolved?.executor.rm(authDir).catch(() => {});
     const message = safeErrorMessage(error).replaceAll(token ?? "\u0000", "[credential]");
-    log(dep.id, message, "error");
-    await finish(dep, "failed", startedAt, new Error(message));
+    if (!cancelled) log(dep.id, message, "error");
+    await finish(dep, cancelled ? "cancelled" : "failed", startedAt, cancelled ? undefined : new Error(message));
+  } finally {
+    endDeployRun(dep.id);
+    await releaseDeployLease(project.id, dep.id);
   }
 }
 
@@ -478,6 +567,10 @@ export async function triggerMountedRelease(
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!mountedReleaseConfig(project)) {
     throw new AppError("Mounted releases are not enabled for this project.", 409, RELEASE_ERROR);
+  }
+  if (opts?.commitSha) {
+    const existing = await findActiveSameShaRelease(project, opts.commitSha);
+    if (existing) return existing;
   }
   await assertGitHubRepoAccess(ctx, { owner: project.gitOwner, repo: project.gitRepo });
   const trigger = opts?.trigger ?? (opts?.commitSha ? "release-rollback" : "code-release");
@@ -531,4 +624,67 @@ export async function restoreMountedRelease(
 
 export function isMountedRelease(dep: Pick<Deployment, "meta">): boolean {
   return releaseMeta(dep).deploymentLane === "release";
+}
+
+/** @returns false when the host was unreachable — keep the lease and retry later. */
+export async function failCleanMountedRelease(
+  project: Project,
+  dep: Deployment,
+  reason: string,
+): Promise<boolean> {
+  const serverId =
+    project.serverId ?? (dep.meta as { serverId?: string } | null)?.serverId;
+  const resolved = await resolveServerExecutor(serverId ?? undefined, project.organizationId).catch(
+    () => null,
+  );
+  if (!resolved) return false;
+  await revertIfIncompleteActivation(resolved.executor, project.id, dep).catch(() => {});
+  await abortMountedReleaseHostWork(resolved.executor, project.id, dep.id);
+  if (["queued", "building", "deploying"].includes(dep.status)) {
+    await repos.deployment.updateStatus(dep.id, "failed", { errorMessage: reason });
+    const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
+    if (session && !session.finishedAt) {
+      await repos.deployment.finishBuildSession(session.id, "failed", 0);
+    }
+  }
+  return true;
+}
+
+export async function recoverInterruptedDeployments(reason: string): Promise<number> {
+  const leased = await repos.project.listWithDeployLease();
+  const inFlight = await repos.deployment.listInFlight();
+  const seen = new Set<string>();
+  const jobs: { project: Project; dep: Deployment }[] = [];
+  let n = 0;
+
+  for (const dep of inFlight) {
+    const project = await repos.project.findById(dep.projectId);
+    if (project) jobs.push({ project, dep });
+    seen.add(dep.id);
+  }
+  for (const project of leased) {
+    if (!project.deployLeaseId || seen.has(project.deployLeaseId)) continue;
+    const dep = await repos.deployment.findById(project.deployLeaseId);
+    if (dep) {
+      jobs.push({ project, dep });
+      continue;
+    }
+    await releaseDeployLease(project.id, project.deployLeaseId);
+    n++;
+  }
+  for (const { project, dep } of jobs) {
+    if (isMountedRelease(dep)) {
+      const cleaned = await failCleanMountedRelease(project, dep, reason);
+      if (!cleaned) continue;
+    } else if (["queued", "building", "deploying"].includes(dep.status)) {
+      await repos.deployment.updateStatus(dep.id, "cancelled", { errorMessage: reason });
+      const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
+      if (session && !session.finishedAt) {
+        await repos.deployment.finishBuildSession(session.id, "cancelled", 0);
+      }
+    }
+    await releaseDeployLease(project.id, dep.id);
+    n++;
+  }
+  return n;
 }
