@@ -38,6 +38,13 @@ import { livePrimaryContainerId } from "../services/service-container";
 import { decryptEnvMap } from "../../lib/encryption";
 import { isMountedRelease } from "./mounted-release.service";
 
+export type {
+  ProjectLiveCode,
+  ProjectLiveRuntime,
+  ProjectLiveState,
+} from "./project-live-state";
+export { resolveProjectLiveState, readProjectLiveState } from "./project-live-state";
+
 /**
  * #336: present a deployment to a CLIENT — masks `meta.composeServices[].environment`.
  * This is the single boundary every client-facing return must go through; the

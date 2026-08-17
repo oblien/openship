@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeCodeReleaseDeploymentId,
   mountedReleaseHostRoot,
   mountedReleaseVolume,
   withMountedReleaseServiceVolume,
@@ -39,5 +40,16 @@ describe("mounted release config", () => {
   it("leaves runtime volumes unchanged while the feature is disabled", () => {
     const disabled = { ...project, mountedRelease: { ...project.mountedRelease, enabled: false } };
     expect(withMountedReleaseVolume(disabled as never, ["data:/data"])).toEqual(["data:/data"]);
+  });
+
+  it("exposes the code pointer only while mounted releases are enabled", () => {
+    const live = { ...project, activeReleaseDeploymentId: "dep_code" };
+    expect(activeCodeReleaseDeploymentId(live as never)).toBe("dep_code");
+    const off = {
+      ...project,
+      mountedRelease: { ...project.mountedRelease, enabled: false },
+      activeReleaseDeploymentId: "dep_code",
+    };
+    expect(activeCodeReleaseDeploymentId(off as never)).toBeNull();
   });
 });

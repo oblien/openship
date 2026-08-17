@@ -30,6 +30,13 @@ export function mountedReleaseConfig(
   return value?.enabled ? value : null;
 }
 
+/** Active code-release row, or null when the project is runtime-only. */
+export function activeCodeReleaseDeploymentId(
+  project: Pick<Project, "mountedRelease" | "activeReleaseDeploymentId">,
+): string | null {
+  return mountedReleaseConfig(project) ? (project.activeReleaseDeploymentId ?? null) : null;
+}
+
 export function mountedReleaseHostRoot(projectId: string): string {
   return `/var/lib/openship/mounted-releases/${projectId}`;
 }

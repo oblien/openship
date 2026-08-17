@@ -166,6 +166,71 @@ describe("commit drift — the deployed side is live", () => {
     expect(status).toMatchObject({ behind: false, deployedSha: null });
     expect(deploymentRepo.findById).not.toHaveBeenCalled();
   });
+
+  it("compares against the code release SHA when mounted releases are live", async () => {
+    // Runtime still holds the image-build SHA; the operator has since shipped
+    // HEAD as a code release. Drift that reads the runtime row would stay
+    // "outdated" after a successful deploy.
+    const p = gitProject({
+      activeDeploymentId: "dep_runtime",
+      activeReleaseDeploymentId: "dep_code",
+      mountedRelease: { enabled: true, containerPath: "/app" },
+    });
+    deploymentRepo.findById.mockImplementation(async (id: string) => ({
+      id,
+      commitSha: id === "dep_code" ? NEWER : SHIPPED,
+    }));
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER));
+
+    expect(status).toMatchObject({ behind: false, deployedSha: NEWER });
+    expect(deploymentRepo.findById).toHaveBeenCalledWith("dep_code");
+  });
+
+  it("still reports code drift after a successful code release falls behind HEAD", async () => {
+    const p = gitProject({
+      activeDeploymentId: "dep_runtime",
+      activeReleaseDeploymentId: "dep_code",
+      mountedRelease: { enabled: true, containerPath: "/app" },
+    });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_code", commitSha: SHIPPED });
+
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER))).toMatchObject({
+      behind: true,
+      deployedSha: SHIPPED,
+    });
+  });
+
+  it("keeps the runtime comparison when mounted releases are off", async () => {
+    const p = gitProject({
+      activeDeploymentId: "dep_runtime",
+      activeReleaseDeploymentId: "dep_code",
+      mountedRelease: { enabled: false, containerPath: "/app" },
+    });
+    deploymentRepo.findById.mockImplementation(async (id: string) => ({
+      id,
+      commitSha: id === "dep_code" ? NEWER : SHIPPED,
+    }));
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER));
+
+    expect(status).toMatchObject({ behind: true, deployedSha: SHIPPED });
+    expect(deploymentRepo.findById).toHaveBeenCalledWith("dep_runtime");
+  });
+
+  it("falls back to the runtime SHA when mounted releases are on but no code pointer exists", async () => {
+    const p = gitProject({
+      activeDeploymentId: "dep_runtime",
+      activeReleaseDeploymentId: null,
+      mountedRelease: { enabled: true, containerPath: "/app" },
+    });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_runtime", commitSha: SHIPPED });
+
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER))).toMatchObject({
+      behind: true,
+      deployedSha: SHIPPED,
+    });
+  });
 });
 
 describe("cache keys — a repointed source is a miss, not stale drift", () => {

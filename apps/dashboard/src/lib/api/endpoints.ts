@@ -38,6 +38,7 @@ export const endpoints = {
     connection: (id: string | number, linkId: string) => `projects/${id}/connections/${linkId}`,
     env: (id: string | number) => `projects/${id}/env`,
     git: (id: string | number) => `projects/${id}/git`,
+    liveState: (id: string | number) => `projects/${id}/live-state`,
     gitLink: (id: string | number) => `projects/${id}/git/link`,
     branches: (id: string | number) => `projects/${id}/branches`,
     branch: (id: string | number) => `projects/${id}/branch`,

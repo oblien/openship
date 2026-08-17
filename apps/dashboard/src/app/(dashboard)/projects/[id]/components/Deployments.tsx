@@ -99,8 +99,9 @@ export const Deployments = () => {
     return () => {
       cancelled = true;
     };
-    // activeDeploymentId dep → refetch after a deploy advances the live release.
-  }, [projectData?.id, projectData?.activeDeploymentId, isSelfApp]);
+    // Refetch when either live pointer moves. Code releases flip
+    // activeReleaseDeploymentId without touching the runtime row.
+  }, [projectData?.id, projectData?.activeDeploymentId, projectData?.activeReleaseDeploymentId, isSelfApp]);
 
   /**
    * A deploy blocked on something the operator can clear — today a port already

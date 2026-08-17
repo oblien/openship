@@ -269,6 +269,18 @@ r.patch("/:id/clone-token", { tag: "project:admin" }, cloudProjectProxy, ctrl.up
 /* ─── Git ──────────────────────────────────────────────────────────────── */
 r.get("/:id/git", { tag: "project:read", mcp: { description: "Get the project's linked git repository info." } }, cloudProjectProxy, ctrl.getGitInfo);
 r.get("/:id/commit-status", { tag: "project:read", mcp: { description: "Compare the deployed commit against the remote HEAD." } }, cloudProjectProxy, ctrl.getCommitStatus);
+r.get(
+  "/:id/live-state",
+  {
+    tag: "project:read",
+    mcp: {
+      description:
+        "Independent live pointers for this project: runtime image/deployment, mounted code release SHA (null when mounted releases are off), and the bound server.",
+    },
+  },
+  cloudProjectProxy,
+  ctrl.getLiveState,
+);
 
 /* ─── Pending actions (everything waiting on a human) ───────────────────── */
 r.get(

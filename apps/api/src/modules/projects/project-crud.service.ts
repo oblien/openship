@@ -78,6 +78,7 @@ import {
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
 import { getFolderSession } from "./folder/session-store";
+import { activeCodeReleaseDeploymentId } from "../deployments/mounted-release.config";
 import type {
   TCreateProjectBody,
   TCreateProjectEnvironmentBody,
@@ -141,7 +142,7 @@ type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[numb
  *  cloud gate in the dashboard, where `deployTarget === "cloud"` IS the cloud test. It
  *  also left the two fields disagreeing, since `serverId` already coalesced to its
  *  column while the target did not. */
-function readDeployMeta(
+export function readDeployMeta(
   p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
   dep: Deployment | null | undefined,
 ): { deployTarget: DeployTarget | null; serverId: string | null } {
@@ -2019,8 +2020,10 @@ export async function resolveDeployedDrift(
 ): Promise<DeployedDrift> {
   if (mode === "commit") {
     let deployedSha: string | null = null;
-    if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+    // Enabled code pointer is the deployed SHA; otherwise the runtime row.
+    const deploymentId = activeCodeReleaseDeploymentId(p) ?? p.activeDeploymentId;
+    if (deploymentId) {
+      const dep = await repos.deployment.findById(deploymentId).catch(() => null);
       deployedSha = dep?.commitSha ?? null;
     }
     return { mode: "commit", deployedSha };
