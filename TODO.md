@@ -112,15 +112,25 @@ What's already there:
 
 The prerequisite nobody expects:
 
-- [ ] **The button can't just be added.** Social login is hidden on self-hosted
-      outright today — `{!selfHosted && <OAuthButtons/>}` at
-      `apps/dashboard/src/app/(auth)/login/page.tsx:246` and
-      `register/page.tsx:154` — because an operator with no `GITHUB_CLIENT_ID`
-      would get buttons that fail, and **nothing tells the dashboard which
-      providers are configured**. `OAuthButtons` hardcodes github+google. SSO
-      needs a server-advertised provider list (public, read-only, alongside the
-      `authMode`/`selfHosted` values `useAuthContext` already serves). That
-      endpoint doesn't exist yet and is the real first task.
+- [x] **The button can't just be added** — DONE for the *primitive*, not for
+      SSO. `GET /health/env` now advertises `authProviders`, the social logins
+      the server actually has credentials for
+      (`apps/api/src/lib/auth-providers.ts` owns the predicate; `lib/auth.ts`
+      reads the SAME resolver to decide registration, so "a button is shown" and
+      "the provider is registered" cannot drift). Public, read-only, IDs only —
+      no client id, no secret, asserted by test. The dashboard carries it
+      through the auth layout's context, and `{!selfHosted && <OAuthButtons/>}`
+      is gone from both `login/page.tsx` and `register/page.tsx`:
+      `OAuthButtons` maps the advertised list and renders nothing (not even the
+      divider) when it is empty. Net effect — cloud unchanged, self-hosted
+      WITHOUT creds unchanged (nothing shown), self-hosted WITH creds now shows
+      buttons that work. `authMode === "none"` is untouched: the login page
+      returns its zero-auth redirect before the form renders.
+      What SSO still has to add here: an entry with a different `kind` (the
+      discriminator already exists and non-`"social"` entries are deliberately
+      NOT drawn as branded buttons), an operator-named label instead of a
+      hardcoded one, and the env gating for the issuer. Everything below is
+      still open.
 
 Decisions to settle before coding:
 
@@ -211,9 +221,17 @@ What actually hardcodes GitHub — each is a decision, not a rename:
       case; GitLab releases would be a third mode.
 - [ ] **Dashboard speaks GitHub throughout**: `ServerGitHubConnect`,
       `GithubPermissionModal`, `DeployCredentialModal`, the deploy wizard's
-      import step, `ResourcePicker`. Needs a server-advertised provider list —
-      the SAME missing primitive as the SSO item above (`OAuthButtons` hardcodes
-      github+google). Build that endpoint once and both features use it.
+      import step, `ResourcePicker`. Still all GitHub — this item is NOT done.
+      What IS done is the shared primitive it was blocked on: the public
+      read-only surface exists and has its first list on it — `GET /health/env`
+      → `authProviders`, derived in `apps/api/src/lib/auth-providers.ts` (see
+      the Auth section above). That covers LOGIN providers only. Git providers
+      are a different capability record (can it list repos? push a deploy key?
+      serve a tarball?) and join the same endpoint as their own field rather
+      than being squeezed into `authProviders` — a git remote is not a login
+      button. The pattern to copy: one module owning the "is it configured?"
+      predicate, read by both the feature and the endpoint, IDs/capabilities
+      only and never credentials.
 - [ ] **`gh` CLI as an ambient identity** (`sources/gh-cli-source.ts`,
       `github.local-auth.ts:360` parses `oauth_token` under `github.com:` in
       hosts.yml) has no equivalent worth matching. `glab` exists; decide

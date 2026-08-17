@@ -48,7 +48,7 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
-  const { authMode, cloudAuthUrl, selfHosted } = useAuthContext();
+  const { authMode, cloudAuthUrl, selfHosted, authProviders } = useAuthContext();
 
   const isDesktop = typeof window !== "undefined" && !!window.desktop?.isDesktop;
   const handleBack = isDesktop ? () => { void window.desktop?.reset?.(); } : undefined;
@@ -308,8 +308,13 @@ function LoginPageInner() {
         </Button>
       </form>
 
-      {/* OAuth only for SaaS (cloud-hosted) - hidden on self-hosted */}
-      {!selfHosted && <OAuthButtons callbackURL={postLoginUrl ?? "/"} />}
+      {/* Whatever the SERVER says it has credentials for. It used to be
+          `!selfHosted &&` — a stand-in for "are any providers configured?" that
+          hid working buttons from every self-hosted operator who had set
+          GITHUB_CLIENT_ID/SECRET. OAuthButtons renders nothing (not even the
+          divider) when the list is empty, which is the default self-hosted
+          instance, so this is safe to mount unconditionally. */}
+      <OAuthButtons providers={authProviders} callbackURL={postLoginUrl ?? "/"} />
 
       {/* Public sign-up is a SaaS-only front door. On a self-hosted instance the
           only account is the CLI-created admin; everyone else joins via an

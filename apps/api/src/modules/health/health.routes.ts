@@ -9,6 +9,7 @@ import { APP_VERSION } from "../../lib/app-version";
 import { getAuthMode } from "../../lib/auth-mode";
 import { resolveProductMode } from "../../lib/product-mode";
 import { resolveHostControlEnabled } from "../../lib/host-control";
+import { configuredAuthProviders } from "../../lib/auth-providers";
 
 /** Running server version (apps/api/package.json, via lib/app-version — the same
  *  value sent to the cloud on every call). Lets the dashboard tell a self-hosted
@@ -117,6 +118,17 @@ healthRoutes.get("/env", rateLimiterFor("default-anon"), async (c) => {
     version: APP_VERSION,
     authMode,
     productMode,
+    // Which social logins this instance actually has credentials for, derived
+    // from the same predicate that decides whether Better Auth registers them
+    // (lib/auth-providers.ts). The dashboard renders exactly these buttons.
+    // Before this, it inferred "cloud ⇒ github+google, self-hosted ⇒ none",
+    // which hid working buttons from any operator who had configured a
+    // provider. IDs ONLY — this route is unauthenticated, so no client id and
+    // no secret may ever be added to these records. (LOGIN providers only. The
+    // git-provider capability record the GitLab work needs — #75, TODO.md "Git
+    // providers" — belongs on this same public surface as its own field, not
+    // folded in here: a git remote is not a login button.)
+    authProviders: configuredAuthProviders(),
     teamMode,
     migrationTargetUrl,
     migrationInProgress,
