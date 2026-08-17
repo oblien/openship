@@ -50,7 +50,6 @@ import {
   releaseDirFor,
   stagedReleaseCleanupPaths,
   withSnapshotCommit,
-  type MountedReleaseContract,
 } from "./release-artifact";
 import type { ReleasePlan } from "./release-planner";
 
@@ -69,18 +68,6 @@ function validateRef(value: string, label: string): string {
     throw new AppError(`Invalid ${label}.`, 400, RELEASE_ERROR);
   }
   return value;
-}
-
-function requireSnapshot(dep: Pick<Deployment, "meta">): MountedReleaseContract {
-  const snapshot = readMountedReleaseSnapshot(dep);
-  if (!snapshot) {
-    throw new AppError(
-      "This code release has no frozen mounted-release contract.",
-      409,
-      RELEASE_ERROR,
-    );
-  }
-  return snapshot;
 }
 
 function releaseMeta(dep: Pick<Deployment, "meta">): {

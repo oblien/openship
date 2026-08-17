@@ -188,9 +188,9 @@ export function createDeploymentRepo(db: Database) {
     },
 
     /**
-     * The most recent in-flight (queued/building/deploying) deployment for a
-     * given commit, if any. Used to suppress the "new commit available" banner
-     * while that commit is already being deployed.
+     * Most recent in-flight row for a project. Also used by checkNoActiveBuild
+     * so a buried queued/building/deploying row is not missed when the newest
+     * page of history is already terminal.
      */
     async findInFlightByProject(projectId: string) {
       return db.query.deployment.findFirst({
@@ -322,21 +322,6 @@ export function createDeploymentRepo(db: Database) {
             ne(deployment.id, exceptId),
           ),
         );
-    },
-
-    /**
-     * In-flight row for a project, if any. Used by checkNoActiveBuild so a
-     * buried queued/building/deploying row is not missed when the newest page
-     * of history is already terminal.
-     */
-    async findInFlightByProject(projectId: string) {
-      return db.query.deployment.findFirst({
-        where: and(
-          eq(deployment.projectId, projectId),
-          inArray(deployment.status, ["queued", "building", "deploying"]),
-        ),
-        orderBy: [desc(deployment.createdAt)],
-      });
     },
 
     async listInFlight() {
