@@ -481,7 +481,8 @@ export async function applyProjectUpdate(ctx: RequestContext, projectId: string)
     throw new ValidationError("Deploy this project before updating it.");
   }
   if (mountedReleaseConfig(project)) {
-    return triggerMountedRelease(ctx, projectId);
+    const dep = await triggerMountedRelease(ctx, projectId);
+    return { success: true, deployment_id: dep.id, project_id: project.id };
   }
   return redeployBuildSession(ctx, project.activeDeploymentId, {
     trigger: "update",

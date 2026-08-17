@@ -369,10 +369,13 @@ describe("applyProjectUpdate", () => {
       mountedRelease: { enabled: true, containerPath: "/app" },
     });
     setup([p], []);
-    triggerMountedRelease.mockResolvedValue({ id: "dep_code_new" });
+    triggerMountedRelease.mockResolvedValue({ id: "dep_code_new", projectId: "proj_1" });
 
-    await applyProjectUpdate(ctx, "proj_1");
-
+    await expect(applyProjectUpdate(ctx, "proj_1")).resolves.toEqual({
+      success: true,
+      deployment_id: "dep_code_new",
+      project_id: "proj_1",
+    });
     expect(triggerMountedRelease).toHaveBeenCalledWith(ctx, "proj_1");
     expect(redeployBuildSession).not.toHaveBeenCalled();
   });
