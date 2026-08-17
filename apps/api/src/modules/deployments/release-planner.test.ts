@@ -201,4 +201,21 @@ describe("planRelease", () => {
       planRelease({ ...mounted, changedPaths: null, forceAll: true }).action,
     ).toBe("rebuild_runtime");
   });
+
+  it("does not webhook-activate an upload-mode project; unknown/manual stays deploy_code", () => {
+    expect(planRelease({ ...mounted, changedPaths: null, buildMode: "upload" }).action).toBe(
+      "deploy_code",
+    );
+    const { plan, trigger } = planAndSelectTrigger({
+      ...mounted,
+      changedPaths: ["apps/staff/resources/views/home.blade.php"],
+      buildMode: "upload",
+    });
+    expect(plan.action).toBe("deploy_code");
+    expect(trigger).toBe("skip");
+    expect(plan.reason).toMatch(/upload/i);
+    expect(selectReleaseTrigger(planRelease({ ...mounted, changedPaths: null }), true, "upload")).toBe(
+      "skip",
+    );
+  });
 });

@@ -34,6 +34,8 @@ export interface PlanReleaseInput {
   /** Repo-relative paths. `null` = unknown (truncated compare, force-push, manual). */
   changedPaths: string[] | null;
   mountedReleaseEnabled: boolean;
+  /** Upload-mode releases are operator-triggered; webhooks must not fetch+activate. */
+  buildMode?: "prebuilt" | "server" | "upload";
   services?: PlannerService[];
   /** Override default service path prefixes (`apps/staff`, `apps/public`, `apps/mail`). */
   servicePathPrefixes?: ServicePathPrefix[];
@@ -57,15 +59,28 @@ export function planAndSelectTrigger(input: PlanReleaseInput): {
   trigger: ReleaseTrigger;
 } {
   const plan = planRelease(input);
-  return { plan, trigger: selectReleaseTrigger(plan, input.mountedReleaseEnabled) };
+  if (input.buildMode === "upload" && plan.action === "deploy_code") {
+    return {
+      plan: {
+        ...plan,
+        reason: "Local artifact upload is operator-triggered, not a webhook path.",
+      },
+      trigger: "skip",
+    };
+  }
+  return { plan, trigger: selectReleaseTrigger(plan, input.mountedReleaseEnabled, input.buildMode) };
 }
 
 export function selectReleaseTrigger(
   plan: ReleasePlan,
   mountedReleaseEnabled: boolean,
+  buildMode?: "prebuilt" | "server" | "upload",
 ): ReleaseTrigger {
   if (plan.action === "skip") return "skip";
-  if (plan.action === "deploy_code" && mountedReleaseEnabled) return "mounted_release";
+  if (plan.action === "deploy_code" && mountedReleaseEnabled) {
+    if (buildMode === "upload") return "skip";
+    return "mounted_release";
+  }
   return "runtime_pipeline";
 }
 

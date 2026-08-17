@@ -10,6 +10,23 @@
  *   const { runtime, routing, ssl, system } = getPlatform();
  */
 
+export {
+  artifactManifestPath,
+  extractArtifact,
+  getTarCreateArgs,
+  getTarCreateEnv,
+  gitTrackedFiles,
+  hashLockfiles,
+  hasZstdBinary,
+  listArtifactFiles,
+  LOCKFILE_BASENAMES,
+  packDeterministicArtifact,
+  prepareSourceTarArgs,
+  sha256File,
+  type ArtifactManifest,
+  type ArtifactSource,
+} from "./archive";
+
 // ─── Shared types ────────────────────────────────────────────────────────────
 export type {
   ResourceConfig,

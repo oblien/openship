@@ -5,7 +5,7 @@
 import { repos, type Project } from "@repo/db";
 import { env } from "../../config/env";
 import { triggerDeployment } from "../deployments/build.service";
-import { mountedReleaseConfig } from "../deployments/mounted-release.config";
+import { mountedReleaseBuildMode, mountedReleaseConfig } from "../deployments/mounted-release.config";
 import { triggerMountedRelease } from "../deployments/mounted-release.service";
 import { planAndSelectTrigger } from "../deployments/release-planner";
 import {
@@ -224,9 +224,11 @@ async function deployProjectFromPush(
 
   const plannerPaths =
     changedPathsTruncated || (!input.payload && !changedPaths) ? null : (changedPaths ?? []);
+  const release = mountedReleaseConfig(p);
   const { plan, trigger } = planAndSelectTrigger({
     changedPaths: plannerPaths,
-    mountedReleaseEnabled: Boolean(mountedReleaseConfig(p)),
+    mountedReleaseEnabled: Boolean(release),
+    buildMode: release ? mountedReleaseBuildMode(release) : undefined,
     services: enabledServices.map((s) => ({
       id: s.id,
       name: s.name,

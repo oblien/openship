@@ -86,8 +86,9 @@ export function mountedReleaseHealthPort(
 }
 
 export function mountedReleaseBuildMode(config: MountedReleaseConfig): MountedReleaseBuildMode {
-  if (config.buildMode === "upload") return "upload";
-  if (config.buildMode === "prebuilt" || config.buildMode === "server") return config.buildMode;
+  if (config.buildMode === "upload" || config.buildMode === "prebuilt" || config.buildMode === "server") {
+    return config.buildMode;
+  }
   return config.prepareCommand?.trim() ? "server" : "prebuilt";
 }
 

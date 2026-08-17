@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BindMountCollisionError,
   activeCodeReleaseDeploymentId,
+  mountedReleaseBuildMode,
   mountedReleaseHealthPort,
   mountedReleaseHostRoot,
   mountedReleaseVolume,
@@ -23,6 +24,17 @@ const project = {
 const mount = "/var/lib/openship/mounted-releases/proj_demo:/srv/demo";
 
 describe("mounted release config", () => {
+  it("accepts upload buildMode without inferring server from a leftover prepare command", () => {
+    expect(
+      mountedReleaseBuildMode({
+        enabled: true,
+        containerPath: "/srv/demo",
+        buildMode: "upload",
+        prepareCommand: "composer install",
+      }),
+    ).toBe("upload");
+  });
+
   it("derives one stable host root and does not remount the root read-only", () => {
     expect(mountedReleaseHostRoot(project.id)).toBe("/var/lib/openship/mounted-releases/proj_demo");
     expect(mountedReleaseVolume(project as never)).toBe(mount);

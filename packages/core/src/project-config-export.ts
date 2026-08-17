@@ -223,7 +223,14 @@ export function serializeMountedRelease(raw: unknown): ExportedMountedRelease | 
     enabled: o.enabled === true,
     containerPath: typeof o.containerPath === "string" ? o.containerPath : "",
   };
-  if (o.buildMode === "prebuilt" || o.buildMode === "server") out.buildMode = o.buildMode;
+  if (o.buildMode === "prebuilt" || o.buildMode === "server" || o.buildMode === "upload") {
+    out.buildMode = o.buildMode;
+  }
+  if (o.runtimeInstall === "image" || o.runtimeInstall === "dockerfile" || o.runtimeInstall === "compose") {
+    out.runtimeInstall = o.runtimeInstall;
+  }
+  const preset = optionalString(o.preset);
+  if (preset !== undefined) out.preset = preset;
   const serviceName = optionalString(o.serviceName);
   if (serviceName !== undefined) out.serviceName = serviceName;
   const sourcePath = optionalString(o.sourcePath);

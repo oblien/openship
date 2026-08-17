@@ -12,6 +12,7 @@ import {
   Server,
   ShieldCheck,
   Terminal,
+  Upload,
 } from "lucide-react";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { useModal } from "@/context/ModalContext";
@@ -45,7 +46,16 @@ function strategyLabel(strategy: "prebuilt" | "server" | "upload" | undefined): 
   if (strategy === "server") return "Prepared on server";
   if (strategy === "upload") return "Built locally and uploaded";
   if (strategy === "prebuilt") return "Prebuilt in Git";
+  if (strategy === "upload") return "Local artifact";
   return "";
+}
+
+async function sha256FileBrowser(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function httpsLabel(https: LiveState["public"]["https"] | undefined): string {
@@ -90,6 +100,9 @@ export function LiveReleaseHeader({
   const { showModal, hideModal } = useModal();
   const [live, setLive] = React.useState<LiveState | null>(null);
   const [deploying, setDeploying] = React.useState(false);
+  const uploadInputRef = React.useRef<HTMLInputElement>(null);
+  const uploadMode =
+    (projectData?.mountedRelease as { buildMode?: string } | null)?.buildMode === "upload";
 
   const hostname =
     live?.public.hostname || selectedDomain || domain || projectData?.name || "This project";
@@ -173,6 +186,25 @@ export function LiveReleaseHeader({
     void startCodeDeploy(sha.trim());
   };
 
+  const handleUploadArtifact = () => {
+    uploadInputRef.current?.click();
+  };
+
+  const handleArtifactPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !id || deploying) return;
+    setDeploying(true);
+    try {
+      const sha256 = await sha256FileBrowser(file);
+      const response = await deployApi.uploadArtifact(id, file, { sha256 });
+      openTriggeredBuild(router, response, id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not upload the artifact.", "error");
+      setDeploying(false);
+    }
+  };
+
   const handleRollback = async () => {
     if (!id) return;
     try {
@@ -227,13 +259,26 @@ export function LiveReleaseHeader({
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => void handleDeployLatest()}
+            onClick={() => (uploadMode ? handleUploadArtifact() : void handleDeployLatest())}
             disabled={deploying || rebuilding}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {deploying ? <RefreshCw className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-            {deploying ? "Deploying…" : "Deploy latest"}
+            {deploying ? (
+              <RefreshCw className="size-4 animate-spin" />
+            ) : uploadMode ? (
+              <Upload className="size-4" />
+            ) : (
+              <ArrowRight className="size-4" />
+            )}
+            {deploying ? "Deploying…" : uploadMode ? "Upload artifact" : "Deploy latest"}
           </button>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept=".tar.gz,.tgz,.tar.zst,.tar,.gz"
+            className="hidden"
+            onChange={(event) => void handleArtifactPicked(event)}
+          />
           <DropdownMenu
             align="right"
             triggerLabel="More release actions"
@@ -244,12 +289,23 @@ export function LiveReleaseHeader({
               </>
             }
             actions={[
-              {
-                id: "commit",
-                label: "Deploy specific commit",
-                icon: <GitCommitHorizontal className="size-4" />,
-                onClick: handleSpecificCommit,
-              },
+              ...(uploadMode
+                ? [
+                    {
+                      id: "upload",
+                      label: "Upload artifact",
+                      icon: <Upload className="size-4" />,
+                      onClick: handleUploadArtifact,
+                    },
+                  ]
+                : [
+                    {
+                      id: "commit",
+                      label: "Deploy specific commit",
+                      icon: <GitCommitHorizontal className="size-4" />,
+                      onClick: handleSpecificCommit,
+                    },
+                  ]),
               {
                 id: "rebuild",
                 label: rebuilding ? "Rebuilding…" : "Rebuild runtime",

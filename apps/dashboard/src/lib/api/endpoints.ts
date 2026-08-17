@@ -130,6 +130,7 @@ export const endpoints = {
   deploy: {
     list: "deployments",
     mountedRelease: "deployments/mounted-release",
+    artifact: "deployments/artifact",
     plan: "deployments/plan",
     rollbackLatest: "deployments/rollback",
     delete: (id: string) => `deployments/${id}`,

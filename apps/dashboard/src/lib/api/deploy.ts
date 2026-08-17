@@ -215,6 +215,19 @@ export const deployApi = {
       { projectId, ...opts },
     ),
 
+  uploadArtifact: (projectId: string, file: File, opts?: { sha256: string; commitSha?: string }) => {
+    const body = new FormData();
+    body.append("projectId", projectId);
+    body.append("sha256", opts?.sha256 ?? "");
+    if (opts?.commitSha) body.append("commitSha", opts.commitSha);
+    body.append("file", file);
+    return api.post<{ data: { deployment_id: string; deployment: any; sha256: string } }>(
+      endpoints.deploy.artifact,
+      body,
+      { timeout: 300_000 },
+    );
+  },
+
   planRelease: (projectId: string, body?: { changedPaths?: string[] | null; forceAll?: boolean }) =>
     api.post<{
       data: {

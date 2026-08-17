@@ -1,3 +1,6 @@
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   assembleGitClone,
   materializeGitTokenAuth,
@@ -52,8 +55,10 @@ import {
   releaseBuilderName,
   releaseDirFor,
   stagedReleaseCleanupPaths,
+  withSnapshotArtifact,
   withSnapshotCommit,
 } from "./release-artifact";
+import { prepareRelease } from "./release-driver";
 import {
   publicHttpsProbeCommand,
   resolveProjectPublicHostname,
@@ -336,11 +341,37 @@ async function finish(
   }
 }
 
+async function previousReadyLockHashes(
+  project: Pick<Project, "activeReleaseDeploymentId">,
+): Promise<Record<string, string> | null> {
+  if (!project.activeReleaseDeploymentId) return null;
+  const active = await repos.deployment.findById(project.activeReleaseDeploymentId);
+  if (!active || active.status !== "ready") return null;
+  return readMountedReleaseSnapshot(active)?.lockHashes ?? null;
+}
+
+async function transferUploadedArchive(
+  executor: CommandExecutor,
+  localPath: string,
+  remoteArchive: string,
+): Promise<void> {
+  const staging = await mkdtemp(join(tmpdir(), "openship-upload-"));
+  try {
+    await copyFile(localPath, join(staging, "artifact"));
+    const remoteDir = remoteArchive.replace(/\/+$/, "");
+    await executor.mkdir(remoteDir);
+    await executor.transferIn(staging, remoteDir);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
+
 export async function runMountedRelease(
   ctx: RequestContext,
   project: Project,
   dep: Deployment,
   requestedCommit?: string,
+  uploaded?: { localPath: string; sha256: string },
 ): Promise<void> {
   const startedAt = Date.now();
   const snapshot = readMountedReleaseSnapshot(dep) ?? null;
@@ -370,104 +401,142 @@ export async function runMountedRelease(
       project.serverId ?? (runtime.deployment.meta as { serverId?: string } | null)?.serverId;
     executor = (await resolveServerExecutor(serverId ?? undefined, project.organizationId)).executor;
     const host = executor;
-    const repoUrl = project.gitUrl;
-    if (!repoUrl)
-      throw new AppError("Mounted releases require a linked Git repository.", 409, RELEASE_ERROR);
-    const branch = validateRef(project.gitBranch || "main", "Git branch");
-    const commit = requestedCommit ? validateRef(requestedCommit, "commit SHA") : null;
+    const isUpload = Boolean(uploaded) || mountedReleaseBuildMode(config) === "upload";
+    let resolvedSha = requestedCommit ? validateRef(requestedCommit, "commit SHA") : "";
+    let remoteArchive: string | undefined;
 
     await persistReleasePhase(dep, "fetching");
     await assertReleaseNotCancelled(dep.id);
-
-    const credential = await resolveBuildGitToken({
-      ctx,
-      projectId: project.id,
-      owner: project.gitOwner,
-      repo: project.gitRepo,
-      buildStrategy: "server",
-      serverId,
-      serverExecutor: executor,
-      repoUrl,
-      onLog: (message) => log(dep.id, message),
-    });
-    if (credential.relay || credential.apiHostFallback) {
-      throw new AppError(
-        "This release needs Git credentials available on the target server or a project/server deploy token.",
-        409,
-        "MOUNTED_RELEASE_REMOTE_GIT_REQUIRED",
-      );
-    }
-    token = credential.token;
-    if (credential.ssh) {
-      await executor.mkdir(authDir);
-      await executor.writeFile(`${authDir}/id`, credential.ssh.privateKey);
-      await executor.writeFile(`${authDir}/known_hosts`, credential.ssh.knownHosts);
-      await exec(
-        `chmod 700 ${shellQuote(authDir)} && chmod 600 ${shellQuote(`${authDir}/id`)} ${shellQuote(`${authDir}/known_hosts`)}`,
-      );
-    }
-    let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
-    if (credential.token && !credential.ssh && !credential.ambient) {
-      tokenAuth = await materializeGitTokenAuth(
-        shellGitSshWriter({
-          exec: (cmd) => host.exec(cmd),
-          writeSecret: (path, content) => host.writeFile(path, content),
-        }),
-        `${hostRoot}/.git-auth`,
-        credential.token,
-      );
-    }
-    const clone = assembleGitClone({
-      repoUrl,
-      gitToken: tokenAuth ? undefined : credential.token,
-      gitTokenConfigFile: tokenAuth?.configFile,
-      ambient: credential.ambient,
-      ssh: credential.ssh
-        ? { keyFile: `${authDir}/id`, knownHostsFile: `${authDir}/known_hosts` }
-        : undefined,
-    });
-
     await exec(
-      `mkdir -p ${shellQuote(`${hostRoot}/releases`)} ${shellQuote(`${hostRoot}/shared`)} ${shellQuote(`${hostRoot}/builder-cache`)}; ` +
-        `rm -rf ${shellQuote(incoming)} ${shellQuote(releaseDir)}; ` +
-        `git init --bare ${shellQuote(`${hostRoot}/source.git`)} >/dev/null 2>&1 || true`,
+      `mkdir -p ${shellQuote(`${hostRoot}/releases`)} ${shellQuote(`${hostRoot}/shared`)} ${shellQuote(`${hostRoot}/builder-cache`)}`,
     );
-    const refspec = commit
-      ? `+${commit}:refs/openship/${dep.id}`
-      : `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
-    try {
+
+    if (isUpload) {
+      if (!uploaded) {
+        throw new AppError(
+          "Upload a release artifact to deploy this project. Webhooks do not activate upload-mode releases.",
+          409,
+          RELEASE_ERROR,
+        );
+      }
+      log(dep.id, "Receiving local artifact");
+      remoteArchive = `${hostRoot}/.incoming-${dep.id}-artifact`;
+      await transferUploadedArchive(executor, uploaded.localPath, remoteArchive);
+      await rm(dirname(uploaded.localPath), { recursive: true, force: true }).catch(() => {});
+      await prepareRelease({
+        exec,
+        config,
+        hostRoot,
+        releaseDir,
+        incoming,
+        deploymentId: dep.id,
+        uploadedArchive: `${remoteArchive}/artifact`,
+        claimedSha256: uploaded.sha256,
+        commitSha: resolvedSha || undefined,
+        runPrepare: async () => {},
+        log: (message) => log(dep.id, message),
+      });
+    } else {
+      const repoUrl = project.gitUrl;
+      if (!repoUrl)
+        throw new AppError("Mounted releases require a linked Git repository.", 409, RELEASE_ERROR);
+      const branch = validateRef(project.gitBranch || "main", "Git branch");
+      const commit = requestedCommit ? validateRef(requestedCommit, "commit SHA") : null;
+
+      const credential = await resolveBuildGitToken({
+        ctx,
+        projectId: project.id,
+        owner: project.gitOwner,
+        repo: project.gitRepo,
+        buildStrategy: "server",
+        serverId,
+        serverExecutor: executor,
+        repoUrl,
+        onLog: (message) => log(dep.id, message),
+      });
+      if (credential.relay || credential.apiHostFallback) {
+        throw new AppError(
+          "This release needs Git credentials available on the target server or a project/server deploy token.",
+          409,
+          "MOUNTED_RELEASE_REMOTE_GIT_REQUIRED",
+        );
+      }
+      token = credential.token;
+      if (credential.ssh) {
+        await executor.mkdir(authDir);
+        await executor.writeFile(`${authDir}/id`, credential.ssh.privateKey);
+        await executor.writeFile(`${authDir}/known_hosts`, credential.ssh.knownHosts);
+        await exec(
+          `chmod 700 ${shellQuote(authDir)} && chmod 600 ${shellQuote(`${authDir}/id`)} ${shellQuote(`${authDir}/known_hosts`)}`,
+        );
+      }
+      let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
+      if (credential.token && !credential.ssh && !credential.ambient) {
+        tokenAuth = await materializeGitTokenAuth(
+          shellGitSshWriter({
+            exec: (cmd) => host.exec(cmd),
+            writeSecret: (path, content) => host.writeFile(path, content),
+          }),
+          `${hostRoot}/.git-auth`,
+          credential.token,
+        );
+      }
+      const clone = assembleGitClone({
+        repoUrl,
+        gitToken: tokenAuth ? undefined : credential.token,
+        gitTokenConfigFile: tokenAuth?.configFile,
+        ambient: credential.ambient,
+        ssh: credential.ssh
+          ? { keyFile: `${authDir}/id`, knownHostsFile: `${authDir}/known_hosts` }
+          : undefined,
+      });
+
       await exec(
-        `${clone.gitEnv} git ${clone.credFlag} --git-dir=${shellQuote(`${hostRoot}/source.git`)} ` +
-          `fetch --force --prune --depth 50 ${shellQuote(clone.cloneUrl)} ${shellQuote(refspec)}`,
+        `rm -rf ${shellQuote(incoming)} ${shellQuote(releaseDir)}; ` +
+          `git init --bare ${shellQuote(`${hostRoot}/source.git`)} >/dev/null 2>&1 || true`,
+      );
+      const refspec = commit
+        ? `+${commit}:refs/openship/${dep.id}`
+        : `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
+      try {
+        await exec(
+          `${clone.gitEnv} git ${clone.credFlag} --git-dir=${shellQuote(`${hostRoot}/source.git`)} ` +
+            `fetch --force --prune --depth 50 ${shellQuote(clone.cloneUrl)} ${shellQuote(refspec)}`,
+          { timeout: 120_000 },
+        );
+      } finally {
+        await tokenAuth?.cleanup();
+      }
+      resolvedSha = (
+        await exec(
+          `git --git-dir=${shellQuote(`${hostRoot}/source.git`)} rev-parse ${shellQuote(commit ? `refs/openship/${dep.id}` : `refs/remotes/origin/${branch}`)}`,
+        )
+      ).trim();
+
+      const alreadyLive = await findActiveSameShaRelease(project, resolvedSha);
+      if (alreadyLive) {
+        log(dep.id, `Release ${resolvedSha.slice(0, 7)} is already live`);
+        await finish(dep, "no_changes", startedAt);
+        return;
+      }
+
+      const tree = config.sourcePath?.replace(/^\/+|\/+$/g, "");
+      await exec(
+        `mkdir -p ${shellQuote(incoming)}; ` +
+          `git --git-dir=${shellQuote(`${hostRoot}/source.git`)} archive ${shellQuote(tree ? `${resolvedSha}:${tree}` : resolvedSha)} ` +
+          `| tar -x -C ${shellQuote(incoming)}; mv ${shellQuote(incoming)} ${shellQuote(releaseDir)}`,
         { timeout: 120_000 },
       );
-    } finally {
-      await tokenAuth?.cleanup();
-    }
-    const resolvedSha = (
-      await exec(
-        `git --git-dir=${shellQuote(`${hostRoot}/source.git`)} rev-parse ${shellQuote(commit ? `refs/openship/${dep.id}` : `refs/remotes/origin/${branch}`)}`,
-      )
-    ).trim();
-
-    const alreadyLive = await findActiveSameShaRelease(project, resolvedSha);
-    if (alreadyLive) {
-      log(dep.id, `Release ${resolvedSha.slice(0, 7)} is already live`);
-      await finish(dep, "no_changes", startedAt);
-      return;
     }
 
-    const frozen = snapshot ? withSnapshotCommit(snapshot, resolvedSha) : undefined;
+    let frozen = snapshot
+      ? resolvedSha
+        ? withSnapshotCommit(snapshot, resolvedSha)
+        : snapshot
+      : undefined;
     if (frozen) {
       dep.meta = { ...(dep.meta as Record<string, unknown>), mountedRelease: frozen };
     }
-    const tree = config.sourcePath?.replace(/^\/+|\/+$/g, "");
-    await exec(
-      `mkdir -p ${shellQuote(incoming)}; ` +
-        `git --git-dir=${shellQuote(`${hostRoot}/source.git`)} archive ${shellQuote(tree ? `${resolvedSha}:${tree}` : resolvedSha)} ` +
-        `| tar -x -C ${shellQuote(incoming)}; mv ${shellQuote(incoming)} ${shellQuote(releaseDir)}`,
-      { timeout: 120_000 },
-    );
     await prepareSharedPaths(exec, hostRoot, releaseDir, frozen?.sharedPaths ?? config.sharedPaths ?? []);
 
     const containerRelease = `${config.containerPath}/releases/${dep.id}`;
@@ -484,19 +553,49 @@ export async function runMountedRelease(
     await persistReleasePhase(dep, "preparing");
     await assertReleaseNotCancelled(dep.id);
 
-    if (mountedReleaseBuildMode(config) === "server" && config.prepareCommand?.trim()) {
-      if (config.builderImage?.trim()) {
-        log(dep.id, `Building release with ${config.builderImage}`);
-        await prepareBuilderCachePaths(exec, hostRoot, config.builderCachePaths ?? []);
-        await exec(builderRun(hostRoot, releaseDir, dep.id, config), { timeout: 900_000 });
-      } else {
-        log(dep.id, "Preparing release in the app container");
-        await exec(dockerExec(runtime.containerId, containerRelease, config.prepareCommand), {
-          timeout: 300_000,
-        });
-      }
-    } else {
+    const prepared = await prepareRelease({
+      exec,
+      config,
+      hostRoot,
+      releaseDir,
+      incoming,
+      deploymentId: dep.id,
+      uploadedArchive: uploaded ? `${remoteArchive}/artifact` : undefined,
+      claimedSha256: uploaded?.sha256,
+      commitSha: resolvedSha || undefined,
+      previousLockHashes: await previousReadyLockHashes(project),
+      previousReleaseDir: project.activeReleaseDeploymentId
+        ? releaseDirFor(project.id, project.activeReleaseDeploymentId)
+        : null,
+      treeReady: true,
+      log: (message) => log(dep.id, message),
+      runPrepare: async () => {
+        if (mountedReleaseBuildMode(config) !== "server" || !config.prepareCommand?.trim()) return;
+        if (config.builderImage?.trim()) {
+          log(dep.id, `Building release with ${config.builderImage}`);
+          await prepareBuilderCachePaths(exec, hostRoot, config.builderCachePaths ?? []);
+          await exec(builderRun(hostRoot, releaseDir, dep.id, config), { timeout: 900_000 });
+        } else {
+          log(dep.id, "Preparing release in the app container");
+          await exec(dockerExec(runtime.containerId, containerRelease, config.prepareCommand), {
+            timeout: 300_000,
+          });
+        }
+      },
+    });
+    if (mountedReleaseBuildMode(config) === "prebuilt") {
       log(dep.id, "Using deployable files committed to Git");
+    } else if (mountedReleaseBuildMode(config) === "upload") {
+      log(dep.id, `Verified artifact ${prepared.sha256.slice(0, 12)}`);
+    }
+    if (frozen) {
+      frozen = withSnapshotArtifact(frozen, {
+        lockHashes: prepared.provenance.lockHashes,
+        artifactSha256: prepared.sha256,
+        artifactSource: prepared.provenance.source,
+        commitSha: resolvedSha || frozen.commitSha,
+      });
+      dep.meta = { ...(dep.meta as Record<string, unknown>), mountedRelease: frozen };
     }
 
     const deploying = await repos.deployment.updateStatus(dep.id, "deploying");
@@ -534,9 +633,10 @@ export async function runMountedRelease(
     }
     await exec(markReleaseTreeReadOnlyCommand(releaseDir));
 
-    const version =
-      (await repos.deployment.findReadyVersionByCommit(project.id, resolvedSha)) ??
-      (await repos.deployment.getNextReadyVersion(project.id));
+    const version = resolvedSha
+      ? ((await repos.deployment.findReadyVersionByCommit(project.id, resolvedSha)) ??
+        (await repos.deployment.getNextReadyVersion(project.id)))
+      : await repos.deployment.getNextReadyVersion(project.id);
     const readyMeta = {
       ...(dep.meta as Record<string, unknown>),
       deploymentLane: "release",
@@ -549,7 +649,7 @@ export async function runMountedRelease(
       publicHttps,
     };
     const applied = await repos.deployment.updateStatus(dep.id, "ready", {
-      commitSha: resolvedSha,
+      ...(resolvedSha ? { commitSha: resolvedSha } : {}),
       version,
       imageRef: null,
       meta: readyMeta,
@@ -562,7 +662,12 @@ export async function runMountedRelease(
     const advanced = await repos.project.setActiveReleaseDeploymentIfReady(project.id, dep.id);
     if (!advanced) throw cancelledError();
     committed = true;
-    log(dep.id, `Code release ${resolvedSha.slice(0, 7)} is live`);
+    log(
+      dep.id,
+      resolvedSha
+        ? `Code release ${resolvedSha.slice(0, 7)} is live`
+        : `Code release ${prepared.sha256.slice(0, 12)} is live`,
+    );
     await finish(dep, "ready", startedAt);
     await sweepMountedReleaseHost(executor, {
       ...project,
@@ -588,6 +693,7 @@ export async function runMountedRelease(
       })) {
         await removeHostPath(executor, path);
       }
+      await removeHostPath(executor, `${hostRoot}/.incoming-${dep.id}-artifact`);
       await executor.exec(`docker rm -f ${shellQuote(builderName)}`).catch(() => {});
     }
     endDeployRun(dep.id);
@@ -627,6 +733,13 @@ export async function triggerMountedRelease(
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!mountedReleaseConfig(project)) {
     throw new AppError("Mounted releases are not enabled for this project.", 409, RELEASE_ERROR);
+  }
+  if (mountedReleaseBuildMode(mountedReleaseConfig(project)!) === "upload") {
+    throw new AppError(
+      "This project deploys from an uploaded artifact. Use POST /api/deployments/artifact.",
+      409,
+      RELEASE_ERROR,
+    );
   }
   if (opts?.commitSha) {
     const existing = await findActiveSameShaRelease(project, opts.commitSha);
@@ -688,6 +801,70 @@ export async function triggerMountedRelease(
   await repos.deployment.updateStatus(dep.id, "queued", { meta: frozenMeta, imageRef: null });
   sessionManager.createSession(dep.id, project.id);
   void runMountedRelease(ctx, project, dep, commitSha);
+  return dep;
+}
+
+export async function triggerUploadedArtifact(
+  ctx: RequestContext,
+  projectId: string,
+  uploaded: { localPath: string; sha256: string; commitSha?: string },
+) {
+  const project = await repos.project.findById(projectId);
+  assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  if (!mountedReleaseConfig(project)) {
+    throw new AppError("Mounted releases are not enabled for this project.", 409, RELEASE_ERROR);
+  }
+  await checkNoActiveBuild(project.id);
+  const live = mountedReleaseConfig(project)!;
+  const runtime = await activeRuntime(project);
+  const hostRoot = mountedReleaseHostRoot(project.id);
+  const commitSha = uploaded.commitSha ? await canonicalizeCommitRef(ctx, project, uploaded.commitSha).catch(() => uploaded.commitSha) : undefined;
+  const meta = {
+    ...buildConfigSnapshot(project),
+    deploymentLane: "release" as const,
+    artifactKind: "mounted-tree" as const,
+    runtimeDeploymentId: runtime.deployment.id,
+    artifactSha256: uploaded.sha256,
+    artifactSource: "local-upload" as const,
+  };
+  const dep = await createQueuedDeployment({
+    projectId: project.id,
+    organizationId: project.organizationId,
+    branch: project.gitBranch || "main",
+    environment: "production",
+    framework: project.framework || "unknown",
+    meta,
+    envVars: null,
+    commitSha,
+    trigger: "artifact-upload",
+    rollbackStrategy: "snapshot",
+  });
+  const contract = freezeMountedReleaseContract({
+    config: live,
+    commitSha,
+    artifactSha256: uploaded.sha256,
+    artifactSource: "local-upload",
+    runtimeDeploymentId: runtime.deployment.id,
+    hostRoot,
+    releaseDir: releaseDirFor(project.id, dep.id),
+  });
+  const frozenMeta = {
+    ...(dep.meta as Record<string, unknown>),
+    deploymentLane: "release" as const,
+    artifactKind: "mounted-tree" as const,
+    mountedReleaseRoot: contract.releaseDir,
+    runtimeDeploymentId: contract.runtimeDeploymentId,
+    mountedRelease: contract,
+    artifactSha256: uploaded.sha256,
+    artifactSource: "local-upload" as const,
+  };
+  dep.meta = frozenMeta;
+  await repos.deployment.updateStatus(dep.id, "queued", { meta: frozenMeta, imageRef: null });
+  sessionManager.createSession(dep.id, project.id);
+  void runMountedRelease(ctx, project, dep, commitSha, {
+    localPath: uploaded.localPath,
+    sha256: uploaded.sha256,
+  });
   return dep;
 }
 
@@ -772,7 +949,7 @@ export async function restoreMountedRelease(
   ctx: RequestContext,
   target: Deployment,
 ): Promise<Deployment> {
-  if (!isMountedRelease(target) || !target.commitSha) {
+  if (!isMountedRelease(target)) {
     throw new AppError("This is not a mounted code release.", 409, RELEASE_ERROR);
   }
   const project = await repos.project.findById(target.projectId);
@@ -785,6 +962,13 @@ export async function restoreMountedRelease(
   );
   if (resolved && (await retainedReleaseTreeExists(resolved.executor, target))) {
     return swapToRetainedRelease(project, target);
+  }
+  if (!target.commitSha) {
+    throw new AppError(
+      "This uploaded release is no longer on disk and has no commit to rebuild from.",
+      409,
+      RELEASE_ERROR,
+    );
   }
   return triggerMountedRelease(ctx, target.projectId, { commitSha: target.commitSha });
 }
