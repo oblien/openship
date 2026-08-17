@@ -114,6 +114,10 @@ export interface DeploymentMeta {
   /** Compose roll-up. Loosely typed on purpose — the pipeline writes a wider
    *  object than any one reader needs. */
   composeDeployment?: { warningMessage?: string } & Record<string, unknown>;
+  deploymentLane?: "runtime" | "release";
+  artifactKind?: "docker-image" | "mounted-tree";
+  mountedReleaseRoot?: string;
+  runtimeDeploymentId?: string;
 }
 
 /**

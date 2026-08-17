@@ -40,6 +40,18 @@ import {
   resolveMountedReleaseRuntimeTarget,
   type MountedReleaseConfig,
 } from "./mounted-release.config";
+import { removeHostPath, sweepMountedReleaseHost } from "./mounted-release.cleanup";
+import {
+  freezeMountedReleaseContract,
+  isMountedReleaseRow,
+  markReleaseTreeReadOnlyCommand,
+  readMountedReleaseSnapshot,
+  releaseBuilderName,
+  releaseDirFor,
+  stagedReleaseCleanupPaths,
+  withSnapshotCommit,
+  type MountedReleaseContract,
+} from "./release-artifact";
 import type { ReleasePlan } from "./release-planner";
 
 const RELEASE_ERROR = "MOUNTED_RELEASE_FAILED";
@@ -57,6 +69,18 @@ function validateRef(value: string, label: string): string {
     throw new AppError(`Invalid ${label}.`, 400, RELEASE_ERROR);
   }
   return value;
+}
+
+function requireSnapshot(dep: Pick<Deployment, "meta">): MountedReleaseContract {
+  const snapshot = readMountedReleaseSnapshot(dep);
+  if (!snapshot) {
+    throw new AppError(
+      "This code release has no frozen mounted-release contract.",
+      409,
+      RELEASE_ERROR,
+    );
+  }
+  return snapshot;
 }
 
 function releaseMeta(dep: Pick<Deployment, "meta">): {
@@ -307,11 +331,13 @@ export async function runMountedRelease(
   requestedCommit?: string,
 ): Promise<void> {
   const startedAt = Date.now();
-  const config = mountedReleaseConfig(project)!;
-  const hostRoot = mountedReleaseHostRoot(project.id);
+  const snapshot = readMountedReleaseSnapshot(dep) ?? null;
+  const config = snapshot?.config ?? mountedReleaseConfig(project)!;
+  const hostRoot = snapshot?.hostRoot ?? mountedReleaseHostRoot(project.id);
   const incoming = `${hostRoot}/.incoming-${dep.id}`;
-  const releaseDir = `${hostRoot}/releases/${dep.id}`;
+  const releaseDir = snapshot?.releaseDir ?? releaseDirFor(project.id, dep.id);
   const authDir = `${hostRoot}/.auth-${dep.id}`;
+  const builderName = releaseBuilderName(dep.id);
   const signal = beginDeployRun(dep.id);
   let previous = "";
   let committed = false;
@@ -418,6 +444,10 @@ export async function runMountedRelease(
       return;
     }
 
+    const frozen = snapshot ? withSnapshotCommit(snapshot, resolvedSha) : undefined;
+    if (frozen) {
+      dep.meta = { ...(dep.meta as Record<string, unknown>), mountedRelease: frozen };
+    }
     const tree = config.sourcePath?.replace(/^\/+|\/+$/g, "");
     await exec(
       `mkdir -p ${shellQuote(incoming)}; ` +
@@ -425,7 +455,7 @@ export async function runMountedRelease(
         `| tar -x -C ${shellQuote(incoming)}; mv ${shellQuote(incoming)} ${shellQuote(releaseDir)}`,
       { timeout: 120_000 },
     );
-    await prepareSharedPaths(exec, hostRoot, releaseDir, config.sharedPaths ?? []);
+    await prepareSharedPaths(exec, hostRoot, releaseDir, frozen?.sharedPaths ?? config.sharedPaths ?? []);
 
     const containerRelease = `${config.containerPath}/releases/${dep.id}`;
     await exec(dockerExec(runtime.containerId, null, `test -d ${shellQuote(containerRelease)}`)).catch(
@@ -481,6 +511,7 @@ export async function runMountedRelease(
     await runReload(exec, runtime.containerId, config);
     await assertReleaseNotCancelled(dep.id);
     await checkHealth(exec, runtime.containerId, config, runtime.healthPort);
+    await exec(markReleaseTreeReadOnlyCommand(releaseDir));
 
     const version =
       (await repos.deployment.findReadyVersionByCommit(project.id, resolvedSha)) ??
@@ -488,15 +519,17 @@ export async function runMountedRelease(
     const readyMeta = {
       ...(dep.meta as Record<string, unknown>),
       deploymentLane: "release",
+      artifactKind: "mounted-tree",
       mountedReleaseRoot: releaseDir,
-      runtimeDeploymentId: runtime.deployment.id,
+      mountedRelease: frozen,
+      runtimeDeploymentId: snapshot?.runtimeDeploymentId ?? runtime.deployment.id,
       runtimeContainerId: runtime.containerId,
       releasePreviousCurrent: previous || undefined,
     };
     const applied = await repos.deployment.updateStatus(dep.id, "ready", {
       commitSha: resolvedSha,
       version,
-      imageRef: releaseDir,
+      imageRef: null,
       meta: readyMeta,
     });
     if (!applied) {
@@ -509,16 +542,10 @@ export async function runMountedRelease(
     committed = true;
     log(dep.id, `Code release ${resolvedSha.slice(0, 7)} is live`);
     await finish(dep, "ready", startedAt);
-
-    const keep = config.retain ?? 5;
-    const old = (await repos.deployment.listReadyOrderedDesc(project.id))
-      .filter((item) => releaseMeta(item).deploymentLane === "release" && item.id !== dep.id)
-      .slice(Math.max(0, keep - 1));
-    for (const item of old) {
-      const root = releaseMeta(item).releaseRoot;
-      if (root && !item.pinned) await executor.rm(root).catch(() => {});
-    }
-    await executor.rm(authDir).catch(() => {});
+    await sweepMountedReleaseHost(executor, {
+      ...project,
+      activeReleaseDeploymentId: dep.id,
+    }).catch(() => {});
   } catch (error) {
     const live = await repos.deployment.findById(dep.id);
     const cancelled = isCancelledError(error) || !live || live.status === "cancelled";
@@ -530,6 +557,17 @@ export async function runMountedRelease(
     if (!cancelled) log(dep.id, message, "error");
     await finish(dep, cancelled ? "cancelled" : "failed", startedAt, cancelled ? undefined : new Error(message));
   } finally {
+    if (executor) {
+      for (const path of stagedReleaseCleanupPaths({
+        ready: committed,
+        incoming,
+        authDir,
+        releaseDir,
+      })) {
+        await removeHostPath(executor, path);
+      }
+      await executor.exec(`docker rm -f ${shellQuote(builderName)}`).catch(() => {});
+    }
     endDeployRun(dep.id);
     await releaseDeployLease(project.id, dep.id);
   }
@@ -585,11 +623,13 @@ export async function triggerMountedRelease(
     }
   }
   await checkNoActiveBuild(project.id);
+  const live = mountedReleaseConfig(project)!;
   const runtime = await activeRuntime(project);
+  const hostRoot = mountedReleaseHostRoot(project.id);
   const meta = {
     ...buildConfigSnapshot(project),
     deploymentLane: "release" as const,
-    mountedReleaseRoot: mountedReleaseHostRoot(project.id),
+    artifactKind: "mounted-tree" as const,
     runtimeDeploymentId: runtime.deployment.id,
   };
   const dep = await createQueuedDeployment({
@@ -607,6 +647,23 @@ export async function triggerMountedRelease(
     serviceIds: opts?.serviceIds,
     changedPaths: opts?.changedPaths ?? null,
   });
+  const contract = freezeMountedReleaseContract({
+    config: live,
+    commitSha,
+    runtimeDeploymentId: runtime.deployment.id,
+    hostRoot,
+    releaseDir: releaseDirFor(project.id, dep.id),
+  });
+  const frozenMeta = {
+    ...(dep.meta as Record<string, unknown>),
+    deploymentLane: "release" as const,
+    artifactKind: "mounted-tree" as const,
+    mountedReleaseRoot: contract.releaseDir,
+    runtimeDeploymentId: contract.runtimeDeploymentId,
+    mountedRelease: contract,
+  };
+  dep.meta = frozenMeta;
+  await repos.deployment.updateStatus(dep.id, "queued", { meta: frozenMeta, imageRef: null });
   sessionManager.createSession(dep.id, project.id);
   void runMountedRelease(ctx, project, dep, commitSha);
   return dep;
@@ -616,14 +673,14 @@ export async function restoreMountedRelease(
   ctx: RequestContext,
   target: Deployment,
 ): Promise<Deployment> {
-  if (releaseMeta(target).deploymentLane !== "release" || !target.commitSha) {
+  if (!isMountedRelease(target) || !target.commitSha) {
     throw new AppError("This is not a mounted code release.", 409, RELEASE_ERROR);
   }
   return triggerMountedRelease(ctx, target.projectId, { commitSha: target.commitSha });
 }
 
 export function isMountedRelease(dep: Pick<Deployment, "meta">): boolean {
-  return releaseMeta(dep).deploymentLane === "release";
+  return isMountedReleaseRow(dep) || releaseMeta(dep).deploymentLane === "release";
 }
 
 /** @returns false when the host was unreachable — keep the lease and retry later. */

@@ -96,6 +96,7 @@ import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
 import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
 import { env } from "../../config";
 import { withMountedReleaseServiceVolume, withMountedReleaseVolume } from "./mounted-release.config";
+import type { MountedReleaseContract } from "./release-artifact";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -182,8 +183,10 @@ export async function runDeploymentPreflight(
 export interface DeploymentConfigSnapshot {
   /** Mounted-code releases share history without replacing the runtime lane. */
   deploymentLane?: "runtime" | "release";
+  artifactKind?: "docker-image" | "mounted-tree";
   mountedReleaseRoot?: string;
   runtimeDeploymentId?: string;
+  mountedRelease?: MountedReleaseContract;
   /** Owning organization — required so server lookups can be org-scoped. */
   organizationId?: string;
   repoUrl: string;

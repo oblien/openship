@@ -192,6 +192,16 @@ export function createDeploymentRepo(db: Database) {
      * given commit, if any. Used to suppress the "new commit available" banner
      * while that commit is already being deployed.
      */
+    async findInFlightByProject(projectId: string) {
+      return db.query.deployment.findFirst({
+        where: and(
+          eq(deployment.projectId, projectId),
+          inArray(deployment.status, ["queued", "building", "deploying"]),
+        ),
+        orderBy: [desc(deployment.createdAt)],
+      });
+    },
+
     async findInProgressByCommit(projectId: string, commitSha: string | null | undefined) {
       if (!commitSha) return undefined;
       return db.query.deployment.findFirst({

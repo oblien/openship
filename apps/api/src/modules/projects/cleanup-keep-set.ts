@@ -22,6 +22,7 @@ import { repos, type Deployment, type Project } from "@repo/db";
 import { computeKeepSet } from "../deployments/image-gc";
 import type { RollbackWindowProject } from "../deployments/release-retention";
 import { usableRef } from "../deployments/rollback/restore-plan";
+import { dockerImageGcRef, mountedReleaseTreeRef } from "../deployments/release-artifact";
 
 export interface CleanupKeepSet {
   /** Image refs a retained release still needs. */
@@ -90,9 +91,13 @@ export async function computeCleanupKeepSet(
       // A protected release still needs its images even when it never reached
       // `ready` (a partial-failure deploy is rejectable, and its predecessor may
       // sit outside the ready list computeKeepSet walks).
-      if (row.imageRef) images.add(row.imageRef);
+      const serviceImage = dep ? dockerImageGcRef(dep, row.imageRef) : row.imageRef;
+      if (serviceImage) images.add(serviceImage);
     }
-    if (dep?.imageRef) images.add(dep.imageRef);
+    const imageRef = dep ? dockerImageGcRef(dep) : null;
+    if (imageRef) images.add(imageRef);
+    const tree = dep ? mountedReleaseTreeRef(dep) : null;
+    if (tree) containers.add(tree);
   }
 
   return { images, containers };

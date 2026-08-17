@@ -87,7 +87,7 @@ export const deployment = pgTable("deployment", {
    * as "Pending".
    */
   status: text("status").notNull().default("queued"),
-  /** Image/snapshot reference produced by build */
+  /** Docker image produced by build. Never a host path — mounted trees use meta. */
   imageRef: text("image_ref"),
   /** Build duration in milliseconds */
   buildDurationMs: integer("build_duration_ms"),

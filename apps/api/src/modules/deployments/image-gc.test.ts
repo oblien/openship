@@ -67,6 +67,32 @@ describe("computeKeepSet", () => {
     expect(keep.has("img-d1")).toBe(true); // pinned
     expect(keep.has("img-d2")).toBe(false); // beyond window(0), unpinned → pruned
   });
+
+  it("ignores filesystem paths and mounted-release rows so GC never docker-rmi a tree", async () => {
+    const tree = "/var/lib/openship/mounted-releases/p1/releases/dRel";
+    const project = { id: "p4", activeDeploymentId: "dRun", rollbackWindow: 5 };
+    const ready = asDeps([
+      {
+        id: "dRel",
+        imageRef: tree,
+        pinned: false,
+        meta: { deploymentLane: "release", artifactKind: "mounted-tree", mountedReleaseRoot: tree },
+      },
+      { id: "dRun", imageRef: "openship/app:bld_live", pinned: false, meta: {} },
+      { id: "dPath", imageRef: "/var/lib/openship/static/.builds/old", pinned: false, meta: {} },
+    ]);
+    const keep = await computeKeepSet(project, {
+      listReadyOrderedDesc: async () => ready,
+      findById: async (id) => ready.find((d) => d.id === id),
+      listByDeployment: async (id) =>
+        id === "dRel" ? [{ imageRef: tree }] : id === "dRun" ? [{ imageRef: "openship/app-web:bld_live" }] : [],
+    });
+    expect(keep.has(tree)).toBe(false);
+    expect(keep.has("/var/lib/openship/static/.builds/old")).toBe(false);
+    expect(keep.has("openship/app:bld_live")).toBe(true);
+    expect(keep.has("openship/app-web:bld_live")).toBe(true);
+    expect([...keep].some((ref) => ref.startsWith("/"))).toBe(false);
+  });
 });
 
 describe("selectImageRemovalRefs (never ruin an operator's image)", () => {
