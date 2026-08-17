@@ -421,6 +421,17 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     label: "Server reachable again",
     tone: "success",
   },
+  "server.agent_enrolled": {
+    category: "servers",
+    action: "enrolled the OpenShip agent",
+    label: "Server agent enrolled",
+  },
+  "server.agent_revoked": {
+    category: "servers",
+    action: "revoked the OpenShip agent",
+    label: "Server agent revoked",
+    tone: "warning",
+  },
   "server:write": {
     category: "servers",
     action: "changed the server",

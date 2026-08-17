@@ -40,7 +40,9 @@ export interface RenewalResult {
  * - Sends notifications on success / failure
  * - Returns a structured result for the caller to log or return to the client
  */
-export async function renewExpiringCerts(): Promise<RenewalResult> {
+export async function renewExpiringCerts(opts?: {
+  skipServerIds?: ReadonlySet<string>;
+}): Promise<RenewalResult> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() + SYSTEM.DOMAINS.SSL_RENEW_BEFORE_DAYS);
 
@@ -53,9 +55,23 @@ export async function renewExpiringCerts(): Promise<RenewalResult> {
   // Previously only `manualSsl` was excluded. The other two escaped by luck: their
   // rows carry no `sslExpiresAt`, and findExpiringSsl compares on it — so a single
   // `updateSsl({ sslExpiresAt })` anywhere would have handed them to certbot.
-  const allDomains = (await repos.domain.findExpiringSsl(cutoff)).filter(
+  let allDomains = (await repos.domain.findExpiringSsl(cutoff)).filter(
     (d) => !tlsIssuedElsewhere(d),
   );
+  const skip = opts?.skipServerIds;
+  if (skip && skip.size > 0) {
+    const projectIds = [...new Set(allDomains.map((d) => d.projectId).filter((p): p is string => !!p))];
+    const projectServer = new Map<string, string | null>();
+    for (const pid of projectIds) {
+      const project = await repos.project.findById(pid);
+      projectServer.set(pid, project?.serverId ?? null);
+    }
+    allDomains = allDomains.filter((d) => {
+      if (!d.projectId) return true;
+      const serverId = projectServer.get(d.projectId);
+      return !serverId || !skip.has(serverId);
+    });
+  }
 
   if (allDomains.length === 0) {
     return { renewed: 0, failed: 0, total: 0, details: [] };

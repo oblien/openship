@@ -21,6 +21,7 @@ import { audit, auditContextFrom } from "../../lib/audit";
 import { assertNotCloud } from "../../lib/controller-helpers";
 import { primeGeo, countryForIp } from "@/lib/geo-ip";
 import { execOnHost } from "../../lib/agent-exec";
+import { publicAgentStatus } from "./server-agent";
 
 /** Public shape - what the controller returns to clients (no SSH secrets). */
 function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
@@ -46,6 +47,7 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
     // ISO country for the row's flag; null for hostnames/private IPs or until
     // the geo DB is warmed (callers prime it via primeGeo before serializing).
     country: countryForIp(s.sshHost),
+    agent: publicAgentStatus(s),
   };
 }
 
