@@ -129,6 +129,8 @@ r.post(
     rateLimit: "write-authed",
     body: AgentExecBody,
     mcp: {
+      name: "services.shell",
+      timeoutMs: 35_000,
       description:
         "Run a shell command inside this service's running container and return its exit code and combined output. Interpreted by `sh -c`; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Requires a Docker runtime — a bare or cloud-hosted service has no container to enter.",
     },
@@ -170,7 +172,19 @@ r.post(
 /* ─── Per-service container actions ─────────────────────────────────────── */
 r.post("/:serviceId/start", { tag: "project:service:write", mcp: { description: "Start this service's container." } }, cloudProjectProxy, ctrl.startContainer);
 r.post("/:serviceId/stop", { tag: "project:service:write", mcp: { description: "Stop this service's container." } }, cloudProjectProxy, ctrl.stopContainer);
-r.post("/:serviceId/restart", { tag: "project:service:write", mcp: { description: "Restart this service's container." } }, cloudProjectProxy, ctrl.restartContainer);
+r.post(
+  "/:serviceId/restart",
+  {
+    tag: "project:service:write",
+    mcp: {
+      name: "services.restart",
+      longRunning: true,
+      description: "Restart this service's container. Returns { operationId } (the service id).",
+    },
+  },
+  cloudProjectProxy,
+  ctrl.restartContainer,
+);
 
 /* ─── Service environment variables ─────────────────────────────────────── */
 r.get(

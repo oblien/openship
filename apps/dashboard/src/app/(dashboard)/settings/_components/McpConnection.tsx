@@ -30,6 +30,39 @@ function useCopy() {
   return { copied, copy };
 }
 
+const CURATED_TOOL_NAMES = [
+  "projects.list",
+  "projects.live_state",
+  "releases.plan",
+  "releases.deploy_code",
+  "releases.rebuild_runtime",
+  "releases.rollback",
+  "deployments.status",
+  "deployments.logs",
+  "services.restart",
+  "services.shell",
+  "servers.health",
+  "activity.recent",
+] as const;
+
+function CuratedToolsNote() {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-2 rounded-xl border border-border/50 px-3.5 py-3">
+      <p className="text-xs font-medium text-foreground">{t.settings.mcp.curatedTitle}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{t.settings.mcp.curatedBody}</p>
+      <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+        {CURATED_TOOL_NAMES.map((name) => (
+          <li key={name} className="font-mono text-[11px] text-foreground/80">
+            {name}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs leading-relaxed text-muted-foreground">{t.settings.mcp.advancedNote}</p>
+    </div>
+  );
+}
+
 function CopyRow({ value }: { value: string }) {
   const { copied, copy } = useCopy();
   const { t } = useI18n();
@@ -465,6 +498,7 @@ export function McpConnection() {
             <GuideBody endpoint={endpoint} configSnippet={configSnippet} />
           </>
         )}
+        <CuratedToolsNote />
       </div>
     </SettingsSection>
   );

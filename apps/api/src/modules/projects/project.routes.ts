@@ -169,7 +169,7 @@ r.post(
 );
 r.get(
   "/",
-  { tag: "project:list", mcp: { description: "List projects in the org." } },
+  { tag: "project:list", mcp: { name: "projects.list", description: "List projects in the org." } },
   ctrl.list,
 );
 r.post(
@@ -274,6 +274,8 @@ r.get(
   {
     tag: "project:read",
     mcp: {
+      name: "projects.live_state",
+      timeoutMs: 8_000,
       description:
         "Independent live pointers for this project: runtime image/deployment, mounted code release SHA (null when mounted releases are off), and the bound server.",
     },

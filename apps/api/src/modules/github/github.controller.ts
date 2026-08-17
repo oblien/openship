@@ -89,12 +89,17 @@ export async function getStatus(c: Context) {
   const capabilities = await resolveGitHubCapabilities(ctx, {
     cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
   }).catch(() => null);
+  const { describeCloneCredentials } = await import("./clone-credential-preview");
+  const cloneCredential = await describeCloneCredentials(ctx, state, {
+    serverId: c.req.query("serverId"),
+  }).catch(() => null);
   return c.json({
     state,
     accounts: allowedAccounts,
     installUrl: install.url,
     cloudUnreachable: install.cloudUnreachable ?? false,
     capabilities,
+    cloneCredential,
   });
 }
 
@@ -138,6 +143,10 @@ export async function getHome(c: Context) {
   const capabilities = await resolveGitHubCapabilities(ctx, {
     cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
   }).catch(() => null);
+  const { describeCloneCredentials } = await import("./clone-credential-preview");
+  const cloneCredential = await describeCloneCredentials(ctx, data.state, {
+    serverId: c.req.query("serverId"),
+  }).catch(() => null);
 
   return c.json({
     ...data,
@@ -148,6 +157,7 @@ export async function getHome(c: Context) {
     // unreachable" instead of a dead install button (installUrl is "").
     cloudUnreachable,
     capabilities,
+    cloneCredential,
   });
 }
 
@@ -613,7 +623,16 @@ export async function setInstanceToken(c: Context) {
     });
   }
 
-  return c.json({ connected: true, login: report.user, warning: verdict.warning });
+  const { testTokenCloneAccess } = await import("./clone-access-test");
+  const cloneTest = await testTokenCloneAccess(token).catch(
+    (err): import("./clone-access-test").CloneAccessTestResult => ({
+      ok: false,
+      via: "none",
+      message: err instanceof Error ? err.message : "Clone test failed",
+    }),
+  );
+
+  return c.json({ connected: true, login: report.user, warning: verdict.warning, cloneTest });
 }
 
 /**

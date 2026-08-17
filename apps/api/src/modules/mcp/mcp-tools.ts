@@ -32,6 +32,18 @@ export interface McpToolDef {
   path: string; // full path with :params, e.g. /api/projects/:id
   pathParams: string[];
   hasBody: boolean;
+  /**
+   * Generated REST name (`get_projects`) before any `spec.mcp.name` override
+   * or `advanced.` prefix. Used as a call-time alias so an older client that
+   * still has the generated name does not 404.
+   */
+  generatedName: string;
+  /** True when this is a generated REST tool, not a curated operator name. */
+  advanced: boolean;
+  /** Queue-and-return — dispatch collapses the payload to `{ operationId }`. */
+  longRunning: boolean;
+  /** Per-tool timeout override from `spec.mcp.timeoutMs`. */
+  timeoutMs?: number;
   /** Parsed permission metadata for capability-aware listing (not sent to client). */
   perm: {
     root: string;
@@ -124,8 +136,31 @@ function extractPathParams(path: string): string[] {
     .map((s) => s.slice(1));
 }
 
-/** Stable, unique, MCP-safe tool name from method + path. */
-function toolName(route: RegisteredRoute, taken: Set<string>): string {
+/** Operator-facing catalog. Prompts and tools/list (default) use these names. */
+export const CURATED_OPERATOR_TOOLS = [
+  "projects.list",
+  "projects.live_state",
+  "releases.plan",
+  "releases.deploy_code",
+  "releases.rebuild_runtime",
+  "releases.rollback",
+  "deployments.status",
+  "deployments.logs",
+  "services.restart",
+  "services.shell",
+  "servers.health",
+  "activity.recent",
+] as const;
+
+export type CuratedOperatorTool = (typeof CURATED_OPERATOR_TOOLS)[number];
+
+export const CURATED_OPERATOR_TOOL_SET: ReadonlySet<string> = new Set(CURATED_OPERATOR_TOOLS);
+
+/** MCP-safe custom name: letters, digits, `_`, `.`, `-`. */
+const MCP_NAME_RE = /^[a-z][a-z0-9_.-]{0,63}$/i;
+
+/** Stable, unique, MCP-safe generated name from method + path. */
+function generatedToolName(route: RegisteredRoute, taken: Set<string>): string {
   const segments = route.path
     .split("/")
     .filter((s) => s && s !== "api")
@@ -138,6 +173,32 @@ function toolName(route: RegisteredRoute, taken: Set<string>): string {
   }
   taken.add(name);
   return name;
+}
+
+/**
+ * Prefer `spec.mcp.name` when it is unique and well-formed. Everything else
+ * is advertised as `advanced.<generated>` so the default catalog stays the
+ * curated operator set.
+ */
+function resolveToolName(
+  route: RegisteredRoute,
+  generated: string,
+  advertised: Set<string>,
+): { name: string; advanced: boolean } {
+  const spec = route.spec;
+  const override = !isPublicSpec(spec) ? spec.mcp?.name?.trim() : undefined;
+  if (override && MCP_NAME_RE.test(override) && !advertised.has(override)) {
+    advertised.add(override);
+    return { name: override, advanced: false };
+  }
+  const advancedName = generated.startsWith("advanced.") ? generated : `advanced.${generated}`;
+  let name = advancedName;
+  let n = 2;
+  while (advertised.has(name)) {
+    name = `${advancedName.slice(0, 60)}_${n++}`;
+  }
+  advertised.add(name);
+  return { name, advanced: true };
 }
 
 function inputSchema(
@@ -194,10 +255,11 @@ export function resetMcpToolCache(): void {
   cached = null;
 }
 
-/** All curated tools, generated once from the route registry. */
+/** All tools, generated once from the route registry (curated + advanced). */
 export function getMcpTools(): McpToolDef[] {
   if (cached) return cached;
-  const taken = new Set<string>();
+  const generatedTaken = new Set<string>();
+  const advertised = new Set<string>();
   cached = getRouteRegistry()
     .filter(includeRoute)
     .map((route): McpToolDef => {
@@ -214,8 +276,10 @@ export function getMcpTools(): McpToolDef[] {
       // auto-validation) wins; `mcp.body` is a deprecated fallback.
       const specBody = isPublicSpec(spec) ? undefined : spec.body;
       const bodySchema = (specBody ?? mcp?.body) as Record<string, unknown> | undefined;
+      const generatedName = generatedToolName(route, generatedTaken);
+      const { name, advanced } = resolveToolName(route, generatedName, advertised);
       return {
-        name: toolName(route, taken),
+        name,
         description: mcp?.description ?? `${route.method} ${route.path}`,
         inputSchema: inputSchema(pathParams, hasBody, hasBody ? bodySchema : undefined),
         annotations: annotationsFor(route),
@@ -223,6 +287,10 @@ export function getMcpTools(): McpToolDef[] {
         path: route.path,
         pathParams,
         hasBody,
+        generatedName,
+        advanced,
+        longRunning: mcp?.longRunning === true,
+        timeoutMs: mcp?.timeoutMs,
         perm: {
           root: parsed?.root ?? "",
           leaf,
@@ -252,6 +320,47 @@ export function getMcpTools(): McpToolDef[] {
       };
     });
   return cached;
+}
+
+/**
+ * Resolve a tool by advertised name, generated REST name, or `advanced.*`
+ * prefix. Call-time is wider than list-time so a client that still has the
+ * old generated name keeps working.
+ */
+export function findMcpTool(name: string | undefined): McpToolDef | undefined {
+  if (!name) return undefined;
+  const tools = getMcpTools();
+  const exact = tools.find((t) => t.name === name);
+  if (exact) return exact;
+  const generated = tools.find((t) => t.generatedName === name);
+  if (generated) return generated;
+  if (name.startsWith("advanced.")) {
+    const rest = name.slice("advanced.".length);
+    return tools.find((t) => t.generatedName === rest || t.name === rest);
+  }
+  return tools.find((t) => t.name === `advanced.${name}`);
+}
+
+export interface ListToolsOptions {
+  /** When true, include generated REST tools (`advanced.*`). Default: curated only. */
+  includeAdvanced?: boolean;
+}
+
+/**
+ * Capability filter + the advanced/curated split. `tools/list` uses this so a
+ * default agent sees the 12 operator names; passing `includeAdvanced` (or
+ * `OPENSHIP_MCP_ADVANCED_TOOLS=1`) adds the generated REST dump.
+ */
+export function listToolsForPrincipal(
+  tools: McpToolDef[],
+  principal: McpPrincipal,
+  opts?: ListToolsOptions,
+): McpToolDef[] {
+  const capable = filterToolsForPrincipal(tools, principal);
+  const includeAdvanced =
+    opts?.includeAdvanced === true || process.env.OPENSHIP_MCP_ADVANCED_TOOLS === "1";
+  if (includeAdvanced) return capable;
+  return capable.filter((t) => !t.advanced);
 }
 
 /**

@@ -331,7 +331,17 @@ export async function updateCloneCredentials(c: Context) {
     },
   });
 
-  return c.json(await getCloneCredentialsState(ctx.userId));
+  const state = await getCloneCredentialsState(ctx.userId);
+  if (setting) {
+    const { testTokenCloneAccess } = await import("../github/clone-access-test");
+    const cloneTest = await testTokenCloneAccess(rawToken).catch((err) => ({
+      ok: false as const,
+      via: "none" as const,
+      message: err instanceof Error ? err.message : "Clone test failed",
+    }));
+    return c.json({ ...state, cloneTest });
+  }
+  return c.json(state);
 }
 
 /**

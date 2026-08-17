@@ -50,16 +50,25 @@ const PROMPTS: PromptDef[] = [
       "Orientation: the main tool groups, the entry points for each flow, and how permission scoping (incl. per-repo GitHub grants) affects what you can see and do.",
     build: (_args, ref) =>
       [
-        "You are driving Openship (deploy/host platform) through its MCP tools. Everything you call re-runs the real API's auth + permission checks, so you can only do what this token allows — `tools/list` already hides what you can't use.",
+        "You are driving Openship Operator through its MCP tools. Everything you call re-runs the real API's auth + permission checks, so you can only do what this token allows — `tools/list` already hides what you can't use.",
         "",
-        "Main tool groups:",
-        `- Projects — ${ref("GET", "/api/projects")} (list), ${ref("GET", "/api/projects/:id")} (detail), config/env/resources/branch setters.`,
-        `- Deployments — ${ref("POST", "/api/deployments/build/access")} (deploy), ${ref("GET", "/api/deployments/:id")} (status), ${ref("GET", "/api/deployments/:id/logs")} (logs), rollback/redeploy/restart.`,
-        `- GitHub — ${ref("GET", "/api/github/home")} (accounts + repos in one call), browse repos/branches, and ${ref("GET", "/api/github/repos/:owner/:repo/detect")} for build config (read-only; you cannot create/delete repos via MCP).`,
+        "Curated operator tools (stable names — use these):",
+        `- ${ref("GET", "/api/projects")} — list projects.`,
+        `- ${ref("GET", "/api/projects/:id/live-state")} — runtime image + code SHA + server.`,
+        `- ${ref("POST", "/api/deployments/plan")} — classify a change set (skip / deploy_code / refresh_config / rebuild_runtime).`,
+        `- ${ref("POST", "/api/deployments/deploy-code")} / ${ref("POST", "/api/deployments/rebuild-runtime")} / ${ref("POST", "/api/deployments/rollback")} — long ops; they return { operationId } immediately. Poll ${ref("GET", "/api/deployments/:id")} and ${ref("GET", "/api/deployments/:id/logs")}.`,
+        `- ${ref("POST", "/api/projects/:id/services/:serviceId/restart")} / ${ref("POST", "/api/projects/:id/services/:serviceId/exec")} — restart or run a command in a service.`,
+        `- ${ref("GET", "/api/system/servers/:id/reachability")} — server health.`,
+        `- ${ref("GET", "/api/audit")} — recent activity.`,
+        "",
+        "Generated REST tools are prefixed `advanced.` and listed only when `tools/list` is called with `{ includeAdvanced: true }` (or OPENSHIP_MCP_ADVANCED_TOOLS=1).",
+        "",
+        "Other useful advanced tools:",
+        `- GitHub — ${ref("GET", "/api/github/home")} (browse as the connected identity), ${ref("GET", "/api/github/repos/:owner/:repo/detect")} for build config.`,
         `- Catalog apps — ${ref("GET", "/api/apps/catalog")} (list), ${ref("POST", "/api/apps")} (install).`,
-        "- Domains, jobs, webhooks, notifications, analytics, backups — read history and change config.",
         "",
         "Guided flows (fetch these prompts for step-by-step chains):",
+        "- `operator-release` — plan / deploy code / rebuild runtime / roll back.",
         "- `deploy-from-git` — deploy a GitHub/linked repo.",
         "- `deploy-a-folder` — deploy a local source folder (has an out-of-band upload step).",
         "- `install-catalog-app` — install a one-click app.",
@@ -71,6 +80,26 @@ const PROMPTS: PromptDef[] = [
         "",
         "Rule of thumb: read state first (list/get), make the change, then confirm by reading the new state.",
       ].join("\n"),
+  },
+  {
+    name: "operator-release",
+    title: "Plan and ship an Operator release",
+    description:
+      "Classify the change, deploy code or rebuild runtime, then watch status/logs. Long ops return an operation id.",
+    arguments: [
+      { name: "projectId", description: "Project id to act on.", required: true },
+    ],
+    build: (args, ref) => {
+      const project = args.projectId ? ` Project: ${args.projectId}.` : "";
+      return [
+        `Ship a release through the Operator tools.${project}`,
+        "",
+        `1. Read live state: ${ref("GET", "/api/projects/:id/live-state")} with id=<projectId>.`,
+        `2. Preview the decision: ${ref("POST", "/api/deployments/plan")} with projectId and optional changedPaths.`,
+        `3. Act: ${ref("POST", "/api/deployments/deploy-code")} for application/code, ${ref("POST", "/api/deployments/rebuild-runtime")} when Docker/Compose/PHP extensions change, ${ref("POST", "/api/deployments/rollback")} to a previous deploymentId. Each returns { operationId } immediately.`,
+        `4. Poll ${ref("GET", "/api/deployments/:id")} and ${ref("GET", "/api/deployments/:id/logs")} with that operationId.`,
+      ].join("\n");
+    },
   },
   {
     name: "deploy-from-git",

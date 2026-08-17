@@ -9,7 +9,15 @@ import { Type } from "@sinclair/typebox";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudDeploymentProxy, cloudProjectProxyByQuery } from "../../lib/cloud/project-router";
 import * as ctrl from "./deployment.controller";
-import { TriggerDeployBody, BuildAccessBody, PrepareDeployBody, BuildRespondBody } from "./deployment.schema";
+import {
+  TriggerDeployBody,
+  BuildAccessBody,
+  PrepareDeployBody,
+  BuildRespondBody,
+  ReleasePlanBody,
+  ReleaseActionBody,
+  ReleaseRollbackBody,
+} from "./deployment.schema";
 
 const r = secureRouter(new Hono(), {
   module: "deployments",
@@ -62,6 +70,71 @@ r.post(
   ctrl.mountedRelease,
 );
 r.post(
+  "/plan",
+  {
+    tag: "deployment:read",
+    readOnly: true,
+    collection: true,
+    collectionProject: true,
+    body: ReleasePlanBody,
+    mcp: {
+      name: "releases.plan",
+      timeoutMs: 8_000,
+      description:
+        "Classify a change set: skip | deploy_code | refresh_config | rebuild_runtime, with target service ids and a reason. Does not start a deploy.",
+    },
+  },
+  ctrl.planRelease,
+);
+r.post(
+  "/deploy-code",
+  {
+    tag: "deployment:write",
+    collection: true,
+    collectionProject: true,
+    body: ReleaseActionBody,
+    mcp: {
+      name: "releases.deploy_code",
+      longRunning: true,
+      description:
+        "Deploy application code (mounted release when enabled). Returns { operationId } immediately — poll deployments.status.",
+    },
+  },
+  ctrl.deployCode,
+);
+r.post(
+  "/rebuild-runtime",
+  {
+    tag: "deployment:write",
+    collection: true,
+    collectionProject: true,
+    body: ReleaseActionBody,
+    mcp: {
+      name: "releases.rebuild_runtime",
+      longRunning: true,
+      description:
+        "Rebuild the runtime image (Dockerfile / Compose / PHP extensions). Returns { operationId } immediately.",
+    },
+  },
+  ctrl.rebuildRuntime,
+);
+r.post(
+  "/rollback",
+  {
+    tag: "deployment:write",
+    collection: true,
+    collectionProject: true,
+    body: ReleaseRollbackBody,
+    mcp: {
+      name: "releases.rollback",
+      longRunning: true,
+      description:
+        "Roll back to deploymentId, or the previous successful deployment when omitted. Returns { operationId } immediately.",
+    },
+  },
+  ctrl.rollbackLatest,
+);
+r.post(
   "/prepare",
   {
     tag: "deployment:write",
@@ -105,14 +178,25 @@ r.get(
   "/:id",
   {
     tag: "deployment:read",
-    mcp: { description: "Get a deployment by id — status, urls, timing, error summary." },
+    mcp: {
+      name: "deployments.status",
+      timeoutMs: 8_000,
+      description: "Get a deployment by id — status, urls, timing, error summary.",
+    },
   },
   cloudDeploymentProxy,
   ctrl.getById,
 );
 r.get(
   "/:id/logs",
-  { tag: "deployment:read", mcp: { description: "Fetch a deployment's build/runtime logs." } },
+  {
+    tag: "deployment:read",
+    mcp: {
+      name: "deployments.logs",
+      timeoutMs: 10_000,
+      description: "Fetch a deployment's build/runtime logs.",
+    },
+  },
   cloudDeploymentProxy,
   ctrl.logs,
 );

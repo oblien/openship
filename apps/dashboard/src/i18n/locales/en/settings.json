@@ -205,7 +205,12 @@
     "credentialRejectedImpact": "It was revoked, expired, or lost a required scope. Deploys that clone with it will keep failing until you reconnect below.",
     "credentialUnreachable": "Couldn't reach GitHub to check the stored {method}.",
     "credentialUnreachableImpact": "This is usually a network problem rather than a bad credential — Openship keeps using it. Reconnecting won't help if GitHub is unreachable.",
-    "credentialCheckedAt": "Last checked {time}"
+    "credentialCheckedAt": "Last checked {time}",
+    "browseAs": "Browsing GitHub as {identity}",
+    "cloneWillUse": "Clones will use {label}",
+    "cloneWillUseOnServer": "Clones on {server} will use {label}",
+    "cloneTestOk": "Server clone access verified.",
+    "cloneTestFailed": "Clone test failed: {message}"
   },
   "deployDefaults": {
     "title": "Deploy Defaults",
@@ -390,7 +395,10 @@
     "scopeGrantRejected": "You can no longer grant {resource}, so it was removed. Save again to continue.",
     "confirmWidenTitle": "This removes every restriction",
     "confirmWidenBody": "The agent will act with your full access, effective immediately. Press again to confirm.",
-    "confirmWidenAction": "Remove all restrictions"
+    "confirmWidenAction": "Remove all restrictions",
+    "curatedTitle": "Operator tools",
+    "curatedBody": "Agents see these stable names by default. Long operations return an operation id immediately; reads time out instead of hanging.",
+    "advancedNote": "Generated REST tools stay under the advanced. prefix. Ask the client to call tools/list with includeAdvanced: true, or set OPENSHIP_MCP_ADVANCED_TOOLS=1."
   },
   "team": {
     "heading": "Team",

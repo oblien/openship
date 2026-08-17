@@ -3,7 +3,8 @@
  */
 
 import type { Context } from "hono";
-import { AppError } from "@repo/core";
+import { AppError, NotFoundError } from "@repo/core";
+import { repos } from "@repo/db";
 import { streamSSE } from "../../lib/sse";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
@@ -19,6 +20,8 @@ import { maybeProxyCloudProject, proxyToSaaS } from "../../lib/cloud/project-rou
 import { promoteProjectToCloud, TransferConflictError } from "../projects/transfer.service";
 import { env } from "../../config";
 import { isMountedRelease, restoreMountedRelease, triggerMountedRelease } from "./mounted-release.service";
+import { mountedReleaseConfig } from "./mounted-release.config";
+import { planRelease as classifyRelease } from "./release-planner";
 
 export async function list(c: Context) {
   const ctx = getRequestContext(c);
@@ -110,6 +113,113 @@ export async function mountedRelease(c: Context) {
   await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
   const dep = await triggerMountedRelease(ctx, body.projectId);
   return c.json({ data: { deployment_id: dep.id, deployment: deploymentService.presentDeployment(dep) } }, 202);
+}
+
+async function loadPlannerProject(projectId: string, organizationId: string) {
+  const project = await repos.project.findById(projectId);
+  if (!project || project.organizationId !== organizationId) {
+    throw new NotFoundError("Project", projectId);
+  }
+  const services = await repos.service.listByProject(project.id).catch(() => []);
+  return { project, services };
+}
+
+export async function planRelease(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    projectId: string;
+    changedPaths?: string[] | null;
+    forceAll?: boolean;
+    refresh?: boolean;
+    serviceIds?: string[];
+  }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "read" });
+  const { project, services } = await loadPlannerProject(body.projectId, ctx.organizationId);
+  const plan = classifyRelease({
+    changedPaths: body.changedPaths === undefined ? null : body.changedPaths,
+    mountedReleaseEnabled: Boolean(mountedReleaseConfig(project)),
+    services: services.map((s) => ({ id: s.id, name: s.name, rootDirectory: s.rootDirectory })),
+    routedServiceIds: body.serviceIds,
+    forceAll: body.forceAll,
+    refreshRequested: body.refresh,
+  });
+  return c.json({ data: plan });
+}
+
+export async function deployCode(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    projectId: string;
+    branch?: string;
+    commitSha?: string;
+    serviceIds?: string[];
+  }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const result = await buildService.triggerPlannedDeployment(ctx, {
+    projectId: body.projectId,
+    branch: body.branch,
+    commitSha: body.commitSha,
+    serviceIds: body.serviceIds,
+  });
+  if (result.skipped && !result.deployment) {
+    return c.json({ skipped: true, reason: result.reason, plan: result.plan });
+  }
+  return c.json({ operationId: result.deployment.id, plan: result.plan }, 202);
+}
+
+export async function rebuildRuntime(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    projectId: string;
+    branch?: string;
+    commitSha?: string;
+    serviceIds?: string[];
+  }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const result = await buildService.triggerPlannedDeployment(ctx, {
+    projectId: body.projectId,
+    branch: body.branch,
+    commitSha: body.commitSha,
+    serviceIds: body.serviceIds,
+    forceAll: true,
+  });
+  if (result.skipped && !result.deployment) {
+    return c.json({ skipped: true, reason: result.reason, plan: result.plan });
+  }
+  return c.json({ operationId: result.deployment.id, plan: result.plan }, 202);
+}
+
+export async function rollbackLatest(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{ projectId: string; deploymentId?: string }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const targetId = body.deploymentId ?? (await resolvePreviousDeploymentId(body.projectId, ctx.organizationId));
+  if (!targetId) {
+    return c.json({ error: "No previous deployment to roll back to" }, 400);
+  }
+  const preview = await deploymentService.previewRestore(targetId, ctx.organizationId);
+  if (preview.needsRepository) {
+    await deploymentService.assertGitHubAccessForDeployment(ctx, targetId, ctx.organizationId);
+  }
+  const target = await deploymentService.getDeployment(targetId, ctx.organizationId);
+  if (target.projectId !== body.projectId) {
+    return c.json({ error: "Deployment does not belong to this project" }, 400);
+  }
+  const dep = isMountedRelease(target)
+    ? await restoreMountedRelease(ctx, target)
+    : await deploymentService.rollbackDeployment(targetId, ctx.organizationId);
+  return c.json({ operationId: dep.id }, 202);
+}
+
+async function resolvePreviousDeploymentId(projectId: string, organizationId: string): Promise<string | null> {
+  const project = await repos.project.findById(projectId);
+  if (!project || project.organizationId !== organizationId) return null;
+  const listed = await repos.deployment.listByProject(projectId, { page: 1, perPage: 20 });
+  const active = new Set(
+    [project.activeDeploymentId, project.activeReleaseDeploymentId].filter((id): id is string => Boolean(id)),
+  );
+  const previous = listed.rows.find((d) => !active.has(d.id) && d.status !== "cancelled" && d.status !== "failed");
+  return previous?.id ?? listed.rows.find((d) => !active.has(d.id))?.id ?? null;
 }
 
 export async function getById(c: Context) {
