@@ -71,14 +71,14 @@ export async function create(c: Context) {
     });
     if (proxied) return proxied;
   }
-  // Construct the triggerDeployment arg from an explicit ALLOWLIST — never
-  // forward the raw body. triggerDeployment has internal-only fields
-  // (reuseSnapshot, rollbackStrategy, commitShaBefore) that must NOT be
-  // settable over HTTP: reuseSnapshot ships a frozen, un-normalized build
-  // snapshot verbatim (commands/target/runtimeMode), so leaking it would let a
-  // caller inject arbitrary build config. Those fields are only ever set by the
-  // internal rollback/webhook callers.
-  const result = await buildService.triggerDeployment(ctx, {
+  // Construct the trigger arg from an explicit ALLOWLIST — never forward the
+  // raw body. triggerDeployment has internal-only fields (reuseSnapshot,
+  // rollbackStrategy, commitShaBefore) that must NOT be settable over HTTP:
+  // reuseSnapshot ships a frozen, un-normalized build snapshot verbatim
+  // (commands/target/runtimeMode), so leaking it would let a caller inject
+  // arbitrary build config. Those fields are only ever set by the internal
+  // rollback/webhook callers.
+  const result = await buildService.triggerPlannedDeployment(ctx, {
     projectId: body.projectId,
     branch: body.branch,
     commitSha: body.commitSha,
@@ -89,7 +89,19 @@ export async function create(c: Context) {
     refresh: body.refresh,
     trigger: body.trigger === "webhook" ? "webhook" : undefined,
   });
-  return c.json({ data: { ...result, deployment: deploymentService.presentDeployment(result.deployment) } }, 202);
+  if (result.skipped && !result.deployment) {
+    return c.json({ data: { skipped: true, reason: result.reason, plan: result.plan } }, 200);
+  }
+  return c.json(
+    {
+      data: {
+        ...result,
+        deployment: deploymentService.presentDeployment(result.deployment),
+        plan: result.plan,
+      },
+    },
+    202,
+  );
 }
 
 export async function mountedRelease(c: Context) {

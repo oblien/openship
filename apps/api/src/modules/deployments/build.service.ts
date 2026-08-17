@@ -1,9 +1,9 @@
 /**
  * Build service — build session LIFECYCLE + config/snapshot helpers.
  *
- * Public API: triggerDeployment, requestBuildAccess, redeployBuildSession,
+ * Public API: triggerDeployment, triggerPlannedDeployment, requestBuildAccess, redeployBuildSession,
  * startBuild, cancelBuildSession, respondToPrompt, createQueuedDeployment,
- * checkNoActiveBuild, buildConfigSnapshot, runDeploymentPreflight,
+ * checkNoActiveBuild, canonicalizeCommitRef, buildConfigSnapshot, runDeploymentPreflight,
  * encryptEnvVars, metaWithPrevious, loadDeployment.
  * (getBuildSessionStatus moved to ./build-status.service.)
  *
@@ -14,7 +14,9 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
-import { repos, type Project } from "@repo/db";
+import { repos, type Deployment, type Project } from "@repo/db";
+import { planAndSelectTrigger, type ReleasePlan } from "./release-planner";
+import { mountedReleaseConfig } from "./mounted-release.config";
 import {
   AppError,
   NotFoundError,
@@ -335,6 +337,8 @@ export interface DeploymentConfigSnapshot {
    * short-lived token). Ignored for cloud; bare always clones on the target.
    */
   cloneStrategy?: "api-host" | "server";
+  /** Release planner decision + why. Persisted so history shows both. */
+  plan?: ReleasePlan;
 }
 
 /**
@@ -502,7 +506,7 @@ async function resolveLatestCommitInfo(ctx: RequestContext, project: Project, br
  * kept verbatim. The deploy still knows how to check it out; only the bookkeeping
  * is less precise, and that is not worth failing a deploy over.
  */
-async function canonicalizeCommitRef(
+export async function canonicalizeCommitRef(
   ctx: RequestContext,
   project: Project,
   ref: string | undefined,
@@ -854,6 +858,8 @@ export async function createQueuedDeployment(opts: {
   /** Changed-file paths traced for this version (file/root tracing). */
   changedPaths?: string[] | null;
   changedPathsTruncated?: boolean;
+  /** Release planner decision + why. */
+  plan?: ReleasePlan;
 }) {
   // Persist the smart-deploy serviceIds onto the snapshot so the
   // executor can find them without re-resolving from request scope.
@@ -863,6 +869,9 @@ export async function createQueuedDeployment(opts: {
   }
   if (opts.refreshServiceIds && opts.refreshServiceIds.length > 0) {
     meta = { ...meta, refreshServiceIds: opts.refreshServiceIds };
+  }
+  if (opts.plan) {
+    meta = { ...meta, plan: opts.plan };
   }
 
   // Plan entitlements, checked BEFORE the row exists so an out-of-allowance org
@@ -1788,6 +1797,8 @@ export async function triggerDeployment(
      * the newest advertised version. Ignored for non-release projects.
      */
     releaseVersion?: string;
+    /** Planner decision + why. Stored on `meta.plan`. */
+    plan?: ReleasePlan;
   },
 ) {
   const project = await repos.project.findById(data.projectId);
@@ -2076,6 +2087,7 @@ export async function triggerDeployment(
     serviceIds: finalServiceIds,
     refreshServiceIds,
     changedPaths: resolvedChangedPaths ?? null,
+    plan: data.plan,
   });
 
   const buildSessionId = await kickoffBuild(project, dep);
@@ -2084,4 +2096,76 @@ export async function triggerDeployment(
   return {
     deployment: dep,
   };
+}
+
+/**
+ * HTTP/UI create-deploy entry. Runs the release planner, then either skips,
+ * ships a mounted code release, or falls through to the runtime pipeline.
+ */
+export async function triggerPlannedDeployment(
+  ctx: RequestContext,
+  data: {
+    projectId: string;
+    branch?: string;
+    commitSha?: string;
+    environment?: string;
+    trigger?: string;
+    serviceIds?: string[];
+    forceAll?: boolean;
+    smartRoute?: boolean;
+    refresh?: boolean;
+  },
+): Promise<
+  | { skipped: true; reason: string; plan: ReleasePlan; deployment?: undefined }
+  | { deployment: Deployment; plan: ReleasePlan; skipped?: true }
+> {
+  const project = await repos.project.findById(data.projectId);
+  if (!project) {
+    throw new NotFoundError("Project", data.projectId);
+  }
+  const services = await repos.service.listByProject(project.id).catch(() => []);
+  const { plan, trigger } = planAndSelectTrigger({
+    changedPaths: null,
+    mountedReleaseEnabled: Boolean(mountedReleaseConfig(project)),
+    services: services.map((s) => ({
+      id: s.id,
+      name: s.name,
+      rootDirectory: s.rootDirectory,
+    })),
+    routedServiceIds: data.serviceIds,
+    forceAll: data.forceAll,
+    refreshRequested: data.refresh,
+  });
+
+  if (trigger === "skip") {
+    console.log(`[Deploy] project ${project.id}: skip — ${plan.reason}`);
+    return { skipped: true as const, reason: plan.reason, plan };
+  }
+
+  if (trigger === "mounted_release") {
+    // Dynamic import keeps this file from importing mounted-release.service
+    // (that module already imports createQueuedDeployment from here).
+    const { triggerMountedRelease } = await import("./mounted-release.service");
+    const dep = await triggerMountedRelease(ctx, project.id, {
+      commitSha: data.commitSha,
+      trigger: data.trigger === "webhook" ? "webhook" : "code-release",
+      plan,
+      serviceIds: plan.serviceIds ?? data.serviceIds,
+    });
+    return { deployment: dep, plan };
+  }
+
+  const result = await triggerDeployment(ctx, {
+    projectId: data.projectId,
+    branch: data.branch,
+    commitSha: data.commitSha,
+    environment: data.environment,
+    forceAll: data.forceAll,
+    serviceIds: data.serviceIds ?? plan.serviceIds,
+    smartRoute: data.smartRoute,
+    refresh: data.refresh,
+    trigger: data.trigger,
+    plan,
+  });
+  return { ...result, plan };
 }
