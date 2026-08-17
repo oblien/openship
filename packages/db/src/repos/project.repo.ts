@@ -577,9 +577,24 @@ export function createProjectRepo(db: Database) {
         .where(eq(project.id, projectId));
     },
 
+    /** Set the code pointer only if the deployment row is still `ready`. */
+    async setActiveReleaseDeploymentIfReady(projectId: string, deploymentId: string): Promise<boolean> {
+      const rows = await db
+        .update(project)
+        .set({ activeReleaseDeploymentId: deploymentId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(project.id, projectId),
+            sql`exists (select 1 from ${deployment} where ${deployment.id} = ${deploymentId} and ${deployment.status} = 'ready')`,
+          ),
+        )
+        .returning();
+      return rows.length > 0;
+    },
+
     /**
      * CAS: take the execution lease only when no other deployment holds it.
-     * Cancel must not clear this — only the worker / boot fail-clean does.
+     * Cancel must not clear this.
      */
     async claimDeployLease(projectId: string, deploymentId: string): Promise<boolean> {
       const rows = await db

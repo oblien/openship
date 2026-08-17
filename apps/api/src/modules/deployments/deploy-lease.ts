@@ -1,9 +1,4 @@
-/**
- * Per-project execution lease. The one-active unique index only serializes
- * INSERT of queued/building/deploying; cancel drops that slot while host work
- * may still be running. This lease is held until the worker exits and leftovers
- * are aborted.
- */
+/** Per-project execution lease. Cancel must not clear it while a worker is running. */
 import { AppError, shellQuote } from "@repo/core";
 import { repos, withAdvisoryLock, type Deployment } from "@repo/db";
 import type { CommandExecutor } from "@repo/adapters";
@@ -25,20 +20,36 @@ export function mountedReleaseBuilderName(deploymentId: string): string {
 }
 
 const runs = new Map<string, AbortController>();
+const workers = new Set<string>();
 
 export function beginDeployRun(deploymentId: string): AbortSignal {
-  runs.get(deploymentId)?.abort();
+  workers.add(deploymentId);
+  const existing = runs.get(deploymentId);
+  if (existing) return existing.signal;
   const abort = new AbortController();
   runs.set(deploymentId, abort);
   return abort.signal;
 }
 
-export function requestDeployAbort(deploymentId: string): void {
-  runs.get(deploymentId)?.abort();
+export function requestDeployAbort(deploymentId: string): boolean {
+  const existing = runs.get(deploymentId);
+  if (existing) {
+    existing.abort();
+    return workers.has(deploymentId);
+  }
+  const abort = new AbortController();
+  abort.abort();
+  runs.set(deploymentId, abort);
+  return false;
 }
 
 export function endDeployRun(deploymentId: string): void {
+  workers.delete(deploymentId);
   runs.delete(deploymentId);
+}
+
+export function hasDeployRun(deploymentId: string): boolean {
+  return workers.has(deploymentId);
 }
 
 export async function claimDeployLease(projectId: string, deploymentId: string): Promise<boolean> {
@@ -99,6 +110,22 @@ export async function revertReleaseCurrent(
   );
 }
 
+export async function revertIfIncompleteActivation(
+  executor: CommandExecutor,
+  projectId: string,
+  dep: Pick<Deployment, "id" | "status" | "meta">,
+): Promise<void> {
+  if (dep.status === "ready") return;
+  const hostRoot = mountedReleaseHostRoot(projectId);
+  const current = (
+    await executor
+      .exec(`readlink ${shellQuote(`${hostRoot}/current`)} 2>/dev/null || true`)
+      .catch(() => "")
+  ).trim();
+  if (!currentPointsAtDeployment(current, dep.id)) return;
+  await revertReleaseCurrent(executor, hostRoot, releaseLaneMeta(dep).releasePreviousCurrent);
+}
+
 export async function execUnlessCancelled(
   executor: CommandExecutor,
   signal: AbortSignal,
@@ -108,8 +135,10 @@ export async function execUnlessCancelled(
 ): Promise<string> {
   if (signal.aborted) throw cancelledError();
   await assertReleaseNotCancelled(deploymentId);
+  const running = executor.exec(command, opts);
+  running.catch(() => {});
   return Promise.race([
-    executor.exec(command, opts),
+    running,
     new Promise<string>((_, reject) => {
       if (signal.aborted) {
         reject(cancelledError());
@@ -118,4 +147,17 @@ export async function execUnlessCancelled(
       signal.addEventListener("abort", () => reject(cancelledError()), { once: true });
     }),
   ]);
+}
+
+/** Wait for the host command, then refuse if the row was cancelled mid-flight. */
+export async function execAndConfirm(
+  executor: CommandExecutor,
+  deploymentId: string,
+  command: string,
+  opts?: { timeout?: number },
+): Promise<string> {
+  await assertReleaseNotCancelled(deploymentId);
+  const result = await executor.exec(command, opts);
+  await assertReleaseNotCancelled(deploymentId);
+  return result;
 }

@@ -14,13 +14,12 @@ import {
   assertReleaseNotCancelled,
   beginDeployRun,
   cancelledError,
-  currentPointsAtDeployment,
   endDeployRun,
+  execAndConfirm,
   execUnlessCancelled,
   isCancelledError,
   releaseDeployLease,
-  releaseLaneMeta,
-  revertReleaseCurrent,
+  revertIfIncompleteActivation,
   type ReleasePhase,
 } from "./deploy-lease";
 import {
@@ -165,8 +164,10 @@ function builderRun(
   );
 }
 
+type HostExec = (command: string, opts?: { timeout?: number }) => Promise<string>;
+
 async function prepareBuilderCachePaths(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   hostRoot: string,
   paths: string[],
 ): Promise<void> {
@@ -175,26 +176,24 @@ async function prepareBuilderCachePaths(
     .filter((path) => path && !path.split("/").includes(".."))
     .map((path) => `${hostRoot}/builder-cache/paths/${path}`);
   if (directories.length > 0) {
-    await executor.exec(`mkdir -p ${directories.map(shellQuote).join(" ")}`);
+    await exec(`mkdir -p ${directories.map(shellQuote).join(" ")}`);
   }
 }
 
 async function runReload(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   containerId: string,
   config: MountedReleaseConfig,
 ): Promise<void> {
   if (config.reloadCommand?.trim()) {
-    await executor.exec(
-      dockerExec(containerId, `${config.containerPath}/current`, config.reloadCommand),
-    );
+    await exec(dockerExec(containerId, `${config.containerPath}/current`, config.reloadCommand));
   } else {
-    await executor.exec(`docker restart ${shellQuote(containerId)} >/dev/null`);
+    await exec(`docker restart ${shellQuote(containerId)} >/dev/null`);
   }
 }
 
 async function checkHealth(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   containerId: string,
   config: MountedReleaseConfig,
   fallbackPort: number,
@@ -208,11 +207,11 @@ async function checkHealth(
     `(command -v curl >/dev/null && curl -fsS --max-time 3 ${shellQuote(url)} >/dev/null) || ` +
     `(command -v wget >/dev/null && wget -q -T 3 -O /dev/null ${shellQuote(url)}) && exit 0; ` +
     `sleep 1; done; exit 1`;
-  await executor.exec(dockerExec(containerId, null, probe), { timeout: 30_000 });
+  await exec(dockerExec(containerId, null, probe), { timeout: 30_000 });
 }
 
 async function prepareSharedPaths(
-  executor: Awaited<ReturnType<typeof resolveServerExecutor>>["executor"],
+  exec: HostExec,
   hostRoot: string,
   releaseDir: string,
   paths: string[],
@@ -224,7 +223,7 @@ async function prepareSharedPaths(
     const target = `${releaseDir}/${path}`;
     const parent = target.substring(0, target.lastIndexOf("/"));
     if (existingContainerTarget?.startsWith("/")) {
-      await executor.exec(
+      await exec(
         `mkdir -p ${shellQuote(parent)}; rm -rf ${shellQuote(target)}; ` +
           `ln -s ${shellQuote(existingContainerTarget)} ${shellQuote(target)}`,
       );
@@ -236,7 +235,7 @@ async function prepareSharedPaths(
       `rm -rf ${shellQuote(target)}; ` +
       `relative=$(realpath --relative-to=${shellQuote(parent)} ${shellQuote(shared)}); ` +
       `ln -s "$relative" ${shellQuote(target)}`;
-    await executor.exec(script);
+    await exec(script);
   }
 }
 
@@ -304,7 +303,7 @@ export async function runMountedRelease(
   const authDir = `${hostRoot}/.auth-${dep.id}`;
   const signal = beginDeployRun(dep.id);
   let previous = "";
-  let activated = false;
+  let committed = false;
   let token: string | undefined;
   let executor: CommandExecutor | null = null;
 
@@ -399,7 +398,7 @@ export async function runMountedRelease(
         `| tar -x -C ${shellQuote(incoming)}; mv ${shellQuote(incoming)} ${shellQuote(releaseDir)}`,
       { timeout: 120_000 },
     );
-    await prepareSharedPaths(executor, hostRoot, releaseDir, config.sharedPaths ?? []);
+    await prepareSharedPaths(exec, hostRoot, releaseDir, config.sharedPaths ?? []);
 
     const containerRelease = `${config.containerPath}/releases/${dep.id}`;
     await exec(dockerExec(runtime.containerId, null, `test -d ${shellQuote(containerRelease)}`)).catch(
@@ -418,7 +417,7 @@ export async function runMountedRelease(
     if (mountedReleaseBuildMode(config) === "server" && config.prepareCommand?.trim()) {
       if (config.builderImage?.trim()) {
         log(dep.id, `Building release with ${config.builderImage}`);
-        await prepareBuilderCachePaths(executor, hostRoot, config.builderCachePaths ?? []);
+        await prepareBuilderCachePaths(exec, hostRoot, config.builderCachePaths ?? []);
         await exec(builderRun(hostRoot, releaseDir, dep.id, config), { timeout: 900_000 });
       } else {
         log(dep.id, "Preparing release in the app container");
@@ -442,19 +441,19 @@ export async function runMountedRelease(
         releasePreviousCurrent: previous || undefined,
       },
     });
-    await assertReleaseNotCancelled(dep.id);
-    await exec(
+    await execAndConfirm(
+      executor,
+      dep.id,
       `ln -sfn ${shellQuote(`releases/${dep.id}`)} ${shellQuote(`${hostRoot}/current.next`)} && ` +
         `mv -Tf ${shellQuote(`${hostRoot}/current.next`)} ${shellQuote(`${hostRoot}/current`)}`,
     );
-    activated = true;
 
     await persistReleasePhase(dep, "health");
     await assertReleaseNotCancelled(dep.id);
     log(dep.id, "Activated release; reloading the application");
-    await runReload(executor, runtime.containerId, config);
+    await runReload(exec, runtime.containerId, config);
     await assertReleaseNotCancelled(dep.id);
-    await checkHealth(executor, runtime.containerId, config, runtime.healthPort);
+    await checkHealth(exec, runtime.containerId, config, runtime.healthPort);
 
     const version =
       (await repos.deployment.findReadyVersionByCommit(project.id, resolvedSha)) ??
@@ -474,10 +473,13 @@ export async function runMountedRelease(
       meta: readyMeta,
     });
     if (!applied) {
-      await revertReleaseCurrent(executor, hostRoot, previous || undefined).catch(() => {});
       throw cancelledError();
     }
-    await repos.project.setActiveReleaseDeployment(project.id, dep.id);
+    const live = await repos.deployment.findById(dep.id);
+    if (live?.status !== "ready") throw cancelledError();
+    const advanced = await repos.project.setActiveReleaseDeploymentIfReady(project.id, dep.id);
+    if (!advanced) throw cancelledError();
+    committed = true;
     log(dep.id, `Code release ${resolvedSha.slice(0, 7)} is live`);
     await finish(dep, "ready", startedAt);
 
@@ -491,11 +493,10 @@ export async function runMountedRelease(
     }
     await executor.rm(authDir).catch(() => {});
   } catch (error) {
-    const cancelled = isCancelledError(error) || (await rowIsCancelled(dep.id));
-    if (activated && executor) {
-      await revertReleaseCurrent(executor, hostRoot, previous || undefined).catch(() => {});
-    }
-    if (executor) {
+    const live = await repos.deployment.findById(dep.id);
+    const cancelled = isCancelledError(error) || !live || live.status === "cancelled";
+    if (executor && !committed && live?.status !== "ready") {
+      await revertIfIncompleteActivation(executor, project.id, live ?? dep).catch(() => {});
       await abortMountedReleaseHostWork(executor, project.id, dep.id);
     }
     const message = safeErrorMessage(error).replaceAll(token ?? "\u0000", "[credential]");
@@ -505,11 +506,6 @@ export async function runMountedRelease(
     endDeployRun(dep.id);
     await releaseDeployLease(project.id, dep.id);
   }
-}
-
-async function rowIsCancelled(deploymentId: string): Promise<boolean> {
-  const row = await repos.deployment.findById(deploymentId);
-  return !row || row.status === "cancelled";
 }
 
 export async function triggerMountedRelease(
@@ -566,34 +562,20 @@ export function isMountedRelease(dep: Pick<Deployment, "meta">): boolean {
   return releaseMeta(dep).deploymentLane === "release";
 }
 
+/** @returns false when the host was unreachable — keep the lease and retry later. */
 export async function failCleanMountedRelease(
   project: Project,
   dep: Deployment,
   reason: string,
-): Promise<void> {
-  const hostRoot = mountedReleaseHostRoot(project.id);
+): Promise<boolean> {
   const serverId =
     project.serverId ?? (dep.meta as { serverId?: string } | null)?.serverId;
   const resolved = await resolveServerExecutor(serverId ?? undefined, project.organizationId).catch(
     () => null,
   );
-  if (resolved) {
-    const current = (
-      await resolved.executor
-        .exec(`readlink ${shellQuote(`${hostRoot}/current`)} 2>/dev/null || true`)
-        .catch(() => "")
-    ).trim();
-    const previous = releaseLaneMeta(dep).releasePreviousCurrent ?? releaseMeta(dep).releasePreviousCurrent;
-    const phase = dep.releasePhase;
-    const healthNeverPassed = dep.status !== "ready";
-    if (
-      healthNeverPassed &&
-      (phase === "activating" || phase === "health" || currentPointsAtDeployment(current, dep.id))
-    ) {
-      await revertReleaseCurrent(resolved.executor, hostRoot, previous).catch(() => {});
-    }
-    await abortMountedReleaseHostWork(resolved.executor, project.id, dep.id);
-  }
+  if (!resolved) return false;
+  await revertIfIncompleteActivation(resolved.executor, project.id, dep).catch(() => {});
+  await abortMountedReleaseHostWork(resolved.executor, project.id, dep.id);
   if (["queued", "building", "deploying"].includes(dep.status)) {
     await repos.deployment.updateStatus(dep.id, "failed", { errorMessage: reason });
     const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
@@ -601,17 +583,15 @@ export async function failCleanMountedRelease(
       await repos.deployment.finishBuildSession(session.id, "failed", 0);
     }
   }
+  return true;
 }
 
-/**
- * Boot recovery: fail-clean mounted leftovers while the unique index / lease
- * still block a new deploy, then settle the row and release the lease.
- */
 export async function recoverInterruptedDeployments(reason: string): Promise<number> {
   const leased = await repos.project.listWithDeployLease();
   const inFlight = await repos.deployment.listInFlight();
   const seen = new Set<string>();
   const jobs: { project: Project; dep: Deployment }[] = [];
+  let n = 0;
 
   for (const dep of inFlight) {
     const project = await repos.project.findById(dep.projectId);
@@ -621,13 +601,17 @@ export async function recoverInterruptedDeployments(reason: string): Promise<num
   for (const project of leased) {
     if (!project.deployLeaseId || seen.has(project.deployLeaseId)) continue;
     const dep = await repos.deployment.findById(project.deployLeaseId);
-    if (dep) jobs.push({ project, dep });
+    if (dep) {
+      jobs.push({ project, dep });
+      continue;
+    }
+    await releaseDeployLease(project.id, project.deployLeaseId);
+    n++;
   }
-
-  let n = 0;
   for (const { project, dep } of jobs) {
     if (isMountedRelease(dep)) {
-      await failCleanMountedRelease(project, dep, reason);
+      const cleaned = await failCleanMountedRelease(project, dep, reason);
+      if (!cleaned) continue;
     } else if (["queued", "building", "deploying"].includes(dep.status)) {
       await repos.deployment.updateStatus(dep.id, "cancelled", { errorMessage: reason });
       const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);

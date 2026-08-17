@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   updateStatus: vi.fn(),
   setReleasePhase: vi.fn(),
   setActiveReleaseDeployment: vi.fn(),
+  setActiveReleaseDeploymentIfReady: vi.fn(),
   claimDeployLease: vi.fn(),
   releaseDeployLease: vi.fn(),
   listWithDeployLease: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock("@repo/db", async (importOriginal) => ({
     project: {
       findById: mocks.findProject,
       setActiveReleaseDeployment: mocks.setActiveReleaseDeployment,
+      setActiveReleaseDeploymentIfReady: mocks.setActiveReleaseDeploymentIfReady,
       claimDeployLease: mocks.claimDeployLease,
       releaseDeployLease: mocks.releaseDeployLease,
       listWithDeployLease: mocks.listWithDeployLease,
@@ -99,10 +101,17 @@ vi.mock("./session-manager", () => ({
   updateStatus: mocks.updateSession,
   createSession: mocks.createSession,
   getSession: mocks.getSession,
+  broadcastServiceStatus: vi.fn(),
 }));
 
 vi.mock("../../lib/controller-helpers", () => ({
   assertResourceInOrg: (resource: unknown) => resource,
+  platform: () => ({ runtime: { cancelBuild: vi.fn(async () => {}) } }),
+}));
+
+vi.mock("../projects/project-cleanup.service", () => ({
+  collectDeploymentManifest: vi.fn(async () => ({ projectId: "p1", resources: [] })),
+  executeCleanup: vi.fn(async () => {}),
 }));
 
 vi.mock("../../lib/plan-guard", () => ({
@@ -111,7 +120,8 @@ vi.mock("../../lib/plan-guard", () => ({
 }));
 
 import { ForbiddenError } from "@repo/core";
-import { createQueuedDeployment } from "./build.service";
+import { cancelBuildSession, checkNoActiveBuild, createQueuedDeployment } from "./build.service";
+import { beginDeployRun, endDeployRun } from "./deploy-lease";
 import {
   failCleanMountedRelease,
   findActiveSameShaRelease,
@@ -178,6 +188,7 @@ describe("mounted release lease, cancel, and recovery", () => {
     });
     mocks.updateStatus.mockResolvedValue(true);
     mocks.setReleasePhase.mockResolvedValue(true);
+    mocks.setActiveReleaseDeploymentIfReady.mockResolvedValue(true);
     mocks.claimDeployLease.mockResolvedValue(true);
     mocks.releaseDeployLease.mockResolvedValue(true);
     mocks.listWithDeployLease.mockResolvedValue([]);
@@ -248,9 +259,42 @@ describe("mounted release lease, cancel, and recovery", () => {
   });
 
   it("blocks a new trigger while a cancelled deploy still holds the lease", async () => {
-    const { checkNoActiveBuild } = await import("./build.service");
     mocks.findProject.mockResolvedValue({ ...project, deployLeaseId: "dep_cancelled" });
-    await expect(checkNoActiveBuild("p1")).rejects.toBeInstanceOf(ForbiddenError);
+    mocks.findById.mockImplementation(async (id: string) => {
+      if (id === "dep_cancelled") return { id, status: "cancelled" };
+      return null;
+    });
+    await expect(checkNoActiveBuild("p1")).rejects.toThrow(/still cleaning up/);
+  });
+
+  it("cancel does not release the lease while a worker is running", async () => {
+    beginDeployRun("dep_rel");
+    mocks.findById.mockImplementation(async (id: string) => {
+      if (id === "dep_rel") {
+        return { ...dep, status: "building", organizationId: "org1", projectId: "p1" };
+      }
+      return null;
+    });
+    mocks.findProject.mockResolvedValue({ ...project, organizationId: "org1" });
+
+    await cancelBuildSession("dep_rel");
+
+    expect(mocks.releaseDeployLease).not.toHaveBeenCalled();
+    expect(mocks.updateStatus).toHaveBeenCalledWith("dep_rel", "cancelled");
+    mocks.claimDeployLease.mockResolvedValue(false);
+    mocks.create.mockResolvedValue({ ...dep, id: "dep_new" });
+    await expect(
+      createQueuedDeployment({
+        projectId: "p1",
+        organizationId: "org1",
+        branch: "main",
+        environment: "production",
+        framework: "laravel",
+        meta: { deploymentLane: "release" } as never,
+        envVars: null,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    endDeployRun("dep_rel");
   });
 
   it("rejects a second concurrent enqueue when the lease is held", async () => {
@@ -375,5 +419,30 @@ describe("mounted release lease, cancel, and recovery", () => {
       "failed",
       expect.objectContaining({ errorMessage: expect.stringContaining("restart") }),
     );
+  });
+
+  it("keeps the lease when fail-clean cannot reach the host", async () => {
+    mocks.resolveServerExecutor.mockRejectedValue(new Error("host down"));
+    mocks.listInFlight.mockResolvedValue([
+      { ...dep, status: "building", releasePhase: "preparing", meta: { deploymentLane: "release" } },
+    ]);
+    mocks.listWithDeployLease.mockResolvedValue([{ ...project, deployLeaseId: "dep_rel" }]);
+
+    const n = await recoverInterruptedDeployments("Interrupted by a server restart");
+
+    expect(n).toBe(0);
+    expect(mocks.updateStatus).not.toHaveBeenCalled();
+    expect(mocks.releaseDeployLease).not.toHaveBeenCalled();
+  });
+
+  it("releases a dangling lease when the deployment row is gone", async () => {
+    mocks.listInFlight.mockResolvedValue([]);
+    mocks.listWithDeployLease.mockResolvedValue([{ ...project, deployLeaseId: "dep_gone" }]);
+    mocks.findById.mockResolvedValue(null);
+
+    const n = await recoverInterruptedDeployments("Interrupted by a server restart");
+
+    expect(n).toBe(1);
+    expect(mocks.releaseDeployLease).toHaveBeenCalledWith("p1", "dep_gone");
   });
 });

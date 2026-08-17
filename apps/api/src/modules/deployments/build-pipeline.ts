@@ -204,6 +204,7 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
   //      stream - which is what users were seeing.
   //
   // [1]: apps/dashboard/src/app/(dashboard)/(deployment)/build/[id]/page.tsx
+  try {
   await repos.deployment.updateStatus(dep.id, "building").catch(() => {
     // Best effort - if this fails, the worst case is the old race
     // returns. executeBuildAndDeploy will set the status itself when it
@@ -231,6 +232,11 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
     });
 
   return buildSession.id;
+  } catch (err) {
+    const { releaseDeployLease } = await import("./deploy-lease");
+    await releaseDeployLease(project.id, dep.id);
+    throw err;
+  }
 }
 
 /**

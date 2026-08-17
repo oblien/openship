@@ -348,10 +348,7 @@ if (env.CLOUD_MODE) {
   const sweepStaleRestores = repos.backupRestore.sweepStaleRestores(
     "API restart while restore in flight",
   );
-  // A deploy is an in-process task driven by an in-memory build session, so a
-  // restart orphans any deployment still building/deploying/queued. Fail-clean
-  // mounted leftovers (revert a half-flipped current, rm builders) BEFORE the
-  // unique index is freed, then settle the row and release the execution lease.
+  // Restart orphans in-process deploys; recover leftover host work then settle.
   void import("./modules/deployments/mounted-release.service")
     .then(({ recoverInterruptedDeployments }) =>
       recoverInterruptedDeployments("Interrupted by a server restart — redeploy to try again."),

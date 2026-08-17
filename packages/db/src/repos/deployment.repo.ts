@@ -247,10 +247,16 @@ export function createDeploymentRepo(db: Database) {
       status: string,
       extra?: Partial<NewDeployment>,
     ): Promise<boolean> {
+      const guards = [eq(deployment.id, id), ne(deployment.status, "cancelled")];
+      // Ready must stay ready: cancel after a committed success must not
+      // overwrite the row or unlock a revert of `current`.
+      if (status === "cancelled") {
+        guards.push(inArray(deployment.status, ["queued", "building", "deploying"]));
+      }
       const rows = await db
         .update(deployment)
         .set({ status, ...extra, updatedAt: new Date() })
-        .where(and(eq(deployment.id, id), ne(deployment.status, "cancelled")))
+        .where(and(...guards))
         .returning();
       return rows.length > 0;
     },
@@ -348,20 +354,9 @@ export function createDeploymentRepo(db: Database) {
     },
 
     /**
-     * Boot sweep: a deploy runs as an in-process background task driven by the
-     * in-memory build session. A restart kills that session, so any deployment
-     * still `queued`/`building`/`deploying` at boot is ORPHANED — nothing will
-     * ever advance it, and the UI hangs on "Building" forever. Flip those (and
-     * finalize their build_session, which the detail view reads for status) to a
-     * terminal `cancelled` so the operator can just redeploy.
-     *
-     * `reconciling` is deliberately EXCLUDED — a connection-loss deploy may be
-     * running fine on the host; the reconcile scheduler settles it separately.
-     * Returns the number of deployments swept.
-     *
-     * Mounted releases must fail-clean host leftovers BEFORE this runs (see
-     * recoverInterruptedDeployments) so the unique index is not freed while a
-     * builder or half-flipped symlink is still live.
+     * Mark orphaned queued/building/deploying rows cancelled. `reconciling` is
+     * excluded — the reconcile scheduler settles those. Boot uses
+     * recoverInterruptedDeployments instead.
      */
     async sweepStaleInFlight(reason: string): Promise<number> {
       const swept = await db

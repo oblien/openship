@@ -72,6 +72,15 @@ describe("deploy lease CAS", () => {
     expect(await deployments.updateStatus("d1", "ready")).toBe(false);
   });
 
+  it("advances the code pointer only while the deployment is ready", async () => {
+    const { db, projects, deployments } = await fresh();
+    expect(await projects.setActiveReleaseDeploymentIfReady("p1", "d1")).toBe(false);
+    expect(await deployments.updateStatus("d1", "ready")).toBe(true);
+    expect(await projects.setActiveReleaseDeploymentIfReady("p1", "d1")).toBe(true);
+    const row = await db.query.project.findFirst({ where: eq(project.id, "p1") });
+    expect(row?.activeReleaseDeploymentId).toBe("d1");
+  });
+
   it("persists incremental build-session logs", async () => {
     const { db, deployments } = await fresh();
     const session = await deployments.createBuildSession({

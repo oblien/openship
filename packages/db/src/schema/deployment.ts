@@ -183,11 +183,7 @@ export const deployment = pgTable("deployment", {
    * that already existed.
    */
   rollbackStrategy: text("rollback_strategy").notNull().default("snapshot"),
-  /**
-   * Named mounted-release phase (`fetching` | `preparing` | `activating` | `health`).
-   * Durable so a restart can fail-clean an interrupted pointer swap instead of
-   * only cancelling the in-memory session.
-   */
+  /** Mounted-release phase: fetching | preparing | activating | health. */
   releasePhase: text("release_phase"),
 
   /* ── Rollback / retention ───────────────────────────────────────────── */
@@ -210,8 +206,6 @@ export const deployment = pgTable("deployment", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
-  // INSERT serialization only — cancel writes `cancelled` and drops this
-  // slot immediately. Host work is gated by `project.deploy_lease_id`.
   uniqueIndex("uq_deployment_one_active_per_project")
     .on(t.projectId)
     .where(sql`status IN ('queued', 'building', 'deploying')`),
