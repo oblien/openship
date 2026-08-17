@@ -80,9 +80,6 @@ export async function resolveProjectServer(
 ): Promise<{ project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>; serverId: string } | { error: string; status: 400 | 404 }> {
   const project = await repos.project.findById(projectId);
   if (!project || project.organizationId !== organizationId) return { error: "Project not found", status: 404 };
-  if (project.cloudWorkspaceId) {
-    return { error: "Cloud projects manage routing at the edge automatically", status: 400 };
-  }
   if (!project.activeDeploymentId) return { error: "Deploy the project before setting up its edge", status: 400 };
   // Prefer the durable binding; fall back to the active deployment's snapshot for
   // legacy rows not yet backfilled.
@@ -112,11 +109,6 @@ export async function edgeStatus(c: Context) {
   if (!project || project.organizationId !== ctx.organizationId) {
     return c.json({ error: "Project not found" }, 404);
   }
-  // Cloud manages its own ingress — always "ready", nothing to set up.
-  if (project.cloudWorkspaceId) {
-    return c.json({ ready: true, managed: "cloud" as const });
-  }
-
   const resolved = await resolveProjectServer(id, ctx.organizationId);
   // Not deployed / no server yet — surface a reason (200, not an error) so the
   // UI renders guidance rather than a failure.

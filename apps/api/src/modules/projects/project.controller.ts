@@ -1715,7 +1715,6 @@ async function reRegisterDomainRoute(
     id: string;
     activeDeploymentId: string | null;
     port: number | null;
-    cloudWorkspaceId: string | null;
     organizationId: string;
     webhookDomain: string | null;
     routeStrategy: string | null;

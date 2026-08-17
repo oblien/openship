@@ -83,7 +83,7 @@ beforeEach(() => {
 
 describe("readProjectEdgeConfig — when it can't tell", () => {
   it("reports unreachable for a cloud project without touching a box", async () => {
-    const r = await readProjectEdgeConfig(project({ cloudWorkspaceId: "ws1" }));
+    const r = await readProjectEdgeConfig(project({}));
     expect(r).toEqual({ reachable: false, saved: {}, hosts: [] });
     expect(withServerHostExecutor).not.toHaveBeenCalled();
   });

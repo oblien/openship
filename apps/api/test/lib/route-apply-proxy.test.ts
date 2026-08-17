@@ -17,8 +17,7 @@ import { reconcileProjectRoutes } from "../../src/lib/route-apply.service";
  */
 const project = (proxy?: unknown) => ({
   id: "proj-1",
-  organizationId: "org-1",
-  cloudWorkspaceId: null,
+  organizationId: "org-1"
   activeDeploymentId: "dep-1",
   webhookDomain: null,
   routingConfig: proxy ? ({ proxy } as never) : null,

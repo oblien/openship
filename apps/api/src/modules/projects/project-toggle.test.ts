@@ -34,7 +34,6 @@ const h = vi.hoisted(() => ({
     // A server project by default; the static cases flip `hasServer` off, which is
     // the same signal resolveDeployRouting reads to pick "static-file-serve".
     hasServer: true,
-    cloudWorkspaceId: null as string | null,
     outputDirectory: "dist",
   },
   containerId: "app-container" as string | null,
@@ -198,7 +197,6 @@ describe("project pause / resume", () => {
     h.project.disabledAt = null;
     h.project.appTemplateId = null;
     h.project.hasServer = true;
-    h.project.cloudWorkspaceId = null;
     h.containerId = "app-container";
     h.serviceRows = [];
     h.domainRows = [];

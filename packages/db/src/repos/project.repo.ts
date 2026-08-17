@@ -623,66 +623,6 @@ export function createProjectRepo(db: Database) {
       });
     },
 
-    /**
-     * Bind a project to its Openship Cloud workspace. The unique
-     * partial index on `(cloud_workspace_id) WHERE NOT NULL` enforces
-     * one-project-per-workspace at the DB layer — a unique violation
-     * here means another project row already claims this workspace,
-     * which is a real drift bug the caller must surface.
-     *
-     * `cloudWorkspaceId IS NOT NULL` is the canonical "this is a
-     * cloud project" test downstream; no separate deployTarget column.
-     */
-    async setCloudWorkspaceId(projectId: string, cloudWorkspaceId: string) {
-      await db
-        .update(project)
-        .set({
-          cloudWorkspaceId,
-          updatedAt: new Date(),
-        })
-        .where(eq(project.id, projectId));
-    },
-
-    /**
-     * Clear the cloud workspace binding (detach). Leaves deployTarget
-     * untouched — the caller decides whether to demote to self-hosted
-     * or keep the project as "cloud but unbound" pending a fresh deploy.
-     */
-    async clearCloudWorkspaceId(projectId: string) {
-      await db
-        .update(project)
-        .set({ cloudWorkspaceId: null, updatedAt: new Date() })
-        .where(eq(project.id, projectId));
-    },
-
-    /**
-     * List every cloud-bound project in an org. Used by the drift
-     * endpoint to diff against Oblien's `workspaces.list`. A project
-     * is "cloud-bound" iff it has a non-null cloudWorkspaceId — that
-     * column is the single source of truth, no separate deployTarget.
-     *
-     * Returns the minimal shape the diff needs — id, name, slug, and
-     * the workspace binding — not the full project record, so the
-     * dashboard payload stays small.
-     */
-    async listCloudProjectsByOrganization(organizationId: string) {
-      return db
-        .select({
-          id: project.id,
-          name: project.name,
-          slug: project.slug,
-          cloudWorkspaceId: project.cloudWorkspaceId,
-        })
-        .from(project)
-        .where(
-          and(
-            eq(project.organizationId, organizationId),
-            sql`${project.cloudWorkspaceId} IS NOT NULL`,
-            isNull(project.deletedAt),
-          ),
-        );
-    },
-
     // ── Environment variables ──────────────────────────────────────────
 
     async listEnvVars(projectId: string, environment?: string, serviceId?: string | null) {

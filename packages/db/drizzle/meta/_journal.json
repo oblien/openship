@@ -792,6 +792,13 @@
       "when": 1788646907325,
       "tag": "0112_drop_saas",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1788733307325,
+      "tag": "0113_drop_cloud_workspace",
+      "breakpoints": true
     }
   ]
 }

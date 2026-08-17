@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { parseReleaseManifest, ValidationError } from "@repo/core";
 import type { AgentOp } from "./protocol";
 import { buildMutex } from "./mutex";
 import { collectReport } from "./report";
@@ -83,26 +84,35 @@ async function recoverReleases(journal: OperationJournal): Promise<OpResult> {
 
 async function executeRelease(payload: unknown): Promise<OpResult> {
   return buildMutex.run(async () => {
-    const plan = payload && typeof payload === "object" ? (payload as { steps?: unknown }) : {};
-    const steps = Array.isArray(plan.steps) ? plan.steps : [];
-    if (steps.length === 0) {
-      return { ok: true, accepted: true, steps: 0 };
+    let manifest;
+    try {
+      manifest = parseReleaseManifest(payload);
+    } catch (err) {
+      const message = err instanceof ValidationError ? err.message : "Invalid release manifest.";
+      return { ok: false, error: message };
+    }
+    if (manifest.steps.length === 0) {
+      return {
+        ok: true,
+        accepted: true,
+        steps: 0,
+        projectId: manifest.projectId,
+        deploymentId: manifest.deploymentId,
+        sha256: manifest.sha256,
+        source: manifest.source,
+      };
     }
     const results: Array<{ ok: boolean; stdout?: string; stderr?: string }> = [];
-    for (const step of steps) {
-      if (!step || typeof step !== "object") continue;
-      const s = step as { command?: unknown; args?: unknown };
-      if (typeof s.command !== "string") continue;
-      const args = Array.isArray(s.args) ? s.args.map(String) : [];
-      const result = await run(s.command, args, 10 * 60_000);
+    for (const step of manifest.steps) {
+      const result = await run(step.command, step.args ?? [], 10 * 60_000);
       results.push({
         ok: result.code === 0,
         stdout: result.stdout.slice(0, 2000),
         stderr: result.stderr.slice(0, 2000),
       });
-      if (result.code !== 0) return { ok: false, steps: results };
+      if (result.code !== 0) return { ok: false, steps: results, sha256: manifest.sha256 };
     }
-    return { ok: true, steps: results };
+    return { ok: true, steps: results, sha256: manifest.sha256, source: manifest.source };
   });
 }
 

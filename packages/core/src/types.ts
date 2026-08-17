@@ -41,28 +41,18 @@ export type BuildStrategy = "server" | "local";
 /**
  * Deploy target - where the application runs after build.
  *   "local"  → This machine (desktop/dev)
- *   "server" → User's remote server via SSH (selfhosted)
- *   "cloud"  → Oblien cloud workspace
+ *   "server" → User's remote server via SSH
+ * `"cloud"` remains only so historical deployment.meta snapshots typecheck.
  */
 export type DeployTarget = "local" | "server" | "cloud";
 
 /**
- * A project's deploy target, DERIVED from its two durable bindings.
- *
- * There is deliberately no `deployTarget` column — see the schema notes on
- * `project.cloudWorkspaceId` and `project.serverId`, which already determine this fact;
- * storing it too would be a second source of truth for the same thing. This function is
- * where that rule lives, so the access URL, the payload the deploy wizard hydrates from,
- * and the deploy resolver cannot drift into disagreeing about where a project runs.
- *
- * `"local"` is the ABSENCE of a binding, not a fallback: it means this box, which is a
- * first-class, separately pickable target.
+ * A project's deploy target, derived from `serverId`.
+ * There is no cloud workspace binding anymore — Operator is local/server only.
  */
 export function deriveProjectDeployTarget(project: {
-  cloudWorkspaceId?: string | null;
   serverId?: string | null;
-}): DeployTarget {
-  if (project.cloudWorkspaceId) return "cloud";
+}): Exclude<DeployTarget, "cloud"> {
   if (project.serverId) return "server";
   return "local";
 }

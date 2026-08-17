@@ -44,7 +44,6 @@ import { webhookProxyTarget } from "../config";
 export interface RouteReconcileProject {
   id: string;
   slug?: string;
-  cloudWorkspaceId?: string | null;
   webhookDomain?: string | null;
   /**
    * The project's routing config. Read here for `proxy` (upload limit, timeouts,

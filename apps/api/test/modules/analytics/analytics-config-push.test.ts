@@ -43,7 +43,7 @@ const { pushProjectAnalyticsConfig, reconcileAnalyticsConfig } = await import(
 );
 
 beforeEach(() => {
-  h.project = { id: "p1", collectPaths: true, cloudWorkspaceId: null };
+  h.project = { id: "p1", collectPaths: true};
   h.domains = [
     { id: "d1", hostname: "a.com" },
     { id: "d2", hostname: "B.com" },
@@ -104,7 +104,7 @@ describe("what the flag says", () => {
   });
 
   it("STILL pushes when collection is off — turning it off must reach the box", async () => {
-    h.project = { id: "p1", collectPaths: false, cloudWorkspaceId: null };
+    h.project = { id: "p1", collectPaths: false};
     await pushProjectAnalyticsConfig("p1", "srv1");
     // Skipping the push here would leave the edge collecting after the UI says it stopped.
     expect(hosts()).toEqual(["a.com", "b.com"]);
@@ -112,7 +112,7 @@ describe("what the flag says", () => {
   });
 
   it("treats a missing column as off, never as on", async () => {
-    h.project = { id: "p1", cloudWorkspaceId: null };
+    h.project = { id: "p1"};
     await pushProjectAnalyticsConfig("p1", "srv1");
     expect(entries().every((e) => e.paths === false)).toBe(true);
   });
@@ -120,7 +120,7 @@ describe("what the flag says", () => {
 
 describe("when it does nothing at all", () => {
   it("skips a cloud project — Oblien's edge is not OpenResty", async () => {
-    h.project = { id: "p1", collectPaths: true, cloudWorkspaceId: "ws1" };
+    h.project = { id: "p1", collectPaths: true};
     await pushProjectAnalyticsConfig("p1", null);
     expect(h.pushes).toHaveLength(0);
   });
@@ -152,8 +152,7 @@ describe("when it does nothing at all", () => {
 describe("reconcile after an edge restart", () => {
   const proj = (id: string, collectPaths: boolean) => ({
     id,
-    collectPaths,
-    cloudWorkspaceId: null,
+    collectPaths
     activeDeploymentId: "dep1",
   });
 
@@ -190,7 +189,7 @@ describe("reconcile after an edge restart", () => {
 
   it("skips cloud projects and cloud sources", async () => {
     h.allProjects = [
-      { id: "p1", collectPaths: true, cloudWorkspaceId: "ws1", activeDeploymentId: "d" },
+      { id: "p1", collectPaths: true activeDeploymentId: "d" },
       proj("p2", true),
     ];
     h.sourcesByProject = { p2: [{ kind: "cloud", domain: "x.com" }] };
@@ -201,7 +200,7 @@ describe("reconcile after an edge restart", () => {
   });
 
   it("skips an undeployed project — its first route apply will configure it", async () => {
-    h.allProjects = [{ id: "p1", collectPaths: true, cloudWorkspaceId: null, activeDeploymentId: null }];
+    h.allProjects = [{ id: "p1", collectPaths: true activeDeploymentId: null }];
     h.sourcesByProject = { p1: [{ kind: "self-hosted", domain: "a.com", serverId: "srv1" }] };
     expect(await reconcileAnalyticsConfig()).toEqual({ servers: 0, hosts: 0 });
   });

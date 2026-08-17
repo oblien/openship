@@ -173,7 +173,7 @@ export async function addDomain(
   // already owns — never off-site, never at itself, never round a loop.
   const redirect = normalizeRedirect(data);
   if (redirect.redirectTo) {
-    assertRedirectSupported({ isCloudProject: !!project?.cloudWorkspaceId, hostname });
+    assertRedirectSupported({ isCloudProject: false, hostname });
     const peers = await repos.domain.listByProject(data.projectId).catch(() => []);
     assertRedirectTargets([
       ...peers
@@ -665,8 +665,6 @@ export async function reuseServerCertForDomain(ctx: RequestContext, domainId: st
   try {
     const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
     if (domain.verified) return true; // already good — nothing to reuse
-    // Cloud domains verify via Oblien (CNAME); reuse is a self-hosted concept.
-    if (project.cloudWorkspaceId) return false;
     // Can't reach the host from inside the container → nothing to reuse here; the
     // manual Verify surfaces the actionable host-channel hint.
     if (await edgeHostUnreachable(ctx, project)) {

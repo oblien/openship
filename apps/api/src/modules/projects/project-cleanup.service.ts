@@ -503,7 +503,7 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
   // an unreachable server would otherwise resolve to `false` and hide the
   // record-only ("Remove from Openship") delete — exactly when it's most useful.
   // The loop below only strengthens (never un-sets) this.
-  let selfHosted = !project.cloudWorkspaceId;
+  let selfHosted = true;
 
   // Map service id → its container id (most recent deployment wins, which
   // matches the order rows come back in). We resolve volumes per container.

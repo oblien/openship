@@ -452,38 +452,6 @@ const sleepModeCmd = new Command("sleep-mode")
     }),
   );
 
-// ─── transfer ────────────────────────────────────────────────────────────────
-// POST /api/projects/:id/transfer/to-cloud | to-self-hosted — self-hosted ONLY
-// (project.routes.ts:119-120, localOnly). Gate with requireSelfHost.
-const TRANSFER_DIRS = ["to-cloud", "to-self-hosted"];
-const transferCmd = new Command("transfer")
-  .description("Promote a project to Openship Cloud, or bring it back (self-hosted only)")
-  .argument("<id>", "Project ID")
-  .argument("<direction>", `One of: ${TRANSFER_DIRS.join(", ")}`)
-  .action(
-    action(async (id: string, direction: string) => {
-      if (!TRANSFER_DIRS.includes(direction)) {
-        err(`  direction must be one of: ${TRANSFER_DIRS.join(", ")}`);
-        process.exitCode = 1;
-        return;
-      }
-      requireSelfHost(await fetchCaps());
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/transfer/${direction}`,
-        { method: "POST", body: JSON.stringify({}) },
-      );
-      if (isJsonMode()) {
-        printJson(result);
-        return;
-      }
-      ok(
-        `\n  Transfer ${direction} complete (project ${result.projectId})` +
-          (result.warning ? `\n  ${result.warning}` : "") +
-          "\n",
-      );
-    }),
-  );
-
 // ─── logs ────────────────────────────────────────────────────────────────────
 // GET /api/projects/:id/logs?tail= → { data } ;
 // GET /api/projects/:id/logs/stream (SSE: event "log" | "error") (project.routes.ts:107-108)
@@ -617,6 +585,6 @@ projectCommand.addCommand(connectCmd);
 projectCommand.addCommand(enableCmd);
 projectCommand.addCommand(disableCmd);
 projectCommand.addCommand(sleepModeCmd);
-projectCommand.addCommand(transferCmd);
+
 projectCommand.addCommand(logsCmd);
 projectCommand.addCommand(serverLogsCmd);

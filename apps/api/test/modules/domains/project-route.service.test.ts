@@ -115,8 +115,7 @@ describe("reapplyProjectLiveRoutes self-app loopback route (issue #129)", () => 
   const project = {
     id: "proj-openship",
     slug: "openship",
-    port: 3001,
-    cloudWorkspaceId: null,
+    port: 3001
     activeDeploymentId: "dep-1",
     organizationId: "org-1",
     webhookDomain: null,
@@ -185,8 +184,7 @@ describe("reapplyProjectLiveRoutes static (path-targeted) routes", () => {
   const staticProject = {
     id: "proj-site",
     slug: "site",
-    port: null,
-    cloudWorkspaceId: null,
+    port: null
     activeDeploymentId: "dep-1",
     organizationId: "org-1",
     webhookDomain: null,

@@ -322,7 +322,6 @@ export async function reapplyProjectLiveRoutes(
     | "id"
     | "slug"
     | "port"
-    | "cloudWorkspaceId"
     | "activeDeploymentId"
     | "organizationId"
     | "webhookDomain"
@@ -341,7 +340,7 @@ export async function reapplyProjectLiveRoutes(
   previousHostnames: string[],
   opts: ReapplyProjectLiveRoutesOptions = {},
 ): Promise<void> {
-  const isCloud = !!project.cloudWorkspaceId;
+  const isCloud = false;
   if (!isCloud && !project.activeDeploymentId) return;
 
   const state = await resolveProjectRouteState({ id: project.id, slug: project.slug });

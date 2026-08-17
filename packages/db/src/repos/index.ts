@@ -74,11 +74,6 @@ export {
   type NewServiceIncident,
 } from "./service-incident.repo";
 export {
-  createCloudWebhookBindingRepo,
-  type CloudWebhookBinding,
-  type NewCloudWebhookBinding,
-} from "./cloud-webhook-binding.repo";
-export {
   createWebhookDeliveryRepo,
   type WebhookDelivery,
   type NewWebhookDelivery,
@@ -157,11 +152,6 @@ export {
   type NewServiceTerminalSession,
 } from "./service-terminal-session.repo";
 export {
-  createCloudHandoffCodeRepo,
-  type HandoffUserData,
-  type HandoffCodeRow,
-} from "./cloud-handoff-code.repo";
-export {
   createBackupDestinationRepo,
   createBackupPolicyRepo,
   createBackupRunRepo,
@@ -222,22 +212,6 @@ export {
   type ChannelKind,
   type DeliveryStatus,
 } from "./notification.repo";
-export {
-  createStripeTopupGrantRepo,
-  type ClaimTopupGrantInput,
-  type ClaimTopupGrantResult,
-} from "./stripe-topup-grant.repo";
-export {
-  createBillingAnniversaryGrantRepo,
-  type ClaimAnniversaryGrantInput,
-  type ClaimAnniversaryGrantResult,
-} from "./billing-anniversary-grant.repo";
-export {
-  createBillingUsageSnapshotRepo,
-  type UsageSnapshot,
-  type UsageSnapshotInput,
-} from "./billing-usage-snapshot.repo";
-
 // ─── Convenience: pre-bound repos using the singleton db ─────────────────────
 
 import { db } from "../client";
@@ -261,7 +235,6 @@ import { createServerModuleStatusRepo } from "./server-module-status.repo";
 import { createServerContainerStatusRepo } from "./server-container-status.repo";
 import { createEdgeTargetVerificationRepo } from "./edge-target-verification.repo";
 import { createServiceIncidentRepo } from "./service-incident.repo";
-import { createCloudWebhookBindingRepo } from "./cloud-webhook-binding.repo";
 import { createProjectConnectionRepo } from "./project-connection.repo";
 import { createCustomAppTemplateRepo } from "./custom-app-template.repo";
 import { createWebhookDeliveryRepo } from "./webhook-delivery.repo";
@@ -279,7 +252,6 @@ import { createAnalyticsRepo } from "./analytics.repo";
 import { createResourceUsageRepo } from "./resource-usage.repo";
 import { createTerminalSessionRepo } from "./terminal-session.repo";
 import { createServiceTerminalSessionRepo } from "./service-terminal-session.repo";
-import { createCloudHandoffCodeRepo } from "./cloud-handoff-code.repo";
 import { createPersonalAccessTokenRepo } from "./personal-access-token.repo";
 import { createPersonalAccessTokenGrantRepo } from "./personal-access-token-grant.repo";
 import { createOAuthRepo } from "./oauth.repo";
@@ -306,9 +278,7 @@ import {
   createNotificationDefaultRepo,
   createNotificationDeliveryRepo,
 } from "./notification.repo";
-import { createStripeTopupGrantRepo } from "./stripe-topup-grant.repo";
-import { createBillingAnniversaryGrantRepo } from "./billing-anniversary-grant.repo";
-import { createBillingUsageSnapshotRepo } from "./billing-usage-snapshot.repo";
+
 
 /**
  * Pre-bound repository instances using the singleton `db`.
@@ -344,7 +314,6 @@ export const repos = {
   serverContainerStatus: createServerContainerStatusRepo(db),
   edgeTargetVerification: createEdgeTargetVerificationRepo(db),
   serviceIncident: createServiceIncidentRepo(db),
-  cloudWebhookBinding: createCloudWebhookBindingRepo(db),
   projectConnection: createProjectConnectionRepo(db),
   customAppTemplate: createCustomAppTemplateRepo(db),
   webhookDelivery: createWebhookDeliveryRepo(db),
@@ -362,7 +331,6 @@ export const repos = {
   resourceUsage: createResourceUsageRepo(db),
   terminalSession: createTerminalSessionRepo(db),
   serviceTerminalSession: createServiceTerminalSessionRepo(db),
-  cloudHandoffCode: createCloudHandoffCodeRepo(db),
   personalAccessToken: createPersonalAccessTokenRepo(db),
   patGrant: createPersonalAccessTokenGrantRepo(db),
   oauth: createOAuthRepo(db),
@@ -385,7 +353,4 @@ export const repos = {
   notificationSubscription: createNotificationSubscriptionRepo(db),
   notificationDefault: createNotificationDefaultRepo(db),
   notificationDelivery: createNotificationDeliveryRepo(db),
-  stripeTopupGrant: createStripeTopupGrantRepo(db),
-  billingAnniversaryGrant: createBillingAnniversaryGrantRepo(db),
-  billingUsageSnapshot: createBillingUsageSnapshotRepo(db),
 } as const;

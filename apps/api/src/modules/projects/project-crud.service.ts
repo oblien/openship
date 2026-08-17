@@ -139,7 +139,7 @@ type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[numb
  *  also left the two fields disagreeing, since `serverId` already coalesced to its
  *  column while the target did not. */
 export function readDeployMeta(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  p: Pick<Project, "serverId" | "activeDeploymentId">,
   dep: Deployment | null | undefined,
 ): { deployTarget: DeployTarget | null; serverId: string | null } {
   const meta = (dep?.meta ?? null) as { serverId?: string } | null;
@@ -154,18 +154,10 @@ export function readDeployMeta(
   // Bound to nothing and never deployed: no target yet. Answering "local" here would be
   // picking one on the operator's behalf — the hosting badge renders none, and the deploy
   // wizard seeds a validated target rather than inheriting a guess from this projection.
-  if (!p.cloudWorkspaceId && !serverId && !p.activeDeploymentId) {
+  if (!serverId && !p.activeDeploymentId) {
     return { deployTarget: null, serverId: null };
   }
-  const deployTarget = deriveProjectDeployTarget({
-    cloudWorkspaceId: p.cloudWorkspaceId,
-    serverId,
-  });
-  // The pair must agree. A cloud-bound project can still carry a server id — from the
-  // column it was bound to before it moved, or from the snapshot of that last deploy —
-  // and emitting both is how a card ends up labelled "Cloud" while holding a server's
-  // name, or a wizard hydrates its target from one field and its destination from the
-  // other. The target won; the id it didn't come from goes.
+  const deployTarget = deriveProjectDeployTarget({ serverId });
   return { deployTarget, serverId: deployTarget === "server" ? serverId : null };
 }
 
@@ -174,7 +166,7 @@ export function readDeployMeta(
  *  of re-deriving it inline — the detail payload is what the deploy wizard hydrates
  *  its target from, so a second copy of the rule there is a wrong destination. */
 export async function resolveProjectDeployTarget(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  p: Pick<Project, "serverId" | "activeDeploymentId">,
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   const activeDep = p.activeDeploymentId
     ? ((await repos.deployment.findById(p.activeDeploymentId)) ?? null)

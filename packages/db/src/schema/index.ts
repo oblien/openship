@@ -26,7 +26,6 @@ export { serverModuleStatus } from "./server-module-status";
 export { serverContainerStatus, type ServerContainerDetail } from "./server-container-status";
 export { edgeTargetVerification } from "./edge-target-verification";
 export { serviceIncident, INCIDENT_KINDS, type IncidentKind } from "./service-incident";
-export { cloudWebhookBinding } from "./cloud-webhook-binding";
 export { projectConnection } from "./project-connection";
 export { webhookDelivery } from "./webhook-delivery";
 export { service, serviceDeployment } from "./service";
@@ -44,7 +43,6 @@ export {
 } from "./resource-usage";
 export { terminalSessions } from "./terminal-sessions";
 export { serviceTerminalSessions } from "./service-terminal-sessions";
-export { cloudHandoffCode } from "./cloud-handoff-code";
 export { personalAccessToken } from "./personal-access-token";
 export { personalAccessTokenGrant } from "./personal-access-token-grant";
 export { oauthApplication, oauthAccessToken, oauthConsent } from "./oauth";
@@ -61,16 +59,6 @@ export {
   notificationDefault,
   notificationDelivery,
 } from "./notification";
-export {
-  billingCustomer,
-  billingSubscription,
-  creditPack,
-  stripeWebhookEvent,
-  oblienWebhookEvent,
-  stripeTopupGrant,
-  billingAnniversaryGrant,
-  billingUsageSnapshot,
-} from "./billing";
 export { customAppTemplate } from "./custom-app-template";
 export { dnsCredential } from "./dns-credential";
 export { credential } from "./credential";

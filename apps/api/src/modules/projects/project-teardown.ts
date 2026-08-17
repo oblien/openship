@@ -333,7 +333,7 @@ export async function teardownProject(
     // the Openship record. NEVER honored for a cloud project — its resources
     // live on Oblien and must be reclaimed; this is the security boundary, not
     // the UI toggle. (CLOUD_MODE = the SaaS itself, where nothing is "kept".)
-    const recordOnly = !!opts.recordOnly && !project.cloudWorkspaceId && !env.CLOUD_MODE;
+    const recordOnly = !!opts.recordOnly && !env.CLOUD_MODE;
 
     // ── Step 1: Cancel in-flight work (force=true only). ────────────────
     // `keepProvisioned` for record-only: the cancel aborts the build and marks

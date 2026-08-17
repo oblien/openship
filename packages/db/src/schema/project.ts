@@ -391,37 +391,17 @@ export const project = pgTable(
     cloudArchiveStrategy: text("cloud_archive_strategy").notNull().default("inplace"),
 
     /**
-     * Oblien workspace id this project deploys to — the LINK, not a
-     * mirror. Like `gitOwner/gitRepo` points at GitHub, this points
-     * at Oblien. Runtime state, files, logs all live on Oblien.
-     *
-     * `cloudWorkspaceId IS NOT NULL` is the canonical "this is a
-     * cloud project" test. The per-deployment `deployTarget` already
-     * lives in `deployment.meta` (snapshot per deploy); duplicating
-     * it on the project row creates two sources of truth for the
-     * same fact. Set by build.service after a successful workspace
-     * provision. Unique-per-project (the partial unique index below
-     * enforces that we never bind two local projects to the same
-     * workspace).
-     */
-    cloudWorkspaceId: text("cloud_workspace_id"),
-
-    /**
-     * Durable owner of the SERVER this project deploys to (self-hosted). The
+     * Durable owner of the SERVER this project deploys to. The
      * per-deployment `deployment.meta.serverId` is a volatile snapshot that a
      * fresh/partial redeploy could fail to re-derive, which then let the deploy
      * fall back to "local" and null the project's verified custom-domain ports —
      * the Access-URL-regressed-to-localhost bug. This column is the single
      * durable binding; `resolveSnapshotTarget` reads it first and re-stamps meta.
      *
-     * Unlike a `deployTarget` column (which we deliberately do NOT add — see
-     * cloudWorkspaceId above), this doesn't duplicate a source of truth: the
-     * effective target is DERIVED — `cloudWorkspaceId ? "cloud" : serverId ?
-     * "server" : "local"`. That derivation lives in ONE function,
-     * `deriveProjectDeployTarget` in @repo/core, so this rule has a single
-     * implementation to change; read surfaces reach it through
-     * `projectService.resolveProjectDeployTarget`. ON DELETE SET NULL so removing a
-     * server unbinds its projects rather than cascade-deleting them.
+     * The effective target is DERIVED — `serverId ? "server" : "local"`.
+     * That derivation lives in `deriveProjectDeployTarget` in @repo/core.
+     * ON DELETE SET NULL so removing a server unbinds its projects rather
+     * than cascade-deleting them.
      */
     serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
 
@@ -525,13 +505,6 @@ export const project = pgTable(
     uniqueIndex("uq_project_app_environment_slug_active")
       .on(table.groupId, table.environmentSlug)
       .where(sql`${table.deletedAt} IS NULL`),
-    // One local project per Oblien workspace. Two project rows pointing
-    // at the same workspace would race on deploy + confuse drift
-    // detection. Partial unique — NULL allowed (self-hosted projects
-    // or pre-first-deploy), but any non-null value is unique.
-    uniqueIndex("uq_project_cloud_workspace_id")
-      .on(table.cloudWorkspaceId)
-      .where(sql`${table.cloudWorkspaceId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
   ],
 );
 

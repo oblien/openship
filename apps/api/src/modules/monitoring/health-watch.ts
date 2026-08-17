@@ -393,7 +393,7 @@ async function resolveWatchTargets(
 
   for (const { project, dep, meta } of projects) {
     const effective = resolveEffectiveTarget(base, meta);
-    if (project.cloudWorkspaceId || effective === "cloud") {
+    if (effective === "cloud") {
       out.set(dep.id, { kind: "cloud" });
       continue;
     }

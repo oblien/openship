@@ -125,7 +125,7 @@ function buildHostState(
 export async function readProjectEdgeConfig(project: Project): Promise<EdgeConfigReport> {
   const saved = sanitizeProxySettings(project.routingConfig?.proxy) ?? {};
 
-  if (project.cloudWorkspaceId) return { reachable: false, saved, hosts: [] };
+
 
   const domains = await repos.domain.listByProject(project.id).catch(() => []);
   const hostnames = [...new Set(domains.map((d) => d.hostname.toLowerCase()))].sort();

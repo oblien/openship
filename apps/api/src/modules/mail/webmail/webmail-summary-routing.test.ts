@@ -23,15 +23,13 @@ const CLOUD_WEBMAIL = {
   appTemplateId: "webmail",
   framework: "docker-compose",
   serverId: null,
-  cloudWorkspaceId: "ws1",
   activeDeploymentId: "dep1",
 };
 
 const SELF_WEBMAIL = {
   ...CLOUD_WEBMAIL,
   id: "wm-self",
-  serverId: "srv1",
-  cloudWorkspaceId: null,
+  serverId: "srv1"
 };
 
 const MAIL_SERVER = {

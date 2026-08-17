@@ -36,7 +36,6 @@ const project = (over: Partial<Project> = {}) =>
     activeReleaseDeploymentId: null,
     mountedRelease: null,
     serverId: "srv_1",
-    cloudWorkspaceId: null,
     ...over,
   }) as Project;
 
@@ -228,7 +227,7 @@ describe("resolveProjectLiveState", () => {
 
   it("omits server when the derived deploy target is not server", async () => {
     projectRepo.findById.mockResolvedValue(
-      project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }),
+      project({ serverId: "srv_1" }),
     );
 
     const state = await resolveProjectLiveState("proj_1", "org_1");

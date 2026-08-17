@@ -81,7 +81,6 @@ const project = (routeStrategy = "auto") => ({
     { hostname: "app.example.com", isCustomDomain: true, rootServiceId: "svc_1", locations: [] },
   ],
   slug: "app",
-  cloudWorkspaceId: null,
   webhookDomain: null,
 });
 

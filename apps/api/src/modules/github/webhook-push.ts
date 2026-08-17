@@ -418,41 +418,12 @@ async function triggerBranchDeployments(
   };
 }
 
-/**
- * Forward a push for a CLOUD project (no local row) to the SaaS as the org
- * owner — the same operation the Redeploy button proxies. Resolution:
- *   1. cloud_webhook_binding by repo (fast, deterministic; written on promote).
- *   2. Fallback: enumerate cloud-linked orgs and match the repo against their
- *      cloud project list, then self-heal a routing-only binding for next time.
- * Returns { forwarded:false } when no cloud project owns this repo/branch.
- */
+/** Operator has no Cloud projects to forward a GitHub push to. */
 async function forwardPushToCloud(
-  input: BranchDeploymentTrigger,
-  defaultBranch?: string | null,
+  _input: BranchDeploymentTrigger,
+  _defaultBranch?: string | null,
 ): Promise<{ forwarded: boolean; cloudProjectId?: string; organizationId?: string }> {
-  let organizationId: string | undefined;
-  let cloudProjectId: string | undefined;
-
-  const bindings = await repos.cloudWebhookBinding
-    .findByRepo(input.owner, input.repo)
-    .catch(() => []);
-  // Mirror projectWebhookBranch: "" means the repo's default branch, so resolve
-  // it the same way the local filter does before comparing to the pushed branch.
-  const bound = bindings.find(
-    (b) => (b.gitBranch?.trim() || defaultBranch?.trim() || null) === input.branch,
-  );
-  if (bound) {
-    organizationId = bound.organizationId;
-    cloudProjectId = bound.cloudProjectId;
-  }
-
-  if (!cloudProjectId) {
-    // Operator has no Cloud-linked projects to forward to.
-  }
-
-  if (!organizationId || !cloudProjectId) return { forwarded: false };
-
-  return { forwarded: false, cloudProjectId, organizationId };
+  return { forwarded: false };
 }
 
 function projectWebhookBranch(project: Project, defaultBranch?: string | null): string | null {

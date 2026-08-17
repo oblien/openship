@@ -52,8 +52,7 @@ const project = {
   slug: "portfolio",
   name: "Portfolio",
   port: 4321,
-  activeDeploymentId: "dep_123",
-  cloudWorkspaceId: null,
+  activeDeploymentId: "dep_123"
   resources: null,
   buildResources: null,
   sleepMode: "auto_sleep",

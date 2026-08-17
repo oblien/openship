@@ -617,7 +617,7 @@ export async function resolveWebmailSummary(
   const routed = rows ? pickCanonicalDomainRow(rows) ?? rows[0] ?? null : null;
   // No route of its own + running on the cloud = the mail VPS fronts it (see
   // the proxy variant above). Derived, so nothing has to be stored.
-  const proxied = rows !== null && !routed && !!project.cloudWorkspaceId;
+  const proxied = false;
   // A webmail on the mail server's OWN hostname has no domain row by design — that row
   // belongs to the mail install's certificate renewal and must stay project-less (#566,
   // see lib/mail-host-claim). Its address therefore has to come from the SERVICE's routing
@@ -677,13 +677,12 @@ async function isLiveDeploymentReady(deploymentId: string | null): Promise<boole
  * Idempotent: a redeploy re-points the proxy at the new URL.
  */
 export async function onWebmailDeployed(
-  project: Pick<Project, "id" | "appTemplateId" | "organizationId" | "cloudWorkspaceId">,
+  project: Pick<Project, "id" | "appTemplateId" | "organizationId">,
   deployedUrl?: string | null,
 ): Promise<void> {
   if (project.appTemplateId !== WEBMAIL_TEMPLATE_ID) return;
-  // Only a CLOUD workload can need the proxy; a self-hosted webmail routes its
-  // own hostname through the standard pipeline.
-  if (!project.cloudWorkspaceId || !deployedUrl) return;
+  // Operator webmail routes its own hostname; no Cloud mail-VPS proxy.
+  if (!deployedUrl) return;
 
   try {
     const mailServer = await repos.mailServer.findByWebmailProject(project.id);
@@ -742,7 +741,7 @@ export async function cleanupWebmailInstall(project: Project): Promise<string | 
   // that vhost), while skipping it leaves a proxy vhost on the mail VPS with no
   // project left to ever remove it.
   const rows: Domain[] = await listProjectRouteRows(project.id).catch(() => []);
-  if (rows.length > 0 || !project.cloudWorkspaceId) return null;
+  if (rows.length > 0) return null;
 
   const hostname = mailHostname(mailServer.domain);
   const platform = await resolveMailVpsPlatform(mailServer.serverId, project.organizationId);

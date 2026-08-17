@@ -857,7 +857,7 @@ export async function updateService(
       // the deployment's own routing (local box or remote server/sandbox).
       // Needed for route REMOVAL too, so it is not gated on having routes.
       const dep =
-        !project.cloudWorkspaceId && project.activeDeploymentId
+        true && project.activeDeploymentId
           ? await repos.deployment.findById(project.activeDeploymentId)
           : null;
 
@@ -1082,7 +1082,7 @@ export async function deleteService(
         // → the deployment's OWN routing (never the local singleton, which would
         // leave a remote vhost proxying a now-dead upstream → 502).
         const dep =
-          !project.cloudWorkspaceId && project.activeDeploymentId
+          true && project.activeDeploymentId
             ? await repos.deployment.findById(project.activeDeploymentId)
             : null;
         await withTimeout(

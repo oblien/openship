@@ -358,7 +358,6 @@ interface SeedOpts {
   deployTarget?: string;
   buildStrategy?: string;
   /** Set to make this a promoted cloud project — the canonical cloud test. */
-  cloudWorkspaceId?: string;
   /**
    * The box the container really lives on, when the meta can't name it: a deploy that
    * targets "a server" without recording which one still runs SOMEWHERE, and the point of
@@ -392,7 +391,6 @@ function seedApp(opts: SeedOpts = {}) {
     slug: `app-${n}`,
     organizationId: "org1",
     activeDeploymentId: depId,
-    cloudWorkspaceId: opts.cloudWorkspaceId ?? null,
     disabledAt: opts.disabledAt ?? null,
   });
   h.deployments.push({
@@ -443,7 +441,6 @@ function seedComposeService(
     slug: `stack-${n}`,
     organizationId: "org1",
     activeDeploymentId: depId,
-    cloudWorkspaceId: null,
     disabledAt: null,
   });
   h.deployments.push({
@@ -1563,7 +1560,7 @@ describe("workload selection", () => {
     // the last LOCAL deployment still reads as an ordinary local deploy. Watching that
     // snapshot means inspecting containers this host no longer has — a confirmed `down`
     // on a service that is up.
-    const { containerId } = seedApp({ serverId: null, cloudWorkspaceId: "ws_1" });
+    const { containerId } = seedApp({ serverId: null});
     setState(containerId, "gone");
 
     const summary = await tick();

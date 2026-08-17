@@ -24,8 +24,7 @@ const baseProject = {
   groupId: null,
   slug: "app",
   name: "App",
-  port: 3000,
-  cloudWorkspaceId: null,
+  port: 3000
   resources: null,
   buildResources: null,
   sleepMode: "auto_sleep",
@@ -163,8 +162,7 @@ describe("enrichProject deployTarget derivation", () => {
     deploymentRepo.findById.mockResolvedValue({ id: "dep_1", meta: {}, version: 4, status: "success" });
 
     const enriched = await enrichProject({
-      ...baseProject,
-      cloudWorkspaceId: "ws_1",
+      ...baseProject
       activeDeploymentId: "dep_1",
       serverId: null,
     });
@@ -183,8 +181,7 @@ describe("enrichProject deployTarget derivation", () => {
     });
 
     const enriched = await enrichProject({
-      ...baseProject,
-      cloudWorkspaceId: "ws_1",
+      ...baseProject
       activeDeploymentId: "dep_1",
       serverId: null,
     });

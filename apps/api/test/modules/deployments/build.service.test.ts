@@ -131,8 +131,7 @@ function baseProject(overrides: Record<string, unknown> = {}) {
     hasServer: true,
     hasBuild: true,
     resources: null,
-    buildResources: null,
-    cloudWorkspaceId: null,
+    buildResources: null
     runtimeMode: "docker",
     defaultRollbackStrategy: "git",
     ...overrides,
@@ -199,8 +198,7 @@ describe("resolveSnapshotTarget", () => {
   function project(overrides: Record<string, unknown> = {}) {
     return {
       id: "project-1",
-      activeDeploymentId: null,
-      cloudWorkspaceId: null,
+      activeDeploymentId: null
       serverId: null,
       runtimeMode: null,
       ...overrides,
@@ -228,7 +226,7 @@ describe("resolveSnapshotTarget", () => {
 
   it("lets cloud win over a stray serverId and drops the serverId", async () => {
     const t = await resolveSnapshotTarget(
-      project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }),
+      project({ serverId: "srv_1" }),
     );
     expect(t.deployTarget).toBe("cloud");
     expect(t.serverId).toBeUndefined();

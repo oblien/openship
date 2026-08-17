@@ -119,7 +119,6 @@ export interface BuildConfig {
    * into it, so the build attaches to it and (with `sourceStaged`) skips clone
    * and source transfer. Ignored by non-cloud runtimes.
    */
-  cloudWorkspaceId?: string;
   /**
    * Source is ALREADY present at the runtime's project dir (uploaded out of
    * band — the folder-upload flow). Skips both the git clone and the local

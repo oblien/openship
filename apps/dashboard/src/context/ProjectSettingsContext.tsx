@@ -86,7 +86,6 @@ interface BasicProjectData {
    */
   activeMigration?: ActiveMigration | null;
   deployTarget?: "cloud" | "server" | "local";
-  cloudWorkspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;
   /** How many recent versions retain their build artifact for rollback (snapshot strategy). null = instance default. */
@@ -474,11 +473,12 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       }
     }
 
-    const target = projectData.cloudWorkspaceId
-      ? "cloud"
-      : (projectData as any).serverId
+    const target =
+      (projectData as any).serverId
         ? "server"
-        : (projectData.deployTarget ?? "local");
+        : projectData.deployTarget === "cloud"
+          ? "server"
+          : (projectData.deployTarget ?? "local");
     if (target === "local") {
       const port =
         Number((projectData as any).port ?? projectData.options?.productionPort) || 3000;

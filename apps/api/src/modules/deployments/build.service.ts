@@ -412,7 +412,7 @@ export function buildConfigSnapshot(
     // pipeline, and rollback all see "cloud" without depending on the
     // UI to pass it on every redeploy. The desktop picker still wins
     // when it does pass an explicit deployTarget (see line ~773).
-    deployTarget: project.cloudWorkspaceId ? "cloud" : undefined,
+    deployTarget: undefined,
     // Runtime isolation mode persisted on the project (editable in the Runtime
     // tab). So a redeploy/webhook deploy respects the saved choice instead of
     // re-defaulting. The wizard's per-deploy override still wins when passed.
@@ -703,7 +703,7 @@ export async function resolveSnapshotTarget(
   // that set serverId but historically omitted deployTarget.
   let deployTarget: DeployTarget | undefined;
   if (override?.deployTarget) deployTarget = override.deployTarget;
-  else if (project.cloudWorkspaceId) deployTarget = "cloud";
+
   else if (project.serverId) deployTarget = "server";
   else if (activeMeta?.deployTarget) deployTarget = activeMeta.deployTarget;
   else if (activeMeta?.serverId) deployTarget = "server";

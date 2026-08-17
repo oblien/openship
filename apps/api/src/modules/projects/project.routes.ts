@@ -17,7 +17,6 @@ import { bodyLimit } from "hono/body-limit";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
-import * as transfer from "./transfer.controller";
 import * as routeRules from "../route-rules/route-rule.controller";
 import * as edgeConfig from "./edge-config.controller";
 import * as incidents from "../monitoring/incident.controller";
