@@ -6,9 +6,10 @@ import { repos, type Domain, type Project, type Server } from "@repo/db";
 import {
   PROJECT_CONFIG_EXPORT_VERSION,
   ValidationError,
+  exportContainsSecretKeys,
   resolveEdition,
+  serializeMountedRelease,
   type ExportedConnection,
-  type ExportedMountedRelease,
   type ExportedProject,
   type ExportedRoute,
   type ExportedServer,
@@ -16,6 +17,8 @@ import {
   type ReleaseSource,
 } from "@repo/core";
 import { env } from "../../config/env";
+
+export { exportContainsSecretKeys, serializeMountedRelease };
 
 type ConnectionRow = {
   id: string;
@@ -25,18 +28,6 @@ type ConnectionRow = {
   envKey: string;
   mode: string;
 };
-
-const SECRET_KEYS = [
-  "sshPassword",
-  "sshPrivateKey",
-  "sshKeyPassphrase",
-  "sshKeyPath",
-  "cloneTokenEncrypted",
-  "webhookSecret",
-  "env",
-  "envVars",
-  "value",
-] as const;
 
 const EXPORT_PAGE_SIZE = 500;
 const EXPORT_MAX_PROJECTS = 5000;
@@ -80,50 +71,6 @@ export function serializeConnectionConfig(link: ConnectionRow): ExportedConnecti
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-function optionalNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function optionalStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return undefined;
-  return value as string[];
-}
-
-export function serializeMountedRelease(raw: unknown): ExportedMountedRelease | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  const out: ExportedMountedRelease = {
-    enabled: o.enabled === true,
-    containerPath: typeof o.containerPath === "string" ? o.containerPath : "",
-  };
-  if (o.buildMode === "prebuilt" || o.buildMode === "server") out.buildMode = o.buildMode;
-  const serviceName = optionalString(o.serviceName);
-  if (serviceName !== undefined) out.serviceName = serviceName;
-  const sourcePath = optionalString(o.sourcePath);
-  if (sourcePath !== undefined) out.sourcePath = sourcePath;
-  const sharedPaths = optionalStringArray(o.sharedPaths);
-  if (sharedPaths !== undefined) out.sharedPaths = sharedPaths;
-  const prepareCommand = optionalString(o.prepareCommand);
-  if (prepareCommand !== undefined) out.prepareCommand = prepareCommand;
-  const builderImage = optionalString(o.builderImage);
-  if (builderImage !== undefined) out.builderImage = builderImage;
-  const builderMemoryMb = optionalNumber(o.builderMemoryMb);
-  if (builderMemoryMb !== undefined) out.builderMemoryMb = builderMemoryMb;
-  const builderCpus = optionalNumber(o.builderCpus);
-  if (builderCpus !== undefined) out.builderCpus = builderCpus;
-  const builderCachePaths = optionalStringArray(o.builderCachePaths);
-  if (builderCachePaths !== undefined) out.builderCachePaths = builderCachePaths;
-  const reloadCommand = optionalString(o.reloadCommand);
-  if (reloadCommand !== undefined) out.reloadCommand = reloadCommand;
-  const healthPath = optionalString(o.healthPath);
-  if (healthPath !== undefined) out.healthPath = healthPath;
-  const healthPort = optionalNumber(o.healthPort);
-  if (healthPort !== undefined) out.healthPort = healthPort;
-  const retain = optionalNumber(o.retain);
-  if (retain !== undefined) out.retain = retain;
-  return out;
 }
 
 export function serializeReleaseSource(raw: unknown): ReleaseSource | null {
@@ -195,17 +142,6 @@ export function serializeProjectConfig(
     routes: routes.map(serializeRouteConfig),
     connections: connections.map(serializeConnectionConfig),
   };
-}
-
-/** True if a serialized object still contains a known secret field name. */
-export function exportContainsSecretKeys(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  if (Array.isArray(value)) return value.some(exportContainsSecretKeys);
-  for (const [key, child] of Object.entries(value)) {
-    if ((SECRET_KEYS as readonly string[]).includes(key)) return true;
-    if (exportContainsSecretKeys(child)) return true;
-  }
-  return false;
 }
 
 export function assertExportSafe(value: unknown): void {

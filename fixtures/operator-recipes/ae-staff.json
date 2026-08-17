@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "name": "AE Staff",
+  "projectHint": "ae-staff",
+  "environment": "production",
+  "service": {
+    "key": "staff",
+    "name": "staff"
+  },
+  "buildMode": "prebuilt",
+  "persistPaths": [
+    "storage"
+  ],
+  "health": {
+    "path": "/up",
+    "port": 8000,
+    "publicHttps": true
+  },
+  "activation": {
+    "strategy": "atomic-current",
+    "reloadCommand": "php artisan optimize:clear",
+    "killDuringStaging": true,
+    "unhealthyRollsBack": true
+  },
+  "monorepoPathPrefixes": [
+    "apps/staff"
+  ],
+  "migrationPolicy": "PHP/Blade code release with compiled assets committed in Git. Rehearse and move Staff separately from Public. Run artisan migrate --force only in a disposable builder, and only when database/migrations or composer.lock under apps/staff changed. Composer vendor is prepared only when apps/staff/composer.lock changes; otherwise reuse the cached layer. A Staff change must never rebuild Public or Mail.",
+  "rollbackPolicy": "If reload or health fails, restore the previous current pointer, reload, and re-check container plus public HTTPS. Do not run down-migrations. Do not rebuild Public or Mail while rolling Staff back.",
+  "mountedRelease": {
+    "enabled": true,
+    "buildMode": "prebuilt",
+    "serviceName": "staff",
+    "sourcePath": "apps/staff",
+    "containerPath": "/var/www/html",
+    "sharedPaths": [
+      "storage"
+    ],
+    "reloadCommand": "php artisan optimize:clear",
+    "healthPath": "/up",
+    "healthPort": 8000,
+    "retain": 5
+  },
+  "planner": {
+    "pathPrefixes": [
+      "apps/staff"
+    ],
+    "lockfiles": [
+      "apps/staff/composer.lock"
+    ],
+    "composerLayerOnLockChange": true,
+    "skipUnrelatedMonorepo": true
+  }
+}

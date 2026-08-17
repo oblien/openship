@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "AE Mail",
+  "projectHint": "ae-mail",
+  "environment": "production",
+  "service": {
+    "key": "mail",
+    "name": "mail"
+  },
+  "buildMode": "image",
+  "persistPaths": [],
+  "health": {
+    "path": "/",
+    "port": 25,
+    "publicHttps": false
+  },
+  "activation": {
+    "strategy": "image-replace",
+    "killDuringStaging": true,
+    "unhealthyRollsBack": true
+  },
+  "monorepoPathPrefixes": [
+    "apps/mail"
+  ],
+  "migrationPolicy": "Workload is an immutable image release, not a mounted code tree. Keep mountedRelease.enabled false. Image or compose changes rebuild the runtime only. Mail-data volumes stay outside this recipe. A Mail change must never deploy Public or Staff code.",
+  "rollbackPolicy": "Roll back by restoring the previous runtime image pointer. Do not flip a mounted current symlink. Unhealthy new image is not left serving.",
+  "mountedRelease": {
+    "enabled": false,
+    "containerPath": "/app"
+  },
+  "planner": {
+    "pathPrefixes": [
+      "apps/mail"
+    ],
+    "lockfiles": [],
+    "composerLayerOnLockChange": false,
+    "skipUnrelatedMonorepo": true
+  }
+}
