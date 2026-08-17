@@ -24,8 +24,6 @@ import {
   resolveProjectTrafficSources,
   fetchMgmt,
 } from "../../lib/project-analytics";
-import { getAdminOblienClient } from "../../lib/oblien-user-client";
-import { cloudClient } from "../../lib/cloud/client";
 import type { RequestContext } from "../../lib/request-context";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -334,20 +332,11 @@ function assertCloudTimeseriesOk(raw: unknown): void {
 }
 
 async function fetchCloudTimeseries(
-  organizationId: string,
-  domain: string,
-  params: { from: number; to: number; interval: "hour" },
+  _organizationId: string,
+  _domain: string,
+  _params: { from: number; to: number; interval: "hour" },
 ): Promise<CloudTimeseriesResponse | null> {
-  // Direct, no caching — always the live source of truth. (Request volume is
-  // controlled on the client; see ServerAnalytics fetch dedup.)
-  const client = getAdminOblienClient();
-  const raw = client
-    ? await client.analytics.timeseries(domain, params)
-    : await cloudClient({ organizationId }).analytics.timeseries(domain, params);
-  // Surface a failed fetch as an error (caller → 502) instead of masking it as
-  // an empty summary; only a genuine no-traffic success falls through to [].
-  assertCloudTimeseriesOk(raw);
-  return { data: extractCloudBuckets(raw) };
+  return null;
 }
 
 export interface AnalyticsSummary {

@@ -6,16 +6,15 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useAuth } from "@/context/AuthContext";
 import { useDeploymentInfo } from "@/hooks/useDeploymentInfo";
 import { SettingsSection } from "./SettingsSection";
-import { UpgradeAuthModal } from "./UpgradeAuthModal";
+import { DesktopControlPlanePanel } from "@/components/desktop-control-plane";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 export function InstanceInfo() {
   const { user } = useAuth();
   const { authMode, deployMode } = usePlatform();
   const { t } = useI18n();
-  const isDesktop = authMode === "none";
+  const isDesktop = deployMode === "desktop";
   const isCloudSaas = deployMode === "cloud";
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   // Running version: the native app version on desktop (from the bridge), else
   // the server release from health/env. Purely informational.
@@ -29,6 +28,8 @@ export function InstanceInfo() {
   const version = (deployMode === "desktop" ? desktopVersion : deployInfo?.version) ?? null;
 
   return (
+    <div className="space-y-6">
+    {isDesktop && <DesktopControlPlanePanel />}
     <SettingsSection
       icon={Info}
       title={t.settings.instance.title}
@@ -67,32 +68,9 @@ export function InstanceInfo() {
               {user?.email || (isDesktop ? t.settings.instance.localUser : "-")}
             </p>
           </div>
-          {/* "Change" only shows in zero-auth — once promoted there's
-              no in-place downgrade. Cloud-mode swaps go through the
-              cloud-disconnect flow elsewhere. */}
-          {isDesktop && (
-            <button
-              type="button"
-              onClick={() => setUpgradeOpen(true)}
-              className="shrink-0 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-            >
-              {t.settings.instance.change}
-            </button>
-          )}
         </div>
       </div>
-
-      <UpgradeAuthModal
-        open={upgradeOpen}
-        onClose={() => setUpgradeOpen(false)}
-        onSuccess={() => {
-          // Hard reload so PlatformContext re-reads the new authMode
-          // and AuthContext picks up the updated user row.
-          if (typeof window !== "undefined") {
-            window.location.reload();
-          }
-        }}
-      />
     </SettingsSection>
+    </div>
   );
 }

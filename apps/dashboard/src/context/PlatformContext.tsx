@@ -1,7 +1,13 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback } from "react";
-import { CLOUD_DASHBOARD_URL, CLOUD_API_URL } from "@repo/core";
+import {
+  CLOUD_DASHBOARD_URL,
+  CLOUD_API_URL,
+  featuresForEdition,
+  type Edition,
+  type EditionFeatures,
+} from "@repo/core";
 import {
   clearProductViewCookie,
   type ProductView,
@@ -16,6 +22,10 @@ const DEFAULT_CLOUD_DOMAIN = "opsh.io";
 interface PlatformContextValue {
   selfHosted: boolean;
   deployMode: string;
+  edition: Edition;
+  features: EditionFeatures;
+  /** Operator edition: hide Cloud/billing/waitlist surfaces. */
+  localOnly: boolean;
   /** OpenShip runs ON a server (self-hosted, non-desktop): the host is itself a
    *  deployable target, auto-registered as the isLocal "This Server". */
   isServerHost: boolean;
@@ -48,13 +58,13 @@ interface PlatformContextValue {
 
 const PlatformContext = createContext<PlatformContextValue | undefined>(undefined);
 
-type CloudConnectionPlatformState = Pick<PlatformContextValue, "selfHosted" | "deployMode">;
+type CloudConnectionPlatformState = Pick<PlatformContextValue, "selfHosted" | "features">;
 
 export function canUseCloudConnection({
   selfHosted,
-  deployMode,
+  features,
 }: CloudConnectionPlatformState) {
-  return selfHosted || deployMode === "desktop";
+  return selfHosted && features.cloudConnect;
 }
 
 export function usePlatform() {
@@ -69,6 +79,8 @@ interface PlatformProviderProps {
   children: React.ReactNode;
   selfHosted?: boolean;
   deployMode?: string;
+  edition?: Edition;
+  features?: EditionFeatures;
   isServerHost?: boolean;
   hostControlEnabled?: boolean;
   authMode?: "cloud" | "local" | "none";
@@ -92,6 +104,8 @@ export function PlatformProvider({
   children,
   selfHosted: initialSelfHosted = true,
   deployMode = "docker",
+  edition: editionProp,
+  features: featuresProp,
   isServerHost = false,
   hostControlEnabled = false,
   authMode = "local",
@@ -103,6 +117,9 @@ export function PlatformProvider({
   hostDomain,
 }: PlatformProviderProps) {
   const [selfHosted, setSelfHostedState] = useState(initialSelfHosted);
+  const edition: Edition = editionProp ?? "operator";
+  const features = featuresProp ?? featuresForEdition(edition);
+  const localOnly = edition === "operator";
   const baseDomain = hostDomain || DEFAULT_CLOUD_DOMAIN;
   const setSelfHosted = useCallback((v: boolean) => setSelfHostedState(v), []);
 
@@ -131,6 +148,9 @@ export function PlatformProvider({
       value={{
         selfHosted,
         deployMode,
+        edition,
+        features,
+        localOnly,
         isServerHost,
         hostControlEnabled,
         authMode,

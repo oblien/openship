@@ -96,18 +96,6 @@ async function collectDeliverySecrets(
     }
   }
 
-  // Cloud projects this box forwards for: the binding holds the same per-project
-  // secret (preserved across promote), so a forged push still rejects.
-  const bindings = await repos.cloudWebhookBinding.findByRepo(owner, repo).catch(() => []);
-  for (const b of bindings) {
-    if (!b.webhookSecret) continue;
-    try {
-      secrets.add(decrypt(b.webhookSecret));
-    } catch {
-      // try the next binding, then env fallback
-    }
-  }
-
   return [...secrets];
 }
 

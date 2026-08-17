@@ -51,7 +51,7 @@ import type { NginxProviderOptions } from "./infra/nginx";
  *   "selfhosted" → Docker or Bare runtime + Nginx routing/SSL. System checks.
  *   "desktop"    → Bare runtime, no routing/SSL, no system setup.
  */
-export type PlatformTarget = "cloud" | "selfhosted" | "desktop";
+export type PlatformTarget = "selfhosted" | "desktop";
 
 export interface PlatformConfig {
   /** Deployment target */
@@ -86,7 +86,7 @@ export interface PlatformConfig {
    * Currently scoped to static-page creation on shared zones like
    * `opsh.io`; same shape as analytics/edge-proxy proxy pattern.
    */
-  cloudAdminProxy?: import("./runtime/cloud").CloudAdminProxy;
+  cloudAdminProxy?: never;
   /**
    * Allow a CLOUD-target runtime to do work on the machine this API process runs on
    * (the "build locally, upload the output" strategy, and the local-source Dockerfile
@@ -227,44 +227,12 @@ export async function sharedMountExecutor(target: {
  */
 export async function createPlatform(config: PlatformConfig): Promise<Platform> {
   switch (config.target) {
-    case "cloud":
-      return createCloudPlatform(config);
     case "desktop":
       return createDesktopPlatform(config);
     case "selfhosted":
     default:
       return createSelfHostedPlatform(config);
   }
-}
-
-async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
-  const { Oblien } = await import("oblien");
-  const { CloudRuntime } = await import("./runtime/cloud");
-  const { CloudInfraProvider } = await import("./infra/cloud");
-
-  // Single Oblien client - either from token or master creds
-  const client = config.cloudToken
-    ? new Oblien({ token: config.cloudToken })
-    : new Oblien({
-        clientId: config.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
-        clientSecret: config.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
-      });
-
-  const infra = new CloudInfraProvider(client);
-
-  return {
-    target: "cloud",
-    runtime: new CloudRuntime(client, {
-      adminProxy: config.cloudAdminProxy,
-      allowHostBuild: config.allowHostBuild,
-    }),
-    routing: infra,
-    ssl: infra,
-    system: null,
-    executor: null,
-    // The workload runs in Oblien's infrastructure, never on this box.
-    localHost: false,
-  };
 }
 
 async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> {

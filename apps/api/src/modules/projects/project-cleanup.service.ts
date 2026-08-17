@@ -21,12 +21,21 @@ import {
   resolveDeploymentPlatform,
   type DeploymentMeta,
 } from "../../lib/deployment-runtime";
-import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
 import { computeCleanupKeepSet } from "./cleanup-keep-set";
 import { buildServiceRouteDomain } from "../../lib/routing-domains";
 import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { resolveLiveServiceState, type LiveMatchKind } from "../services/live-state";
+import { mountedReleaseConfig, mountedReleaseHostRoot } from "../deployments/mounted-release.config";
+import {
+  cleanupUsesRemoveImage,
+  isFilesystemArtifactRef,
+  isMountedReleaseRow,
+  isProtectedMountedReleaseFilesystem,
+  isSingleReleaseTree,
+  mountedReleaseTreeRef,
+  releaseDirFor,
+} from "../deployments/release-artifact";
 
 /** Identity keys a DELETE may act on: each one proves the container is this
  *  project's. Deliberately excludes `compose` (see ResolveLiveStateInput.tiers). */
@@ -199,6 +208,17 @@ export async function collectProjectManifest(
   const { rows: allDeps } = await repos.deployment.listByProject(project.id, { perPage: 1000 });
   const seenImages = new Set<string>();
 
+  const pushImageOrTree = (ref: string | null | undefined, runtime: RuntimeAdapter, label: string) => {
+    if (!ref || seenImages.has(ref)) return;
+    seenImages.add(ref);
+    if (isFilesystemArtifactRef(ref)) {
+      resources.push({ type: "artifact", ref, label, runtime });
+      return;
+    }
+    if (!(runtime instanceof DockerRuntime)) return;
+    resources.push({ type: "image", ref, label, runtime });
+  };
+
   for (const dep of allDeps) {
     // Fast-fail: if this deployment targets a server that's UNREACHABLE right
     // now, do NOT resolve/exec against it — that's the source of the ~81s
@@ -279,15 +299,7 @@ export async function collectProjectManifest(
       // These are the REAL images for a multi-service deployment — dep.imageRef
       // is only the "compose" sentinel — so without this they leak on project
       // deletion. Deduped via the shared seenImages set. Docker only.
-      if (sd.imageRef && !seenImages.has(sd.imageRef) && runtime instanceof DockerRuntime) {
-        seenImages.add(sd.imageRef);
-        resources.push({
-          type: "image",
-          ref: sd.imageRef,
-          label: `service image ${sd.imageRef.slice(0, 24)}`,
-          runtime,
-        });
-      }
+      pushImageOrTree(sd.imageRef, runtime, `service image ${(sd.imageRef ?? "").slice(0, 24)}`);
     }
 
     // Main deployment container - same order.
@@ -296,16 +308,9 @@ export async function collectProjectManifest(
       pushContainer(dep.containerId, runtime, "deployment container");
     }
 
-    // Docker images (deduplicated)
-    if (dep.imageRef && !seenImages.has(dep.imageRef) && runtime instanceof DockerRuntime) {
-      seenImages.add(dep.imageRef);
-      resources.push({
-        type: "image",
-        ref: dep.imageRef,
-        label: `image ${dep.imageRef.slice(0, 24)}`,
-        runtime,
-      });
-    }
+    pushImageOrTree(dep.imageRef, runtime, `image ${(dep.imageRef ?? "").slice(0, 24)}`);
+    const tree = mountedReleaseTreeRef(dep);
+    if (tree) pushImageOrTree(tree, runtime, `release tree ${tree.slice(0, 40)}`);
 
     // Bare runtime artifacts (release dirs stored as containerId paths)
     if (dep.containerId?.includes("/") && !(runtime instanceof DockerRuntime)) {
@@ -326,6 +331,17 @@ export async function collectProjectManifest(
   const sweepRuntimes = new Set<DockerRuntime>(dockerRuntimes);
   const localRuntime = platform().runtime;
   if (localRuntime instanceof DockerRuntime) sweepRuntimes.add(localRuntime);
+
+  const releaseRoot =
+    mountedReleaseConfig(project) || allDeps.some((dep) => isMountedReleaseRow(dep))
+      ? mountedReleaseHostRoot(project.id)
+      : null;
+  if (releaseRoot) {
+    const runtimeForRoot = [...dockerRuntimes][0] ?? localRuntime;
+    if (runtimeForRoot) {
+      pushImageOrTree(releaseRoot, runtimeForRoot, `mounted release root ${releaseRoot}`);
+    }
+  }
   for (const docker of sweepRuntimes) {
     if (!docker.supports("projectContainerSweep") || !docker.listProjectContainerIds) continue;
     const ids = await withTimeout(
@@ -403,74 +419,6 @@ export async function collectProjectManifest(
         label: `orphan image ${ref.slice(0, 24)}`,
         runtime: docker,
       });
-    }
-  }
-
-  // ── Cloud workspace (the canonical Oblien binding) ────────────────
-  // `project.cloudWorkspaceId` is the CURRENT workspace this project
-  // deploys to. Deployment rows may reference OLD workspaces (re-provisioned)
-  // or none at all (provision succeeded but no deploy row reached ready),
-  // and the per-deployment runtime resolution above may have been skipped
-  // (server gone). Enumerate it explicitly so deleting the project always
-  // tears the workspace down on Oblien — fixes "deleted locally but still
-  // live on Openship Cloud". De-duped against any deployment container that
-  // already covers it.
-  if (project.cloudWorkspaceId && !seenContainers.has(project.cloudWorkspaceId)) {
-    try {
-      // BOUNDED: this resolution mints a cloud token (cloudFetch, no native
-      // timeout). Without withTimeout a cloud-side hang would stall manifest
-      // collection while the teardown holds the deletion lock — the same hang
-      // class the SSH paths above are bounded against.
-      const { platform: cloudPlatform } = await withTimeout(
-        resolveDeploymentPlatform(
-          { deployTarget: "cloud", workspaceId: project.cloudWorkspaceId },
-          { organizationId: project.organizationId },
-        ),
-        INSPECT_TIMEOUT_MS,
-        `resolve cloud workspace ${project.cloudWorkspaceId}`,
-      );
-      // Guard against a non-cloud base resolving to local/server (a pure
-      // self-hosted project never has a cloud workspace anyway).
-      if (cloudPlatform.runtime.name === "cloud") {
-        seenContainers.add(project.cloudWorkspaceId);
-        resources.push({
-          type: "cloud_workspace",
-          ref: project.cloudWorkspaceId,
-          label: `cloud workspace ${project.cloudWorkspaceId}`,
-          runtime: cloudPlatform.runtime,
-        });
-      } else {
-        // Don't silently drop it — an orphaned workspace should be visible.
-        console.warn(
-          `[cleanup] cloud workspace ${project.cloudWorkspaceId} resolved to non-cloud runtime "${cloudPlatform.runtime.name}" — skipped`,
-        );
-      }
-    } catch (err) {
-      // Two very different failures land here — distinguish them like the
-      // gone-server branch above:
-      //   • PERMANENT (org has no Openship Cloud link → owner unlinked/never
-      //     linked): we can never reach this workspace from here, so blocking
-      //     the delete forever helps nobody. Skip + warn so the project stays
-      //     deletable (the workspace may remain on Oblien; re-link to clean it).
-      //   • TRANSIENT (link exists but cloud/token-mint is down, or we timed
-      //     out above): mark unreachable so the atomicity gate KEEPS the row and
-      //     the user retries once Cloud is reachable. On an inconclusive link
-      //     check we also keep (never orphan on uncertainty).
-      const linkUserId = await resolveOrgCloudUserId(project.organizationId).catch(
-        () => "unknown" as const,
-      );
-      if (linkUserId === null) {
-        console.warn(
-          `[cleanup] cloud workspace ${project.cloudWorkspaceId} skipped — org ${project.organizationId} has no Openship Cloud link (${safeErrorMessage(err)}); workspace may remain on Oblien. Re-link to clean it up.`,
-        );
-      } else {
-        resources.push({
-          type: "unreachable",
-          ref: project.cloudWorkspaceId,
-          label: `cloud workspace ${project.cloudWorkspaceId} (cloud unreachable)`,
-          runtime: null,
-        });
-      }
     }
   }
 
@@ -555,7 +503,7 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
   // an unreachable server would otherwise resolve to `false` and hide the
   // record-only ("Remove from Openship") delete — exactly when it's most useful.
   // The loop below only strengthens (never un-sets) this.
-  let selfHosted = !project.cloudWorkspaceId;
+  let selfHosted = true;
 
   // Map service id → its container id (most recent deployment wins, which
   // matches the order rows come back in). We resolve volumes per container.
@@ -749,22 +697,35 @@ export async function collectDeploymentManifest(
     });
   }
 
-  // Images - main deployment imageRef + per-service imageRef. Only Docker
-  // images need explicit removal (bare runtime artifacts are tied to the
-  // container destroy path). Deduplicated across the manifest.
-  if (runtime instanceof DockerRuntime) {
-    const seenImages = new Set<string>();
-    const pushImage = (ref: string | null | undefined, label: string) => {
-      if (!ref || seenImages.has(ref)) return;
-      seenImages.add(ref);
-      if (skip("image", ref)) return;
-      resources.push({ type: "image", ref, label, runtime });
-    };
-    pushImage(dep.imageRef, `image ${(dep.imageRef ?? "").slice(0, 24)}`);
-    for (const sd of serviceRows) {
-      pushImage(sd.imageRef, `service image ${(sd.imageRef ?? "").slice(0, 24)}`);
+  const seenImages = new Set<string>();
+  const pushImageOrTree = (ref: string | null | undefined, label: string) => {
+    if (!ref || seenImages.has(ref)) return;
+    if (isFilesystemArtifactRef(ref) && isProtectedMountedReleaseFilesystem(ref)) return;
+    if (
+      isFilesystemArtifactRef(ref) &&
+      ref.includes("/mounted-releases/") &&
+      !isSingleReleaseTree(ref, dep.id)
+    ) {
+      return;
     }
+    seenImages.add(ref);
+    if (isFilesystemArtifactRef(ref)) {
+      if (skip("container", ref)) return;
+      resources.push({ type: "artifact", ref, label, runtime });
+      return;
+    }
+    if (!(runtime instanceof DockerRuntime)) return;
+    if (skip("image", ref)) return;
+    resources.push({ type: "image", ref, label, runtime });
+  };
+  pushImageOrTree(dep.imageRef, `image ${(dep.imageRef ?? "").slice(0, 24)}`);
+  for (const sd of serviceRows) {
+    pushImageOrTree(sd.imageRef, `service image ${(sd.imageRef ?? "").slice(0, 24)}`);
   }
+  const tree =
+    mountedReleaseTreeRef(dep) ??
+    (isMountedReleaseRow(dep) ? releaseDirFor(dep.projectId, dep.id) : null);
+  if (tree) pushImageOrTree(tree, `release tree ${tree.slice(0, 40)}`);
 
   return { projectId: dep.projectId, organizationId: dep.organizationId, resources };
 }
@@ -907,7 +868,12 @@ async function destroyResourceOnce(
       throw new Error(`${resource.label}: unreachable — project kept, retry once reachable`);
     }
     case "image": {
-      if (!resource.runtime || !(resource.runtime instanceof DockerRuntime)) return;
+      if (!resource.runtime) return;
+      if (!cleanupUsesRemoveImage(resource.type, resource.ref)) {
+        await resource.runtime.destroy(resource.ref);
+        return;
+      }
+      if (!(resource.runtime instanceof DockerRuntime)) return;
       await resource.runtime.removeImage(resource.ref);
       return;
     }

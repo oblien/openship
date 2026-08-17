@@ -25,7 +25,6 @@ import type {
 import {
   BareRuntime,
   BuildLogger,
-  CloudRuntime,
   DockerRuntime,
   STATIC_RELEASE_BASE,
   sharedMountExecutor,
@@ -181,7 +180,11 @@ export async function resolveServicePipelineMode(
  */
 export async function kickoffBuild(project: Project, dep: Deployment): Promise<string | null> {
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
-  if (!buildSession) return null;
+  if (!buildSession) {
+    const { releaseDeployLease } = await import("./deploy-lease");
+    await releaseDeployLease(project.id, dep.id);
+    return null;
+  }
 
   // Flip the row to "building" SYNCHRONOUSLY before firing the async
   // `executeBuildAndDeploy`. Without this, callers that chain
@@ -200,6 +203,7 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
   //      stream - which is what users were seeing.
   //
   // [1]: apps/dashboard/src/app/(dashboard)/(deployment)/build/[id]/page.tsx
+  try {
   await repos.deployment.updateStatus(dep.id, "building").catch(() => {
     // Best effort - if this fails, the worst case is the old race
     // returns. executeBuildAndDeploy will set the status itself when it
@@ -209,18 +213,32 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
 
   sessionManager.createSession(dep.id, project.id);
 
-  void executeBuildAndDeploy(project, dep, buildSession.id).catch(async (err) => {
-    console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
-    // executeBuildAndDeploy's inner try/catch only arms onFailure() after
-    // snapshot + route state resolve. Anything that throws before that
-    // (missing snapshot, route lookup crash, runtime resolution) would
-    // otherwise leave the row queued forever - this guarantees the
-    // deployment is marked failed and the SSE stream gets a closing
-    // message.
-    await markDeploymentFailedFromOutside(dep.id, err);
-  });
+  const { beginDeployRun, endDeployRun, releaseDeployLease } = await import("./deploy-lease");
+  beginDeployRun(dep.id);
+
+  void executeBuildAndDeploy(project, dep, buildSession.id)
+    .catch(async (err) => {
+      console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
+      // executeBuildAndDeploy's inner try/catch only arms onFailure() after
+      // snapshot + route state resolve. Anything that throws before that
+      // (missing snapshot, route lookup crash, runtime resolution) would
+      // otherwise leave the row queued forever - this guarantees the
+      // deployment is marked failed and the SSE stream gets a closing
+      // message.
+      await markDeploymentFailedFromOutside(dep.id, err);
+    })
+    .finally(() => {
+      endDeployRun(dep.id);
+      void releaseDeployLease(project.id, dep.id);
+    });
 
   return buildSession.id;
+  } catch (err) {
+    const { endDeployRun, releaseDeployLease } = await import("./deploy-lease");
+    endDeployRun(dep.id);
+    await releaseDeployLease(project.id, dep.id);
+    throw err;
+  }
 }
 
 /**
@@ -827,7 +845,6 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // a pre-provisioned workspace — adopt it and skip clone + transfer. (The
     // self-hosted upload path instead rides snapshot.localPath, handled above.)
     if (snapshot.uploadWorkspaceId) {
-      buildConfig.cloudWorkspaceId = snapshot.uploadWorkspaceId;
       buildConfig.sourceStaged = snapshot.sourceStaged ?? true;
     }
     // When opted in, the runtime clones on the remote build host instead of the
@@ -897,6 +914,18 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     }
 
     if (useServicePipeline && isMultiServiceRuntime(runtime)) {
+      let composeBuildRuntime = runtime;
+      if (
+        buildStrategy === "local" &&
+        resolved.effectiveTarget === "server" &&
+        runtime instanceof DockerRuntime
+      ) {
+        composeBuildRuntime = await DockerRuntime.create({ transport: "socket" });
+        transports.add(composeBuildRuntime);
+        logger.log(
+          "→ Build location: this machine; completed images will be streamed to the deploy server.\n",
+        );
+      }
       // snapshot.composeServices is a DeployableService[] - mixed compose +
       // monorepo. syncFromCompose strictly owns compose rows; passing a
       // monorepo entry in causes a ghost compose-kind row to be inserted
@@ -925,6 +954,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           project,
           dep,
           runtime,
+          buildRuntime: composeBuildRuntime,
           routing,
           ssl,
           system,
@@ -1063,7 +1093,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
 
     // deployMode is derived from runtime.name === "cloud", so the cast is sound.
     if (deployRouting.deployMode === "static-edge") {
-      await executeStaticEdgeDeploy(phase, runtime as CloudRuntime);
+      throw new Error("Static edge (Cloud) deploy is not available on Operator.");
     } else {
       await executeServerDeploy(phase);
     }
@@ -1124,55 +1154,11 @@ interface DeployPhaseInputs {
   transports: Set<RuntimeAdapter>;
 }
 
-/** Static edge deploy via CloudRuntime (Oblien Pages). */
 async function executeStaticEdgeDeploy(
-  phase: DeployPhaseInputs,
-  runtime: CloudRuntime,
+  _phase: DeployPhaseInputs,
+  _runtime: unknown,
 ): Promise<void> {
-  const { ctx, project, dep, snapshot, buildSessionId, routeState, buildResult, envMap, prodResources, logger } = phase;
-
-  logger.step("deploy", "running", "Deploying to edge (static)...");
-
-  const staticResult = await runtime.deployStatic({
-    deploymentId: dep.id,
-    projectId: project.id,
-    buildSessionId,
-    imageRef: buildResult.imageRef!,
-    environment: dep.environment,
-    port: snapshot.port,
-    startCommand: snapshot.startCommand,
-    stack: snapshot.framework,
-    envVars: envMap,
-    resources: prodResources,
-    restartPolicy: "no",
-    runtimeName: project.slug ?? project.id,
-    publicEndpoints: routeState.publicEndpoints,
-    outputDirectory: resolveStaticOutputDirectory(
-      snapshot.outputDirectory,
-      routeState.publicEndpoints[0]?.targetPath,
-    ),
-    projectName: project.name,
-  });
-
-  if (staticResult.status === "failed" || !staticResult.containerId) {
-    logger.step("deploy", "failed", "Static deploy failed");
-    await onFailure(ctx, "Failed to deploy static site to edge", buildResult.durationMs);
-    return;
-  }
-
-  logger.step("deploy", "completed", "Deployed to edge successfully");
-
-  await onSuccess(ctx, {
-    containerId: staticResult.containerId,
-    url: staticResult.url,
-    durationMs: buildResult.durationMs ?? 0,
-  });
-
-  // Archive the previous-active deployment for rollback — same helper the
-  // server + compose paths use. (Previously hand-copied here WITHOUT the
-  // helper's best-effort try/catch, so an archive failure threw and failed the
-  // deploy; the shared helper keeps it best-effort per its contract.)
-  await archivePreviousDeployment(dep, project, logger);
+  throw new Error("Static edge (Cloud) deploy is not available on Operator.");
 }
 
 /**

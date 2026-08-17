@@ -107,7 +107,6 @@ describe("buildOptimisticDomainRow", () => {
     expect(row.isPrimary).toBe(true);
   });
 });
-
 describe("findLoadedDomainRow", () => {
   const rows = [
     { id: "dom_1", hostname: "api.example.com" },
@@ -137,4 +136,3 @@ describe("findLoadedDomainRow", () => {
     expect(findLoadedDomainRow(undefined, "api.example.com")).toBeUndefined();
   });
 });
-

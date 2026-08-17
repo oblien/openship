@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/components/i18n-provider";
+import { useOnboardingContext } from "../../providers";
 import type { StepProps } from "./step-props";
 
 /* ── Inline SVGs matching old design exactly ── */
@@ -26,6 +27,8 @@ const SwapIcon = () => (
 
 export function ChooseStep({ onUpdate, onNext }: StepProps) {
   const { t } = useI18n();
+  const { deployMode, features } = useOnboardingContext();
+  const localOnly = deployMode === "desktop" || !features.cloudConnect;
   return (
     <div className="ob-screen ob-screen--choose">
       <div className="ob-screen-inner ob-screen-inner--wide">
@@ -37,8 +40,8 @@ export function ChooseStep({ onUpdate, onNext }: StepProps) {
         </div>
 
         <div className="ob-cards-row ob-anim-fade ob-anim-d2">
-          {/* Cloud card */}
-          <div className="ob-choice-card">
+          {/* Cloud is a hosted-product choice, never a Desktop identity mode. */}
+          {!localOnly && <div className="ob-choice-card">
             <div className="ob-card-icon"><CloudIcon /></div>
             <h3>{t.onboarding.choose.cloud.name}</h3>
             <p className="ob-card-desc">
@@ -56,14 +59,14 @@ export function ChooseStep({ onUpdate, onNext }: StepProps) {
               {t.onboarding.choose.cloud.cta}
               <ArrowIcon />
             </button>
-          </div>
+          </div>}
 
           {/* Vertical divider */}
-          <div className="ob-cards-divider">
+          {!localOnly && <div className="ob-cards-divider">
             <div className="ob-divider-line" />
             <span className="ob-divider-label">{t.onboarding.choose.or}</span>
             <div className="ob-divider-line" />
-          </div>
+          </div>}
 
           {/* Self-host card */}
           <div className="ob-choice-card">

@@ -8,7 +8,7 @@ export interface RestorePlanUI {
   /** `redeploy-pinned` = instant (reuses the retained image), `unit-swap` =
    *  instant (restarts the retained unit), `rebuild` = builds the commit again,
    *  `ineligible` = can't be restored (already active, not successful). */
-  mode: "redeploy-pinned" | "unit-swap" | "rebuild" | "ineligible";
+  mode: "redeploy-pinned" | "unit-swap" | "release-swap" | "rebuild" | "ineligible";
   /** True when the restore clones the repo (so it needs GitHub access). */
   needsRepository: boolean;
   /** Services that must rebuild because their image aged out. */
@@ -206,6 +206,42 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
 /* ------------------------------------------------------------------ */
 
 export const deployApi = {
+  get: (id: string) => api.get<{ data: any }>(`deployments/${id}`),
+
+  /** Fast lane: update mounted code and reload the existing runtime. */
+  mountedRelease: (projectId: string, opts?: { commitSha?: string }) =>
+    api.post<{ data: { deployment_id: string; deployment: any } }>(
+      endpoints.deploy.mountedRelease,
+      { projectId, ...opts },
+    ),
+
+  uploadArtifact: (projectId: string, file: File, opts?: { sha256: string; commitSha?: string }) => {
+    const body = new FormData();
+    body.append("projectId", projectId);
+    body.append("sha256", opts?.sha256 ?? "");
+    if (opts?.commitSha) body.append("commitSha", opts.commitSha);
+    body.append("file", file);
+    return api.post<{ data: { deployment_id: string; deployment: any; sha256: string } }>(
+      endpoints.deploy.artifact,
+      body,
+      { timeout: 300_000 },
+    );
+  },
+
+  planRelease: (projectId: string, body?: { changedPaths?: string[] | null; forceAll?: boolean }) =>
+    api.post<{
+      data: {
+        action: "skip" | "deploy_code" | "refresh_config" | "rebuild_runtime";
+        reason: string;
+        serviceIds?: string[];
+      };
+    }>(endpoints.deploy.plan, { projectId, ...body }),
+
+  rollbackLatest: (projectId: string, deploymentId?: string) =>
+    api.post<{ operationId: string }>(endpoints.deploy.rollbackLatest, {
+      projectId,
+      deploymentId,
+    }),
   /** List all deployments for the authenticated user */
   getAll: (opts?: { page?: number; perPage?: number }) =>
     api.get<any>(endpoints.deploy.list, { params: opts }),

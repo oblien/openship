@@ -327,9 +327,7 @@ export const project = pgTable(
      * is available either way — images are retained by the rollback-window keep
      * set regardless of this setting.
      */
-    defaultRollbackStrategy: text("default_rollback_strategy")
-      .notNull()
-      .default("git"),
+    defaultRollbackStrategy: text("default_rollback_strategy").notNull().default("git"),
     /**
      * One-shot "rebuild every service on the next deploy regardless of
      * what changed" flag. Used by the dashboard's force-deploy toggle.
@@ -393,37 +391,17 @@ export const project = pgTable(
     cloudArchiveStrategy: text("cloud_archive_strategy").notNull().default("inplace"),
 
     /**
-     * Oblien workspace id this project deploys to — the LINK, not a
-     * mirror. Like `gitOwner/gitRepo` points at GitHub, this points
-     * at Oblien. Runtime state, files, logs all live on Oblien.
-     *
-     * `cloudWorkspaceId IS NOT NULL` is the canonical "this is a
-     * cloud project" test. The per-deployment `deployTarget` already
-     * lives in `deployment.meta` (snapshot per deploy); duplicating
-     * it on the project row creates two sources of truth for the
-     * same fact. Set by build.service after a successful workspace
-     * provision. Unique-per-project (the partial unique index below
-     * enforces that we never bind two local projects to the same
-     * workspace).
-     */
-    cloudWorkspaceId: text("cloud_workspace_id"),
-
-    /**
-     * Durable owner of the SERVER this project deploys to (self-hosted). The
+     * Durable owner of the SERVER this project deploys to. The
      * per-deployment `deployment.meta.serverId` is a volatile snapshot that a
      * fresh/partial redeploy could fail to re-derive, which then let the deploy
      * fall back to "local" and null the project's verified custom-domain ports —
      * the Access-URL-regressed-to-localhost bug. This column is the single
      * durable binding; `resolveSnapshotTarget` reads it first and re-stamps meta.
      *
-     * Unlike a `deployTarget` column (which we deliberately do NOT add — see
-     * cloudWorkspaceId above), this doesn't duplicate a source of truth: the
-     * effective target is DERIVED — `cloudWorkspaceId ? "cloud" : serverId ?
-     * "server" : "local"`. That derivation lives in ONE function,
-     * `deriveProjectDeployTarget` in @repo/core, so this rule has a single
-     * implementation to change; read surfaces reach it through
-     * `projectService.resolveProjectDeployTarget`. ON DELETE SET NULL so removing a
-     * server unbinds its projects rather than cascade-deleting them.
+     * The effective target is DERIVED — `serverId ? "server" : "local"`.
+     * That derivation lives in `deriveProjectDeployTarget` in @repo/core.
+     * ON DELETE SET NULL so removing a server unbinds its projects rather
+     * than cascade-deleting them.
      */
     serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
 
@@ -441,6 +419,32 @@ export const project = pgTable(
     /* ── State ──────────────────────────────────────────────────────────── */
     /** Currently active deployment ID */
     activeDeploymentId: text("active_deployment_id"),
+    /** Active mounted-code release; separate from the runtime container/image pointer. */
+    activeReleaseDeploymentId: text("active_release_deployment_id"),
+    /** Deployment currently allowed to do host work. Cancel must not clear this. */
+    deployLeaseId: text("deploy_lease_id"),
+    mountedRelease: jsonb("mounted_release").$type<{
+      enabled: boolean;
+      buildMode?: "prebuilt" | "server" | "upload";
+      runtimeInstall?: "image" | "dockerfile" | "compose";
+      preset?: string;
+      serviceId?: string;
+      serviceName?: string;
+      sourcePath?: string;
+      containerPath: string;
+      sharedPaths?: string[];
+      prepareCommand?: string;
+      builderImage?: string;
+      builderMemoryMb?: number;
+      builderCpus?: number;
+      builderCachePaths?: string[];
+      reloadCommand?: string;
+      healthPath?: string;
+      healthPort?: number;
+      retain?: number;
+      uid?: number;
+      gid?: number;
+    } | null>(),
     /** GitHub webhook ID registered on the repo */
     webhookId: integer("webhook_id"),
     /** Domain hostname used for receiving GitHub webhooks (null = edge relay or none) */
@@ -501,13 +505,6 @@ export const project = pgTable(
     uniqueIndex("uq_project_app_environment_slug_active")
       .on(table.groupId, table.environmentSlug)
       .where(sql`${table.deletedAt} IS NULL`),
-    // One local project per Oblien workspace. Two project rows pointing
-    // at the same workspace would race on deploy + confuse drift
-    // detection. Partial unique — NULL allowed (self-hosted projects
-    // or pre-first-deploy), but any non-null value is unique.
-    uniqueIndex("uq_project_cloud_workspace_id")
-      .on(table.cloudWorkspaceId)
-      .where(sql`${table.cloudWorkspaceId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
   ],
 );
 
@@ -518,30 +515,34 @@ export const project = pgTable(
  * Values are encrypted at rest (application-level encryption).
  * Each var can be scoped to specific environments.
  */
-export const envVar = pgTable("env_var", {
-  id: text("id").primaryKey(), // "env_..."
-  projectId: text("project_id")
-    .notNull()
-    .references(() => project.id, { onDelete: "cascade" }),
-  /** Service ID for service-scoped env vars (null = project-level / all services) */
-  serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
+export const envVar = pgTable(
+  "env_var",
+  {
+    id: text("id").primaryKey(), // "env_..."
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    /** Service ID for service-scoped env vars (null = project-level / all services) */
+    serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
 
-  /** Variable key (e.g. "DATABASE_URL") */
-  key: text("key").notNull(),
-  /** Encrypted value */
-  value: text("value").notNull(),
-  /** Environments where this var is active */
-  environment: text("environment").notNull().default("production"), // production | preview | development
+    /** Variable key (e.g. "DATABASE_URL") */
+    key: text("key").notNull(),
+    /** Encrypted value */
+    value: text("value").notNull(),
+    /** Environments where this var is active */
+    environment: text("environment").notNull().default("production"), // production | preview | development
 
-  /** Preview-only: don't include in production builds */
-  isSecret: boolean("is_secret").notNull().default(false),
+    /** Preview-only: don't include in production builds */
+    isSecret: boolean("is_secret").notNull().default(false),
 
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (t) => [
-  // Env resolution runs on every build — covers project + service +
-  // environment filtering used by buildPipelineEnv.
-  index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
-  // Backup / restore reads all vars for a project.
-  index("idx_env_var_project").on(t.projectId),
-]);
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Env resolution runs on every build — covers project + service +
+    // environment filtering used by buildPipelineEnv.
+    index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
+    // Backup / restore reads all vars for a project.
+    index("idx_env_var_project").on(t.projectId),
+  ],
+);

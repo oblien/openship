@@ -29,6 +29,7 @@ import { ResourcePicker } from "@/components/permissions/ResourcePicker";
 import { useModal } from "@/context/ModalContext";
 import { serversNewlyGranted, hasNewServerGrant, confirmServerAccess } from "@/components/permissions/confirm-server-access";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { usePlatform } from "@/context/PlatformContext";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
 type MailSource = "platform" | "cloud";
@@ -58,11 +59,14 @@ export function InviteMemberInline({
 }) {
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
+  const { features } = usePlatform();
   const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<MemberRole>("member");
   const [grants, setGrants] = useState<PickerGrant[]>([]);
-  const [mailSource, setMailSource] = useState<MailSource>(initialMailSource);
+  const [mailSource, setMailSource] = useState<MailSource>(
+    features.cloudConnect ? initialMailSource : "platform",
+  );
   const [savingMailSource, setSavingMailSource] = useState(false);
   const [inviting, setInviting] = useState(false);
 
@@ -184,7 +188,7 @@ export function InviteMemberInline({
           {selfHosted && (
             <div className="space-y-2 pt-3">
               <label className="text-sm font-medium text-foreground block">{t.settings.inviteMember.sendVia}</label>
-              <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/50 bg-muted/25 p-1">
+              <div className={`grid gap-1 rounded-xl border border-border/50 bg-muted/25 p-1 ${features.cloudConnect ? "grid-cols-2" : "grid-cols-1"}`}>
                 <SendSegment
                   icon={Send}
                   label={t.settings.inviteMember.yourMailServer}
@@ -200,6 +204,7 @@ export function InviteMemberInline({
                   disabled={inviting || savingMailSource}
                   onClick={() => changeMailSource("platform")}
                 />
+                {features.cloudConnect && (
                 <SendSegment
                   icon={Cloud}
                   label={t.settings.inviteMember.openshipCloud}
@@ -209,6 +214,7 @@ export function InviteMemberInline({
                   disabled={inviting || savingMailSource}
                   onClick={() => changeMailSource("cloud")}
                 />
+                )}
               </div>
 
               {mailSource === "platform" && emailDeliverable === false && (

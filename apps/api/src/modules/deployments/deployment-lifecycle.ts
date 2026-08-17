@@ -738,33 +738,7 @@ export async function onSuccess(
       ),
     );
 
-  // deployment.meta is the per-deploy historical snapshot; the
-  // project column is the CURRENT cloud binding. Drift detection
-  // reads the project column.
-  //
-  // EXCEPT for a local-orchestrated cloud deploy (self-hosted instance,
-  // deployTarget=cloud + buildStrategy=local): the project MUST stay
-  // local-canonical. `cloud_workspace_id` is the "this project lives on
-  // the SaaS — proxy everything to it" primitive; setting it here would
-  // flip the project to a SaaS proxy and break the next local build. The
-  // workspace is still tracked per-deploy via `deployment.containerId`
-  // (used for retirement of the previous workspace on redeploy), so
-  // skipping the project column here loses nothing for this mode.
-  const isLocalOrchestratedCloud =
-    !env.CLOUD_MODE &&
-    mergedMeta?.deployTarget === "cloud" &&
-    mergedMeta?.buildStrategy === "local";
-  if (mergedMeta?.workspaceId && !isLocalOrchestratedCloud) {
-    await repos.project
-      .setCloudWorkspaceId(project.id, mergedMeta.workspaceId)
-      .catch((err) =>
-        console.warn(
-          `[deployment-lifecycle] setCloudWorkspaceId failed project=${project.id} workspace=${mergedMeta.workspaceId}: ${safeErrorMessage(err)}`,
-        ),
-      );
-  }
-
-  // Persist the DURABLE server binding (self-hosted). deployment.meta.serverId is
+  // Persist the DURABLE server binding. deployment.meta.serverId is
   // the per-deploy snapshot; project.server_id is the current owner that
   // resolveSnapshotTarget reads FIRST, so a later fresh/partial redeploy stays on
   // the server instead of falling back to "local". Best-effort + idempotent; we

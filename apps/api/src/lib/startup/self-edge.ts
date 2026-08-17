@@ -157,6 +157,8 @@ async function runEnsure(
     await deliverEdge();
     const { status } = await foreignProxyOnEdge(executor);
     const scan = await importSites(executor, status);
+    const { reservedOperatorDomains, trackImportedDomain } = await import("../imported-domain-track");
+    const reservedDomains = await reservedOperatorDomains().catch(() => [] as string[]);
     const res = await runEdgeTakeover(
       executor,
       {
@@ -165,6 +167,17 @@ async function runEnsure(
         acmeEmail: env.OPENSHIP_ACME_EMAIL,
         nginx: resolveAcmeProviderOptions(),
         extraRoutes: [],
+        reservedDomains,
+        onRegistered: async (info) => {
+          try {
+            await trackImportedDomain(info);
+          } catch (err) {
+            log(
+              `${info.domain}: could not enroll for certificate renewal (${(err as Error).message})`,
+              "warn",
+            );
+          }
+        },
         // Pin the edge the takeover installs. `setDefaultEdgeImage` at boot already
         // covers this, but state it here too: this is the ONE caller of
         // runEdgeTakeover, so leaving its `edgeImage` unset is what made the option

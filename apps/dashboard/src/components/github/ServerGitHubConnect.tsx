@@ -19,7 +19,7 @@ import {
 } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 
 /**
  * The ONE per-server GitHub connect model (self-hosted). How THIS server
@@ -115,9 +115,19 @@ export function ServerGitHubConnect({
     if (!pat.trim()) return;
     setBusy(true);
     try {
-      await serverGithubApi.setToken(serverId, pat.trim());
+      const saved = await serverGithubApi.setToken(serverId, pat.trim());
       setPat("");
-      showToast(g.savedToast, "success", g.title);
+      if (saved.cloneTest && !saved.cloneTest.ok) {
+        showToast(saved.cloneTest.message, "error", g.title);
+      } else {
+        showToast(
+          saved.cloneTest?.repo
+            ? interpolate(g.cloneTestOk, { repo: saved.cloneTest.repo })
+            : g.savedToast,
+          "success",
+          g.title,
+        );
+      }
       await load();
       onConnected?.();
     } catch (err) {

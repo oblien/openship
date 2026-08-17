@@ -91,11 +91,42 @@
   height: 2rem;
 }
 
-/* Everything between nav and the end zone is pure drag surface. */
+/* Everything between nav and the end zone is drag surface, with an optional
+ * control-plane chip that stays clickable (no-drag). */
 .app-titlebar-drag {
   flex: 1;
   min-width: 0;
   align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-titlebar-instance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding-inline: 0.5rem;
+  -webkit-app-region: no-drag;
+  user-select: text;
+}
+.app-titlebar-instance-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  opacity: 0.45;
+}
+.app-titlebar-instance-warn {
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--st-warning-solid, #d97706) 18%, transparent);
+  color: var(--st-warning-solid, #d97706);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.45rem;
 }
 
 .app-titlebar-end {

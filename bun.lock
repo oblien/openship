@@ -15,9 +15,21 @@
         "typescript": "^5.9.3",
       },
     },
+    "apps/agent": {
+      "name": "@repo/agent",
+      "version": "0.6.6",
+      "dependencies": {
+        "@repo/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^22.13.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.0.18",
+      },
+    },
     "apps/api": {
       "name": "@repo/api",
-      "version": "0.6.1",
+      "version": "0.6.6",
       "dependencies": {
         "@better-auth/drizzle-adapter": "^1.5.4",
         "@hono/node-server": "^1.19.15",
@@ -51,7 +63,7 @@
     },
     "apps/cli": {
       "name": "openship",
-      "version": "0.6.1",
+      "version": "0.6.6",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -117,7 +129,7 @@
     },
     "apps/desktop": {
       "name": "@repo/desktop",
-      "version": "0.6.1",
+      "version": "0.6.6",
       "dependencies": {
         "@repo/core": "workspace:*",
         "@repo/onboarding": "workspace:*",
@@ -140,11 +152,11 @@
     },
     "apps/email": {
       "name": "@repo/email",
-      "version": "0.6.1",
+      "version": "0.6.6",
     },
     "apps/web": {
       "name": "@repo/web",
-      "version": "0.6.1",
+      "version": "0.6.6",
       "dependencies": {
         "@repo/core": "workspace:*",
         "@repo/ui": "workspace:*",
@@ -841,6 +853,8 @@
     "@reforged/maker-types": ["@reforged/maker-types@1.0.1", "", {}, "sha512-gjLr6O7rS8XzjbqCEo/BxT4mrevWuYKdMzc0uO6dNcWDXinfhJVHT3aEZmtMyn1nx+ZbffzpCFPgGNYZtwGXxQ=="],
 
     "@repo/adapters": ["@repo/adapters@workspace:packages/adapters"],
+
+    "@repo/agent": ["@repo/agent@workspace:apps/agent"],
 
     "@repo/api": ["@repo/api@workspace:apps/api"],
 

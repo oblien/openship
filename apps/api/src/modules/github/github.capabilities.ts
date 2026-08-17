@@ -22,6 +22,7 @@
  * value. Nothing secret crosses this boundary.
  */
 
+import { resolveEditionState } from "@repo/core";
 import { env } from "../../config/env";
 import type { RequestContext } from "../../lib/request-context";
 import { CHAINS, type GitHubTokenSource } from "./github.token";
@@ -87,7 +88,8 @@ export async function resolveGitHubCapabilities(
   ctx: RequestContext,
   opts: { cloudConnected: boolean },
 ): Promise<GitHubCapabilities> {
-  const platform: "saas" | "selfhosted" = env.CLOUD_MODE ? "saas" : "selfhosted";
+  const { features } = resolveEditionState();
+  const platform: "saas" | "selfhosted" = "selfhosted";
   const desktop = env.DEPLOY_MODE === "desktop";
 
   // The instance-wide git identity (device sign-in / pasted token) occupies ONE
@@ -127,10 +129,9 @@ export async function resolveGitHubCapabilities(
     },
     {
       kind: "app",
-      available: chainHas(platform, "app-installation"),
-      configured: opts.cloudConnected,
-      // Only self-hosted proxies through the cloud; on the SaaS the App is native.
-      requiresCloud: platform === "selfhosted",
+      available: false,
+      configured: false,
+      unavailableReason: "The hosted GitHub App is not available on Operator.",
     },
     {
       kind: "ssh-key",

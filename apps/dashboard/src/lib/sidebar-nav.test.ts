@@ -56,7 +56,7 @@ const ALL_TABS: readonly string[] = MAIL_TAB_KEYS;
 
 describe("getNavSections (the platform rail)", () => {
   it("is unchanged by mail mode: main + infrastructure + settings", () => {
-    const s = getNavSections(false, true);
+    const s = getNavSections(true, { billing: false });
     expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings"]);
     expect(keysOf(find(s, "main"))).toEqual([
       "home",
@@ -69,33 +69,17 @@ describe("getNavSections (the platform rail)", () => {
     expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "audit"]);
   });
 
-  it("adds Billing on the SaaS and drops the infrastructure section there", () => {
-    const s = getNavSections(true, false);
-    expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing", "audit"]);
-    // Empty sections are filtered out, not rendered as a bare heading.
-    expect(find(s, "infrastructure")).toBeUndefined();
-  });
-
-  it("keeps Billing at the very bottom, below Servers, on a cloud-linked self-hosted box", () => {
-    // isSaaS goes true the moment a self-hosted install links a cloud account, which
-    // is the case that put Billing above Servers. The invariant is that Billing does not
-    // OUTRANK the infrastructure — every host row must precede it.
-    const s = getNavSections(true, true);
+  it("never includes billing — Operator has no billing nav", () => {
+    const s = getNavSections(true, { billing: true });
     const keys = s.flatMap((x) => keysOf(x));
-    for (const host of ["servers", "emails", "jobs"]) {
-      expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
-    }
-    // Only the audit log follows it. That is a read-only review surface, consulted after
-    // the fact and never on the way to a task, so it is deliberately the last row — it
-    // cannot outrank anything by sitting there.
+    expect(keys).not.toContain("billing");
     expect(keys.at(-1)).toBe("audit");
-    expect(keys.indexOf("billing")).toBe(keys.length - 2);
   });
 
   it("keeps /emails in the platform rail", () => {
     // Mail mode promotes the tabs, it doesn't move the page: an operator on the
     // full platform still reaches mail the way they always did.
-    expect(keysOf(find(getNavSections(false, true), "infrastructure"))).toContain("emails");
+    expect(keysOf(find(getNavSections(true, { billing: false }), "infrastructure"))).toContain("emails");
   });
 });
 
@@ -374,8 +358,8 @@ describe("every rail label resolves in the English dictionary", () => {
     item.labelSource === "mailTab" ? tabs[item.key] : nav[item.key];
 
   const all: NavSection[] = [
-    ...getNavSections(true, true),
-    ...getNavSections(false, false),
+    ...getNavSections(true, { billing: true }),
+    ...getNavSections(false, { billing: false }),
     ...mailAt(),
     ...mailAt({ loaded: false }),
     ...mailAt({ serverCount: 0, activeServerId: null }),

@@ -36,7 +36,15 @@ let cached: LocalUser | null = null;
 export async function ensureLocalUser(): Promise<LocalUser> {
   if (cached) return cached;
 
-  const existing = await repos.user.findByEmail(LOCAL_EMAIL);
+  // Desktop used to create a second, empty personal workspace whenever the
+  // original synthetic user had been renamed by an account/cloud flow. That
+  // made two Electron profiles backed by the same database appear to contain
+  // different projects. A desktop control plane has one operator: adopt the
+  // existing founding admin before provisioning a new synthetic identity.
+  const existing =
+    (await repos.user.findProjectWorkspaceOwner()) ??
+    (await repos.user.findFoundingAdmin()) ??
+    (await repos.user.findByEmail(LOCAL_EMAIL));
   const id = existing?.id ?? randomUUID();
 
   // provisionUser is idempotent: it upserts the user row AND the
@@ -46,11 +54,11 @@ export async function ensureLocalUser(): Promise<LocalUser> {
   // owner of `${name}'s workspace` — no separate insertion needed.
   await provisionUser({
     id,
-    name: "Local User",
-    email: LOCAL_EMAIL,
+    name: existing?.name ?? "Local User",
+    email: existing?.email ?? LOCAL_EMAIL,
     emailVerified: true,
     role: "admin",
-    autoProvisioned: true,
+    autoProvisioned: existing?.autoProvisioned ?? true,
   });
 
   const row = await repos.user.findById(id);

@@ -28,7 +28,6 @@ const WEBMAIL_PROJECT = {
   appTemplateId: "webmail",
   framework: "docker-compose",
   serverId: "srv1",
-  cloudWorkspaceId: null,
   activeDeploymentId: null,
 };
 
@@ -40,7 +39,6 @@ const LEGACY_PROJECT = {
   appTemplateId: "mail-webmail",
   framework: "webmail",
   serverId: "srv1",
-  cloudWorkspaceId: null,
   activeDeploymentId: "dep-old",
 };
 

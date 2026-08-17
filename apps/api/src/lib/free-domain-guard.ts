@@ -1,46 +1,23 @@
-import type { CloudCapability } from "@repo/core";
-import { requireCloud } from "./cloud/require-cloud";
-import { assertFreeSubdomainQuota } from "./plan-guard";
+import { ValidationError } from "@repo/core";
 import {
-  cloudManagedHostnameOf,
   storedPublicEndpointsNeedCloud,
   type StoredPublicEndpoint,
 } from "./public-endpoints";
 
 /**
- * Atomic gate for free (*.opsh.io) routes. A free managed subdomain only
- * resolves behind the Openship Cloud edge, so persisting one on a self-hosted
- * instance that isn't connected to Cloud creates a dead "Pending" route that
- * can never register. Call this at every user-facing write that can INTRODUCE a
- * free endpoint (route add/edit), BEFORE the DB write, so the write is atomic —
- * either the route can work or nothing is persisted.
- *
- * The client mirrors this exact rule via `useCloud().requireCloud`, so UI and
- * API can't disagree. This reuses the two single sources: the
- * `storedPublicEndpointsNeedCloud` predicate (only gate when a free route is in
- * play) and the shared `requireCloud` guard (SaaS-exempt + one connection-truth
- * + one error shape).
+ * Operator write gate for public endpoints. Custom domains and HOST_DOMAIN
+ * subdomains are allowed. `*.opsh.io` (Openship Cloud managed hostnames)
+ * are rejected — there is no Cloud edge in Operator.
  */
 export async function assertFreeEndpointsAllowed(
-  organizationId: string,
+  _organizationId: string,
   endpoints:
     | Array<Pick<StoredPublicEndpoint, "domainType" | "domain" | "customDomain">>
     | null
     | undefined,
-  capability: CloudCapability = "managed-project-domain",
 ): Promise<void> {
-  // Only custom domains in play → no Cloud edge needed.
   if (!storedPublicEndpointsNeedCloud(endpoints)) return;
-  await requireCloud(capability, { organizationId });
-
-  // Then the plan allowance. Order matters: "connect Cloud" must be answered
-  // before "you've used all 10", because an unconnected instance can't have a
-  // free route at all and the connect prompt is the actionable one. A quota
-  // refusal is deliberately NOT a CloudRequiredError — that error's copy sends
-  // the user to a connect-Cloud flow which, for an already-connected org, would
-  // succeed and change nothing.
-  await assertFreeSubdomainQuota(
-    organizationId,
-    (endpoints ?? []).map(cloudManagedHostnameOf),
+  throw new ValidationError(
+    "*.opsh.io subdomains are not available. Use a custom domain or this instance's host domain.",
   );
 }

@@ -166,11 +166,6 @@ export default function MailWizardPage() {
       showToast(m.hostsRequired, "error");
       return;
     }
-    // Deploying the webmail TO Openship Cloud needs a cloud connection — same
-    // gate as the deploy wizard / app install, so the pick isn't a dead end.
-    if (destination?.deployTarget === "cloud" && !cloudConnected) {
-      if (!(await requireCloud("cloud-deploy-target"))) return;
-    }
     setBusy(true);
     try {
       const res = await mailApi.webmail.deployExternal({

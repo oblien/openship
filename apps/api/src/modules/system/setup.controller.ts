@@ -14,6 +14,7 @@ import type { Context } from "hono";
 import { setSignedCookie } from "hono/cookie";
 import { db, repos, schema, eq, and } from "@repo/db";
 import { generateId, normalizeRollbackWindow, safeErrorMessage } from "@repo/core";
+import { resolveInvitationMailSource } from "../../lib/invitation-mail-source";
 import { hashPassword } from "better-auth/crypto";
 import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
 import { env } from "../../config";
@@ -252,7 +253,7 @@ export async function getSetup(c: Context) {
     tunnelProvider: settings?.tunnelProvider ?? null,
     defaultBuildMode: settings?.defaultBuildMode ?? "auto",
     defaultRollbackWindow: normalizeRollbackWindow(settings?.defaultRollbackWindow),
-    invitationMailSource: settings?.invitationMailSource ?? "platform",
+    invitationMailSource: resolveInvitationMailSource(settings?.invitationMailSource),
     teamMode: settings?.teamMode ?? "single_user",
     migrationTargetUrl: settings?.migrationTargetUrl ?? null,
     migratedAt: settings?.migratedAt?.toISOString() ?? null,
@@ -322,7 +323,7 @@ export async function updateSettings(c: Context) {
         400,
       );
     }
-    patch.invitationMailSource = raw;
+    patch.invitationMailSource = resolveInvitationMailSource(raw);
   }
   if (body.autoUpdateInfra !== undefined) patch.autoUpdateInfra = Boolean(body.autoUpdateInfra);
   if (body.autoScanInfra !== undefined) patch.autoScanInfra = Boolean(body.autoScanInfra);

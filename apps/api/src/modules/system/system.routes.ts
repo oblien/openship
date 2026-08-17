@@ -16,6 +16,7 @@ import { internalAuth, requireInstanceAdmin } from "../../middleware";
 import { AgentExecBody } from "../../lib/agent-exec.schema";
 import { rateLimiterFor } from "../../middleware/rate-limiter";
 import { secureRouter } from "../../lib/secure-router";
+import { env } from "../../config/env";
 import * as fs from "./filesystem.controller";
 import * as setup from "./setup.controller";
 import * as selfApp from "./self-app.controller";
@@ -55,8 +56,10 @@ r.public("post", "/invite-signup", { reason: "Self-host invited signup — autho
  * After bootstrap-admin, the wizard registers Openship itself as an app
  * (shows under Apps) + attaches its domain — free (Oblien edge) or custom
  * (OpenResty + Let's Encrypt, streamed). All internal-token gated. */
-r.public("get", "/cloud-status", { reason: "CLI setup — read Openship Cloud connection state; internal-token gated" }, internalAuth, selfApp.cloudStatus);
-r.public("post", "/cloud-connect", { reason: "CLI setup — finalize Openship Cloud PKCE handshake for a free domain; internal-token gated" }, internalAuth, selfApp.cloudConnect);
+if (env.DEPLOY_MODE !== "desktop") {
+  r.public("get", "/cloud-status", { reason: "CLI setup — read Openship Cloud connection state; internal-token gated" }, internalAuth, selfApp.cloudStatus);
+  r.public("post", "/cloud-connect", { reason: "CLI setup — finalize Openship Cloud PKCE handshake for a free domain; internal-token gated" }, internalAuth, selfApp.cloudConnect);
+}
 r.public("post", "/self-register", { reason: "CLI setup — register the control plane as an app + attach its domain; internal-token gated" }, internalAuth, selfApp.selfRegister);
 r.public("get", "/self-register/stream", { reason: "CLI setup — SSE progress for custom-domain edge provisioning; internal-token gated" }, internalAuth, selfApp.selfRegisterStream);
 r.public("post", "/self-edge/preflight", { reason: "CLI setup — detect what owns ports 80/443 before installing OpenResty; internal-token gated" }, internalAuth, selfApp.selfEdgePreflight);
@@ -134,7 +137,19 @@ r.public(
 /* ── Servers CRUD ───────────────────────────────────────────────── */
 r.get("/servers", { tag: "server:list" }, serversCtrl.listServers);
 r.get("/servers/:id", { tag: "server:read" }, serversCtrl.getServer);
-r.get("/servers/:id/reachability", { tag: "server:read" }, serversCtrl.probeReachability);
+r.get(
+  "/servers/:id/reachability",
+  {
+    tag: "server:read",
+    mcp: {
+      name: "servers.health",
+      timeoutMs: 8_000,
+      description:
+        "Probe whether this server is reachable (SSH/host channel). Returns reachable, code, and a hint when it is not.",
+    },
+  },
+  serversCtrl.probeReachability,
+);
 // Create has no :id in the URL — org scope comes from the request and the
 // row is created in the active org. collection:true keeps the permission
 // middleware from demanding a (nonexistent) :id param.
@@ -249,7 +264,6 @@ r.get("/browse", { tag: "settings:read" }, fs.browse);
 
 /* ── Team-mode migration ─────────────────────────────────────────
  * Path A (single_user → self_hosted_remote): preflight + start
- * Path B (single_user → cloud_hosted):       start-cloud
  * Path C (single_user → tunneled):           start-tunnel
  */
 // requireInstanceAdmin() is mandatory: migrating the instance exports every
@@ -257,11 +271,12 @@ r.get("/browse", { tag: "settings:read" }, fs.browse);
 // The `settings:*` tag admits plain members (lib/permission.ts discards the
 // action half), and requireRole("owner") would NOT help — see the middleware's
 // header for why an org-scoped role can't gate a whole-instance operation.
-r.post("/migration/preflight", { tag: "settings:admin" }, requireInstanceAdmin(), migration.preflight);
-r.post("/migration/start", { tag: "settings:admin" }, requireInstanceAdmin(), migration.start);
-r.post("/migration/start-cloud", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startCloud);
-r.post("/migration/start-tunnel", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startTunnel);
-r.post("/migration/switch-back", { tag: "settings:admin" }, requireInstanceAdmin(), migration.switchBack);
+if (env.DEPLOY_MODE !== "desktop") {
+  r.post("/migration/preflight", { tag: "settings:admin" }, requireInstanceAdmin(), migration.preflight);
+  r.post("/migration/start", { tag: "settings:admin" }, requireInstanceAdmin(), migration.start);
+  r.post("/migration/start-tunnel", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startTunnel);
+  r.post("/migration/switch-back", { tag: "settings:admin" }, requireInstanceAdmin(), migration.switchBack);
+}
 
 /* ── Whole-instance data export / import (instance-admin only) ─────
  * This moves the entire database including every org's data, and export
@@ -283,4 +298,3 @@ r.use(
 r.post("/data-transfer/import", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.importInstanceHandler);
 
 export const systemRoutes = r.hono;
-

@@ -68,8 +68,6 @@ const PROJECT_FIELDS_NOT_CLONED = [
   // Routing that names specific hostnames. The copy starts with no domains (the confirm dialog
   // promises exactly this) — the originals stay with the project still serving them.
   "compositeRoutes",
-  // A server-hosted copy is not a cloud project, whatever the source was.
-  "cloudWorkspaceId",
 ] as const;
 
 /**

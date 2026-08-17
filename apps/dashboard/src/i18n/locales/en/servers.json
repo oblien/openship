@@ -30,7 +30,9 @@
     "deployKeyActive": "Deploy-key mode active — keys are created on first deploy.",
     "deployKeysRegistered": "deploy keys registered",
     "disconnect": "Disconnect",
-    "disconnectedToast": "GitHub disconnected"
+    "disconnectedToast": "GitHub disconnected",
+    "cloneTestOk": "Server can clone {repo}.",
+    "cloneTestFailed": "Clone test: {message}"
   },
   "list": {
     "title": "Servers",

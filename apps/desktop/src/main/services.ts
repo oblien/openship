@@ -21,6 +21,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
 import { resolvePortPair } from "@repo/core/ports";
+import {
+  DesktopControlPlaneState,
+  type ControlPlaneSnapshot,
+} from "./control-plane-state";
 
 // The API + dashboard both run under Electron's OWN Node (utilityProcess.fork —
 // no Dock tile), NOT a bun binary. `NodeService` is either that utility process
@@ -54,37 +58,31 @@ function killService(p: NodeService, signal?: NodeJS.Signals): void {
 // before services start); overwritten with the dynamic ports actually bound.
 let localApiUrl = LOCAL_API_URL;
 let localDashboardUrl = LOCAL_DASHBOARD_URL;
+let plane: DesktopControlPlaneState | null = null;
+/** Next start should try the original preferred pair (repair), not the last bind. */
+let rebindToPreferred = false;
 
 /** The API origin the app is actually using (dynamic once packaged). */
 export const getLocalApiUrl = (): string => localApiUrl;
 /** The dashboard origin the app is actually using (dynamic once packaged). */
 export const getLocalDashboardUrl = (): string => localDashboardUrl;
 
-/**
- * Persist the chosen ports so a restart reuses the SAME origin. Session cookies
- * are bound to `localhost:<port>`, so a stable port is what keeps the user
- * logged in across restarts; we only pick a different port if the stored one
- * is taken.
- */
-function portsFile(): string {
-  return join(app.getPath("userData"), "ports.json");
+export function initControlPlane(userDataPath: string): DesktopControlPlaneState {
+  plane = new DesktopControlPlaneState(userDataPath);
+  return plane;
 }
-function loadStoredPorts(): { api?: number; dashboard?: number } {
-  try {
-    return JSON.parse(readFileSync(portsFile(), "utf-8")) as {
-      api?: number;
-      dashboard?: number;
-    };
-  } catch {
-    return {};
-  }
+
+export function getControlPlane(): DesktopControlPlaneState | null {
+  return plane;
 }
-function saveStoredPorts(api: number, dashboard: number): void {
-  try {
-    writeFileSync(portsFile(), JSON.stringify({ api, dashboard }));
-  } catch {
-    // best-effort
-  }
+
+export function getControlPlaneSnapshot(): ControlPlaneSnapshot {
+  const state = plane ?? initControlPlane(app.getPath("userData"));
+  return state.snapshot({ api: localApiUrl, dashboard: localDashboardUrl });
+}
+
+export function requestPortRebind(): void {
+  rebindToPreferred = true;
 }
 
 /** Bundled payload lives under Resources/ (see forge.config.js extraResource). */
@@ -281,10 +279,11 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   const { apiEntry, migrationsDir, pgliteDir, geoipDb, engineDir, dashboardDir, nodeModulesDir } =
     resourcePaths();
   const userData = app.getPath("userData");
-  const dataDir = join(userData, "data");
-  mkdirSync(dataDir, { recursive: true });
+  const state = plane ?? initControlPlane(userData);
+  mkdirSync(state.dataPath, { recursive: true });
 
   if (!existsSync(apiEntry)) {
+    started = false;
     throw new Error(`Bundled API entry missing at ${apiEntry}`);
   }
 
@@ -294,7 +293,11 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   // races away (another process grabs it first) the child exits early and we
   // just try fresh ports.
   const MAX_ATTEMPTS = 3;
-  const stored = loadStoredPorts();
+  // Repair prefers the original pair so a fallback port can move back; a
+  // normal start reuses last run's bind (stable cookies + OAuth audience).
+  const stored = rebindToPreferred ? state.preferredPorts() : state.loadStoredPorts();
+  rebindToPreferred = false;
+  try {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     // Attempt 1 reuses last run's ports when it can (stable origin → the session
     // survives a restart); a retry means a chosen port raced away, so it asks for
@@ -310,9 +313,8 @@ export async function startLocalServices(internalToken: string): Promise<void> {
     // NO `defaults` on purpose: a packaged app must never land on 4000/3001, where
     // a dev server lives. Without them the resolver hands out ephemeral ports,
     // which is what this launcher has always wanted.
-    const { api: apiPort, dashboard: dashPort } = await resolvePortPair(
-      attempt === 1 ? { stored } : {},
-    );
+    const resolved = await resolvePortPair(attempt === 1 ? { stored } : {});
+    const { api: apiPort, dashboard: dashPort, switched, preferred } = resolved;
 
     // Use 127.0.0.1, not localhost: the API/dashboard bind IPv4 loopback only
     // (OPENSHIP_API_HOST=127.0.0.1), and clients that resolve `localhost` → ::1
@@ -355,7 +357,7 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       // so a 0.0.0.0 listener would let any host on the LAN reach the local
       // session-mint endpoints. Mirrors the CLI `up` path (OPENSHIP_API_HOST).
       OPENSHIP_API_HOST: "127.0.0.1",
-      PGLITE_DATA_DIR: dataDir,
+      PGLITE_DATA_DIR: state.dataPath,
       OPENSHIP_MIGRATIONS_DIR: migrationsDir,
       OPENSHIP_PGLITE_ASSETS_DIR: pgliteDir,
       // Point geo-ip.ts straight at the staged mmdb. Only set when the file is
@@ -384,7 +386,10 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       // fallback (#119). URL-construction ONLY — it must NOT be OPENSHIP_PUBLIC_URL,
       // which would trip zeroAuthAllowed's "publicly-served" rejection and kill
       // the desktop's zero-auth session.
+      // Always the origin actually bound this launch — never the previous
+      // ports.json value. A silent stale audience breaks MCP OAuth.
       OPENSHIP_ADVERTISED_ORIGIN: apiOrigin,
+      OPENSHIP_CONTROL_PLANE_FINGERPRINT: state.fingerprint,
       BETTER_AUTH_SECRET: authSecret,
       INTERNAL_TOKEN: internalToken,
       // The API bundle keeps ssh2/dockerode EXTERNAL (bundling them mangles
@@ -412,13 +417,29 @@ export async function startLocalServices(internalToken: string): Promise<void> {
     if (apiReady && dashProc) {
       localApiUrl = apiOrigin;
       localDashboardUrl = dashOrigin;
-      saveStoredPorts(apiPort, dashPort); // reuse next launch → session persists
+      state.recordResolved({
+        api: apiPort,
+        dashboard: dashPort,
+        advertisedOrigin: apiOrigin,
+        preferred,
+        switched,
+      });
+      if (switched.api) {
+        console.warn(
+          `[openship] API port moved ${preferred.api} → ${apiPort}; advertised MCP origin is now ${apiOrigin}`,
+        );
+      }
+      if (switched.dashboard) {
+        console.warn(
+          `[openship] dashboard port moved ${preferred.dashboard} → ${dashPort}`,
+        );
+      }
       console.log(`[openship] services ready — api=${apiOrigin} dashboard=${dashOrigin}`);
       return;
     }
 
     // A child failed to come up (port race / crash). Tear down and retry.
-    stopLocalServices();
+    teardownChildren();
     if (attempt === MAX_ATTEMPTS) {
       throw new Error(
         `Local services failed to start after ${MAX_ATTEMPTS} attempts ` +
@@ -426,10 +447,26 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       );
     }
   }
+  } catch (err) {
+    teardownChildren();
+    started = false;
+    throw err;
+  }
+}
+
+/** Restart the bundled API + dashboard. `rebind` retries the preferred ports. */
+export async function restartLocalServices(
+  internalToken: string,
+  opts: { rebind?: boolean } = {},
+): Promise<void> {
+  await stopLocalServicesAndWait();
+  started = false;
+  if (opts.rebind) requestPortRebind();
+  await startLocalServices(internalToken);
 }
 
 /** Kill both children. Safe to call anytime / repeatedly. */
-export function stopLocalServices(): void {
+function teardownChildren(): void {
   // API: SIGTERM then a SIGKILL fallback. The SIGKILL escalation only applies to
   // the ChildProcess fallback — a utilityProcess exposes just kill(), and
   // Electron hard-kills it on app quit anyway.
@@ -455,6 +492,12 @@ export function stopLocalServices(): void {
   }
   apiProc = null;
   dashboardProc = null;
+}
+
+/** Kill both children. Safe to call anytime / repeatedly. */
+export function stopLocalServices(): void {
+  teardownChildren();
+  started = false;
 }
 
 /**
@@ -515,4 +558,5 @@ export async function stopLocalServicesAndWait(graceMs = 8000): Promise<void> {
   }
 
   apiProc = null;
+  started = false;
 }

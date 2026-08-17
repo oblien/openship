@@ -10,6 +10,23 @@
  *   const { runtime, routing, ssl, system } = getPlatform();
  */
 
+export {
+  artifactManifestPath,
+  extractArtifact,
+  getTarCreateArgs,
+  getTarCreateEnv,
+  gitTrackedFiles,
+  hashLockfiles,
+  hasZstdBinary,
+  listArtifactFiles,
+  LOCKFILE_BASENAMES,
+  packDeterministicArtifact,
+  prepareSourceTarArgs,
+  sha256File,
+  type ArtifactManifest,
+  type ArtifactSource,
+} from "./archive";
+
 // ─── Shared types ────────────────────────────────────────────────────────────
 export type {
   ResourceConfig,
@@ -48,9 +65,14 @@ export {
   assembleGitClone,
   injectGitToken,
   toGitHubSshUrl,
+  gitCloneArgv,
+  gitCloneShellPreview,
+  gitTokenExtraHeader,
+  httpsUrlWithoutUserinfo,
   type GitCloneAuth,
   type GitCloneInvocation,
 } from "./runtime/git-clone";
+export { materializeGitTokenAuth, shellGitSshWriter } from "./runtime/git-ssh-material";
 
 export { BUILD_STEPS } from "./types";
 
@@ -93,12 +115,6 @@ export { BareRuntime, STATIC_RELEASE_BASE, type BareRuntimeOptions } from "./run
 // location with the SAME confinement rules the deploy used (no reimplementation:
 // this function is what rejects absolute paths and `../` traversal out of the root).
 export { resolveServedStaticPath, resolveStaticOutputPath } from "./runtime/stack-output";
-export {
-  CloudRuntime,
-  type CloudAdminProxy,
-  PAGE_CONTAINER_PREFIX,
-  provisionCloudWorkspace,
-} from "./runtime/cloud";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
@@ -152,11 +168,6 @@ export {
   type CompiledRedirect,
   type CompiledHeaderRule,
 } from "./infra/vercel-routing";
-export {
-  compileRoutingToOblien,
-  type OblienRoutingContext,
-} from "./runtime/oblien-routing";
-export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
 export {
   ACME_HTTP01_PORT,
@@ -277,6 +288,7 @@ export {
   type EdgeTakeoverOptions,
   type EdgeTakeoverResult,
   type RegisterImportedSitesOptions,
+  type ImportedSiteRegistration,
 } from "./system/proxy/takeover";
 export {
   recoverInterruptedTakeover,

@@ -1,10 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   sq,
   injectGitToken,
   toGitHubSshUrl,
   assembleGitClone,
+  gitCloneArgv,
+  gitCloneShellPreview,
+  gitTokenExtraHeader,
+  httpsUrlWithoutUserinfo,
 } from "./git-clone";
+import { localGitSshWriter, materializeGitTokenAuth } from "./git-ssh-material";
 
 describe("sq (POSIX single-quote)", () => {
   it("wraps a plain value", () => {
@@ -56,25 +64,89 @@ describe("toGitHubSshUrl", () => {
 });
 
 describe("assembleGitClone — token / public mode", () => {
+  const token = "tok123";
   const inv = assembleGitClone({
     repoUrl: "https://github.com/owner/repo.git",
-    gitToken: "tok123",
+    gitToken: token,
   });
-  it("injects the token into the clone URL", () => {
-    expect(inv.cloneUrl).toBe(
-      "https://x-access-token:tok123@github.com/owner/repo.git",
-    );
+  it("keeps the plain URL — token is NOT in the clone URL", () => {
+    expect(inv.cloneUrl).toBe("https://github.com/owner/repo.git");
+    expect(inv.cloneUrl).not.toContain(token);
+    expect(inv.cloneUrl).not.toContain("x-access-token");
   });
-  it("fails fast instead of prompting (no interactive credential path)", () => {
-    expect(inv.gitEnv).toContain("GIT_TERMINAL_PROMPT=0");
-    expect(inv.gitEnv).toContain("GIT_ASKPASS=/bin/echo");
+  it("puts the token in extraheader env, not argv", () => {
+    expect(inv.env.GIT_CONFIG_KEY_0).toBe("http.extraHeader");
+    expect(inv.env.GIT_CONFIG_VALUE_0).toBe(gitTokenExtraHeader(token));
+    expect(inv.gitEnv).toContain("http.extraHeader");
+    expect(gitCloneArgv(inv).join(" ")).not.toContain(token);
+    expect(gitCloneArgv(inv).join(" ")).not.toContain("x-access-token");
   });
-  it("disables the host credential helper so the URL token is the only auth", () => {
+  it("disables the host credential helper so extraheader is the only auth", () => {
     expect(inv.credFlag).toBe("-c credential.helper=");
   });
   it("public repo (no token) clones the plain URL", () => {
     const pub = assembleGitClone({ repoUrl: "https://github.com/owner/repo.git" });
     expect(pub.cloneUrl).toBe("https://github.com/owner/repo.git");
+  });
+  it("strips a token already embedded in the URL so it cannot leak via argv", () => {
+    const dirty = assembleGitClone({
+      repoUrl: "https://x-access-token:preloaded@github.com/owner/repo.git",
+      gitToken: token,
+    });
+    expect(dirty.cloneUrl).toBe("https://github.com/owner/repo.git");
+    expect(gitCloneArgv(dirty).join(" ")).not.toContain("preloaded");
+    expect(httpsUrlWithoutUserinfo("https://x-access-token:preloaded@github.com/o/r.git")).toBe(
+      "https://github.com/o/r.git",
+    );
+  });
+});
+
+describe("assembleGitClone — token must not appear in process arguments", () => {
+  it("never puts the token in cloneUrl, credArgs, or credFlag", () => {
+    const token = "ghs_thisMustNotLeak";
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/owner/repo.git",
+      gitToken: token,
+    });
+    const argv = gitCloneArgv(inv);
+    expect(argv).not.toEqual(expect.arrayContaining([expect.stringContaining(token)]));
+    expect(inv.cloneUrl).not.toContain(token);
+    expect(inv.credFlag).not.toContain(token);
+    expect(inv.credArgs.join(" ")).not.toContain(token);
+    // Local spawn env map is allowed — extraheader lives there.
+    expect(inv.env.GIT_CONFIG_VALUE_0).toContain(
+      Buffer.from(`x-access-token:${token}`, "utf8").toString("base64"),
+    );
+  });
+
+  it("remote file mode keeps the token and its base64 out of the shell command", () => {
+    const token = "ghs_thisMustNotLeak";
+    const b64 = Buffer.from(`x-access-token:${token}`, "utf8").toString("base64");
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/owner/repo.git",
+      gitTokenConfigFile: "/tmp/osh-gitauth/gitconfig",
+    });
+    const cmd = gitCloneShellPreview(inv);
+    expect(cmd).toContain("GIT_CONFIG_GLOBAL=");
+    expect(cmd).toContain("/tmp/osh-gitauth/gitconfig");
+    expect(cmd).not.toContain(token);
+    expect(cmd).not.toContain(b64);
+    expect(cmd).not.toContain("x-access-token");
+    expect(inv.env.GIT_CONFIG_GLOBAL).toBe("/tmp/osh-gitauth/gitconfig");
+  });
+
+  it("materializeGitTokenAuth writes extraheader to a 0600 file, not argv", async () => {
+    const token = "ghs_fileOnly";
+    const dir = await mkdtemp(join(tmpdir(), "osh-gitauth-"));
+    const { configFile, cleanup } = await materializeGitTokenAuth(localGitSshWriter(), dir, token);
+    const body = await readFile(configFile, "utf8");
+    expect(body).toContain(gitTokenExtraHeader(token));
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/owner/repo.git",
+      gitTokenConfigFile: configFile,
+    });
+    expect(gitCloneShellPreview(inv)).not.toContain(token);
+    await cleanup();
   });
 });
 

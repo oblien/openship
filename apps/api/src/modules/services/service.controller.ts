@@ -308,7 +308,7 @@ export async function restartContainer(c: Context) {
   const serviceId = param(c, "serviceId");
   try {
     await serviceService.restartServiceContainer(ctx, projectId, serviceId);
-    return c.json({ success: true });
+    return c.json({ success: true, operationId: serviceId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to restart container";
     return c.json({ success: false, error: message }, 400);

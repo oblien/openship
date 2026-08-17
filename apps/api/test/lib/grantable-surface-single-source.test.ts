@@ -16,7 +16,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  CLOUD_ONLY_GRANT_TYPES,
   GRANTABLE_RESOURCE_TYPES,
   ORG_SINGLETON_RESOURCE_TYPES,
   PLATFORM_GRANT_TYPES,
@@ -115,19 +114,11 @@ describe("the derived views stay coherent", () => {
     }
   });
 
-  it("mode filtering drops each mode's absent types and nothing else", () => {
+  it("mode filtering returns every grantable type — Operator is the only product", () => {
     const selfHosted = grantableTypesForMode(true);
-    const cloud = grantableTypesForMode(false);
-    for (const t of CLOUD_ONLY_GRANT_TYPES) {
-      expect(selfHosted, `${t} is cloud-only`).not.toContain(t);
-      expect(cloud).toContain(t);
-    }
-    for (const t of SELF_HOSTED_ONLY_GRANT_TYPES) {
-      expect(cloud, `${t} is self-hosted-only`).not.toContain(t);
-      expect(selfHosted).toContain(t);
-    }
-    // Nothing is absent from BOTH modes — that would be a permanently dead type.
-    expect(new Set([...selfHosted, ...cloud]).size).toBe(GRANTABLE_RESOURCE_TYPES.length);
+    const other = grantableTypesForMode(false);
+    expect(selfHosted).toEqual([...GRANTABLE_RESOURCE_TYPES]);
+    expect(other).toEqual([...GRANTABLE_RESOURCE_TYPES]);
   });
 
   it("mode filtering preserves canonical display order", () => {

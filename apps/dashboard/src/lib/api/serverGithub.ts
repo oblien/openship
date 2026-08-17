@@ -3,6 +3,13 @@ import { endpoints } from "./endpoints";
 
 export type ServerGithubMode = "token" | "ssh-server-key" | "ssh-deploy-key";
 
+export interface CloneAccessTest {
+  ok: boolean;
+  via: "ls-remote" | "server" | "api" | "pending" | "none";
+  message: string;
+  repo?: string;
+}
+
 export interface ServerGithubStatus {
   mode: ServerGithubMode | null;
   connected: boolean;
@@ -34,7 +41,7 @@ export const serverGithubApi = {
     ),
 
   setToken: (id: string, token: string) =>
-    api.put<{ login: string }>(endpoints.system.serverGithubToken(id), { token }),
+    api.put<{ login: string; cloneTest?: CloneAccessTest }>(endpoints.system.serverGithubToken(id), { token }),
 
   /** Generate (or return) the server's SSH key; returns the public line to add
    *  to the operator's GitHub account. */

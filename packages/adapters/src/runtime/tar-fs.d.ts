@@ -8,12 +8,25 @@
 declare module "tar-fs" {
   import type { Readable } from "node:stream";
 
+  interface PackHeader {
+    name: string;
+    type?: string;
+    mode?: number;
+    uid?: number;
+    gid?: number;
+    uname?: string;
+    gname?: string;
+    mtime?: Date;
+  }
+
   interface PackOptions {
     /** Top-level entry names to include (mirrors dockerode's `file.src`). */
     entries?: string[];
     /** Return true to skip a path during the walk. */
     ignore?: (name: string) => boolean;
     dereference?: boolean;
+    /** Normalize headers so two packs of the same tree are byte-identical. */
+    map?: (header: PackHeader) => PackHeader;
   }
 
   /** Pack a directory into a tar stream (a tar-stream `Pack`, i.e. a Readable). */

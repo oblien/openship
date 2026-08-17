@@ -21,14 +21,9 @@ import { audit, auditContextFrom } from "../../lib/audit";
 import { auth } from "../../lib/auth";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { createGitHubSource } from "../github/sources";
-import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
-import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
-import { env } from "../../config";
 import { GRANTABLE_RESOURCE_TYPES } from "../../lib/grantable-types";
 import {
-  isCloudOnlyGrantType,
   isOrgSingletonResourceType,
-  isSelfHostedOnlyGrantType,
   isSensitiveGrantType,
   parseSourceAccessScope,
   serializeSourceAccessScope,
@@ -74,13 +69,7 @@ async function resourceBelongsToOrg(
       case "project": {
         const row = await repos.project.findById(id);
         if (row) return row.organizationId === organizationId;
-        // No local row → may be a CLOUD project (canonical on the SaaS).
-        // Accept when NOT on the SaaS and the org is cloud-linked; the SaaS /
-        // proxy stays the authoritative existence gate. Mirrors the permission
-        // resolver's cloud fallback.
-        if (env.CLOUD_MODE) return false;
-        const linked = await resolveOrgCloudUserId(organizationId).catch(() => null);
-        return !!linked;
+        return false;
       }
       case "server":
       case "mail_server": {
@@ -126,7 +115,7 @@ export async function orgMeta(c: Context) {
 }
 
 /**
- * GET /api/permissions/resources?type=project|server|mail_server|backup_destination|billing|audit
+ * GET /api/permissions/resources?type=project|server|mail_server|backup_destination|audit
  *
  * Picker payload for the grant modal + invite-with-grants flow. Returns
  * `{ id, label, meta? }[]`. Wildcard "*" isn't listed — the picker adds
@@ -146,10 +135,6 @@ export async function listResources(c: Context) {
   if (isOrgSingletonResourceType(type)) {
     // A type whose routes don't exist in this mode would be a tab whose catalog can
     // only ever be empty. Say so honestly instead of offering a dead grant.
-    const absentHere = env.CLOUD_MODE
-      ? isSelfHostedOnlyGrantType(type)
-      : isCloudOnlyGrantType(type);
-    if (absentHere) return c.json({ data: [] });
     return c.json({
       data: [
         {
@@ -172,30 +157,12 @@ export async function listResources(c: Context) {
       .listByOrganization(organizationId, { page: 1, perPage: 200 })
       .catch(() => ({ rows: [] as Array<{ id: string; name: string; slug?: string | null }> }));
     const localRows = localRes.rows ?? [];
-    const localIds = new Set(localRows.map((p) => p.id));
     const data: Array<{ id: string; label: string; meta?: Record<string, unknown> }> =
       localRows.map((p) => ({
         id: p.id,
         label: p.name || p.slug || p.id,
         meta: p.slug ? { slug: p.slug } : undefined,
       }));
-
-    // Cloud projects (proxied as the org owner) are grantable too — a
-    // restricted member can be scoped to a specific cloud project from local.
-    const cloud = await fetchOrgCloudProjects(organizationId);
-    if (cloud.state === "merged") {
-      for (const p of cloud.projects) {
-        const id = typeof p.id === "string" ? p.id : "";
-        if (!id || localIds.has(id)) continue;
-        const name = typeof p.name === "string" ? p.name : "";
-        const slug = typeof p.slug === "string" ? p.slug : "";
-        data.push({
-          id,
-          label: name || slug || id,
-          meta: { source: "cloud", ...(slug ? { slug } : {}) },
-        });
-      }
-    }
 
     return c.json({ data });
   }

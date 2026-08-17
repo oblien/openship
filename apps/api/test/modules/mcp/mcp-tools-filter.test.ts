@@ -25,6 +25,9 @@ function tool(partial: Partial<McpToolDef> & { method: string; perm: PartialPerm
     path: partial.path ?? "/api/x",
     pathParams: partial.pathParams ?? [],
     hasBody: partial.hasBody ?? false,
+    generatedName: partial.generatedName ?? partial.name ?? "t",
+    advanced: partial.advanced ?? false,
+    longRunning: partial.longRunning ?? false,
     perm: { projectCreate: false, ...partial.perm },
   };
 }

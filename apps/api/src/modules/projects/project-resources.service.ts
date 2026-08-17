@@ -40,7 +40,7 @@ async function resolveTargetCapacity(
     deployTarget: undefined,
     serverId: undefined,
   }));
-  const isCloud = target.deployTarget === "cloud" || !!project.cloudWorkspaceId;
+  const isCloud = target.deployTarget === "cloud";
 
   // Cloud sizes an Oblien workspace from the tier table, not from host hardware,
   // so there is nothing to probe (and no SSH target to probe it on).

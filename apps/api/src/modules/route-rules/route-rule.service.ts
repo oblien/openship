@@ -116,7 +116,7 @@ export async function resolveProjectPushTarget(
 ): Promise<{ serverId: string | null } | null> {
   const project = await repos.project.findById(projectId);
   if (!project) return null;
-  if (project.cloudWorkspaceId) return null; // cloud edge is not OpenResty
+
   if (!project.activeDeploymentId) return { serverId: null }; // not deployed → local default
   const deployment = await repos.deployment.findById(project.activeDeploymentId);
   if (!deployment) return { serverId: null };

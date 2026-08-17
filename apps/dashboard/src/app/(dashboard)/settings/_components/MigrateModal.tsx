@@ -41,6 +41,7 @@ import type {
 import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useCloud } from "@/context/CloudContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { Modal } from "@/components/ui/Modal";
@@ -59,6 +60,7 @@ export function MigrateModal({ open, onClose, onMigrated }: MigrateModalProps) {
   const { showToast } = useToast();
   const { t } = useI18n();
   const { connected: cloudConnected } = useCloud();
+  const { features } = usePlatform();
   const [step, setStep] = useState<Step>("choose");
   const [path, setPath] = useState<PathKind | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -120,6 +122,7 @@ export function MigrateModal({ open, onClose, onMigrated }: MigrateModalProps) {
           {step === "choose" && (
             <ChooseStep
               cloudConnected={cloudConnected}
+              showCloudPaths={features.cloudConnect}
               onPick={(p) => {
                 setPath(p);
                 setStep("form");
@@ -247,9 +250,11 @@ function ModalHeader({
 
 function ChooseStep({
   cloudConnected,
+  showCloudPaths,
   onPick,
 }: {
   cloudConnected: boolean;
+  showCloudPaths: boolean;
   onPick: (p: PathKind) => void;
 }) {
   const { t } = useI18n();
@@ -267,23 +272,27 @@ function ChooseStep({
         onClick={() => onPick("server")}
       />
 
-      <PathCard
-        icon={Cloud}
-        title={t.settings.migrate.cards.cloudTitle}
-        body={t.settings.migrate.cards.cloudBody}
-        meta={cloudConnected ? t.settings.migrate.cards.cloudMetaConnected : t.settings.migrate.cards.metaRequiresCloud}
-        warn={!cloudConnected ? t.settings.migrate.cards.cloudWarn : undefined}
-        onClick={() => onPick("cloud")}
-      />
+      {showCloudPaths && (
+        <PathCard
+          icon={Cloud}
+          title={t.settings.migrate.cards.cloudTitle}
+          body={t.settings.migrate.cards.cloudBody}
+          meta={cloudConnected ? t.settings.migrate.cards.cloudMetaConnected : t.settings.migrate.cards.metaRequiresCloud}
+          warn={!cloudConnected ? t.settings.migrate.cards.cloudWarn : undefined}
+          onClick={() => onPick("cloud")}
+        />
+      )}
 
-      <PathCard
-        icon={Network}
-        title={t.settings.migrate.cards.tunnelTitle}
-        body={t.settings.migrate.cards.tunnelBody}
-        meta={cloudConnected ? t.settings.migrate.cards.tunnelMetaConnected : t.settings.migrate.cards.metaRequiresCloud}
-        warn={!cloudConnected ? t.settings.migrate.cards.tunnelWarn : undefined}
-        onClick={() => onPick("tunnel")}
-      />
+      {showCloudPaths && (
+        <PathCard
+          icon={Network}
+          title={t.settings.migrate.cards.tunnelTitle}
+          body={t.settings.migrate.cards.tunnelBody}
+          meta={cloudConnected ? t.settings.migrate.cards.tunnelMetaConnected : t.settings.migrate.cards.metaRequiresCloud}
+          warn={!cloudConnected ? t.settings.migrate.cards.tunnelWarn : undefined}
+          onClick={() => onPick("tunnel")}
+        />
+      )}
     </div>
   );
 }

@@ -22,15 +22,19 @@ const {
       findById: vi.fn(),
       getEnvMap: vi.fn(),
       update: vi.fn(),
+      claimDeployLease: vi.fn(),
+      releaseDeployLease: vi.fn(),
     },
     deployment: {
       findById: vi.fn(),
       listByProject: vi.fn(),
+      findInFlightByProject: vi.fn(),
       getLatestSuccessfulForBranch: vi.fn(),
       create: vi.fn(),
       createBuildSession: vi.fn(),
       supersedeReconciling: vi.fn(),
       supersedePendingDecisions: vi.fn(),
+      deleteDeployment: vi.fn(),
     },
     service: {
       listByProject: vi.fn(),
@@ -90,6 +94,7 @@ import {
   requestBuildAccess,
   resolveSnapshotTarget,
   triggerDeployment,
+  triggerPlannedDeployment,
   type DeploymentConfigSnapshot,
 } from "../../../src/modules/deployments/build.service";
 import {
@@ -126,8 +131,7 @@ function baseProject(overrides: Record<string, unknown> = {}) {
     hasServer: true,
     hasBuild: true,
     resources: null,
-    buildResources: null,
-    cloudWorkspaceId: null,
+    buildResources: null
     runtimeMode: "docker",
     defaultRollbackStrategy: "git",
     ...overrides,
@@ -194,8 +198,7 @@ describe("resolveSnapshotTarget", () => {
   function project(overrides: Record<string, unknown> = {}) {
     return {
       id: "project-1",
-      activeDeploymentId: null,
-      cloudWorkspaceId: null,
+      activeDeploymentId: null
       serverId: null,
       runtimeMode: null,
       ...overrides,
@@ -223,7 +226,7 @@ describe("resolveSnapshotTarget", () => {
 
   it("lets cloud win over a stray serverId and drops the serverId", async () => {
     const t = await resolveSnapshotTarget(
-      project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }),
+      project({ serverId: "srv_1" }),
     );
     expect(t.deployTarget).toBe("cloud");
     expect(t.serverId).toBeUndefined();
@@ -262,9 +265,12 @@ describe("triggerDeployment", () => {
 
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
+    repos.project.claimDeployLease.mockResolvedValue(true);
+    repos.project.releaseDeployLease.mockResolvedValue(true);
     // Only read by the best-effort compose-drift reconcile (git projects).
     repos.service.listByProject.mockResolvedValue([]);
     repos.deployment.listByProject.mockResolvedValue({ rows: [] });
+    repos.deployment.findInFlightByProject.mockResolvedValue(null);
     repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
     repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
     repos.deployment.createBuildSession.mockResolvedValue(undefined);
@@ -390,6 +396,62 @@ describe("triggerDeployment", () => {
       expect.objectContaining({
         multiService: true,
         composeServices,
+      }),
+    );
+  });
+});
+
+describe("triggerPlannedDeployment", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repos.project.findById.mockResolvedValue(baseProject({ mountedRelease: null }));
+    repos.project.getEnvMap.mockResolvedValue({});
+    repos.service.listByProject.mockResolvedValue([]);
+    repos.deployment.listByProject.mockResolvedValue({ rows: [] });
+    repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
+    repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
+    repos.deployment.createBuildSession.mockResolvedValue(undefined);
+    repos.deployment.supersedeReconciling.mockResolvedValue(undefined);
+    repos.deployment.supersedePendingDecisions.mockResolvedValue(undefined);
+    assertGitHubRepoAccess.mockResolvedValue(undefined);
+    resolveProjectRouteState.mockResolvedValue({
+      primaryCustomDomain: undefined,
+      primaryDomainType: undefined,
+      primarySlug: undefined,
+      publicEndpoints: [],
+    });
+    resolveServicePipelineMode.mockResolvedValue({
+      useServicePipeline: true,
+      servicePreflightServices: composeServices,
+      useSingleAppPipeline: false,
+    });
+    resolveStrategy.mockResolvedValue("local");
+    resolveSmartRoute.mockResolvedValue({
+      forceAll: undefined,
+      serviceIds: undefined,
+      changedPaths: undefined,
+    });
+    runPreflightChecks.mockResolvedValue({ ok: true, checks: [] });
+    kickoffBuild.mockResolvedValue("session-1");
+  });
+
+  it("still uses triggerDeployment when mounted releases are off", async () => {
+    const result = await triggerPlannedDeployment(ctx, {
+      projectId: "project-1",
+      commitSha: "abc123",
+    });
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.deployment).toEqual({ id: "dep-1", projectId: "project-1" });
+    expect(result.plan.action).toBe("deploy_code");
+    expect(repos.deployment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          plan: expect.objectContaining({
+            action: "deploy_code",
+            reason: expect.any(String),
+          }),
+        }),
       }),
     );
   });

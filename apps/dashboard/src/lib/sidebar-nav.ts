@@ -21,7 +21,6 @@ import {
   Bell,
   Building2,
   Clock,
-  CreditCard,
   DatabaseBackup,
   FileText,
   FolderKanban,
@@ -93,20 +92,14 @@ const MAIN_ITEMS: NavItem[] = [
 ];
 
 /** Build nav sections dynamically */
-export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection[] {
+export function getNavSections(
+  selfHosted: boolean,
+  _features: { billing?: boolean } = {},
+): NavSection[] {
   const settingsItems: NavItem[] = [
     { key: "backups", href: "/backups", icon: DatabaseBackup },
     { key: "settings", href: "/settings", icon: Settings },
   ];
-  // LAST row of the LAST section, deliberately. `isSaaS` is true on a self-hosted box
-  // the moment it links a cloud account (`!selfHosted || cloudConnected` in
-  // sidebar.tsx), and Billing sitting mid-rail there read as "this install is
-  // metered" — above Servers, which is what an operator on their own machine
-  // actually came for. Cloud credits are real, so the entry stays; it just stops
-  // outranking the infrastructure.
-  if (isSaaS) {
-    settingsItems.push({ key: "billing", href: "/billing", icon: CreditCard });
-  }
   // Audit log, last row of the rail. Promoted out of Settings: it is not a setting — you
   // never change anything here, you READ what already happened, and burying a
   // review surface three clicks deep behind a settings tab is how it goes unread.

@@ -1,7 +1,5 @@
 import type { Platform } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
-import { cloudClient } from "./cloud/client";
-import { isTargetUnverified } from "./cloud/request-error";
 import { canonicalEdgeTarget, resolveEdgeTargetHost } from "./edge-target";
 import { isCloudManagedHostname, managedHostnameToSlug } from "./public-endpoints";
 import { ensureTargetVerified } from "./edge-target-verify";
@@ -61,56 +59,10 @@ export async function ensureManagedEdgeProxy(
     onLog?: (message: string, level?: "warn") => void;
   },
 ): Promise<{ target: string; warning?: string }> {
-  if (!slug.trim()) return { target: "" };
-
-  // The edge target MUST be a public host Cloud can reach on :80 — NOT the deploy
-  // server's display `sshHost` (which is `127.0.0.1` for an isLocal box with no
-  // public URL, making Cloud proxy to its own loopback → 404). resolveEdgeTargetHost
-  // returns null (with a reason) rather than a dead loopback so we surface an
-  // actionable warning instead of silently wiring a broken route.
-  const { host, reason, warning } = await resolveEdgeTargetHost(organizationId, {
-    serverId: opts?.serverId,
-    ...(opts?.preferHost ? { preferHost: opts.preferHost } : {}),
-  });
-  if (!host) {
-    throw new ManagedEdgeError(
-      `Cannot configure edge proxy: ${reason ?? "target host could not be resolved"}`,
-      400,
-    );
-  }
-
-  const client = cloudClient({ organizationId });
-  const sync = async () => {
-    const result = await client.edgeProxy.sync({ slug, target: host });
-    if (!result) throw new ManagedEdgeError(NO_CLOUD_MEMBER, 409);
-    return result;
-  };
-
-  try {
-    await sync();
-  } catch (err) {
-    if (!isTargetUnverified(err)) {
-      throw err instanceof ManagedEdgeError ? err : new ManagedEdgeError(safeErrorMessage(err), 502);
-    }
-    // Prove control, then retry once. `canonicalEdgeTarget` is the SAME normalizer
-    // the SaaS applies before calling Cloud, so what we verify is what gets routed.
-    opts?.onLog?.(`Proving this server controls ${host} for Openship Cloud routing...\n`);
-    const verdict = await ensureTargetVerified(organizationId, canonicalEdgeTarget(host), {
-      ...(opts?.serverId ? { serverId: opts.serverId } : {}),
-      ...(opts?.routing ? { routing: opts.routing } : {}),
-      ...(opts?.onLog ? { onLog: opts.onLog } : {}),
-    });
-    if (!verdict.verified) {
-      throw new ManagedEdgeError(
-        `Openship Cloud won't route to ${host} until it can confirm this server controls it: ` +
-          `${verdict.reason ?? "verification did not complete"}`,
-        502,
-      );
-    }
-    await sync();
-  }
-
-  return { target: host, warning };
+  throw new ManagedEdgeError(
+    "*.opsh.io Cloud edge routes are not available on Operator. Use a custom domain or this instance's host domain.",
+    400,
+  );
 }
 
 export interface ManagedEdgeTarget {
@@ -176,7 +128,7 @@ export async function deregisterManagedEdgeRoutes(
   for (const slug of slugs) {
     if (!slug.trim()) continue;
     try {
-      await cloudClient({ organizationId: opts.organizationId }).edgeProxy.deregister(slug);
+      // Operator has no Cloud edge to deregister.
     } catch (err) {
       failures.push(`${slug} (${safeErrorMessage(err)})`);
     }

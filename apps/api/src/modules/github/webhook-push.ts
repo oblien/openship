@@ -5,12 +5,14 @@
 import { repos, type Project } from "@repo/db";
 import { env } from "../../config/env";
 import { triggerDeployment } from "../deployments/build.service";
+import { mountedReleaseBuildMode, mountedReleaseConfig } from "../deployments/mounted-release.config";
+import { triggerMountedRelease } from "../deployments/mounted-release.service";
+import { planAndSelectTrigger } from "../deployments/release-planner";
 import {
   compareCommits,
   getRepository,
 } from "./github.service";
-import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
-import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
+
 import { safeErrorMessage } from "@repo/core";
 import {
   extractChangedFiles,
@@ -193,17 +195,11 @@ async function deployProjectFromPush(
 
     if (!forceAll && routableServices.length > 0) {
       const routed = routeServicesByChanges(routableServices, extracted.files);
-      if (routed.mode === "skip") {
-        // No services affected → skip the deploy entirely. (mode "all" can't
-        // occur here since routableServices.length > 0.)
-        console.log(
-          `[GitHub Webhook] ${input.owner}/${input.repo}#${input.branch} project ${p.id}: no services affected by ${extracted.files.size} changed file(s) — skipping deploy.`,
-        );
-        return { skipped: true as const, projectId: p.id };
-      }
       if (routed.mode === "services") {
         serviceIds = routed.serviceIds;
       }
+      // mode "skip" is not final — the planner also maps bound service
+      // prefixes that compose services with a null rootDirectory miss.
     }
   } else {
     // No payload was passed (manual trigger path going through this
@@ -225,24 +221,61 @@ async function deployProjectFromPush(
     );
   }
 
+  const plannerPaths =
+    changedPathsTruncated || (!input.payload && !changedPaths) ? null : (changedPaths ?? []);
+  const release = mountedReleaseConfig(p);
+  const { plan, trigger } = planAndSelectTrigger({
+    changedPaths: plannerPaths,
+    mountedReleaseEnabled: Boolean(release),
+    buildMode: release ? mountedReleaseBuildMode(release) : undefined,
+    services: enabledServices.map((s) => ({
+      id: s.id,
+      name: s.name,
+      rootDirectory: s.rootDirectory,
+    })),
+    preset: p.mountedRelease?.preset,
+    routedServiceIds: serviceIds,
+    forceAll,
+  });
+  const targetServiceIds = plan.serviceIds ?? serviceIds;
+
+  if (trigger === "skip") {
+    console.log(
+      `[GitHub Webhook] ${input.owner}/${input.repo}#${input.branch} project ${p.id}: skip — ${plan.reason}`,
+    );
+    return { skipped: true as const, projectId: p.id, reason: plan.reason };
+  }
+
+  const actor = webhookActorCtx(actorUserId, p.organizationId, "webhook:github-push");
+  const persistablePaths = changedPathsTruncated ? null : changedPaths;
+
+  if (trigger === "mounted_release") {
+    const deployment = await triggerMountedRelease(actor, p.id, {
+      commitSha: input.commitSha,
+      trigger: "webhook",
+      plan,
+      serviceIds: targetServiceIds,
+      changedPaths: persistablePaths,
+    });
+    return { deployment };
+  }
+
   // Rollback context (strategy + commit_sha_before anchor) is resolved inside
   // triggerDeployment via the shared resolveRollbackContext helper — no need to
   // recompute it here.
-  const triggered = await triggerDeployment(
-    webhookActorCtx(actorUserId, p.organizationId, "webhook:github-push"),
-    {
-      projectId: p.id,
-      branch: input.branch,
-      commitSha: input.commitSha,
-      commitMessage: input.commitMessage,
-      trigger: "webhook",
-      serviceIds,
-      forceAll,
-      // Let the compose-drift reconciler skip its repo scan when this push
-      // didn't touch a compose file. Truncated → pass null (unknown → reconcile).
-      changedPaths: changedPathsTruncated ? null : changedPaths,
-    },
-  );
+  const triggered = await triggerDeployment(actor, {
+    projectId: p.id,
+    branch: input.branch,
+    commitSha: input.commitSha,
+    commitMessage: input.commitMessage,
+    trigger: "webhook",
+    serviceIds: targetServiceIds,
+    forceAll,
+    // Let the compose-drift reconciler skip its repo scan when this push
+    // didn't touch a compose file. Truncated → pass null (unknown → reconcile).
+    changedPaths: persistablePaths,
+    plan,
+  });
 
   // Persist changed-files onto the deployment row for the dashboard. Best-effort.
   // Skip when deduped — `triggered.deployment` is the already-live one, not ours.
@@ -380,93 +413,17 @@ async function triggerBranchDeployments(
     event: input.event,
     message:
       `Triggered ${succeeded} deployment(s) for ${input.owner}/${input.repo}#${input.branch}` +
-      `${skipped ? `, ${skipped} skipped (no affected services)` : ""}` +
+      `${skipped ? `, ${skipped} skipped` : ""}` +
       `${failed ? `, ${failed} failed` : ""}`,
   };
 }
 
-/**
- * Forward a push for a CLOUD project (no local row) to the SaaS as the org
- * owner — the same operation the Redeploy button proxies. Resolution:
- *   1. cloud_webhook_binding by repo (fast, deterministic; written on promote).
- *   2. Fallback: enumerate cloud-linked orgs and match the repo against their
- *      cloud project list, then self-heal a routing-only binding for next time.
- * Returns { forwarded:false } when no cloud project owns this repo/branch.
- */
+/** Operator has no Cloud projects to forward a GitHub push to. */
 async function forwardPushToCloud(
-  input: BranchDeploymentTrigger,
-  defaultBranch?: string | null,
+  _input: BranchDeploymentTrigger,
+  _defaultBranch?: string | null,
 ): Promise<{ forwarded: boolean; cloudProjectId?: string; organizationId?: string }> {
-  let organizationId: string | undefined;
-  let cloudProjectId: string | undefined;
-
-  const bindings = await repos.cloudWebhookBinding
-    .findByRepo(input.owner, input.repo)
-    .catch(() => []);
-  // Mirror projectWebhookBranch: "" means the repo's default branch, so resolve
-  // it the same way the local filter does before comparing to the pushed branch.
-  const bound = bindings.find(
-    (b) => (b.gitBranch?.trim() || defaultBranch?.trim() || null) === input.branch,
-  );
-  if (bound) {
-    organizationId = bound.organizationId;
-    cloudProjectId = bound.cloudProjectId;
-  }
-
-  if (!cloudProjectId) {
-    const orgIds = await repos.settings.listCloudLinkedOrgIds().catch(() => []);
-    const ownerKey = input.owner.toLowerCase();
-    const repoKey = input.repo.toLowerCase();
-    for (const orgId of orgIds) {
-      const result = await fetchOrgCloudProjects(orgId).catch(() => null);
-      if (result?.state !== "merged") continue;
-      const match = result.projects.find((p) => {
-        const o = typeof p.gitOwner === "string" ? p.gitOwner.toLowerCase() : "";
-        const r = typeof p.gitRepo === "string" ? p.gitRepo.toLowerCase() : "";
-        if (o !== ownerKey || r !== repoKey || p.autoDeploy !== true) return false;
-        const b =
-          (typeof p.gitBranch === "string" ? p.gitBranch.trim() : "") ||
-          defaultBranch?.trim() ||
-          "";
-        return b === input.branch;
-      });
-      if (match && typeof match.id === "string") {
-        organizationId = orgId;
-        cloudProjectId = match.id;
-        // Self-heal a routing-only binding (secret was lost on promote, so
-        // validation stays on the env/legacy path) so the next push is fast.
-        await repos.cloudWebhookBinding
-          .upsert({
-            organizationId: orgId,
-            cloudProjectId: match.id,
-            gitOwner: input.owner,
-            gitRepo: input.repo,
-            gitBranch: typeof match.gitBranch === "string" ? match.gitBranch : "",
-            webhookId: null,
-            webhookSecret: null,
-          })
-          .catch(() => {});
-        break;
-      }
-    }
-  }
-
-  if (!organizationId || !cloudProjectId) return { forwarded: false };
-
-  const res = await cloudFetchAsOrgOwner(organizationId, "/api/deployments", {
-    method: "POST",
-    body: JSON.stringify({
-      projectId: cloudProjectId,
-      branch: input.branch,
-      commitSha: input.commitSha,
-      smartRoute: true,
-      // Auto-deploy marker → SaaS applies commit-sha dedup (if the App also
-      // delivered this push, whichever lands second skips).
-      trigger: "webhook",
-    }),
-  }).catch(() => null);
-
-  return { forwarded: !!res && res.ok, cloudProjectId, organizationId };
+  return { forwarded: false };
 }
 
 function projectWebhookBranch(project: Project, defaultBranch?: string | null): string | null {

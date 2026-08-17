@@ -85,7 +85,6 @@ import {
   type PlatformConfig,
 } from "@repo/adapters";
 import { env } from "../config/env";
-import { isOblienConfigured } from "./platform-mode";
 import { resolveAcmeProviderOptions } from "./acme-config";
 
 // Re-export the platform accessor so existing callers that do
@@ -197,25 +196,10 @@ export async function isServerInOrg(
 }
 
 /**
- * Local-only route guard. Returns a 404 Response when CLOUD_MODE is on,
- * or `null` when the route may proceed.
- *
- * Use at the top of self-hosted-only handlers:
- *
- *   export async function handler(c: Context) {
- *     const guard = assertNotCloud(c);
- *     if (guard) return guard;
- *     // ... cloud-impossible work ...
- *   }
- *
- * This is defense-in-depth on top of routing-level gates — even if a
- * route ever gets mounted in cloud mode by mistake, the handler refuses
- * to execute the cloud-impossible code path.
+ * Local-only route guard. Operator is the only product, so this always
+ * allows the handler to proceed.
  */
-export function assertNotCloud(c: Context): Response | null {
-  if (env.CLOUD_MODE) {
-    return c.json({ error: "Not available in cloud mode" }, 404);
-  }
+export function assertNotCloud(_c: Context): Response | null {
   return null;
 }
 
@@ -240,30 +224,14 @@ export function assertDesktop(c: Context): Response | null {
 /**
  * Resolve the deployment target from environment config.
  *
- * CLOUD_MODE (SaaS hosting) and DEPLOY_MODE=cloud (Oblien runtime) both
- * need the cloud platform adapter, so either triggers the cloud config.
- * Auth/billing concerns are gated separately by CLOUD_MODE alone.
- *
- * Priority:
- *   1. CLOUD_MODE=true or DEPLOY_MODE=cloud → "cloud" (Oblien runtime)
- *   2. DEPLOY_MODE=desktop → "desktop"
- *   3. Default → "selfhosted" with docker or bare runtime
+ * Operator never uses the deleted Cloud/Oblien runtime. Desktop stays
+ * desktop; everything else is self-hosted docker or bare.
  */
 export function resolvePlatformConfig(): PlatformConfig {
-  if (isOblienConfigured()) {
-    return {
-      target: "cloud",
-      cloudClientId: env.OBLIEN_CLIENT_ID,
-      cloudClientSecret: env.OBLIEN_CLIENT_SECRET,
-      allowHostBuild: !env.CLOUD_MODE,
-    };
-  }
-
   if (env.DEPLOY_MODE === "desktop") {
     return { target: "desktop" };
   }
 
-  // Self-hosted: docker or bare
   return {
     target: "selfhosted",
     runtime: env.DEPLOY_MODE === "bare" ? "bare" : "docker",

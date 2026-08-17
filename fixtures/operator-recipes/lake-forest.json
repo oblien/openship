@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "Lake Forest",
+  "projectHint": "lake-forest",
+  "environment": "production",
+  "service": {
+    "key": "lake-forest",
+    "name": "web"
+  },
+  "buildMode": "upload",
+  "persistPaths": [
+    "storage",
+    "database/database.sqlite"
+  ],
+  "health": {
+    "path": "/up",
+    "port": 8000,
+    "publicHttps": true
+  },
+  "activation": {
+    "strategy": "atomic-current",
+    "reloadCommand": "php artisan optimize:clear",
+    "killDuringStaging": true,
+    "unhealthyRollsBack": true
+  },
+  "monorepoPathPrefixes": [],
+  "migrationPolicy": "Run artisan migrate --force in a disposable builder after the artifact is staged and before the current pointer flips. Never migrate inside the live container. SQLite lives on the persist path and is not replaced by the artifact.",
+  "rollbackPolicy": "If reload or health fails, restore the previous current pointer and reload. Do not run down-migrations. Persist paths (storage, SQLite) stay put; restore them only from the sqlite backup preset.",
+  "mountedRelease": {
+    "enabled": true,
+    "buildMode": "prebuilt",
+    "serviceName": "web",
+    "containerPath": "/var/www/html",
+    "sharedPaths": [
+      "storage",
+      "database/database.sqlite"
+    ],
+    "reloadCommand": "php artisan optimize:clear",
+    "healthPath": "/up",
+    "healthPort": 8000,
+    "retain": 5
+  },
+  "planner": {
+    "pathPrefixes": [],
+    "lockfiles": [
+      "composer.lock"
+    ],
+    "composerLayerOnLockChange": true,
+    "skipUnrelatedMonorepo": true,
+    "backupPreset": "sqlite"
+  }
+}

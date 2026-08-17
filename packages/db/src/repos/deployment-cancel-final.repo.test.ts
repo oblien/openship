@@ -75,4 +75,11 @@ describe("updateStatus — a cancelled row is final", () => {
 
     expect(await repo.updateStatus("nope", "ready")).toBe(false);
   });
+
+  it("refuses to cancel a ready deployment", async () => {
+    const { db, repo } = await freshRepo();
+    expect(await repo.updateStatus("d1", "ready")).toBe(true);
+    expect(await repo.updateStatus("d1", "cancelled")).toBe(false);
+    expect(await statusOf(db)).toBe("ready");
+  });
 });

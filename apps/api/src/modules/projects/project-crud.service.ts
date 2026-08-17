@@ -38,7 +38,11 @@ import {
 } from "@repo/core";
 import type { ResourceConfig } from "@repo/adapters";
 import { encodeResources } from "../../lib/resources";
-import { resolveLatestVersion, resolveLatestReleaseTag, readApiVersion } from "../../lib/release-resolver";
+import {
+  resolveLatestVersion,
+  resolveLatestReleaseTag,
+  readApiVersion,
+} from "../../lib/release-resolver";
 import { resolveLatestImageDigest } from "../../lib/image-registry";
 import { env } from "../../config";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
@@ -66,14 +70,10 @@ import { applyProjectRouting } from "../domains/routing-apply.service";
 import { syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
-import {
-  currentPlanTier,
-  planProjectLimit,
-  PlanUpgradeRequiredError,
-} from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
 import { getFolderSession } from "./folder/session-store";
+import { activeCodeReleaseDeploymentId } from "../deployments/mounted-release.config";
 import type {
   TCreateProjectBody,
   TCreateProjectEnvironmentBody,
@@ -81,6 +81,7 @@ import type {
   TUpdateProjectBody,
 } from "./project.schema";
 import { UpdateProjectBody } from "./project.schema";
+import { mountedReleaseTargetService } from "../deployments/mounted-release.config";
 
 /**
  * Mass-assignment allow-list for PATCH /projects/:id — the exact set of
@@ -100,12 +101,7 @@ const PROJECT_UPDATE_KEYS = Object.keys(UpdateProjectBody.properties);
  * intentionally excluded (stays editable, parity with setBranch); gitUrl is
  * derived by the linker and never set via PATCH.
  */
-const GIT_SOURCE_IDENTITY_KEYS = new Set([
-  "gitProvider",
-  "gitOwner",
-  "gitRepo",
-  "installationId",
-]);
+const GIT_SOURCE_IDENTITY_KEYS = new Set(["gitProvider", "gitOwner", "gitRepo", "installationId"]);
 
 /**
  * The project's INFRASTRUCTURE identity — settable at creation, immutable after.
@@ -142,8 +138,8 @@ type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[numb
  *  cloud gate in the dashboard, where `deployTarget === "cloud"` IS the cloud test. It
  *  also left the two fields disagreeing, since `serverId` already coalesced to its
  *  column while the target did not. */
-function readDeployMeta(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+export function readDeployMeta(
+  p: Pick<Project, "serverId" | "activeDeploymentId">,
   dep: Deployment | null | undefined,
 ): { deployTarget: DeployTarget | null; serverId: string | null } {
   const meta = (dep?.meta ?? null) as { serverId?: string } | null;
@@ -158,15 +154,10 @@ function readDeployMeta(
   // Bound to nothing and never deployed: no target yet. Answering "local" here would be
   // picking one on the operator's behalf — the hosting badge renders none, and the deploy
   // wizard seeds a validated target rather than inheriting a guess from this projection.
-  if (!p.cloudWorkspaceId && !serverId && !p.activeDeploymentId) {
+  if (!serverId && !p.activeDeploymentId) {
     return { deployTarget: null, serverId: null };
   }
-  const deployTarget = deriveProjectDeployTarget({ cloudWorkspaceId: p.cloudWorkspaceId, serverId });
-  // The pair must agree. A cloud-bound project can still carry a server id — from the
-  // column it was bound to before it moved, or from the snapshot of that last deploy —
-  // and emitting both is how a card ends up labelled "Cloud" while holding a server's
-  // name, or a wizard hydrates its target from one field and its destination from the
-  // other. The target won; the id it didn't come from goes.
+  const deployTarget = deriveProjectDeployTarget({ serverId });
   return { deployTarget, serverId: deployTarget === "server" ? serverId : null };
 }
 
@@ -175,7 +166,7 @@ function readDeployMeta(
  *  of re-deriving it inline — the detail payload is what the deploy wizard hydrates
  *  its target from, so a second copy of the rule there is a wrong destination. */
 export async function resolveProjectDeployTarget(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  p: Pick<Project, "serverId" | "activeDeploymentId">,
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   const activeDep = p.activeDeploymentId
     ? ((await repos.deployment.findById(p.activeDeploymentId)) ?? null)
@@ -423,7 +414,8 @@ function resolveProjectSource(data: TCreateProjectBody) {
   if (isRelease && env.CLOUD_MODE) {
     throw new ForbiddenError("Release/dist source projects are not available in cloud mode");
   }
-  const safeLocalPath = !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
+  const safeLocalPath =
+    !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
 
@@ -462,11 +454,7 @@ function environmentNameFromSlug(slug: string) {
   );
 }
 
-async function ensureProjectApp(
-  data: TCreateProjectBody,
-  slug: string,
-  organizationId: string,
-) {
+async function ensureProjectApp(data: TCreateProjectBody, slug: string, organizationId: string) {
   let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
   if (app) return { app, created: false };
 
@@ -550,7 +538,11 @@ function buildProductionProjectInput(
     workloadType: data.workloadType,
     hasServer: data.hasServer,
     productionMode: data.productionMode,
-  }) ?? { workloadType: "web" as WorkloadType, hasServer: true, productionMode: "host" as ProductionMode };
+  }) ?? {
+    workloadType: "web" as WorkloadType,
+    hasServer: true,
+    productionMode: "host" as ProductionMode,
+  };
 
   return {
     organizationId,
@@ -567,6 +559,7 @@ function buildProductionProjectInput(
     gitBranch: data.gitBranch ?? "main",
     gitUrl: source.gitUrl,
     releaseSource: source.releaseSource,
+    mountedRelease: data.mountedRelease ?? null,
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
     framework: normalizeFramework(data.framework),
@@ -592,9 +585,7 @@ function buildProductionProjectInput(
     sourceKind: data.sourceKind ?? null,
     buildKind: data.buildKind ?? null,
     workspacePrepareCommand:
-      data.projectType === "monorepo"
-        ? data.monorepoWorkspace?.prepareCommand ?? null
-        : null,
+      data.projectType === "monorepo" ? (data.monorepoWorkspace?.prepareCommand ?? null) : null,
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
       data.rollbackWindow !== undefined ? normalizeRollbackWindow(data.rollbackWindow) : null,
@@ -615,15 +606,11 @@ function buildProductionProjectInput(
     // deploy resolves to "bare", and a compose deploy fails with "services are
     // not supported on the bare runtime". Git apps/monorepos stay null (chosen at
     // deploy time).
-    runtimeMode:
-      data.projectType === "services" || data.projectType === "docker" ? "docker" : null,
+    runtimeMode: data.projectType === "services" || data.projectType === "docker" ? "docker" : null,
   };
 }
 
-async function persistMonorepoApps(
-  projectId: string,
-  data: TCreateProjectBody,
-): Promise<void> {
+async function persistMonorepoApps(projectId: string, data: TCreateProjectBody): Promise<void> {
   if (data.projectType !== "monorepo" || !data.monorepoApps?.length) return;
 
   // #336: monorepo rows are masked on read too (withDrift has no kind filter),
@@ -666,7 +653,7 @@ async function persistMonorepoApps(
       domainType: app.domainType ?? "free",
       environment: hasMaskedValue(app.environment)
         ? unmaskEnv(app.environment, storedEnvByName.get(app.name) ?? null)
-        : app.environment ?? {},
+        : (app.environment ?? {}),
     })),
   );
 }
@@ -791,12 +778,15 @@ async function createProductionProject(
     ...((data as Partial<EnsureProjectBody>).services ?? []),
   ]);
   const { app, created: appCreated } = await ensureProjectApp(data, slug, organizationId);
-  const routing = deriveNextProjectRouteState({
-    slug,
-  }, {
-    nextPublicEndpoints: data.publicEndpoints,
-    slug,
-  });
+  const routing = deriveNextProjectRouteState(
+    {
+      slug,
+    },
+    {
+      nextPublicEndpoints: data.publicEndpoints,
+      slug,
+    },
+  );
 
   try {
     const created = await repos.project.create(
@@ -910,7 +900,8 @@ export async function linkProjectRepo(
   const { organizationId } = ctx;
   const owner = input.owner?.trim();
   const repo = input.repo?.trim();
-  if (!owner || !repo) return { ok: false, code: "invalid", message: "owner and repo are required" };
+  if (!owner || !repo)
+    return { ok: false, code: "invalid", message: "owner and repo are required" };
 
   const project = await repos.project.findById(projectId);
   try {
@@ -981,7 +972,14 @@ export async function linkProjectRepo(
     );
   }
 
-  return { ok: true, owner, repo, branch: defaultBranch, strategy, autoDeploy: !!gitFields.autoDeploy };
+  return {
+    ok: true,
+    owner,
+    repo,
+    branch: defaultBranch,
+    strategy,
+    autoDeploy: !!gitFields.autoDeploy,
+  };
 }
 
 /** Exported for the project CLONE, which needs the same "-2, -3, …" rule a fresh project gets —
@@ -1096,30 +1094,13 @@ async function findProjectByAppSlug(
  * "duplicate" becomes the way around the cap.
  */
 export async function assertProjectQuota(organizationId: string): Promise<void> {
-  if (!env.CLOUD_MODE) {
-    const { total } = await repos.projectGroup.listByOrganization(organizationId, { page: 1, perPage: 1 });
-    if (total >= SYSTEM.PROJECTS.MAX_PER_USER) {
-      throw new ValidationError(`Project limit reached (${SYSTEM.PROJECTS.MAX_PER_USER})`);
-    }
-    return;
-  }
-
-  const planCap = await planProjectLimit(organizationId);
-  const cap = planCap ?? env.CLOUD_MAX_PROJECTS_PER_USER;
   const { total } = await repos.projectGroup.listByOrganization(organizationId, { page: 1, perPage: 1 });
-  if (total >= cap) {
-    throw new PlanUpgradeRequiredError(
-      `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
-      "project-limit",
-      await currentPlanTier(organizationId),
-    );
+  if (total >= SYSTEM.PROJECTS.MAX_PER_USER) {
+    throw new ValidationError(`Project limit reached (${SYSTEM.PROJECTS.MAX_PER_USER})`);
   }
 }
 
-export async function ensureProject(
-  data: EnsureProjectBody,
-  organizationId: string,
-) {
+export async function ensureProject(data: EnsureProjectBody, organizationId: string) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
 
@@ -1141,11 +1122,7 @@ export async function ensureProject(
     // No existing match → this ensure will create. Enforce the cap here too
     // (the folder-upload deploy flow reaches creation only through ensure).
     await assertProjectQuota(organizationId);
-    project = await createProductionProject(
-      data,
-      desiredSlug,
-      organizationId,
-    );
+    project = await createProductionProject(data, desiredSlug, organizationId);
     created = true;
   } else {
     // Defensive: if we matched an existing project but its org_id doesn't
@@ -1281,10 +1258,10 @@ export async function listProjects(
 
   // organizationId is required across the codebase — the route-level
   // requirePermission middleware ensures it's set before the controller runs.
-  const { rows: projects } = await repos.project.listByOrganization(
-    organizationId,
-    { page: 1, perPage: 1000 },
-  );
+  const { rows: projects } = await repos.project.listByOrganization(organizationId, {
+    page: 1,
+    perPage: 1000,
+  });
 
   const byGroup = new Map<string, Project[]>();
   for (const p of projects) {
@@ -1315,10 +1292,7 @@ export async function getProject(projectId: string, organizationId: string) {
 // ─── Create project ──────────────────────────────────────────────────────────
 
 /** @scope org — only reads organizationId as a DB key. */
-export async function createProject(
-  data: TCreateProjectBody,
-  organizationId: string,
-) {
+export async function createProject(data: TCreateProjectBody, organizationId: string) {
   const slug = slugify(data.name);
 
   await assertProjectQuota(organizationId);
@@ -1404,9 +1378,7 @@ export async function updateProject(
     update.routeStrategy !== undefined &&
     !["auto", "loopback-port", "container-ip"].includes(update.routeStrategy as string)
   ) {
-    throw new ValidationError(
-      "routeStrategy must be 'auto', 'loopback-port', or 'container-ip'",
-    );
+    throw new ValidationError("routeStrategy must be 'auto', 'loopback-port', or 'container-ip'");
   }
 
   // ── monorepoSharedPaths validation ──────────────────────────────────
@@ -1415,11 +1387,8 @@ export async function updateProject(
   // deployable service would force-rebuild every service on every push
   // to web (defeating the point of smart per-service deploys).
   if (data.monorepoSharedPaths !== undefined && data.monorepoSharedPaths !== null) {
-    const normalize = (s: string) =>
-      s.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
-    const prefixes = data.monorepoSharedPaths
-      .map(normalize)
-      .filter((s) => s.length > 0);
+    const normalize = (s: string) => s.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
+    const prefixes = data.monorepoSharedPaths.map(normalize).filter((s) => s.length > 0);
     if (prefixes.length > 0) {
       const services = await repos.service.listByProject(projectId).catch(() => []);
       const serviceRoots = services
@@ -1427,7 +1396,8 @@ export async function updateProject(
         .filter((s) => s.length > 0);
       const overlap = prefixes.find((prefix) =>
         serviceRoots.some(
-          (root) => root === prefix || root.startsWith(`${prefix}/`) || prefix.startsWith(`${root}/`),
+          (root) =>
+            root === prefix || root.startsWith(`${prefix}/`) || prefix.startsWith(`${root}/`),
         ),
       );
       if (overlap) {
@@ -1443,11 +1413,67 @@ export async function updateProject(
   // ── defaultRollbackStrategy ────────────────────────────────────────
   if (data.defaultRollbackStrategy !== undefined) {
     if (data.defaultRollbackStrategy !== "git" && data.defaultRollbackStrategy !== "snapshot") {
-      throw new ValidationError(
-        `defaultRollbackStrategy must be "git" or "snapshot"`,
-      );
+      throw new ValidationError(`defaultRollbackStrategy must be "git" or "snapshot"`);
     }
     update.defaultRollbackStrategy = data.defaultRollbackStrategy;
+  }
+
+  // Mounted releases target one app container. Normalize relative paths once
+  // and refuse an ambiguous compose target instead of mounting every service.
+  if (data.mountedRelease !== undefined) {
+    if (data.mountedRelease === null) {
+      update.mountedRelease = null;
+    } else {
+      const release = data.mountedRelease;
+      const services = await repos.service.listByProject(projectId);
+      const target = mountedReleaseTargetService(release, services);
+      if (services.length > 0 && !target) {
+        throw new ValidationError(
+          !release.serviceId && !release.serviceName
+            ? "Choose the service that should receive the mounted release."
+            : `Mounted release service "${release.serviceId ?? release.serviceName}" does not exist.`,
+        );
+      }
+      if (target && target.enabled === false) {
+        throw new ValidationError("The mounted release service is disabled.");
+      }
+      const relative = (value: string) => value.trim().replace(/^\/+|\/+$/g, "");
+      const buildMode =
+        release.buildMode === "upload" || release.buildMode === "prebuilt" || release.buildMode === "server"
+          ? release.buildMode
+          : release.prepareCommand?.trim()
+            ? "server"
+            : "prebuilt";
+      const persisted = {
+        ...release,
+        buildMode,
+        runtimeInstall: release.runtimeInstall,
+        preset: release.preset,
+        sourcePath: release.sourcePath ? relative(release.sourcePath) : undefined,
+        sharedPaths: [...new Set((release.sharedPaths ?? []).map(relative).filter(Boolean))],
+        containerPath: release.containerPath.trim().replace(/\/+$/, ""),
+        // Keep prepare/phases on prebuilt recipes (Laravel migrate/optimize; Composer on lock change).
+        prepareCommand: release.prepareCommand?.trim() || undefined,
+        builderImage: release.builderImage?.trim() || undefined,
+        builderMemoryMb: release.builderMemoryMb ?? 1024,
+        builderCpus: release.builderCpus ?? 1,
+        builderCachePaths: [
+          ...new Set((release.builderCachePaths ?? []).map(relative).filter(Boolean)),
+        ],
+        reloadCommand: release.reloadCommand?.trim() || undefined,
+        healthPath: release.healthPath?.trim() || undefined,
+        retain: release.retain ?? 5,
+        uid: release.uid,
+        gid: release.gid,
+        serviceId: target?.id,
+        serviceName: target?.name,
+      };
+      if (!target) {
+        delete persisted.serviceId;
+        delete persisted.serviceName;
+      }
+      update.mountedRelease = persisted;
+    }
   }
 
   // ── internalAlias (single-app east-west hostname) ──────────────────
@@ -1460,9 +1486,7 @@ export async function updateProject(
     } else {
       const alias = normalizeAliasStrict(String(data.internalAlias));
       if (!alias) {
-        throw new ValidationError(
-          "internalAlias must contain at least one letter or digit",
-        );
+        throw new ValidationError("internalAlias must contain at least one letter or digit");
       }
       // Reject an internalAlias that collides with a sidecar service's name or
       // custom alias on this project's network (embedded DNS is first-match).
@@ -1491,8 +1515,7 @@ export async function updateProject(
   // which must not add a SECOND concurrent writer to the same vhost.
   // No slug term: the slug is immutable here (PROJECT_IDENTITY_KEYS), so a rename
   // never re-syncs routes — which is the point. Its hostname is edited as a domain.
-  const routesReapplied =
-    data.publicEndpoints !== undefined || update.port !== undefined;
+  const routesReapplied = data.publicEndpoints !== undefined || update.port !== undefined;
   if (routesReapplied) {
     // Snapshot the live hostnames before the sync so re-application can tear
     // down any the edit drops — AND so the free-cloud gate only fires for
@@ -1512,10 +1535,7 @@ export async function updateProject(
       // (the latter also covers a PENDING route that has no domain row yet), so a
       // remaining pending route is never mistaken for net-new.
       const priorHosts = new Set(
-        [
-          ...previousHostnames,
-          ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname),
-        ]
+        [...previousHostnames, ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname)]
           .filter((h): h is string => typeof h === "string" && h.length > 0)
           .map((h) => h.trim().toLowerCase()),
       );
@@ -1628,10 +1648,7 @@ export async function updateProject(
 
 // ─── Project environments ───────────────────────────────────────────────────
 
-export async function listProjectEnvironments(
-  projectId: string,
-  organizationId: string,
-) {
+export async function listProjectEnvironments(projectId: string, organizationId: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -1699,7 +1716,9 @@ export async function createProjectEnvironment(
     const branches = await listGitHubBranches(ctx, base.gitOwner, base.gitRepo);
     const exists = branches.some((branch) => branch.name === gitBranch);
     if (!exists) {
-      throw new ValidationError(`Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`);
+      throw new ValidationError(
+        `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
+      );
     }
   }
 
@@ -1988,8 +2007,10 @@ export async function resolveDeployedDrift(
 ): Promise<DeployedDrift> {
   if (mode === "commit") {
     let deployedSha: string | null = null;
-    if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+    // Enabled code pointer is the deployed SHA; otherwise the runtime row.
+    const deploymentId = activeCodeReleaseDeploymentId(p) ?? p.activeDeploymentId;
+    if (deploymentId) {
+      const dep = await repos.deployment.findById(deploymentId).catch(() => null);
       deployedSha = dep?.commitSha ?? null;
     }
     return { mode: "commit", deployedSha };
@@ -2052,7 +2073,9 @@ export async function evaluateDrift(p: Project, upstream: UpstreamDrift) {
     // pressing Update quiets every surface immediately.
     const latestInProgress =
       behind && latestSha
-        ? Boolean(await repos.deployment.findInProgressByCommit(p.id, latestSha).catch(() => undefined))
+        ? Boolean(
+            await repos.deployment.findInProgressByCommit(p.id, latestSha).catch(() => undefined),
+          )
         : false;
     return {
       supported: true as const,
@@ -2164,11 +2187,7 @@ export async function getGitInfo(projectId: string, organizationId: string) {
   };
 }
 
-export async function setBranch(
-  projectId: string,
-  branch: string,
-  organizationId: string,
-) {
+export async function setBranch(projectId: string, branch: string, organizationId: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -2266,16 +2285,20 @@ export async function listProjectDeployments(
   // framework/Docker glyph (twin of deploymentService.listDeployments).
   return {
     ...result,
-    rows: result.rows.map((d) => ({ ...d, favicon: p.favicon ?? null })),
+    rows: result.rows.map((d) => ({
+      ...d,
+      favicon: p.favicon ?? null,
+      isActive:
+        ((d.meta as { deploymentLane?: string } | null)?.deploymentLane === "release"
+          ? p.activeReleaseDeploymentId
+          : p.activeDeploymentId) === d.id,
+    })),
   };
 }
 
 // ─── Deployment session ──────────────────────────────────────────────────────
 
-export async function getLatestDeploymentSession(
-  projectId: string,
-  organizationId: string,
-) {
+export async function getLatestDeploymentSession(projectId: string, organizationId: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -2295,4 +2318,3 @@ export async function getLatestDeploymentSession(
       : null,
   };
 }
-

@@ -23,7 +23,7 @@ import type {
   SslProvider,
   SystemManager,
 } from "@repo/adapters";
-import { BuildLogger } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, transferImage } from "@repo/adapters";
 
 import type { BuildConfigSnapshotLike } from "../build-config";
 import {
@@ -50,6 +50,9 @@ export interface ComposePipelineOpts {
   project: Project;
   dep: Deployment;
   runtime: MultiServiceRuntimeAdapter;
+  /** Optional local Docker daemon used only for image builds. Built images are
+   * streamed into `runtime` before the target containers are changed. */
+  buildRuntime?: MultiServiceRuntimeAdapter;
   routing: RoutingProvider;
   ssl: SslProvider;
   /** SystemManager for the target (self-hosted); null for cloud/desktop. Used to
@@ -94,6 +97,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     project,
     dep,
     runtime,
+    buildRuntime = runtime,
     routing,
     ssl,
     system,
@@ -129,7 +133,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   const composeBuild = await buildComposeImages({
     project,
     dep,
-    runtime,
+    runtime: buildRuntime,
     logger,
     snapshot,
     buildSessionId,
@@ -149,13 +153,34 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // to "deploying" and the services the user cancelled would start anyway.
   if (composeBuild.cancelled) {
     for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
-      await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
+      await cleanupBuildArtifact(buildRuntime, imageRef).catch((err) => {
         const detail = safeErrorMessage(err);
         logger.log(`Warning: failed to clean up built service image ${serviceId}: ${detail}\n`, "warn");
       });
     }
     await onCancelled(ctx, composeBuild.durationMs);
     return;
+  }
+
+  if (buildRuntime !== runtime && composeBuild.builtImageRefs.size > 0) {
+    if (!(buildRuntime instanceof DockerRuntime) || !(runtime instanceof DockerRuntime)) {
+      throw new Error("Cross-host image transfer requires Docker runtimes for both build and deploy");
+    }
+    logger.log(
+      `Local image build complete. Streaming ${composeBuild.builtImageRefs.size} image${composeBuild.builtImageRefs.size === 1 ? "" : "s"} to the deploy server...\n`,
+    );
+    for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
+      await transferImage(buildRuntime, runtime, { id: imageRef, tag: imageRef }, {
+        log: (message) => logger.log(`[${serviceId}] ${message}\n`),
+      });
+      await cleanupBuildArtifact(buildRuntime, imageRef).catch((err) => {
+        logger.log(
+          `Warning: transferred ${serviceId}, but could not remove its local build image: ${safeErrorMessage(err)}\n`,
+          "warn",
+        );
+      });
+    }
+    logger.log("Local images loaded on the deploy server. Starting rollout...\n");
   }
 
   if (composeBuild.buildFailures.size > 0) {
@@ -277,5 +302,4 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     },
   });
 }
-
 

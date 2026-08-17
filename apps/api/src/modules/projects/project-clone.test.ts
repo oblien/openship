@@ -33,7 +33,6 @@ const h = {
     favicon: "https://clincai.example/favicon.ico",
     faviconCheckedAt: new Date(),
     compositeRoutes: [{ host: "clincai.example" }],
-    cloudWorkspaceId: null,
     gitProvider: "github",
     gitOwner: "acme",
     gitRepo: "clincai",
@@ -206,7 +205,7 @@ describe("what it deliberately does NOT copy", () => {
     const p = clonedProject();
     // `id`/`groupId` are the insert's, and name/slug/serverId/activeDeploymentId are set
     // explicitly above — the rest must simply be absent.
-    for (const field of ["deletedAt", "deletionInProgress", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "cloudWorkspaceId", "id", "groupId", "createdAt", "updatedAt"]) {
+    for (const field of ["deletedAt", "deletionInProgress", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "id", "groupId", "createdAt", "updatedAt"]) {
       expect(p, field).not.toHaveProperty(field);
     }
   });

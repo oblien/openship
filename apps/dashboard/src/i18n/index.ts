@@ -18,7 +18,6 @@ import auth from "./locales/en/auth.json";
 import dashboard from "./locales/en/dashboard.json";
 import settings from "./locales/en/settings.json";
 import servers from "./locales/en/servers.json";
-import billing from "./locales/en/billing.json";
 import library from "./locales/en/library.json";
 import onboarding from "./locales/en/onboarding.json";
 import deploy from "./locales/en/deploy.json";
@@ -39,7 +38,7 @@ import issues from "./locales/en/issues.json";
 import autoDns from "./locales/en/autoDns.json";
 
 /** The base (English) dictionary — bundled, used as the type + fallback. */
-export const baseDictionary = { brand, auth, dashboard, settings, servers, billing, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, issues, autoDns };
+export const baseDictionary = { brand, auth, dashboard, settings, servers, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, issues, autoDns };
 export type Dictionary = typeof baseDictionary;
 
 export const locales = ["en", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr"] as const;

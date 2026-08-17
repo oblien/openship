@@ -1,5 +1,22 @@
-import { pgTable, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
+
+/** Public enrollment state stored on `servers.agent`. Secret is a sibling column. */
+export type ServerAgentPendingOp = {
+  id: string;
+  op: string;
+  payload: unknown;
+  queuedAt: string;
+};
+
+export type ServerAgentState = {
+  enrolledAt: string;
+  keyId: string;
+  lastSeenAt: string | null;
+  capabilities: string[];
+  version: string | null;
+  pendingOps?: ServerAgentPendingOp[];
+};
 
 // ─── Servers ─────────────────────────────────────────────────────────────────
 
@@ -51,6 +68,14 @@ export const servers = pgTable("servers", {
   sshKeyPassphrase: text("ssh_key_passphrase"),
   sshJumpHost: text("ssh_jump_host"),
   sshArgs: text("ssh_args"),
+
+  /**
+   * Signed OpenShip agent enrollment (kid, last seen, capabilities). The
+   * shared HMAC secret lives in `agentSecret` so status reads never leak it.
+   */
+  agent: jsonb("agent").$type<ServerAgentState | null>(),
+  /** HMAC shared secret, encrypted at rest (`enc1:`). Null when not enrolled. */
+  agentSecret: text("agent_secret"),
 
   // ── Timestamps ─────────────────────────────────────────────────────────────
 

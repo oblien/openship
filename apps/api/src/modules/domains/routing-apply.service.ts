@@ -16,12 +16,6 @@
 
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
-import {
-  CloudRuntime,
-  PAGE_CONTAINER_PREFIX,
-  compileRoutingToOblien,
-  type OblienRoutingContext,
-} from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import {
   disposePlatform,
@@ -68,12 +62,6 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
     const managed = usesManagedRouting(platform().target, resolved.effectiveTarget);
     const defs = await repos.service.listByProject(project.id);
     const liveRows = await repos.service.listByDeployment(project.activeDeploymentId);
-
-    // Cloud: apply the vercel routing at the Oblien edge (no OpenResty).
-    if (runtime instanceof CloudRuntime) {
-      await applyCloudRouting({ project, runtime, defs, liveRows, usesManaged: managed });
-      return;
-    }
 
     // Self-hosted: compile to OpenResty locations and reconcile the domain.
     if (!routing) return;
@@ -169,64 +157,4 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
   } finally {
     disposePlatform(resolved);
   }
-}
-
-/**
- * Cloud edge routing: resolve the monorepo composite's frontend + backend to
- * their live Oblien workspaces (or a Page for a static frontend) and set ONE
- * hostname's edge table via `routes.set`. Same 1-static + 1-server shape the
- * self-hosted path handles; other shapes no-op (services keep their own
- * subdomains) until the cloud composite deploy topology lands.
- */
-async function applyCloudRouting(opts: {
-  project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>;
-  runtime: CloudRuntime;
-  defs: Awaited<ReturnType<typeof repos.service.listByProject>>;
-  liveRows: Awaited<ReturnType<typeof repos.service.listByDeployment>>;
-  usesManaged: boolean;
-}): Promise<void> {
-  const { project, runtime, defs, liveRows, usesManaged } = opts;
-  if (!project.routingConfig) return;
-
-  const plan = planCompositeRoute(defs, { rewrites: project.routingConfig.rewrites });
-  if (!plan) return;
-
-  const rowByService = new Map(liveRows.map((row) => [row.serviceId, row]));
-  const front = rowByService.get(plan.frontendServiceId);
-  const back = rowByService.get(plan.backendServiceId);
-  const frontDef = defs.find((s) => s.id === plan.frontendServiceId);
-  const backDef = defs.find((s) => s.id === plan.backendServiceId);
-  const frontPort = frontDef ? resolveServicePort(frontDef, project.port) : null;
-  const backPort = backDef ? resolveServicePort(backDef, project.port) : null;
-
-  const domain = frontDef
-    ? buildServiceRouteDomain({
-        project,
-        service: frontDef,
-        runtimeName: runtime.name,
-        usesManagedRouting: usesManaged,
-      })
-    : null;
-
-  if (!front?.containerId || !back?.containerId || !backPort || !domain?.hostname) return;
-
-  // The frontend backs `/`: a Page (containerId "page:<slug>") via the CDN + SPA
-  // fallback, or a workspace container via a catch-all proxy.
-  let ctx: OblienRoutingContext;
-  if (front.containerId.startsWith(PAGE_CONTAINER_PREFIX)) {
-    ctx = {
-      staticPage: front.containerId.slice(PAGE_CONTAINER_PREFIX.length),
-      backend: { workspace: back.containerId, port: backPort },
-    };
-  } else if (frontPort) {
-    ctx = {
-      root: { workspace: front.containerId, port: frontPort },
-      backend: { workspace: back.containerId, port: backPort },
-    };
-  } else {
-    return;
-  }
-
-  const input = compileRoutingToOblien(project.routingConfig, ctx);
-  await runtime.setDomainRoutes(domain.hostname, input);
 }

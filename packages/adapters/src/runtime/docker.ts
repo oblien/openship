@@ -31,7 +31,8 @@
 /// <reference path="./tar-fs.d.ts" />
 import Dockerode from "dockerode";
 import * as tarFs from "tar-fs";
-import { createGzip } from "node:zlib";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 import type {
   BuildConfig,
@@ -126,7 +127,7 @@ import {
   sq,
   assembleGitClone,
 } from "./build-pipeline";
-import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
+import { materializeGitSsh, materializeGitTokenAuth, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import { createDockerBuildContext, prepareSourceTree, resolveServiceDockerfile } from "./docker-build-context";
@@ -508,8 +509,7 @@ export function parsePortBindings(portSpecs: string[]): {
 }
 
 /**
- * Build the Docker build-context tar stream OURSELVES, mirroring dockerode's own
- * `prepareBuildContext` (tar-fs pack → gzip) but with an `'error'` handler
+ * Build the Docker build-context tar stream OURSELVES, with an `'error'` handler
  * dockerode never attaches.
  *
  * When you pass `{ context, src }`, dockerode builds this pack internally and
@@ -521,9 +521,10 @@ export function parsePortBindings(portSpecs: string[]): {
  * ENTIRE API process. Owning the pack lets us capture that, abort the in-flight
  * build request so it can't hang on a truncated body, and fail only the deploy.
  *
- * Passing the resulting STREAM (not `{ context }`) to buildImage routes through
- * dockerode's pass-through branch, so the bytes on the wire are identical to
- * what it would have produced.
+ * Passing a plain tar matters for the BuildKit v2 endpoint on Docker Desktop:
+ * its legacy API proxy can corrupt a chunked gzip body before BuildKit reads the
+ * Dockerfile. This stream only travels to the local daemon, so compressing it
+ * saves no network bandwidth anyway.
  */
 export function packBuildContext(
   contextDir: string,
@@ -532,7 +533,7 @@ export function packBuildContext(
 ): { body: NodeJS.ReadableStream; abortSignal: AbortSignal; takeError: () => Error | null } {
   const controller = new AbortController();
   const pack = tarFs.pack(contextDir, { entries });
-  const body = pack.pipe(createGzip());
+  const body = pack;
   let contextError: Error | null = null;
   const capture = (err: unknown) => {
     contextError ??= err instanceof Error ? err : new Error(String(err));
@@ -545,11 +546,9 @@ export function packBuildContext(
     if (cancelSignal.aborted) controller.abort();
     else cancelSignal.addEventListener("abort", () => controller.abort(), { once: true });
   }
-  // pipe() does NOT forward source errors, so a tar-fs walk failure is only
-  // observable on the pack itself — this listener is what keeps it from killing
-  // the process. Guard the gzip side too for completeness.
+  // A tar-fs walk failure is observable on the pack itself — this listener is
+  // what keeps it from killing the process.
   pack.once("error", capture);
-  body.once("error", capture);
   return { body, abortSignal: controller.signal, takeError: () => contextError };
 }
 
@@ -1305,12 +1304,72 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   /**
+   * Docker Desktop's Windows named-pipe API corrupts streamed build contexts
+   * on the BuildKit v2 endpoint. The native CLI uses Docker Desktop's supported
+   * BuildKit transport, while still building against the exact prepared tree.
+   */
+  private async buildImageWithWindowsCli(
+    config: BuildConfig,
+    contextDir: string,
+    dockerfileName: string,
+    tag: string,
+    log: BuildLogger,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const installedCli = "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe";
+    const dockerCli = existsSync(installedCli) ? installedCli : "docker.exe";
+    const args = ["build", "--progress=plain", "-t", tag, "-f", dockerfileName];
+    for (const [key, value] of Object.entries(
+      this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
+    )) {
+      args.push("--label", `${key}=${value}`);
+    }
+    for (const [key, value] of Object.entries({
+      ...config.envVars,
+      NODE_ENV: "production",
+    })) {
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) args.push("--build-arg", `${key}=${value}`);
+    }
+    args.push("--force-rm", ".");
+
+    log.log(`Running local Docker Desktop BuildKit build for ${tag}...\n`);
+    const dockerCliDirectory = "C:\\Program Files\\Docker\\Docker\\resources\\bin";
+    const child = spawn(dockerCli, args, {
+      cwd: contextDir,
+      env: {
+        ...process.env,
+        DOCKER_BUILDKIT: "1",
+        PATH: `${dockerCliDirectory};${process.env.PATH ?? ""}`,
+      },
+      windowsHide: true,
+      signal,
+    });
+    child.stdout.on("data", (chunk: Buffer) => log.log(chunk.toString(), "info"));
+    child.stderr.on("data", (chunk: Buffer) => {
+      const message = chunk.toString();
+      log.log(message, parseLogLevel(message));
+    });
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", (err) => {
+        if (signal?.aborted) reject(new BuildCancelledError());
+        else reject(err);
+      });
+      child.once("close", (code) => {
+        if (signal?.aborted) reject(new BuildCancelledError());
+        else if (code === 0) resolve();
+        else reject(new Error(`docker build exited with code ${code ?? "unknown"}`));
+      });
+    });
+  }
+
+  /**
    * Clone the repo directly ON the remote host into `remoteContextDir` — the
    * clone-on-server alternative to transferBuildContext (which clones on the
    * orchestrator and rsyncs the tree). Runs `git clone` in a remote host shell,
    * mirroring the bare runtime (build-pipeline.ts): the credential-helper relay
    * (`config.gitCredentialHelperPath` — plain URL, nothing persisted) when set,
-   * else `injectGitToken(...)`. Strips `.git` so it never ships into the image.
+   * else token extraheader env (never `x-access-token:TOKEN` in argv). Strips
+   * `.git` so it never ships into the image.
    */
   private async cloneSourceOnRemote(
     config: BuildConfig,
@@ -1367,10 +1426,23 @@ export class DockerRuntime implements RuntimeAdapter {
       );
     }
 
-    // Centralized clone assembly (token / relay / ssh / ambient) — see git-clone.ts.
+    // Token for remote exec lives in a 0600 gitconfig, not in the shell string.
+    let tokenAuth: Awaited<ReturnType<typeof materializeGitTokenAuth>> | undefined;
+    if (config.gitToken && !useHelper && !config.gitSsh && !config.gitAmbient) {
+      tokenAuth = await materializeGitTokenAuth(
+        shellGitSshWriter({
+          exec: (cmd) => executor.exec(cmd),
+          writeSecret: (path, content) => executor.writeFile(path, content),
+        }),
+        `${remoteContextDir}.gitauth`,
+        config.gitToken,
+      );
+    }
+
     const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
       repoUrl: config.repoUrl,
-      gitToken: config.gitToken,
+      gitToken: tokenAuth ? undefined : config.gitToken,
+      gitTokenConfigFile: tokenAuth?.configFile,
       gitCredentialHelperPath: config.gitCredentialHelperPath,
       ssh: sshMaterial,
       ambient: config.gitAmbient,
@@ -1416,6 +1488,7 @@ export class DockerRuntime implements RuntimeAdapter {
       // Never ship .git into the build image.
       await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
     } finally {
+      await tokenAuth?.cleanup();
       await sshMaterial?.cleanup();
     }
   }
@@ -1500,6 +1573,17 @@ export class DockerRuntime implements RuntimeAdapter {
     log: BuildLogger,
     cancelSignal?: AbortSignal,
   ): Promise<void> {
+    if (process.platform === "win32" && this.transport.kind === "socket") {
+      await this.buildImageWithWindowsCli(
+        config,
+        buildContext.contextDir,
+        buildContext.dockerfileName,
+        tag,
+        log,
+        cancelSignal,
+      );
+      return;
+    }
     log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
 
     const { body, abortSignal, takeError } = packBuildContext(
@@ -1510,6 +1594,7 @@ export class DockerRuntime implements RuntimeAdapter {
 
     try {
       const stream = await this.docker.buildImage(body, {
+        version: "2",
         t: tag,
         dockerfile: buildContext.dockerfileName,
         labels: this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
@@ -2332,6 +2417,15 @@ export class DockerRuntime implements RuntimeAdapter {
               spec.logger,
               signal,
             );
+          } else if (process.platform === "win32" && this.transport.kind === "socket") {
+            await this.buildImageWithWindowsCli(
+              spec.config,
+              tree!.contextDir,
+              dockerfileName,
+              tag,
+              spec.logger,
+              signal,
+            );
           } else {
             // Own the pack (error handler + abort) so a build-context read
             // failure fails just this service instead of crashing the API — see
@@ -2344,6 +2438,7 @@ export class DockerRuntime implements RuntimeAdapter {
             );
             try {
               const stream = await this.docker.buildImage(body, {
+                version: "2",
                 t: tag,
                 dockerfile: dockerfileName,
                 labels: this.labels({
@@ -2679,10 +2774,14 @@ export class DockerRuntime implements RuntimeAdapter {
     // same transport buildStaticToHost used (SSH exec, else local fs).
     if (containerId.startsWith("/")) {
       const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+      const wipe = `chmod -R u+w ${sq(containerId)} 2>/dev/null || true; rm -rf ${sq(containerId)}`;
       if (executor) {
-        await executor.exec(`rm -rf ${sq(containerId)}`).catch(() => { /* best effort */ });
+        await executor.exec(wipe).catch(() => { /* best effort */ });
       } else {
         const { rm } = await import("node:fs/promises");
+        const { execFile } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        await promisify(execFile)("chmod", ["-R", "u+w", containerId]).catch(() => {});
         await rm(containerId, { recursive: true, force: true }).catch(() => { /* best effort */ });
       }
       return;

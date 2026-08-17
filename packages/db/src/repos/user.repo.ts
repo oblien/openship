@@ -1,6 +1,6 @@
 import { eq, and, asc, ilike, count, desc, inArray, sql } from "drizzle-orm";
 import type { Database } from "../client";
-import { user } from "../schema";
+import { member, project, user } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +115,30 @@ export function createUserRepo(db: Database) {
       return db.query.user.findFirst({
         where: eq(user.autoProvisioned, false),
         orderBy: [asc(user.createdAt), asc(user.id)],
+      });
+    },
+
+    /**
+     * Local Desktop owns one shared control-plane database. Prefer the owner of
+     * the workspace that actually contains projects over account creation
+     * order: an earlier Cloud/GitHub login may legitimately own an empty org.
+     */
+    async findProjectWorkspaceOwner(): Promise<User | undefined> {
+      const [workspace] = await db
+        .select({
+          userId: member.userId,
+          projectCount: count(project.id),
+        })
+        .from(member)
+        .innerJoin(project, eq(project.organizationId, member.organizationId))
+        .where(eq(member.role, "owner"))
+        .groupBy(member.userId)
+        .orderBy(desc(count(project.id)), asc(member.userId))
+        .limit(1);
+
+      if (!workspace) return undefined;
+      return db.query.user.findFirst({
+        where: eq(user.id, workspace.userId),
       });
     },
 

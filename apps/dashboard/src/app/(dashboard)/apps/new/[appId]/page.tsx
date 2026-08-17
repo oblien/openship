@@ -912,12 +912,6 @@ export default function AppInstallPage() {
       );
       return;
     }
-    // Installing TO Openship Cloud needs a cloud connection — the same hard gate
-    // the deploy wizard applies at Continue. Without it the pick was a dead end:
-    // the install failed deep in preflight with no way to act on it.
-    if (destination?.deployTarget === "cloud" && !cloudConnected) {
-      if (!(await requireCloud("cloud-deploy-target"))) return;
-    }
     // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
     // remote servers; an app can't run on this machine yet. Every install here is
     // a new one (a draft isn't deployed), so there's nothing to strand.
@@ -1128,10 +1122,7 @@ export default function AppInstallPage() {
     // destination after a mid-install refresh — only the routing pickers
     // rehydrate) is left out rather than guessed.
     const summary: DeploySummaryRow[] = [];
-    const destinationValue =
-      destination?.deployTarget === "cloud"
-        ? t.deploy.targetStep.options.cloud
-        : (destination?.serverName || destination?.serverHost || "");
+    const destinationValue = destination?.serverName || destination?.serverHost || "";
     if (destinationValue) {
       summary.push({
         id: "destination",

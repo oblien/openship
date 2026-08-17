@@ -114,7 +114,7 @@ const MISSING_BASELINE: Record<string, number> = {
   // blocks), the connection's Activity link into its own audit feed, and the audit
   // tab's agent filter + the "Agent" detail row that names WHICH assistant a row
   // came from. English-first via deepMerge like the access-editor block above.
-  settings: 1456,
+  settings: 1520,
   // +164: the Sending tab's rebuild — 21 net-new English keys (the direct-vs-relay
   // path picker and its switch-back action, the "which senders relay?" card with the
   // individual-sender editor, the manual SPF include for providers whose token is
@@ -201,7 +201,7 @@ const MISSING_BASELINE: Record<string, number> = {
   // translating only these three would render a banner whose title was localized above
   // an English impact paragraph. They fall back via deepMerge, so the card is correct
   // and internally consistent in every locale.
-  servers: 305,
+  servers: 321,
   importProject: 81,
   onboarding: 60,
   // +16: setup.startFailed / startFailedFallback — the mail wizard had no way to
@@ -212,7 +212,6 @@ const MISSING_BASELINE: Record<string, number> = {
   projectDetail: 42,
   brand: 40,
   library: 119,
-  billing: 6,
 
 };
 
@@ -270,7 +269,6 @@ describe("i18n locale parity vs the English source", () => {
     settings: 99,
     projectSettings: 48,
     importProject: 43,
-    billing: 28,
     onboarding: 24,
     projectDetail: 19,
     library: 18,

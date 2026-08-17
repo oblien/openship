@@ -35,7 +35,6 @@ export const CATEGORY_GROUPS = [
   // Self-hosted-only, and dropped from `listCategories` under CLOUD_MODE — the mirror
   // image of `billing` below. Placed before it so the cloud-only group stays last.
   { id: "mail", label: "Mail" },
-  { id: "billing", label: "Billing" },
 ] as const satisfies readonly { id: string; label: string }[];
 
 export type NotificationCategoryGroup = (typeof CATEGORY_GROUPS)[number];
@@ -235,26 +234,6 @@ export const CATEGORIES: readonly NotificationCategory[] = [
     defaultEnabled: false,
   },
 
-  // Cloud-only: both are fed by Stripe/Oblien, so `listCategories` drops the whole
-  // group outside CLOUD_MODE rather than showing toggles that can never fire. They
-  // stay in the registry regardless — `findCategory` still has to render a message
-  // for any row an org already has.
-  {
-    id: "billing.alert",
-    group: "billing",
-    label: "Billing alert",
-    description:
-      "Payment failed, plan limit reached, or invoice overdue. Always notifies billing-owners.",
-    defaultEnabled: true,
-  },
-  {
-    id: "quota.warning",
-    group: "billing",
-    label: "Quota warning",
-    description:
-      "You're approaching a plan limit (storage, deployments, members). Heads-up before things start failing.",
-    defaultEnabled: true,
-  },
 ] as const;
 
 /**
@@ -319,14 +298,6 @@ const EVENT_TYPE_TO_CATEGORY: Record<string, string> = {
   // is ever sent.
   "mail.inbound_received": "mail.inbound_received",
 
-  // Billing
-  "billing.payment_failed": "billing.alert",
-  "billing.invoice_overdue": "billing.alert",
-  "billing.credit_exhausted": "billing.alert",
-  "billing.credit_restored": "billing.alert",
-  "billing.credit_low": "quota.warning",
-  "quota.threshold_reached": "quota.warning",
-  "quota.threshold_fired": "quota.warning",
 };
 
 export function categoryForEventType(eventType: string): string | undefined {

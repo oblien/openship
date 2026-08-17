@@ -69,14 +69,6 @@ const QuickLinks: React.FC = () => {
       color: '#ec4899',
       bgColor: 'rgba(236, 72, 153, 0.1)',
     },
-    {
-      title: quickLinks.billing.title,
-      description: quickLinks.billing.description,
-      href: '/billing',
-      icon: <CreditCard className="w-5 h-5" />,
-      color: '#059669',
-      bgColor: 'rgba(5, 150, 105, 0.1)',
-    },
   ];
 
   return (

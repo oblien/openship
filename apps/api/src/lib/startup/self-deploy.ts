@@ -160,18 +160,23 @@ export async function ensureAdoptDeployment(
     console.warn(`[self-deploy] adopt probe failed (continuing): ${safeErrorMessage(err)}`);
   }
 
-  await onSuccess(
-    { project, dep, buildSessionId, persistLogs: () => [], provisioned: {} },
-    { containerId, durationMs: 0 },
-  );
+  try {
+    await onSuccess(
+      { project, dep, buildSessionId, persistLogs: () => [], provisioned: {} },
+      { containerId, durationMs: 0 },
+    );
 
-  // A containerized install (`openship up` on Linux) runs Openship as a compose
-  // stack; link those containers to this project so its Apps & Services tab shows
-  // the real thing instead of "No apps or services yet". Best-effort + idempotent
-  // — a bare install has nothing to link and this no-ops.
-  await linkSelfAppServices(projectId, dep.id).catch((err) =>
-    console.warn(`[self-deploy] service linking skipped: ${safeErrorMessage(err)}`),
-  );
+    // A containerized install (`openship up` on Linux) runs Openship as a compose
+    // stack; link those containers to this project so its Apps & Services tab shows
+    // the real thing instead of "No apps or services yet". Best-effort + idempotent
+    // — a bare install has nothing to link and this no-ops.
+    await linkSelfAppServices(projectId, dep.id).catch((err) =>
+      console.warn(`[self-deploy] service linking skipped: ${safeErrorMessage(err)}`),
+    );
+  } finally {
+    const { releaseDeployLease } = await import("../../modules/deployments/deploy-lease");
+    await releaseDeployLease(projectId, dep.id).catch(() => {});
+  }
 
   return dep;
 }

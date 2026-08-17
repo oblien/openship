@@ -1,6 +1,7 @@
 import { app } from "../../app";
 import { internalClientHeader, internalSourceHeader } from "../../lib/call-source";
 import type { McpToolDef } from "./mcp-tools";
+import { McpTimeoutError, toolTimeoutMs } from "./mcp-timeouts";
 
 /**
  * Execute a tool by dispatching an internal request through the real Hono app.
@@ -37,11 +38,17 @@ export interface DispatchOrigin {
 // so the PAT (a non-browser credential) is accepted by authMiddleware.
 const INTERNAL_BASE = "http://mcp.internal";
 
+export interface DispatchOptions {
+  /** Outer handleMcpMessage deadline — combined with the per-tool timeout. */
+  signal?: AbortSignal;
+}
+
 export async function dispatchTool(
   tool: McpToolDef,
   args: Record<string, unknown>,
   bearerToken: string,
   origin: DispatchOrigin,
+  opts?: DispatchOptions,
 ): Promise<DispatchResult> {
   // Fill path params.
   let path = tool.path;
@@ -87,9 +94,31 @@ export async function dispatchTool(
     body = JSON.stringify(args.body);
   }
 
-  const res = await app.fetch(
-    new Request(url.toString(), { method: tool.method, headers, body }),
-  );
+  const timeoutMs = toolTimeoutMs({
+    readOnly: tool.annotations.readOnlyHint,
+    timeoutMs: tool.timeoutMs,
+  });
+  const toolSignal = AbortSignal.timeout(timeoutMs);
+  const signal =
+    opts?.signal && typeof AbortSignal.any === "function"
+      ? AbortSignal.any([opts.signal, toolSignal])
+      : toolSignal;
+
+  let res: Response;
+  try {
+    res = await app.fetch(
+      new Request(url.toString(), { method: tool.method, headers, body, signal }),
+    );
+  } catch (err) {
+    if (signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+      const outer = opts?.signal?.aborted;
+      throw new McpTimeoutError(
+        outer ? "MCP execution deadline exceeded" : `Tool timed out after ${timeoutMs}ms`,
+        outer ? "MCP_EXECUTION_DEADLINE" : "MCP_TOOL_TIMEOUT",
+      );
+    }
+    throw err;
+  }
 
   const text = await res.text();
   let data: unknown = text;
@@ -98,5 +127,41 @@ export async function dispatchTool(
   } catch {
     /* non-JSON response — return the raw text */
   }
-  return { status: res.status, ok: res.ok, data };
+  return {
+    status: res.status,
+    ok: res.ok,
+    data: tool.longRunning && res.ok ? collapseLongRunning(data) : data,
+  };
+}
+
+/**
+ * Long ops advertise `{ operationId }` so the agent polls instead of waiting
+ * out a deploy. Extra fields (plan, skipped) stay when there is no id yet.
+ */
+export function collapseLongRunning(data: unknown): unknown {
+  const operationId = extractOperationId(data);
+  if (!operationId) return data;
+  if (data && typeof data === "object" && "skipped" in (data as object)) {
+    const rec = data as Record<string, unknown>;
+    return { operationId, skipped: rec.skipped, reason: rec.reason, plan: rec.plan };
+  }
+  return { operationId };
+}
+
+export function extractOperationId(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const rec = data as Record<string, unknown>;
+  for (const key of ["operationId", "deployment_id", "deploymentId"] as const) {
+    const v = rec[key];
+    if (typeof v === "string" && v) return v;
+  }
+  const inner = rec.data;
+  if (inner && typeof inner === "object") {
+    const nested = extractOperationId(inner);
+    if (nested) return nested;
+    const dep = (inner as { deployment?: { id?: unknown } }).deployment;
+    if (typeof dep?.id === "string" && dep.id) return dep.id;
+  }
+  if (typeof rec.id === "string" && rec.id) return rec.id;
+  return null;
 }

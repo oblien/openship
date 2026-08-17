@@ -57,6 +57,8 @@ module.exports = {
     // Bundled payload built by build/stage.ts. These are the ONLY things that
     // make the app self-contained; no source is copied.
     extraResource: [
+      // Tray icon (packaged app has no assets/ next to the asar).
+      path.join(__dirname, "assets/icon.png"),
       // The API as a Node bundle (Bun.build target:node) + its type:module
       // marker — run under Electron's Node by services.ts, NOT a bun binary.
       path.join(RESOURCES, "server"),

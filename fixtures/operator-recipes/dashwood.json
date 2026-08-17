@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "name": "Dashwood",
+  "projectHint": "dashwood",
+  "environment": "production",
+  "service": {
+    "key": "dashwood",
+    "name": "web"
+  },
+  "buildMode": "prebuilt",
+  "persistPaths": [],
+  "health": {
+    "path": "/",
+    "port": 3000,
+    "publicHttps": true
+  },
+  "activation": {
+    "strategy": "atomic-current",
+    "killDuringStaging": true,
+    "unhealthyRollsBack": true
+  },
+  "monorepoPathPrefixes": [],
+  "migrationPolicy": "No database migrations. Static files only. Staging and activation kill leftover trees and builders; do not leave a half-extracted release.",
+  "rollbackPolicy": "If reload or public HTTPS health fails, restore the previous current pointer and re-check health. Do not rebuild the runtime to roll back a static release.",
+  "mountedRelease": {
+    "enabled": true,
+    "buildMode": "prebuilt",
+    "serviceName": "web",
+    "sourcePath": "out",
+    "containerPath": "/srv/app",
+    "sharedPaths": [],
+    "healthPath": "/",
+    "healthPort": 3000,
+    "retain": 5
+  },
+  "planner": {
+    "pathPrefixes": [],
+    "lockfiles": [],
+    "composerLayerOnLockChange": false,
+    "skipUnrelatedMonorepo": true
+  }
+}

@@ -29,7 +29,7 @@ import {
   fetchMgmt,
   type ProjectTrafficSource,
 } from "../../lib/project-analytics";
-import { proxyCloudAnalytics } from "../cloud/cloud-analytics.service";
+
 import { scrapeServerIfStale } from "../system/analytics-scraper";
 import type { RequestContext } from "../../lib/request-context";
 
@@ -320,15 +320,7 @@ async function collectCloud(
   fromMs: number,
   toMs: number,
 ): Promise<ProjectGeoResult> {
-  const settled = await Promise.allSettled(
-    sources.map((s) =>
-      proxyCloudAnalytics(organizationId, {
-        operation: "geo",
-        domain: s.domain,
-        params: { from: fromMs, to: toMs },
-      }),
-    ),
-  );
+  const settled: PromiseSettledResult<{ countries: { code: string; count: number }[] }>[] = [];
 
   const counts: Record<string, number> = {};
   for (const r of settled) {

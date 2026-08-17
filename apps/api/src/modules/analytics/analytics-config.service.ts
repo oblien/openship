@@ -48,8 +48,6 @@ export async function pushProjectAnalyticsConfig(
     repos.domain.listByProject(projectId),
   ]);
   if (!project) return;
-  // The cloud edge is not OpenResty and has no shared dict to push into.
-  if (project.cloudWorkspaceId) return;
 
   const paths = project.collectPaths === true;
   const hosts = new Set<string>([
@@ -111,7 +109,6 @@ export async function reconcileAnalyticsConfig(): Promise<{ servers: number; hos
   >();
 
   for (const p of projects) {
-    if (p.cloudWorkspaceId) continue;
     // An undeployed project has no edge to configure yet; its first route apply will.
     if (!p.activeDeploymentId) continue;
     const sources = await resolveProjectTrafficSources(p.id).catch(() => []);

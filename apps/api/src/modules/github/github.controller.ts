@@ -85,9 +85,12 @@ export async function getStatus(c: Context) {
   // `deployMode`, which is how it ended up offering a forwarding toggle that could
   // never take effect and a Cloud App row on a box with no cloud link.
   const { resolveGitHubCapabilities } = await import("./github.capabilities");
-  const { isCloudConnected } = await import("../../lib/cloud/session");
   const capabilities = await resolveGitHubCapabilities(ctx, {
-    cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
+    cloudConnected: false,
+  }).catch(() => null);
+  const { describeCloneCredentials } = await import("./clone-credential-preview");
+  const cloneCredential = await describeCloneCredentials(ctx, state, {
+    serverId: c.req.query("serverId"),
   }).catch(() => null);
   return c.json({
     state,
@@ -95,6 +98,7 @@ export async function getStatus(c: Context) {
     installUrl: install.url,
     cloudUnreachable: install.cloudUnreachable ?? false,
     capabilities,
+    cloneCredential,
   });
 }
 
@@ -134,9 +138,12 @@ export async function getHome(c: Context) {
   // it here the empty state would have to fall back to guessing platform policy —
   // the duplication this whole thing removes.
   const { resolveGitHubCapabilities } = await import("./github.capabilities");
-  const { isCloudConnected } = await import("../../lib/cloud/session");
   const capabilities = await resolveGitHubCapabilities(ctx, {
-    cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
+    cloudConnected: false,
+  }).catch(() => null);
+  const { describeCloneCredentials } = await import("./clone-credential-preview");
+  const cloneCredential = await describeCloneCredentials(ctx, data.state, {
+    serverId: c.req.query("serverId"),
   }).catch(() => null);
 
   return c.json({
@@ -148,6 +155,7 @@ export async function getHome(c: Context) {
     // unreachable" instead of a dead install button (installUrl is "").
     cloudUnreachable,
     capabilities,
+    cloneCredential,
   });
 }
 
@@ -613,7 +621,16 @@ export async function setInstanceToken(c: Context) {
     });
   }
 
-  return c.json({ connected: true, login: report.user, warning: verdict.warning });
+  const { testTokenCloneAccess } = await import("./clone-access-test");
+  const cloneTest = await testTokenCloneAccess(token).catch(
+    (err): import("./clone-access-test").CloneAccessTestResult => ({
+      ok: false,
+      via: "none",
+      message: err instanceof Error ? err.message : "Clone test failed",
+    }),
+  );
+
+  return c.json({ connected: true, login: report.user, warning: verdict.warning, cloneTest });
 }
 
 /**

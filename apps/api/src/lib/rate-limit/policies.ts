@@ -29,8 +29,7 @@ export type PolicyId =
   | "mcp"
   | "read-authed"
   | "write-authed"
-  | "webhook-ingress"
-  | "billing-portal";
+  | "webhook-ingress";
 
 export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
   /** Conservative default for unauthed routes. Per-IP. */
@@ -115,14 +114,6 @@ export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
     description: "Inbound webhook deliveries — per-source-IP.",
   },
 
-  /** Billing portal — expensive Stripe round-trip. Per-org, tight. */
-  "billing-portal": {
-    id: "billing-portal",
-    limit: 20,
-    windowMs: MINUTE_MS,
-    subject: "org",
-    description: "Stripe portal / checkout creation — per-org.",
-  },
 };
 
 export function getPolicy(id: PolicyId): RateLimitPolicy {

@@ -61,7 +61,7 @@ export interface SettingsTab {
 }
 
 export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTabId } {
-  const { selfHosted, deployMode, productView } = usePlatform();
+  const { selfHosted, deployMode, features, productView } = usePlatform();
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
@@ -99,7 +99,6 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
       visible: selfHosted,
       requiresRole: "admin",
     },
-    { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted },
     // The servers this install runs — edge/mail container versions + global scan
     // + untracked edge routes. Self-hosted/desktop only (the SaaS has no
     // operator-managed infra). See settings/page.tsx.
@@ -107,7 +106,9 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     { id: "instance", label: t.settings.sidebar.tabs.instance, icon: Server, visible: true },
   ];
 
-  return { tabs: tabs.filter((t) => t.visible), activeTab };
+  const visibleTabs = tabs.filter((tab) => tab.visible);
+  const visibleActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : "general";
+  return { tabs: visibleTabs, activeTab: visibleActiveTab };
 }
 
 export function SettingsSidebar() {

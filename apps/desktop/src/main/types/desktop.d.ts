@@ -14,7 +14,16 @@ export interface DesktopBridge {
   app: {
     version: () => Promise<string>;
     platform: string;
-    cloudUrls: () => Promise<{ api: string; dashboard: string }>;
+    localUrls: () => Promise<DesktopControlPlaneInfo>;
+  };
+  instance: {
+    info: () => Promise<DesktopControlPlaneInfo>;
+    openBrowser: () => Promise<boolean>;
+    openDataFolder: () => Promise<boolean>;
+    restartEngine: () => Promise<boolean>;
+    repairEndpoint: () => Promise<boolean>;
+    backup: () => Promise<string | null>;
+    onChange: (cb: (info: DesktopControlPlaneInfo) => void) => () => void;
   };
   onboarding: {
     complete: (apiUrl: string, dashboardUrl: string) => Promise<boolean>;
@@ -25,7 +34,38 @@ export interface DesktopBridge {
     browseFolder: () => Promise<string | null>;
     browseFile: () => Promise<string | null>;
   };
+  profiles: {
+    list: () => Promise<DesktopProfilesState>;
+    create: (name: string) => Promise<DesktopProfile>;
+    rename: (id: string, name: string) => Promise<DesktopProfile>;
+    switch: (id: string) => Promise<boolean>;
+    remove: (id: string) => Promise<boolean>;
+  };
   reset: () => Promise<boolean>;
+}
+
+export interface DesktopProfile {
+  id: string;
+  name: string;
+  partition: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+}
+
+export interface DesktopProfilesState {
+  activeProfileId: string;
+  profiles: DesktopProfile[];
+}
+
+export interface DesktopControlPlaneInfo {
+  api: string;
+  dashboard: string;
+  advertisedOrigin: string;
+  previousAdvertisedOrigin: string | null;
+  switched: { api: boolean; dashboard: boolean };
+  fingerprint: string;
+  dataPath: string;
+  userDataPath: string;
 }
 
 declare global {

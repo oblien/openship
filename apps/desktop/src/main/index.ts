@@ -1,36 +1,41 @@
 /**
- * Openship Desktop - Electron main process.
+ * Openship Desktop — background control-plane host.
  *
- * Flow:
- *   1. App starts → check if onboarding is complete
- *   2. If not → show the local onboarding UI (bundled HTML)
- *   3. User connects to a server → save config → load dashboard
- *   4. If already set up → load dashboard directly
- *
- * Architecture:
- *   Desktop (Electron)
- *     ├─ Onboarding (local HTML, first run only)
- *     └─ Dashboard (Next.js web UI, loaded in BrowserWindow)
- *         └─ API (remote server, reached via HTTP)
+ * One process owns PGlite + the bundled API/MCP. The window is a view onto
+ * that host: close hides to the tray, quit is tray/menu only, and a second
+ * launch focuses the first window instead of starting another engine.
  */
 
-import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme } from "electron";
-import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { randomBytes, createHash } from "node:crypto";
-import { hostname } from "node:os";
 import {
-  CLOUD_API_URL as DEFAULT_CLOUD_API_URL,
-  CLOUD_DASHBOARD_URL as DEFAULT_CLOUD_DASHBOARD_URL,
-} from "@repo/core";
+  app,
+  BrowserWindow,
+  shell,
+  ipcMain,
+  net,
+  dialog,
+  globalShortcut,
+  screen,
+  nativeTheme,
+  session,
+  Tray,
+  Menu,
+  nativeImage,
+} from "electron";
+import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import {
   type SystemSettings,
   type TunnelConfig,
   buildSetupPayload,
 } from "@repo/onboarding";
+import { writeJsonAtomic } from "./atomic-json";
 import {
+  getControlPlaneSnapshot,
   getLocalApiUrl,
   getLocalDashboardUrl,
+  initControlPlane,
+  restartLocalServices,
   startLocalServices,
   stopLocalServices,
   stopLocalServicesAndWait,
@@ -49,6 +54,7 @@ import {
   isSafeExternalUrl,
   type RendererConfigKey,
 } from "./security";
+import { DesktopProfileStore, type DesktopProfile } from "./profile-store";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -131,11 +137,27 @@ class ConfigStore {
   }
 
   private save() {
-    writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+    writeJsonAtomic(this.filePath, this.data);
   }
 }
 
+const isPrimaryInstance = app.requestSingleInstanceLock();
+if (!isPrimaryInstance) {
+  app.exit(0);
+}
+
+// Focus the first window before any disk I/O so a double-launch during first
+// run still lands. Loser never constructs stores (exit + throw).
+app.on("second-instance", () => {
+  showMainWindow();
+});
+if (!isPrimaryInstance) {
+  throw new Error("openship: another instance is already running");
+}
+
 const store = new ConfigStore();
+const profiles = new DesktopProfileStore(app.getPath("userData"));
+initControlPlane(app.getPath("userData"));
 
 // ─── Internal token (ephemeral, per-session) ─────────────────────────────────
 
@@ -186,11 +208,6 @@ async function pushInstanceSettings(
   }
 }
 
-// ─── URL constants ───────────────────────────────────────────────────────────
-
-const CLOUD_API_URL = DEFAULT_CLOUD_API_URL;
-const CLOUD_DASHBOARD_URL = DEFAULT_CLOUD_DASHBOARD_URL;
-
 // Local API/dashboard origins are DYNAMIC (chosen at launch by services.ts).
 // Always read them live via getLocalApiUrl()/getLocalDashboardUrl() — never
 // cache, since the ports differ each run.
@@ -219,6 +236,10 @@ async function waitForApi(apiUrl: string, maxAttempts = 30, intervalMs = 1000): 
 // ─── Window management ───────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow | null = null;
+let switchingProfiles = false;
+/** True once the user asked to quit. Close-to-tray must not preventDefault then. */
+let isQuitting = false;
+let tray: Tray | null = null;
 
 /** The update found by the launch check, pending user action in the update window. */
 let pendingUpdate: UpdateInfo | null = null;
@@ -228,6 +249,7 @@ let pendingUpdate: UpdateInfo | null = null;
 let updateInFlight: Promise<boolean> | null = null;
 
 function createWindow() {
+  const activeProfile = profiles.active();
   const bounds = store.get("windowBounds");
   // Never open larger than the display (a previously-stored oversized bound, or
   // a small screen, would otherwise make the window bigger than the desktop).
@@ -242,7 +264,7 @@ function createWindow() {
   // the top-left corner.
   const hasStoredPosition = typeof bounds?.x === "number" && typeof bounds?.y === "number";
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width,
     height,
     ...(hasStoredPosition ? { x: bounds?.x, y: bounds?.y } : { center: true }),
@@ -274,6 +296,7 @@ function createWindow() {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      ...(activeProfile.partition ? { partition: activeProfile.partition } : {}),
       // Still off because the preload does `require("@repo/onboarding")`, which a
       // sandboxed preload can't resolve — it would silently hit the fallback path
       // and degrade onboarding's SSH validation to no-ops. Turning this on means
@@ -282,39 +305,40 @@ function createWindow() {
       sandbox: false,
     },
   });
+  mainWindow = window;
 
   // Restore a maximized window only if the user actually left it maximized. This
   // was `!== false`, i.e. undefined counted as "maximize" — so every first launch
   // (and any launch after a config reset) opened fullscreen-wide regardless of the
   // sizing above.
   if (store.get("windowMaximized") === true) {
-    mainWindow.maximize();
+    window.maximize();
   }
 
   // Keep the renderer's restore icon honest: the window can be maximized by the
   // OS, a keyboard shortcut, or a double-click, none of which go through our IPC.
   const emitMaximized = (maximized: boolean) =>
-    mainWindow?.webContents.send("window:maximized-change", maximized);
-  mainWindow.on("maximize", () => emitMaximized(true));
-  mainWindow.on("unmaximize", () => emitMaximized(false));
+    window.webContents.send("window:maximized-change", maximized);
+  window.on("maximize", () => emitMaximized(true));
+  window.on("unmaximize", () => emitMaximized(false));
 
   // Same idea for the titlebar's back/forward arrows: most navigation happens
   // through links and the Next router, not our IPC, so push the real state after
   // every navigation instead of letting the renderer guess. `did-navigate-in-page`
   // is the one that fires for Next's client-side pushState routing.
   const emitNav = () => {
-    const h = mainWindow?.webContents.navigationHistory;
-    mainWindow?.webContents.send("window:nav-state-change", {
+    const h = window.webContents.navigationHistory;
+    window.webContents.send("window:nav-state-change", {
       canGoBack: h?.canGoBack() ?? false,
       canGoForward: h?.canGoForward() ?? false,
     });
   };
-  mainWindow.webContents.on("did-navigate", emitNav);
-  mainWindow.webContents.on("did-navigate-in-page", emitNav);
+  window.webContents.on("did-navigate", emitNav);
+  window.webContents.on("did-navigate-in-page", emitNav);
 
   // Show the window once content is painted (avoids white flash)
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+  window.once("ready-to-show", () => {
+    window.show();
   });
 
   // Paint a loading splash immediately. The real view (onboarding/dashboard)
@@ -322,7 +346,7 @@ function createWindow() {
   showLoading();
 
   // Open external links in the system browser
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) {
       shell.openExternal(url);
     }
@@ -353,11 +377,11 @@ function createWindow() {
     if (verdict === "external") shell.openExternal(url);
     else console.warn(`[security] blocked main-frame navigation to ${url}`);
   };
-  mainWindow.webContents.on("will-navigate", containNavigation);
-  mainWindow.webContents.on("will-redirect", containNavigation);
+  window.webContents.on("will-navigate", containNavigation);
+  window.webContents.on("will-redirect", containNavigation);
 
   // Detect when onboarding completes via dashboard desktop-login redirect
-  mainWindow.webContents.on("did-navigate", (_e, url) => {
+  window.webContents.on("did-navigate", (_e, url) => {
     const u = new URL(url);
     // desktop-login redirects to dashboard root - mark onboarding complete
     if (!store.get("onboardingComplete") && u.pathname === "/" && u.origin === getLocalDashboardUrl()) {
@@ -369,15 +393,18 @@ function createWindow() {
 
   // Save window state on close. Store the NORMAL (un-maximized) bounds so a
   // maximized session doesn't persist a full-screen-sized "normal" window.
-  mainWindow.on("close", () => {
-    if (mainWindow) {
-      store.set("windowMaximized", mainWindow.isMaximized());
-      store.set("windowBounds", mainWindow.getNormalBounds());
+  // Hide to tray unless this is a real quit — the embedded API/MCP stay up.
+  window.on("close", (event) => {
+    store.set("windowMaximized", window.isMaximized());
+    store.set("windowBounds", window.getNormalBounds());
+    if (!isQuitting && !switchingProfiles) {
+      event.preventDefault();
+      window.hide();
     }
   });
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
   });
 }
 
@@ -608,9 +635,11 @@ function loadOnboarding() {
 
 function loadDashboard() {
   if (!mainWindow) return;
-  // Always use the LIVE dashboard origin — the port is dynamic per launch, so
-  // any persisted dashboardUrl is stale. onboardingComplete is the real state.
-  mainWindow.loadURL(getLocalDashboardUrl()).catch((err) => {
+  // Re-mint the canonical local session on every launch/profile switch. Older
+  // builds stored account cookies per partition, so loading the dashboard
+  // directly can resurrect an empty Cloud/synthetic workspace even though all
+  // profiles now intentionally share the same local data.
+  mainWindow.loadURL(`${getLocalApiUrl()}/api/auth/desktop-login`).catch((err) => {
     // Fall back to onboarding on a dashboard-load failure only when onboarding
     // is enabled; otherwise it's just a transient dashboard error to surface.
     if (ONBOARDING_ENABLED) {
@@ -622,15 +651,179 @@ function loadDashboard() {
   });
 }
 
+function electronSessionFor(profile: DesktopProfile) {
+  return profile.partition ? session.fromPartition(profile.partition) : session.defaultSession;
+}
+
+async function clearProfileSession(profile: DesktopProfile): Promise<void> {
+  const profileSession = electronSessionFor(profile);
+  await profileSession.clearStorageData({ storages: ["cookies", "localstorage", "indexdb"] });
+  await profileSession.cookies.flushStore();
+}
+
+function reopenForActiveProfile(): void {
+  const previous = mainWindow;
+  switchingProfiles = true;
+  createWindow();
+  routeInitialView();
+  previous?.destroy();
+  switchingProfiles = false;
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    routeInitialView();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function emitInstanceChanged(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("instance:changed", getControlPlaneSnapshot());
+}
+
+function openDashboardInBrowser(): void {
+  const url = getLocalDashboardUrl();
+  if (isSafeExternalUrl(url)) void shell.openExternal(url);
+}
+
+function openDataFolder(): void {
+  void shell.openPath(getControlPlaneSnapshot().dataPath);
+}
+
+async function backupControlPlane(): Promise<string | null> {
+  if (!mainWindow) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: "Back up control plane",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (canceled || !filePaths[0]) return null;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dest = join(filePaths[0], `openship-control-plane-${stamp}`);
+  mkdirSync(dest, { recursive: true });
+  // Stop the engine first so PGlite releases the data dir — a live cpSync can
+  // tear the cluster or throw EBUSY on Windows.
+  const cycle = app.isPackaged;
+  if (cycle) {
+    showLoading();
+    setLoadingStage("Backing up control plane", 0.4);
+    await stopLocalServicesAndWait();
+  }
+  try {
+    cpSync(getControlPlaneSnapshot().dataPath, join(dest, "data"), { recursive: true });
+  } catch (err) {
+    if (cycle) {
+      try {
+        await startLocalServices(internalToken);
+        loadDashboard();
+      } catch {
+        // copy failed; start failure is reported below
+      }
+    }
+    throw err;
+  }
+  if (cycle) {
+    setLoadingStage("Starting services", 0.75);
+    await startLocalServices(internalToken);
+    setLoadingStage("Opening dashboard", 1);
+    loadDashboard();
+    emitInstanceChanged();
+  }
+  return dest;
+}
+
+async function runEngineAction(rebind: boolean): Promise<boolean> {
+  if (!app.isPackaged) {
+    emitInstanceChanged();
+    return true;
+  }
+  showLoading();
+  setLoadingStage(rebind ? "Repairing endpoint" : "Restarting engine", 0.55);
+  try {
+    await restartLocalServices(internalToken, { rebind });
+    setLoadingStage("Opening dashboard", 1);
+    loadDashboard();
+    emitInstanceChanged();
+    return true;
+  } catch (err) {
+    dialog.showErrorBox(
+      rebind ? "Couldn't repair endpoint" : "Couldn't restart engine",
+      err instanceof Error ? err.message : String(err),
+    );
+    routeInitialView();
+    return false;
+  }
+}
+
+function resolveTrayIcon(): Electron.NativeImage {
+  const candidates = [
+    join(process.resourcesPath, "icon.png"),
+    join(__dirname, "../../assets/icon.png"),
+  ];
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    const image = nativeImage.createFromPath(path);
+    if (image.isEmpty()) continue;
+    if (process.platform === "darwin") image.setTemplateImage(true);
+    return image.resize({ width: 16, height: 16 });
+  }
+  return nativeImage.createEmpty();
+}
+
+function createTray(): void {
+  if (tray) return;
+  tray = new Tray(resolveTrayIcon());
+  tray.setToolTip("Openship");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open Openship", click: () => showMainWindow() },
+      { label: "Open in Browser", click: () => openDashboardInBrowser() },
+      { type: "separator" },
+      { label: "Restart Engine", click: () => void runEngineAction(false) },
+      { label: "Repair Endpoint", click: () => void runEngineAction(true) },
+      { label: "Back Up Control Plane…", click: () => void backupControlPlane() },
+      { label: "Open Data Folder", click: () => openDataFolder() },
+      { type: "separator" },
+      {
+        label: "Quit Openship",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on("click", () => showMainWindow());
+}
+
+function requestQuit(): void {
+  isQuitting = true;
+  app.quit();
+}
+
 // ─── App lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return;
+
   createWindow(); // shows the loading splash immediately
+  createTray();
 
   // Native menu: Reload / Developer Tools / Help. Registered on every platform —
   // Windows/Linux are frameless so no menu bar renders, but the accelerators
   // (Ctrl+R, Ctrl+Shift+I) still install, and the titlebar keeps a ⋯ there.
-  buildAppMenu(() => mainWindow);
+  buildAppMenu(() => mainWindow, {
+    openInBrowser: openDashboardInBrowser,
+    restartEngine: () => void runEngineAction(false),
+    repairEndpoint: () => void runEngineAction(true),
+    backupControlPlane: () => void backupControlPlane(),
+    openDataFolder,
+    quit: requestQuit,
+  });
 
   // In a packaged build there are no external dev servers — boot the bundled
   // API + dashboard ourselves before routing to the real view. In dev the
@@ -646,6 +839,7 @@ app.whenReady().then(async () => {
         "Openship failed to start",
         err instanceof Error ? err.message : String(err),
       );
+      isQuitting = true;
       app.quit();
       return;
     }
@@ -693,22 +887,19 @@ app.whenReady().then(async () => {
   });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-      routeInitialView();
-    }
+    showMainWindow();
   });
 });
 
 app.on("window-all-closed", () => {
-  globalShortcut.unregisterAll();
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  if (switchingProfiles) return;
+  // Do not quit. The control plane stays up behind the tray; quit is
+  // tray/menu only. (macOS already behaved this way.)
 });
 
 // Tear down the bundled services when the app actually quits.
 app.on("before-quit", () => {
+  isQuitting = true;
   stopLocalServices();
 });
 
@@ -818,8 +1009,7 @@ ipcMain.handle("window:toggle-maximize", () => {
 });
 
 ipcMain.handle("window:close", () => {
-  // close(), not destroy() — the existing "close" handler persists window bounds
-  // and decides hide-vs-quit per platform.
+  // close(), not destroy() — the close handler persists bounds and hides unless isQuitting.
   mainWindow?.close();
   return true;
 });
@@ -866,11 +1056,8 @@ ipcMain.handle("window:nav-state", () => navState());
 /**
  * Toggle DevTools from the titlebar's ⋯ menu.
  *
- * This is the ONLY route on Windows/Linux: those run `frame: false`, so there is
- * no menu bar at all. macOS still has Electron's default application menu (main
- * never calls Menu.setApplicationMenu, so the built-in one with View → Toggle
- * Developer Tools stays), but it lives in the system menu bar — having it in the
- * window too costs nothing and keeps the two platforms behaving the same.
+ * This is the only clickable route on Windows/Linux (`frame: false` hides the
+ * menu bar). macOS also has View → Toggle Developer Tools in the app menu.
  */
 ipcMain.handle("window:toggle-devtools", () => {
   const wc = mainWindow?.webContents;
@@ -909,12 +1096,57 @@ ipcMain.handle("app:version", () => {
   return app.getVersion();
 });
 
-ipcMain.handle("app:cloud-urls", () => {
-  return { api: CLOUD_API_URL, dashboard: CLOUD_DASHBOARD_URL };
+ipcMain.handle("app:local-urls", () => getControlPlaneSnapshot());
+
+ipcMain.handle("instance:info", () => getControlPlaneSnapshot());
+
+ipcMain.handle("instance:open-browser", () => {
+  openDashboardInBrowser();
+  return true;
 });
 
-ipcMain.handle("app:local-urls", () => {
-  return { api: getLocalApiUrl(), dashboard: getLocalDashboardUrl() };
+ipcMain.handle("instance:open-data", () => {
+  openDataFolder();
+  return true;
+});
+
+ipcMain.handle("instance:restart", () => runEngineAction(false));
+
+ipcMain.handle("instance:repair", () => runEngineAction(true));
+
+ipcMain.handle("instance:backup", () => backupControlPlane());
+
+// ─── IPC: Named desktop profiles ────────────────────────────────────────────
+
+ipcMain.handle("profiles:list", () => ({
+  activeProfileId: profiles.active().id,
+  profiles: profiles.list(),
+}));
+
+ipcMain.handle("profiles:create", (_event, name: unknown) => {
+  if (typeof name !== "string") throw new Error("Profile name is required");
+  return profiles.create(name);
+});
+
+ipcMain.handle("profiles:rename", (_event, id: unknown, name: unknown) => {
+  if (typeof id !== "string" || typeof name !== "string") {
+    throw new Error("Profile and name are required");
+  }
+  return profiles.rename(id, name);
+});
+
+ipcMain.handle("profiles:switch", (_event, id: unknown) => {
+  if (typeof id !== "string") throw new Error("Profile is required");
+  profiles.setActive(id);
+  setImmediate(reopenForActiveProfile);
+  return true;
+});
+
+ipcMain.handle("profiles:remove", async (_event, id: unknown) => {
+  if (typeof id !== "string") throw new Error("Profile is required");
+  const removed = profiles.remove(id);
+  await clearProfileSession(removed);
+  return true;
 });
 
 // No renderer-driven navigation channel: `loadURL` from main bypasses the
@@ -965,201 +1197,6 @@ ipcMain.handle(
     return true;
   }
 );
-
-/**
- * Cloud auth flow - "Continue with Cloud" in onboarding.
- *
- * 1. Wait for local API to be available
- * 2. Push authMode="cloud" to the local API
- * 3. Generate a random nonce and register it with the API
- * 4. Open cloud auth URL in the system browser
- * 5. Return immediately so the renderer can show polling UX
- * 6. Renderer polls via cloud-auth-poll until session is obtained
- */
-ipcMain.handle("onboarding:cloud-auth", async () => {
-  if (!mainWindow) return { ok: false, error: "No window" };
-
-  // Wait for API to be available
-  const apiReady = await waitForApi(getLocalApiUrl());
-  if (!apiReady) {
-    return { ok: false, error: "api_unavailable" };
-  }
-
-  // Push authMode before auth so env returns "cloud"
-  await pushInstanceSettings(getLocalApiUrl(), {
-    authMode: "cloud",
-    buildMode: "auto",
-  });
-
-  // Generate nonce, state (CSRF), and PKCE pair
-  const nonce = randomBytes(16).toString("hex");
-  const state = randomBytes(16).toString("hex");
-  const codeVerifier = randomBytes(32).toString("base64url");
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-
-  // Register with API (authenticated with internal token)
-  try {
-    const res = await net.fetch(`${getLocalApiUrl()}/api/auth/desktop-auth-start`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Token": internalToken,
-      },
-      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
-    return { ok: false, error: "nonce_registration_failed" };
-  }
-
-  // Open the authorize page in the system browser - if not logged in,
-  // it redirects to login first, then back to authorize after auth.
-  const callbackUrl = `${getLocalApiUrl()}/api/auth/cloud-callback`;
-  const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
-  shell.openExternal(cloudAuthUrl);
-
-  return { ok: true, cloudAuthUrl, nonce };
-});
-
-/**
- * Poll for cloud auth completion.
- *
- * Electron calls this every ~2 s after cloud-auth returns.
- * When the API reports "resolved", we navigate to the claim URL
- * which sets the cookie via HTTP Set-Cookie and redirects to the dashboard.
- */
-ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
-  if (!mainWindow) return { status: "expired" };
-
-  try {
-    const res = await net.fetch(
-      `${getLocalApiUrl()}/api/auth/desktop-auth-poll?nonce=${encodeURIComponent(nonce)}`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    const data = (await res.json()) as { status: string; claimCode?: string };
-
-    if (data.status === "resolved" && data.claimCode) {
-      // Navigate to the claim endpoint - it sets the cookie via HTTP
-      // Set-Cookie header and redirects to the dashboard.
-      const claimUrl = `${getLocalApiUrl()}/api/auth/desktop-claim?code=${encodeURIComponent(data.claimCode)}`;
-
-      // Listen for dashboard load to mark onboarding complete
-      const onNavigate = (_e: unknown, url: string) => {
-        if (url.startsWith(getLocalDashboardUrl())) {
-          store.set("apiUrl", getLocalApiUrl());
-          store.set("dashboardUrl", getLocalDashboardUrl());
-          store.set("onboardingComplete", true);
-          mainWindow?.webContents.removeListener("did-navigate", onNavigate);
-        }
-      };
-      mainWindow.webContents.on("did-navigate", onNavigate);
-      mainWindow.loadURL(claimUrl);
-
-      // Bring the desktop app back to the front (the browser had focus for the
-      // cloud sign-in) — like VS Code re-focusing after an external auth.
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-      app.focus({ steal: true });
-
-      return { status: "resolved" };
-    }
-
-    return { status: data.status };
-  } catch {
-    // Network error during poll - report as error so UI can show feedback
-    return { status: "error" };
-  }
-});
-
-// ─── Cloud reconnect from settings (no onboarding side-effects) ──────────────
-
-/**
- * Start cloud connect flow from the settings page.
- *
- * Same PKCE + nonce mechanism as onboarding, but does NOT:
- *   - push authMode / buildMode changes
- *   - navigate the main window away
- *   - mark onboarding complete
- *
- * The cloud-callback endpoint stores the cloud session token server-side.
- * After polling resolves, the renderer just refreshes cloudApi.status().
- */
-ipcMain.handle("cloud:connect", async () => {
-  if (!mainWindow) return { ok: false, error: "No window" };
-
-  const apiReady = await waitForApi(getLocalApiUrl());
-  if (!apiReady) {
-    return { ok: false, error: "api_unavailable" };
-  }
-
-  // Generate nonce, state (CSRF), and PKCE pair
-  const nonce = randomBytes(16).toString("hex");
-  const state = randomBytes(16).toString("hex");
-  const codeVerifier = randomBytes(32).toString("base64url");
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-
-  // Register with API
-  try {
-    const res = await net.fetch(`${getLocalApiUrl()}/api/auth/desktop-auth-start`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Token": internalToken,
-      },
-      body: JSON.stringify({ nonce, state, code_verifier: codeVerifier }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
-    return { ok: false, error: "nonce_registration_failed" };
-  }
-
-  const callbackUrl = `${getLocalApiUrl()}/api/auth/cloud-callback`;
-  const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
-  shell.openExternal(cloudAuthUrl);
-
-  return { ok: true, cloudAuthUrl, nonce };
-});
-
-/**
- * Poll cloud connect from settings.
- *
- * Unlike onboarding poll, when resolved this does NOT navigate the window.
- * The cloud-callback has already stored the session token server-side.
- * The renderer should call cloudApi.status() to pick up the new state.
- */
-ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
-  if (!mainWindow) return { status: "expired" };
-
-  try {
-    const res = await net.fetch(
-      `${getLocalApiUrl()}/api/auth/desktop-auth-poll?nonce=${encodeURIComponent(nonce)}`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    const data = (await res.json()) as { status: string; claimCode?: string };
-
-    if (data.status === "resolved") {
-      // Cloud session token is already stored server-side by cloud-callback.
-      // No need to navigate or claim - just tell the renderer to refresh status.
-      // Re-focus the desktop app (the browser had focus during sign-in).
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-      }
-      app.focus({ steal: true });
-      return { status: "resolved" };
-    }
-
-    return { status: data.status };
-  } catch {
-    return { status: "error" };
-  }
-});
 
 // http/https only. `shell.openExternal` hands the string to the OS dispatcher,
 // so an unvalidated scheme could launch a local handler or, on Windows, resolve a

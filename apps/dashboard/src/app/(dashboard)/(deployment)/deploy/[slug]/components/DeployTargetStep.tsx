@@ -495,7 +495,7 @@ export interface ResolvedTargets {
 
 export function useDesktopTargets(): ResolvedTargets {
   const cloud = useCloud();
-  const { selfHosted } = usePlatform();
+  const { selfHosted, localOnly } = usePlatform();
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [serversReady, setServersReady] = useState(false);
 
@@ -531,8 +531,8 @@ export function useDesktopTargets(): ResolvedTargets {
 
   const hasServers = servers.length > 0;
   const hasCloudConnected = cloud.connected;
-  const hasCloudOption = true;
-  const ready = serversReady && !cloud.loading;
+  const hasCloudOption = false;
+  const ready = serversReady && (localOnly || !cloud.loading);
 
   return {
     ready,
@@ -620,7 +620,7 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
         updateConfig({ deployTarget: "server", serverId: savedServerId });
         return;
       }
-      if (target === "cloud") {
+      if (target === "cloud" && targets.hasCloudOption) {
         updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         return;
       }
@@ -630,7 +630,7 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
         updateConfig({ deployTarget: "server", serverId: last.serverId });
         return;
       }
-      if (last?.target === "cloud") {
+      if (last?.target === "cloud" && targets.hasCloudOption) {
         updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         return;
       }
@@ -646,7 +646,11 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
         updateConfig({ deployTarget: "server", serverId: preferred.id });
         return;
       }
-      updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
+      updateConfig(
+        targets.hasCloudOption
+          ? { deployTarget: "cloud", serverId: undefined, buildStrategy: "server" }
+          : { deployTarget: "server", serverId: undefined },
+      );
     };
     settingsApi.get().then((res) => seed(res)).catch(() => seed(null));
     return () => { cancelled = true; };

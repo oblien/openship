@@ -26,11 +26,9 @@ describe("restoreSubgraph wipe gate (GATE 2)", () => {
     else process.env.CLOUD_MODE = prev;
   });
 
-  it("refuses a wipe restore when CLOUD_MODE=true", async () => {
+  it("allows a wipe restore — Operator is single-tenant", async () => {
     process.env.CLOUD_MODE = "true";
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(restoreSubgraph(instanceWipeDump as any, { mode: "wipe" })).rejects.toThrow(
-      /multi-tenant/i,
-    );
+    await expect(restoreSubgraph(instanceWipeDump as any, { mode: "wipe" })).resolves.toBeUndefined();
   });
 });

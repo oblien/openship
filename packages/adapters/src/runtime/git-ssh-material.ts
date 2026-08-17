@@ -17,7 +17,7 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 
-import { sq } from "./git-clone";
+import { gitTokenExtraHeader, sq } from "./git-clone";
 
 /** Minimal IO surface a host needs to host SSH clone material. */
 export interface GitSshWriter {
@@ -88,6 +88,27 @@ export function shellGitSshWriter(io: {
       await io.exec(`rm -rf ${sq(dir)}`).catch(() => {});
     },
   };
+}
+
+/**
+ * Write a 0600 gitconfig whose only secret is `http.extraHeader`. Remote
+ * `assembleGitClone({ gitTokenConfigFile })` then points GIT_CONFIG_GLOBAL at
+ * this path so the token is not in the SSH / `sh -c` command string.
+ */
+export async function materializeGitTokenAuth(
+  writer: GitSshWriter,
+  dir: string,
+  token: string,
+): Promise<{ configFile: string; cleanup: () => Promise<void> }> {
+  const configFile = `${dir}/gitconfig`;
+  await writer.ensureDir(dir);
+  try {
+    await writer.writeSecret(configFile, `[http]\n\textraHeader = ${gitTokenExtraHeader(token)}\n`);
+  } catch (err) {
+    await writer.remove(dir);
+    throw err;
+  }
+  return { configFile, cleanup: () => writer.remove(dir) };
 }
 
 /** Writer for material staged on THIS machine (the orchestrator's api-host clone). */

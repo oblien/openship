@@ -264,7 +264,7 @@ export type RateLimitPolicyId =
   | "read-authed"
   | "write-authed"
   | "webhook-ingress"
-  | "billing-portal";
+
 
 /**
  * MCP exposure for a route. Presence of this block is the MCP allowlist:
@@ -275,6 +275,22 @@ export type RateLimitPolicyId =
 export interface McpRouteMeta {
   /** Agent-facing tool description. */
   description: string;
+  /**
+   * Stable tool name (e.g. `projects.list`). When set, this is the advertised
+   * name and prompts can hard-code it. Unnamed routes are advertised as
+   * `advanced.<generated>` and stay behind the advanced tools flag.
+   */
+  name?: string;
+  /**
+   * Queues work and returns `{ operationId }` immediately. Dispatch extracts
+   * the id from the handler payload so the agent polls instead of waiting.
+   */
+  longRunning?: boolean;
+  /**
+   * Per-tool timeout in ms. Distinct from the outer MCP execution deadline.
+   * Reads default to the shared read budget when this is omitted.
+   */
+  timeoutMs?: number;
   /**
    * @deprecated Declare the body schema ONCE via the top-level `spec.body`
    * field instead — secureRouter auto-wires `tbValidator` from it AND the MCP

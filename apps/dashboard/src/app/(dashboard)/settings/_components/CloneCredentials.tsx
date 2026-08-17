@@ -7,7 +7,7 @@ import { getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { SettingsSection } from "./SettingsSection";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 
 /**
  * GitHub clone credentials - user-global PAT for cloning private repos.
@@ -89,7 +89,16 @@ export function CloneCredentials() {
       setState(next.cloneToken);
       setTokenInput("");
       setEditing(false);
-      showToast(t.settings.cloneCredentials.toast.saved, "success", t.settings.common.toast.cloneCredentials);
+      const cloneTest = (next as { cloneTest?: { ok: boolean; message: string } }).cloneTest;
+      if (cloneTest && !cloneTest.ok) {
+        showToast(
+          interpolate(t.settings.github.cloneTestFailed, { message: cloneTest.message }),
+          "error",
+          t.settings.common.toast.cloneCredentials,
+        );
+      } else {
+        showToast(t.settings.cloneCredentials.toast.saved, "success", t.settings.common.toast.cloneCredentials);
+      }
     } catch (err) {
       showToast(getApiErrorMessage(err, t.settings.cloneCredentials.toast.saveFailed), "error", t.settings.common.toast.cloneCredentials);
     } finally {

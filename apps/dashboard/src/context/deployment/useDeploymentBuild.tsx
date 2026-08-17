@@ -216,7 +216,7 @@ export function useDeploymentBuild(
   // "connecting is the missing step" from "we already think we're connected and the
   // server still said no" — the two cases requireCloud's return value conflates.
   const { requireCloud, connected: cloudConnected } = useCloud();
-  const { baseDomain, selfHosted, deployMode } = usePlatform();
+  const { baseDomain, selfHosted, deployMode, features } = usePlatform();
   const { showModal, hideModal } = useModal();
   const openGithubConnect = useServerGitHubConnectModal();
   const { installUrl, state: githubState } = useGitHub();
@@ -951,7 +951,7 @@ export function useDeploymentBuild(
       const message = getApiErrorMessage(err, "Failed to start deployment");
       const errorCode = extractErrorCode(err);
 
-      const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
+      const canConnectCloud = canUseCloudConnection({ selfHosted, features });
       // Backend defense-in-depth: a cloud-requiring preflight failure carries a
       // shared CLOUD_REQUIRED_* code. Map it → capability → the ONE connect modal
       // (copy from the shared registry — no hardcoded strings). The up-front
@@ -976,7 +976,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, cloudConnected, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
+  }, [baseDomain, cloudConnected, config, deployMode, features, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only

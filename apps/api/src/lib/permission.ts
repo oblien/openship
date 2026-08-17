@@ -35,8 +35,6 @@ import { repos } from "@repo/db";
 import type { Permission, ResourceType } from "@repo/db";
 import { getRequestContext, withScopedOrg, type RequestContext } from "./request-context";
 import { grantSourceFor, type GrantSource } from "./grant-source";
-import { env } from "../config";
-import { resolveOrgCloudUserId } from "./cloud/transport";
 
 /**
  * Resources that exist exactly once per org and carry no resource id in the URL —
@@ -113,7 +111,6 @@ async function loadRootOrgId(
       const d = await repos.backupDestination.findById(id);
       return d?.organizationId ?? null;
     }
-    case "billing":
     case "audit":
       // Org-singletons — the id IS the org id (or "*" for list scope).
       // List scope is handled upstream; here we just accept the org id.
@@ -258,14 +255,10 @@ export const PROJECT_ROOTED: ReadonlySet<CheckedResourceType> = new Set([
  * remains the authoritative per-project gate; a bogus id still 404s once proxied.
  */
 async function resolveCloudFallbackOrg(
-  resourceType: CheckedResourceType,
-  scopeOrg: string | null,
+  _resourceType: CheckedResourceType,
+  _scopeOrg: string | null,
 ): Promise<string | null> {
-  if (env.CLOUD_MODE) return null; // the SaaS IS canonical — no upstream to fall back to
-  if (!PROJECT_ROOTED.has(resourceType)) return null;
-  if (!scopeOrg) return null;
-  const ownerUserId = await resolveOrgCloudUserId(scopeOrg).catch(() => null);
-  return ownerUserId ? scopeOrg : null;
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -284,8 +277,8 @@ export function roleAllowsResourceType(
   resourceType: CheckedResourceType,
 ): boolean {
   if (role === "owner") return true;
-  if (role === "admin") return resourceType !== "billing";
-  return resourceType !== "billing" && resourceType !== "audit";
+  if (role === "admin") return true;
+  return resourceType !== "audit";
 }
 
 /**
@@ -396,17 +389,7 @@ export async function checkPermission(
 
   let root = await resolveResourceOrg(input.resourceType, input.resourceId);
   if (!root) {
-    // A `project` with no local row is a CLOUD project (canonical on the
-    // SaaS). `assert` only reaches here with a resolved `organizationId` when
-    // the cloud fallback fired (the org is cloud-linked), so honor a grant
-    // keyed by the cloud project id itself. Scoped to the directly-granted
-    // `project` type — cloud sub-resources can't be resolved to their parent
-    // locally, and are covered by the project-level grant on their routes.
-    if (!env.CLOUD_MODE && input.resourceType === "project" && input.resourceId !== "*") {
-      root = { orgId: organizationId, rootType: "project", rootId: input.resourceId };
-    } else {
-      return false;
-    }
+    return false;
   }
   const grant = await source.findForResource(
     organizationId,

@@ -115,13 +115,13 @@ type DeploymentRow = NonNullable<Awaited<ReturnType<typeof repos.deployment.find
  * against our own edge.
  */
 function isEdgeServedStatic(
-  project: Pick<ProjectRow, "hasServer" | "workloadType" | "cloudWorkspaceId">,
+  project: Pick<ProjectRow, "hasServer" | "workloadType">,
 ): boolean {
   // Only a STATIC workload is served by the edge as files. A worker shares
   // `hasServer=false` but is a real container with its own runtime lifecycle, so
   // route through the workload axis — not the legacy boolean — or a worker's
   // pause/resume would be (mis)handled as edge-route removal (#538-B).
-  return deploymentWorkload(project) === "static" && !project.cloudWorkspaceId;
+  return deploymentWorkload(project) === "static";
 }
 
 /**
@@ -315,9 +315,6 @@ export async function retryProjectRouting(
 ): Promise<{ ok: boolean; warning?: string }> {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
-
-  // Cloud manages its own ingress — there is no server edge to repair here.
-  if (p.cloudWorkspaceId) return { ok: true };
 
   const dep = p.activeDeploymentId
     ? await repos.deployment.findById(p.activeDeploymentId)

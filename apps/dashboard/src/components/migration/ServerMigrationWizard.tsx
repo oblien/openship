@@ -1942,13 +1942,13 @@ export function ServerMigrationWizard({
             )}
           </div>
         </div>
-  
+
         {/* The error text already shows in the LEFT card's failure banner
             (above the session log) — don't duplicate it here in the rail. */}
         {awaiting && (
           <p className="text-xs leading-relaxed text-muted-foreground">{m.cutover.warning}</p>
         )}
-  
+
         <div className="space-y-2">
           {awaiting ? (
             <>
@@ -1990,7 +1990,7 @@ export function ServerMigrationWizard({
             </>
           )}
         </div>
-  
+
         {/* Delete this run's record (terminal only; project + data untouched). */}
         {terminal && (
           <div className="border-t border-border/50 pt-3">

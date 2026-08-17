@@ -1,5 +1,6 @@
 import "server-only";
 import { cache } from "react";
+import type { Edition, EditionFeatures } from "@repo/core";
 import { serverApi, ServerApiError } from "./api";
 
 /**
@@ -107,6 +108,8 @@ export const getSession = cache(async (): Promise<SessionData | null> => {
 
 export type DeploymentInfo = {
   selfHosted: boolean;
+  edition?: Edition;
+  features?: EditionFeatures;
   deployMode: string;
   /** True when OpenShip runs ON a server (self-hosted, non-desktop) — the host
    *  is itself a deployable target, auto-registered as an isLocal server. */

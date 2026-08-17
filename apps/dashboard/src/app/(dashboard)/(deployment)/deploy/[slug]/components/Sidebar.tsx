@@ -7,7 +7,6 @@ import { CustomSelect } from "@/components/ui/CustomSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
-import { CloudWaitlistModal } from "./CloudWaitlistModal";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
@@ -155,7 +154,7 @@ const Sidebar: React.FC = () => {
   const { config, state, updateConfig, startDeployment } = useDeployment();
   const { t } = useI18n();
   const { requireCloud } = useCloud();
-  const { baseDomain, selfHosted, deployMode } = usePlatform();
+  const { baseDomain, selfHosted, deployMode, features } = usePlatform();
   // Desktop mode: the workload can't run on this machine yet (builds still can).
   const localDeployGate = useLocalDeployGate();
   const { showModal, hideModal } = useModal();
@@ -183,7 +182,7 @@ const Sidebar: React.FC = () => {
       showToast(getApiErrorMessage(err, t.deploy.sidebar.cloneTokenFailed), "error", t.deploy.sidebar.cloneTokenTitle);
     }
   }, [config.owner, config.repo, showToast, t]);
-  const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
+  const canConnectCloud = canUseCloudConnection({ selfHosted, features });
   // Clone-strategy gate - only meaningful for self-hosted server deploys
   // where we need to pick how the repo gets cloned on the remote (local
   // build vs PAT vs existing GitHub credential). Opshcloud has its own
@@ -271,20 +270,6 @@ const Sidebar: React.FC = () => {
   }, [doDeploy, selfHosted, config.publicEndpoints, showModal, hideModal]);
 
   const handleDeploy = useCallback(async () => {
-    // TODO: removed — temporary SaaS gate. The managed cloud isn't open yet, so
-    // pressing Deploy on the hosted control plane shows the "Cloud is almost
-    // here" waitlist instead of running a deploy. Self-hosted / desktop deploys
-    // are unaffected. Delete this block (+ CloudWaitlistModal + the
-    // /api/cloud-waitlist route) when Cloud launches.
-    if (!selfHosted) {
-      let modalId = "";
-      modalId = showModal({
-        customContent: <CloudWaitlistModal onClose={() => hideModal(modalId)} />,
-        maxWidth: "460px",
-      });
-      return;
-    }
-
     // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
     // remote servers; the workload can't run on this machine yet. Scoped to NEW
     // projects on purpose — a project that already lives locally stays fully
@@ -404,7 +389,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy(buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined);
-  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
+  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, features.cloudDeploy, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
 
   // Edit mode (opened from the project Runtime page with ?mode=config): the
   // finish button SAVES the config to the project and returns — no deploy, no

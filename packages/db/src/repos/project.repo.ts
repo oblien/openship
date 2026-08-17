@@ -569,64 +569,58 @@ export function createProjectRepo(db: Database) {
         .where(eq(project.id, projectId));
     },
 
-    /**
-     * Bind a project to its Openship Cloud workspace. The unique
-     * partial index on `(cloud_workspace_id) WHERE NOT NULL` enforces
-     * one-project-per-workspace at the DB layer — a unique violation
-     * here means another project row already claims this workspace,
-     * which is a real drift bug the caller must surface.
-     *
-     * `cloudWorkspaceId IS NOT NULL` is the canonical "this is a
-     * cloud project" test downstream; no separate deployTarget column.
-     */
-    async setCloudWorkspaceId(projectId: string, cloudWorkspaceId: string) {
+    /** Advance mounted code without changing the active runtime container. */
+    async setActiveReleaseDeployment(projectId: string, deploymentId: string | null) {
       await db
         .update(project)
-        .set({
-          cloudWorkspaceId,
-          updatedAt: new Date(),
-        })
+        .set({ activeReleaseDeploymentId: deploymentId, updatedAt: new Date() })
         .where(eq(project.id, projectId));
     },
 
-    /**
-     * Clear the cloud workspace binding (detach). Leaves deployTarget
-     * untouched — the caller decides whether to demote to self-hosted
-     * or keep the project as "cloud but unbound" pending a fresh deploy.
-     */
-    async clearCloudWorkspaceId(projectId: string) {
-      await db
+    /** Set the code pointer only if the deployment row is still `ready`. */
+    async setActiveReleaseDeploymentIfReady(projectId: string, deploymentId: string): Promise<boolean> {
+      const rows = await db
         .update(project)
-        .set({ cloudWorkspaceId: null, updatedAt: new Date() })
-        .where(eq(project.id, projectId));
-    },
-
-    /**
-     * List every cloud-bound project in an org. Used by the drift
-     * endpoint to diff against Oblien's `workspaces.list`. A project
-     * is "cloud-bound" iff it has a non-null cloudWorkspaceId — that
-     * column is the single source of truth, no separate deployTarget.
-     *
-     * Returns the minimal shape the diff needs — id, name, slug, and
-     * the workspace binding — not the full project record, so the
-     * dashboard payload stays small.
-     */
-    async listCloudProjectsByOrganization(organizationId: string) {
-      return db
-        .select({
-          id: project.id,
-          name: project.name,
-          slug: project.slug,
-          cloudWorkspaceId: project.cloudWorkspaceId,
-        })
-        .from(project)
+        .set({ activeReleaseDeploymentId: deploymentId, updatedAt: new Date() })
         .where(
           and(
-            eq(project.organizationId, organizationId),
-            sql`${project.cloudWorkspaceId} IS NOT NULL`,
-            isNull(project.deletedAt),
+            eq(project.id, projectId),
+            sql`exists (select 1 from ${deployment} where ${deployment.id} = ${deploymentId} and ${deployment.status} = 'ready')`,
           ),
-        );
+        )
+        .returning();
+      return rows.length > 0;
+    },
+
+    /**
+     * CAS: take the execution lease only when no other deployment holds it.
+     * Cancel must not clear this.
+     */
+    async claimDeployLease(projectId: string, deploymentId: string): Promise<boolean> {
+      const rows = await db
+        .update(project)
+        .set({ deployLeaseId: deploymentId, updatedAt: new Date() })
+        .where(
+          and(eq(project.id, projectId), isNull(project.deployLeaseId), isNull(project.deletedAt)),
+        )
+        .returning();
+      return rows.length > 0;
+    },
+
+    /** Release only if `deploymentId` still owns the lease. */
+    async releaseDeployLease(projectId: string, deploymentId: string): Promise<boolean> {
+      const rows = await db
+        .update(project)
+        .set({ deployLeaseId: null, updatedAt: new Date() })
+        .where(and(eq(project.id, projectId), eq(project.deployLeaseId, deploymentId)))
+        .returning();
+      return rows.length > 0;
+    },
+
+    async listWithDeployLease() {
+      return db.query.project.findMany({
+        where: and(isNotNull(project.deployLeaseId), isNull(project.deletedAt)),
+      });
     },
 
     // ── Environment variables ──────────────────────────────────────────

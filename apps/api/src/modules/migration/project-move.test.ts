@@ -43,12 +43,6 @@ describe("planProjectMove refusals", () => {
     expect(() => plan({ isControlPlane: true })).toThrow(ProjectMoveRefused);
   });
 
-  it("refuses a cloud project, naming Cloud", () => {
-    expect(() =>
-      plan({ project: { ...project, cloudWorkspaceId: "ws_1", serverId: null } }),
-    ).toThrow(/Openship Cloud/);
-  });
-
   it("refuses a project bound to no server", () => {
     expect(() => plan({ project: { ...project, serverId: null } })).toThrow(/isn't bound to a server/);
   });

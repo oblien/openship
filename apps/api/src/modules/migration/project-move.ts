@@ -67,7 +67,6 @@ export interface MovableProject {
   id: string;
   name: string;
   slug: string;
-  cloudWorkspaceId?: string | null;
   serverId?: string | null;
 }
 
@@ -150,9 +149,7 @@ export function assertProjectMovable(input: {
   if (target !== "server" || !project.serverId) {
     throw new ProjectMoveRefused(
       "not_server_hosted",
-      target === "cloud"
-        ? `"${project.name}" runs on Openship Cloud. Moving between Cloud and a server isn't supported yet.`
-        : `"${project.name}" isn't bound to a server, so there's no source host to move it from.`,
+      `"${project.name}" isn't bound to a server, so there's no source host to move it from.`,
     );
   }
 

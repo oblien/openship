@@ -31,10 +31,23 @@ const helpItems: MenuItemConstructorOptions[] = [
   { label: "Openship on X", click: () => void shell.openExternal(BRAND_LINKS.x) },
 ];
 
-export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
+export interface AppMenuActions {
+  openInBrowser: () => void;
+  restartEngine: () => void;
+  repairEndpoint: () => void;
+  backupControlPlane: () => void;
+  openDataFolder: () => void;
+  quit: () => void;
+}
+
+export function buildAppMenu(
+  getWindow: () => BrowserWindow | null,
+  actions?: AppMenuActions,
+): void {
   const template: MenuItemConstructorOptions[] = [
     // macOS puts the app menu first; on Windows/Linux there is no equivalent, so
-    // quit lives under File.
+    // quit lives under File. Use the explicit quit callback so hide-to-tray
+    // does not swallow the close.
     ...(isMac
       ? ([
           {
@@ -48,11 +61,30 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): void {
               { role: "hideOthers" },
               { role: "unhide" },
               { type: "separator" },
-              { role: "quit" },
+              { label: `Quit ${app.name}`, accelerator: "CmdOrCtrl+Q", click: () => actions?.quit() },
             ],
           },
         ] as MenuItemConstructorOptions[])
-      : ([{ label: "File", submenu: [{ role: "quit" }] }] as MenuItemConstructorOptions[])),
+      : ([
+          {
+            label: "File",
+            submenu: [
+              { label: "Quit", accelerator: "CmdOrCtrl+Q", click: () => actions?.quit() },
+            ],
+          },
+        ] as MenuItemConstructorOptions[])),
+
+    {
+      label: "Instance",
+      submenu: [
+        { label: "Open in Browser", click: () => actions?.openInBrowser() },
+        { type: "separator" },
+        { label: "Restart Engine", click: () => actions?.restartEngine() },
+        { label: "Repair Endpoint", click: () => actions?.repairEndpoint() },
+        { label: "Back Up Control Plane…", click: () => actions?.backupControlPlane() },
+        { label: "Open Data Folder", click: () => actions?.openDataFolder() },
+      ],
+    },
 
     // Edit is not optional even in an app with no text editor: without it, the
     // OS-level Cut/Copy/Paste accelerators do not reach input fields on macOS.

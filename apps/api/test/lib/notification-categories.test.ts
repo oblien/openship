@@ -73,8 +73,6 @@ describe("notification category registry", () => {
       "member.removed",
       "invitation.sent",
       "mail.inbound_received",
-      "billing.alert",
-      "quota.warning",
     ]);
   });
 

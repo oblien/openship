@@ -262,7 +262,7 @@ describe("pushProjectRules", () => {
 
 describe("resolveProjectPushTarget", () => {
   it("returns nothing for a cloud project (its edge is not OpenResty)", async () => {
-    findProject.mockResolvedValue({ id: "p1", cloudWorkspaceId: "ws1" });
+    findProject.mockResolvedValue({ id: "p1"});
     expect(await resolveProjectPushTarget("p1")).toBeNull();
   });
 

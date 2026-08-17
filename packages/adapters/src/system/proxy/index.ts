@@ -39,7 +39,7 @@ export {
   rollbackEdgeTakeover,
   completeEdgeTakeover,
 } from "./takeover-journal";
-export type { RegisterImportedSitesOptions } from "./takeover";
+export type { RegisterImportedSitesOptions, ImportedSiteRegistration } from "./takeover";
 export { scanImportableSites, canImportProxy, scanOpenshipEdge, detectInstalledProxy } from "./import";
 // The READ api — prefer this over re-assembling probeEdge + importSites + your own
 // cert reader at the call site (see ./api.ts for why it exists).

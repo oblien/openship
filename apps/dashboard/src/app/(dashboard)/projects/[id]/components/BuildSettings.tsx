@@ -9,6 +9,7 @@ import { encodeLocalSlug, encodeRepoSlug } from "@/utils/repoSlug";
 import { EnvVarsEditor } from "./EnvVarsEditor";
 import { StorageSettings } from "./StorageSettings";
 import { ResourceSettings } from "./ResourceSettings";
+import { MountedReleaseSettings } from "./MountedReleaseSettings";
 
 /**
  * Project → Runtime tab. READ-ONLY by design.
@@ -250,6 +251,8 @@ export const BuildSettings = () => {
           component's own note on why it doesn't route through the wizard). Only
           meaningful for a project with a running container. */}
       {workload !== "static" && <StorageSettings />}
+
+      {workload !== "static" && projectData?.deployTarget !== "cloud" && <MountedReleaseSettings />}
 
       {/* Environment variables — edited in place via a safe per-variable editor
           (diff-merge; untouched secrets are never re-sent), NOT the wizard. */}

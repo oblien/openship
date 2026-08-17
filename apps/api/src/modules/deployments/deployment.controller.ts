@@ -3,7 +3,8 @@
  */
 
 import type { Context } from "hono";
-import { AppError } from "@repo/core";
+import { AppError, NotFoundError } from "@repo/core";
+import { repos } from "@repo/db";
 import { streamSSE } from "../../lib/sse";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
@@ -15,9 +16,14 @@ import * as buildStatusService from "./build-status.service";
 import * as sslService from "./ssl.service";
 import * as prepareService from "./prepare.service";
 import { maskEnv, maskScanService } from "../../lib/secret-env";
-import { maybeProxyCloudProject, proxyToSaaS } from "../../lib/cloud/project-router";
-import { promoteProjectToCloud, TransferConflictError } from "../projects/transfer.service";
-import { env } from "../../config";
+import { isMountedRelease, restoreMountedRelease, triggerMountedRelease, triggerUploadedArtifact } from "./mounted-release.service";
+import { mountedReleaseBuildMode, mountedReleaseConfig } from "./mounted-release.config";
+import { planRelease as classifyRelease } from "./release-planner";
+import { assertArtifactSha256, isSha256Hex, normalizeSha256 } from "./release-driver";
+import { sha256File } from "@repo/adapters";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export async function list(c: Context) {
   const ctx = getRequestContext(c);
@@ -63,21 +69,15 @@ export async function create(c: Context) {
   }>();
   if (body.projectId) {
     await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: body.projectId, action: "write" });
-    // Cloud-as-source: a cloud project's deploy runs on the SaaS; proxy it as
-    // the org owner. The local box does zero orchestration for cloud projects.
-    const proxied = await maybeProxyCloudProject(c, body.projectId, getRequestContext(c).organizationId, {
-      body: JSON.stringify(body),
-    });
-    if (proxied) return proxied;
   }
-  // Construct the triggerDeployment arg from an explicit ALLOWLIST — never
-  // forward the raw body. triggerDeployment has internal-only fields
-  // (reuseSnapshot, rollbackStrategy, commitShaBefore) that must NOT be
-  // settable over HTTP: reuseSnapshot ships a frozen, un-normalized build
-  // snapshot verbatim (commands/target/runtimeMode), so leaking it would let a
-  // caller inject arbitrary build config. Those fields are only ever set by the
-  // internal rollback/webhook callers.
-  const result = await buildService.triggerDeployment(ctx, {
+  // Construct the trigger arg from an explicit ALLOWLIST — never forward the
+  // raw body. triggerDeployment has internal-only fields (reuseSnapshot,
+  // rollbackStrategy, commitShaBefore) that must NOT be settable over HTTP:
+  // reuseSnapshot ships a frozen, un-normalized build snapshot verbatim
+  // (commands/target/runtimeMode), so leaking it would let a caller inject
+  // arbitrary build config. Those fields are only ever set by the internal
+  // rollback/webhook callers.
+  const result = await buildService.triggerPlannedDeployment(ctx, {
     projectId: body.projectId,
     branch: body.branch,
     commitSha: body.commitSha,
@@ -88,7 +88,180 @@ export async function create(c: Context) {
     refresh: body.refresh,
     trigger: body.trigger === "webhook" ? "webhook" : undefined,
   });
-  return c.json({ data: { ...result, deployment: deploymentService.presentDeployment(result.deployment) } }, 202);
+  if (result.skipped && !result.deployment) {
+    return c.json({ data: { skipped: true, reason: result.reason, plan: result.plan } }, 200);
+  }
+  return c.json(
+    {
+      data: {
+        ...result,
+        deployment: deploymentService.presentDeployment(result.deployment),
+        plan: result.plan,
+      },
+    },
+    202,
+  );
+}
+
+export async function mountedRelease(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{ projectId: string; commitSha?: string }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const dep = await triggerMountedRelease(ctx, body.projectId, { commitSha: body.commitSha });
+  return c.json({ data: { deployment_id: dep.id, deployment: deploymentService.presentDeployment(dep) } }, 202);
+}
+
+const ARTIFACT_MAX_BYTES = 512 * 1024 * 1024;
+
+export async function uploadArtifact(c: Context) {
+  const ctx = getRequestContext(c);
+  const form = await c.req.parseBody({ all: true });
+  const projectId = String(form.projectId ?? "");
+  const claimed = String(form.sha256 ?? "");
+  const commitSha = form.commitSha ? String(form.commitSha) : undefined;
+  const file = form.file ?? form.artifact;
+  if (!projectId) throw new AppError("projectId is required.", 400);
+  if (!isSha256Hex(claimed)) throw new AppError("sha256 must be a 64-character hex digest.", 400);
+  if (!file || typeof file === "string") throw new AppError("An artifact file is required.", 400);
+  await permission.assert(ctx, { resourceType: "project", resourceId: projectId, action: "write" });
+
+  const blob = file as File;
+  const size = typeof blob.size === "number" ? blob.size : 0;
+  if (size > ARTIFACT_MAX_BYTES) {
+    throw new AppError("Artifact exceeds the 512 MB upload limit.", 413, "ARTIFACT_TOO_LARGE");
+  }
+
+  const tmp = await mkdtemp(join(tmpdir(), "openship-artifact-"));
+  const localPath = join(tmp, "artifact");
+  try {
+    const bytes = Buffer.from(await blob.arrayBuffer());
+    await writeFile(localPath, bytes);
+    const actual = await sha256File(localPath);
+    assertArtifactSha256(actual, claimed);
+    const dep = await triggerUploadedArtifact(ctx, projectId, {
+      localPath,
+      sha256: normalizeSha256(claimed),
+      commitSha,
+    });
+    return c.json(
+      { data: { deployment_id: dep.id, deployment: deploymentService.presentDeployment(dep), sha256: actual } },
+      202,
+    );
+  } catch (error) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+async function loadPlannerProject(projectId: string, organizationId: string) {
+  const project = await repos.project.findById(projectId);
+  if (!project || project.organizationId !== organizationId) {
+    throw new NotFoundError("Project", projectId);
+  }
+  const services = await repos.service.listByProject(project.id).catch(() => []);
+  return { project, services };
+}
+
+export async function planRelease(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    projectId: string;
+    changedPaths?: string[] | null;
+    forceAll?: boolean;
+    refresh?: boolean;
+    serviceIds?: string[];
+  }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "read" });
+  const { project, services } = await loadPlannerProject(body.projectId, ctx.organizationId);
+  const plan = classifyRelease({
+    changedPaths: body.changedPaths === undefined ? null : body.changedPaths,
+    mountedReleaseEnabled: Boolean(mountedReleaseConfig(project)),
+    buildMode: mountedReleaseConfig(project)
+      ? mountedReleaseBuildMode(mountedReleaseConfig(project)!)
+      : undefined,
+    services: services.map((s) => ({ id: s.id, name: s.name, rootDirectory: s.rootDirectory })),
+    preset: project.mountedRelease?.preset,
+    routedServiceIds: body.serviceIds,
+    forceAll: body.forceAll,
+    refreshRequested: body.refresh,
+  });
+  return c.json({ data: plan });
+}
+
+export async function deployCode(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    projectId: string;
+    branch?: string;
+    commitSha?: string;
+    serviceIds?: string[];
+  }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const result = await buildService.triggerPlannedDeployment(ctx, {
+    projectId: body.projectId,
+    branch: body.branch,
+    commitSha: body.commitSha,
+    serviceIds: body.serviceIds,
+  });
+  if (result.skipped && !result.deployment) {
+    return c.json({ skipped: true, reason: result.reason, plan: result.plan });
+  }
+  return c.json({ operationId: result.deployment.id, plan: result.plan }, 202);
+}
+
+export async function rebuildRuntime(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    projectId: string;
+    branch?: string;
+    commitSha?: string;
+    serviceIds?: string[];
+  }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const result = await buildService.triggerPlannedDeployment(ctx, {
+    projectId: body.projectId,
+    branch: body.branch,
+    commitSha: body.commitSha,
+    serviceIds: body.serviceIds,
+    forceAll: true,
+  });
+  if (result.skipped && !result.deployment) {
+    return c.json({ skipped: true, reason: result.reason, plan: result.plan });
+  }
+  return c.json({ operationId: result.deployment.id, plan: result.plan }, 202);
+}
+
+export async function rollbackLatest(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{ projectId: string; deploymentId?: string }>();
+  await permission.assert(ctx, { resourceType: "project", resourceId: body.projectId, action: "write" });
+  const targetId = body.deploymentId ?? (await resolvePreviousDeploymentId(body.projectId, ctx.organizationId));
+  if (!targetId) {
+    return c.json({ error: "No previous deployment to roll back to" }, 400);
+  }
+  const preview = await deploymentService.previewRestore(targetId, ctx.organizationId);
+  if (preview.needsRepository) {
+    await deploymentService.assertGitHubAccessForDeployment(ctx, targetId, ctx.organizationId);
+  }
+  const target = await deploymentService.getDeployment(targetId, ctx.organizationId);
+  if (target.projectId !== body.projectId) {
+    return c.json({ error: "Deployment does not belong to this project" }, 400);
+  }
+  const dep = isMountedRelease(target)
+    ? await restoreMountedRelease(ctx, target)
+    : await deploymentService.rollbackDeployment(targetId, ctx.organizationId);
+  return c.json({ operationId: dep.id }, 202);
+}
+
+async function resolvePreviousDeploymentId(projectId: string, organizationId: string): Promise<string | null> {
+  const project = await repos.project.findById(projectId);
+  if (!project || project.organizationId !== organizationId) return null;
+  const listed = await repos.deployment.listByProject(projectId, { page: 1, perPage: 20 });
+  const active = new Set(
+    [project.activeDeploymentId, project.activeReleaseDeploymentId].filter((id): id is string => Boolean(id)),
+  );
+  const previous = listed.rows.find((d) => !active.has(d.id) && d.status !== "cancelled" && d.status !== "failed");
+  return previous?.id ?? listed.rows.find((d) => !active.has(d.id))?.id ?? null;
 }
 
 export async function getById(c: Context) {
@@ -193,7 +366,10 @@ export async function rollback(c: Context) {
   if (preview.needsRepository) {
     await deploymentService.assertGitHubAccessForDeployment(ctx, id, ctx.organizationId);
   }
-  const dep = await deploymentService.rollbackDeployment(id, ctx.organizationId);
+  const target = await deploymentService.getDeployment(id, ctx.organizationId);
+  const dep = isMountedRelease(target)
+    ? await restoreMountedRelease(ctx, target)
+    : await deploymentService.rollbackDeployment(id, ctx.organizationId);
   return c.json({ data: deploymentService.presentDeployment(dep) });
 }
 
@@ -380,9 +556,6 @@ export async function prepare(c: Context) {
         env: composeEnv,
       };
     } else if (source === "local") {
-      if (env.CLOUD_MODE) {
-        return c.json({ error: "Local projects are not available in cloud mode" }, 403);
-      }
       if (!body.path) {
         return c.json({ error: "path is required" }, 400);
       }
@@ -415,68 +588,6 @@ export async function buildAccess(c: Context) {
   }
 
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: body.projectId, action: "write" });
-
-  // Cloud-as-source: an already-cloud project's build/deploy runs on the SaaS —
-  // proxy it as the org owner; the local box does no orchestration.
-  const proxied = await maybeProxyCloudProject(c, body.projectId, getRequestContext(c).organizationId, {
-    body: JSON.stringify(body),
-  });
-  if (proxied) return proxied;
-
-  // Born-on-cloud (SELF-HOSTED ONLY): a LOCAL project chosen for a CLOUD deploy
-  // is promoted to the SaaS FIRST (ingest + local teardown), so it never exists
-  // as a "local project using cloud pages/compute" hybrid — then the deploy
-  // proxies and runs entirely on the SaaS. Promote throws BEFORE any local
-  // teardown if the SaaS ingest fails, so the local project is left intact.
-  //
-  // EXCEPTION — local build: when the operator chose "Build on this machine",
-  // we deliberately KEEP the project local-canonical and orchestrate the cloud
-  // deploy from here (build locally with the host's credentials, upload the
-  // output to an Openship Cloud workspace, deploy it). No promote/transfer, so
-  // no duplicate/leftover cloud copy, and redeploys re-run this same local
-  // pipeline. That path falls through to requestBuildAccess below, where
-  // resolveEffectiveTarget keeps the cloud target for a local build.
-  //
-  // On the SaaS itself (CLOUD_MODE) there is NOTHING to promote — the project is
-  // already canonical here — so skip and let the deploy run natively below.
-  if (!env.CLOUD_MODE && body.deployTarget === "cloud" && body.buildStrategy !== "local") {
-    try {
-      await promoteProjectToCloud(getRequestContext(c), body.projectId);
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      // A leftover cloud copy of this project (drift): surface a typed 409 with
-      // a clear message. Cleanup is an explicit, runtime-aware operation (the
-      // teardown endpoint) — never a deploy-triggered auto-delete of cloud data.
-      if (err instanceof TransferConflictError) {
-        // A slug/name conflict (a DIFFERENT cloud project owns the name) is not
-        // a leftover copy — tell the operator to rename, not to "clean up".
-        if (err.conflictKind === "slug") {
-          return c.json(
-            {
-              success: false,
-              code: "CLOUD_SLUG_TAKEN",
-              message: `The name "${err.conflictValue}" is already taken on Openship Cloud. Rename this project and try again.`,
-            },
-            409,
-          );
-        }
-        // A leftover cloud copy of THIS project (id) from an earlier transfer.
-        return c.json(
-          {
-            success: false,
-            code: "CLOUD_PROMOTE_CONFLICT",
-            message:
-              "This project already has a copy on Openship Cloud (leftover from an earlier transfer). Clean it up and retry to promote this local copy.",
-          },
-          409,
-        );
-      }
-      const message =
-        err instanceof Error ? err.message : "Failed to move project to Openship Cloud";
-      return c.json({ success: false, message }, 400);
-    }
-    return proxyToSaaS(c, getRequestContext(c).organizationId, { body: JSON.stringify(body) });
-  }
 
   try {
     const result = await buildService.requestBuildAccess(ctx, body);

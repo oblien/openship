@@ -25,13 +25,16 @@ export * from "./source-access";
 export * from "./edge-orphans";
 export * from "./service-status";
 export * from "./runtime-config";
+export * from "./edition";
+export * from "./release-presets";
+export * from "./release-manifest";
+export * from "./project-config-export";
 export * from "./resources";
 export * from "./rollback-window";
 export * from "./secret-keys";
 export * from "./credentials";
 export * from "./workspaces";
 export * from "./connectivity";
-export * from "./cloud-capability";
 export * from "./languages";
 export * from "./metadata";
 export * from "./openship-config";
@@ -46,14 +49,6 @@ export {
   type AppTemplateRejection,
 } from "./apps/schema";
 export * from "./apps/install-phases";
-export * from "./pricing";
-export {
-  pricingCatalogSchema,
-  pricingCopySchema,
-  MAX_SUPPORTED_PRICING_SCHEMA,
-  type PricingCatalogRaw,
-  type PricingPlanRaw,
-} from "./pricing/schema";
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./deployment-class";
@@ -65,3 +60,5 @@ export * from "./answer";
 export * from "./host-profile";
 export * from "./host-firewall";
 export * from "./host-channel";
+// agent-protocol stays on `@repo/core/agent-protocol` — it uses node:crypto
+// and must not enter the dashboard webpack graph.

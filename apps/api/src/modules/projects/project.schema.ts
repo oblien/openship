@@ -104,10 +104,7 @@ const EnvironmentEnum = Type.Union([
   Type.Literal("development"),
 ]);
 
-const EnvironmentSourceModeEnum = Type.Union([
-  Type.Literal("branch"),
-  Type.Literal("manual"),
-]);
+const EnvironmentSourceModeEnum = Type.Union([Type.Literal("branch"), Type.Literal("manual")]);
 
 const PublicEndpointSchema = Type.Object({
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
@@ -289,7 +286,10 @@ const RoutingConfigSchema = Type.Object({
       Type.Object({
         source: Type.String({ maxLength: 2000 }),
         headers: Type.Array(
-          Type.Object({ key: Type.String({ maxLength: 200 }), value: Type.String({ maxLength: 4000 }) }),
+          Type.Object({
+            key: Type.String({ maxLength: 200 }),
+            value: Type.String({ maxLength: 4000 }),
+          }),
           { maxItems: 50 },
         ),
       }),
@@ -324,6 +324,50 @@ const ReleaseSourceSchema = Type.Object({
   trackReleases: Type.Optional(Type.Boolean()),
 });
 
+/** Fast code releases mounted into a long-lived runtime container. Host paths
+ * are derived by OpenShip; operators only describe the container contract. */
+const MountedReleaseSchema = Type.Object({
+  enabled: Type.Boolean(),
+  buildMode: Type.Optional(
+    Type.Union([Type.Literal("prebuilt"), Type.Literal("server"), Type.Literal("upload")]),
+  ),
+  runtimeInstall: Type.Optional(
+    Type.Union([Type.Literal("image"), Type.Literal("dockerfile"), Type.Literal("compose")]),
+  ),
+  preset: Type.Optional(
+    Type.Union([
+      Type.Literal("laravel"),
+      Type.Literal("next-static"),
+      Type.Literal("node"),
+      Type.Literal("compose"),
+    ]),
+  ),
+  serviceId: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+  serviceName: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+  sourcePath: Type.Optional(Type.String({ maxLength: 300, pattern: NO_TRAVERSAL_PATTERN })),
+  containerPath: Type.String({ minLength: 2, maxLength: 500, pattern: "^/[^\\0]*$" }),
+  sharedPaths: Type.Optional(
+    Type.Array(Type.String({ minLength: 1, maxLength: 300, pattern: NO_TRAVERSAL_PATTERN }), {
+      maxItems: 30,
+    }),
+  ),
+  prepareCommand: Type.Optional(Type.String({ maxLength: 4000 })),
+  builderImage: Type.Optional(Type.String({ minLength: 1, maxLength: 300 })),
+  builderMemoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 32768 })),
+  builderCpus: Type.Optional(Type.Number({ minimum: 0.1, maximum: 32 })),
+  builderCachePaths: Type.Optional(
+    Type.Array(Type.String({ minLength: 1, maxLength: 300, pattern: NO_TRAVERSAL_PATTERN }), {
+      maxItems: 20,
+    }),
+  ),
+  reloadCommand: Type.Optional(Type.String({ maxLength: 4000 })),
+  healthPath: Type.Optional(Type.String({ minLength: 1, maxLength: 500, pattern: "^/" })),
+  healthPort: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
+  retain: Type.Optional(Type.Number({ minimum: 2, maximum: 20 })),
+  uid: Type.Optional(Type.Number({ minimum: 0, maximum: 65535 })),
+  gid: Type.Optional(Type.Number({ minimum: 0, maximum: 65535 })),
+});
+
 export const CreateProjectBody = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 100 }),
   /** Override the auto-generated slug (used as free subdomain: slug.opsh.io) */
@@ -340,6 +384,7 @@ export const CreateProjectBody = Type.Object({
   installationId: Type.Optional(Type.Number()),
   // Release/dist source (gitProvider === "release")
   releaseSource: Type.Optional(ReleaseSourceSchema),
+  mountedRelease: Type.Optional(Type.Union([Type.Null(), MountedReleaseSchema])),
   // Build configuration
   framework: Type.Optional(FrameworkEnum),
   packageManager: Type.Optional(PackageManagerEnum),
@@ -424,7 +469,10 @@ export const CreateProjectBody = Type.Object({
    * overlaps an existing service's `rootDirectory`.
    */
   monorepoSharedPaths: Type.Optional(
-    Type.Union([Type.Null(), Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 })]),
+    Type.Union([
+      Type.Null(),
+      Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
+    ]),
   ),
   /** Routing config from the repo's vercel.json (see RoutingConfigSchema). */
   routingConfig: Type.Optional(Type.Union([Type.Null(), RoutingConfigSchema])),
@@ -445,11 +493,7 @@ export const CreateProjectBody = Type.Object({
    *     supported on Docker Desktop). Ignored by bare + cloud runtimes.
    */
   routeStrategy: Type.Optional(
-    Type.Union([
-      Type.Literal("auto"),
-      Type.Literal("loopback-port"),
-      Type.Literal("container-ip"),
-    ]),
+    Type.Union([Type.Literal("auto"), Type.Literal("loopback-port"), Type.Literal("container-ip")]),
   ),
   /**
    * Deploy-time readiness gate. Omitted/null = OFF, which is the default for
@@ -510,7 +554,9 @@ export const EnsureProjectBody = Type.Composite([
 export const FolderSessionBody = Type.Object(
   {
     stack: Type.Optional(
-      Type.String({ description: "Stack hint (e.g. 'vite','nextjs'); picks the cloud build image." }),
+      Type.String({
+        description: "Stack hint (e.g. 'vite','nextjs'); picks the cloud build image.",
+      }),
     ),
     packageManager: Type.Optional(Type.String({ description: "npm | pnpm | yarn | bun." })),
     name: Type.Optional(Type.String({ description: "Project name." })),
@@ -586,13 +632,19 @@ export const UpdateResourcesBody = Type.Object({
 export const LinkRepoBody = Type.Object({
   owner: Type.String({ minLength: 1, description: "GitHub repo owner." }),
   repo: Type.String({ minLength: 1, description: "GitHub repo name." }),
-  branch: Type.Optional(Type.String({ description: "Deploy branch (defaults to the repo default)." })),
-  installationId: Type.Optional(Type.Number({ description: "GitHub App installation id, when known." })),
+  branch: Type.Optional(
+    Type.String({ description: "Deploy branch (defaults to the repo default)." }),
+  ),
+  installationId: Type.Optional(
+    Type.Number({ description: "GitHub App installation id, when known." }),
+  ),
 });
 
 /** POST /:id/auto-deploy — enable/disable auto-deploy on push. */
 export const SetAutoDeployBody = Type.Object({
-  enabled: Type.Boolean({ description: "Whether a push to the deploy branch triggers a redeploy." }),
+  enabled: Type.Boolean({
+    description: "Whether a push to the deploy branch triggers a redeploy.",
+  }),
 });
 
 /** POST /:id/branch — set the deploy branch. */

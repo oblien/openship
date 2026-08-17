@@ -449,7 +449,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   composePath: undefined,
   uploadSessionId: undefined,
   buildStrategy: "server",
-  deployTarget: "cloud",
+  deployTarget: "server",
   runtimeMode: "docker",
   projectType: "app",
   framework: "nextjs",
@@ -548,7 +548,12 @@ export function resolveBuildImageForDeploymentMode(
 // The needs-cloud predicate (managed/free domain ⇒ needs cloud) is defined ONCE
 // in @repo/core and re-exported here under the historical names, so existing
 // importers are unchanged and client + server share one definition.
-export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } from "@repo/core";
+export function servicesNeedCloud(_services?: unknown): boolean {
+  return false;
+}
+export function publicEndpointsNeedCloud(_endpoints?: unknown): boolean {
+  return false;
+}
 
 export function createPublicEndpoint(
   overrides: Partial<PublicEndpoint> = {},

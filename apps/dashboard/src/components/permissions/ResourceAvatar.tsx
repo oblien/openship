@@ -18,8 +18,6 @@ import {
   ArrowUpCircle,
   Bell,
   Boxes,
-  Cloud,
-  CreditCard,
   Database,
   Github,
   HardDrive,
@@ -46,9 +44,7 @@ const FALLBACK_ICON: Record<ResourceType, LucideIcon> = {
   analytics: Activity,
   settings: Settings,
   updates: ArrowUpCircle,
-  cloud: Cloud,
   audit: ScrollText,
-  billing: CreditCard,
 };
 
 /** GitHub avatar for an account login, or the owner of an "owner/repo" id. */

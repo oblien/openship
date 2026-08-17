@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "name": "AE Public",
+  "projectHint": "ae-public",
+  "environment": "production",
+  "service": {
+    "key": "public",
+    "name": "public"
+  },
+  "buildMode": "prebuilt",
+  "persistPaths": [
+    "storage"
+  ],
+  "health": {
+    "path": "/up",
+    "port": 8000,
+    "publicHttps": true
+  },
+  "activation": {
+    "strategy": "atomic-current",
+    "reloadCommand": "php artisan optimize:clear",
+    "killDuringStaging": true,
+    "unhealthyRollsBack": true
+  },
+  "monorepoPathPrefixes": [
+    "apps/public"
+  ],
+  "migrationPolicy": "PHP/Blade code release with compiled assets committed in Git. Run artisan migrate --force only in a disposable builder, and only when database/migrations or composer.lock under apps/public changed. Composer vendor is prepared only when apps/public/composer.lock changes; otherwise reuse the cached layer. A Public change must never rebuild Staff or Mail.",
+  "rollbackPolicy": "If reload or health fails, restore the previous current pointer, reload, and re-check container plus public HTTPS. Do not run down-migrations. Do not rebuild Staff or Mail while rolling Public back.",
+  "mountedRelease": {
+    "enabled": true,
+    "buildMode": "prebuilt",
+    "serviceName": "public",
+    "sourcePath": "apps/public",
+    "containerPath": "/var/www/html",
+    "sharedPaths": [
+      "storage"
+    ],
+    "reloadCommand": "php artisan optimize:clear",
+    "healthPath": "/up",
+    "healthPort": 8000,
+    "retain": 5
+  },
+  "planner": {
+    "pathPrefixes": [
+      "apps/public"
+    ],
+    "lockfiles": [
+      "apps/public/composer.lock"
+    ],
+    "composerLayerOnLockChange": true,
+    "skipUnrelatedMonorepo": true
+  }
+}

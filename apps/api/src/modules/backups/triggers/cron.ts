@@ -12,10 +12,19 @@
  */
 
 import cronParser from "cron-parser";
-import { repos } from "@repo/db";
+import { repos, type BackupPolicy } from "@repo/db";
 import { getJobRunner } from "../../../lib/job-runner";
 import { safeErrorMessage } from "@repo/core";
 import { backupOrchestrator } from "../backup.orchestrator";
+
+async function serverIdForBackupPolicy(policy: BackupPolicy): Promise<string | null> {
+  if (policy.projectId) {
+    const project = await repos.project.findById(policy.projectId);
+    return project?.serverId ?? null;
+  }
+  // mail_servers.server_id is the host servers.id
+  return policy.mailServerId ?? null;
+}
 
 export interface CronValidationResult {
   valid: boolean;
@@ -73,6 +82,13 @@ export async function syncPolicySchedule(policyId: string): Promise<void> {
       // between schedule + tick are honored.
       const fresh = await repos.backupPolicy.findById(policyId);
       if (!fresh || !fresh.enabled) return;
+      const { dispatchToAgent } = await import("../../system/server-agent");
+      const serverId = await serverIdForBackupPolicy(fresh);
+      if (serverId) {
+        const dispatched = await dispatchToAgent(serverId, "run_backup", { policyId }).catch(() => null);
+        // Agent returns skipped when it has no local producer plan — keep today's path.
+        if (dispatched?.ok && !dispatched.skipped) return;
+      }
       await backupOrchestrator.enqueue({
         policyId,
         trigger: {

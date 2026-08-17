@@ -3,7 +3,7 @@ import {
   buildSetupPayload,
 } from "@repo/onboarding";
 import { api, getApiBaseUrl } from "@/lib/api";
-import { buildDesktopAuthorizeUrl, preparePkceFlow, startDesktopCloudAuth } from "@/lib/cloud-auth";
+import { buildDesktopAuthorizeUrl, preparePkceFlow } from "@/lib/cloud-auth";
 import type { OnboardingState } from "@repo/onboarding";
 import type { Dictionary } from "@/i18n";
 
@@ -29,48 +29,12 @@ async function getCloudLoginUrl(cloudAuthUrl?: string) {
   return buildDesktopAuthorizeUrl({ cloudAuthUrl, callbackUrl, state, codeChallenge });
 }
 
-async function runDesktopCloudAuth(
-  desktop: DesktopBridge,
-  setStatus: (status: LoadingStatus) => void,
-  isCancelled: () => boolean,
-  labels: LoadingLabels,
-): Promise<LoadingResult> {
-  setStatus({
-    title: labels.openingCloud,
-    message: labels.waitingAuth,
-  });
-
-  const result = await startDesktopCloudAuth({ desktop, isCancelled });
-  if (!result.ok) {
-    return {
-      ok: false,
-      status: {
-        title: result.reason === "start_failed" ? labels.couldNotStartAuthTitle : labels.authFailedTitle,
-        message: result.reason === "start_failed"
-          ? labels.couldNotStartAuthMsg
-          : labels.authFailedMsg,
-      },
-    };
-  }
-
-  setStatus({
-    title: labels.completingSignIn,
-    message: labels.returningToOpenship,
-  });
-  return { ok: true };
-}
-
 async function runCloudFlow(
   cloudAuthUrl: string | undefined,
   setStatus: (status: LoadingStatus) => void,
   isCancelled: () => boolean,
   labels: LoadingLabels,
 ): Promise<LoadingResult> {
-  const desktop = window.desktop;
-  if (desktop?.onboarding) {
-    return runDesktopCloudAuth(desktop, setStatus, isCancelled, labels);
-  }
-
   setStatus({
     title: labels.redirectingCloud,
     message: labels.newTabSignIn,

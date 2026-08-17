@@ -71,6 +71,9 @@ const URL_USERINFO = /([a-z][a-z0-9+.-]{0,15}:\/\/)[^\s/@]{1,512}@/gi;
  */
 const GITHUB_TOKEN = /\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/g;
 
+/** Extraheader form: `Authorization: Basic <base64(x-access-token:TOKEN)>`. */
+const BASIC_AUTH_HEADER = /Authorization:\s*Basic\s+[A-Za-z0-9+/]+=*/gi;
+
 const REDACTED = "***";
 
 /**
@@ -83,7 +86,10 @@ const REDACTED = "***";
  */
 export function redactCredentials(text: string): string {
   if (!text) return text;
-  return text.replace(URL_USERINFO, `$1${REDACTED}@`).replace(GITHUB_TOKEN, REDACTED);
+  return text
+    .replace(URL_USERINFO, `$1${REDACTED}@`)
+    .replace(BASIC_AUTH_HEADER, `Authorization: Basic ${REDACTED}`)
+    .replace(GITHUB_TOKEN, REDACTED);
 }
 
 /**

@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { Rocket, ChevronDown, RefreshCw, Layers } from "lucide-react";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
+import { LiveReleaseHeader } from "./LiveReleaseHeader";
 
 export const Deployments = () => {
   const {
@@ -30,6 +31,8 @@ export const Deployments = () => {
   const router = useRouter();
 
   const [isRedeploying, setIsRedeploying] = React.useState(false);
+  const [isCodeDeploying, setIsCodeDeploying] = React.useState(false);
+  const mountedReleaseEnabled = Boolean(projectData?.mountedRelease?.enabled);
   // The Openship control-plane self-app has no deployable source and updates
   // itself via the CLI — redeploy/self-update controls would only 403, so hide them.
   const isSelfApp = projectData?.appTemplateId === "openship";
@@ -84,8 +87,9 @@ export const Deployments = () => {
     return () => {
       cancelled = true;
     };
-    // activeDeploymentId dep → refetch after a deploy advances the live release.
-  }, [projectData?.id, projectData?.activeDeploymentId, isSelfApp]);
+    // Refetch when either live pointer moves. Code releases flip
+    // activeReleaseDeploymentId without touching the runtime row.
+  }, [projectData?.id, projectData?.activeDeploymentId, projectData?.activeReleaseDeploymentId, isSelfApp]);
 
   /**
    * A deploy blocked on something the operator can clear — today a port already
@@ -248,6 +252,19 @@ export const Deployments = () => {
     }
   };
 
+  const handleCodeDeploy = async () => {
+    if (!projectData?.id || isCodeDeploying) return;
+    setIsCodeDeploying(true);
+    try {
+      const response = await deployApi.mountedRelease(projectData.id);
+      openTriggeredBuild(router, response, projectData.id);
+    } catch (error) {
+      console.error("Code deploy failed:", error);
+      showToast(error instanceof Error ? error.message : "Could not start the code release.", "error", "Code deploy");
+      setIsCodeDeploying(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Blocked deploy — FIRST, because nothing shipped: the newest release
@@ -326,11 +343,13 @@ export const Deployments = () => {
           actions={
             <button
               type="button"
-              onClick={handleRedeploy}
-              disabled={isRedeploying}
+              onClick={mountedReleaseEnabled ? handleCodeDeploy : handleRedeploy}
+              disabled={mountedReleaseEnabled ? isCodeDeploying : isRedeploying}
               className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
-              {isRedeploying ? t.projects.redeploy.deploying : t.projects.redeploy.redeployLatest}
+              {mountedReleaseEnabled
+                ? isCodeDeploying ? "Deploying code…" : "Deploy code"
+                : isRedeploying ? t.projects.redeploy.deploying : t.projects.redeploy.redeployLatest}
             </button>
           }
         />
@@ -372,7 +391,14 @@ export const Deployments = () => {
         />
       )}
 
-      {!isSelfApp && (
+      {!isSelfApp && mountedReleaseEnabled && (
+        <LiveReleaseHeader
+          rebuilding={isRedeploying}
+          onRebuildRuntime={() => void runRedeploy("all")}
+        />
+      )}
+
+      {!isSelfApp && !mountedReleaseEnabled && (
         <div className="bg-card rounded-2xl border border-border/50 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">

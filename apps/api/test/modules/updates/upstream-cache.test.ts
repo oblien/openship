@@ -61,11 +61,17 @@ vi.mock("../../../src/modules/projects/project-crud.service", async (importOrigi
 });
 
 // Never reached here; stubbed so the module graph doesn't drag in the build pipeline.
+const redeployBuildSession = vi.hoisted(() => vi.fn());
+const triggerMountedRelease = vi.hoisted(() => vi.fn());
 vi.mock("../../../src/modules/deployments/build.service", () => ({
-  redeployBuildSession: vi.fn(),
+  redeployBuildSession,
+}));
+vi.mock("../../../src/modules/deployments/mounted-release.service", () => ({
+  triggerMountedRelease,
 }));
 
 import {
+  applyProjectUpdate,
   getProjectDrift,
   listOrganizationUpdates,
 } from "../../../src/modules/updates/updates.service";
@@ -145,6 +151,8 @@ beforeEach(() => {
     fn.mockReset();
   }
   resolveUpstreamDrift.mockReset();
+  redeployBuildSession.mockReset();
+  triggerMountedRelease.mockReset();
   updateStatusRepo.upsert.mockResolvedValue(undefined);
   updateStatusRepo.deleteByProject.mockResolvedValue(undefined);
   deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
@@ -316,5 +324,75 @@ describe("getProjectDrift (the project page banner)", () => {
 
     expect(await getProjectDrift(ctx, "proj_1")).toEqual({ supported: false });
     expect(resolveUpstreamDrift).not.toHaveBeenCalled();
+  });
+
+  it("does not mark a project outdated after a successful code release", async () => {
+    const p = project({
+      activeDeploymentId: "dep_runtime",
+      activeReleaseDeploymentId: "dep_code",
+      mountedRelease: { enabled: true, containerPath: "/app" },
+    });
+    setup([p], []);
+    resolveUpstreamDrift.mockResolvedValue(upstream(p, NEWER));
+    deploymentRepo.findById.mockImplementation(async (id: string) => ({
+      id,
+      commitSha: id === "dep_code" ? NEWER : SHIPPED,
+    }));
+
+    const status = await getProjectDrift(ctx, "proj_1");
+
+    expect(status).toMatchObject({ supported: true, behind: false, deployedSha: NEWER });
+  });
+
+  it("still compares runtime-only projects against the runtime deployment", async () => {
+    const p = project({
+      activeDeploymentId: "dep_live",
+      activeReleaseDeploymentId: "dep_code",
+      mountedRelease: { enabled: false, containerPath: "/app" },
+    });
+    setup([p], []);
+    resolveUpstreamDrift.mockResolvedValue(upstream(p, NEWER));
+    deploymentRepo.findById.mockImplementation(async (id: string) => ({
+      id,
+      commitSha: id === "dep_code" ? NEWER : SHIPPED,
+    }));
+
+    const status = await getProjectDrift(ctx, "proj_1");
+
+    expect(status).toMatchObject({ supported: true, behind: true, deployedSha: SHIPPED });
+  });
+});
+
+describe("applyProjectUpdate", () => {
+  it("ships a mounted-release project through triggerMountedRelease", async () => {
+    const p = project({
+      mountedRelease: { enabled: true, containerPath: "/app" },
+    });
+    setup([p], []);
+    triggerMountedRelease.mockResolvedValue({ id: "dep_code_new", projectId: "proj_1" });
+
+    await expect(applyProjectUpdate(ctx, "proj_1")).resolves.toEqual({
+      success: true,
+      deployment_id: "dep_code_new",
+      project_id: "proj_1",
+    });
+    expect(triggerMountedRelease).toHaveBeenCalledWith(ctx, "proj_1");
+    expect(redeployBuildSession).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds the runtime when mounted releases are off", async () => {
+    const p = project({
+      mountedRelease: { enabled: false, containerPath: "/app" },
+    });
+    setup([p], []);
+    redeployBuildSession.mockResolvedValue({ id: "dep_runtime_new" });
+
+    await applyProjectUpdate(ctx, "proj_1");
+
+    expect(redeployBuildSession).toHaveBeenCalledWith(ctx, "dep_live", {
+      trigger: "update",
+      preDeployBackup: true,
+    });
+    expect(triggerMountedRelease).not.toHaveBeenCalled();
   });
 });

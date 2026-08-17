@@ -180,7 +180,17 @@ async function resolveClientNames(ids: string[]): Promise<Map<string, string>> {
   return names;
 }
 
-r.get("/", { tag: "audit:read" }, async (c: Context) => {
+r.get(
+  "/",
+  {
+    tag: "audit:read",
+    mcp: {
+      name: "activity.recent",
+      timeoutMs: 8_000,
+      description: "Recent organization activity (audit events). Use query.limit or query.cursor.",
+    },
+  },
+  async (c: Context) => {
   const ctx = getRequestContext(c);
   const cursor = c.req.query("cursor");
   const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);

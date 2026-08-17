@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
-import type { RoutingConfig, RouteRuleSpec, ProxySettings, OpenshipReadiness, WorkloadType } from "@repo/core";
+import type { ProjectConfigExport, RoutingConfig, RouteRuleSpec, ProxySettings, OpenshipReadiness, WorkloadType } from "@repo/core";
 import { endpoints } from "./endpoints";
 
 /* ------------------------------------------------------------------ */
@@ -235,6 +235,8 @@ export const projectsApi = {
     api.get<{ success: boolean; projects: any[]; numbers: Record<string, number> }>(
       endpoints.projects.home,
     ),
+
+  exportConfig: () => api.get<ProjectConfigExport>(endpoints.projects.configExport),
 
   /** Create or update a project (mandatory before build access) */
   ensure: (body: {
@@ -504,6 +506,31 @@ export const projectsApi = {
         pinned?: boolean;
       };
     }>(`projects/${id}/commit-status`),
+
+  /** Independent runtime image and mounted code-release pointers. */
+  getLiveState: (id: string | number) =>
+    api.get<{
+      data: {
+        runtime: {
+          deploymentId: string | null;
+          imageRef: string | null;
+          digest: string | null;
+          commitSha: string | null;
+          builtAt: string | null;
+        };
+        code: {
+          deploymentId: string | null;
+          sha: string | null;
+          strategy: "prebuilt" | "server" | "upload";
+          activatedAt: string | null;
+        } | null;
+        server: { id: string; name: string } | null;
+        public: {
+          hostname: string | null;
+          https: "passed" | "failed" | "skipped" | "unchecked";
+        };
+      };
+    }>(endpoints.projects.liveState(id)),
 
   /** Enable or disable a project */
   toggle: (id: string | number, enable: boolean) =>

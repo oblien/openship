@@ -126,7 +126,10 @@ interface GitHubContextValue {
    * Doing it locally is what made a fresh token need a page reload before the
    * importer would use it.
    */
-  connectWithToken: (token: string) => Promise<void>;
+  connectWithToken: (token: string) => Promise<{
+    connected?: boolean;
+    cloneTest?: { ok: boolean; message: string };
+  }>;
   disconnect: (source?: "oauth" | "cli" | "all") => Promise<void>;
 
   /* CLI / Device flow */
@@ -407,9 +410,10 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
       // Throws on an invalid / under-scoped token so the caller can render the
       // server's reason on the field it came from. refresh() drops the cached
       // status and re-pulls, which is what propagates the identity app-wide.
-      await githubApi.setInstanceToken(token);
+      const saved = await githubApi.setInstanceToken(token);
       setCliAction(null);
       await refresh();
+      return saved;
     },
     [refresh],
   );

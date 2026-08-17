@@ -79,8 +79,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     vi.clearAllMocks();
     projectRepo.findById.mockResolvedValue({
       id: "proj_1",
-      organizationId: "org_1",
-      cloudWorkspaceId: null,
+      organizationId: "org_1"
       serverId: "srv_1",
       activeDeploymentId: "dep_1",
     });
@@ -146,8 +145,7 @@ describe("retryProjectRouting — safe self-heal", () => {
   it("does not touch the edge for a domain-less, server-less project", async () => {
     projectRepo.findById.mockResolvedValue({
       id: "proj_1",
-      organizationId: "org_1",
-      cloudWorkspaceId: null,
+      organizationId: "org_1"
       serverId: null,
       activeDeploymentId: "dep_1",
     });
@@ -232,8 +230,7 @@ describe("retryProjectRouting — safe self-heal", () => {
   it("is a no-op for a cloud project (no server edge to repair)", async () => {
     projectRepo.findById.mockResolvedValue({
       id: "proj_1",
-      organizationId: "org_1",
-      cloudWorkspaceId: "ws_1",
+      organizationId: "org_1"
       serverId: null,
       activeDeploymentId: "dep_1",
     });

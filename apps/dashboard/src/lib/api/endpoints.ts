@@ -13,6 +13,7 @@ export const endpoints = {
     home: "projects/home",
     item: (id: string | number) => `projects/${id}`,
     local: "projects/local",
+    configExport: "projects/config-export",
     scan: "projects/scan",
     import: "projects/import",
     info: (id: string | number) => `projects/${id}/info`,
@@ -37,6 +38,7 @@ export const endpoints = {
     connection: (id: string | number, linkId: string) => `projects/${id}/connections/${linkId}`,
     env: (id: string | number) => `projects/${id}/env`,
     git: (id: string | number) => `projects/${id}/git`,
+    liveState: (id: string | number) => `projects/${id}/live-state`,
     gitLink: (id: string | number) => `projects/${id}/git/link`,
     branches: (id: string | number) => `projects/${id}/branches`,
     branch: (id: string | number) => `projects/${id}/branch`,
@@ -127,6 +129,10 @@ export const endpoints = {
   /* ---------------------------------------------------------------- */
   deploy: {
     list: "deployments",
+    mountedRelease: "deployments/mounted-release",
+    artifact: "deployments/artifact",
+    plan: "deployments/plan",
+    rollbackLatest: "deployments/rollback",
     delete: (id: string) => `deployments/${id}`,
     reject: (id: string) => `deployments/${id}/reject`,
     keep: (id: string) => `deployments/${id}/keep`,

@@ -1,7 +1,7 @@
 "use client";
 
+import type { Edition, EditionFeatures } from "@repo/core";
 import { GitHubProvider } from "@/context/GitHubContext";
-import { CloudProvider } from "@/context/CloudContext";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { MailScopeProvider } from "@/context/MailScopeContext";
 import { AuthProvider, type AuthUser } from "@/context/AuthContext";
@@ -11,6 +11,8 @@ interface DashboardProvidersProps {
   children: React.ReactNode;
   selfHosted: boolean;
   deployMode: string;
+  edition?: Edition;
+  features?: EditionFeatures;
   isServerHost?: boolean;
   hostControlEnabled?: boolean;
   authMode: "cloud" | "local" | "none";
@@ -33,6 +35,8 @@ export function DashboardProviders({
   initialUser,
   selfHosted,
   deployMode,
+  edition,
+  features,
   isServerHost,
   hostControlEnabled,
   authMode,
@@ -48,6 +52,8 @@ export function DashboardProviders({
       <PlatformProvider
         selfHosted={selfHosted}
         deployMode={deployMode}
+        edition={edition}
+        features={features}
         isServerHost={isServerHost}
         hostControlEnabled={hostControlEnabled}
         authMode={authMode}
@@ -59,18 +65,11 @@ export function DashboardProviders({
         hostDomain={hostDomain}
       >
         <GitHubProvider initialData={initialGithubData}>
-          <CloudProvider>
-            {/* Mounted only in mail view: it fetches the mail-server registry on
-                every page, and that call SSH-scans when the registry is empty
-                (backfill from pre-table installs) — not something a platform-mode
-                dashboard should pay for. Consumers get an unloaded shape when
-                it's absent, so nothing breaks. */}
-            {productView === "mail" ? (
-              <MailScopeProvider>{children}</MailScopeProvider>
-            ) : (
-              children
-            )}
-          </CloudProvider>
+          {productView === "mail" ? (
+            <MailScopeProvider>{children}</MailScopeProvider>
+          ) : (
+            children
+          )}
         </GitHubProvider>
       </PlatformProvider>
     </AuthProvider>

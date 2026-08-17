@@ -36,6 +36,14 @@ import {
 import { checkNoActiveBuild } from "./build.service";
 import { livePrimaryContainerId } from "../services/service-container";
 import { decryptEnvMap } from "../../lib/encryption";
+import { isMountedRelease, retainedReleaseNeedsRepository } from "./mounted-release.service";
+
+export type {
+  ProjectLiveCode,
+  ProjectLiveRuntime,
+  ProjectLiveState,
+} from "./project-live-state";
+export { resolveProjectLiveState, readProjectLiveState } from "./project-live-state";
 
 /**
  * #336: present a deployment to a CLIENT — masks `meta.composeServices[].environment`.
@@ -91,11 +99,12 @@ export async function listDeployments(
     // "Active" chip + gate the rollback action. The schema columns
     // artifactRetainedAt + pinned flow through ...row automatically.
     const activeId = project.activeDeploymentId;
+    const activeReleaseId = project.activeReleaseDeploymentId;
     return {
       ...result,
       rows: result.rows.map((d) => ({
         ...d,
-        isActive: d.id === activeId,
+        isActive: d.id === (isMountedRelease(d) ? activeReleaseId : activeId),
         // Project favicon → the dashboard uses it as the row's logo instead
         // of the framework/Docker glyph.
         favicon: project.favicon ?? null,
@@ -114,7 +123,7 @@ export async function listDeployments(
   const projectIds = [...new Set(result.rows.map((d) => d.projectId))];
   const projectMap = new Map<
     string,
-    { name: string; activeDeploymentId: string | null; favicon: string | null }
+    { name: string; activeDeploymentId: string | null; activeReleaseDeploymentId: string | null; favicon: string | null }
   >();
   for (const pid of projectIds) {
     const p = await repos.project.findById(pid);
@@ -122,6 +131,7 @@ export async function listDeployments(
       projectMap.set(pid, {
         name: p.name,
         activeDeploymentId: p.activeDeploymentId,
+        activeReleaseDeploymentId: p.activeReleaseDeploymentId,
         favicon: p.favicon ?? null,
       });
   }
@@ -131,7 +141,7 @@ export async function listDeployments(
     return {
       ...d,
       projectName: proj?.name ?? "Unknown",
-      isActive: proj?.activeDeploymentId === d.id,
+      isActive: (isMountedRelease(d) ? proj?.activeReleaseDeploymentId : proj?.activeDeploymentId) === d.id,
       // Project favicon → dashboard row logo (see listByProject above).
       favicon: proj?.favicon ?? null,
     };
@@ -193,6 +203,9 @@ export async function deleteDeployment(
   if (project && project.activeDeploymentId === deploymentId) {
     await repos.project.setActiveDeployment(project.id, null);
   }
+  if (project && project.activeReleaseDeploymentId === deploymentId) {
+    await repos.project.setActiveReleaseDeployment(project.id, null);
+  }
 
   await repos.deployment.deleteDeployment(deploymentId);
 }
@@ -223,6 +236,17 @@ export async function rollbackDeployment(
 export async function previewRestore(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
   await assertNotControlPlaneById(dep.projectId);
+  if (isMountedRelease(dep)) {
+    const project = await repos.project.findById(dep.projectId);
+    const active = project?.activeReleaseDeploymentId === dep.id;
+    return {
+      mode: active ? "ineligible" : "release-swap",
+      needsRepository: active ? false : retainedReleaseNeedsRepository(dep),
+      rebuildServices: [],
+      untouchedServices: [],
+      ...(active ? { code: "ALREADY_ACTIVE", reason: "This code release is already active." } : {}),
+    };
+  }
   const { target, project, plan } = await resolveRestorePlan(deploymentId);
   const consequences =
     plan.mode === "ineligible"
@@ -615,5 +639,4 @@ export async function getBuildLogs(
   }
   return buildSession.logs as LogEntry[];
 }
-
 

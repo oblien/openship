@@ -202,6 +202,27 @@ export async function resolveBearerIdentity(
   }
   if (!session) return null;
 
+  // The desktop API is loopback-only and intentionally has one local operator
+  // and one local workspace. OAuth here authenticates the MCP client, not a
+  // second Openship/cloud identity. Resolve every valid MCP token onto that
+  // canonical local operator so browser profiles and agents always see the
+  // same projects and servers. Hosted/self-hosted multi-user installs retain
+  // the normal consent-binding behavior below.
+  if (env.DEPLOY_MODE === "desktop") {
+    const localUser = await ensureLocalUser();
+    const organizationId = await resolveActiveOrganizationId(localUser.id, null);
+    return {
+      kind: "oauth",
+      userId: localUser.id,
+      organizationId,
+      scoped: false,
+      readOnly: false,
+      tokenId: `oauth-local:${session.clientId}`,
+      hasBinding: false,
+      principalId: `oauth:${session.clientId}`,
+    };
+  }
+
   // The client's authorized scope (org + read-only + grants) lives on a binding
   // row keyed by (user, client), written at consent. No binding → the token
   // never passed consent → DENY EVERYTHING (a scoped principal with a grant key

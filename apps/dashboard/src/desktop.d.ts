@@ -5,14 +5,27 @@ declare global {
     | "dismissedAdvisoryIds"
     | "lastSeenVersion";
 
-  type DesktopCloudAuthResult = {
-    ok?: boolean;
-    nonce?: string;
-    error?: string;
+  type DesktopProfile = {
+    id: string;
+    name: string;
+    createdAt: string;
+    lastUsedAt: string;
   };
 
-  type DesktopCloudPollResult = {
-    status: "pending" | "resolved" | "expired" | "error";
+  type DesktopProfilesState = {
+    activeProfileId: string;
+    profiles: DesktopProfile[];
+  };
+
+  type DesktopControlPlaneInfo = {
+    api: string;
+    dashboard: string;
+    advertisedOrigin: string;
+    previousAdvertisedOrigin: string | null;
+    switched: { api: boolean; dashboard: boolean };
+    fingerprint: string;
+    dataPath: string;
+    userDataPath: string;
   };
 
   interface DesktopBridge {
@@ -21,6 +34,16 @@ declare global {
     app?: {
       version: () => Promise<string>;
       platform?: string;
+      localUrls?: () => Promise<DesktopControlPlaneInfo>;
+    };
+    instance?: {
+      info: () => Promise<DesktopControlPlaneInfo>;
+      openBrowser: () => Promise<boolean>;
+      openDataFolder: () => Promise<boolean>;
+      restartEngine: () => Promise<boolean>;
+      repairEndpoint: () => Promise<boolean>;
+      backup: () => Promise<string | null>;
+      onChange: (cb: (info: DesktopControlPlaneInfo) => void) => () => void;
     };
     /** Update preferences only. The desktop config store also holds SSH
      *  credentials and tunnel tokens, which the bridge refuses to serve —
@@ -38,9 +61,12 @@ declare global {
       onDone: (cb: () => void) => () => void;
       onError: (cb: (message: string) => void) => () => void;
     };
-    onboarding: {
-      cloudAuth: () => Promise<DesktopCloudAuthResult>;
-      cloudAuthPoll: (nonce: string) => Promise<DesktopCloudPollResult>;
+    profiles?: {
+      list: () => Promise<DesktopProfilesState>;
+      create: (name: string) => Promise<DesktopProfile>;
+      rename: (id: string, name: string) => Promise<DesktopProfile>;
+      switch: (id: string) => Promise<boolean>;
+      remove: (id: string) => Promise<boolean>;
     };
   }
 

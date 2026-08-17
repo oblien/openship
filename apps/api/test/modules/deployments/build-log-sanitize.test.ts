@@ -264,6 +264,13 @@ describe("redactCredentials", () => {
     expect(redactCredentials("token ghs_ABCDEFGHIJKLMNOP0")).toBe("token ***");
   });
 
+  it("redacts an extraheader Authorization: Basic payload", () => {
+    const b64 = Buffer.from("x-access-token:ghs_ABCDEFGHIJKLMNOP0", "utf8").toString("base64");
+    const out = redactCredentials(`GIT_CONFIG_VALUE_0='Authorization: Basic ${b64}'`);
+    expect(out).toContain("Authorization: Basic ***");
+    expect(out).not.toContain(b64);
+  });
+
   it("leaves the SSH form and ordinary output alone", () => {
     // git@github.com carries no secret and has no "://" — must not be touched.
     for (const keep of [

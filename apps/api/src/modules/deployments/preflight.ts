@@ -19,16 +19,11 @@ import {
 } from "../../lib/deployment-runtime";
 import {
   normalizeCustomHostname,
-  cloudRequiredCode,
-  CLOUD_UNREACHABLE_CODE,
   stackExpectsBuildCommand,
   describeResourceFit,
   fitsCapacity,
   hasMinResources,
 } from "@repo/core";
-import { cloudClient } from "../../lib/cloud/client";
-import { isCloudConnectedForOrg } from "../../lib/cloud/session";
-import { runCloudPreflight, type CloudPreflightData } from "../../lib/cloud-preflight";
 import { isStaticService, type DeployableService } from "../../lib/deployable-service";
 import { isFullyPinned, snapshotNeedsGitSource } from "./pinned-artifacts";
 import { snapshotToClass } from "./deployment-class";
@@ -91,16 +86,10 @@ export interface PreflightCheck {
 }
 
 export const PREFLIGHT_ERROR_CODES = {
-  // Cloud-requirement codes are sourced from the shared @repo/core registry (the
-  // single source of truth) — identical strings, no wire-format change.
-  CLOUD_REQUIRED_TARGET: cloudRequiredCode("cloud-deploy-target"),
-  /** Org IS cloud-connected (owner's session validates) but the SaaS
-   *  preflight call returned nothing — transient (5xx / network). Distinct
-   *  from CLOUD_REQUIRED_TARGET so we never tell a connected user to
-   *  "connect your account" over a momentary blip. */
-  CLOUD_UNREACHABLE: CLOUD_UNREACHABLE_CODE,
-  CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN: cloudRequiredCode("managed-project-domain"),
-  CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS: cloudRequiredCode("managed-compose-domains"),
+  CLOUD_REQUIRED_TARGET: "CLOUD_REQUIRED_cloud-deploy-target",
+  CLOUD_UNREACHABLE: "CLOUD_UNREACHABLE",
+  CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN: "CLOUD_REQUIRED_managed-project-domain",
+  CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS: "CLOUD_REQUIRED_managed-compose-domains",
   GITHUB_APP_INSTALLATION_REQUIRED: "GITHUB_APP_INSTALLATION_REQUIRED",
   REMOTE_BUILD_TOKEN_LEAK_RISK: "REMOTE_BUILD_TOKEN_LEAK_RISK",
   /** gh CLI auth + remote-server build target. clone-auth.ts will throw
@@ -726,27 +715,17 @@ async function checkComposeServiceDomains(
   return checks;
 }
 
+type CloudPreflightData = {
+  runtime: { ok?: boolean; message?: string };
+  customDomain?: { verified?: boolean; message?: string };
+  slug?: { available?: boolean; message?: string };
+};
+
 async function requestCloudPreflight(
-  snapshot: DeploymentConfigSnapshot,
-  input: { slug?: string; customDomain?: string },
+  _snapshot: DeploymentConfigSnapshot,
+  _input: { slug?: string; customDomain?: string },
 ): Promise<CloudPreflightData | null> {
-  const plat = platform();
-  if (!snapshot.organizationId) return null;
-
-  // On the SaaS itself, run preflight in-process — no bridge needed.
-  // `runCloudPreflight` keys EVERYTHING off the organization id
-  // (namespace slug, quota, token mint) — passing userId here used
-  // to mint the wrong namespace on SaaS.
-  if (plat.target === "cloud") {
-    return runCloudPreflight(snapshot.organizationId, input);
-  }
-
-  // Everywhere else (selfhosted, desktop): bridge to SaaS via the
-  // stored bearer. The token IS the source of truth — if it's valid
-  // SaaS answers, if not the bridge returns null and the outer code
-  // surfaces "connect your account". No second-guessing at this
-  // layer.
-  return cloudClient({ organizationId: snapshot.organizationId }).preflight(input);
+  return null;
 }
 
 // #427 follow-up — preflight decides "needs Cloud" by HOSTNAME truth, exactly like
@@ -1261,10 +1240,7 @@ async function checkCustomDomain(
   // host carrying a server/local snapshot — it would A-record-check a cloud deploy.)
   const plat = platform();
   const effectiveTarget = resolveEffectiveTarget(plat.target, snapshot ?? {});
-  if (effectiveTarget !== "cloud") {
-    return checkCustomDomainSelfHosted(customDomain, snapshot);
-  }
-  return checkCustomDomainCloudCname(customDomain);
+  return checkCustomDomainSelfHosted(customDomain, snapshot);
 }
 
 async function checkCloudRuntime(
@@ -1466,11 +1442,7 @@ export async function runPreflightChecks(
   // first"). Resolve the org-owner's validated verdict just for that case —
   // skip the SaaS round-trip when preflight already returned data or no
   // cloud requirement applies.
-  const cloudConnected =
-    !cloudPreflight && cloudRequirement !== "none" && snapshot.organizationId
-      ? await isCloudConnectedForOrg(snapshot.organizationId).catch(() => false)
-      : false;
-  checks.push(await checkCloudRuntime(cloudPreflight, cloudRequirement, cloudConnected));
+  checks.push(await checkCloudRuntime(cloudPreflight, cloudRequirement, false));
 
   const effectiveBuildStrategy =
     opts?.buildStrategy ?? (snapshot.buildStrategy as "local" | "server" | undefined);

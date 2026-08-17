@@ -129,17 +129,31 @@ interface ResolvedSslProvider {
 /** `domain.ownerType` for the `mail.<base>` host of a mail server. */
 export const MAIL_DOMAIN_OWNER = "mail";
 
+/** Edge-imported / restored hostname with no project. Renews on the local edge. */
+export const IMPORTED_DOMAIN_OWNER = "imported";
+
 /**
  * Who owns a domain for SSL purposes.
  *
  * Almost every row is project-owned and resolves its provider from the project's
  * active deployment. A MAIL-owned row has no project at all — the mail wizard's
  * `mail.<base>` host is a certificate on a box, not an app — so it resolves from
- * the mail server directly.
+ * the mail server directly. An IMPORTED row is the same shape for a vhost we
+ * adopted from a foreign proxy: no project, local edge.
  */
 type SslOwner =
   | { kind: "project"; project: Project }
-  | { kind: "mail"; serverId: string; organizationId: string };
+  | { kind: "mail"; serverId: string; organizationId: string }
+  | { kind: "imported" };
+
+export function isImportedDomainOwner(row: {
+  ownerType?: string | null;
+  projectId?: string | null;
+}): boolean {
+  if (row.ownerType === IMPORTED_DOMAIN_OWNER) return true;
+  // First persist used ownerType=project with a null projectId.
+  return row.ownerType === "project" && !row.projectId;
+}
 
 /**
  * The mail server behind a `mail.<base>` hostname, or null when there isn't one.
@@ -171,7 +185,10 @@ function assertVerified(domainRecord: Domain, opts: DomainSslOptions): void {
   }
 }
 
-async function resolveAuthorizedDomain(hostname: string, opts: DomainSslOptions) {
+async function resolveAuthorizedDomain(
+  hostname: string,
+  opts: DomainSslOptions,
+): Promise<{ domainRecord: Domain; owner: SslOwner }> {
   const domainRecord = await repos.domain.findByHostname(hostname);
   if (!domainRecord) throw new NotFoundError("Domain", hostname);
 
@@ -186,6 +203,12 @@ async function resolveAuthorizedDomain(hostname: string, opts: DomainSslOptions)
     const owner = await resolveMailOwner(domainRecord.hostname);
     if (!owner) throw new NotFoundError("Domain", hostname);
     return { domainRecord, owner: owner as SslOwner };
+  }
+
+  if (isImportedDomainOwner(domainRecord)) {
+    if (opts.projectId) throw new NotFoundError("Domain", hostname);
+    assertVerified(domainRecord, opts);
+    return { domainRecord, owner: { kind: "imported" } as const };
   }
 
   const project = await repos.project.findById(domainRecord.projectId);
@@ -385,6 +408,10 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
   if (owner.kind === "mail") {
     const ssl = await resolveSslOnly({ serverId: owner.serverId } as DeploymentMeta, owner.organizationId);
     return { ssl, lockScope: owner.serverId };
+  }
+
+  if (owner.kind === "imported") {
+    return { ssl: platform().ssl, lockScope: LOCAL_ACME_SCOPE };
   }
 
   const project = owner.project;
