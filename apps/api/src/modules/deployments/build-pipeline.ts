@@ -214,6 +214,9 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
 
   sessionManager.createSession(dep.id, project.id);
 
+  const { beginDeployRun, endDeployRun, releaseDeployLease } = await import("./deploy-lease");
+  beginDeployRun(dep.id);
+
   void executeBuildAndDeploy(project, dep, buildSession.id)
     .catch(async (err) => {
       console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
@@ -226,14 +229,14 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
       await markDeploymentFailedFromOutside(dep.id, err);
     })
     .finally(() => {
-      void import("./deploy-lease").then(({ releaseDeployLease }) =>
-        releaseDeployLease(project.id, dep.id),
-      );
+      endDeployRun(dep.id);
+      void releaseDeployLease(project.id, dep.id);
     });
 
   return buildSession.id;
   } catch (err) {
-    const { releaseDeployLease } = await import("./deploy-lease");
+    const { endDeployRun, releaseDeployLease } = await import("./deploy-lease");
+    endDeployRun(dep.id);
     await releaseDeployLease(project.id, dep.id);
     throw err;
   }

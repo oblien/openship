@@ -121,7 +121,7 @@ vi.mock("../../lib/plan-guard", () => ({
 
 import { ForbiddenError } from "@repo/core";
 import { cancelBuildSession, checkNoActiveBuild, createQueuedDeployment } from "./build.service";
-import { beginDeployRun, endDeployRun } from "./deploy-lease";
+import { beginDeployRun, endDeployRun, revertIfIncompleteActivation } from "./deploy-lease";
 import {
   failCleanMountedRelease,
   findActiveSameShaRelease,
@@ -267,6 +267,53 @@ describe("mounted release lease, cancel, and recovery", () => {
     await expect(checkNoActiveBuild("p1")).rejects.toThrow(/still cleaning up/);
   });
 
+  it("does not revert current when the row is ready at revert time", async () => {
+    mocks.exec.mockImplementation(async (cmd: string) => {
+      if (cmd.includes("readlink")) return "releases/dep_rel\n";
+      return "";
+    });
+    mocks.findById.mockResolvedValue({
+      ...dep,
+      status: "ready",
+      meta: { deploymentLane: "release", releasePreviousCurrent: "releases/dep_old" },
+    });
+
+    await revertIfIncompleteActivation(executor() as never, "p1", {
+      ...dep,
+      status: "deploying",
+      meta: { deploymentLane: "release", releasePreviousCurrent: "releases/dep_old" },
+    } as never);
+
+    expect(
+      mocks.exec.mock.calls.some(
+        (call) =>
+          typeof call[0] === "string" &&
+          call[0].includes("ln -sfn") &&
+          call[0].includes("releases/dep_old"),
+      ),
+    ).toBe(false);
+  });
+
+  it("cancel of a building runtime deploy does not release the lease", async () => {
+    mocks.findById.mockImplementation(async (id: string) => {
+      if (id === "dep_rel") {
+        return {
+          ...dep,
+          status: "building",
+          organizationId: "org1",
+          projectId: "p1",
+          meta: {},
+        };
+      }
+      return null;
+    });
+    mocks.findProject.mockResolvedValue({ ...project, organizationId: "org1" });
+
+    await cancelBuildSession("dep_rel");
+
+    expect(mocks.releaseDeployLease).not.toHaveBeenCalled();
+  });
+
   it("cancel does not release the lease while a worker is running", async () => {
     beginDeployRun("dep_rel");
     mocks.findById.mockImplementation(async (id: string) => {
@@ -381,6 +428,16 @@ describe("mounted release lease, cancel, and recovery", () => {
 
   it("reverts current on boot when health never passed after activate", async () => {
     const commands: string[] = [];
+    const interrupted = {
+      ...dep,
+      status: "deploying",
+      releasePhase: "health",
+      meta: { deploymentLane: "release", releasePreviousCurrent: "releases/dep_old" },
+    };
+    mocks.findById.mockImplementation(async (id: string) => {
+      if (id === "dep_rel") return interrupted;
+      return null;
+    });
     mocks.exec.mockImplementation(async (cmd: string) => {
       commands.push(cmd);
       if (cmd.includes("readlink")) return "releases/dep_rel\n";
@@ -389,12 +446,7 @@ describe("mounted release lease, cancel, and recovery", () => {
 
     await failCleanMountedRelease(
       project as never,
-      {
-        ...dep,
-        status: "deploying",
-        releasePhase: "health",
-        meta: { deploymentLane: "release", releasePreviousCurrent: "releases/dep_old" },
-      } as never,
+      interrupted as never,
       "Interrupted by a server restart — redeploy to try again.",
     );
 

@@ -1531,7 +1531,10 @@ export async function cancelBuildSession(
   // activeDeploymentId (the last successful release) is left untouched, so a
   // cancelled redeploy has zero effect on the project's live state.
   await repos.deployment.updateStatus(dep.id, "cancelled");
-  if (!hasDeployRun(dep.id)) {
+  // Runtime kickoffBuild and mounted runMountedRelease both register a run.
+  // Only a queued cancel with no worker may drop the lease; otherwise the
+  // worker's finally releases after host work stops.
+  if ((latest.status === "queued" || dep.status === "queued") && !hasDeployRun(dep.id)) {
     await releaseDeployLease(project.id, dep.id).catch(() => {});
   }
   if (buildSession) {

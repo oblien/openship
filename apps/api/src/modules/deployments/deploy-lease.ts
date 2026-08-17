@@ -113,9 +113,8 @@ export async function revertReleaseCurrent(
 export async function revertIfIncompleteActivation(
   executor: CommandExecutor,
   projectId: string,
-  dep: Pick<Deployment, "id" | "status" | "meta">,
+  dep: Pick<Deployment, "id" | "meta">,
 ): Promise<void> {
-  if (dep.status === "ready") return;
   const hostRoot = mountedReleaseHostRoot(projectId);
   const current = (
     await executor
@@ -123,7 +122,9 @@ export async function revertIfIncompleteActivation(
       .catch(() => "")
   ).trim();
   if (!currentPointsAtDeployment(current, dep.id)) return;
-  await revertReleaseCurrent(executor, hostRoot, releaseLaneMeta(dep).releasePreviousCurrent);
+  const live = await repos.deployment.findById(dep.id);
+  if (!live || live.status === "ready") return;
+  await revertReleaseCurrent(executor, hostRoot, releaseLaneMeta(live).releasePreviousCurrent);
 }
 
 export async function execUnlessCancelled(
