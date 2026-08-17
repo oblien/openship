@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { env } from "../../src/config/env";
 
 // GET /health/env is what the dashboard reads to decide which login flow to
 // render ("none" → zero-auth, "local" → Better Auth login). The non-desktop
@@ -59,6 +60,7 @@ afterEach(async () => {
   getThrows = false;
   delete settings.authMode;
   delete settings.teamMode;
+  (env as { CLOUD_MODE: boolean }).CLOUD_MODE = false;
   // /health/env now delegates to getAuthMode(), which memoises its answer so
   // authMiddleware doesn't hit the DB per request. Without clearing it here the
   // first case's mode leaks into every later case (they all saw "none"). The
@@ -115,6 +117,19 @@ describe("GET /health/env authMode", () => {
       publicSignup: false,
       hostedGithubApp: false,
       cloudDeploy: false,
+    });
+  });
+
+  it("reports cloud edition with SaaS features on when CLOUD_MODE is true", async () => {
+    (env as { CLOUD_MODE: boolean }).CLOUD_MODE = true;
+    const { body } = await getEnv();
+    expect(body.edition).toBe("cloud");
+    expect(body.features).toEqual({
+      billing: true,
+      cloudConnect: true,
+      publicSignup: true,
+      hostedGithubApp: true,
+      cloudDeploy: true,
     });
   });
 });

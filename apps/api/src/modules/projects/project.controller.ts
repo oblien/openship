@@ -357,7 +357,8 @@ export async function getHome(c: Context) {
 /** GET /api/projects/config-export — non-secret Operator config snapshot. */
 export async function exportConfig(c: Context) {
   const ctx = getRequestContext(c);
-  const data = await buildProjectConfigExport(ctx.organizationId);
+  const scopedIds = await scopedProjectIds(ctx);
+  const data = await buildProjectConfigExport(ctx.organizationId, { projectIds: scopedIds });
   return c.json(data);
 }
 

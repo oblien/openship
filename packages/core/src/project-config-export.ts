@@ -96,4 +96,8 @@ export type ProjectConfigExport = {
   organizationId: string;
   servers: ExportedServer[];
   projects: ExportedProject[];
+  /** Projects matching the caller after scope filter (not the unfiltered org count). */
+  total: number;
+  /** True when the org has more projects than this snapshot loaded. */
+  truncated: boolean;
 };

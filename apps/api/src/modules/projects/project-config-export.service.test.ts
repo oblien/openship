@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { ValidationError } from "@repo/core";
 import {
+  applyExportScope,
+  assertExportSafe,
   exportContainsSecretKeys,
   serializeConnectionConfig,
+  serializeMountedRelease,
   serializeProjectConfig,
+  serializeReleaseSource,
   serializeRouteConfig,
   serializeServerConfig,
 } from "./project-config-export.service";
@@ -182,5 +187,56 @@ describe("project config export serializers", () => {
   it("serializes routes and connections without secret payloads", () => {
     expect(serializeRouteConfig(domain()).hostname).toBe("dashwood.example.com");
     expect(serializeConnectionConfig(connection()).envKey).toBe("DATABASE_URL");
+  });
+
+  it("allowlists mountedRelease and releaseSource and drops extra JSONB keys", () => {
+    const recipe = serializeMountedRelease({
+      enabled: true,
+      containerPath: "/app",
+      cloneTokenEncrypted: "enc1:NO",
+      webhookSecret: "whsec",
+      unknown: "drop-me",
+    });
+    expect(recipe).toEqual({ enabled: true, containerPath: "/app" });
+    expect(recipe).not.toHaveProperty("cloneTokenEncrypted");
+    expect(recipe).not.toHaveProperty("webhookSecret");
+    expect(exportContainsSecretKeys(recipe)).toBe(false);
+
+    const src = serializeReleaseSource({
+      mode: "github",
+      repo: "acme/dashwood",
+      cloneTokenEncrypted: "enc1:NO",
+    });
+    expect(src).toEqual({ mode: "github", repo: "acme/dashwood" });
+    expect(src).not.toHaveProperty("cloneTokenEncrypted");
+  });
+
+  it("refuses a payload that still contains a secret key", () => {
+    expect(() => assertExportSafe({ sshPassword: "x" })).toThrow(ValidationError);
+    expect(() => assertExportSafe({ servers: [{ name: "ok" }] })).not.toThrow();
+  });
+
+  it("a scoped token only sees granted projects and the servers they reference", () => {
+    const mine = project({ id: "proj_mine", serverId: "srv_1" });
+    const other = project({ id: "proj_other", serverId: "srv_2" });
+    const unused = server({ id: "srv_2", sshHost: "10.0.0.9", name: "Other" });
+    const { projects, servers } = applyExportScope(
+      [mine, other],
+      [server(), unused],
+      new Set(["proj_mine"]),
+    );
+    expect(projects.map((p) => p.id)).toEqual(["proj_mine"]);
+    expect(servers.map((s) => s.id)).toEqual(["srv_1"]);
+    expect(JSON.stringify(servers)).not.toContain("10.0.0.9");
+  });
+
+  it("an unscoped caller keeps the full project and server set", () => {
+    const { projects, servers } = applyExportScope(
+      [project(), project({ id: "proj_2", serverId: "srv_2" })],
+      [server(), server({ id: "srv_2" })],
+      null,
+    );
+    expect(projects).toHaveLength(2);
+    expect(servers).toHaveLength(2);
   });
 });

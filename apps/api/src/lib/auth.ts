@@ -557,7 +557,8 @@ export const auth = betterAuth({
             // round-trip lets operators flip the toggle without
             // bouncing the API.
             const settings = await repos.instanceSettings.get();
-            const source = settings?.invitationMailSource === "cloud" ? "cloud" : "platform";
+            const { resolveInvitationMailSource } = await import("./invitation-mail-source");
+            const source = resolveInvitationMailSource(settings?.invitationMailSource);
 
             const delivered = await sendMail({
               to: data.email,
