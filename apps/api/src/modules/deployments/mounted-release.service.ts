@@ -15,6 +15,7 @@ import {
   mountedReleaseHostRoot,
   type MountedReleaseConfig,
 } from "./mounted-release.config";
+import type { ReleasePlan } from "./release-planner";
 
 const RELEASE_ERROR = "MOUNTED_RELEASE_FAILED";
 
@@ -391,7 +392,14 @@ async function runMountedRelease(
 export async function triggerMountedRelease(
   ctx: RequestContext,
   projectId: string,
-  opts?: { commitSha?: string },
+  opts?: {
+    commitSha?: string;
+    /** Defaults to release-rollback when a SHA is pinned, else code-release. */
+    trigger?: string;
+    plan?: ReleasePlan;
+    serviceIds?: string[];
+    changedPaths?: string[] | null;
+  },
 ) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
@@ -416,8 +424,11 @@ export async function triggerMountedRelease(
     meta,
     envVars: null,
     commitSha: opts?.commitSha,
-    trigger: opts?.commitSha ? "release-rollback" : "code-release",
+    trigger: opts?.trigger ?? (opts?.commitSha ? "release-rollback" : "code-release"),
     rollbackStrategy: "snapshot",
+    plan: opts?.plan,
+    serviceIds: opts?.serviceIds,
+    changedPaths: opts?.changedPaths ?? null,
   });
   sessionManager.createSession(dep.id, project.id);
   void runMountedRelease(ctx, project, dep, opts?.commitSha);

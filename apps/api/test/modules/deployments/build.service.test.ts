@@ -90,6 +90,7 @@ import {
   requestBuildAccess,
   resolveSnapshotTarget,
   triggerDeployment,
+  triggerPlannedDeployment,
   type DeploymentConfigSnapshot,
 } from "../../../src/modules/deployments/build.service";
 import {
@@ -390,6 +391,62 @@ describe("triggerDeployment", () => {
       expect.objectContaining({
         multiService: true,
         composeServices,
+      }),
+    );
+  });
+});
+
+describe("triggerPlannedDeployment", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repos.project.findById.mockResolvedValue(baseProject({ mountedRelease: null }));
+    repos.project.getEnvMap.mockResolvedValue({});
+    repos.service.listByProject.mockResolvedValue([]);
+    repos.deployment.listByProject.mockResolvedValue({ rows: [] });
+    repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
+    repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
+    repos.deployment.createBuildSession.mockResolvedValue(undefined);
+    repos.deployment.supersedeReconciling.mockResolvedValue(undefined);
+    repos.deployment.supersedePendingDecisions.mockResolvedValue(undefined);
+    assertGitHubRepoAccess.mockResolvedValue(undefined);
+    resolveProjectRouteState.mockResolvedValue({
+      primaryCustomDomain: undefined,
+      primaryDomainType: undefined,
+      primarySlug: undefined,
+      publicEndpoints: [],
+    });
+    resolveServicePipelineMode.mockResolvedValue({
+      useServicePipeline: true,
+      servicePreflightServices: composeServices,
+      useSingleAppPipeline: false,
+    });
+    resolveStrategy.mockResolvedValue("local");
+    resolveSmartRoute.mockResolvedValue({
+      forceAll: undefined,
+      serviceIds: undefined,
+      changedPaths: undefined,
+    });
+    runPreflightChecks.mockResolvedValue({ ok: true, checks: [] });
+    kickoffBuild.mockResolvedValue("session-1");
+  });
+
+  it("still uses triggerDeployment when mounted releases are off", async () => {
+    const result = await triggerPlannedDeployment(ctx, {
+      projectId: "project-1",
+      commitSha: "abc123",
+    });
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.deployment).toEqual({ id: "dep-1", projectId: "project-1" });
+    expect(result.plan.action).toBe("deploy_code");
+    expect(repos.deployment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          plan: expect.objectContaining({
+            action: "deploy_code",
+            reason: expect.any(String),
+          }),
+        }),
       }),
     );
   });

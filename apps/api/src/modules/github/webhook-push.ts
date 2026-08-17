@@ -5,6 +5,9 @@
 import { repos, type Project } from "@repo/db";
 import { env } from "../../config/env";
 import { triggerDeployment } from "../deployments/build.service";
+import { mountedReleaseConfig } from "../deployments/mounted-release.config";
+import { triggerMountedRelease } from "../deployments/mounted-release.service";
+import { planAndSelectTrigger } from "../deployments/release-planner";
 import {
   compareCommits,
   getRepository,
@@ -193,17 +196,11 @@ async function deployProjectFromPush(
 
     if (!forceAll && routableServices.length > 0) {
       const routed = routeServicesByChanges(routableServices, extracted.files);
-      if (routed.mode === "skip") {
-        // No services affected → skip the deploy entirely. (mode "all" can't
-        // occur here since routableServices.length > 0.)
-        console.log(
-          `[GitHub Webhook] ${input.owner}/${input.repo}#${input.branch} project ${p.id}: no services affected by ${extracted.files.size} changed file(s) — skipping deploy.`,
-        );
-        return { skipped: true as const, projectId: p.id };
-      }
       if (routed.mode === "services") {
         serviceIds = routed.serviceIds;
       }
+      // mode "skip" is not final — the planner also maps AE prefixes
+      // (apps/public/**) that compose services with a null rootDirectory miss.
     }
   } else {
     // No payload was passed (manual trigger path going through this
@@ -225,24 +222,59 @@ async function deployProjectFromPush(
     );
   }
 
+  const plannerPaths =
+    changedPathsTruncated || (!input.payload && !changedPaths) ? null : (changedPaths ?? []);
+  const { plan, trigger } = planAndSelectTrigger({
+    changedPaths: plannerPaths,
+    mountedReleaseEnabled: Boolean(mountedReleaseConfig(p)),
+    services: enabledServices.map((s) => ({
+      id: s.id,
+      name: s.name,
+      rootDirectory: s.rootDirectory,
+    })),
+    routedServiceIds: serviceIds,
+    forceAll,
+  });
+  const targetServiceIds = plan.serviceIds ?? serviceIds;
+
+  if (trigger === "skip") {
+    console.log(
+      `[GitHub Webhook] ${input.owner}/${input.repo}#${input.branch} project ${p.id}: skip — ${plan.reason}`,
+    );
+    return { skipped: true as const, projectId: p.id, reason: plan.reason };
+  }
+
+  const actor = webhookActorCtx(actorUserId, p.organizationId, "webhook:github-push");
+  const persistablePaths = changedPathsTruncated ? null : changedPaths;
+
+  if (trigger === "mounted_release") {
+    const deployment = await triggerMountedRelease(actor, p.id, {
+      commitSha: input.commitSha,
+      trigger: "webhook",
+      plan,
+      serviceIds: targetServiceIds,
+      changedPaths: persistablePaths,
+    });
+    return { deployment };
+  }
+
   // Rollback context (strategy + commit_sha_before anchor) is resolved inside
   // triggerDeployment via the shared resolveRollbackContext helper — no need to
   // recompute it here.
-  const triggered = await triggerDeployment(
-    webhookActorCtx(actorUserId, p.organizationId, "webhook:github-push"),
-    {
-      projectId: p.id,
-      branch: input.branch,
-      commitSha: input.commitSha,
-      commitMessage: input.commitMessage,
-      trigger: "webhook",
-      serviceIds,
-      forceAll,
-      // Let the compose-drift reconciler skip its repo scan when this push
-      // didn't touch a compose file. Truncated → pass null (unknown → reconcile).
-      changedPaths: changedPathsTruncated ? null : changedPaths,
-    },
-  );
+  const triggered = await triggerDeployment(actor, {
+    projectId: p.id,
+    branch: input.branch,
+    commitSha: input.commitSha,
+    commitMessage: input.commitMessage,
+    trigger: "webhook",
+    serviceIds: targetServiceIds,
+    forceAll,
+    // Let the compose-drift reconciler skip its repo scan when this push
+    // didn't touch a compose file. Truncated → pass null (unknown → reconcile).
+    changedPaths: persistablePaths,
+    refresh: plan.action === "refresh_config",
+    plan,
+  });
 
   // Persist changed-files onto the deployment row for the dashboard. Best-effort.
   // Skip when deduped — `triggered.deployment` is the already-live one, not ours.
@@ -380,7 +412,7 @@ async function triggerBranchDeployments(
     event: input.event,
     message:
       `Triggered ${succeeded} deployment(s) for ${input.owner}/${input.repo}#${input.branch}` +
-      `${skipped ? `, ${skipped} skipped (no affected services)` : ""}` +
+      `${skipped ? `, ${skipped} skipped` : ""}` +
       `${failed ? `, ${failed} failed` : ""}`,
   };
 }
