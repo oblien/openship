@@ -183,6 +183,12 @@ export const deployment = pgTable("deployment", {
    * that already existed.
    */
   rollbackStrategy: text("rollback_strategy").notNull().default("snapshot"),
+  /**
+   * Named mounted-release phase (`fetching` | `preparing` | `activating` | `health`).
+   * Durable so a restart can fail-clean an interrupted pointer swap instead of
+   * only cancelling the in-memory session.
+   */
+  releasePhase: text("release_phase"),
 
   /* ── Rollback / retention ───────────────────────────────────────────── */
   /**
@@ -204,12 +210,8 @@ export const deployment = pgTable("deployment", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
-  // At most ONE in-flight deployment per project. The race-prone
-  // pattern (SELECT-then-INSERT inside checkNoActiveBuild +
-  // createQueuedDeployment) is replaced by relying on this constraint:
-  // concurrent webhook deliveries both try the INSERT, only one wins,
-  // the other's unique-violation is caught by the caller and reported
-  // as "another build already in progress."
+  // INSERT serialization only — cancel writes `cancelled` and drops this
+  // slot immediately. Host work is gated by `project.deploy_lease_id`.
   uniqueIndex("uq_deployment_one_active_per_project")
     .on(t.projectId)
     .where(sql`status IN ('queued', 'building', 'deploying')`),

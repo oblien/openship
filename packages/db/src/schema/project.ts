@@ -441,6 +441,12 @@ export const project = pgTable(
     activeDeploymentId: text("active_deployment_id"),
     /** Active mounted-code release; separate from the runtime container/image pointer. */
     activeReleaseDeploymentId: text("active_release_deployment_id"),
+    /**
+     * Execution lease: the deployment allowed to do host work. Survives cancel
+     * (which drops `uq_deployment_one_active_per_project`) until the worker
+     * exits and leftover host work is aborted.
+     */
+    deployLeaseId: text("deploy_lease_id"),
     mountedRelease: jsonb("mounted_release").$type<{
       enabled: boolean;
       buildMode?: "prebuilt" | "server";

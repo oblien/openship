@@ -309,6 +309,45 @@ export function createDeploymentRepo(db: Database) {
     },
 
     /**
+     * In-flight row for a project, if any. Used by checkNoActiveBuild so a
+     * buried queued/building/deploying row is not missed when the newest page
+     * of history is already terminal.
+     */
+    async findInFlightByProject(projectId: string) {
+      return db.query.deployment.findFirst({
+        where: and(
+          eq(deployment.projectId, projectId),
+          inArray(deployment.status, ["queued", "building", "deploying"]),
+        ),
+        orderBy: [desc(deployment.createdAt)],
+      });
+    },
+
+    async listInFlight() {
+      return db
+        .select()
+        .from(deployment)
+        .where(inArray(deployment.status, ["queued", "building", "deploying"]));
+    },
+
+    /**
+     * Persist a named mounted-release phase. Refuses (returns false) when the
+     * row is already `cancelled` — same pin as updateStatus.
+     */
+    async setReleasePhase(
+      id: string,
+      phase: string,
+      extra?: Partial<NewDeployment>,
+    ): Promise<boolean> {
+      const rows = await db
+        .update(deployment)
+        .set({ releasePhase: phase, ...extra, updatedAt: new Date() })
+        .where(and(eq(deployment.id, id), ne(deployment.status, "cancelled")))
+        .returning();
+      return rows.length > 0;
+    },
+
+    /**
      * Boot sweep: a deploy runs as an in-process background task driven by the
      * in-memory build session. A restart kills that session, so any deployment
      * still `queued`/`building`/`deploying` at boot is ORPHANED — nothing will
@@ -319,6 +358,10 @@ export function createDeploymentRepo(db: Database) {
      * `reconciling` is deliberately EXCLUDED — a connection-loss deploy may be
      * running fine on the host; the reconcile scheduler settles it separately.
      * Returns the number of deployments swept.
+     *
+     * Mounted releases must fail-clean host leftovers BEFORE this runs (see
+     * recoverInterruptedDeployments) so the unique index is not freed while a
+     * builder or half-flipped symlink is still live.
      */
     async sweepStaleInFlight(reason: string): Promise<number> {
       const swept = await db
@@ -564,6 +607,20 @@ export function createDeploymentRepo(db: Database) {
         .update(buildSession)
         .set(data)
         .where(eq(buildSession.id, id));
+    },
+
+    /** Incremental persist so a restart can replay mounted-release logs. */
+    async persistBuildSessionLogs(id: string, logs: unknown[]): Promise<void> {
+      try {
+        await db
+          .update(buildSession)
+          .set({ logs: logs as never })
+          .where(eq(buildSession.id, id));
+      } catch (err) {
+        console.error(
+          `[db] build_session ${id}: incremental log persist rejected (${detailOf(err)})`,
+        );
+      }
     },
 
     /**

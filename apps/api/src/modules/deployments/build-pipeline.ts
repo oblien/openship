@@ -181,7 +181,11 @@ export async function resolveServicePipelineMode(
  */
 export async function kickoffBuild(project: Project, dep: Deployment): Promise<string | null> {
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
-  if (!buildSession) return null;
+  if (!buildSession) {
+    const { releaseDeployLease } = await import("./deploy-lease");
+    await releaseDeployLease(project.id, dep.id);
+    return null;
+  }
 
   // Flip the row to "building" SYNCHRONOUSLY before firing the async
   // `executeBuildAndDeploy`. Without this, callers that chain
@@ -209,16 +213,22 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
 
   sessionManager.createSession(dep.id, project.id);
 
-  void executeBuildAndDeploy(project, dep, buildSession.id).catch(async (err) => {
-    console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
-    // executeBuildAndDeploy's inner try/catch only arms onFailure() after
-    // snapshot + route state resolve. Anything that throws before that
-    // (missing snapshot, route lookup crash, runtime resolution) would
-    // otherwise leave the row queued forever - this guarantees the
-    // deployment is marked failed and the SSE stream gets a closing
-    // message.
-    await markDeploymentFailedFromOutside(dep.id, err);
-  });
+  void executeBuildAndDeploy(project, dep, buildSession.id)
+    .catch(async (err) => {
+      console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
+      // executeBuildAndDeploy's inner try/catch only arms onFailure() after
+      // snapshot + route state resolve. Anything that throws before that
+      // (missing snapshot, route lookup crash, runtime resolution) would
+      // otherwise leave the row queued forever - this guarantees the
+      // deployment is marked failed and the SSE stream gets a closing
+      // message.
+      await markDeploymentFailedFromOutside(dep.id, err);
+    })
+    .finally(() => {
+      void import("./deploy-lease").then(({ releaseDeployLease }) =>
+        releaseDeployLease(project.id, dep.id),
+      );
+    });
 
   return buildSession.id;
 }

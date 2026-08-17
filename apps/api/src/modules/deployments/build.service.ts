@@ -16,10 +16,18 @@
 
 import { repos, type Project } from "@repo/db";
 import {
+  abortMountedReleaseHostWork,
+  claimDeployLease,
+  releaseDeployLease,
+  requestDeployAbort,
+  revertReleaseCurrent,
+  releaseLaneMeta,
+} from "./deploy-lease";
+import { mountedReleaseHostRoot } from "./mounted-release.config";
+import {
   AppError,
   NotFoundError,
   ForbiddenError,
-  SYSTEM,
   STACKS,
   safeErrorMessage,
   compareCommitSha,
@@ -773,13 +781,15 @@ export async function loadDeployment(deploymentId: string) {
   return { dep, project };
 }
 
-/** Throw if the project already has an in-progress deployment. */
+/** Throw if the project already has an in-progress deployment or an unreleased lease. */
 export async function checkNoActiveBuild(projectId: string) {
-  const { rows } = await repos.deployment.listByProject(projectId, {
-    page: 1,
-    perPage: SYSTEM.DEPLOYMENTS.MAX_CONCURRENT_PER_PROJECT + 1,
-  });
-  const active = rows.find((d) => ["queued", "building", "deploying"].includes(d.status));
+  const project = await repos.project.findById(projectId);
+  if (project?.deployLeaseId) {
+    throw new ForbiddenError(
+      `A deployment is already in progress (${project.deployLeaseId}). Cancel it first or wait for it to complete.`,
+    );
+  }
+  const active = await repos.deployment.findInFlightByProject(projectId);
   if (active) {
     throw new ForbiddenError(
       `A deployment is already in progress (${active.id}). Cancel it first or wait for it to complete.`,
@@ -928,6 +938,16 @@ export async function createQueuedDeployment(opts: {
     );
   }
 
+  // Unique index serializes INSERT; this lease is the execution lock and
+  // survives cancel until the worker acknowledges.
+  const claimed = await claimDeployLease(opts.projectId, dep.id);
+  if (!claimed) {
+    await repos.deployment.deleteDeployment(dep.id).catch(() => {});
+    throw new ForbiddenError(
+      "Another deployment is already in progress for this project. Wait for it to finish or cancel it.",
+    );
+  }
+
   try {
     await repos.deployment.createBuildSession({
       deploymentId: dep.id,
@@ -937,6 +957,7 @@ export async function createQueuedDeployment(opts: {
   } catch (err) {
     // Atomicity: clean up orphaned deployment
     await repos.deployment.deleteDeployment(dep.id).catch(() => {});
+    await releaseDeployLease(opts.projectId, dep.id).catch(() => {});
     throw err;
   }
 
@@ -1427,6 +1448,11 @@ export async function cancelBuildSession(
     throw new ForbiddenError("Cannot cancel a deployment that is not in progress");
   }
 
+  // Signal the worker first. Do not release the execution lease here — cancel
+  // frees the unique index, and a new deploy must wait until the worker exits
+  // and leftover host work is aborted.
+  requestDeployAbort(deploymentId);
+
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(deploymentId);
 
   // 1. Abort the running build process. Best-effort - if the build already
@@ -1457,6 +1483,26 @@ export async function cancelBuildSession(
         // still has to mark the deployment cancelled, leak or no leak.
         console.error(`[CANCEL] Cleanup crashed for ${dep.id}:`, err);
       });
+    }
+  }
+
+  if (releaseLaneMeta(dep).deploymentLane === "release") {
+    const { resolveServerExecutor } = await import("../../lib/deployment-runtime");
+    const serverId =
+      project.serverId ?? (dep.meta as { serverId?: string } | null)?.serverId;
+    const resolved = await resolveServerExecutor(
+      serverId ?? undefined,
+      project.organizationId,
+    ).catch(() => null);
+    if (resolved) {
+      await abortMountedReleaseHostWork(resolved.executor, project.id, dep.id);
+      if (dep.releasePhase === "activating" || dep.releasePhase === "health") {
+        await revertReleaseCurrent(
+          resolved.executor,
+          mountedReleaseHostRoot(project.id),
+          releaseLaneMeta(dep).releasePreviousCurrent,
+        ).catch(() => {});
+      }
     }
   }
 
