@@ -630,7 +630,20 @@ export function createTrackedSslProvider(
     const domainRecord = domainByHostname.get(host);
     const wasVerified = !!domainRecord?.verified;
     return createProvisionLock(sslIssueLockKey(host)).run(async () => {
-      log?.(`Requesting SSL certificate for ${host}…`);
+      // The edge only emits the :443 block once the cert is ON DISK (nginx
+      // `route.tls && certsExist(domain)`), so from the route going live until
+      // certbot finishes the site answers on HTTP and nothing on HTTPS — ~1
+      // minute that is indistinguishable from a broken deploy unless the log
+      // says so. `reason === "missing"` IS that same certsExist check, read-only:
+      // a `read_error`/`invalid` cert is present on disk, so :443 is already up
+      // and this is a renewal, not a dark window.
+      const onDisk = await ssl.verifyCert(host).catch(() => null);
+      const noCertYet = onDisk?.reason === "missing";
+      log?.(
+        noCertYet
+          ? `${host} is live on HTTP — provisioning the certificate, HTTPS in ~1 min.`
+          : `Requesting SSL certificate for ${host}…`,
+      );
       let result: SslResult;
       let errorReason: string | null = null;
       try {
@@ -668,19 +681,28 @@ export function createTrackedSslProvider(
             sslExpiresAt: new Date(result.expiresAt),
           });
         }
-        log?.(`SSL certificate active — ${host} is Live.`);
+        log?.(
+          noCertYet
+            ? `SSL certificate issued — ${host} is now live on HTTPS.`
+            : `SSL certificate active — ${host} is Live.`,
+        );
         return result;
       }
 
-      // Failure.
+      // Failure. Always carry the provider's own summary (summarizeCertbotFailure,
+      // via the error thrown above) — "failed" with no cause is the silence again.
+      const reason = errorReason ?? "certificate was not issued";
       if (wasVerified) {
         // Verified domain, transient issuance failure → keep it in the auto-heal
         // sweep (findPendingSsl covers provisioning, not error).
         const patch = resolveSslPatch(domainRecord.sslStatus, result);
         if (patch) await repos.domain.updateSsl(domainRecord.id, patch);
-        log?.(`SSL for ${host} not renewed this deploy — will retry in the background.`);
+        log?.(
+          noCertYet
+            ? `SSL not issued for ${host} — it stays on HTTP for now, and will retry in the background. Reason: ${reason}`
+            : `SSL for ${host} not renewed this deploy — will retry in the background. Reason: ${reason}`,
+        );
       } else {
-        const reason = errorReason ?? "certificate was not issued";
         await repos.domain.updateSsl(domainRecord.id, {
           sslStatus: "error",
           lastVerifyError: reason,

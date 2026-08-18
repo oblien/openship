@@ -515,7 +515,15 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
         return result;
       }),
       renewCert: vi.fn(),
-      verifyCert: vi.fn(),
+      // The read-only pre-check the tracker runs before issuing: no cert on disk
+      // yet (the adapter's certsExist()===false).
+      verifyCert: vi.fn(async () => ({
+        domain: "app.example.com",
+        expiresAt: "",
+        issuer: "certbot",
+        verified: false,
+        reason: "missing",
+      })),
       installCert: vi.fn(),
     }) as any;
 
@@ -815,5 +823,81 @@ describe("routeWarningHostnames", () => {
 
   it("drops an empty prefix rather than adding a blank hostname", () => {
     expect(routeWarningHostnames([": orphaned reason", ""]).size).toBe(0);
+  });
+});
+
+describe("createTrackedSslProvider (SSL visibility in the deploy log)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // `reason: "missing"` is the adapter's own certsExist()===false — the state in
+  // which the edge has NOT emitted the :443 block, so the route really is
+  // HTTP-only until certbot returns.
+  const NO_CERT = {
+    domain: "app.example.com",
+    expiresAt: "",
+    issuer: "certbot",
+    verified: false,
+    reason: "missing",
+  };
+  const LIVE_CERT = {
+    domain: "app.example.com",
+    expiresAt: "2026-01-01T00:00:00.000Z",
+    issuer: "Let's Encrypt",
+    verified: true,
+  };
+
+  const trackedWith = (opts: { onDisk: any; issued?: any; throws?: string; row: any }) => {
+    const lines: string[] = [];
+    const ssl = {
+      provisionCert: vi.fn(async () => {
+        if (opts.throws) throw new Error(opts.throws);
+        return opts.issued;
+      }),
+      renewCert: vi.fn(),
+      verifyCert: vi.fn(async () => opts.onDisk),
+      installCert: vi.fn(),
+    } as any;
+    const tracked = createTrackedSslProvider(
+      ssl,
+      new Map([["app.example.com", opts.row]]) as any,
+      (m) => lines.push(m),
+    );
+    return { tracked, lines };
+  };
+
+  it("announces the HTTP-only window at registration, then says HTTPS is live when the cert lands", async () => {
+    const { tracked, lines } = trackedWith({
+      onDisk: NO_CERT,
+      issued: LIVE_CERT,
+      row: { id: "dom_1", verified: false, sslStatus: "none" },
+    });
+    await tracked.provisionCert("app.example.com");
+    expect(lines[0]).toBe(
+      "app.example.com is live on HTTP — provisioning the certificate, HTTPS in ~1 min.",
+    );
+    expect(lines).toContain("SSL certificate issued — app.example.com is now live on HTTPS.");
+  });
+
+  it("does not claim an HTTP-only window on a redeploy whose certificate is already on disk", async () => {
+    const { tracked, lines } = trackedWith({
+      onDisk: LIVE_CERT,
+      issued: LIVE_CERT,
+      row: { id: "dom_1", verified: true, sslStatus: "active" },
+    });
+    await tracked.provisionCert("app.example.com");
+    expect(lines.some((line) => line.includes("live on HTTP"))).toBe(false);
+    expect(lines).toContain("Requesting SSL certificate for app.example.com…");
+  });
+
+  it("carries the provider's own failure summary into the log, not a generic 'failed'", async () => {
+    const { tracked, lines } = trackedWith({
+      onDisk: NO_CERT,
+      throws: "DNS problem: NXDOMAIN looking up A for app.example.com",
+      row: { id: "dom_1", verified: true, sslStatus: "active" },
+    });
+    await tracked.provisionCert("app.example.com");
+    expect(
+      lines.some((line) => line.includes("DNS problem: NXDOMAIN looking up A for app.example.com")),
+    ).toBe(true);
   });
 });

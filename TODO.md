@@ -347,21 +347,6 @@ mounted. Nothing warned; the operator saw two broken sites and no reason.
       `docker-compose.yml` — the edge is the one container whose mounts depend on
       what the box was serving before us.
 
-### SSL provisioning is invisible in the deploy log
-
-A new project's route is registered with `tls: true`, but the 443 block is only
-emitted once the cert exists (`packages/adapters/src/infra/nginx.ts:594`
-`route.tls && certsExist(domain)`), so there is a ~1 minute window where the site
-answers HTTP and nothing on HTTPS. Verified end-to-end on a live box: cert written
-`01:00:13.137`, vhost re-rendered with TLS `01:00:13.661`, `https=200` right after
-— the pipeline is correct, but during the gap it is indistinguishable from broken,
-and two people have now reported it as an SSL bug.
-
-- [ ] Log it: "route live on HTTP — provisioning the certificate, HTTPS in ~1 min"
-      at registration, then a line when the cert lands (or fails). Issuance is
-      best-effort by design ("domains never fail a deploy"), which is exactly why
-      the *silence* has to go.
-
 ---
 
 ## Runtime roles: release phase, queue workers, scheduler (#231)
