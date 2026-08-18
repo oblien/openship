@@ -8,7 +8,7 @@
  * restore: `mongorestore --archive --gzip --drop` via pipeIntoCommand.
  *          --drop wipes existing collections before importing.
  *
- * Detection: image matches ^(mongo|percona/percona-server-mongodb):.*
+ * Detection: image matches ^(mongo|percona/percona-server-mongodb)(:|$)
  */
 
 import { registerProducer } from "../registry";
@@ -22,7 +22,7 @@ import type {
   ServiceHandle,
 } from "../types";
 
-const MONGO_IMAGE_RE = /^(mongo|percona\/percona-server-mongodb):/i;
+const MONGO_IMAGE_RE = /^(mongo|percona\/percona-server-mongodb)(:|$)/i;
 
 function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
