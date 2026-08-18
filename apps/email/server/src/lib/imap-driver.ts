@@ -1304,7 +1304,15 @@ export async function modifyLabels(
         }
         if (!found) continue;
         if (input.addLabels && input.addLabels.length > 0) {
-          await client.messageFlagsAdd(found, input.addLabels, { uid: true });
+          if (input.addLabels.includes('TRASH') || input.addLabels.includes('bin')) {
+            if (mailbox === 'Trash') {
+              await client.messageDelete(found, { uid: true });
+            } else {
+              await client.messageMove(found, 'Trash', { uid: true });
+            }
+          } else {
+            await client.messageFlagsAdd(found, input.addLabels, { uid: true });
+          }
         }
         if (input.removeLabels && input.removeLabels.length > 0) {
           await client.messageFlagsRemove(found, input.removeLabels, { uid: true });

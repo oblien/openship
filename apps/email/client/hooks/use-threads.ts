@@ -35,9 +35,10 @@ export const useThreads = () => {
         // explicit refresh button). Without this, stale-while-revalidate
         // refetches were overwriting a just-marked row with the older
         // server snapshot and visibly "reverting" the action.
-        staleTime: Infinity,
-        refetchOnMount: false,
-        refetchOnWindowFocus: false,
+        staleTime: 10000,
+        refetchInterval: 30000,
+        refetchOnMount: true,
+        refetchOnWindowFocus: true,
       },
     ),
   );
