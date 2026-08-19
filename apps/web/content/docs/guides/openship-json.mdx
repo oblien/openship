@@ -43,6 +43,12 @@ A typical server app:
 
 - **Secrets** — wrap the value in `{ "value": "…", "secret": true }` so it's encrypted at rest.
 - **Custom domain** — a dotted hostname is treated as custom; a bare label is a free subdomain.
+- **Migrations** — add
+  [`releaseCommands`](/docs/reference/openship-json#release-commands) (e.g.
+  `["php artisan migrate --force"]`) to run them once per deploy, after the build and before
+  the new version goes live. A failure there fails the deploy and the old version keeps serving.
+  Single-app projects only for now: attaching a service routes the project onto the compose
+  pipeline, where the commands are logged and skipped.
 - **Leave out** anything detection already gets right (most `installCommand`s, `outputDirectory`
   for known frameworks, etc.).
 

@@ -165,6 +165,46 @@ describe("parseOpenshipConfig", () => {
     });
   });
 
+  describe("releaseCommands", () => {
+    // Laravel 13's canonical set — the case the release phase exists for.
+    it("round-trips a list of commands in declared order", () => {
+      const releaseCommands = [
+        "php artisan migrate --force",
+        "php artisan optimize",
+        "php artisan storage:link",
+        "php artisan reload",
+      ];
+      const { config, errors, warnings } = parseOpenshipConfig({ releaseCommands });
+      expect(errors).toEqual([]);
+      expect(warnings).toEqual([]);
+      expect(config?.releaseCommands).toEqual(releaseCommands);
+    });
+
+    it("rejects a bare string and a non-string entry", () => {
+      expect(parseOpenshipConfig({ releaseCommands: "php artisan migrate" }).errors).toEqual([
+        "releaseCommands: must be an array of strings",
+      ]);
+      expect(parseOpenshipConfig({ releaseCommands: ["ok", 7] }).errors).toEqual([
+        "releaseCommands[1]: must be a string",
+      ]);
+    });
+
+    // Absent must stay distinguishable from `[]` all the way to the column: the
+    // phase is opt-in, and an undeclared field has to behave exactly as it did
+    // before the field existed.
+    it("is absent (not undefined-valued) when undeclared", () => {
+      const { config, errors } = parseOpenshipConfig({ framework: "nextjs" });
+      expect(errors).toEqual([]);
+      expect(config && "releaseCommands" in config).toBe(false);
+    });
+
+    it("keeps an explicit empty list as a declared opt-out", () => {
+      const { config, errors } = parseOpenshipConfig({ releaseCommands: [] });
+      expect(errors).toEqual([]);
+      expect(config?.releaseCommands).toEqual([]);
+    });
+  });
+
   describe("readiness", () => {
     it("round-trips every field", () => {
       const readiness = {

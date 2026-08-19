@@ -282,6 +282,13 @@ export interface DeployConfig {
   hostPort?: number;
   /** Shell command to start the application (e.g. "npm start", "node server.js") */
   startCommand?: string;
+  /**
+   * Commands run ONCE per deploy, after the build and BEFORE this config is
+   * activated — migrations, cache warms. Each runs with the same env the start
+   * command gets; a non-zero exit fails the deploy. Empty/absent ⇒ no release
+   * phase, the default. Consumed by `runReleaseCommand`, never by `deploy`.
+   */
+  releaseCommands?: string[];
   /** Detected framework / stack (e.g. "nextjs", "express") */
   stack?: string;
   /** Environment variables injected at runtime */

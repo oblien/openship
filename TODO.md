@@ -382,23 +382,41 @@ the JS asset stage also landed; the storage section below has what's left of tho
 ### A generic release phase
 
 Commands that run ONCE per deploy, after build and before cutover, failing the
-deploy on error. `queue:work`, `schedule:run`, `migrate --force`, `optimize` and
-`storage:link` appear nowhere in the tree today, so migrations, scheduled tasks
-and queued jobs silently never run.
+deploy on error.
 
-- [ ] Add release commands to the project + `openship.json`, snapshot them onto
-      the deployment, and run them from the deploy pipeline between build and
-      activate (`apps/api/src/modules/deployments/build-pipeline.ts` — the same
-      seam `deployConfig` is assembled in).
-- [ ] Laravel's set for 13.x: `migrate --force`, `optimize` (config/events/routes/
-      views), `storage:link`, and `reload` (13's umbrella for cycling long-running
-      services — supersedes `queue:restart` for deploys, also covers Reverb and
-      Octane).
+**Shipped (v1).** `openship.json` `releaseCommands` (a LIST — a framework's
+release set is several independent steps, each with its own log marker and its
+own attributable failure) → `project.release_commands` → frozen on the
+deployment snapshot → run in `executeServerDeploy`
+(`apps/api/src/modules/deployments/build-pipeline.ts`) right after `deployConfig`
+is assembled and before the first domain row or `runDeployPipeline`, so a failed
+migration leaves the previous version running and routed. Docker runs each
+command in a throwaway container off the new image (deploy env + volumes +
+project network, no published port, no restart policy); bare runs it in the
+staged release dir through a login shell. Ordering / fail-fast / skip live in
+`deployments/release-phase.ts`. Nothing is auto-injected per framework.
+
+- [ ] Laravel's set for 13.x is DOCUMENTED, not injected: `migrate --force`,
+      `optimize` (config/events/routes/views), `storage:link`, and `reload` (13's
+      umbrella for cycling long-running services — supersedes `queue:restart` for
+      deploys, also covers Reverb and Octane). Auto-injection on detection is the
+      open question.
+- [ ] No dashboard field yet — the phase is reachable through `openship.json`,
+      `POST /projects` / `PATCH /projects/:id` and `POST /:id/options` only.
+- [ ] Compose/services projects skip it with a logged warning: a release command
+      there would have to name a SERVICE to run in, which v1 doesn't model.
+      Openship Cloud skips it too (no one-off execution primitive), as do static
+      deploys (no runtime).
+- [ ] Bare runs the command BEFORE `linkPersistentPaths`, so a path that becomes a
+      `shared/` symlink is still a plain dir at release time. Migrating a DATABASE
+      is unaffected; a command that writes a file expected to survive the release
+      swap (a SQLite file under `storage/`) is not.
+- [ ] A rollback/redeploy replays the TARGET release's frozen commands. Fine for
+      idempotent migrations, an open question for anything else.
 - [ ] Not the same thing as `#206` deploy hooks: those are an inbound trigger that
       STARTS a deploy; this runs DURING one.
-- [ ] Until this exists, a stock SQLite Laravel app still needs its migrations run
-      by hand (the service terminal can do it) — a persistent volume stops data
-      LOSS, it doesn't bootstrap a schema.
+- [ ] `queue:work` and `schedule:run` are still unexpressible — they're roles, not
+      release steps. See multi-role stacks below.
 
 ### Multi-role stacks
 

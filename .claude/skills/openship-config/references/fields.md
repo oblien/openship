@@ -14,6 +14,7 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `installCommand` | string | Dependency install command. |
 | `buildCommand` | string | Build command. |
 | `startCommand` | string | Production start command. |
+| `releaseCommands` | string[] | Commands run ONCE per deploy, after the build and before the new version goes live (migrations, cache warms). Each runs with the start command's env; a non-zero exit fails the deploy and the previous version keeps serving. Laravel: `["php artisan migrate --force", "php artisan optimize", "php artisan storage:link", "php artisan reload"]`. Omit for no release phase (the default — nothing is auto-injected). Skipped with a logged warning on Openship Cloud, static sites and compose projects. |
 | `outputDirectory` | string | Build output dir (`dist`, `.next`, `build`, `out`, …). |
 | `buildImage` | string | Build Docker image (e.g. `node:22`). |
 | `productionPaths` | string[] | Paths shipped as the production artifact. |

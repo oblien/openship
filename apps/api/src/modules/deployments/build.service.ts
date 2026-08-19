@@ -188,6 +188,14 @@ export interface DeploymentConfigSnapshot {
   rootDirectory: string;
   port: number;
   startCommand: string;
+  /**
+   * Commands run once between this deployment's build and its cutover. Frozen
+   * here for the same reason `volumes` is: a redeploy of an OLD deployment must
+   * replay the commands THAT release declared, not what the project says today.
+   * Absent on every row written before the field existed — and absent means no
+   * release phase, so those redeploy exactly as they always did.
+   */
+  releaseCommands?: string[];
   resources: ResourceConfig | null;
   buildResources: ResourceConfig | null;
   /** Whether the project needs a running server (false = static, deploy via Pages) */
@@ -379,6 +387,11 @@ export function buildConfigSnapshot(
     rootDirectory: project.rootDirectory || "",
     port: project.port ?? 3000,
     startCommand: project.startCommand!,
+    // Only carried when the project declared some: an absent key keeps the
+    // snapshot byte-identical to a pre-release-phase one.
+    ...(Array.isArray(project.releaseCommands) && project.releaseCommands.length > 0
+      ? { releaseCommands: project.releaseCommands as string[] }
+      : {}),
     resources: (project.resources as ResourceConfig) || null,
     buildResources: (project.buildResources as ResourceConfig) || null,
     hasServer: project.hasServer ?? !!project.startCommand?.trim(),

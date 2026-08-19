@@ -27,6 +27,11 @@
     "installCommand": { "description": "Command that installs dependencies.", "type": "string" },
     "buildCommand": { "description": "Command that builds the app.", "type": "string" },
     "startCommand": { "description": "Command that starts the server in production.", "type": "string" },
+    "releaseCommands": {
+      "description": "Commands run ONCE per deploy, after the build and before the new version goes live — migrations, cache warms. A non-zero exit fails the deploy and the previous version keeps serving. Laravel: [\"php artisan migrate --force\", \"php artisan optimize\", \"php artisan storage:link\", \"php artisan reload\"]. Omit for no release phase (the default).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "outputDirectory": {
       "description": "Directory the build writes to (e.g. \".next\", \"dist\").",
       "type": "string"

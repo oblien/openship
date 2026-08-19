@@ -180,6 +180,21 @@ export const project = pgTable(
     composePath: text("compose_path"),
     /** Start command for production runtime */
     startCommand: text("start_command"),
+    /**
+     * Commands run ONCE per deploy, between a successful build and the cutover
+     * to the new version — `php artisan migrate --force`, `rails db:migrate`,
+     * cache warms. A non-zero exit fails the deploy, so the previous version
+     * keeps serving.
+     *
+     * A LIST rather than one `&&`-chained string (the shape `startCommand` and
+     * `workspacePrepareCommand` take): each entry is logged and attributed
+     * separately, and a framework's release set is several independent steps.
+     * NULL = no release phase, which is the default for every project and is
+     * byte-identical to the behaviour before this column existed. Seeded from
+     * `openship.json`'s `releaseCommands`; snapshotted onto each deployment so a
+     * redeploy of an old release replays the commands as they were.
+     */
+    releaseCommands: jsonb("release_commands").$type<string[] | null>(),
     /** Docker image for build environment (e.g. node:22, oven/bun:latest) */
     buildImage: text("build_image"),
     /** Production mode: host, static, standalone */

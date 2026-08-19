@@ -32,7 +32,7 @@ import type {
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
 import { ensureOwnedDir } from "../system/elevated-executor";
 import { execReliable } from "../system/remote-journal";
-import { STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, type StackId, type StackDefinition } from "@repo/core";
+import { SYSTEM, STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, type StackId, type StackDefinition } from "@repo/core";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type {
   RuntimeAdapter,
@@ -128,6 +128,7 @@ export class BareRuntime implements RuntimeAdapter {
     // past release really is an in-place unit swap (see makeActive).
     "unitRestore",
     "inContainerExec",
+    "releaseCommand",
   ]);
 
   private readonly workDir: string;
@@ -678,6 +679,80 @@ export class BareRuntime implements RuntimeAdapter {
       containerId: config.deploymentId,
       status: "running",
     };
+  }
+
+  /**
+   * Run one release command in the STAGED artifact directory, before it is
+   * promoted to a release and before the supervisor starts anything.
+   *
+   * That directory is the exact tree `deploy` promotes seconds later, so the
+   * command sees the code it is migrating for. It runs through a login shell
+   * (`sh -lc`, via the same wrap the build steps use) with the deploy's env
+   * exported — the closest match available to what `ExecStart=/bin/sh -lc` gives
+   * the start command.
+   *
+   * One difference worth knowing: `linkPersistentPaths` has not run yet, so a
+   * path that will become a symlink into `shared/` (Laravel's `storage/`) is
+   * still a plain directory here. A command that MIGRATES A DATABASE is
+   * unaffected; one that writes files it expects to survive the release swap
+   * (an SQLite file under `storage/`) would write into the release copy that
+   * `shared/` is about to be seeded FROM on a first deploy, and into the release
+   * copy alone on later ones.
+   */
+  async runReleaseCommand(
+    config: DeployConfig,
+    command: string,
+    onLog: LogCallback,
+    opts?: { timeoutMs?: number },
+  ): Promise<void> {
+    const workDir = config.imageRef ?? this.projectDir(config.projectId);
+    const timeoutMs = opts?.timeoutMs ?? SYSTEM.DEPLOYMENTS.RELEASE_COMMAND_TIMEOUT_MS;
+
+    // Same env the supervisor gives the start command (see deploy below).
+    // Non-identifier keys are dropped rather than breaking the `export` prefix,
+    // matching the build pipeline's env handling.
+    const env: Record<string, string> = {
+      ...Object.fromEntries(
+        Object.entries(config.envVars ?? {}).map(([k, v]) => [k, String(v)]),
+      ),
+      PORT: String(config.port),
+      NODE_ENV: config.environment === "production" ? "production" : "development",
+    };
+    const envPrefix = Object.entries(env)
+      .filter(([k]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k))
+      .map(([k, v]) => `export ${k}=${sq(v)}`)
+      .join(" && ");
+    const full = `${envPrefix ? `${envPrefix} && ` : ""}cd ${sq(workDir)} && ${command}`;
+    // Login-shell wrap for a LOCAL target only — same rule buildOnTarget applies,
+    // and the reason a version-managed toolchain (nvm, rbenv) is on PATH at all.
+    const effective = this.executor instanceof LocalExecutor ? wrapLocalBuildCommand(full) : full;
+
+    const abort = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      abort.abort();
+    }, timeoutMs);
+    let result: { code: number; output: string };
+    try {
+      result = await this.executor.streamExec(effective, onLog, { signal: abort.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    // Checked BEFORE the exit code: an aborted child's code is whatever the kill
+    // produced, and reporting that as the failure would hide the real cause.
+    if (timedOut) {
+      throw new Error(
+        `Release command timed out after ${Math.round(timeoutMs / 1000)}s: ${command}`,
+      );
+    }
+    if (result.code !== 0) {
+      const tail = result.output.trim().slice(-1000);
+      throw new Error(
+        `Release command failed with exit code ${result.code}: ${command}${tail ? `\n${tail}` : ""}`,
+      );
+    }
   }
 
   async deployStatic(config: DeployConfig & { outputDirectory: string }): Promise<DeploymentResult> {
