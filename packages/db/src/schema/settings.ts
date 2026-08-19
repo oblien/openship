@@ -190,6 +190,14 @@ export const instanceSettings = pgTable("instance_settings", {
    */
   ghDeviceTokenMethod: text("gh_device_token_method").$type<"device" | "token" | null>(),
 
+  /**
+   * Instance-wide Azure DevOps PAT (self-hosted only). Encrypted at rest.
+   * Used when the operator has not connected via Entra ID OAuth.
+   * Injected into clone URLs in memory — never stored as part of gitUrl.
+   */
+  azurePatEncrypted: text("azure_pat_encrypted"),
+  azurePatSetAt: timestamp("azure_pat_set_at"),
+
   // ── Remote infra (edge / mail container) updates ────────────────────────────
   //
   // When the control plane's APP_VERSION moves forward (desktop self-update or

@@ -214,6 +214,23 @@ export const auth = betterAuth({
           },
         }
       : {}),
+    ...(env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET
+      ? {
+          microsoft: {
+            clientId: env.AZURE_CLIENT_ID,
+            clientSecret: env.AZURE_CLIENT_SECRET,
+            tenantId: env.AZURE_TENANT_ID?.trim() || "organizations",
+            // Azure DevOps resource + refresh. .default is the Entra ID scope
+            // for the DevOps app; PAT remains the no-OAuth-app fallback.
+            scope: [
+              "openid",
+              "profile",
+              "offline_access",
+              "499b84ac-1321-427f-aa17-267ca6975798/.default",
+            ],
+          },
+        }
+      : {}),
   },
 
   /* ---------- Account Linking ---------- */
@@ -222,7 +239,7 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       allowDifferentEmails: true,
-      trustedProviders: ["github", "google"],
+      trustedProviders: ["github", "google", "microsoft"],
     },
   },
 

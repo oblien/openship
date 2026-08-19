@@ -3014,7 +3014,10 @@ function parseGitHubRepo(input: string): { owner: string; repo: string } | null 
   const s = input.trim();
   if (!s) return null;
   const fromUrl = extractOwnerRepoFromUrl(s);
-  if (fromUrl) return fromUrl;
+  if (fromUrl) {
+    if (fromUrl.provider !== "github") return null;
+    return { owner: fromUrl.owner, repo: fromUrl.repo };
+  }
   // Bare "owner/repo" (no github.com / scheme) — not handled by the URL parser.
   if (!s.includes("://") && !s.includes("github.com")) {
     const bare = s.match(/^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);

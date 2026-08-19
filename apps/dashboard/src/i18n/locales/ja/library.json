@@ -14,6 +14,7 @@
     "tabs": {
       "folder": "フォルダ",
       "github": "GitHub",
+      "azure": "Azure DevOps",
       "url": "Git URL",
       "template": "テンプレート"
     }
@@ -163,9 +164,24 @@
     "manageGithubSettings": "設定で GitHub を管理"
   },
   "urlImport": {
-    "invalidUrl": "有効な GitHub リポジトリ URL を入力してください",
+    "invalidUrl": "有効な GitHub または Azure DevOps のリポジトリ URL を入力してください",
     "title": "Git URL からインポート",
-    "description": "インポートするには公開リポジトリの URL を貼り付けてください。GitHub 接続は不要です。",
+    "description": "GitHub または Azure DevOps の URL を貼り付けてください。公開 GitHub リポジトリは接続不要です。Azure DevOps は設定のアカウントまたは PAT が必要です。",
+    "placeholder": "https://github.com/… または https://dev.azure.com/org/project/_git/repo",
     "importButton": "リポジトリをインポート"
+  },
+  "azure": {
+    "connectTitle": "Azure DevOps に接続",
+    "connectDesc": "Microsoft でサインインするか、設定にインスタンス PAT を貼り付けて Azure DevOps リポジトリを閲覧します。",
+    "connectButton": "Microsoft でサインイン",
+    "connectInSettings": "Git 設定を開く",
+    "searchPlaceholder": "リポジトリを検索…",
+    "noRepos": "リポジトリがありません",
+    "noReposDesc": "この組織には Openship から見える Git リポジトリがありません。",
+    "noMatching": "一致するリポジトリがありません",
+    "noMatchingDesc": "別の検索を試してください。",
+    "emptyOrgs": "Azure DevOps 組織がありません",
+    "emptyOrgsDesc": "接続アカウントに組織がないか、PAT に Code (Read) がありません。",
+    "loading": "リポジトリを読み込み中…"
   }
 }

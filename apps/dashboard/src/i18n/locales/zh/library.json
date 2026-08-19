@@ -14,6 +14,7 @@
     "tabs": {
       "folder": "文件夹",
       "github": "GitHub",
+      "azure": "Azure DevOps",
       "url": "Git URL",
       "template": "模板"
     }
@@ -163,9 +164,24 @@
     "manageGithubSettings": "在设置中管理 GitHub"
   },
   "urlImport": {
-    "invalidUrl": "请输入有效的 GitHub 仓库 URL",
+    "invalidUrl": "请输入有效的 GitHub 或 Azure DevOps 仓库 URL",
     "title": "从 Git URL 导入",
-    "description": "粘贴一个公开仓库的 URL 以导入。无需连接 GitHub。",
+    "description": "粘贴 GitHub 或 Azure DevOps 仓库 URL。公开 GitHub 仓库无需连接；Azure DevOps 需要在设置中连接账户或 PAT。",
+    "placeholder": "https://github.com/… 或 https://dev.azure.com/org/project/_git/repo",
     "importButton": "导入仓库"
+  },
+  "azure": {
+    "connectTitle": "连接 Azure DevOps",
+    "connectDesc": "使用 Microsoft 登录，或在设置中粘贴实例 PAT，以浏览 Azure DevOps 仓库。",
+    "connectButton": "使用 Microsoft 登录",
+    "connectInSettings": "打开 Git 设置",
+    "searchPlaceholder": "搜索仓库…",
+    "noRepos": "没有仓库",
+    "noReposDesc": "该组织没有 Openship 可见的 Git 仓库。",
+    "noMatching": "没有匹配的仓库",
+    "noMatchingDesc": "请尝试其他搜索。",
+    "emptyOrgs": "没有 Azure DevOps 组织",
+    "emptyOrgsDesc": "已连接账户没有组织，或 PAT 缺少 Code (Read) 权限。",
+    "loading": "正在加载仓库…"
   }
 }

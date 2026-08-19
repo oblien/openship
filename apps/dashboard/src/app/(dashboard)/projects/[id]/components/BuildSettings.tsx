@@ -5,7 +5,7 @@ import { isServicesFramework } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { encodeLocalSlug, encodeRepoSlug } from "@/utils/repoSlug";
+import { encodeLocalSlug, encodeGitSourceSlug } from "@/utils/repoSlug";
 import { EnvVarsEditor } from "./EnvVarsEditor";
 import { StorageSettings } from "./StorageSettings";
 import { ResourceSettings } from "./ResourceSettings";
@@ -109,7 +109,12 @@ export const BuildSettings = () => {
   // config is editable; this tab never mutates it.
   const hasRepo = Boolean(projectData?.gitOwner && projectData?.gitRepo);
   const editSlug = hasRepo
-    ? encodeRepoSlug(projectData!.gitOwner!, projectData!.gitRepo!)
+    ? encodeGitSourceSlug({
+        provider: projectData!.gitProvider,
+        owner: projectData!.gitOwner!,
+        repo: projectData!.gitRepo!,
+        project: projectData!.gitProject,
+      })
     : projectData?.localPath
       ? encodeLocalSlug(projectData.localPath)
       : null;

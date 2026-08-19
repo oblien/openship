@@ -267,13 +267,17 @@ describe("i18n locale parity vs the English source", () => {
    */
   const UNTRANSLATED_BASELINE: Record<string, number> = {
     deploy: 133,
-    settings: 99,
+    // +16: azureDevops.title / toastTitle — the product name "Azure DevOps" is
+    // identical in every locale (same convention as "GitHub"). 2 keys × 8 locales.
+    settings: 115,
     projectSettings: 48,
     importProject: 43,
     billing: 28,
     onboarding: 24,
     projectDetail: 19,
-    library: 18,
+    // +8: page.tabs.azure — "Azure DevOps" kept as the product name in all 8
+    // non-English locales.
+    library: 26,
     misc: 18,
     projects: 17,
     deployments: 14,

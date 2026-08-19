@@ -45,6 +45,7 @@ import { tokenFor, requireTokenFor, type TokenContext } from "./github.token";
 import { isPublicRepo } from "./github.http";
 import { getLocalGhToken, hasLocalGitIdentity } from "./github.local-auth";
 import { resolveServerGitCredential } from "./server-github.service";
+import { getCredential as getAzureCredential } from "../azure/azure.auth";
 import type { RequestContext } from "../../lib/request-context";
 
 /**
@@ -118,6 +119,9 @@ export async function resolveBuildGitToken(opts: {
   /** Repo name — threaded to the github-access gate for PER-REPO
    *  authorization (so a member granted only repo X can build X). */
   repo?: string | null;
+  /** When "azure", resolve an Azure DevOps OAuth token or instance PAT instead
+   *  of the GitHub chain. */
+  gitProvider?: string | null;
   buildStrategy: BuildStrategy;
   /**
    * Target server id (server deploys). When set, a per-server GitHub auth
@@ -155,6 +159,11 @@ export async function resolveBuildGitToken(opts: {
   /** Build-log sink for the probe's one-line outcome. Never receives secrets. */
   onLog?: (message: string) => void;
 }): Promise<BuildGitCredential> {
+  if ((opts.gitProvider ?? "").toLowerCase() === "azure") {
+    const token = await getAzureCredential(opts.ctx);
+    return token ? { token } : {};
+  }
+
   const tokenCtx: TokenContext = {
     projectId: opts.projectId,
     owner: opts.owner ?? undefined,

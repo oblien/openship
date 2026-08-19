@@ -49,6 +49,7 @@ const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> =
   "servers.sshKeyPassphrase": { table: schema.servers, scheme: "enc1" },
   "instance_settings.tunnelToken": { table: schema.instanceSettings, scheme: "plaintext" },
   "instance_settings.ghDeviceTokenEncrypted": { table: schema.instanceSettings, scheme: "scalar" },
+  "instance_settings.azurePatEncrypted": { table: schema.instanceSettings, scheme: "scalar" },
   "deployment.envVars": { table: schema.deployment, scheme: "map" },
   "notification_channel.config": { table: schema.notificationChannel, scheme: "notification-config" },
 };

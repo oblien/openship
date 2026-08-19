@@ -44,7 +44,7 @@ import { AppLogo } from "@/components/AppLogo";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
 import { projectsApi } from "@/lib/api";
 import { getProjectStatus, PROJECT_STATUS_META, projectStatusLabel } from "@/utils/project-status";
-import { encodeLocalSlug, encodeRepoSlug, encodeProjectSlug } from "@/utils/repoSlug";
+import { encodeLocalSlug, encodeGitSourceSlug, encodeProjectSlug, gitSourceLabel } from "@/utils/repoSlug";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 
@@ -119,7 +119,12 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
       return;
     }
     const slug = hasRepoSource
-      ? encodeRepoSlug(projectData.gitOwner, projectData.gitRepo)
+      ? encodeGitSourceSlug({
+          provider: projectData.gitProvider,
+          owner: projectData.gitOwner,
+          repo: projectData.gitRepo,
+          project: projectData.gitProject,
+        })
       : hasLocalSource
         ? encodeLocalSlug(projectData.localPath)
         : encodeProjectSlug(pid);
@@ -307,7 +312,12 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
               {hasRepoSource && (
                 <InfoRow
                   label={t.projects.draft.repository}
-                  value={`${projectData.gitOwner}/${projectData.gitRepo}`}
+                  value={gitSourceLabel({
+                    provider: projectData.gitProvider,
+                    owner: projectData.gitOwner,
+                    repo: projectData.gitRepo,
+                    project: projectData.gitProject,
+                  })}
                 />
               )}
               {hasRepoSource && projectData.gitBranch && (

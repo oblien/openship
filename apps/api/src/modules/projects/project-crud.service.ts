@@ -21,6 +21,7 @@ import {
   compareSemver,
   compareCommitSha,
   isReleaseProvider,
+  buildGitUrl,
   isBehind,
   GITHUB_REPO,
   normalizeRollbackWindow,
@@ -103,6 +104,7 @@ const PROJECT_UPDATE_KEYS = Object.keys(UpdateProjectBody.properties);
 const GIT_SOURCE_IDENTITY_KEYS = new Set([
   "gitProvider",
   "gitOwner",
+  "gitProject",
   "gitRepo",
   "installationId",
 ]);
@@ -406,8 +408,18 @@ export async function enrichProjectsBatch(
   });
 }
 
-function projectGitUrl(owner?: string | null, repo?: string | null) {
-  return owner && repo ? `https://github.com/${owner}/${repo}.git` : undefined;
+function projectGitUrl(
+  owner?: string | null,
+  repo?: string | null,
+  provider?: string | null,
+  gitProject?: string | null,
+) {
+  if (!owner || !repo) return undefined;
+  if (provider === "azure") {
+    if (!gitProject) return undefined;
+    return buildGitUrl("azure", owner, repo, gitProject);
+  }
+  return buildGitUrl("github", owner, repo);
 }
 
 function resolveProjectSource(data: TCreateProjectBody) {
@@ -426,13 +438,16 @@ function resolveProjectSource(data: TCreateProjectBody) {
   const safeLocalPath = !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
+  const gitProject = isRelease || safeLocalPath ? undefined : data.gitProject;
+  const gitProvider = isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github");
 
   return {
     safeLocalPath,
     gitOwner,
     gitRepo,
-    gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github"),
-    gitUrl: projectGitUrl(gitOwner, gitRepo),
+    gitProject,
+    gitProvider,
+    gitUrl: projectGitUrl(gitOwner, gitRepo, gitProvider, gitProject),
     releaseSource: isRelease ? ((data.releaseSource as ReleaseSource | undefined) ?? null) : null,
   };
 }
@@ -563,6 +578,7 @@ function buildProductionProjectInput(
     localPath: source.safeLocalPath,
     gitProvider: source.gitProvider,
     gitOwner: source.gitOwner,
+    gitProject: source.gitProject,
     gitRepo: source.gitRepo,
     gitBranch: data.gitBranch ?? "main",
     gitUrl: source.gitUrl,

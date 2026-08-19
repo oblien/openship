@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { FolderUp, Github, Link2, Sparkles, Boxes } from "lucide-react";
+import { FolderUp, Github, Link2, Sparkles, Boxes, FolderGit2 } from "lucide-react";
 import { useGitHub } from "@/context/GitHubContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
@@ -15,13 +15,18 @@ import { FolderUpload } from "./components/FolderUpload";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { UrlImport } from "./components/UrlImport";
 import { TemplateGrid } from "./components/TemplateGrid";
+import { AzureRepositoryList } from "./components/AzureRepositoryList";
+import { useLibraryAzureRepos } from "./useLibraryAzureRepos";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HelpMenu } from "@/components/HelpMenu";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
+import { azureApi, endpoints, getApiBaseUrl, getApiErrorMessage } from "@/lib/api";
+import type { AzureStatus } from "@/lib/api";
+import { openAuthWindow } from "@/utils/authWindow";
 
-type Tab = "folder" | "repositories" | "url" | "template" | "server";
+type Tab = "folder" | "repositories" | "azure" | "url" | "template" | "server";
 
 /** One-time gh-CLI repo-read consent flag (per browser — desktop is single-user). */
 const GH_CLI_CONSENT_KEY = "openship.gh-cli-consent";
@@ -58,6 +63,55 @@ export default function LibraryPage() {
   const isDesktop = deployMode === "desktop";
   const { connected: cloudConnected, startConnect: startCloudConnect } = useCloud();
 
+  const [azureStatus, setAzureStatus] = useState<AzureStatus | null>(null);
+  const [azureConnecting, setAzureConnecting] = useState(false);
+  const [azureOrg, setAzureOrg] = useState("");
+  const azureRepos = useLibraryAzureRepos(azureOrg, selfHosted && Boolean(azureStatus?.connected));
+
+  useEffect(() => {
+    if (!selfHosted) return;
+    let cancelled = false;
+    azureApi
+      .getStatus()
+      .then((res) => {
+        if (cancelled) return;
+        setAzureStatus(res);
+        setAzureOrg((prev) => prev || res.orgs[0] || "");
+      })
+      .catch(() => {
+        if (!cancelled) setAzureStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selfHosted]);
+
+  const connectAzure = useCallback(async () => {
+    setAzureConnecting(true);
+    try {
+      const res = await azureApi.connect();
+      if (res.flow === "redirect") {
+        const handle = openAuthWindow(`${getApiBaseUrl()}${endpoints.azure.connectRedirect}`);
+        handle.onClose(() => {
+          azureApi
+            .getStatus()
+            .then((status) => {
+              setAzureStatus(status);
+              setAzureOrg((prev) => prev || status.orgs[0] || "");
+            })
+            .catch(() => undefined)
+            .finally(() => setAzureConnecting(false));
+        });
+        return;
+      }
+      showToast(res.error || t.library.azure.connectTitle, "error");
+    } catch (err) {
+      showToast(getApiErrorMessage(err, t.library.azure.connectTitle), "error");
+    } finally {
+      setAzureConnecting(false);
+    }
+  }, [showToast, t.library.azure.connectTitle]);
+
   // Default to the GitHub tab everywhere. When GitHub isn't connected it shows
   // the connect prompt (a fine call-to-action); the Folder/URL/Template tabs
   // are one click away for local/self-hosted deploys.
@@ -92,6 +146,9 @@ export default function LibraryPage() {
   const tabs: TabItem[] = [
     { key: "folder", label: t.library.page.tabs.folder, icon: FolderUp },
     { key: "repositories", label: t.library.page.tabs.github, icon: Github },
+    ...(selfHosted
+      ? [{ key: "azure" as const, label: t.library.page.tabs.azure, icon: FolderGit2 }]
+      : []),
     { key: "url", label: t.library.page.tabs.url, icon: Link2 },
     { key: "template", label: t.library.page.tabs.template, icon: Sparkles },
     // Adopting a running Docker deployment needs SSH into the user's own box —
@@ -175,6 +232,18 @@ export default function LibraryPage() {
             )
           ) : activeTab === "url" ? (
             <UrlImport />
+          ) : activeTab === "azure" ? (
+            <AzureRepositoryList
+              orgs={azureStatus?.orgs ?? []}
+              selectedOrg={azureOrg}
+              setSelectedOrg={setAzureOrg}
+              repos={azureRepos.repos}
+              loading={azureRepos.loading}
+              connected={Boolean(azureStatus?.connected)}
+              onConnect={() => void connectAzure()}
+              connecting={azureConnecting}
+              oauthConfigured={azureStatus?.oauthConfigured}
+            />
           ) : activeTab === "template" ? (
             <TemplateGrid />
           ) : loading ? (
@@ -221,11 +290,15 @@ export default function LibraryPage() {
           selfHosted={selfHosted}
           state={state}
           cloudConnected={cloudConnected}
-          counts={{
-            total: libRepos.meta.total,
-            publicCount: libRepos.meta.publicCount,
-            privateCount: libRepos.meta.privateCount,
-          }}
+          counts={
+            activeTab === "azure"
+              ? { total: 0, publicCount: 0, privateCount: 0 }
+              : {
+                  total: libRepos.meta.total,
+                  publicCount: libRepos.meta.publicCount,
+                  privateCount: libRepos.meta.privateCount,
+                }
+          }
         />
       </div>
 

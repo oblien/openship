@@ -17,7 +17,7 @@ import type { RequestContext } from "../../lib/request-context";
 import { buildBackgroundContext } from "../../lib/request-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { assertGitHubRepoAccess, canUseGitHubRepo } from "./github-access";
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, parseGitRepoUrl, safeErrorMessage } from "@repo/core";
 import { repos as dbRepos } from "@repo/db";
 import { encrypt, decrypt } from "../../lib/encryption";
 import type {
@@ -1221,14 +1221,10 @@ export async function rotateProjectWebhookSecret(
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Extract owner/repo from a GitHub URL. Handles both the https
- * (`https://github.com/owner/repo(.git)`) and SSH
- * (`git@github.com:owner/repo(.git)`) forms; returns null for non-GitHub hosts.
- * Single source of truth for GitHub URL parsing on the API side.
+ * Extract owner/repo from a GitHub URL. Non-GitHub hosts (including Azure) return null.
  */
 export function parseRepoUrl(repoUrl?: string): { owner: string; repo: string } | null {
-  if (!repoUrl || !/github\.com/i.test(repoUrl)) return null;
-  const m = repoUrl.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
-  if (!m) return null;
-  return { owner: m[1]!, repo: m[2]! };
+  const parsed = parseGitRepoUrl(repoUrl);
+  if (!parsed || parsed.provider !== "github") return null;
+  return { owner: parsed.owner, repo: parsed.repo };
 }
