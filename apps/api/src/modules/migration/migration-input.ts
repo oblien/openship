@@ -160,16 +160,26 @@ export function sanitizeRoutes(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Validate the optional project-level git source (v1: GitHub only). */
+/** Validate the optional project-level git source. */
 export function sanitizeGitSource(
   input: unknown,
-): { provider: "github"; owner: string; repo: string; branch?: string } | undefined {
+): { provider: "github" | "azure"; owner: string; repo: string; project?: string; branch?: string } | undefined {
   if (!input || typeof input !== "object") return undefined;
-  const g = input as { provider?: unknown; owner?: unknown; repo?: unknown; branch?: unknown };
-  if (g.provider !== "github") return undefined;
+  const g = input as {
+    provider?: unknown;
+    owner?: unknown;
+    repo?: unknown;
+    project?: unknown;
+    branch?: unknown;
+  };
+  if (g.provider !== "github" && g.provider !== "azure") return undefined;
   const owner = typeof g.owner === "string" ? g.owner.trim() : "";
   const repo = typeof g.repo === "string" ? g.repo.trim() : "";
   if (!owner || !repo) return undefined;
+  const project = typeof g.project === "string" ? g.project.trim() : "";
+  if (g.provider === "azure" && !project) return undefined;
   const branch = typeof g.branch === "string" && g.branch.trim() ? g.branch.trim() : undefined;
-  return { provider: "github", owner, repo, branch };
+  return g.provider === "azure"
+    ? { provider: "azure", owner, repo, project, branch }
+    : { provider: "github", owner, repo, branch };
 }

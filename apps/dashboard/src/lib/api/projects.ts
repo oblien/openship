@@ -249,6 +249,8 @@ export const projectsApi = {
     gitOwner?: string;
     /** Source discriminator; "upload" for browser folder-upload projects. */
     gitProvider?: string;
+    /** Azure DevOps project name (org lives in gitOwner). */
+    gitProject?: string;
     gitRepo?: string;
     gitBranch?: string;
     framework?: string;

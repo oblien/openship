@@ -757,7 +757,8 @@ export function useDeploymentBuild(
         localPath: config.localPath || undefined,
         // Folder-upload projects: mark the source so it renders correctly and
         // can later be switched to a GitHub repo (Source tab / linkRepo).
-        gitProvider: isUpload ? "upload" : undefined,
+        gitProvider: isUpload ? "upload" : config.gitProvider === "azure" ? "azure" : undefined,
+        gitProject: config.gitProvider === "azure" ? config.gitProject : undefined,
         framework: config.framework,
         packageManager: config.packageManager,
         buildImage: config.buildImage,

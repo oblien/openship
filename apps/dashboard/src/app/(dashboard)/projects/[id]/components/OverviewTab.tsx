@@ -8,7 +8,7 @@ import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
 import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
-import { useI18n, interpolate } from "@/components/i18n-provider";
+import { gitSourceHref, gitSourceLabel } from "@/utils/repoSlug";
 import type { Dictionary } from "@/i18n";
 import {
   ExternalLink,
@@ -257,16 +257,35 @@ export const OverviewTab = () => {
             </span>
             {showProjectInfoSkeleton ? (
               <div className="h-[14px] w-28 rounded bg-muted-foreground/20 animate-pulse" />
-            ) : hasGit ? (
+            ) : hasGit ? (() => {
+              const href = gitSourceHref({
+                provider: projectData.gitProvider,
+                owner: projectData.gitOwner,
+                repo: projectData.gitRepo,
+                project: projectData.gitProject,
+              });
+              const label = gitSourceLabel({
+                provider: projectData.gitProvider,
+                owner: projectData.gitOwner,
+                repo: projectData.gitRepo,
+                project: projectData.gitProject,
+              });
+              return href ? (
               <a
-                href={`https://github.com/${projectData.gitOwner}/${projectData.gitRepo}`}
+                href={href}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 truncate max-w-[180px]"
               >
-                {projectData.gitOwner}/{projectData.gitRepo}
+                {label}
                 <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
               </a>
+              ) : (
+                <span className="text-[13px] font-medium text-foreground truncate max-w-[180px]">
+                  {label}
+                </span>
+              );
+            })() : (
             ) : (
               <span className="text-[13px] text-muted-foreground/60">
                 {t.projects.overview.notConnected}

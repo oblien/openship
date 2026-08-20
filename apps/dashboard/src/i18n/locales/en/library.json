@@ -14,6 +14,7 @@
     "tabs": {
       "folder": "Folder",
       "github": "GitHub",
+      "azure": "Azure DevOps",
       "url": "Git URL",
       "template": "Template"
     }
@@ -179,9 +180,24 @@
     "methodDevice": "GitHub sign-in"
   },
   "urlImport": {
-    "invalidUrl": "Enter a valid GitHub repository URL",
+    "invalidUrl": "Enter a valid GitHub or Azure DevOps repository URL",
     "title": "Import from Git URL",
-    "description": "Paste a public repository URL to import. No GitHub connection required.",
+    "description": "Paste a GitHub or Azure DevOps repository URL. Public GitHub repos need no connection; Azure DevOps needs an account or PAT in Settings.",
+    "placeholder": "https://github.com/… or https://dev.azure.com/org/project/_git/repo",
     "importButton": "Import Repository"
+  },
+  "azure": {
+    "connectTitle": "Connect Azure DevOps",
+    "connectDesc": "Sign in with Microsoft or paste an instance PAT in Settings to browse Azure DevOps repos.",
+    "connectButton": "Sign in with Microsoft",
+    "connectInSettings": "Open Git settings",
+    "searchPlaceholder": "Search repositories…",
+    "noRepos": "No repositories",
+    "noReposDesc": "This organization has no Git repositories Openship can see.",
+    "noMatching": "No matching repositories",
+    "noMatchingDesc": "Try a different search.",
+    "emptyOrgs": "No Azure DevOps organizations",
+    "emptyOrgsDesc": "The connected account has no organizations, or the PAT lacks Code (Read).",
+    "loading": "Loading repositories…"
   }
 }

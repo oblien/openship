@@ -41,7 +41,15 @@ export function injectGitToken(repoUrl: string, token?: string): string {
     const url = new URL(repoUrl);
     if (url.protocol !== "https:") return repoUrl;
     const isGitHub = /(^|\.)github\.com$/.test(url.hostname);
-    if (isGitHub && !token.startsWith("ghs_")) {
+    const isAzure =
+      /(^|\.)dev\.azure\.com$/.test(url.hostname) ||
+      /(^|\.)visualstudio\.com$/.test(url.hostname);
+    if (isAzure) {
+      // Azure DevOps: empty username, PAT/OAuth token as password.
+      // Never persist this form — callers inject at clone time only.
+      url.username = "";
+      url.password = token;
+    } else if (isGitHub && !token.startsWith("ghs_")) {
       url.username = token;
       url.password = "";
     } else {

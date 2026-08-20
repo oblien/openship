@@ -8,6 +8,7 @@
 /** Values stored in `project.gitProvider` (free-text column). */
 export const SOURCE_PROVIDERS = [
   "github",
+  "azure",
   "gitlab",
   "bitbucket",
   "local",
@@ -97,4 +98,108 @@ export function renderAssetName(
     );
   }
   return rendered;
+}
+
+/** Git hosts we can parse a clone URL for today. */
+export type GitHostProvider = Extract<SourceProvider, "github" | "azure">;
+
+export interface ParsedGitRepo {
+  provider: GitHostProvider;
+  /** GitHub owner, or Azure DevOps organization. */
+  owner: string;
+  /** Azure DevOps project name. Absent for GitHub. */
+  project?: string;
+  repo: string;
+}
+
+function stripGitSuffix(name: string): string {
+  return name.replace(/\.git$/i, "").replace(/\/+$/, "");
+}
+
+/**
+ * Parse a GitHub or Azure DevOps repository URL into owner/repo (+ Azure project).
+ * Returns null for unknown hosts. SSH Azure URLs are parsed; clone still uses HTTPS.
+ */
+export function parseGitRepoUrl(url: string | null | undefined): ParsedGitRepo | null {
+  if (!url || typeof url !== "string") return null;
+  const s = url.trim();
+  if (!s) return null;
+
+  // git@ssh.dev.azure.com:v3/{org}/{project}/{repo}
+  const azureSsh = s.match(
+    /(?:^git@ssh\.dev\.azure\.com:v3\/|ssh\.dev\.azure\.com:v3\/)([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i,
+  );
+  if (azureSsh) {
+    return {
+      provider: "azure",
+      owner: azureSsh[1]!,
+      project: azureSsh[2]!,
+      repo: stripGitSuffix(azureSsh[3]!),
+    };
+  }
+
+  // https://{org}.visualstudio.com/{project}/_git/{repo}
+  const azureOld = s.match(
+    /(?:https?:\/\/)?([^.]+)(?:\.visualstudio\.com)\/([^/?#]+)\/_git\/([^/?#]+)/i,
+  );
+  if (azureOld) {
+    return {
+      provider: "azure",
+      owner: azureOld[1]!,
+      project: azureOld[2]!,
+      repo: stripGitSuffix(azureOld[3]!),
+    };
+  }
+
+  // https://dev.azure.com/{org}/{project}/_git/{repo}  (optional :pat@ prefix)
+  const azureHttps = s.match(
+    /dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/?#]+)/i,
+  );
+  if (azureHttps) {
+    return {
+      provider: "azure",
+      owner: azureHttps[1]!,
+      project: azureHttps[2]!,
+      repo: stripGitSuffix(azureHttps[3]!),
+    };
+  }
+
+  // git@github.com:owner/repo.git
+  const ghSsh = s.match(/github\.com:([^/]+)\/([^/?#]+?)(?:\.git)?\/?$/i);
+  if (ghSsh) {
+    return { provider: "github", owner: ghSsh[1]!, repo: stripGitSuffix(ghSsh[2]!) };
+  }
+
+  // https://github.com/owner/repo — first two path segments only (ignore /tree/…)
+  const ghHttps = s.match(/github\.com\/([^/]+)\/([^/?#]+)/i);
+  if (ghHttps) {
+    return { provider: "github", owner: ghHttps[1]!, repo: stripGitSuffix(ghHttps[2]!) };
+  }
+
+  return null;
+}
+
+/**
+ * Canonical HTTPS clone URL for a parsed git source.
+ * Azure requires `project`. Token is never embedded — inject at clone time only.
+ */
+export function buildGitUrl(
+  provider: GitHostProvider,
+  owner: string,
+  repo: string,
+  project?: string,
+): string {
+  switch (provider) {
+    case "github":
+      return `https://github.com/${owner}/${repo}.git`;
+    case "azure":
+      if (!project) {
+        throw new Error("Azure DevOps clone URL requires a project name");
+      }
+      return `https://dev.azure.com/${owner}/${project}/_git/${repo}`;
+    default: {
+      const _never: never = provider;
+      throw new Error(`Unsupported git provider: ${_never}`);
+    }
+  }
 }

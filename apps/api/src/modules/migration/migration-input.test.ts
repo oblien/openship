@@ -62,8 +62,30 @@ describe("sanitizeGitSource", () => {
     });
   });
 
-  it("rejects non-GitHub providers (v1 GitHub only)", () => {
+  it("rejects unknown providers", () => {
     expect(sanitizeGitSource({ provider: "gitlab", owner: "acme", repo: "web" })).toBeUndefined();
+  });
+
+  it("accepts a well-formed Azure DevOps source", () => {
+    expect(
+      sanitizeGitSource({
+        provider: "azure",
+        owner: " myorg ",
+        project: " myproject ",
+        repo: " myrepo ",
+        branch: " main ",
+      }),
+    ).toEqual({
+      provider: "azure",
+      owner: "myorg",
+      project: "myproject",
+      repo: "myrepo",
+      branch: "main",
+    });
+  });
+
+  it("rejects Azure without a project", () => {
+    expect(sanitizeGitSource({ provider: "azure", owner: "myorg", repo: "myrepo" })).toBeUndefined();
   });
 
   it("rejects missing owner or repo", () => {

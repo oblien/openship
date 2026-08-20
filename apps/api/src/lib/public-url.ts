@@ -213,6 +213,11 @@ export function sharedWebhookUrl(): string {
   return `${resolveApiPublicUrl()}/api/webhooks/github`;
 }
 
+/** Azure DevOps Service Hook callback — same public-URL rules as GitHub. */
+export function sharedAzureWebhookUrl(): string {
+  return `${resolveApiPublicUrl()}/api/webhooks/azure`;
+}
+
 /**
  * The delivery URL for a generic per-project incoming webhook — where the
  * external caller POSTs to fire the hook's action. Public URL when configured

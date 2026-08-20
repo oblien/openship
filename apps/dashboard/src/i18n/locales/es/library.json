@@ -14,6 +14,7 @@
     "tabs": {
       "folder": "Carpeta",
       "github": "GitHub",
+      "azure": "Azure DevOps",
       "url": "URL de Git",
       "template": "Plantilla"
     }
@@ -163,9 +164,24 @@
     "manageGithubSettings": "gestionar GitHub en Ajustes"
   },
   "urlImport": {
-    "invalidUrl": "Introduce una URL válida de repositorio de GitHub",
+    "invalidUrl": "Introduce una URL válida de GitHub o Azure DevOps",
     "title": "Importar desde URL de Git",
-    "description": "Pega la URL de un repositorio público para importarlo. No requiere conexión con GitHub.",
+    "description": "Pega una URL de GitHub o Azure DevOps. Los repos públicos de GitHub no requieren conexión; Azure DevOps necesita una cuenta o PAT en Ajustes.",
+    "placeholder": "https://github.com/… o https://dev.azure.com/org/project/_git/repo",
     "importButton": "Importar repositorio"
+  },
+  "azure": {
+    "connectTitle": "Conectar Azure DevOps",
+    "connectDesc": "Inicia sesión con Microsoft o pega un PAT de instancia en Ajustes para explorar repos de Azure DevOps.",
+    "connectButton": "Iniciar sesión con Microsoft",
+    "connectInSettings": "Abrir ajustes de Git",
+    "searchPlaceholder": "Buscar repositorios…",
+    "noRepos": "No hay repositorios",
+    "noReposDesc": "Esta organización no tiene repositorios Git que Openship pueda ver.",
+    "noMatching": "No hay repositorios coincidentes",
+    "noMatchingDesc": "Prueba otra búsqueda.",
+    "emptyOrgs": "No hay organizaciones de Azure DevOps",
+    "emptyOrgsDesc": "La cuenta conectada no tiene organizaciones, o el PAT no tiene Code (Read).",
+    "loading": "Cargando repositorios…"
   }
 }

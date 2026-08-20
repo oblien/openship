@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   SOURCE_PROVIDERS,
   isReleaseProvider,
+  parseGitRepoUrl,
+  buildGitUrl,
   renderAssetName,
 } from "../src/project-source";
 
@@ -19,6 +21,109 @@ describe("isReleaseProvider", () => {
 
   it("release is a member of SOURCE_PROVIDERS", () => {
     expect(SOURCE_PROVIDERS).toContain("release");
+  });
+
+  it("azure is a member of SOURCE_PROVIDERS", () => {
+    expect(SOURCE_PROVIDERS).toContain("azure");
+  });
+});
+
+describe("parseGitRepoUrl", () => {
+  it("parses a GitHub HTTPS URL", () => {
+    expect(parseGitRepoUrl("https://github.com/acme/widgets")).toEqual({
+      provider: "github",
+      owner: "acme",
+      repo: "widgets",
+    });
+  });
+
+  it("strips .git and ignores a GitHub tree path", () => {
+    expect(parseGitRepoUrl("https://github.com/acme/widgets.git")).toEqual({
+      provider: "github",
+      owner: "acme",
+      repo: "widgets",
+    });
+    expect(parseGitRepoUrl("https://github.com/acme/widgets/tree/main")).toEqual({
+      provider: "github",
+      owner: "acme",
+      repo: "widgets",
+    });
+  });
+
+  it("parses a GitHub SSH URL", () => {
+    expect(parseGitRepoUrl("git@github.com:acme/widgets.git")).toEqual({
+      provider: "github",
+      owner: "acme",
+      repo: "widgets",
+    });
+  });
+
+  it("parses Azure DevOps HTTPS", () => {
+    expect(parseGitRepoUrl("https://dev.azure.com/myorg/myproject/_git/myrepo")).toEqual({
+      provider: "azure",
+      owner: "myorg",
+      project: "myproject",
+      repo: "myrepo",
+    });
+  });
+
+  it("parses Azure DevOps old visualstudio.com host", () => {
+    expect(parseGitRepoUrl("https://myorg.visualstudio.com/myproject/_git/myrepo")).toEqual({
+      provider: "azure",
+      owner: "myorg",
+      project: "myproject",
+      repo: "myrepo",
+    });
+  });
+
+  it("parses Azure DevOps SSH (clone still uses HTTPS)", () => {
+    expect(parseGitRepoUrl("git@ssh.dev.azure.com:v3/myorg/myproject/myrepo")).toEqual({
+      provider: "azure",
+      owner: "myorg",
+      project: "myproject",
+      repo: "myrepo",
+    });
+  });
+
+  it("strips an embedded PAT from an Azure clone URL", () => {
+    expect(
+      parseGitRepoUrl("https://:secret@dev.azure.com/myorg/myproject/_git/myrepo"),
+    ).toEqual({
+      provider: "azure",
+      owner: "myorg",
+      project: "myproject",
+      repo: "myrepo",
+    });
+  });
+
+  it("returns null for unknown hosts", () => {
+    expect(parseGitRepoUrl("https://gitlab.com/acme/widgets")).toBeNull();
+    expect(parseGitRepoUrl("not-a-url")).toBeNull();
+    expect(parseGitRepoUrl("")).toBeNull();
+    expect(parseGitRepoUrl(null)).toBeNull();
+  });
+});
+
+describe("buildGitUrl", () => {
+  it("builds a GitHub clone URL", () => {
+    expect(buildGitUrl("github", "acme", "widgets")).toBe("https://github.com/acme/widgets.git");
+  });
+
+  it("builds an Azure DevOps HTTPS clone URL without embedding a token", () => {
+    expect(buildGitUrl("azure", "myorg", "myrepo", "myproject")).toBe(
+      "https://dev.azure.com/myorg/myproject/_git/myrepo",
+    );
+    expect(buildGitUrl("azure", "myorg", "myrepo", "myproject")).not.toMatch(/@/);
+  });
+
+  it("refuses Azure without a project", () => {
+    expect(() => buildGitUrl("azure", "myorg", "myrepo")).toThrow(/project/i);
+  });
+
+  it("round-trips Azure HTTPS through parse + build", () => {
+    const url = "https://dev.azure.com/myorg/myproject/_git/myrepo";
+    const parsed = parseGitRepoUrl(url)!;
+    expect(buildGitUrl(parsed.provider, parsed.owner, parsed.repo, parsed.project)).toBe(url);
   });
 });
 

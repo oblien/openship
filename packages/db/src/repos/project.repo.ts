@@ -152,6 +152,22 @@ export function createProjectRepo(db: Database) {
       });
     },
 
+    /** Azure DevOps: match org + project + repo (case-insensitive). */
+    async findByAzureGitRepo(owner: string, gitProject: string, repo: string) {
+      const ownerKey = owner.toLowerCase();
+      const projectKey = gitProject.toLowerCase();
+      const repoKey = repo.toLowerCase();
+      return db.query.project.findMany({
+        where: and(
+          sql`lower(${project.gitOwner}) = ${ownerKey}`,
+          sql`lower(${project.gitProject}) = ${projectKey}`,
+          sql`lower(${project.gitRepo}) = ${repoKey}`,
+          eq(project.gitProvider, "azure"),
+          isNull(project.deletedAt),
+        ),
+      });
+    },
+
     /**
      * Auto-deploy projects that have a registered webhook (webhookId set) but no
      * per-project signing secret yet — the self-hosted webhook-secret backfill

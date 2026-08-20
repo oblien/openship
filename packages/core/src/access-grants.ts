@@ -54,6 +54,7 @@ export type ResourceType =
   | "audit"
   | "analytics"
   | "github"
+  | "azure"
   // GitHub access control is default-deny and owner-granted. "github"
   // (resourceId "*") = all GitHub; "github_installation" (resourceId = the
   // account LOGIN, not an installation id) = every repo under one account;
@@ -86,6 +87,7 @@ export const ORG_SINGLETON_RESOURCE_TYPES: readonly ResourceType[] = [
   "audit",
   "analytics",
   "github",
+  "azure",
   "permissions",
   "settings",
   "job",

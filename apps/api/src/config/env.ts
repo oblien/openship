@@ -265,6 +265,16 @@ const envSchema = z.object({
   GITHUB_DEVICE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /**
+   * Microsoft Entra ID app used to connect Azure DevOps (self-hosted).
+   * Scope is the Azure DevOps resource; tokens live in Better Auth's account
+   * table (encryptOAuthTokens). Optional — operators can paste an instance PAT
+   * instead via POST /api/azure/instance-token.
+   */
+  AZURE_CLIENT_ID: z.string().optional(),
+  AZURE_CLIENT_SECRET: z.string().optional(),
+  /** Entra tenant. Default "organizations" (work/school accounts). */
+  AZURE_TENANT_ID: z.string().optional(),
 
   /* ---------- GitHub Auth Strategy ---------- */
   /**

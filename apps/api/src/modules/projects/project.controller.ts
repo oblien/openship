@@ -81,6 +81,7 @@ import {
 import { getInstallUrl } from "../github/github.auth";
 import { ensureSharedWebhook } from "./project-git-webhook";
 import { listProjectRouteRows, resolveProjectRouteState } from "../domains/project-route.service";
+import { enableProjectHook, deleteServiceHook } from "../azure/azure.service";
 
 // Track which servers have had Lua scripts deployed this session
 const luaDeployedServers = new Set<string>();
@@ -1538,6 +1539,27 @@ export async function setAutoDeploy(c: Context) {
 
   if (!owner || !repo) {
     return c.json({ success: false, error: "No repository linked" }, 400);
+  }
+
+  if (project.gitProvider === "azure") {
+    const gitProject = project.gitProject;
+    if (!gitProject) {
+      return c.json({ success: false, error: "Azure DevOps project name is missing" }, 400);
+    }
+    try {
+      if (enabled) {
+        await enableProjectHook(ctx, id, owner, gitProject, repo);
+      } else {
+        await repos.project.update(id, { autoDeploy: false });
+        if (project.webhookExternalId) {
+          await deleteServiceHook(ctx, owner, project.webhookExternalId).catch(() => undefined);
+        }
+      }
+      return c.json({ success: true, autoDeploy: enabled });
+    } catch (err) {
+      const msg = safeErrorMessage(err);
+      return c.json({ success: false, error: msg }, 400);
+    }
   }
 
   const strategy = await resolveWebhookStrategy(project);

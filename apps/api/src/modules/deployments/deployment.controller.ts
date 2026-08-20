@@ -347,9 +347,10 @@ export async function buildRespond(c: Context) {
 export async function prepare(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{
-    source?: "github" | "local";
+    source?: "github" | "azure" | "local";
     owner?: string;
     repo?: string;
+    project?: string;
     branch?: string;
     path?: string;
     composePath?: string;
@@ -357,7 +358,9 @@ export async function prepare(c: Context) {
   }>();
 
   // Determine source - callers may send { owner, repo } without an explicit source
-  const source = body.source ?? (body.owner && body.repo ? "github" : undefined);
+  const source =
+    body.source ??
+    (body.owner && body.repo ? (body.project ? "azure" : "github") : undefined);
   const composePath = body.composePath?.trim() || undefined;
   // Interpolation-only: never persisted here, and the response masks every
   // service env below, so supplying a value cannot echo it back unmasked.
@@ -379,6 +382,23 @@ export async function prepare(c: Context) {
         composePath,
         env: composeEnv,
       };
+    } else if (source === "azure") {
+      if (env.CLOUD_MODE) {
+        return c.json({ error: "Azure DevOps is not available in cloud mode" }, 403);
+      }
+      if (!body.owner || !body.repo || !body.project) {
+        return c.json({ error: "owner, project, and repo are required" }, 400);
+      }
+      input = {
+        source: "azure",
+        owner: body.owner,
+        project: body.project,
+        repo: body.repo,
+        branch: body.branch,
+        ctx,
+        composePath,
+        env: composeEnv,
+      };
     } else if (source === "local") {
       if (env.CLOUD_MODE) {
         return c.json({ error: "Local projects are not available in cloud mode" }, 403);
@@ -388,7 +408,7 @@ export async function prepare(c: Context) {
       }
       input = { source: "local", path: body.path, composePath, env: composeEnv };
     } else {
-      return c.json({ error: "source must be 'github' or 'local'" }, 400);
+      return c.json({ error: "source must be 'github', 'azure', or 'local'" }, 400);
     }
 
     const info = await prepareService.resolveProjectInfo(input);

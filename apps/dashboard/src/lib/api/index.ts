@@ -4,7 +4,7 @@
  * Centralised API layer for the Openship dashboard.
  *
  * Usage:
- *   import { projectsApi, deployApi, githubApi } from "@/lib/api";
+ *   import { projectsApi, deployApi, githubApi, azureApi } from "@/lib/api";
  *   const { projects, numbers } = await projectsApi.getHome();
  */
 
@@ -58,6 +58,8 @@ export { tokensApi } from "./tokens";
 export type { AccessToken, CreatedAccessToken, McpClient, McpClientDetail } from "./tokens";
 export { githubApi } from "./github";
 export type { RepoTreeEntry } from "./github";
+export { azureApi } from "./azure";
+export type { AzureStatus, AzureRepo } from "./azure";
 export { iconsApi } from "./icons";
 export { imagesApi } from "./images";
 export type { ImageCatalogEntry, ListImagesResponse } from "./images";

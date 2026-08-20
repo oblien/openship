@@ -38,6 +38,8 @@ interface PreparedConfigArgs {
   projectId?: string;
   localPath?: string;
   uploadSessionId?: string;
+  gitProvider?: DeploymentConfig["gitProvider"];
+  gitProject?: string;
 }
 
 interface PreparedProjectContext {
@@ -718,6 +720,8 @@ export function useDeploymentConfig() {
         projectId,
         localPath,
         uploadSessionId,
+        gitProvider,
+        gitProject,
       } = args;
       const preparedContext = resolvePreparedProjectContext(response, newEndpointDomainType);
       const routingState = resolvePreparedRoutingState(
@@ -739,6 +743,8 @@ export function useDeploymentConfig() {
         projectId,
         repo: repoName,
         owner,
+        gitProvider,
+        gitProject,
         localPath,
         uploadSessionId,
         projectName: project?.name || repoName,
@@ -836,6 +842,8 @@ export function useDeploymentConfig() {
         projectId?: string;
         composePath?: string;
         env?: Record<string, string>;
+        provider?: "github" | "azure";
+        gitProject?: string;
       },
     ): Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }> => {
       try {
@@ -856,17 +864,44 @@ export function useDeploymentConfig() {
 
         const sourceOwner = project?.gitOwner || owner;
         const sourceRepo = project?.gitRepo || repo;
+        const gitProvider: DeploymentConfig["gitProvider"] =
+          (project?.gitProvider || context?.provider) === "azure" ? "azure" : "github";
+        const gitProject =
+          (typeof project?.gitProject === "string" && project.gitProject) ||
+          context?.gitProject ||
+          undefined;
         const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
         const requestedBranch = (projectBranch || context?.branch || "").trim() || undefined;
 
-        const response = await deployApi.prepare({
-          owner: sourceOwner,
-          repo: sourceRepo,
-          branch: requestedBranch,
-          force,
-          ...scanComposePath(context?.composePath, project),
-          ...(context?.env ? { env: context.env } : {}),
-        });
+        if (gitProvider === "azure" && !gitProject) {
+          return {
+            success: false,
+            error: "Azure DevOps project name is required",
+            errorType: "api_error",
+          };
+        }
+
+        const response = await deployApi.prepare(
+          gitProvider === "azure"
+            ? {
+                source: "azure",
+                owner: sourceOwner,
+                project: gitProject!,
+                repo: sourceRepo,
+                branch: requestedBranch,
+                force,
+                ...scanComposePath(context?.composePath, project),
+                ...(context?.env ? { env: context.env } : {}),
+              }
+            : {
+                owner: sourceOwner,
+                repo: sourceRepo,
+                branch: requestedBranch,
+                force,
+                ...scanComposePath(context?.composePath, project),
+                ...(context?.env ? { env: context.env } : {}),
+              },
+        );
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -895,6 +930,8 @@ export function useDeploymentConfig() {
           branch: selectedBranch,
           branches: branchOptions,
           projectId: context?.projectId,
+          gitProvider,
+          gitProject,
         }));
 
         return { success: true };
@@ -994,6 +1031,8 @@ export function useDeploymentConfig() {
         branch: config.branch,
         projectId: config.projectId,
         composePath: trimmed,
+        provider: config.gitProvider,
+        gitProject: config.gitProject,
         ...env,
       });
       return { success: result.success, error: result.error, errorType: result.errorType };
@@ -1004,6 +1043,8 @@ export function useDeploymentConfig() {
       config.repo,
       config.branch,
       config.projectId,
+      config.gitProvider,
+      config.gitProject,
       config.envVars,
       initializeFromLocal,
       initializeFromRepo,
@@ -1222,6 +1263,8 @@ export function useDeploymentConfig() {
               branches: branch ? [branch] : [],
               projectId,
               localPath: project.localPath || undefined,
+              gitProvider: project.gitProvider === "azure" ? "azure" : "github",
+              gitProject: typeof project.gitProject === "string" ? project.gitProject : undefined,
             }),
             // buildPreparedConfig (shared with detection) doesn't load production
             // env — overlay the saved values we fetched above.

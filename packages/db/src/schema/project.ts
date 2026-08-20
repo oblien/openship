@@ -110,7 +110,7 @@ export const project = pgTable(
 
     /* ── Git source ─────────────────────────────────────────────────────── */
     /**
-     * Source discriminator: "github" | "gitlab" | "bitbucket" | "local" | "upload" | "release".
+     * Source discriminator: "github" | "azure" | "gitlab" | "bitbucket" | "local" | "upload" | "release".
      * (Free-text; canonical set = SOURCE_PROVIDERS in @repo/core.)
      *   - "local"  → folder on a filesystem the API can read (desktop/self-hosted),
      *                path in `localPath`.
@@ -123,6 +123,11 @@ export const project = pgTable(
     gitProvider: text("git_provider").default("github"),
     /** Owner/org on the git provider */
     gitOwner: text("git_owner"),
+    /**
+     * Azure DevOps project name (the middle segment of org/project/repo).
+     * Null for GitHub and every other provider.
+     */
+    gitProject: text("git_project"),
     /** Repo name on the git provider */
     gitRepo: text("git_repo"),
     /** Default branch to deploy from */
@@ -443,6 +448,11 @@ export const project = pgTable(
     activeDeploymentId: text("active_deployment_id"),
     /** GitHub webhook ID registered on the repo */
     webhookId: integer("webhook_id"),
+    /**
+     * Provider-native webhook id when it is not an integer (Azure DevOps
+     * Service Hook subscription GUIDs). GitHub continues to use webhookId.
+     */
+    webhookExternalId: text("webhook_external_id"),
     /** Domain hostname used for receiving GitHub webhooks (null = edge relay or none) */
     webhookDomain: text("webhook_domain"),
     /**

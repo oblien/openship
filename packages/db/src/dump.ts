@@ -758,6 +758,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "oauth_application", column: "clientSecret" },
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
+  { table: "instance_settings", column: "azurePatEncrypted" },
   { table: "deployment", column: "envVars" },
   { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl"] },
 ];

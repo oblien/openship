@@ -238,6 +238,19 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Azure DevOps (self-hosted only)                                 */
+  /* ---------------------------------------------------------------- */
+  azure: {
+    status: "azure/status",
+    connect: "azure/connect",
+    connectRedirect: "azure/connect/redirect",
+    disconnect: "azure/disconnect",
+    instanceToken: "azure/instance-token",
+    orgs: "azure/orgs",
+    orgRepos: (org: string) => `azure/orgs/${encodeURIComponent(org)}/repos`,
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Icons                                                           */
   /* ---------------------------------------------------------------- */
   icons: {
