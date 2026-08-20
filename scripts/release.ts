@@ -42,6 +42,9 @@
  * The tag-push triggers .github/workflows/release.yml which builds both
  * dist tarballs + SHA-256 sidecars and publishes a GitHub Release.
  * Tags containing `-` (rc.N, beta.N) become prereleases automatically.
+ * The release DESCRIPTION is this version's CHANGELOG.md section (see
+ * scripts/changelog-notes.ts) — write it before you cut the tag; a version with
+ * no section still releases, it just links to the changelog instead.
  */
 
 import { spawnSync } from "node:child_process";
@@ -49,6 +52,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildWizardArgs, type WizardAnswers } from "./release-args";
+import { extractChangelogSection } from "./changelog-notes";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ROOT_PKG = join(ROOT, "package.json");
@@ -214,6 +218,7 @@ log(`Announcement:               ${publish ? `yes (${critical ? "critical" : "re
 if (publish) {
   log(`Audience:                   ${modes ? modes.join(", ") : "all installs (desktop, selfhosted, cloud)"}`);
 }
+log(`Release notes:              ${changelogNotesStatus(next)}`);
 log(``);
 
 if (dryRun) {
@@ -377,6 +382,24 @@ function usageAndExit(code = 1): never {
     ].join("\n"),
   );
   process.exit(code);
+}
+
+/** What the GitHub release body will say, so a missing CHANGELOG.md section is
+ *  visible BEFORE the tag is pushed. Purely informational — a version with no
+ *  section still releases (the workflow falls back to a changelog link). */
+function changelogNotesStatus(version: string): string {
+  try {
+    const md = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
+    const section = extractChangelogSection(md, version);
+    if (section) return `CHANGELOG.md § ${version} (${section.split("\n").length} lines)`;
+    const base = version.split("-")[0];
+    if (base !== version && extractChangelogSection(md, base)) {
+      return `CHANGELOG.md § ${base} (base version — this is a prerelease)`;
+    }
+  } catch {
+    // fall through
+  }
+  return `⚠ no CHANGELOG.md section for ${version} — the release will link to the changelog instead`;
 }
 
 /** True if the tag already exists locally or on origin. */

@@ -704,9 +704,41 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Read bun version
+        id: bun-version
+        run: echo "version=$(cat .bun-version)" >> "$GITHUB_OUTPUT"
+
+      # Only to run scripts/changelog-notes.ts (node:-only, zero deps) — this
+      # job deliberately does no `bun install`.
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-version.outputs.version }}
+
+      # The release body is this version's CHANGELOG.md section, written to a
+      # FILE (never interpolated into the shell — changelog prose is full of
+      # backticks and quotes) and passed to `gh --notes-file`. The extractor
+      # always emits a body, and this step is non-fatal on top of that: missing
+      # notes must never fail a release.
+      - name: Build release notes from CHANGELOG.md
+        id: notes
+        run: |
+          set -uo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          if ! bun scripts/changelog-notes.ts "${TAG}" > "${NOTES_FILE}"; then
+            echo "::warning::changelog extraction failed — publishing a generic body."
+            printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md).\n' \
+              "${GITHUB_REPOSITORY}" "${TAG}" > "${NOTES_FILE}"
+          fi
+          echo "file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+          echo "▸ release notes (${TAG}):"
+          head -c 500 "${NOTES_FILE}"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -731,10 +763,18 @@ jobs:
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "::notice::Release ${TAG} exists — re-uploading core assets (--clobber)."
             gh release upload "${TAG}" "${CORE_ASSETS[@]}" --clobber
+            # Backfill notes ONLY when the existing release has none (a release
+            # cut before this step existed, or a re-run of one that published an
+            # empty body). A body that's already there may have been hand-edited
+            # on the release page — never overwrite it.
+            if [[ -z "$(gh release view "${TAG}" --json body --jq '.body' | tr -d '[:space:]')" ]]; then
+              gh release edit "${TAG}" --notes-file "${NOTES_FILE}"
+              echo "::notice::Backfilled empty release notes for ${TAG}."
+            fi
           else
             gh release create "${TAG}" \
               --title "Openship ${TAG}" \
-              --notes-from-tag \
+              --notes-file "${NOTES_FILE}" \
               ${PRERELEASE_FLAG} \
               "${CORE_ASSETS[@]}"
           fi
