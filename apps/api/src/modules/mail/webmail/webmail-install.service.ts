@@ -34,6 +34,7 @@ import {
   type ComposeAdvanced,
   type OpenshipReadiness, mailHostname } from "@repo/core";
 import { repos, type Domain, type Project } from "@repo/db";
+import { env } from "../../../config/env";
 import { assertResourceInOrg } from "../../../lib/controller-helpers";
 import { pickCanonicalDomainRow, resolveServicePublicEndpoints } from "../../../lib/public-endpoints";
 import type { RequestContext } from "../../../lib/request-context";
@@ -88,6 +89,9 @@ export const WEBMAIL_SETTING_KEYS = {
   smtpHost: "DEFAULT_SMTP_HOST",
   smtpPort: "DEFAULT_SMTP_PORT",
   trustedOrigins: "TRUSTED_ORIGINS",
+  miniMaxApiKey: "MINIMAX_API_KEY",
+  miniMaxModel: "MINIMAX_MODEL",
+  miniMaxBaseUrl: "MINIMAX_BASE_URL",
 } as const;
 
 /**
@@ -101,6 +105,15 @@ export const WEBMAIL_SETTING_KEYS = {
  */
 const OUR_IMAP_PORT = "993";
 const OUR_SMTP_PORT = "465";
+
+function miniMaxSettings(service: string): AppSettingChange[] {
+  if (!env.MINIMAX_API_KEY) return [];
+  return [
+    { service, key: WEBMAIL_SETTING_KEYS.miniMaxApiKey, value: env.MINIMAX_API_KEY },
+    { service, key: WEBMAIL_SETTING_KEYS.miniMaxModel, value: env.MINIMAX_MODEL },
+    { service, key: WEBMAIL_SETTING_KEYS.miniMaxBaseUrl, value: env.MINIMAX_BASE_URL },
+  ];
+}
 
 // ─── Public shapes ───────────────────────────────────────────────────────────
 
@@ -476,6 +489,7 @@ export async function startWebmailDeploy(
         // catalog token — which is what makes a hostname change self-correcting.
         value: useProxyVariant ? `https://${input.hostname}` : "",
       },
+      ...miniMaxSettings(endpoint.service),
     ],
     deployTarget: input.target.kind === "cloud" ? "cloud" : "server",
     serverId: input.target.kind === "self" ? input.target.serverId : undefined,
@@ -542,6 +556,7 @@ export async function startExternalWebmailDeploy(
         key: WEBMAIL_SETTING_KEYS.smtpPort,
         value: String(input.backend.smtpPort),
       },
+      ...miniMaxSettings(endpoint.service),
     ],
     deployTarget: input.target.deployTarget,
     serverId: input.target.serverId,

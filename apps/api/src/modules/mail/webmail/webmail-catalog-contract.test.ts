@@ -51,6 +51,28 @@ describe("webmail catalog contract", () => {
     }
   });
 
+  it("declares MiniMax credentials, models, and regional endpoints", () => {
+    const fields = flattenSettingFields(getAppSettings(template!));
+    const apiKey = fields.find((field) => field.key === WEBMAIL_SETTING_KEYS.miniMaxApiKey);
+    const model = fields.find((field) => field.key === WEBMAIL_SETTING_KEYS.miniMaxModel);
+    const baseUrl = fields.find((field) => field.key === WEBMAIL_SETTING_KEYS.miniMaxBaseUrl);
+
+    expect(apiKey?.type).toBe("password");
+    expect(apiKey?.secret).toBe(true);
+    expect(model?.options?.map((option) => option.value)).toEqual([
+      "MiniMax-M3",
+      "MiniMax-M2.7",
+    ]);
+    expect(baseUrl?.options?.map((option) => option.value)).toEqual([
+      "https://api.minimax.io/v1",
+      "https://api.minimaxi.com/v1",
+    ]);
+    for (const field of [apiKey, model, baseUrl]) {
+      expect(field?.installStep).toBe(true);
+      expect(field?.requiresRedeploy).toBe(true);
+    }
+  });
+
   it("generates the two secrets nobody may be asked for", () => {
     // SESSION_ENCRYPTION_KEY is generated ONCE at install and reused from the
     // project's env on every redeploy — a fresh key signs every operator out.

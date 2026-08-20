@@ -9,6 +9,12 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import {
+  MINIMAX_BASE_URLS,
+  MINIMAX_MODELS,
+  type MiniMaxBaseUrl,
+  type MiniMaxModel,
+} from './lib/minimax';
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -74,6 +80,19 @@ function int(name: string, fallback: number): number {
   return n;
 }
 
+function choice<const Values extends readonly string[]>(
+  name: string,
+  values: Values,
+  fallback: Values[number],
+): Values[number] {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  if (!values.includes(raw as Values[number])) {
+    throw new Error(`Env var ${name} must be one of: ${values.join(', ')}`);
+  }
+  return raw as Values[number];
+}
+
 export interface Env {
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
@@ -89,6 +108,10 @@ export interface Env {
   DEFAULT_IMAP_PORT: number;
   DEFAULT_SMTP_HOST: string | undefined;
   DEFAULT_SMTP_PORT: number;
+
+  MINIMAX_API_KEY: string | undefined;
+  MINIMAX_MODEL: MiniMaxModel;
+  MINIMAX_BASE_URL: MiniMaxBaseUrl;
 
   SQLITE_PATH: string;
   /**
@@ -133,6 +156,10 @@ export const env: Env = {
   DEFAULT_IMAP_PORT: int('DEFAULT_IMAP_PORT', 993),
   DEFAULT_SMTP_HOST: process.env.DEFAULT_SMTP_HOST,
   DEFAULT_SMTP_PORT: int('DEFAULT_SMTP_PORT', 587),
+
+  MINIMAX_API_KEY: process.env.MINIMAX_API_KEY?.trim() || undefined,
+  MINIMAX_MODEL: choice('MINIMAX_MODEL', MINIMAX_MODELS, MINIMAX_MODELS[0]),
+  MINIMAX_BASE_URL: choice('MINIMAX_BASE_URL', MINIMAX_BASE_URLS, MINIMAX_BASE_URLS[0]),
 
   SQLITE_PATH: optional('SQLITE_PATH', './data/zero.db'),
   BRANDING_PATH: optional('BRANDING_PATH', './data/mail-branding'),
