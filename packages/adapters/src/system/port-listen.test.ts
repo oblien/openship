@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
+  buildPortProbeCommand,
   parseListeningPorts,
+  parsePortProbeOutput,
+  waitForPortFree,
   waitForPortListening,
   type PortProbeExecutor,
 } from "./port-listen";
@@ -57,6 +60,51 @@ describe("parseListeningPorts", () => {
     expect(parseListeningPorts("\n\n   \n").size).toBe(0);
   });
 });
+describe("parsePortProbeOutput", () => {
+  test("parses procfs output with matching port", () => {
+    const out = `${HEADER}\n${IPV4_LISTEN_3000}\n`;
+    expect(parsePortProbeOutput(out, 3000)).toBe(true);
+    expect(parsePortProbeOutput(out, 9999)).toBe(false);
+  });
+
+  test("parses lsof single PID output as listening", () => {
+    expect(parsePortProbeOutput("13917\n", 80)).toBe(true);
+  });
+
+  test("parses lsof multiple PIDs output as listening", () => {
+    expect(parsePortProbeOutput("13917\n13918\n", 80)).toBe(true);
+  });
+
+  test("parses __FREE__ sentinel as not listening", () => {
+    expect(parsePortProbeOutput("__FREE__\n", 80)).toBe(false);
+  });
+
+  test("parses ss __LISTEN__ sentinel as listening", () => {
+    expect(parsePortProbeOutput("__LISTEN__\n", 80)).toBe(true);
+  });
+
+  test("returns false for empty or header-only procfs dump (no port listening)", () => {
+    expect(parsePortProbeOutput("", 80)).toBe(false);
+    expect(parsePortProbeOutput(HEADER, 80)).toBe(false);
+    expect(parsePortProbeOutput("   \n", 80)).toBe(false);
+  });
+
+  test("returns null for __UNAVAILABLE__", () => {
+    expect(parsePortProbeOutput("__UNAVAILABLE__", 80)).toBeNull();
+  });
+});
+
+describe("buildPortProbeCommand", () => {
+  test("generates probe script referencing procfs, lsof, ss, and unavailable fallback", () => {
+    const cmd = buildPortProbeCommand(80);
+    expect(cmd).toContain("/proc/net/tcp");
+    expect(cmd).toContain("lsof -ti \"tcp:80\"");
+    expect(cmd).toContain("ss -tln sport = \":80\"");
+    expect(cmd).toContain("__FREE__");
+    expect(cmd).toContain("__UNAVAILABLE__");
+  });
+});
+
 
 /** A stub executor whose exec returns a fixed dump (or throws). */
 function stubExecutor(behavior: () => Promise<string>): PortProbeExecutor {
@@ -88,6 +136,55 @@ describe("waitForPortListening", () => {
     expect(await waitForPortListening(exec, 9999, { timeoutMs: 150, intervalMs: 50 })).toEqual({
       listening: false,
       checked: true,
+    });
+  });
+  test("handles macOS lsof listening PID output", async () => {
+    const exec = stubExecutor(async () => "13917\n");
+    expect(await waitForPortListening(exec, 80, { timeoutMs: 150, intervalMs: 50 })).toEqual({
+      listening: true,
+      checked: true,
+    });
+  });
+
+  test("handles macOS lsof __FREE__ output", async () => {
+    const exec = stubExecutor(async () => "__FREE__\n");
+    expect(await waitForPortListening(exec, 80, { timeoutMs: 150, intervalMs: 50 })).toEqual({
+      listening: false,
+      checked: true,
+    });
+  });
+
+  test("treats __UNAVAILABLE__ or missing output as inconclusive", async () => {
+    const exec = stubExecutor(async () => "__UNAVAILABLE__\n");
+    expect(await waitForPortListening(exec, 80, { timeoutMs: 150, intervalMs: 50 })).toEqual({
+      listening: false,
+      checked: false,
+    });
+  });
+});
+
+describe("waitForPortFree", () => {
+  test("returns {free:true, checked:true} when __FREE__ is returned", async () => {
+    const exec = stubExecutor(async () => "__FREE__\n");
+    expect(await waitForPortFree(exec, 80, { timeoutMs: 150, intervalMs: 50 })).toEqual({
+      free: true,
+      checked: true,
+    });
+  });
+
+  test("returns {free:false, checked:true} when port remains occupied via lsof PID", async () => {
+    const exec = stubExecutor(async () => "13917\n");
+    expect(await waitForPortFree(exec, 80, { timeoutMs: 150, intervalMs: 50 })).toEqual({
+      free: false,
+      checked: true,
+    });
+  });
+
+  test("returns {free:false, checked:false} when probe is inconclusive", async () => {
+    const exec = stubExecutor(async () => "__UNAVAILABLE__\n");
+    expect(await waitForPortFree(exec, 80, { timeoutMs: 150, intervalMs: 50 })).toEqual({
+      free: false,
+      checked: false,
     });
   });
 });

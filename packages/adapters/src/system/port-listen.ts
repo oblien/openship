@@ -3,16 +3,21 @@
  *
  * Unlike `reachability.ts` (which dials the target from the API host), this runs
  * INSIDE the deployment (docker container / cloud workspace / bare host) via a
- * CommandExecutor and reads the kernel's own socket table. It exists because a
- * host-side TCP probe can't reach cloud/remote targets, and because the tool the
- * naive approach reaches for — `lsof -i :PORT` — is (a) absent on minimal images
- * and (b) prone to missing IPv6-only (or IPv4-only) listeners.
+ * CommandExecutor and reads the kernel's socket table or tool probes. It exists because
+ * a host-side TCP probe can't reach cloud/remote targets.
  *
- * Method: `cat /proc/net/tcp` + `/proc/net/tcp6` (needs only busybox `sh` + `cat`,
- * present on every runtime image incl. Alpine/Oblien) and parse in TypeScript.
- * Reading BOTH files and unioning them is what eliminates the address-family
- * false negative: a process bound to `0.0.0.0:PORT` shows in tcp, one bound to
- * `:::PORT` (or Node's default dual-stack) shows in tcp6 — either counts.
+ * Method:
+ *   1. `/proc/net/tcp` + `/proc/net/tcp6` (needs only busybox `sh` + `cat`,
+ *      present on every Linux runtime image incl. Alpine/Oblien) and parse in TypeScript.
+ *      Reading BOTH files and unioning them is what eliminates the address-family
+ *      false negative: a process bound to `0.0.0.0:PORT` shows in tcp, one bound to
+ *      `:::PORT` (or Node's default dual-stack) shows in tcp6 — either counts.
+ *   2. `lsof -ti tcp:PORT -sTCP:LISTEN` / `lsof -ti :PORT -sTCP:LISTEN` fallback
+ *      on macOS / Darwin / BSD hosts where `/proc` is absent.
+ *   3. `ss -tln sport = :PORT` fallback on Linux hosts where procfs is unmounted.
+ *   4. Explicit `__UNAVAILABLE__` emitted when no probe method is present, returning
+ *      `null` (inconclusive / `checked: false`) so an unmeasurable host is never
+ *      falsely reported as "not listening".
  */
 
 import type { ExecOnly } from "../types";
@@ -31,14 +36,29 @@ export interface PortProbeResult {
   checked: boolean;
 }
 
-// Dump both address families; suppress stderr and force exit 0 so a missing
-// file (rare) or an empty family never rejects the exec. Parsing is per-line and
-// family-agnostic, so no separator is needed between the two files.
-const PROC_NET_TCP_CMD = "cat /proc/net/tcp 2>/dev/null; cat /proc/net/tcp6 2>/dev/null; true";
+/**
+ * Shell command to probe whether `port` is listening in TCP.
+ * Tiered across procfs → lsof → ss → unavailable.
+ */
+export function buildPortProbeCommand(port: number): string {
+  return [
+    `if [ -r /proc/net/tcp ] || [ -r /proc/net/tcp6 ]; then`,
+    `  cat /proc/net/tcp 2>/dev/null; cat /proc/net/tcp6 2>/dev/null`,
+    `elif command -v lsof >/dev/null 2>&1; then`,
+    `  lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || lsof -ti ":${port}" -sTCP:LISTEN 2>/dev/null || echo "__FREE__"`,
+    `elif command -v ss >/dev/null 2>&1; then`,
+    `  ss -tln sport = ":${port}" 2>/dev/null | grep -q LISTEN && echo "__LISTEN__" || echo "__FREE__"`,
+    `else`,
+    `  echo "__UNAVAILABLE__"`,
+    `fi`,
+  ].join("\n");
+}
+
+// Backward-compatible constant for procfs-only callers/tests.
+export const PROC_NET_TCP_CMD = "cat /proc/net/tcp 2>/dev/null; cat /proc/net/tcp6 2>/dev/null; true";
 
 // procfs socket state column: 0A = TCP_LISTEN.
 const TCP_LISTEN = "0A";
-
 /**
  * Parse the concatenated contents of /proc/net/tcp and /proc/net/tcp6 into the
  * set of ports in LISTEN state. Pure and family-agnostic — feeding it both files
@@ -69,6 +89,32 @@ export function parseListeningPorts(procText: string): Set<number> {
 }
 
 /**
+ * Parse the output of `buildPortProbeCommand`.
+ *
+ * Resolves:
+ *   - `true` when a LISTEN socket was confirmed.
+ *   - `false` when the socket table/tool was read and the port is confirmed NOT listening.
+ *   - `null` when the probe was inconclusive (unknown output, tool missing, or error).
+ */
+export function parsePortProbeOutput(out: string, port: number): boolean | null {
+  const trimmed = out.trim();
+  if (trimmed === "__UNAVAILABLE__") {
+    return null;
+  }
+  if (trimmed === "__LISTEN__") {
+    return true;
+  }
+  if (trimmed === "__FREE__") {
+    return false;
+  }
+  // lsof prints one or more numeric PIDs (one per line)
+  if (/^\d+(\s+\d+)*$/m.test(trimmed)) {
+    return true;
+  }
+  return parseListeningPorts(trimmed).has(port);
+}
+
+/**
  * One probe. Resolves `true`/`false` for "port is listening", or `null` when the
  * exec itself failed (inconclusive). Never throws.
  */
@@ -77,8 +123,8 @@ export async function probePortListeningOnce(
   port: number,
 ): Promise<boolean | null> {
   try {
-    const out = await executor.exec(PROC_NET_TCP_CMD, { timeout: 5_000 });
-    return parseListeningPorts(out).has(port);
+    const out = await executor.exec(buildPortProbeCommand(port), { timeout: 5_000 });
+    return parsePortProbeOutput(out, port);
   } catch {
     return null;
   }
