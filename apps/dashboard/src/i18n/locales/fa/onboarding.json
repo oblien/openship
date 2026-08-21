@@ -1,0 +1,149 @@
+{
+  "common": {
+    "goBack": "بازگشت",
+    "continue": "ادامه",
+    "back": "بازگشت",
+    "optional": "(اختیاری)"
+  },
+  "topBar": {
+    "website": "وب‌سایت",
+    "github": "GitHub",
+    "theme": "تغییر پوسته",
+    "language": "زبان"
+  },
+  "choose": {
+    "title": "به Openship خوش آمدید",
+    "subtitle": "نحوه اجرای Openship را انتخاب کنید. هر دو گزینه همه قابلیت‌ها را می‌دهند — و هر زمان می‌توانید جابه‌جا شوید.",
+    "cloud": {
+      "name": "Openship Cloud",
+      "desc": "زیرساخت، به‌روزرسانی‌ها و پشتیبان‌گیری با ماست. فقط وارد شوید و استقرار را شروع کنید.",
+      "perk1": "بدون نیاز به سرور",
+      "perk2": "سطح رایگان همراه است",
+      "perk3": "مدیریت‌شده و همیشه به‌روز",
+      "cta": "ادامه با Cloud"
+    },
+    "or": "یا",
+    "selfhost": {
+      "name": "میزبانی شخصی",
+      "desc": "Openship را روی سخت‌افزار خود اجرا کنید. یک سرور راه دور متصل کنید یا از همین ماشین استفاده کنید.",
+      "perk1": "مالکیت کامل داده",
+      "perk2": "سرور راه دور یا همین Mac",
+      "perk3": "بقیه را ما انجام می‌دهیم",
+      "cta": "راه‌اندازی سرور من"
+    },
+    "migrateNote": "هر زمان با یک کلیک بین Cloud و میزبانی شخصی جابه‌جا شوید — بدون قفل شدن، هیچ‌وقت.",
+    "skip": "فعلاً رد شو"
+  },
+  "selfhost": {
+    "title": "Openship کجا اجرا شود؟",
+    "subtitleLine1": "محل نصب پلتفرم Openship را انتخاب کنید.",
+    "subtitleLine2": "هر دو گزینه کنترل کامل و مالکیت داده را می‌دهند.",
+    "local": {
+      "title": "همین ماشین",
+      "badge": "بتا",
+      "desc": "Openship را همین‌جا نصب کنید — بدون SSH، بدون راه‌اندازی راه دور",
+      "comingSoon": "به‌زودی",
+      "comingSoonDesc": "اجرای مستقیم Openship روی این ماشین هنوز آماده نیست — فعلاً یک سرور متصل کنید."
+    },
+    "remote": {
+      "title": "سروری دیگر",
+      "desc": "از طریق SSH به سرور راه دور، VPS یا هر ماشین در شبکه‌تان متصل شوید"
+    }
+  },
+  "ssh": {
+    "title": "به سرور خود متصل شوید",
+    "subtitleLine1": "جزئیات سرور را وارد کنید و روش احراز هویت را انتخاب کنید.",
+    "subtitleLine2": "نصب و پیکربندی همه چیز را به‌صورت خودکار انجام می‌دهیم.",
+    "serverNameLabel": "نام سرور",
+    "serverNamePlaceholder": "Production، Staging، Dev...",
+    "serverIpLabel": "آدرس IP سرور",
+    "usernameLabel": "نام کاربری",
+    "methodPassword": "رمز عبور",
+    "methodKey": "کلید SSH",
+    "methodAgent": "Agent",
+    "agentHint": "با SSH agent همین ماشین متصل می‌شود — مثل VSCode، بدون نیاز به رمز یا کلید. میزبانی که Openship را اجرا می‌کند باید از قبل به این سرور دسترسی داشته باشد (کلیدی که در ssh-agent آن بارگذاری شده).",
+    "passwordLabel": "رمز عبور",
+    "passwordPlaceholder": "رمز عبور سرور",
+    "keyPathLabel": "مسیر کلید",
+    "browse": "مرور",
+    "passphraseLabel": "عبارت عبور",
+    "passphrasePlaceholder": "اگر ندارد خالی بگذارید",
+    "advanced": "پیشرفته",
+    "sshPortLabel": "پورت SSH",
+    "jumpHostLabel": "میزبان واسط",
+    "extraArgsLabel": "آرگومان‌های اضافه SSH",
+    "submit": "ذخیره و ادامه",
+    "tutorial": "آموزش گام‌به‌گام راه‌اندازی",
+    "testConnection": "آزمایش اتصال",
+    "testing": "در حال آزمایش…",
+    "connected": "متصل شد",
+    "testFailed": "اتصال ناموفق بود",
+    "testHint": "قبل از ادامه، در دسترس بودن سرور را تأیید کنید."
+  },
+  "tunnel": {
+    "title": "دسترسی اینترنت",
+    "subtitle": "سرور شما برای وب‌هوک‌ها، SSL و دسترسی عمومی باید از اینترنت قابل‌دسترسی باشد.",
+    "providers": {
+      "edge": {
+        "title": "Openship Edge",
+        "desc": "بدون پیکربندی. SSL خودکار، دسترس‌پذیری بالا و محافظت DDoS — همه داخلی.",
+        "badge": "پیشنهادی"
+      },
+      "cloudflare": {
+        "title": "Cloudflare Tunnel",
+        "desc": "از حساب Cloudflare خودتان استفاده کنید. سطح رایگان موجود است."
+      },
+      "ngrok": {
+        "title": "ngrok",
+        "desc": "سرویس‌ها را با توکن احراز هویت ngrok در دسترس بگذارید."
+      }
+    },
+    "cloudflareTokenLabel": "توکن Cloudflare Tunnel",
+    "ngrokTokenLabel": "توکن احراز هویت ngrok",
+    "cloudflarePlaceholder": "توکن تونل را جای‌گذاری کنید",
+    "ngrokPlaceholder": "توکن احراز هویت ngrok را جای‌گذاری کنید",
+    "edgeHint": "Openship Edge به حساب Openship نیاز دارد. برای ادامه وارد می‌شوید.",
+    "signInContinue": "ورود و ادامه"
+  },
+  "preferences": {
+    "title": "ترجیحات ساخت",
+    "subtitleLine1": "نحوه ساخته شدن پروژه‌ها هنگام استقرار را انتخاب کنید.",
+    "subtitleLine2": "بعداً می‌توانید این را در تنظیمات تغییر دهید.",
+    "options": {
+      "auto": {
+        "title": "خودکار",
+        "desc": "بهترین گزینه را برای هر فریم‌ورک انتخاب می‌کنیم"
+      },
+      "server": {
+        "title": "راه دور",
+        "desc": "مستقیماً روی سرور استقرار بسازید"
+      },
+      "local": {
+        "title": "محلی",
+        "desc": "روی این Mac بسازید، سپس به سرور بفرستید"
+      }
+    },
+    "hint": "استقرارهای Git push همیشه روی سرور ساخته می‌شوند — این فقط برای استقرارهای دستی است."
+  },
+  "loading": {
+    "connecting": "در حال اتصال…",
+    "verifying": "در حال تأیید سرور شما",
+    "retry": "تلاش دوباره",
+    "openingCloud": "در حال باز کردن Openship Cloud…",
+    "waitingAuth": "در انتظار تکمیل احراز هویت",
+    "couldNotStartAuthTitle": "شروع احراز هویت ابری ممکن نشد",
+    "authFailedTitle": "احراز هویت ابری ناموفق بود",
+    "couldNotStartAuthMsg": "جریان احراز هویت دسکتاپ شروع نشد.",
+    "authFailedMsg": "دوباره تلاش کنید و ورود را در مرورگر تمام کنید.",
+    "completingSignIn": "در حال تکمیل ورود…",
+    "returningToOpenship": "بازگشت به Openship",
+    "redirectingCloud": "در حال هدایت به Openship Cloud…",
+    "newTabSignIn": "ورود را در زبانه جدید تمام می‌کنید",
+    "couldNotSaveTitle": "ذخیره پیکربندی ممکن نشد",
+    "couldNotSaveMsg": "API پاسخ نداد. مطمئن شوید سرویس‌ها در حال اجرا هستند.",
+    "savingConfig": "در حال ذخیره پیکربندی…",
+    "almostThere": "تقریباً تمام است",
+    "settingUpAccount": "در حال راه‌اندازی حساب شما…",
+    "creatingSession": "در حال ایجاد نشست شما"
+  }
+}
