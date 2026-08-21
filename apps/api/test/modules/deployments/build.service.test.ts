@@ -371,7 +371,6 @@ describe("triggerDeployment", () => {
   });
 
   it("resolves service mode before preflight for reused snapshots", async () => {
-
     await triggerDeployment(ctx, {
       projectId: "project-1",
       branch: "main",

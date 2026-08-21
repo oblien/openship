@@ -17,7 +17,6 @@ import {
 import { deployApi } from "@/lib/api/deploy";
 import { formatBytes } from "@/lib/formatBytes";
 import { serviceEnvPatch } from "@/lib/service-env-payload";
-import { serviceEnvApplyTrigger } from "@/lib/service-env-apply";
 import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import {
@@ -247,12 +246,14 @@ export function ServiceDetailPanel({
   // ── Env tab state (editable; the panel used to show env read-only) ────
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => envRowsFromRecord(service.environment));
   const [envSaving, setEnvSaving] = useState(false);
-  const [envPendingApply, setEnvPendingApply] = useState(false);
+  // Which service has a saved-but-unapplied env offer, keyed by id — NOT a
+  // boolean derived from env identity. `service.environment` gets a fresh
+  // object on every refetch (the context replaces services wholesale), so any
+  // effect keyed on it would wipe the offer before it ever rendered (#669).
+  const [pendingApplyFor, setPendingApplyFor] = useState<string | null>(null);
   const [envApplying, setEnvApplying] = useState(false);
   useEffect(() => {
     setEnvRows(envRowsFromRecord(service.environment));
-    // A saved-but-unapplied offer belongs to the service it was saved on.
-    setEnvPendingApply(false);
   }, [service.id, service.environment]);
   const envDirty = useMemo(
     () => JSON.stringify(envRecordFromRows(envRows)) !== JSON.stringify(service.environment ?? {}),
@@ -268,7 +269,9 @@ export function ServiceDetailPanel({
       });
       if (!result.success) throw new Error(t.projectDetail.services.detail.toast.envSaveFailed);
       await onRefresh();
-      if (activeDeploymentId) setEnvPendingApply(true);
+      // Offer the restart-only apply only when there's a live deployment to
+      // refresh; keyed by service id so refetches can't wipe it.
+      if (activeDeploymentId) setPendingApplyFor(service.id);
       showToast(t.projectDetail.services.detail.toast.envUpdated, "success", service.name);
     } catch (err) {
       showToast(err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed, "error");
@@ -277,22 +280,28 @@ export function ServiceDetailPanel({
     }
   };
 
+  // Same shape as handleRedeployService below: enabled guard up front, and the
+  // spinner deliberately stays set through router.push on success — resetting
+  // it in a finally would flicker the button back to Save mid-navigation.
   const handleApplyEnv = async () => {
+    if (!service.enabled) {
+      showToast(t.projectDetail.services.detail.toast.enableBeforeApply, "error", service.name);
+      return;
+    }
     setEnvApplying(true);
     try {
-      const res = await deployApi.trigger(serviceEnvApplyTrigger({ projectId, serviceId: service.id }));
+      const res = await deployApi.trigger({ projectId, refresh: true, serviceIds: [service.id] });
       if ((res as any)?.success === false) {
         setEnvApplying(false);
-        showToast((res as any)?.error || t.projectSettings.envVars.toast.applyFailed, "error", t.projectSettings.envVars.toast.applyFailedTitle);
+        showToast((res as any)?.error || t.projectDetail.services.detail.toast.envApplyFailed, "error", service.name);
         return;
       }
-      setEnvPendingApply(false);
+      setPendingApplyFor(null);
       const newId = res?.data?.deployment?.id;
       router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
     } catch (err) {
-      showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.applyFailed), "error", t.projectSettings.envVars.toast.applyFailedTitle);
-    } finally {
       setEnvApplying(false);
+      showToast(getApiErrorMessage(err, t.projectDetail.services.detail.toast.envApplyFailed), "error", service.name);
     }
   };
 
@@ -815,14 +824,14 @@ export function ServiceDetailPanel({
             />
           </div>
           <div className="flex justify-end">
-            {envPendingApply && !envDirty ? (
+            {pendingApplyFor === service.id && !envDirty ? (
               <button
                 onClick={handleApplyEnv}
                 disabled={envApplying}
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {envApplying ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
-                {t.projectSettings.envVars.applyButton}
+                {t.projectDetail.services.detail.applyEnvironment}
               </button>
             ) : (
               <button
