@@ -17,6 +17,7 @@ import {
 import { deployApi } from "@/lib/api/deploy";
 import { formatBytes } from "@/lib/formatBytes";
 import { serviceEnvPatch } from "@/lib/service-env-payload";
+import { serviceEnvApplyTrigger } from "@/lib/service-env-apply";
 import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import {
@@ -246,8 +247,12 @@ export function ServiceDetailPanel({
   // ── Env tab state (editable; the panel used to show env read-only) ────
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => envRowsFromRecord(service.environment));
   const [envSaving, setEnvSaving] = useState(false);
+  const [envPendingApply, setEnvPendingApply] = useState(false);
+  const [envApplying, setEnvApplying] = useState(false);
   useEffect(() => {
     setEnvRows(envRowsFromRecord(service.environment));
+    // A saved-but-unapplied offer belongs to the service it was saved on.
+    setEnvPendingApply(false);
   }, [service.id, service.environment]);
   const envDirty = useMemo(
     () => JSON.stringify(envRecordFromRows(envRows)) !== JSON.stringify(service.environment ?? {}),
@@ -263,11 +268,31 @@ export function ServiceDetailPanel({
       });
       if (!result.success) throw new Error(t.projectDetail.services.detail.toast.envSaveFailed);
       await onRefresh();
+      if (activeDeploymentId) setEnvPendingApply(true);
       showToast(t.projectDetail.services.detail.toast.envUpdated, "success", service.name);
     } catch (err) {
       showToast(err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed, "error");
     } finally {
       setEnvSaving(false);
+    }
+  };
+
+  const handleApplyEnv = async () => {
+    setEnvApplying(true);
+    try {
+      const res = await deployApi.trigger(serviceEnvApplyTrigger({ projectId, serviceId: service.id }));
+      if ((res as any)?.success === false) {
+        setEnvApplying(false);
+        showToast((res as any)?.error || t.projectSettings.envVars.toast.applyFailed, "error", t.projectSettings.envVars.toast.applyFailedTitle);
+        return;
+      }
+      setEnvPendingApply(false);
+      const newId = res?.data?.deployment?.id;
+      router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
+    } catch (err) {
+      showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.applyFailed), "error", t.projectSettings.envVars.toast.applyFailedTitle);
+    } finally {
+      setEnvApplying(false);
     }
   };
 
@@ -790,14 +815,25 @@ export function ServiceDetailPanel({
             />
           </div>
           <div className="flex justify-end">
-            <button
-              onClick={handleSaveEnv}
-              disabled={envSaving || !envDirty}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {envSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {t.projectDetail.services.detail.saveEnvironment}
-            </button>
+            {envPendingApply && !envDirty ? (
+              <button
+                onClick={handleApplyEnv}
+                disabled={envApplying}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {envApplying ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
+                {t.projectSettings.envVars.applyButton}
+              </button>
+            ) : (
+              <button
+                onClick={handleSaveEnv}
+                disabled={envSaving || !envDirty}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {envSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {t.projectDetail.services.detail.saveEnvironment}
+              </button>
+            )}
           </div>
         </div>
       )}
