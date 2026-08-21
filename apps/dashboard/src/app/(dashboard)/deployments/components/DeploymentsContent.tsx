@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Rocket, Activity, CheckCircle2, XCircle, Loader2, Zap, ArrowRight } from "lucide-react";
 import { deployApi, projectsApi } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -15,6 +16,40 @@ import {
   sortDeploymentsByDate,
   mapRowToDeployment,
 } from "../utils";
+
+type StatusFilter =
+  | "all"
+  | "success"
+  | "failed"
+  | "building"
+  | "pending"
+  | "canceled";
+
+const STATUS_FILTERS: readonly StatusFilter[] = [
+  "all",
+  "success",
+  "failed",
+  "building",
+  "pending",
+  "canceled",
+];
+
+/** Query keys the standalone /deployments view keeps its filters in. */
+const P_STATUS = "status";
+const P_PROJECT = "project";
+const P_QUERY = "q";
+
+/** Only accept a status the filter actually has, so a hand-edited URL can't wedge
+ *  the list on a value `filterDeployments` will never match. */
+function readStatus(raw: string | null): StatusFilter {
+  return STATUS_FILTERS.includes(raw as StatusFilter) ? (raw as StatusFilter) : "all";
+}
+
+/** Keep the URL clean: a filter at its default is absent, not `?status=all`. */
+function setOrDelete(params: URLSearchParams, key: string, value: string, dflt: string) {
+  if (value === dflt) params.delete(key);
+  else params.set(key, value);
+}
 
 interface DeploymentsContentProps {
   /** When set, scope to this project and hide the project selector */
@@ -35,15 +70,54 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
 }) => {
   const { t } = useI18n();
   const isProject = !!projectId;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  /**
+   * Filters are mirrored into the URL on the standalone /deployments view, so
+   * opening a deployment and pressing Back returns to the list you were looking at.
+   * They used to be component state only: Back remounts this component, every
+   * filter reset to "all", and a filtered-down list silently became the full one.
+   *
+   * Scoped to the standalone view on purpose. Embedded in a project (`isProject`)
+   * the list is already one project's, the project selector is hidden, and that
+   * page owns its own URL — it rewrites it to `/projects/:id/:tab` after reading
+   * its params, which would strip anything written here and fight the sync below.
+   *
+   * Read once per mount: a Back navigation IS a fresh mount, which is exactly when
+   * the URL should seed the state.
+   */
+  const urlFilters = !isProject;
 
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<
-    "all" | "success" | "failed" | "building" | "pending" | "canceled"
-  >("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState<string | "all">("all");
+  const [filter, setFilter] = useState<StatusFilter>(() =>
+    urlFilters ? readStatus(searchParams.get(P_STATUS)) : "all",
+  );
+  const [searchQuery, setSearchQuery] = useState(() =>
+    urlFilters ? (searchParams.get(P_QUERY) ?? "") : "",
+  );
+  const [selectedProjectId, setSelectedProjectId] = useState<string | "all">(() =>
+    urlFilters ? (searchParams.get(P_PROJECT) ?? "all") : "all",
+  );
+
+  // Write the current filters back to the URL. `replace`, not `push`, so filtering
+  // never builds up history entries the Back button has to chew through — and
+  // `scroll: false` so re-filtering doesn't jump the list to the top. Bails when the
+  // query string is already correct, which is the mount case: no redundant
+  // navigation, and no loop with the effect's own dependency on searchParams.
+  useEffect(() => {
+    if (!urlFilters) return;
+    const next = new URLSearchParams(Array.from(searchParams.entries()));
+    setOrDelete(next, P_STATUS, filter, "all");
+    setOrDelete(next, P_QUERY, searchQuery, "");
+    setOrDelete(next, P_PROJECT, selectedProjectId, "all");
+    const qs = next.toString();
+    if (qs === searchParams.toString()) return;
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [urlFilters, filter, searchQuery, selectedProjectId, searchParams, pathname, router]);
 
   const fetchDeployments = useCallback(async () => {
     setIsLoading(true);
