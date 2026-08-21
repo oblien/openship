@@ -63,9 +63,26 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
       setLoading(true);
       setLoadError(null);
       const res = await systemApi.getRateLimit(serverId);
-      setCurrentConfig(res.config);
-      syncDraftFromConfig(res.config);
-      setIsEditing(res.config.rps === 0);
+      // Validate the shape before it reaches state. A 2xx whose body isn't the
+      // config we asked for (a proxy answering for the API, a version skew) used
+      // to be stored as-is; the derived reads below then threw DURING RENDER, and
+      // this card is mounted by the server page — so one malformed response took
+      // the whole page to the error boundary and, with it, the only "Remove
+      // server" action there is. A bad payload is a load error, not a crash.
+      const config = res?.config;
+      if (
+        !config ||
+        typeof config.rps !== "number" ||
+        typeof config.burst !== "number" ||
+        !Array.isArray(config.whitelist)
+      ) {
+        setCurrentConfig(null);
+        setLoadError(t.servers.security.failedReadConfig);
+        return;
+      }
+      setCurrentConfig(config);
+      syncDraftFromConfig(config);
+      setIsEditing(config.rps === 0);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : t.servers.security.failedReadConfig);
     } finally {
@@ -77,10 +94,13 @@ export function RateLimitSettings({ serverId }: { serverId: string }) {
     void fetchConfig();
   }, [fetchConfig]);
 
-  const hasExistingLimit = currentConfig !== null && currentConfig.rps > 0;
+  // `!= null`, not `!== null`: these run on every render, BEFORE the
+  // `!currentConfig` bail-out below, so a nullish config has to read as absent
+  // here or the property access throws mid-render and the page dies.
+  const hasExistingLimit = currentConfig != null && currentConfig.rps > 0;
   const effectiveBurst = useAutomaticBurst ? getAutoBurst(draftRps) : draftBurst;
 
-  const hasChanges = currentConfig !== null && (
+  const hasChanges = currentConfig != null && (
     draftRps !== currentConfig.rps ||
     effectiveBurst !== currentConfig.burst ||
     !arraysEqual(draftWhitelist, currentConfig.whitelist)

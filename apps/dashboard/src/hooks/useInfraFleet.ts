@@ -50,6 +50,19 @@ const sameKeys = (a: Set<string>, b: Set<string>): boolean =>
  * `enabled` is the self-hosted/desktop gate: on cloud these endpoints are
  * `assertNotCloud`, so we never call them.
  */
+/**
+ * Coerce a container-groups response to an array.
+ *
+ * `?? []` is not enough: it admits any non-null value, and a 2xx body that isn't
+ * the array we asked for (a proxy answering for the API, a version skew) then
+ * reached `.some(...)` DURING RENDER — which throws, and this hook is called by
+ * the servers LIST page, so a single odd payload took the whole fleet view to the
+ * error boundary and left no route to any server.
+ */
+function asGroups(value: unknown): ServerContainerGroup[] {
+  return Array.isArray(value) ? (value as ServerContainerGroup[]) : [];
+}
+
 export function useInfraFleet(enabled: boolean) {
   const [groups, setGroups] = useState<ServerContainerGroup[] | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -77,7 +90,7 @@ export function useInfraFleet(enabled: boolean) {
   const load = useCallback(async (): Promise<ServerContainerGroup[]> => {
     if (!enabled) return [];
     try {
-      const fresh = await systemApi.listAllContainers();
+      const fresh = asGroups(await systemApi.listAllContainers());
       if (alive.current) setGroups(fresh);
       return fresh;
     } catch {
@@ -90,7 +103,7 @@ export function useInfraFleet(enabled: boolean) {
     if (!enabled) return;
     setScanning(true);
     try {
-      setGroups(await systemApi.scanAllContainers());
+      setGroups(asGroups(await systemApi.scanAllContainers()));
       markInfraScanned();
     } catch {
       // Best-effort: one unreachable box shouldn't wipe the cached view.
@@ -117,7 +130,7 @@ export function useInfraFleet(enabled: boolean) {
       setScanning(true);
       try {
         const fresh = await systemApi.scanAllContainers();
-        if (!cancelled) setGroups(fresh);
+        if (!cancelled) setGroups(asGroups(fresh));
       } catch {
         /* cached view stays */
       } finally {
