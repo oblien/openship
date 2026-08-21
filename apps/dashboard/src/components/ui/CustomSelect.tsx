@@ -161,7 +161,7 @@ export function CustomSelect<T extends string>({
         <div
           ref={menuRef}
           role="listbox"
-          className="fixed z-[10050] overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
+          className="fixed z-[10050] flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
           style={{
             left: menuPosition.left,
             width: menuPosition.width,
@@ -171,7 +171,7 @@ export function CustomSelect<T extends string>({
               : { bottom: menuPosition.bottom }),
           }}
         >
-          <div className="max-h-full overflow-y-auto py-1.5">
+          <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
             {options.map((option) => {
               const isSelected = option.value === value;
               return (

@@ -51,7 +51,7 @@ export const ProjectFilter: React.FC<ProjectFilterProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full start-0 z-50 mt-2 max-h-96 w-72 overflow-y-auto rounded-xl border border-border/50 bg-popover overflow-hidden">
+        <div className="absolute top-full start-0 z-50 mt-2 max-h-96 w-72 overflow-y-auto rounded-xl border border-border/50 bg-popover">
           {/* All Projects Option */}
           <button
             onClick={() => {
