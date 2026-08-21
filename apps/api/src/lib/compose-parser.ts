@@ -112,8 +112,22 @@ export interface ComposeEnvironmentMeta {
   defaultValue?: string;
   resolvedValue: string;
   expression?: string;
-  /** The file declares this one mandatory (`:?` / `?`). Only set when it also
-   *  came back unresolved, i.e. alongside `source: "missing"`. */
+  /**
+   * Variables an EMBEDDED expression (`source: "interpolated"`) referenced that
+   * resolved to nothing — a `${VAR}` with no value, or an unsatisfied
+   * `${VAR:?msg}`. NAMES ONLY, never values.
+   *
+   * A whole-value expression names its single variable in `variable`. An
+   * embedded one has no single variable to name, and before this it named none
+   * at all — so `postgres://user:${PASS}@db`, which resolves to the non-empty
+   * `postgres://user:@db`, was indistinguishable from a literal the author
+   * typed (#673).
+   */
+  unresolvedVariables?: string[];
+  /** The file declares this one mandatory (`:?` / `?`) and nothing satisfied it.
+   *  Alongside `source: "missing"` for a whole-value expression, or
+   *  `source: "interpolated"` when the mandatory variable sits inside a larger
+   *  string. */
   required?: boolean;
 }
 
@@ -834,6 +848,16 @@ function findClosingQuote(value: string, quote: '"' | "'"): number {
 const BARE_VARIABLE_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 
 /**
+ * Reports a referenced variable that contributed nothing to the result.
+ * `required` marks the mandatory operators (`:?` / `?`).
+ *
+ * Only genuine non-resolutions are reported. A `${VAR:-fallback}` that used its
+ * default HAS resolved, and a `${VAR:+alt}` that yielded "" resolved exactly as
+ * the author asked — neither is a hole the caller needs to know about.
+ */
+type UnresolvedSink = (variable: string, required: boolean) => void;
+
+/**
  * Reads the `${...}` expression opening at `start`, counting nested `${` so the
  * matching close brace is found. Returns null when the expression is never closed.
  */
@@ -853,7 +877,11 @@ function readBracedExpression(
   return null;
 }
 
-function interpolateComposeString(input: string, env: Record<string, string>): string {
+function interpolateComposeString(
+  input: string,
+  env: Record<string, string>,
+  onUnresolved?: UnresolvedSink,
+): string {
   const escapedDollar = "\0COMPOSE_ESCAPED_DOLLAR\0";
   const protectedInput = input.replace(/\$\$/g, escapedDollar);
 
@@ -868,15 +896,17 @@ function interpolateComposeString(input: string, env: Record<string, string>): s
     if (protectedInput[dollar + 1] === "{") {
       const braced = readBracedExpression(protectedInput, dollar);
       if (braced && braced.expression) {
-        out += resolveInterpolationExpression(braced.expression, env).value;
+        out += resolveInterpolationExpression(braced.expression, env, onUnresolved).value;
         cursor = braced.end;
         continue;
       }
     } else {
       const bare = protectedInput.slice(dollar + 1).match(BARE_VARIABLE_RE);
       if (bare) {
-        out += env[bare[0]] ?? "";
-        cursor = dollar + 1 + bare[0].length;
+        const key = bare[0];
+        if (!Object.prototype.hasOwnProperty.call(env, key)) onUnresolved?.(key, false);
+        out += env[key] ?? "";
+        cursor = dollar + 1 + key.length;
         continue;
       }
     }
@@ -923,7 +953,13 @@ function resolveComposeValue(
     };
   }
 
-  const value = interpolateComposeString(input, env);
+  // An embedded expression has no single variable to name, so collect the holes
+  // instead: without them a half-interpolated value is just a string, and every
+  // consumer downstream reads it as one the author typed (#673).
+  const unresolved = new Map<string, boolean>();
+  const value = interpolateComposeString(input, env, (variable, required) => {
+    unresolved.set(variable, (unresolved.get(variable) ?? false) || required);
+  });
   if (!input.includes("$")) return { value };
 
   return {
@@ -932,6 +968,8 @@ function resolveComposeValue(
       source: "interpolated",
       resolvedValue: value,
       expression: input,
+      ...(unresolved.size > 0 && { unresolvedVariables: [...unresolved.keys()] }),
+      ...([...unresolved.values()].some(Boolean) && { required: true }),
     },
   };
 }
@@ -956,6 +994,7 @@ function resolveBareEnvironmentKey(
 function resolveInterpolationExpression(
   expression: string,
   env: Record<string, string>,
+  onUnresolved?: UnresolvedSink,
 ): {
   value: string;
   source: ComposeEnvironmentMeta["source"];
@@ -970,10 +1009,11 @@ function resolveInterpolationExpression(
   const hasValue = Object.prototype.hasOwnProperty.call(env, key);
   const value = env[key] ?? "";
   const isNonEmpty = hasValue && value !== "";
-  const word = () => interpolateComposeString(rawWord, env);
+  const word = () => interpolateComposeString(rawWord, env, onUnresolved);
 
   switch (operator) {
     case undefined:
+      if (!hasValue) onUnresolved?.(key, false);
       return { value: hasValue ? value : "", source: hasValue ? "env-file" : "missing", variable: key };
     case ":-":
       if (isNonEmpty) return { value, source: "env-file", variable: key };
@@ -989,9 +1029,11 @@ function resolveInterpolationExpression(
       }
     case ":?":
       if (isNonEmpty) return { value, source: "env-file", variable: key };
+      onUnresolved?.(key, true);
       return reportMissingRequired(key, rawWord, env);
     case "?":
       if (hasValue) return { value, source: "env-file", variable: key };
+      onUnresolved?.(key, true);
       return reportMissingRequired(key, rawWord, env);
     case ":+":
       if (!isNonEmpty) return { value: "", source: "missing", variable: key };

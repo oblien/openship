@@ -89,6 +89,7 @@ vi.mock("../../../src/modules/deployments/smart-route", () => ({
 import {
   requestBuildAccess,
   resolveSnapshotTarget,
+  keepUnresolvedEnv,
   triggerDeployment,
   type DeploymentConfigSnapshot,
 } from "../../../src/modules/deployments/build.service";
@@ -607,5 +608,78 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     await expect(
       requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId }),
     ).rejects.toThrow(/Upload session not found/);
+  });
+});
+
+/**
+ * Issue #673: `keepUnresolvedEnv` protects a value the user typed in the wizard
+ * from being overwritten by a push-deploy re-parse that could not resolve the
+ * variable behind it — the repo's `.env` holds the secret and is not committed.
+ *
+ * It recognised the whole-value spelling only. An EMBEDDED variable resolves to
+ * a non-empty string with a hole in it, so neither of the old guards
+ * (`value === ""`, `source === "missing"`) fired and the working URL was wiped.
+ */
+describe("keepUnresolvedEnv - embedded compose variables (#673)", () => {
+  const stored = [
+    {
+      name: "api",
+      environment: {
+        DATABASE_URL: "postgresql://username:s3cret@postgres:5432",
+        DB_PASSWORD: "s3cret",
+      },
+    },
+  ];
+
+  it("keeps the stored value when an embedded variable did not resolve", () => {
+    const [svc] = keepUnresolvedEnv(
+      [
+        {
+          name: "api",
+          environment: { DATABASE_URL: "postgresql://username:@postgres:5432" },
+          environmentMeta: {
+            DATABASE_URL: {
+              source: "interpolated",
+              unresolvedVariables: ["POSTGRES_PASSWORD"],
+            },
+          },
+        },
+      ],
+      stored,
+    );
+
+    expect(svc?.environment.DATABASE_URL).toBe("postgresql://username:s3cret@postgres:5432");
+  });
+
+  it("still keeps the stored value for a whole-value variable", () => {
+    const [svc] = keepUnresolvedEnv(
+      [
+        {
+          name: "api",
+          environment: { DB_PASSWORD: "" },
+          environmentMeta: { DB_PASSWORD: { source: "missing" } },
+        },
+      ],
+      stored,
+    );
+
+    expect(svc?.environment.DB_PASSWORD).toBe("s3cret");
+  });
+
+  it("lets a real upstream edit through - a resolved value is not a hole", () => {
+    const [svc] = keepUnresolvedEnv(
+      [
+        {
+          name: "api",
+          environment: { DATABASE_URL: "postgresql://username:s3cret@postgres:6543" },
+          environmentMeta: {
+            DATABASE_URL: { source: "interpolated" },
+          },
+        },
+      ],
+      stored,
+    );
+
+    expect(svc?.environment.DATABASE_URL).toBe("postgresql://username:s3cret@postgres:6543");
   });
 });
