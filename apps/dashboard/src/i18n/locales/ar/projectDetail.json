@@ -138,6 +138,7 @@
 			"tabs": {
 				"overview": "نظرة عامة",
 				"terminal": "الطرفية",
+				"files": "الملفات",
 				"logs": "السجلات",
 				"env": "البيئة",
 				"settings": "الإعدادات",
@@ -209,7 +210,20 @@
 				"backupRunFailed": "فشلت عملية النسخ الاحتياطي"
 			},
 			"duplicateContainers": "توجد حاوية أخرى مطابقة لهذه الخدمة: {names}",
-			"editInSettings": "تعديل في الإعدادات"
+			"editInSettings": "تعديل في الإعدادات",
+			"files": {
+				"loading": "جارٍ التحميل…",
+				"empty": "هذا المجلد فارغ",
+				"selectPrompt": "اختر ملفًا لمعاينته",
+				"download": "تنزيل",
+				"binary": "ملف ثنائي ({size}) — نزّله لعرضه",
+				"loadFailed": "تعذّر فتح هذا المجلد",
+				"readFailed": "تعذّر فتح هذا الملف",
+				"refresh": "تحديث",
+				"back": "رجوع",
+				"downloadFailed": "فشل التنزيل",
+				"truncated": "يتم عرض أول {limit} عنصرًا — يحتوي هذا المجلد على المزيد."
+			}
 		},
 		"settingsForm": {
 			"name": "الاسم",

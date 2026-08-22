@@ -555,6 +555,18 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Service files (read-only browsing inside a container)           */
+  /* ---------------------------------------------------------------- */
+  serviceFiles: {
+    list: (serviceId: string, path: string) =>
+      `services/files/${serviceId}/list?path=${encodeURIComponent(path)}`,
+    read: (serviceId: string, path: string) =>
+      `services/files/${serviceId}/read?path=${encodeURIComponent(path)}`,
+    download: (serviceId: string, path: string) =>
+      `services/files/${serviceId}/download?path=${encodeURIComponent(path)}`,
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Backup destinations (per-user)                                  */
   /* ---------------------------------------------------------------- */
   backupDestinations: {
