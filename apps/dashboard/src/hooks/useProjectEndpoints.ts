@@ -188,9 +188,7 @@ interface AsyncState<T> {
  * Invalidation: call `invalidateProjectCaches(id)` after a mutation that
  * could change the underlying data (e.g. after a domain save).
  */
-type CacheEntry<T> =
-  | { kind: "loading"; promise: Promise<T> }
-  | { kind: "ready"; data: T };
+type CacheEntry<T> = { kind: "loading"; promise: Promise<T> } | { kind: "ready"; data: T };
 
 const infoCache = new Map<string, CacheEntry<ProjectInfoData>>();
 const overviewCache = new Map<string, CacheEntry<AnalyticsOverviewResponse>>();
@@ -400,6 +398,9 @@ async function fetchProjectInfo(id: string): Promise<ProjectInfoData> {
 // first domain's cached numbers; `fetchOverview` splits it back apart.
 const OVERVIEW_KEY_SEP = "::";
 
+/** Analytics overview aggregates traffic server-side; high-traffic projects can exceed the 15s default. */
+const ANALYTICS_OVERVIEW_TIMEOUT_MS = 60_000;
+
 function overviewCacheKey(id: string, domain?: string | null): string {
   return domain ? `${id}${OVERVIEW_KEY_SEP}${domain}` : id;
 }
@@ -408,10 +409,14 @@ async function fetchOverview(key: string): Promise<AnalyticsOverviewResponse> {
   const sepIndex = key.indexOf(OVERVIEW_KEY_SEP);
   const projectId = sepIndex === -1 ? key : key.slice(0, sepIndex);
   const domain = sepIndex === -1 ? undefined : key.slice(sepIndex + OVERVIEW_KEY_SEP.length);
-  const response = await api.get<{ data: AnalyticsOverviewResponse; success?: boolean; error?: string }>(
-    endpoints.analytics.overview,
-    { params: { projectId, ...(domain ? { domain } : {}) } },
-  );
+  const response = await api.get<{
+    data: AnalyticsOverviewResponse;
+    success?: boolean;
+    error?: string;
+  }>(endpoints.analytics.overview, {
+    params: { projectId, ...(domain ? { domain } : {}) },
+    timeout: ANALYTICS_OVERVIEW_TIMEOUT_MS,
+  });
   if (response.success === false || !response.data) {
     throw new Error(response.error || "Failed to load analytics");
   }

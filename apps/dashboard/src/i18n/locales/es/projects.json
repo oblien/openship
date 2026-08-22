@@ -236,6 +236,9 @@
     "waitingRequests": "Esperando solicitudes",
     "noTransfer": "Aún no hay transferencia"
   },
+  "analytics": {
+    "loadFailed": "No se pudieron cargar las analíticas de tráfico"
+  },
   "monitoring": {
     "noDataTitle": "Aún no hay datos de monitoreo",
     "noDataDescription": "Las analíticas aparecerán aquí una vez que la aplicación desplegada comience a recibir tráfico.",
