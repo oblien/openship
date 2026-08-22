@@ -15,7 +15,11 @@ import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { projectsApi, servicesApi, type Service } from "@/lib/api";
-import { PROJECT_INFO_NOT_FOUND, useProjectInfo } from "@/hooks/useProjectEndpoints";
+import {
+  invalidateProjectCaches,
+  PROJECT_INFO_NOT_FOUND,
+  useProjectInfo,
+} from "@/hooks/useProjectEndpoints";
 import type { ActiveMigration } from "@/utils/project-status";
 import { dedupeServerLogs } from "./server-log-dedup";
 import { beginServicesFetch, failServicesFetch } from "./services-fetch-state";
@@ -809,10 +813,21 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       if (!response.success || !response.data) {
         throw new Error(response.error || "Failed to create environment");
       }
+      // #657: the mutation changed the environments list — which is bundled
+      // into EVERY environment's /info payload. Drop those caches NOW or the
+      // next projectInfo emit re-runs the effect above and writes the stale
+      // bundle back over refreshEnvironments' fresh patch, and the new
+      // environment vanishes until a hard reload. Self first, then the known
+      // siblings whose cached bundles are missing the new entry.
+      invalidateProjectCaches(id);
+      for (const env of environments) {
+        const eid = String(env?.id ?? "");
+        if (eid && eid !== String(id)) invalidateProjectCaches(eid);
+      }
       await refreshEnvironments();
       return response.data as ProjectEnvironment;
     },
-    [id, refreshEnvironments],
+    [id, refreshEnvironments, environments],
   );
 
   // Terminal Logs Management
