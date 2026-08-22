@@ -324,3 +324,150 @@ describe("image drift — digests keyed by the ref they were polled for", () => 
     expect(status).toEqual({ supported: false });
   });
 });
+
+/**
+ * Monorepo scoping (#637): a branch HEAD that moved without touching this
+ * project's rootDirectory must not offer a redeploy. The upstream half is
+ * polled; the comparison is `git diff deployedSha..latestSha`, and ANY file
+ * inside the project's rootDirectory (or a configured shared-path) still
+ * counts as drift — only a diff that DOES NOT touch this project is hidden.
+ *
+ * The compare call is the only place a new network round-trip is required,
+ * so every test in this block mocks {@link compareCommits} directly.
+ */
+const compareCommits = vi.hoisted(() => vi.fn());
+
+vi.mock("../../../src/modules/github/github.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/modules/github/github.service")>();
+  return {
+    ...actual,
+    compareCommits,
+  };
+});
+
+const ctx = { userId: "u_1", organizationId: "org_1", label: "test" } as never;
+
+describe("commit drift — monorepo root scoping (#637)", () => {
+  beforeEach(() => {
+    compareCommits.mockReset();
+  });
+
+  it("hides a diff that is confined to a sibling directory", async () => {
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({ files: ["apps/client/src/ui.tsx"] });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: false });
+    expect(compareCommits).toHaveBeenCalledWith(ctx, "oblien", "openship", SHIPPED, NEWER);
+  });
+
+  it("keeps reporting drift when a file inside the project root changed", async () => {
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({ files: ["apps/backend/src/api.ts"] });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: true });
+  });
+
+  it("does not false-positive on a similarly-prefixed sibling directory", async () => {
+    // apps/backend-utils/* must NOT match rootDirectory "apps/backend".
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({ files: ["apps/backend-utils/turbo.json"] });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: false });
+  });
+
+  it("flags a repo-root config change as affecting every project", async () => {
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({ files: ["package.json"] });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: true });
+  });
+
+  it("flags a configured monorepo-shared-path change as affecting every project", async () => {
+    const p = gitProject({
+      rootDirectory: "apps/backend",
+      framework: "monorepo",
+      monorepoSharedPaths: ["packages/"],
+    });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({ files: ["packages/ui/button.tsx"] });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: true });
+  });
+
+  it("is a no-op for a project with no scoping root", async () => {
+    // Single-app repo: any change IS drift. The compare call must not even be
+    // made — there's nothing to scope.
+    const p = gitProject({ rootDirectory: null });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: true });
+    expect(compareCommits).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when caller has no context (background sweep can't reach GitHub)", async () => {
+    // The badge must not be hidden because the network has dropped out: a
+    // background sweep that can't poll a compare keeps "behind" as the
+    // upstream half said it. (Conservative: better over-report than miss a
+    // real update.)
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), null);
+
+    expect(status).toMatchObject({ behind: true });
+    expect(compareCommits).not.toHaveBeenCalled();
+  });
+
+  it("treats a truncated compare (>= 300 files) as still behind the headline", async () => {
+    // GitHub's compare API caps the file list at 300. Above that we can't
+    // actually see whether the diff touched the project root, so we keep
+    // "behind" — the badge must never miss a real update.
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    const files = Array.from({ length: 300 }, (_, i) => `apps/other/file-${i}.ts`);
+    compareCommits.mockResolvedValue({ files });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: true });
+  });
+
+  it("treats a compare failure (network error / rate limit) as still behind", async () => {
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue(null);
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: true });
+  });
+
+  it("treats a compare returning an empty file list as not behind", async () => {
+    // 0 files between two SHAs that differ is the "shouldn't happen, but
+    // fail-soft" case — the upstream disagree is unbewebbable, so the
+    // conservative thing is to leave the badge alone.
+    const p = gitProject({ rootDirectory: "apps/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({ files: [] });
+
+    const status = await evaluateDrift(p, commitUpstream(p, NEWER), ctx);
+
+    expect(status).toMatchObject({ behind: false });
+  });
+});
