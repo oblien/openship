@@ -732,6 +732,78 @@ services:
     expect(parsed.missingRequired.map((m) => m.variable)).toEqual(["DB_PASSWORD", "API_KEY"]);
   });
 
+  // #673: the same operator EMBEDDED in a larger string. It resolves to a
+  // non-empty value with a hole in it (`postgresql://username:@postgres:5432`),
+  // which used to be indistinguishable from a literal the author typed — the
+  // meta said only `source: "interpolated"` and named no variable at all.
+  it("names the unresolved variable when the expression is embedded in a string", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    image: api:latest
+    environment:
+      DATABASE_URL: postgresql://username:\${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432
+`);
+    expect(parsed.services[0]?.environment.DATABASE_URL).toBe(
+      "postgresql://username:@postgres:5432",
+    );
+    expect(parsed.services[0]?.environmentMeta?.DATABASE_URL).toMatchObject({
+      source: "interpolated",
+      unresolvedVariables: ["POSTGRES_PASSWORD"],
+      required: true,
+    });
+    expect(parsed.missingRequired).toEqual([
+      { variable: "POSTGRES_PASSWORD", message: "set POSTGRES_PASSWORD in .env" },
+    ]);
+  });
+
+  it("names an embedded variable that is merely unset, without marking it required", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    image: api:latest
+    environment:
+      DATABASE_URL: postgresql://username:\${POSTGRES_PASSWORD}@postgres:5432
+`);
+    expect(parsed.services[0]?.environmentMeta?.DATABASE_URL).toMatchObject({
+      source: "interpolated",
+      unresolvedVariables: ["POSTGRES_PASSWORD"],
+    });
+    expect(parsed.services[0]?.environmentMeta?.DATABASE_URL.required).toBeUndefined();
+  });
+
+  it("names nothing once the variable resolves", () => {
+    const parsed = parseComposeFile(
+      `
+services:
+  api:
+    image: api:latest
+    environment:
+      DATABASE_URL: postgresql://username:\${POSTGRES_PASSWORD:?required}@postgres:5432
+`,
+      { env: { POSTGRES_PASSWORD: "s3cret" } },
+    );
+    expect(parsed.services[0]?.environment.DATABASE_URL).toBe(
+      "postgresql://username:s3cret@postgres:5432",
+    );
+    expect(parsed.services[0]?.environmentMeta?.DATABASE_URL.unresolvedVariables).toBeUndefined();
+    expect(parsed.missingRequired).toEqual([]);
+  });
+
+  it("does not treat a satisfied default as unresolved", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    image: api:latest
+    environment:
+      DATABASE_URL: postgresql://username:\${PW:-fallback}@postgres:5432
+`);
+    expect(parsed.services[0]?.environment.DATABASE_URL).toBe(
+      "postgresql://username:fallback@postgres:5432",
+    );
+    expect(parsed.services[0]?.environmentMeta?.DATABASE_URL.unresolvedVariables).toBeUndefined();
+  });
+
   it("satisfies a required variable from the caller-supplied env (#383)", () => {
     const parsed = parseComposeFile(compose("NODE_VERSION:?required"), {
       env: { NODE_VERSION: "24" },

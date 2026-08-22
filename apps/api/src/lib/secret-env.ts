@@ -166,14 +166,19 @@ interface EnvMetaLike {
   resolvedValue?: string;
   expression?: string;
   required?: boolean;
+  unresolvedVariables?: string[];
 }
 
 /**
  * Mask a compose `environmentMeta` map. Keeps the structural fields (`source`,
- * `variable` — the variable NAME, not its value, and `required`) so the scan UI
- * can still show where a value resolved from, but strips every value-bearing
- * field (`resolvedValue`, `defaultValue`, `expression` — a `${VAR:-secret}`
- * default embeds the value) so a secret can't leak through the metadata.
+ * `variable` and `unresolvedVariables` — variable NAMES, not their values, and
+ * `required`) so the scan UI can still show where a value resolved from, but
+ * strips every value-bearing field (`resolvedValue`, `defaultValue`,
+ * `expression` — a `${VAR:-secret}` default embeds the value) so a secret can't
+ * leak through the metadata.
+ *
+ * This is an ALLOWLIST: a field added to `ComposeEnvironmentMeta` and not named
+ * here is dropped on the way out, so the client never sees it.
  */
 export function maskEnvironmentMeta(
   meta: Record<string, EnvMetaLike> | null | undefined,
@@ -185,6 +190,7 @@ export function maskEnvironmentMeta(
       ...(m.source !== undefined && { source: m.source }),
       ...(m.variable !== undefined && { variable: m.variable }),
       ...(m.required !== undefined && { required: m.required }),
+      ...(m.unresolvedVariables !== undefined && { unresolvedVariables: m.unresolvedVariables }),
       ...(m.resolvedValue !== undefined && { resolvedValue: maskValue(m.resolvedValue) }),
       ...(m.defaultValue !== undefined && { defaultValue: maskValue(m.defaultValue) }),
     };

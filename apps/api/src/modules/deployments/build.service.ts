@@ -598,6 +598,27 @@ async function reconcileComposeDrift(
   }
 }
 
+/** The `environmentMeta` fields {@link isUnresolvedParse} decides on. */
+type UnresolvedParseMeta = { source?: string; unresolvedVariables?: string[] };
+
+/**
+ * Whether a re-parsed value is a hole the repo's own files could not fill,
+ * rather than something the author actually wrote.
+ *
+ * Two shapes, because a compose variable can be the whole value or sit inside
+ * one:
+ *   - `DB_PASSWORD: ${DB_PASSWORD}` resolves to `""` — the emptiness is the tell.
+ *   - `DATABASE_URL: postgres://u:${DB_PASSWORD}@db` resolves to the NON-empty
+ *     `postgres://u:@db`, so emptiness says nothing and only the variables the
+ *     parser could not resolve do (#673). Before they were reported, this value
+ *     read as an ordinary upstream edit and overwrote the working URL the user
+ *     had typed in the wizard.
+ */
+function isUnresolvedParse(value: string, meta: UnresolvedParseMeta | undefined): boolean {
+  if (value === "" && meta?.source === "missing") return true;
+  return (meta?.unresolvedVariables?.length ?? 0) > 0;
+}
+
 /**
  * A re-parse of the repo's compose resolves `${DB_PASSWORD}` against the repo's
  * own `.env` — which for a secret is exactly the file that ISN'T committed, so it
@@ -610,11 +631,11 @@ async function reconcileComposeDrift(
  * the variable from the container instead), and a real upstream edit — a new key,
  * a changed literal, a different `${VAR:-default}` — still drifts normally.
  */
-function keepUnresolvedEnv<
+export function keepUnresolvedEnv<
   T extends {
     name: string;
     environment?: Record<string, string>;
-    environmentMeta?: Record<string, { source?: string }>;
+    environmentMeta?: Record<string, UnresolvedParseMeta>;
   },
 >(parsed: T[], stored: { name: string; environment?: unknown }[]): T[] {
   const storedByName = new Map(
@@ -627,7 +648,7 @@ function keepUnresolvedEnv<
     if (!storedEnv) return svc; // new upstream service — nothing to preserve
     let patched: Record<string, string> | undefined;
     for (const [key, value] of Object.entries(svc.environment)) {
-      if (value !== "" || meta[key]?.source !== "missing") continue;
+      if (!isUnresolvedParse(value, meta[key])) continue;
       const kept = storedEnv[key];
       if (!kept) continue;
       patched ??= { ...svc.environment };
