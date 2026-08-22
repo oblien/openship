@@ -146,7 +146,7 @@ export async function registerResolvedRoutes(
 
     const resolvedRouteTarget =
       domain.targetPort !== undefined
-        ? routeTargetsByPort?.get(domain.targetPort) ?? baseRouteTarget
+        ? (routeTargetsByPort?.get(domain.targetPort) ?? baseRouteTarget)
         : baseRouteTarget;
     const targetUrl = (resolvedRouteTarget as { targetUrl?: string }).targetUrl;
     const staticRoot = (resolvedRouteTarget as { staticRoot?: string }).staticRoot;
@@ -212,14 +212,27 @@ export async function registerResolvedRoutes(
     if (options?.trailingSlash !== undefined) routeConfig.trailingSlash = options.trailingSlash;
 
     // Add webhook proxy location if this domain is the project's webhook domain
-    if (options?.webhookDomain && domain.hostname === options.webhookDomain && options.webhookProxy) {
+    if (
+      options?.webhookDomain &&
+      domain.hostname === options.webhookDomain &&
+      options.webhookProxy
+    ) {
       routeConfig.webhookProxy = options.webhookProxy;
     }
 
     await routingProvider.registerRoute(routeConfig);
 
     if (domain.provisionSsl && ssl) {
-      logger.log(`Checking SSL for ${domain.hostname}...\n`);
+      // The 443 block is only emitted once the cert exists, so there is a
+      // ~1 minute window where the site answers HTTP and nothing (or a
+      // bootstrap self-signed cert) on HTTPS. Issuance is best-effort by
+      // design — domains never fail a deploy — which is why the *silence*
+      // was the bug: operators filed it as broken SSL. Say so in the deploy
+      // log at registration, then let the tracked provider log when the
+      // cert lands (or fails).
+      logger.log(
+        `Route live on HTTP for ${domain.hostname} — provisioning the certificate, HTTPS in ~1 min\n`,
+      );
       // SSL is best-effort. The HTTP route is already written to disk
       // and reachable on port 80, which is what serves the ACME HTTP-01
       // challenge — so even when certbot fails right now (rate limit,
