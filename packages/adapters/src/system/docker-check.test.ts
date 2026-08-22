@@ -6,7 +6,7 @@ import type { CommandExecutor } from "../types";
 
 /**
  * #408: an SSH-added server reported "Docker is installed but the daemon is not
- * running" while `docker info` worked from the Terminal tab on the same
+ * running" while `docker version` worked from the Terminal tab on the same
  * connection. The check had already READ the daemon's refusal off stderr and then
  * dropped it, so the report could only be a guess — hence a fix attempt (PR #422)
  * aimed at SSH quoting, which is not how ssh2's exec channel works.
@@ -32,7 +32,7 @@ const VERSION = ["docker --version", "Docker version 29.7.1, build abc1234"] as 
 
 describe("checkDocker", () => {
   it("reports healthy when the daemon names its version", async () => {
-    const status = await checkDocker(box([[...VERSION], ["docker info", "29.7.1"]]));
+    const status = await checkDocker(box([[...VERSION], ["docker version", "29.7.1"]]));
 
     expect(status.healthy).toBe(true);
     expect(status.running).toBe(true);
@@ -50,7 +50,7 @@ describe("checkDocker", () => {
       box([
         [...VERSION],
         [
-          "docker info",
+          "docker version",
           new Error(
             "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock",
           ),
@@ -73,15 +73,15 @@ describe("checkDocker", () => {
   });
 
   // The other live #408 candidate: `docker --version` is client-only and instant,
-  // `docker info` contacts the daemon and can outrun the 10s probe timeout. Same
+  // `docker version` contacts the daemon and can outrun the 10s probe timeout. Same
   // symptom, completely different fix — so the message has to distinguish them.
   it("surfaces a probe timeout rather than blaming the daemon", async () => {
     const status = await checkDocker(
       box([
         [...VERSION],
         [
-          "docker info",
-          new Error("Command timed out after 10000ms: docker info --format '{{.ServerVersion}}'"),
+          "docker version",
+          new Error("Command timed out after 10000ms: docker version --format '{{.Server.Version}}'"),
         ],
       ]),
     );
@@ -91,9 +91,9 @@ describe("checkDocker", () => {
   });
 
   // Exit 0 with no server version is NOT healthy. This is what an exit-status-only
-  // probe (`docker info >/dev/null && echo ok`) would misreport as running.
+  // probe (`docker version >/dev/null && echo ok`) would misreport as running.
   it("treats an exit-0 probe with no server version as not running", async () => {
-    const status = await checkDocker(box([[...VERSION], ["docker info", "   "]]));
+    const status = await checkDocker(box([[...VERSION], ["docker version", "   "]]));
 
     expect(status.healthy).toBe(false);
     expect(status.running).toBe(false);
@@ -116,7 +116,7 @@ describe("checkDocker", () => {
       box([
         [...VERSION],
         [
-          "docker info",
+          "docker version",
           new Error("Cannot connect to the Docker daemon\nIs the docker daemon running?"),
         ],
       ]),
@@ -136,6 +136,6 @@ describe("checkDocker", () => {
   it("probes for a server version, not just an exit code", () => {
     // Guards the false-positive direction: an exit-code-only probe reports healthy
     // for a daemon that answered nothing. See the comment on daemonCommand.
-    expect(systemCatalog.checks.docker.daemonCommand).toContain("ServerVersion");
+    expect(systemCatalog.checks.docker.daemonCommand).toMatch(/Server\.Version/);
   });
 });

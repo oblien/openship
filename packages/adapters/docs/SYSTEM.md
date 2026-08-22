@@ -32,7 +32,7 @@ Dashboard Setup Wizard
 SystemManager.setup(onLog, config)
     │
     │  Phase 1: CHECK - run health checks
-    │     checkDocker(executor)  → "docker --version" + "docker info"
+    │     checkDocker(executor)  → "docker --version" + "docker version --format '{{.Server.Version}}'"
     │     checkGit(executor)     → "git --version"
     │     checkNode(executor)    → "node -v"
     │     checkTraefik(executor) → "traefik version" + systemctl status
