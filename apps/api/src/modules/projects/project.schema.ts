@@ -322,6 +322,7 @@ const ReleaseSourceSchema = Type.Object({
   channel: Type.Optional(Type.String({ maxLength: 64 })),
   pinnedVersion: Type.Optional(Type.String({ maxLength: 64 })),
   trackReleases: Type.Optional(Type.Boolean()),
+  imageTemplate: Type.Optional(Type.String({ maxLength: 300 })),
 });
 
 export const CreateProjectBody = Type.Object({

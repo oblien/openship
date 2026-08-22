@@ -56,6 +56,12 @@ export interface ReleaseSource {
   pinnedVersion?: string;
   /** Opt into release-webhook auto-deploy. */
   trackReleases?: boolean;
+  /**
+   * Container image ref template for container release mode (mode="github" or "url").
+   * Placeholders: {version} (bare semver) or {tag} (raw release tag).
+   * e.g. "ghcr.io/orangecoding/fredy:{version}".
+   */
+  imageTemplate?: string;
 }
 
 /**
@@ -97,4 +103,38 @@ export function renderAssetName(
     );
   }
   return rendered;
+}
+
+const IMAGE_PLACEHOLDERS = ["tag", "version"] as const;
+
+/**
+ * Fill a container image template from a version (and optional raw release tag).
+ * If template has no placeholders, replaces the tag portion after the final colon.
+ */
+export function renderImageTemplate(
+  template: string,
+  opts: { version: string; tag?: string },
+): string {
+  const version = opts.version.trim();
+  const cleanVersion = version.replace(/^v/, "");
+  const rawTag = opts.tag ?? cleanVersion;
+  const stray = template.match(/\{[^{}]*\}/g)?.filter(
+    (p) => !IMAGE_PLACEHOLDERS.some((valid) => p === `{${valid}}`),
+  );
+  if (stray && stray.length > 0) {
+    throw new Error(
+      `Release image template ${JSON.stringify(template)} uses unknown placeholder(s) ` +
+        `${stray.join(", ")}. Supported: ${IMAGE_PLACEHOLDERS.map((p) => `{${p}}`).join(" ")}.`,
+    );
+  }
+
+  if (template.includes("{version}") || template.includes("{tag}")) {
+    return template.replaceAll("{version}", cleanVersion).replaceAll("{tag}", rawTag);
+  }
+  const lastColon = template.lastIndexOf(":");
+  const lastSlash = template.lastIndexOf("/");
+  if (lastColon > lastSlash) {
+    return `${template.slice(0, lastColon)}:${cleanVersion}`;
+  }
+  return `${template}:${cleanVersion}`;
 }

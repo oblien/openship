@@ -41,8 +41,10 @@ vi.mock("@repo/db", async (importOriginal) => {
 
 import {
   commitSourceKey,
+  driftMode,
   evaluateDrift,
   releaseSourceKey,
+  resolveDeployedDrift,
   type UpstreamDrift,
 } from "../../../src/modules/projects/project-crud.service";
 import type { Project } from "@repo/db";
@@ -236,6 +238,45 @@ describe("cache keys — a repointed source is a miss, not stale drift", () => {
       behind: true,
       currentVersion: "0.5.0",
       latestVersion: "0.6.0",
+    });
+  });
+
+  it("driftMode returns release when releaseSource is present even with gitProvider github", () => {
+    const p = gitProject({
+      gitProvider: "github",
+      gitOwner: "orangecoding",
+      gitRepo: "fredy",
+      releaseSource: { mode: "github", repo: "orangecoding/fredy" } as never,
+    });
+    expect(driftMode(p)).toBe("release");
+  });
+
+  it("reports release drift for container release project when releaseVersion is missing in deployment row", async () => {
+    const p = gitProject({
+      gitProvider: "github",
+      gitOwner: "orangecoding",
+      gitRepo: "fredy",
+      buildImage: "ghcr.io/orangecoding/fredy:26.6.0",
+      releaseSource: { mode: "github", repo: "orangecoding/fredy" } as never,
+    });
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_live",
+      releaseVersion: null,
+      meta: { buildImage: "ghcr.io/orangecoding/fredy:26.6.0" },
+    });
+
+    const status = await evaluateDrift(p, {
+      supported: true,
+      mode: "release",
+      key: releaseSourceKey(p),
+      latestVersion: "26.7.0",
+      pinned: false,
+    });
+
+    expect(status).toMatchObject({
+      behind: true,
+      currentVersion: "26.6.0",
+      latestVersion: "26.7.0",
     });
   });
 

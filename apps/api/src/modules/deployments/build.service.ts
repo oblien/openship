@@ -26,6 +26,7 @@ import {
   getRuntimeImage,
   isFullCommitSha,
   isReleaseProvider,
+  renderImageTemplate,
   looksLikeSecretKey,
   resolveProjectVolumes,
   type StackId,
@@ -447,14 +448,6 @@ export async function applyReleaseSourceToSnapshot(
   snapshot: DeploymentConfigSnapshot,
   opts?: { version?: string },
 ): Promise<string> {
-  // Backstop: release/dist resolution downloads + extracts a prebuilt dir onto
-  // THIS box (~/.openship) — a self-hosted runtime op that must never run on the
-  // multi-tenant SaaS control plane. Creation is already blocked in cloud mode
-  // (resolveProjectSource); this also covers redeploy/webhook paths for any
-  // project that predates the gate.
-  if (env.CLOUD_MODE) {
-    throw new ForbiddenError("Release/dist source deploys are not available in cloud mode");
-  }
   const source = (project.releaseSource as ReleaseSource | null) ?? null;
   if (!source) {
     throw new AppError(
@@ -469,6 +462,38 @@ export async function applyReleaseSourceToSnapshot(
     stripV(source.pinnedVersion) ||
     (await resolveLatestVersion(source)) ||
     readApiVersion();
+
+  const isImageRelease =
+    Boolean(source.imageTemplate) ||
+    Boolean(snapshot.buildImage && !source.assetTemplate && !source.distUrl) ||
+    project.sourceKind === "image" ||
+    project.buildKind === "prebuilt";
+
+  if (isImageRelease) {
+    const imageTemplate = source.imageTemplate || snapshot.buildImage || project.buildImage;
+    if (imageTemplate) {
+      snapshot.buildImage = renderImageTemplate(imageTemplate, { version, tag: opts?.version });
+    }
+    snapshot.releaseVersion = version;
+    snapshot.releaseRepo = source.mode === "github" ? source.repo : undefined;
+    if (snapshot.composeServices) {
+      for (const svc of snapshot.composeServices) {
+        if (svc.image && (svc.image.includes("{version}") || svc.image.includes("{tag}"))) {
+          svc.image = renderImageTemplate(svc.image, { version, tag: opts?.version });
+        }
+      }
+    }
+    return version;
+  }
+
+  // Backstop: release/dist resolution downloads + extracts a prebuilt dir onto
+  // THIS box (~/.openship) — a self-hosted runtime op that must never run on the
+  // multi-tenant SaaS control plane. Creation is already blocked in cloud mode
+  // (resolveProjectSource); this also covers redeploy/webhook paths for any
+  // project that predates the gate.
+  if (env.CLOUD_MODE) {
+    throw new ForbiddenError("Release/dist source deploys are not available in cloud mode");
+  }
 
   const result = await resolveReleaseDist({
     name: project.slug || project.id,
@@ -1106,7 +1131,7 @@ export async function requestBuildAccess(
   // Release/dist source: resolve version → prebuilt dist dir → snapshot.localPath
   // (no build). Runs here, not in the sync buildConfigSnapshot, because the
   // cache-miss path downloads. Everything downstream sees a plain localPath deploy.
-  if (isReleaseProvider(project.gitProvider)) {
+  if (isReleaseProvider(project.gitProvider) || project.releaseSource) {
     await applyReleaseSourceToSnapshot(project, snapshot);
   }
 
@@ -1568,7 +1593,7 @@ export async function redeployBuildSession(
   // redeploy the SAME version; default → newest advertised (parity with the
   // "redeploy latest commit" semantics below). Re-resolving also guards against
   // a frozen snapshot whose cached dist dir was since pruned.
-  if (isReleaseProvider(project.gitProvider)) {
+  if (isReleaseProvider(project.gitProvider) || project.releaseSource) {
     await applyReleaseSourceToSnapshot(project, meta, {
       version: opts?.useExistingCommit ? frozenMeta?.releaseVersion : undefined,
     });
@@ -1803,7 +1828,7 @@ export async function triggerDeployment(
   // adopted Docker migration, which builds nothing — the exemption preflight
   // already makes), and a ROLLBACK replaying pinned artifacts. Both used to be
   // refused here, before preflight could apply its own, smarter rule.
-  if (!project.gitUrl && !project.localPath && !isReleaseProvider(project.gitProvider)) {
+  if (!project.gitUrl && !project.localPath && !isReleaseProvider(project.gitProvider) && !project.releaseSource) {
     const sourceless = data.reuseSnapshot
       ? snapshotNeedsGitSource(data.reuseSnapshot.meta)
       : snapshotNeedsGitSource(
@@ -1887,7 +1912,7 @@ export async function triggerDeployment(
   // Release/dist source: resolve the version (webhook-supplied tag, else newest)
   // → prebuilt dist dir → snapshot.localPath, no build. A reused (rollback)
   // snapshot already froze its localPath + releaseVersion, so leave it untouched.
-  if (!reuse && isReleaseProvider(project.gitProvider)) {
+  if (!reuse && (isReleaseProvider(project.gitProvider) || project.releaseSource)) {
     await applyReleaseSourceToSnapshot(project, snapshot, { version: data.releaseVersion });
   }
 

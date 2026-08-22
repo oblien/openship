@@ -4,6 +4,7 @@ import {
   SOURCE_PROVIDERS,
   isReleaseProvider,
   renderAssetName,
+  renderImageTemplate,
 } from "../src/project-source";
 
 describe("isReleaseProvider", () => {
@@ -59,5 +60,49 @@ describe("renderAssetName", () => {
     expect(renderAssetName("openship-{tag}-linux-amd64.tar.gz", { version: "0.6.1" })).toBe(
       "openship-v0.6.1-linux-amd64.tar.gz",
     );
+  });
+});
+
+describe("renderImageTemplate", () => {
+  it("substitutes {version} in image template", () => {
+    expect(
+      renderImageTemplate("ghcr.io/orangecoding/fredy:{version}", { version: "26.7.0" }),
+    ).toBe("ghcr.io/orangecoding/fredy:26.7.0");
+  });
+
+  it("substitutes {tag} with raw release tag or version", () => {
+    expect(
+      renderImageTemplate("ghcr.io/orangecoding/fredy:{tag}", { version: "26.7.0", tag: "v26.7.0" }),
+    ).toBe("ghcr.io/orangecoding/fredy:v26.7.0");
+  });
+
+  it("replaces existing image tag if no placeholder is provided", () => {
+    expect(
+      renderImageTemplate("ghcr.io/orangecoding/fredy:26.6.0", { version: "26.7.0" }),
+    ).toBe("ghcr.io/orangecoding/fredy:26.7.0");
+  });
+
+  it("appends version if image ref has no tag", () => {
+    expect(
+      renderImageTemplate("ghcr.io/orangecoding/fredy", { version: "26.7.0" }),
+    ).toBe("ghcr.io/orangecoding/fredy:26.7.0");
+  });
+
+  it("handles registry host with port correctly", () => {
+    expect(
+      renderImageTemplate("registry.example.com:5000/fredy:26.6.0", { version: "26.7.0" }),
+    ).toBe("registry.example.com:5000/fredy:26.7.0");
+  });
+
+  it("strips leading 'v' from version", () => {
+    expect(
+      renderImageTemplate("ghcr.io/orangecoding/fredy:{version}", { version: "v26.7.0" }),
+    ).toBe("ghcr.io/orangecoding/fredy:26.7.0");
+  });
+
+  it("refuses unknown placeholders", () => {
+    expect(() =>
+      renderImageTemplate("ghcr.io/orangecoding/fredy:{arch}", { version: "26.7.0" }),
+    ).toThrow(/\{arch\}/);
   });
 });

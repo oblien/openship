@@ -432,7 +432,7 @@ function resolveProjectSource(data: TCreateProjectBody) {
     gitRepo,
     gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github"),
     gitUrl: projectGitUrl(gitOwner, gitRepo),
-    releaseSource: isRelease ? ((data.releaseSource as ReleaseSource | undefined) ?? null) : null,
+    releaseSource: (data.releaseSource as ReleaseSource | undefined) ?? null,
   };
 }
 
@@ -1004,7 +1004,7 @@ export async function uniqueProjectSlug(organizationId: string, baseSlug: string
  */
 async function resolveEnvVersion(row: Project, latest: Deployment | null): Promise<string | null> {
   if (row.appTemplateId === "openship") return readApiVersion();
-  if (isReleaseProvider(row.gitProvider)) {
+  if (isReleaseProvider(row.gitProvider) || row.releaseSource) {
     const pinned = (row.releaseSource as ReleaseSource | null)?.pinnedVersion;
     return latest?.releaseVersion ?? pinned ?? null;
   }
@@ -1210,6 +1210,12 @@ export async function ensureProject(
         update.gitProvider = "local";
         update.gitUrl = null;
       }
+    }
+    if (data.releaseSource !== undefined) {
+      update.releaseSource = (data.releaseSource as ReleaseSource | null) ?? null;
+    }
+    if (data.gitProvider !== undefined) {
+      update.gitProvider = data.gitProvider;
     }
     if (data.rollbackWindow !== undefined) {
       update.rollbackWindow =
@@ -1847,7 +1853,7 @@ export type DriftStatus = Awaited<ReturnType<typeof evaluateDrift>>;
 
 /** Which of the three drift shapes a project has, from local fields only. */
 export function driftMode(p: Project): "commit" | "release" | "image" {
-  if (isReleaseProvider(p.gitProvider)) return "release";
+  if (isReleaseProvider(p.gitProvider) || p.releaseSource) return "release";
   if (p.appTemplateId === "openship") return "release";
   return p.gitOwner && p.gitRepo ? "commit" : "image";
 }
@@ -1868,10 +1874,9 @@ export function commitSourceKey(p: Project): string {
  * question's answer.
  */
 export function releaseSourceKey(p: Project): string {
-  if (!isReleaseProvider(p.gitProvider)) return `self:${p.appTemplateId ?? ""}`;
   const s = (p.releaseSource as ReleaseSource | null) ?? null;
-  if (!s) return "none";
-  return [s.mode, s.repo ?? "", s.versionUrl ?? "", s.pinnedVersion ?? ""].join("|");
+  if (!s) return !isReleaseProvider(p.gitProvider) ? `self:${p.appTemplateId ?? ""}` : "none";
+  return [s.mode, s.repo ?? "", s.versionUrl ?? "", s.pinnedVersion ?? "", s.imageTemplate ?? ""].join("|");
 }
 
 /** Image services whose upstream digest is worth resolving (image-only, enabled). */
@@ -1929,18 +1934,20 @@ export async function resolveUpstreamDrift(
     // Self-app + webmail ship from the oblien/openship release stream but carry
     // no releaseSource (they deploy via localPath/migration), so they'd otherwise
     // fall through to unsupported.
-    if (!isReleaseProvider(p.gitProvider)) {
-      const latestVersion = await resolveLatestReleaseTag(GITHUB_REPO).catch(() => null);
-      return {
-        supported: true,
-        mode: "release",
-        key: releaseSourceKey(p),
-        latestVersion,
-        pinned: false,
-      };
-    }
     const source = (p.releaseSource as ReleaseSource | null) ?? null;
-    if (!source) return { supported: false };
+    if (!source) {
+      if (!isReleaseProvider(p.gitProvider) || p.appTemplateId === "openship") {
+        const latestVersion = await resolveLatestReleaseTag(GITHUB_REPO).catch(() => null);
+        return {
+          supported: true,
+          mode: "release",
+          key: releaseSourceKey(p),
+          latestVersion,
+          pinned: false,
+        };
+      }
+      return { supported: false };
+    }
     const latestVersion = source.pinnedVersion
       ? source.pinnedVersion.replace(/^v/, "")
       : await resolveLatestVersion(source);
@@ -2008,15 +2015,27 @@ export async function resolveDeployedDrift(
   if (mode === "release") {
     // The self-app without a releaseSource tracks the running API's own
     // version — it never ships a releaseVersion through the pipeline.
-    if (!isReleaseProvider(p.gitProvider) && p.appTemplateId === "openship") {
+    if (!isReleaseProvider(p.gitProvider) && p.appTemplateId === "openship" && !p.releaseSource) {
       return { mode: "release", currentVersion: readApiVersion() };
     }
     let currentVersion: string | null = null;
     if (p.activeDeploymentId) {
       const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
       currentVersion = dep?.releaseVersion ?? null;
+      if (!currentVersion && dep) {
+        const meta = dep.meta as Record<string, unknown> | null;
+        const image = (meta?.buildImage as string | undefined) ?? p.buildImage ?? dep.imageRef;
+        if (image) {
+          const tag = image.split("@")[0].split(":").pop();
+          if (tag && /^\d+\.\d+(\.\d+)?/.test(tag.replace(/^v/, ""))) {
+            currentVersion = tag.replace(/^v/, "");
+          }
+        }
+        if (!currentVersion && dep.branch && /^\d+\.\d+(\.\d+)?/.test(dep.branch.replace(/^v/, ""))) {
+          currentVersion = dep.branch.replace(/^v/, "");
+        }
+      }
     }
-    if (!currentVersion && p.appTemplateId === "openship") currentVersion = readApiVersion();
     return { mode: "release", currentVersion };
   }
 
