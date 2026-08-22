@@ -52,3 +52,41 @@ describe("creating an environment survives the next projectInfo emit", () => {
     );
   });
 });
+
+describe("deleting an environment leaves no dead entry behind", () => {
+  const handler = page.slice(
+    page.indexOf("const handleDeleteProject"),
+    page.indexOf("const renderTabContent"),
+  );
+
+  // Pinned on the helper's DEFINITION: proves the teardown actually drops
+  // caches rather than that a function by that name exists.
+  const helper = handler.slice(
+    handler.indexOf("const invalidateAfterTeardown = "),
+    handler.indexOf("\n    try {"),
+  );
+
+  it("invalidates every known id — the deleted one and its stale siblings", () => {
+    expect(helper).toContain("invalidateProjectCaches(eid)");
+    expect(helper).toContain("for (const env of environments ?? [])");
+  });
+
+  it("runs on ALL THREE success exits", () => {
+    // Two inside try (full ok + unrecoverable-partial) and the 404 in catch:
+    // another tab already deleted the row, so this tab's caches are
+    // guaranteed stale there. Real failures (409 active-work,
+    // deletion-in-progress, teardown-failed) must NOT invalidate.
+    expect(handler.split("invalidateAfterTeardown();").length - 1).toBeGreaterThanOrEqual(3);
+  });
+
+  it("the cross-tab 404 exit invalidates before navigating home", () => {
+    const notFoundExit = handler.slice(
+      handler.indexOf("// 404: someone else already deleted"),
+      handler.indexOf("showToast(getApiErrorMessage(err"),
+    );
+    expect(notFoundExit).toContain("invalidateAfterTeardown();");
+    expect(notFoundExit.indexOf("invalidateAfterTeardown();")).toBeLessThan(
+      notFoundExit.indexOf('router.push("/")'),
+    );
+  });
+});

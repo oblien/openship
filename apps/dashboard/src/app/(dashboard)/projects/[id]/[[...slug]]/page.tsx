@@ -32,7 +32,11 @@ import { DraftProjectView } from "../components/DraftProjectView";
 import { environmentErrorMessage, environmentWizardHref } from "../components/environment-next";
 import { getProjectStatus } from "@/utils/project-status";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { useProjectInfo, PROJECT_INFO_NOT_FOUND } from "@/hooks/useProjectEndpoints";
+import {
+  invalidateProjectCaches,
+  useProjectInfo,
+  PROJECT_INFO_NOT_FOUND,
+} from "@/hooks/useProjectEndpoints";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
@@ -598,6 +602,22 @@ const ProjectSettingsContent = () => {
     // Optimistic - immediately show "Deleting" status
     setProjectData((prev: any) => ({ ...prev, deletedAt: new Date().toISOString() }));
 
+    // #657: teardown removed THIS environment, but every sibling's cached
+    // /info bundle still lists it — their switchers would keep showing the
+    // dead entry until a hard reload. Drop all known ids on the way out.
+    // Only invoked on success; a failed delete keeps every cache as-is.
+    // Accepted cost: invalidateProjectCaches evicts overview/geo/usage too,
+    // per id — pure eviction for unmounted siblings (only mounted hooks
+    // refetch), so no request storm; just a slower first paint next visit.
+    const invalidateAfterTeardown = () => {
+      const ids = new Set<string>([projectData.id]);
+      for (const env of environments ?? []) {
+        const eid = String(env?.id ?? "");
+        if (eid) ids.add(eid);
+      }
+      ids.forEach((eid) => invalidateProjectCaches(eid));
+    };
+
     try {
       const response = await projectsApi.delete(projectData.id, {
         wipeVolumes,
@@ -651,6 +671,7 @@ const ProjectSettingsContent = () => {
           );
         }
         invalidateSidebarNavCounts();
+        invalidateAfterTeardown();
         router.push("/");
         return;
       }
@@ -667,6 +688,7 @@ const ProjectSettingsContent = () => {
           t.projects.delete.partialCleanupTitle,
         );
         invalidateSidebarNavCounts();
+        invalidateAfterTeardown();
         router.push("/");
         return;
       }
@@ -784,10 +806,14 @@ const ProjectSettingsContent = () => {
         return;
       }
 
-      // 404: someone else already deleted the project in another tab.
+      // 404: someone else already deleted the project in another tab. Not a
+      // failure — the row IS gone — so this is a third success exit, and the
+      // one where this tab's cached bundles are GUARANTEED stale rather than
+      // merely possibly (#657).
       if (err instanceof ApiError && err.status === 404) {
         showToast(t.projects.delete.alreadyDeleted, "success");
         invalidateSidebarNavCounts();
+        invalidateAfterTeardown();
         router.push("/");
         return;
       }
