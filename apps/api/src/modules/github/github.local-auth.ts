@@ -336,7 +336,9 @@ const GH_FALLBACK_PATHS = [
 /** One-shot exec attempt — resolves to the trimmed stdout on success,
  *  or an error object the caller can log. Used to walk fallback paths
  *  without burying the actual ENOENT/EPERM under a silent null. */
-function tryGhExec(bin: string): Promise<{ token: string } | { error: NodeJS.ErrnoException; stderr?: string }> {
+function tryGhExec(
+  bin: string,
+): Promise<{ token: string } | { error: NodeJS.ErrnoException; stderr?: string }> {
   return new Promise((resolve) => {
     execFile(bin, ["auth", "token"], { timeout: 10_000 }, (err, stdout, stderr) => {
       if (err) return resolve({ error: err as NodeJS.ErrnoException, stderr: stderr?.toString() });
@@ -400,20 +402,23 @@ async function ghAuthTokenViaCli(): Promise<string | null> {
 }
 
 /**
- * Read token from the gh CLI config file. Tries (in order):
- *   - $GH_CONFIG_DIR/hosts.yml (explicit override)
- *   - $XDG_CONFIG_HOME/gh/hosts.yml (XDG spec)
- *   - ~/.config/gh/hosts.yml (default)
+ * Read token from the gh CLI config file. An explicit `$GH_CONFIG_DIR` or
+ * `$XDG_CONFIG_HOME` is authoritative; otherwise use `~/.config/gh/hosts.yml`.
+ * This prevents a sandboxed or service-specific config lookup from silently
+ * falling back to another user's credentials.
  *
  * Logs the path it actually attempted on failure so operators can see
  * the resolved location.
  */
 async function ghAuthTokenViaConfig(): Promise<string | null> {
   const candidates: string[] = [];
-  if (process.env.GH_CONFIG_DIR) candidates.push(join(process.env.GH_CONFIG_DIR, "hosts.yml"));
-  if (process.env.XDG_CONFIG_HOME)
+  if (process.env.GH_CONFIG_DIR) {
+    candidates.push(join(process.env.GH_CONFIG_DIR, "hosts.yml"));
+  } else if (process.env.XDG_CONFIG_HOME) {
     candidates.push(join(process.env.XDG_CONFIG_HOME, "gh", "hosts.yml"));
-  candidates.push(join(homedir(), ".config", "gh", "hosts.yml"));
+  } else {
+    candidates.push(join(homedir(), ".config", "gh", "hosts.yml"));
+  }
 
   for (const path of candidates) {
     try {
