@@ -340,7 +340,7 @@ export function ThreadContextMenu({
     toast.promise(
       Promise.all(
         targets.map(async (id) => {
-          return deleteThread({ id });
+          return deleteThread({ id, folder: currentFolder });
         }),
       ),
       {
