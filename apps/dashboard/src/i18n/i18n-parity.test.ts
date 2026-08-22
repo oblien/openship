@@ -150,7 +150,9 @@ const MISSING_BASELINE: Record<string, number> = {
   // these strings drive a security decision — e.g. "a clone can't be limited to
   // paths, so local builds won't work" — and a subtly wrong translation would
   // mislead the operator choosing a grant. Lower this as they're translated.
-  widgets: 498,
+  // +360: permissions.sourceAccess — 45 keys for the source access modal and its
+  // 8 non-English locales (ru translated).
+  widgets: 501,
   // +40: mcpAuthorize gained 5 English-first keys — two digest lines that answer
   // "can it read my source?" either way, and three level tooltips.
   //
@@ -222,7 +224,7 @@ const MISSING_BASELINE: Record<string, number> = {
 };
 
 /** Stale locale keys that no longer exist in English. */
-const EXTRA_BASELINE = 14;
+const EXTRA_BASELINE = 24;
 
 describe("i18n locale parity vs the English source", () => {
   const report = checkI18nParity(defaultLocalesDir());
