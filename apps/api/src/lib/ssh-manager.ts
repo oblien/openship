@@ -43,10 +43,10 @@ import {
   type HostChannelHealth,
   type SshConfig,
 } from "@repo/adapters";
-import { formatDuration, systemDebug } from "@/lib/system-debug";
-import { decryptSecretField } from "@/lib/credential-encryption";
-import { operatorSshKeyRoots, resolveSafeSshKeyPath } from "@/lib/ssh-key-path";
-import { isLocalHostRow } from "@/lib/box-org";
+import { formatDuration, systemDebug } from "./system-debug";
+import { decryptSecretField } from "./credential-encryption";
+import { operatorSshKeyRoots, resolveSafeSshKeyPath } from "./ssh-key-path";
+import { isLocalHostRow } from "./box-org";
 import { safeErrorMessage } from "@repo/core";
 
 const execFileAsync = promisify(execFile);

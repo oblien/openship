@@ -723,6 +723,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       isDesktop: plat.target === "desktop",
       forwardGitCredentials: snapshot.forwardGitCredentials,
       repoIsGithub: !!project.gitOwner,
+      isLocalHost: resolved.platform.localHost,
     });
     const cloneOnServer = clonePlan.runsOnServer;
     // The relay needs a real SSH reverse tunnel — `reverseForward` exists on every

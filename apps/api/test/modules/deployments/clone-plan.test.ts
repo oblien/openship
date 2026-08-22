@@ -19,6 +19,33 @@ describe("resolveClonePlan", () => {
     expect(plan.runsLocally).toBe(true);
     expect(plan.cloneBuildStrategy).toBe("local");
   });
+  it("docker + server + repoIsGithub + buildStrategy=local → clone runs locally with local credential", () => {
+    const plan = resolveClonePlan({
+      ...base,
+      effectiveTarget: "server",
+      buildStrategy: "local",
+      repoIsGithub: true,
+    });
+    expect(plan.runsOnServer).toBe(false);
+    expect(plan.dockerClonesOnServer).toBe(false);
+    expect(plan.runsLocally).toBe(true);
+    expect(plan.cloneBuildStrategy).toBe("local");
+  });
+
+  it("docker + server (localHost / This Server) + repoIsGithub → clones locally with local credential, not on server", () => {
+    const plan = resolveClonePlan({
+      ...base,
+      effectiveTarget: "server",
+      isLocalHost: true,
+      repoIsGithub: true,
+      cloneStrategy: "server",
+    });
+    expect(plan.runsOnServer).toBe(false);
+    expect(plan.dockerClonesOnServer).toBe(false);
+    expect(plan.runsLocally).toBe(true);
+    expect(plan.cloneBuildStrategy).toBe("local");
+  });
+
 
   it("docker + server + api-host clone → api-host clone (local credential), not on server", () => {
     const plan = resolveClonePlan({ ...base, cloneStrategy: "api-host" });

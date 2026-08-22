@@ -37,6 +37,7 @@ import {
 import { isFullyPinned, snapshotNeedsGitSource } from "./pinned-artifacts";
 import { snapshotToClass } from "./deployment-class";
 import { relayConfigEligible, resolveClonePlan } from "./clone-plan";
+import { isLocalHostRow } from "../../lib/box-org";
 import { hasLocalGitIdentity } from "../github/github.local-auth";
 import { isPublicRepo } from "../github/github.http";
 import { getRoutingBaseDomain } from "../../lib/routing-domains";
@@ -1447,12 +1448,17 @@ export async function runPreflightChecks(
   // Does this machine meet what the app says it needs? Cloud is sized from the
   // tier table, not from host hardware, so there is nothing to match there (and
   // nothing to probe — a multi-tenant control plane must not dial a tenant's box).
+  let isLocalTarget = effectiveTarget === "local";
+  if (snapshot.serverId) {
+    const server = await repos.server?.get?.(snapshot.serverId).catch(() => null);
+    if (server) isLocalTarget = await isLocalHostRow(server);
+  }
   if (opts?.appTemplateId && snapshot.organizationId && effectiveTarget !== "cloud") {
     const hostCapacity = await checkHostCapacity(
       snapshot.organizationId,
       opts.appTemplateId,
       snapshot.serverId,
-      effectiveTarget === "local",
+      isLocalTarget,
       opts.firstDeploy ?? false,
     );
     if (hostCapacity) checks.push(hostCapacity);
@@ -1573,6 +1579,7 @@ export async function runPreflightChecks(
     // tarball on the server for them. Same structured signal the pipeline uses
     // (`!!project.gitOwner`) so the two decisions can't drift.
     repoIsGithub: !!opts?.gitOwner,
+    isLocalHost: isLocalTarget,
   }).dockerClonesOnServer;
   if (dockerClonesOnServer) {
     checks.push(

@@ -38,4 +38,13 @@ describe("resolveClonePlan — relayEligible (forward is the default on desktop)
       }).relayEligible,
     ).toBe(false);
   });
+  it("is NOT eligible on a local host server (no remote host)", () => {
+    expect(
+      resolveClonePlan({
+        ...base,
+        isLocalHost: true,
+        forwardGitCredentials: true,
+      }).relayEligible,
+    ).toBe(false);
+  });
 });

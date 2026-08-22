@@ -49,6 +49,10 @@ export interface ClonePlanInput {
    *  adapter re-validates the URL (github + https) before downloading and falls
    *  back to clone. Local/imported projects → false → unchanged. */
   repoIsGithub?: boolean;
+  /** Target server is the local host ("This Server" row, socket DooD).
+   *  Docker builds on the local host build over the local Docker socket and
+   *  prepare context on the API host — they never clone on a remote server. */
+  isLocalHost?: boolean;
 }
 
 export interface ClonePlan {
@@ -89,10 +93,18 @@ export function relayConfigEligible(input: {
 
 export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   const onServer = input.effectiveTarget === "server";
+  const isLocalHost = input.isLocalHost === true || input.effectiveTarget === "local";
+
+  // Docker on the local host (socket DooD) or a local build (buildStrategy === "local"
+  // without cloneStrategy === "server") builds via createDockerBuildContext on the API host
+  // and NEVER clones on a remote host via SSH.
+  const isLocalDockerBuild =
+    !input.runtimeIsBare &&
+    (isLocalHost || (input.buildStrategy === "local" && input.cloneStrategy !== "server"));
 
   // Docker acquires source ON THE SERVER when the deploy opted in
-  // (cloneStrategy="server") OR the repo is a GitHub HTTPS remote — the server
-  // downloads the tarball directly, skipping the orchestrator clone + context
+  // (cloneStrategy="server") OR the repo is a GitHub HTTPS remote on a remote server build —
+  // the server downloads the tarball directly, skipping the orchestrator clone + context
   // transfer. Bare has its own always-on-server path (below), so it's excluded
   // here. Whether it truly runs on the server still hinges on a shippable
   // credential; effectiveCloneOnServer degrades to an api-host clone otherwise
@@ -100,17 +112,16 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   const dockerServerSide =
     onServer &&
     !input.runtimeIsBare &&
+    !isLocalDockerBuild &&
     (input.cloneStrategy === "server" || input.repoIsGithub === true);
 
   // Pipeline: the clone runs on the server (bare always; docker per above).
   const runsOnServer =
-    onServer && !!input.serverId && (input.runtimeIsBare || dockerServerSide);
+    onServer && !isLocalDockerBuild && !!input.serverId && (input.runtimeIsBare || dockerServerSide);
 
   // Preflight warn-case + api-host-fallback gate: DOCKER (non-bare) acquiring on
   // the server. Bare is handled by the separate hard-fail remote-build checks.
   const dockerClonesOnServer = dockerServerSide;
-
-  // The clone's credential purpose follows WHERE THE CLONE RUNS, not where the
   // build runs: a local build clones on this machine, and a server deploy that
   // isn't cloning on the server clones on the api-host (both local → gh OK).
   // Everything else (on-server clone, cloud workspace clone) is off-host → remote.
