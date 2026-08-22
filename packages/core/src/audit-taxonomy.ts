@@ -919,6 +919,13 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     action: "triggered a backup of",
     label: "Backup triggered by webhook",
   },
+  "backup_policy.defaults_applied": {
+    category: "system",
+    action: "set up backups for",
+    label: "Backup defaults applied",
+    description:
+      "One policy per stateful service, from the app template's defaults — at install, or from the project's apply-defaults action.",
+  },
   "backup.webhook.disabled": {
     category: "system",
     action: "disabled the backup webhook for",

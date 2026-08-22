@@ -29,6 +29,7 @@ r.use("/backup-restores/*", authMiddleware);
 // Policies — project-scoped routes proxy to the SaaS for cloud projects.
 r.get("/projects/:projectId/backup-policies", { tag: "project:write", ids: { project: "projectId" }, mcp: { description: "List a project's backup policies (schedules/retention)." } }, cloudProjectProxy, ctrl.listProjectPolicies);
 r.post("/projects/:projectId/backup-policies", { tag: "project:write", ids: { project: "projectId" } }, cloudProjectProxy, ctrl.createProjectPolicy);
+r.post("/projects/:projectId/backup-policies/apply-defaults", { tag: "project:write", ids: { project: "projectId" }, mcp: { description: "Set a project's backups up from its app template's defaults, one policy per stateful service. Idempotent; skips services that already have a policy." } }, cloudProjectProxy, ctrl.applyProjectPolicyDefaults);
 r.patch("/backup-policies/:policyId", { tag: "backup_destination:backup_policy:write" }, ctrl.patchPolicy);
 r.delete("/backup-policies/:policyId", { tag: "backup_destination:backup_policy:write" }, ctrl.removePolicy);
 

@@ -99,6 +99,8 @@ export async function install(c: Context) {
     name?: string;
     config?: Record<string, string>;
     routes?: InstallAppRoute[];
+    applyBackupDefaults?: boolean;
+    backupDestinationId?: string;
   };
   const body = await c.req.json<InstallBody>().catch((): InstallBody => ({}));
   if (!body.templateId) {
@@ -110,6 +112,8 @@ export async function install(c: Context) {
       name: body.name,
       config: body.config,
       routes: body.routes,
+      applyBackupDefaults: body.applyBackupDefaults,
+      backupDestinationId: body.backupDestinationId,
     });
     return c.json({ data: result });
   } catch (err) {

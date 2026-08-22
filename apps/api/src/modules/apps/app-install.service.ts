@@ -42,6 +42,7 @@ import { assertPlanAllowsServices } from "../../lib/plan-guard";
 import { getTrustedHostCapacity } from "../../lib/host-capacity";
 import { createProject } from "../projects/project-crud.service";
 import { createService, updateService, setServiceEnvVars } from "../services/service.service";
+import { applyBackupDefaults } from "../backups/apply-defaults.service";
 
 /**
  * Strong random value for generated secrets (Convex INSTANCE_SECRET, DB
@@ -229,6 +230,12 @@ export interface InstallAppInput {
   /** Per-endpoint routing the operator CHOSE. A service with no entry gets no
    *  public route — see planInstallRouting. */
   routes?: InstallAppRoute[];
+  /** Set the template's backup defaults up as part of this install (default:
+   *  true, and a no-op when the org has no backup destination). `false` opts
+   *  out — an install that wants no schedules attached to it. */
+  applyBackupDefaults?: boolean;
+  /** Destination the derived policies point at. Omitted ⇒ the org's default. */
+  backupDestinationId?: string;
 }
 
 interface PlannedEndpoint {
@@ -670,6 +677,25 @@ export async function installApp(
   // makes the installer's guarantee unconditional rather than "if the first attempt ran
   // to completion".
   await ensureGeneratedAppSecrets(project.id, template);
+
+  // Backups go last, and can never be fatal. By this point the project, its
+  // services and its env are all persisted — the install SUCCEEDED — so a
+  // destination that fails to resolve or a policy insert that trips must not
+  // turn that into an error the user sees as "install failed". It logs and the
+  // user can apply defaults later from the project's backup settings.
+  //
+  // `applyBackupDefaults` resolves service rows itself rather than borrowing the
+  // `idByName` map above: that map only exists when the template had env to
+  // write, and the endpoint caller has no map at all.
+  if (input.applyBackupDefaults !== false) {
+    try {
+      await applyBackupDefaults(ctx, project.id, template, {
+        destinationId: input.backupDestinationId,
+      });
+    } catch (err) {
+      console.error("[app-install] backup defaults not applied", project.id, err);
+    }
+  }
 
   return { kind: "template", projectId: project.id, slug: project.slug };
 }

@@ -280,6 +280,15 @@
       "restart": "unless-stopped"
     }
   ],
+  "backup": {
+    "services": [
+      {
+        "service": "imgproxy",
+        "skip": true,
+        "reason": "Mounts the same supabase_storage_data volume as `storage`, so derivation would copy identical bytes twice under two policies. `storage` owns it."
+      }
+    ]
+  },
   "configFields": [
     {
       "key": "POSTGRES_PASSWORD",

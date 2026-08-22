@@ -16,6 +16,8 @@ import { backupRunBus } from "./backup.sse";
 import { restoreRunBus } from "./restore.sse";
 import { restoreOrchestrator } from "./restore.orchestrator";
 import { safeErrorMessage } from "@repo/core";
+import { getTemplateForOrg } from "../apps/catalog-source";
+import { applyBackupDefaults } from "./apply-defaults.service";
 import {
   createPolicy,
   deletePolicy,
@@ -84,6 +86,53 @@ export async function createProjectPolicy(c: Context) {
       enabled: body.enabled,
     });
     return c.json({ data: policy });
+  } catch (err) {
+    return c.json({ error: safeErrorMessage(err) }, 400);
+  }
+}
+
+/**
+ * POST /projects/:projectId/backup-policies/apply-defaults — set up this
+ * project's backups from its app template in one call.
+ *
+ * For projects installed before catalog-declared defaults existed, and for
+ * anyone who added a destination after installing. Idempotent by construction
+ * (`applyBackupDefaults` skips services that already have a policy), so this is
+ * safe to call repeatedly and can't clobber a hand-tuned schedule.
+ *
+ * Reports rather than fails: no destination, or a project that isn't a catalog
+ * app, both come back 200 with a `reason`. Nothing was wrong with the REQUEST,
+ * and a 4xx would push a caller toward retrying something that will keep being
+ * a no-op until the operator adds a destination.
+ */
+export async function applyProjectPolicyDefaults(c: Context) {
+  const ctx = getRequestContext(c);
+  const projectId = param(c, "projectId");
+  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: projectId, action: "write" });
+  const body = await c.req
+    .json<{ destinationId?: string }>()
+    .catch((): { destinationId?: string } => ({}));
+
+  const project = await repos.project.findById(projectId);
+  try {
+    assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  } catch (err) {
+    return c.json({ error: safeErrorMessage(err) }, 404);
+  }
+
+  if (!project?.appTemplateId) {
+    return c.json({ data: { applied: 0, skipped: 0, services: [], reason: "not-an-app" } });
+  }
+  const template = await getTemplateForOrg(ctx.organizationId, project.appTemplateId);
+  if (!template) {
+    return c.json({ data: { applied: 0, skipped: 0, services: [], reason: "unknown-app-template" } });
+  }
+
+  try {
+    const result = await applyBackupDefaults(ctx, projectId, template, {
+      destinationId: body.destinationId,
+    });
+    return c.json({ data: result });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 400);
   }

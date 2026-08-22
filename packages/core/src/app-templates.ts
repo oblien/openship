@@ -452,6 +452,44 @@ export interface AppTemplate {
   provides?: readonly AppProvides[];
   /** Connections this app needs from other projects (install-time auto-wire). */
   requires?: readonly AppRequires[];
+  /** Authored corrections to the backup defaults derived from this app's volumes
+   *  (see apps/backup-defaults.ts). Omit and derivation stands on its own. */
+  backup?: AppBackup;
+}
+
+/** One service's authored backup default — see `AppBackup`. */
+export interface AppBackupServiceRule {
+  /** Service (docker alias) this rule is about. */
+  service: string;
+  /** Don't back this service up at all, whatever derivation concluded. */
+  skip?: boolean;
+  /** Why this rule exists — authoring rationale, not rendered anywhere yet. */
+  reason?: string;
+  /** Producer to use. Omit ⇒ "auto" (registry detects it). */
+  payloadKind?:
+    | "auto"
+    | "volume"
+    | "pg_dump"
+    | "mysql_dump"
+    | "redis_rdb"
+    | "mongo_dump"
+    | "custom_command";
+  /** Producer-specific options, forwarded whole. */
+  payloadConfig?: Record<string, unknown>;
+  /** 5-field cron. Omit ⇒ the staggered default schedule. */
+  cronExpression?: string;
+  /** Successful runs kept. Omit ⇒ DEFAULT_RETAIN_COUNT; null ⇒ unlimited. */
+  retainCount?: number | null;
+  /** Age cap in days. Omit/null ⇒ none. */
+  retainDays?: number | null;
+}
+
+/**
+ * What an app wants backed up, by service. Optional: with no block at all, every
+ * service that declares a volume still gets a derived default.
+ */
+export interface AppBackup {
+  services: readonly AppBackupServiceRule[];
 }
 
 /** A generated file bind-mounted into a service container (see AppTemplate.files). */

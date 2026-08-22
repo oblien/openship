@@ -144,3 +144,18 @@ export const isMaskedValue = (value: unknown): boolean => value === ENV_MASK;
  * which is the point. Existing NULL rows were backfilled by migration 0096.
  */
 export const DEFAULT_RETAIN_COUNT = 7;
+
+/**
+ * Wall-clock time a backup runs when nobody picked one — the base for every
+ * schedule derived from an app template (see `apps/backup-defaults.ts`).
+ *
+ * Same 03:17 the dashboard's schedule editor already offers as
+ * `DEFAULT_BACKUP_TIME` (apps/dashboard/src/lib/backup-schedule.ts), so a policy
+ * Openship derived and one a human clicked through the form land on the same
+ * hour rather than looking like two different products. The minute is off :00
+ * and :30 deliberately: those are where every hand-written cron in the world
+ * piles up, and a dump is heavy enough that colliding with the rest of the box's
+ * nightly work is worth one minute of avoidance.
+ */
+export const DEFAULT_BACKUP_HOUR = 3;
+export const DEFAULT_BACKUP_MINUTE = 17;
