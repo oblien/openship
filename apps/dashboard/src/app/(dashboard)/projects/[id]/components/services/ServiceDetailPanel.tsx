@@ -246,6 +246,12 @@ export function ServiceDetailPanel({
   // ── Env tab state (editable; the panel used to show env read-only) ────
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => envRowsFromRecord(service.environment));
   const [envSaving, setEnvSaving] = useState(false);
+  // Which service has a saved-but-unapplied env offer, keyed by id — NOT a
+  // boolean derived from env identity. `service.environment` gets a fresh
+  // object on every refetch (the context replaces services wholesale), so any
+  // effect keyed on it would wipe the offer before it ever rendered (#669).
+  const [pendingApplyFor, setPendingApplyFor] = useState<string | null>(null);
+  const [envApplying, setEnvApplying] = useState(false);
   useEffect(() => {
     setEnvRows(envRowsFromRecord(service.environment));
   }, [service.id, service.environment]);
@@ -263,11 +269,39 @@ export function ServiceDetailPanel({
       });
       if (!result.success) throw new Error(t.projectDetail.services.detail.toast.envSaveFailed);
       await onRefresh();
+      // Offer the restart-only apply only when there's a live deployment to
+      // refresh; keyed by service id so refetches can't wipe it.
+      if (activeDeploymentId) setPendingApplyFor(service.id);
       showToast(t.projectDetail.services.detail.toast.envUpdated, "success", service.name);
     } catch (err) {
       showToast(err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed, "error");
     } finally {
       setEnvSaving(false);
+    }
+  };
+
+  // Same shape as handleRedeployService below: enabled guard up front, and the
+  // spinner deliberately stays set through router.push on success — resetting
+  // it in a finally would flicker the button back to Save mid-navigation.
+  const handleApplyEnv = async () => {
+    if (!service.enabled) {
+      showToast(t.projectDetail.services.detail.toast.enableBeforeApply, "error", service.name);
+      return;
+    }
+    setEnvApplying(true);
+    try {
+      const res = await deployApi.trigger({ projectId, refresh: true, serviceIds: [service.id] });
+      if ((res as any)?.success === false) {
+        setEnvApplying(false);
+        showToast((res as any)?.error || t.projectDetail.services.detail.toast.envApplyFailed, "error", service.name);
+        return;
+      }
+      setPendingApplyFor(null);
+      const newId = res?.data?.deployment?.id;
+      router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
+    } catch (err) {
+      setEnvApplying(false);
+      showToast(getApiErrorMessage(err, t.projectDetail.services.detail.toast.envApplyFailed), "error", service.name);
     }
   };
 
@@ -790,14 +824,25 @@ export function ServiceDetailPanel({
             />
           </div>
           <div className="flex justify-end">
-            <button
-              onClick={handleSaveEnv}
-              disabled={envSaving || !envDirty}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {envSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {t.projectDetail.services.detail.saveEnvironment}
-            </button>
+            {pendingApplyFor === service.id && !envDirty ? (
+              <button
+                onClick={handleApplyEnv}
+                disabled={envApplying}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {envApplying ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
+                {t.projectDetail.services.detail.applyEnvironment}
+              </button>
+            ) : (
+              <button
+                onClick={handleSaveEnv}
+                disabled={envSaving || !envDirty}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {envSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {t.projectDetail.services.detail.saveEnvironment}
+              </button>
+            )}
           </div>
         </div>
       )}

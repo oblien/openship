@@ -396,6 +396,144 @@ describe("triggerDeployment", () => {
 });
 
 /**
+ * Refresh (#669): recreate running services from their existing images with
+ * current env — no clone, no build. The dashboard's per-service Apply button
+ * sends `{ refresh: true, serviceIds: [svc] }`; the contract under test is
+ * that this lands in createQueuedDeployment as an exclusive, non-force subset.
+ */
+describe("triggerDeployment — refresh", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-active" }));
+    repos.project.getEnvMap.mockResolvedValue({});
+    repos.service.listByProject.mockResolvedValue([]);
+    repos.deployment.listByProject.mockResolvedValue({ rows: [] });
+    repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
+    repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
+    repos.deployment.createBuildSession.mockResolvedValue(undefined);
+    repos.deployment.supersedeReconciling.mockResolvedValue(undefined);
+    repos.deployment.supersedePendingDecisions.mockResolvedValue(undefined);
+
+    assertGitHubRepoAccess.mockResolvedValue(undefined);
+    resolveProjectRouteState.mockResolvedValue({
+      primaryCustomDomain: undefined,
+      primaryDomainType: undefined,
+      primarySlug: undefined,
+      publicEndpoints: [],
+    });
+    resolveServicePipelineMode.mockResolvedValue({
+      useServicePipeline: true,
+      servicePreflightServices: composeServices,
+      useSingleAppPipeline: false,
+    });
+    resolveStrategy.mockResolvedValue("local");
+    resolveSmartRoute.mockResolvedValue({
+      forceAll: undefined,
+      serviceIds: undefined,
+      changedPaths: undefined,
+    });
+    runPreflightChecks.mockResolvedValue({ ok: true, checks: [] });
+    kickoffBuild.mockResolvedValue("session-1");
+  });
+
+  function activeDeployment() {
+    return { id: "dep-active", commitSha: "sha-active", commitMessage: "feat: base" };
+  }
+
+  it("scopes a per-service refresh to exactly the requested service (#669)", async () => {
+    repos.deployment.findById.mockResolvedValue(activeDeployment());
+    repos.service.listByProject.mockResolvedValue([{ id: "svc-web", enabled: true }]);
+
+    await triggerDeployment(ctx, {
+      projectId: "project-1",
+      branch: "main",
+      refresh: true,
+      serviceIds: ["svc-web"],
+    });
+
+    const row = repos.deployment.create.mock.calls[0][0];
+    expect(row.forceAll).toBe(false);
+    expect(row.meta).toMatchObject({
+      targetServiceIds: ["svc-web"],
+      refreshServiceIds: ["svc-web"],
+    });
+  });
+
+  it("drops disabled services from an explicit refresh scope instead of deploying them blind", async () => {
+    repos.deployment.findById.mockResolvedValue(activeDeployment());
+    repos.service.listByProject.mockResolvedValue([
+      { id: "svc-web", enabled: true },
+      { id: "svc-db", enabled: false },
+    ]);
+
+    await triggerDeployment(ctx, {
+      projectId: "project-1",
+      branch: "main",
+      refresh: true,
+      serviceIds: ["svc-web", "svc-db"],
+    });
+
+    const row = repos.deployment.create.mock.calls[0][0];
+    expect(row.meta).toMatchObject({
+      targetServiceIds: ["svc-web"],
+      refreshServiceIds: ["svc-web"],
+    });
+  });
+
+  it("refuses to refresh when nothing is deployed yet", async () => {
+    repos.project.findById.mockResolvedValue(baseProject()); // no activeDeploymentId
+
+    await expect(
+      triggerDeployment(ctx, { projectId: "project-1", branch: "main", refresh: true }),
+    ).rejects.toThrow(/Nothing to refresh yet/i);
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+  });
+
+  it("fails loudly when every requested service is disabled (never re-clones)", async () => {
+    repos.deployment.findById.mockResolvedValue(activeDeployment());
+    repos.service.listByProject.mockResolvedValue([{ id: "svc-db", enabled: false }]);
+
+    await expect(
+      triggerDeployment(ctx, {
+        projectId: "project-1",
+        branch: "main",
+        refresh: true,
+        serviceIds: ["svc-db"],
+      }),
+    ).rejects.toThrow(/Nothing to refresh/i);
+  });
+
+  it("never touches git on refresh and inherits the active deployment's commit", async () => {
+    repos.project.findById.mockResolvedValue(
+      baseProject({
+        activeDeploymentId: "dep-active",
+        gitProvider: "github",
+        gitOwner: "acme",
+        gitRepo: "app",
+        localPath: null,
+      }),
+    );
+    repos.deployment.findById.mockResolvedValue(activeDeployment());
+    repos.service.listByProject.mockResolvedValue([{ id: "svc-web", enabled: true }]);
+
+    await triggerDeployment(ctx, {
+      projectId: "project-1",
+      branch: "main",
+      refresh: true,
+      serviceIds: ["svc-web"],
+    });
+
+    // No HEAD lookup — refresh carries no new source, but repo access is
+    // still verified so a lost credential can't silently "refresh".
+    expect(getCommitByRef).not.toHaveBeenCalled();
+    expect(repos.deployment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ commitSha: "sha-active" }),
+    );
+  });
+});
+
+/**
  * Folder-upload deploys (#334): the scan parses the uploaded compose file, but
  * the documented session → scan → ensure → deploy flow has no step that hands
  * those services back — so the deploy must take them off the upload session or
