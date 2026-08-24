@@ -58,9 +58,11 @@ export const UploadCertBody = Type.Object({
   keyPem: Type.String({ minLength: 1, maxLength: 100_000 }),
 });
 
-/** POST /preview — side-effect-free DNS-records preview for a hostname. */
+/** Shared body for side-effect-free DNS preview + live check. */
 export const PreviewDomainBody = Type.Object({
   hostname: Type.String({ minLength: 1, maxLength: 253, description: "Hostname to preview DNS records for." }),
+  /** When set, the A-record value is the project's server IP (self-hosted). */
+  projectId: Type.Optional(Type.String({ minLength: 1 })),
   serverId: Type.Optional(
     Type.String({
       minLength: 1,
@@ -74,6 +76,7 @@ export const PreviewDomainBody = Type.Object({
         "Also return the records for the www.<hostname> sibling, matching the 'Include www' toggle. The toggle claims a SECOND hostname, so it needs its own record.",
     }),
   ),
+  externalIngress: Type.Optional(Type.Boolean({ default: false })),
 });
 
 // ─── Inferred types ──────────────────────────────────────────────────────────
@@ -81,4 +84,5 @@ export const PreviewDomainBody = Type.Object({
 export type TDomainIdParam = Static<typeof DomainIdParam>;
 export type TListDomainsQuery = Static<typeof ListDomainsQuery>;
 export type TAddDomainBody = Static<typeof AddDomainBody>;
+export type TPreviewDomainBody = Static<typeof PreviewDomainBody>;
 export type TUploadCertBody = Static<typeof UploadCertBody>;

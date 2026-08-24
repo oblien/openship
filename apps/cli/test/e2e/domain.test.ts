@@ -117,6 +117,47 @@ describe("openship domain preview", () => {
   });
 });
 
+// ─── check (live DNS probe, no write) ─────────────────────────────────────────
+
+describe("openship domain check", () => {
+  const CHECK = {
+    data: {
+      mode: "selfhosted",
+      allOk: true,
+      records: [{ type: "A", host: "@", value: "203.0.113.10", status: "ok", observed: ["203.0.113.10"] }],
+    },
+  };
+
+  it("POSTs the hostname to /domains/check and prints per-record status", async () => {
+    fetchStub = stubFetch(() => ({ json: CHECK }));
+    const { err, code } = await runCommand(domainCommand, ["check", "app.example.com", "-p", "prj1"]);
+    expect(code).toBe(0);
+    expect(fetchStub.calls[0].method).toBe("POST");
+    expect(fetchStub.calls[0].url).toBe(`${API}/domains/check`);
+    expect(fetchStub.calls[0].body).toEqual({
+      hostname: "app.example.com",
+      projectId: "prj1",
+      includeWww: false,
+    });
+    expect(err).toContain("All records resolve");
+  });
+
+  it("exits 1 when some records are missing", async () => {
+    fetchStub = stubFetch(() => ({
+      json: {
+        data: {
+          mode: "selfhosted",
+          allOk: false,
+          records: [{ type: "A", host: "@", value: "203.0.113.10", status: "missing", observed: [] }],
+        },
+      },
+    }));
+    const { err, code } = await runCommand(domainCommand, ["check", "app.example.com"]);
+    expect(code).toBe(1);
+    expect(err).toContain("missing or don't match");
+  });
+});
+
 // ─── verify (apiRaw: 200 verified vs 422 not-propagated-yet) ──────────────────
 
 describe("openship domain verify", () => {

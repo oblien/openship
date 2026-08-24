@@ -60,25 +60,23 @@ beforeEach(() => {
 
 describe("previewRecords — self-hosted", () => {
   it("returns only the apex A record when www is off", async () => {
-    const { mode, records } = await previewRecords("freshs.hekai.org", "org_1", false);
+    const { mode, records } = await previewRecords("freshs.hekai.org", { organizationId: "org_1" });
     expect(mode).toBe("selfhosted");
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ type: "A", host: "freshs", name: "freshs.hekai.org" });
   });
 
   it("uses the selected remote Docker server for a pre-deploy preview (#663)", async () => {
-    const { records } = await previewRecords(
-      "app.example.com",
-      "org_1",
-      false,
-      "server_remote",
-    );
+    const { records } = await previewRecords("app.example.com", {
+      organizationId: "org_1",
+      serverId: "server_remote",
+    });
     expect(resolveSelectedServerHost).toHaveBeenCalledWith("org_1", "server_remote");
     expect(records[0]).toMatchObject({ type: "A", value: "198.51.100.42" });
   });
 
   it("adds the www A record when the toggle is on", async () => {
-    const { records } = await previewRecords("freshs.hekai.org", "org_1", true);
+    const { records } = await previewRecords("freshs.hekai.org", { organizationId: "org_1", includeWww: true });
     expect(records).toHaveLength(2);
     expect(records[1]).toMatchObject({
       type: "A",
@@ -90,14 +88,14 @@ describe("previewRecords — self-hosted", () => {
   });
 
   it("uses @ / www for an apex domain", async () => {
-    const { records } = await previewRecords("hekai.org", "org_1", true);
+    const { records } = await previewRecords("hekai.org", { organizationId: "org_1", includeWww: true });
     expect(records.map((r) => r.host)).toEqual(["@", "www"]);
     expect(records.map((r) => r.name)).toEqual(["hekai.org", "www.hekai.org"]);
   });
 
   // Guards the "never stacks www on www" rule the add path already enforces.
   it("does not stack www on a hostname that is already www", async () => {
-    const { records } = await previewRecords("www.hekai.org", "org_1", true);
+    const { records } = await previewRecords("www.hekai.org", { organizationId: "org_1", includeWww: true });
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ name: "www.hekai.org" });
   });
@@ -106,14 +104,14 @@ describe("previewRecords — self-hosted", () => {
 describe("previewRecords — cloud", () => {
   it("returns the apex CNAME + ownership TXT when www is off", async () => {
     platformTarget = "cloud";
-    const { mode, records } = await previewRecords("freshs.hekai.org", "org_1", false);
+    const { mode, records } = await previewRecords("freshs.hekai.org", { organizationId: "org_1" });
     expect(mode).toBe("cloud");
     expect(records.map((r) => r.type)).toEqual(["CNAME", "TXT"]);
   });
 
   it("adds a CNAME AND its own TXT for www (the shared edge verifies each name)", async () => {
     platformTarget = "cloud";
-    const { records } = await previewRecords("freshs.hekai.org", "org_1", true);
+    const { records } = await previewRecords("freshs.hekai.org", { organizationId: "org_1", includeWww: true });
     expect(records.map((r) => r.type)).toEqual(["CNAME", "TXT", "CNAME", "TXT"]);
     expect(records[2]).toMatchObject({ name: "www.freshs.hekai.org", value: "edge.opsh.io" });
     expect(records[3]).toMatchObject({

@@ -20,9 +20,30 @@ export interface DomainDnsRecord {
   value: string;
 }
 
+export type DomainDnsCheckStatus = "ok" | "missing" | "mismatch";
+
+export interface DomainDnsCheckedRecord extends DomainDnsRecord {
+  status: DomainDnsCheckStatus;
+  observed: string[];
+}
+
 export interface DomainDnsRecords {
   mode: "cloud" | "selfhosted" | "external";
   records: DomainDnsRecord[];
+}
+
+export interface DomainDnsCheckResult {
+  mode: "cloud" | "selfhosted" | "external";
+  records: DomainDnsCheckedRecord[];
+  allOk: boolean;
+}
+
+export interface DomainDnsQuery {
+  hostname: string;
+  projectId?: string;
+  includeWww?: boolean;
+  externalIngress?: boolean;
+  serverId?: string;
 }
 
 export interface DomainSslVerifyResult {
@@ -54,15 +75,15 @@ export const domainsApi = {
    */
   get: (domainId: string) => api.get<{ data: DomainState }>(endpoints.domains.byId(domainId)),
 
-  /** Get DNS records preview for a hostname (no domain creation needed). */
-  /** `includeWww` mirrors the Add-domain toggle so the panel shows the www
+  /** Get DNS records preview for a hostname (no domain creation needed).
+   *  `includeWww` mirrors the Add-domain toggle so the panel shows the www
    *  sibling's record too — the toggle claims a SECOND hostname. */
-  previewRecords: (hostname: string, includeWww = false, serverId?: string) =>
-    api.post<{ data: DomainDnsRecords }>(endpoints.domains.preview, {
-      hostname,
-      includeWww,
-      ...(serverId ? { serverId } : {}),
-    }),
+  previewRecords: (body: DomainDnsQuery) =>
+    api.post<{ data: DomainDnsRecords }>(endpoints.domains.preview, body),
+
+  /** Live DNS lookup for a hostname — no domain row. */
+  checkRecords: (body: DomainDnsQuery) =>
+    api.post<{ data: DomainDnsCheckResult }>(endpoints.domains.check, body),
 
   /** Remove a domain/route (DELETE /domains/:id). Drops the route + its edge
    *  registration; the app/service keeps running. Used by the per-card ⋯ menu. */

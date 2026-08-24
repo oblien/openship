@@ -69,6 +69,8 @@ export interface RoutingSettingsCardProps {
     targets: string[];
     onChange: (next: { to: string; status: number }) => void | Promise<void>;
   };
+  /** Domain + port on one row, without DNS chrome. */
+  compact?: boolean;
 }
 
 export function RoutingSettingsCard({
@@ -95,6 +97,7 @@ export function RoutingSettingsCard({
   hideTypeToggle = false,
   stripWww = false,
   redirect,
+  compact = false,
 }: RoutingSettingsCardProps) {
   const { baseDomain } = usePlatform();
   const { t } = useI18n();
@@ -145,7 +148,7 @@ export function RoutingSettingsCard({
     if (!hostname || hostname.length < 3 || !hostname.includes(".")) return;
     setLoadingRecords(true);
     try {
-      const res = await domainsApi.previewRecords(hostname);
+      const res = await domainsApi.previewRecords({ hostname });
       setDnsRecords(res.data.records);
       setDnsMode(res.data.mode);
     } catch {
@@ -156,7 +159,7 @@ export function RoutingSettingsCard({
   }, []);
 
   useEffect(() => {
-    if (domainType !== "custom" || !previewHostname) {
+    if (compact || domainType !== "custom" || !previewHostname) {
       setDnsRecords([]);
       return;
     }
@@ -166,7 +169,7 @@ export function RoutingSettingsCard({
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [domainType, previewHostname, fetchRecords]);
+  }, [compact, domainType, previewHostname, fetchRecords]);
 
   const hasRecords = dnsRecords.length > 0 && dnsRecords.every((record) => record.value);
 
@@ -448,7 +451,7 @@ export function RoutingSettingsCard({
                   "checking…" loading state was dropped: it flashed on every
                   keystroke and jittered the card height. DNS isn't required up
                   front (verified later at preflight / in domain settings). */}
-              {hasRecords && (
+              {hasRecords && !compact && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2">
                     <Server className="size-3 text-muted-foreground shrink-0" />

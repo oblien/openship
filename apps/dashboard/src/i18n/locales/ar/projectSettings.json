@@ -760,9 +760,9 @@
       "status": "الحالة"
     },
     "edit": {
-      "title": "تعديل النطاقات",
-      "descServer": "عدّل المنفذ الداخلي الذي يُوجَّه إليه كل نطاق.",
-      "descStatic": "عدّل المسار الثابت الذي يخدمه كل نطاق.",
+      "title": "تعديل النطاق",
+      "descServer": "غيّر العنوان أو المنفذ الذي يُوجَّه إليه.",
+      "descStatic": "غيّر العنوان أو المسار الذي يخدمه.",
       "cancel": "إلغاء",
       "saving": "جارٍ الحفظ...",
       "save": "حفظ التغييرات"
@@ -829,6 +829,65 @@
       "noServicePort": "لا توجد خدمة تنشر المنفذ {port}. أضِف ذلك المنفذ إلى خدمة أولًا.",
       "enterCustom": "أدخِل نطاقًا مخصّصًا.",
       "enterSubdomain": "أدخِل نطاقًا فرعيًا."
+    },
+    "setup": {
+      "title": "Add domain",
+      "subtitle": "Type the address people will use to open this site.",
+      "listTitle": "Website addresses",
+      "emptyTitle": "No address yet",
+      "emptyBody": "Add the name people type in the browser — like shop.yourname.com.",
+      "domainQuestion": "What's the website address?",
+      "freeQuestion": "Pick a short name",
+      "domainHint": "Example: shop.yourname.com",
+      "alsoWww": "Also use www.{domain}",
+      "typeGroup": "What kind of address",
+      "typeOwn": "Your own domain",
+      "typeOwnHint": "shop.yourname.com",
+      "typeFree": "Free OpenShip address",
+      "typeFreeHint": "my-app.{domain}",
+      "moreOptions": "More options",
+      "dnsFor": "Connect {hostname}",
+      "dnsQuestion": "Copy these at your domain company",
+      "dnsIntro": "Copy Name and Value at your domain company, then paste.",
+      "pendingHelp": "Add these records at your domain company, then Verify.",
+      "verifyWait": "Not showing up yet. Wait a few minutes and try again.",
+      "steps": {
+        "details": "Address",
+        "dns": "Connect"
+      },
+      "continue": "Next",
+      "back": "Back",
+      "cancel": "Cancel",
+      "addNow": "Add this address",
+      "checkDns": "Check DNS",
+      "checkingDns": "Checking…",
+      "dnsAllOk": "Looks good. Add it, then press Verify to turn on the lock (HTTPS).",
+      "dnsSomeFail": "Not showing up yet. That's normal — wait a few minutes and Check again. You can still add it.",
+      "willServe": "People will open {hostname}",
+      "advanced": "More options",
+      "cloudflareWarning": "Cloudflare: turn the orange cloud off (DNS only).",
+      "propagation": "This can take a few minutes. Some companies take longer.",
+      "table": {
+        "status": "Status",
+        "type": "Type",
+        "name": "Name",
+        "value": "Value"
+      },
+      "recordStatus": {
+        "unchecked": "—",
+        "ok": "Found",
+        "missing": "Missing",
+        "mismatch": "Wrong value"
+      },
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyName": "Copy name",
+      "copyValue": "Copy value",
+      "previewFailed": "Couldn't load the copy-paste rows. You can still add the address.",
+      "checkFailed": "Couldn't check right now. Try again in a moment.",
+      "emptyValue": "Not set",
+      "emptyValueHint": "We don't know this computer's public IP yet. Set SERVER_IP (or deploy to a server) so we can tell you what to paste.",
+      "observed": "Currently {value}"
     },
     "edge": {
       "setUp": "إعداد الحافة",

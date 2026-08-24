@@ -150,6 +150,7 @@ export const endpoints = {
   /* ---------------------------------------------------------------- */
   domains: {
     preview: "domains/preview",
+    check: "domains/check",
     byId: (id: string) => `domains/${encodeURIComponent(id)}`,
     verify: (id: string) => `domains/${encodeURIComponent(id)}/verify`,
     verifySsl: (id: string) => `domains/${encodeURIComponent(id)}/verify-ssl`,

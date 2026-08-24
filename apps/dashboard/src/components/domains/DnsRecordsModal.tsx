@@ -53,11 +53,11 @@ export default function DnsRecordsModal({
             try {
               const res = target.domainId
                 ? await domainsApi.records(target.domainId)
-                : await domainsApi.previewRecords(
-                    target.hostname,
-                    target.includeWww === true,
+                : await domainsApi.previewRecords({
+                    hostname: target.hostname,
+                    includeWww: target.includeWww === true,
                     serverId,
-                  );
+                  });
               const mode = res.data.mode === "cloud" ? "cloud" as const : "selfhosted" as const;
               let records = res.data.records;
               if (

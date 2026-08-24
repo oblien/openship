@@ -470,16 +470,84 @@ export async function removeServiceDomain(opts: {
   }
 }
 
-// ─── Preview records (no DB write) ───────────────────────────────────────────
+// ─── Preview / check records (no DB write) ───────────────────────────────────
 
-export async function previewRecords(
-  hostname: string,
-  organizationId?: string,
-  includeWww = false,
-  serverId?: string,
-) {
+export type DnsCheckStatus = "ok" | "missing" | "mismatch";
+
+export interface DnsCheckedRecord {
+  type: "CNAME" | "A" | "TXT";
+  host: string;
+  name: string;
+  value: string;
+  status: DnsCheckStatus;
+  observed: string[];
+}
+
+export interface PreviewRecordsOpts {
+  projectId?: string;
+  includeWww?: boolean;
+  externalIngress?: boolean;
+  organizationId?: string;
+  serverId?: string;
+}
+
+async function resolvePreviewProject(projectId?: string): Promise<Project | undefined> {
+  if (!projectId) return undefined;
+  return (await repos.project.findById(projectId)) ?? undefined;
+}
+
+export async function previewRecords(hostname: string, opts: PreviewRecordsOpts = {}) {
+  const project = await resolvePreviewProject(opts.projectId);
   const token = generateToken(hostname);
-  return buildRecords(hostname, token, undefined, false, organizationId, includeWww, serverId);
+  return buildRecords(
+    hostname,
+    token,
+    project,
+    opts.externalIngress === true,
+    opts.organizationId,
+    opts.includeWww === true,
+    opts.serverId,
+  );
+}
+
+/** Strip trailing dots and wrapping quotes so CNAME/TXT compares are stable. */
+export function normalizeDnsValue(value: string): string {
+  return value.trim().toLowerCase().replace(/^"|"$/g, "").replace(/\.$/, "");
+}
+
+export function dnsValueMatches(expected: string, observed: string[]): boolean {
+  if (!expected) return observed.length > 0;
+  const exp = normalizeDnsValue(expected);
+  return observed.some((value) => {
+    const got = normalizeDnsValue(value);
+    return got === exp || got.endsWith(`.${exp}`) || exp.endsWith(`.${got}`);
+  });
+}
+
+async function checkOneRecord(
+  record: DnsRecord,
+): Promise<DnsCheckedRecord> {
+  const observed = await resolveRecords(record.name, record.type);
+  let status: DnsCheckStatus;
+  if (observed.length === 0) {
+    status = "missing";
+  } else if (!record.value || dnsValueMatches(record.value, observed)) {
+    status = "ok";
+  } else {
+    status = "mismatch";
+  }
+  return { ...record, status, observed };
+}
+
+/** Live-dig the records a hostname would need — no domain row is created. */
+export async function checkRecords(hostname: string, opts: PreviewRecordsOpts = {}) {
+  const preview = await previewRecords(hostname, opts);
+  const records = await Promise.all(preview.records.map(checkOneRecord));
+  return {
+    mode: preview.mode,
+    records,
+    allOk: records.length > 0 && records.every((record) => record.status === "ok"),
+  };
 }
 
 // ─── Get DNS records (existing domain) ───────────────────────────────────────

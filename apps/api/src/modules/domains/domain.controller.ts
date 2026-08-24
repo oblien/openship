@@ -12,7 +12,7 @@ import { notification } from "../../lib/notification-dispatcher";
 import { streamSSE } from "../../lib/sse";
 import * as domainService from "./domain.service";
 import { maybeProxyCloudProject } from "../../lib/cloud/project-router";
-import type { TAddDomainBody, TUploadCertBody } from "./domain.schema";
+import type { TAddDomainBody, TPreviewDomainBody, TUploadCertBody } from "./domain.schema";
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
@@ -246,19 +246,54 @@ export async function setPrimary(c: Context) {
   return c.json({ data: domain });
 }
 
+async function parsePreviewBody(c: Context): Promise<TPreviewDomainBody | Response> {
+  const body = await c.req.json<TPreviewDomainBody>().catch(() => null);
+  if (!body?.hostname?.trim()) {
+    return c.json({ error: "hostname is required" }, 400);
+  }
+  if (body.projectId) {
+    await permission.assert(getRequestContext(c), {
+      resourceType: "project",
+      resourceId: body.projectId,
+      action: "read",
+    });
+  }
+  return {
+    hostname: body.hostname.trim().toLowerCase(),
+    projectId: body.projectId,
+    serverId: body.serverId,
+    includeWww: body.includeWww,
+    externalIngress: body.externalIngress,
+  };
+}
+
 /** POST /domains/preview - get DNS records for a hostname (no DB write) */
 export async function preview(c: Context) {
   const ctx = getRequestContext(c);
-  const body = await c.req.json<{ hostname: string; includeWww?: boolean; serverId?: string }>();
-  if (!body.hostname?.trim()) {
-    return c.json({ error: "hostname is required" }, 400);
-  }
-  const result = await domainService.previewRecords(
-    body.hostname.trim().toLowerCase(),
-    ctx.organizationId,
-    body.includeWww === true,
-    body.serverId,
-  );
+  const body = await parsePreviewBody(c);
+  if (body instanceof Response) return body;
+  const result = await domainService.previewRecords(body.hostname, {
+    projectId: body.projectId,
+    includeWww: body.includeWww,
+    externalIngress: body.externalIngress,
+    organizationId: ctx.organizationId,
+    serverId: body.serverId,
+  });
+  return c.json({ data: result });
+}
+
+/** POST /domains/check - live-dig the records a hostname would need (no DB write) */
+export async function check(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await parsePreviewBody(c);
+  if (body instanceof Response) return body;
+  const result = await domainService.checkRecords(body.hostname, {
+    projectId: body.projectId,
+    includeWww: body.includeWww,
+    externalIngress: body.externalIngress,
+    organizationId: ctx.organizationId,
+    serverId: body.serverId,
+  });
   return c.json({ data: result });
 }
 

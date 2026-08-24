@@ -23,6 +23,7 @@ Send a personal access token as a bearer header (`Authorization: Bearer <token>`
 | `GET /api/domains` | `domain:list` | List domains (optionally `?projectId=`). |
 | `POST /api/domains` | `domain:write` | Add a domain to a project. |
 | `POST /api/domains/preview` | `domain:read` | Preview the DNS records a hostname will need — creates nothing. |
+| `POST /api/domains/check` | `domain:read` | Live-check whether those records already resolve — still creates nothing. |
 | `GET /api/domains/:id` | `domain:read` | Read one domain's verify + SSL state. |
 | `DELETE /api/domains/:id` | `domain:admin` | Remove a domain. |
 | `POST /api/domains/:id/verify` | `domain:write` | Verify ownership / DNS for a domain. |
@@ -86,6 +87,28 @@ curl -X POST https://your-host/api/domains/preview \
 
 The response's `mode` tells you which setup applies: `selfhosted` (an A record to your server), `cloud`
 (a CNAME to Openship Cloud), or `external` (a TXT record only — you front TLS yourself).
+
+## Check DNS without adding
+
+Same records as preview, but Openship actually looks them up. Use this to confirm the registrar
+published the values before you attach the domain.
+
+```
+POST /api/domains/check
+```
+
+```bash
+curl -X POST https://your-host/api/domains/check \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"app.example.com","projectId":"proj_123"}'
+```
+
+```bash
+openship domain check app.example.com -p proj_123
+```
+
+Each record comes back with `status` (`ok` / `missing` / `mismatch`) and the values currently observed.
 
 ## Verify a domain
 

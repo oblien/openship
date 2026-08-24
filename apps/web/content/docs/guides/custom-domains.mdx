@@ -40,8 +40,8 @@ Go to your project and open the **Domains** tab. This is home base for everythin
 
 ### Add your domain
 
-Press **Add domain**. In the form that opens, choose **Custom domain**, then type the full address you want,
-like `app.example.com`.
+Press **Add domain**. A dialog opens: choose **Custom domain**, type the address you want
+(like `app.example.com`), then **Continue**.
 
 If your project runs a server, you'll also see a **Maps to port** field — this is which internal port the
 domain sends traffic to. Openship pre-fills it with your app's port, so you can usually leave it.
@@ -61,6 +61,9 @@ Because `www.example.com` is a separate domain, it needs a separate DNS record �
 the bare domain's in the next step. Skip it and `www` will stay Pending: it can't be verified, so it never gets
 a certificate.
 </Callout>
+
+On the next step Openship shows the exact DNS records to add, with a **Check DNS** button so you can
+confirm they resolve **before** the domain is attached.
 
 When the form is filled in, press the **Add domain** button at the bottom of the form to save it. (Yes,
 it's the same label as the button you just clicked — the first one opens the form, this one saves it.)

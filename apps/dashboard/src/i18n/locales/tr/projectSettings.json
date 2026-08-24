@@ -924,9 +924,9 @@
       "status": "Durum"
     },
     "edit": {
-      "title": "Alan adlarını düzenle",
-      "descServer": "Her alan adının hangi dahili porta yönleneceğini düzenleyin.",
-      "descStatic": "Her alan adının hangi statik yolu sunacağını düzenleyin.",
+      "title": "Alan adını düzenle",
+      "descServer": "Adresi veya yönlendiği portu değiştirin.",
+      "descStatic": "Adresi veya sunduğu yolu değiştirin.",
       "cancel": "İptal",
       "saving": "Kaydediliyor...",
       "save": "Değişiklikleri kaydet"
@@ -1010,6 +1010,65 @@
       "noServicePort": "Hiçbir servis {port} portunu dışa açmıyor. Önce bu portu bir servise ekleyin.",
       "enterCustom": "Özel bir alan adı girin.",
       "enterSubdomain": "Bir alt alan adı girin."
+    },
+    "setup": {
+      "title": "Add domain",
+      "subtitle": "Type the address people will use to open this site.",
+      "listTitle": "Website addresses",
+      "emptyTitle": "No address yet",
+      "emptyBody": "Add the name people type in the browser — like shop.yourname.com.",
+      "domainQuestion": "What's the website address?",
+      "freeQuestion": "Pick a short name",
+      "domainHint": "Example: shop.yourname.com",
+      "alsoWww": "Also use www.{domain}",
+      "typeGroup": "What kind of address",
+      "typeOwn": "Your own domain",
+      "typeOwnHint": "shop.yourname.com",
+      "typeFree": "Free OpenShip address",
+      "typeFreeHint": "my-app.{domain}",
+      "moreOptions": "More options",
+      "dnsFor": "Connect {hostname}",
+      "dnsQuestion": "Copy these at your domain company",
+      "dnsIntro": "Copy Name and Value at your domain company, then paste.",
+      "pendingHelp": "Add these records at your domain company, then Verify.",
+      "verifyWait": "Not showing up yet. Wait a few minutes and try again.",
+      "steps": {
+        "details": "Address",
+        "dns": "Connect"
+      },
+      "continue": "Next",
+      "back": "Back",
+      "cancel": "Cancel",
+      "addNow": "Add this address",
+      "checkDns": "Check DNS",
+      "checkingDns": "Checking…",
+      "dnsAllOk": "Looks good. Add it, then press Verify to turn on the lock (HTTPS).",
+      "dnsSomeFail": "Not showing up yet. That's normal — wait a few minutes and Check again. You can still add it.",
+      "willServe": "People will open {hostname}",
+      "advanced": "More options",
+      "cloudflareWarning": "Cloudflare: turn the orange cloud off (DNS only).",
+      "propagation": "This can take a few minutes. Some companies take longer.",
+      "table": {
+        "status": "Status",
+        "type": "Type",
+        "name": "Name",
+        "value": "Value"
+      },
+      "recordStatus": {
+        "unchecked": "—",
+        "ok": "Found",
+        "missing": "Missing",
+        "mismatch": "Wrong value"
+      },
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyName": "Copy name",
+      "copyValue": "Copy value",
+      "previewFailed": "Couldn't load the copy-paste rows. You can still add the address.",
+      "checkFailed": "Couldn't check right now. Try again in a moment.",
+      "emptyValue": "Not set",
+      "emptyValueHint": "We don't know this computer's public IP yet. Set SERVER_IP (or deploy to a server) so we can tell you what to paste.",
+      "observed": "Currently {value}"
     },
     "edge": {
       "setUp": "Kenarı kur",

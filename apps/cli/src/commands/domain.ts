@@ -6,6 +6,7 @@
  *   list        GET    /domains?projectId=<id>
  *   add         POST   /domains                 { projectId, hostname, isPrimary? }
  *   preview     POST   /domains/preview         { hostname }
+ *   check       POST   /domains/check           { hostname }  live DNS probe, no write
  *   verify      POST   /domains/:id/verify      (200 verified | 422 not-yet)
  *   primary     POST   /domains/:id/primary
  *   records     GET    /domains/:id/records
@@ -143,6 +144,56 @@ const previewCmd = new Command("preview")
       });
       printRecords(res.data);
     } catch (e) {
+      fail(e);
+    }
+  });
+
+const checkCmd = new Command("check")
+  .description("Live-check whether the required DNS records already resolve (no changes saved)")
+  .argument("<hostname>", "Domain hostname to check")
+  .option("-p, --project <id>", "Project ID — used to fill the self-hosted A-record target")
+  .option("--www", "Also check www.<hostname>", false)
+  .action(async (hostname: string, opts: { project?: string; www?: boolean }) => {
+    const sp = spin(`Checking DNS for ${hostname}…`);
+    try {
+      const res = await apiRequest<{
+        data: {
+          mode: string;
+          allOk: boolean;
+          records: Array<{ type: string; host: string; value: string; status: string; observed: string[] }>;
+        };
+      }>("/domains/check", {
+        method: "POST",
+        body: JSON.stringify({
+          hostname,
+          projectId: opts.project,
+          includeWww: !!opts.www,
+        }),
+      });
+      sp?.stop();
+      if (isJsonMode()) {
+        printJson(res.data);
+        return;
+      }
+      info(`  DNS mode: ${res.data.mode}`);
+      printTable(
+        res.data.records.map((r) => ({
+          status: r.status,
+          type: r.type,
+          host: r.host,
+          value: r.value,
+          observed: r.observed.join(", ") || "—",
+        })),
+        ["status", "type", "host", "value", "observed"],
+      );
+      if (res.data.allOk) {
+        ok("  All records resolve.");
+      } else {
+        err("  Some records are missing or don't match yet.");
+        process.exit(1);
+      }
+    } catch (e) {
+      sp?.fail("DNS check failed");
       fail(e);
     }
   });
@@ -308,6 +359,7 @@ export const domainCommand = new Command("domain")
   .addCommand(listCmd)
   .addCommand(addCmd)
   .addCommand(previewCmd)
+  .addCommand(checkCmd)
   .addCommand(verifyCmd)
   .addCommand(primaryCmd)
   .addCommand(recordsCmd)

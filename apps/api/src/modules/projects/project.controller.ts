@@ -2435,13 +2435,26 @@ export async function connectDomain(c: Context) {
   }
 
   try {
+    const hostname = body.domain.trim();
     const result = await domainService.addDomain(getRequestContext(c), {
       projectId: id,
-      hostname: body.domain.trim(),
+      hostname,
       isPrimary: true,
       externalIngress: body.externalIngress ?? false,
       includeWww: body.includeWww ?? false,
     });
+
+    // Preview/check already emit www records when this flag is on; attach the
+    // matching pending row so Verify / SSL can run on both hostnames.
+    const apex = hostname.toLowerCase();
+    if (body.includeWww && !apex.startsWith("www.")) {
+      await domainService.addDomain(getRequestContext(c), {
+        projectId: id,
+        hostname: `www.${apex}`,
+        isPrimary: false,
+        externalIngress: body.externalIngress ?? false,
+      });
+    }
 
     audit.recordAsync(auditContextFrom(c, organizationId, userId), {
       eventType: "domain.added",

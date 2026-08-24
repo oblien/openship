@@ -26,7 +26,8 @@ interface DropdownPosition {
   top?: number;
   bottom?: number;
   left: number;
-  width: number;
+  width?: number;
+  minWidth?: number;
   maxHeight: number;
 }
 
@@ -40,6 +41,9 @@ interface CustomSelectProps<T extends string> {
   /** Fired once each time the menu opens — use to lazily load options. */
   onOpen?: () => void;
   disabled?: boolean;
+  /** Compact trigger for inline field prefixes. */
+  size?: "default" | "compact";
+  ariaLabel?: string;
 }
 
 export function CustomSelect<T extends string>({
@@ -51,6 +55,8 @@ export function CustomSelect<T extends string>({
   footerAction,
   onOpen,
   disabled = false,
+  size = "default",
+  ariaLabel,
 }: CustomSelectProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,38 +70,48 @@ export function CustomSelect<T extends string>({
     if (!triggerRef.current || typeof window === "undefined") return;
 
     const rect = triggerRef.current.getBoundingClientRect();
-    const width = Math.min(
-      Math.max(rect.width, 220),
-      window.innerWidth - VIEWPORT_PADDING * 2,
-    );
+    const minWidth = size === "compact" ? rect.width : 220;
+    const width = size === "compact"
+      ? undefined
+      : Math.min(
+          Math.max(rect.width, minWidth),
+          window.innerWidth - VIEWPORT_PADDING * 2,
+        );
     const left = Math.min(
       Math.max(VIEWPORT_PADDING, rect.left),
-      Math.max(VIEWPORT_PADDING, window.innerWidth - width - VIEWPORT_PADDING),
+      Math.max(
+        VIEWPORT_PADDING,
+        window.innerWidth - (width ?? Math.max(rect.width, 160)) - VIEWPORT_PADDING,
+      ),
     );
+    const offset = size === "compact" ? 4 : MENU_OFFSET;
     const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_PADDING;
     const spaceAbove = rect.top - VIEWPORT_PADDING;
-    const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow;
+    const minMenu = size === "compact" ? 72 : 120;
+    const openAbove = spaceBelow < minMenu && spaceAbove > spaceBelow;
     const availableHeight = Math.max(
-      120,
-      (openAbove ? spaceAbove : spaceBelow) - MENU_OFFSET,
+      minMenu,
+      (openAbove ? spaceAbove : spaceBelow) - offset,
     );
 
     setMenuPosition(
       openAbove
         ? {
-            bottom: window.innerHeight - rect.top + MENU_OFFSET,
+            bottom: window.innerHeight - rect.top + offset,
             left,
             width,
+            minWidth,
             maxHeight: Math.min(MENU_MAX_HEIGHT, availableHeight),
           }
         : {
-            top: rect.bottom + MENU_OFFSET,
+            top: rect.bottom + offset,
             left,
             width,
+            minWidth,
             maxHeight: Math.min(MENU_MAX_HEIGHT, availableHeight),
           },
     );
-  }, []);
+  }, [size]);
 
   useEffect(() => {
     const isInside = (target: EventTarget | null) => (
@@ -161,17 +177,25 @@ export function CustomSelect<T extends string>({
         <div
           ref={menuRef}
           role="listbox"
-          className="fixed z-[10050] overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
+          className={`fixed z-[10050] border border-border bg-popover shadow-lg shadow-black/[0.06] ${
+            size === "compact"
+              ? "h-fit w-max rounded-lg"
+              : "overflow-hidden rounded-2xl border-border/50 shadow-xl shadow-black/[0.08]"
+          }`}
           style={{
             left: menuPosition.left,
-            width: menuPosition.width,
-            maxHeight: menuPosition.maxHeight,
+            minWidth: menuPosition.minWidth,
+            ...(menuPosition.width !== undefined ? { width: menuPosition.width } : {}),
+            ...(size === "compact" ? undefined : { maxHeight: menuPosition.maxHeight }),
             ...(menuPosition.top !== undefined
               ? { top: menuPosition.top }
               : { bottom: menuPosition.bottom }),
           }}
         >
-          <div className="max-h-full overflow-y-auto py-1.5">
+          <div
+            className={size === "compact" ? "flex flex-col p-0.5" : "overflow-y-auto py-1.5"}
+            style={size === "compact" ? undefined : { maxHeight: menuPosition.maxHeight }}
+          >
             {options.map((option) => {
               const isSelected = option.value === value;
               return (
@@ -181,8 +205,9 @@ export function CustomSelect<T extends string>({
                   aria-selected={isSelected}
                   onClick={() => handleSelect(option.value)}
                   className={`
-                    w-full px-4 py-2.5 text-start flex items-center justify-between gap-2
-                    text-sm transition-all duration-150
+                    w-full text-start flex items-center justify-between gap-2
+                    transition-all duration-150
+                    ${size === "compact" ? "h-8 rounded-md px-2.5 text-[13px] leading-none" : "px-4 py-2.5 text-sm"}
                     ${isSelected
                       ? 'bg-accent text-accent-foreground font-medium'
                       : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -190,20 +215,22 @@ export function CustomSelect<T extends string>({
                   `}
                   type="button"
                 >
-                  <span className="flex min-w-0 items-center gap-2">
+                  <span className={`flex items-center gap-2 ${option.description ? "min-w-0" : "shrink-0"}`}>
                     {option.icon}
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate">{option.label}</span>
-                      {option.description && (
+                    {option.description ? (
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{option.label}</span>
                         <span className="truncate text-xs text-muted-foreground/70">
                           {option.description}
                         </span>
-                      )}
-                    </span>
+                      </span>
+                    ) : (
+                      <span className="whitespace-nowrap">{option.label}</span>
+                    )}
                   </span>
-                  {isSelected && (
-                    <Check className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                  )}
+                  <Check
+                    className={`size-3.5 shrink-0 ${isSelected ? "text-muted-foreground" : "invisible"}`}
+                  />
                 </button>
               );
             })}
@@ -232,45 +259,52 @@ export function CustomSelect<T extends string>({
       <button
         ref={triggerRef}
         onClick={() => {
-          if (disabled) return;
           if (!isOpen) onOpen?.();
           setIsOpen((prev) => !prev);
         }}
         disabled={disabled}
+        aria-label={ariaLabel}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        className={`
+        className={
+          size === "compact"
+            ? `flex h-full items-center gap-1 px-2.5 text-[13px] font-medium text-foreground transition-colors ${
+                disabled ? "cursor-not-allowed opacity-50" : "hover:bg-foreground/[0.04]"
+              } ${isOpen ? "bg-foreground/[0.04]" : ""}`
+            : `
           w-full px-4 py-3 rounded-2xl text-sm font-medium
           transition-all duration-200 flex items-center justify-between gap-2
           border border-border/50
-          ${disabled
-            ? 'bg-muted/30 opacity-60 cursor-not-allowed'
-            : isOpen
-              ? 'bg-muted/80 border-border'
-              : 'bg-muted/40 hover:bg-muted/60 hover:border-border'
+          ${disabled ? "cursor-not-allowed opacity-50" : ""}
+          ${isOpen 
+            ? 'bg-muted/80 border-border' 
+            : 'bg-muted/40 hover:bg-muted/60 hover:border-border'
           }
-        `}
+        `
+        }
         type="button"
       >
-        <span className="flex min-w-0 items-center gap-2 text-foreground/70">
+        <span className={`flex min-w-0 items-center gap-2 ${size === "compact" ? "text-foreground" : "text-foreground/70"}`}>
           {selectedOption?.icon}
           {selectedOption ? (
-            <span className="flex min-w-0 flex-col text-start">
-              <span className="truncate">{selectedOption.label}</span>
-              {selectedOption.description && (
+            selectedOption.description ? (
+              <span className="flex min-w-0 flex-col text-start">
+                <span className="truncate">{selectedOption.label}</span>
                 <span className="truncate text-xs font-normal text-muted-foreground/70">
                   {selectedOption.description}
                 </span>
-              )}
-            </span>
+              </span>
+            ) : (
+              <span className="truncate">{selectedOption.label}</span>
+            )
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
           )}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-muted-foreground transition-transform duration-200 flex-shrink-0 ${
-            isOpen ? "rotate-180" : ""
-          }`}
+          className={`text-muted-foreground transition-transform duration-200 flex-shrink-0 ${
+            size === "compact" ? "size-3.5" : "w-4 h-4"
+          } ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
 

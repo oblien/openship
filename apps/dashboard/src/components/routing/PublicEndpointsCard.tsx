@@ -49,6 +49,8 @@ interface PublicEndpointsCardProps {
    * managed edge owns.
    */
   allowRedirects?: boolean;
+  /** When false, hide the add-domain control (single-domain edit modal). */
+  allowAdd?: boolean;
 }
 
 const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
@@ -65,6 +67,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   allowRemoveAll = false,
   wwwToggle,
   allowRedirects = false,
+  allowAdd = true,
 }) => {
   const { t } = useI18n();
   const { baseDomain } = usePlatform();
@@ -215,6 +218,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         actionSlot={actionSlot}
         portInline={portInline}
         hideTypeToggle={hideTypeToggle}
+        compact={!allowAdd}
         redirect={
           redirectTargets.length > 0
             ? {
@@ -247,7 +251,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     // No domains. With allowRemoveAll this is a valid state (internal-only) — keep
     // an "add domain" affordance so the user can add one back; otherwise render
     // nothing (the parent owns the empty case).
-    if (!allowRemoveAll) return null;
+    if (!allowRemoveAll || !allowAdd) return null;
     return (
       <button
         type="button"
@@ -334,6 +338,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                 </div>
               );
             })}
+            {allowAdd ? (
             <button
               type="button"
               onClick={handleAddEndpoint}
@@ -342,13 +347,14 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
               <Plus className="size-4" />
               {w.addDomain}
             </button>
+            ) : null}
           </>
         ) : (
           renderRoutingCard(
             endpoints[0],
             <>
               {allowRemoveAll && removeButton(endpoints[0].id)}
-              {addButton}
+              {allowAdd ? addButton : null}
             </>,
           )
         )}
@@ -370,6 +376,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
               : w.accessibleWhere}
           </p>
         </div>
+        {allowAdd ? (
         <button
           type="button"
           onClick={handleAddEndpoint}
@@ -379,6 +386,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         >
           <Plus className="size-4" />
         </button>
+        ) : null}
       </div>
 
       <div className="p-4 space-y-4">
