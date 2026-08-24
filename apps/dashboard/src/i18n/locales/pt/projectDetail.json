@@ -138,6 +138,7 @@
 			"tabs": {
 				"overview": "Visão geral",
 				"terminal": "Terminal",
+				"files": "Ficheiros",
 				"logs": "Logs",
 				"env": "Ambiente",
 				"settings": "Configurações",
@@ -209,7 +210,20 @@
 				"backupRunFailed": "Falha na execução do backup"
 			},
 			"duplicateContainers": "Outro contêiner também corresponde a este serviço: {names}",
-			"editInSettings": "Editar nas configurações"
+			"editInSettings": "Editar nas configurações",
+			"files": {
+				"loading": "A carregar…",
+				"empty": "Esta pasta está vazia",
+				"selectPrompt": "Selecione um ficheiro para pré-visualizar",
+				"download": "Transferir",
+				"binary": "Ficheiro binário ({size}) — transfira-o para ver",
+				"loadFailed": "Não foi possível abrir esta pasta",
+				"readFailed": "Não foi possível abrir este ficheiro",
+				"refresh": "Atualizar",
+				"back": "Voltar",
+				"downloadFailed": "A transferência falhou",
+				"truncated": "A mostrar as primeiras {limit} entradas — esta pasta tem mais."
+			}
 		},
 		"settingsForm": {
 			"name": "Nome",

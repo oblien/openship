@@ -138,6 +138,7 @@
 			"tabs": {
 				"overview": "Resumen",
 				"terminal": "Terminal",
+				"files": "Archivos",
 				"logs": "Registros",
 				"env": "Entorno",
 				"settings": "Configuración",
@@ -209,7 +210,20 @@
 				"backupRunFailed": "La ejecución de la copia de seguridad falló"
 			},
 			"duplicateContainers": "Otro contenedor también coincide con este servicio: {names}",
-			"editInSettings": "Editar en ajustes"
+			"editInSettings": "Editar en ajustes",
+			"files": {
+				"loading": "Cargando…",
+				"empty": "Esta carpeta está vacía",
+				"selectPrompt": "Selecciona un archivo para previsualizar",
+				"download": "Descargar",
+				"binary": "Archivo binario ({size}): descárgalo para verlo",
+				"loadFailed": "No se pudo abrir esta carpeta",
+				"readFailed": "No se pudo abrir este archivo",
+				"refresh": "Actualizar",
+				"back": "Atrás",
+				"downloadFailed": "Error al descargar",
+				"truncated": "Mostrando las primeras {limit} entradas: esta carpeta tiene más."
+			}
 		},
 		"settingsForm": {
 			"name": "Nombre",
