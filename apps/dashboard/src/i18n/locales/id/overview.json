@@ -1,0 +1,144 @@
+{
+  "activity": {
+    "title": "Aktivitas",
+    "thisWeek": "minggu ini",
+    "deploymentSingular": "{count} deployment",
+    "deploymentPlural": "{count} deployment"
+  },
+  "apiRequests": {
+    "title": "Request API",
+    "last7Days": "7 hari terakhir",
+    "totalRequests": "Total request",
+    "requestsTooltip": "{count} request"
+  },
+  "credits": {
+    "title": "Saldo Kredit",
+    "availableToUse": "Tersedia untuk digunakan",
+    "spentThisMonth": "Digunakan bulan ini",
+    "add": "Tambah"
+  },
+  "deployments": {
+    "title": "Deployment",
+    "lastNDays": "{period} hari terakhir",
+    "deploymentSingular": "{count} deployment",
+    "deploymentPlural": "{count} deployment"
+  },
+  "homeTip": {
+    "quickTip": "Tips Cepat",
+    "connectText": "Hubungkan repository GitHub Anda untuk deployment otomatis setiap push.",
+    "connectLabel": "Hubungkan GitHub",
+    "createText": "Buat proyek pertama Anda untuk mulai deploy.",
+    "createLabel": "Proyek Baru",
+    "settingsText": "Atur environment variable dan domain kustom di pengaturan proyek.",
+    "settingsLabel": "Pengaturan Proyek",
+    "connected": "Tersambung",
+    "tips": {
+      "envVars": {
+        "text": "Tambahkan environment variable terenkripsi dan secret ke proyek mana pun.",
+        "label": "Buka proyek"
+      },
+      "customDomain": {
+        "text": "Arahkan domain kustom ke proyek — HTTPS disediakan secara otomatis.",
+        "label": "Buka proyek"
+      },
+      "autoDeploy": {
+        "text": "Hubungkan GitHub untuk auto-deploy setiap push, tanpa CI.",
+        "label": "Buka pengaturan Git"
+      },
+      "rollback": {
+        "text": "Kembalikan ke deployment sebelumnya dengan satu klik.",
+        "label": "Lihat deployment"
+      },
+      "apps": {
+        "text": "Instal aplikasi self-hosted seperti Gitea, n8n, dan Metabase dengan satu klik.",
+        "label": "Jelajahi aplikasi"
+      },
+      "servers": {
+        "text": "Hubungkan server Anda sendiri melalui SSH dan deploy dari sini.",
+        "label": "Kelola server"
+      },
+      "jobs": {
+        "text": "Jadwalkan command dengan cron job — retry, log langsung, dan riwayat termasuk.",
+        "label": "Buka job"
+      },
+      "backups": {
+        "text": "Atur backup otomatis untuk database dan volume Anda.",
+        "label": "Konfigurasi backup"
+      },
+      "mail": {
+        "text": "Jalankan server email dan webmail Anda sendiri, sepenuhnya self-hosted.",
+        "label": "Atur email"
+      },
+      "team": {
+        "text": "Undang rekan tim dan batasi akses mereka per proyek.",
+        "label": "Kelola tim"
+      }
+    }
+  },
+  "welcome": {
+    "title": "Luncurkan proyek pertama Anda",
+    "subtitle": "Hubungkan repository atau mulai dari template — OpenShip membangunnya, mengirimkannya, dan memberikan URL aktif dalam hitungan menit.",
+    "createProject": "Buat proyek",
+    "importGithub": "Impor dari GitHub",
+    "tipPrefix": "Tips: tekan",
+    "tipSuffix": "untuk melompat ke mana saja"
+  },
+  "header": {
+    "goodMorning": "Selamat pagi",
+    "goodAfternoon": "Selamat siang",
+    "goodEvening": "Selamat malam",
+    "greetingWithName": "{greeting}, {name}",
+    "overview": "Ringkasan",
+    "subtitle": "Pantau penggunaan platform dan kelola sumber daya",
+    "creditsBalance": "Saldo Kredit",
+    "topUp": "Isi Ulang"
+  },
+  "hero": {
+    "title": "Aktivitas Platform",
+    "subtitle": "Penggunaan token & request API",
+    "tokens": "Token",
+    "requests": "Request",
+    "lastNDays": "{period} hari terakhir",
+    "agents": "Agent",
+    "environments": "Environment",
+    "total": "Total",
+    "production": "Produksi",
+    "testing": "Pengujian",
+    "prodCount": "{count} produksi",
+    "testCount": "{count} uji"
+  },
+  "projects": {
+    "title": "Proyek",
+    "activeDeployments": "Deployment aktif",
+    "total": "Total",
+    "live": "Aktif",
+    "building": "Membangun",
+    "needAttentionSingular": "{count} proyek perlu perhatian",
+    "needAttentionPlural": "{count} proyek perlu perhatian"
+  },
+  "sandboxes": {
+    "title": "Sandbox",
+    "developmentEnvironments": "Environment pengembangan",
+    "totalSandboxes": "Total sandbox",
+    "active": "Aktif",
+    "runningCount": "{count} berjalan",
+    "stoppedCount": "{count} berhenti"
+  },
+  "stats": {
+    "creditsBalance": "Saldo Kredit",
+    "tokenUsage": "Penggunaan Token",
+    "thisMonth": "Bulan ini",
+    "apiRequests": "Request API",
+    "last7Days": "7 hari terakhir",
+    "deployments": "Deployment",
+    "successfulCount": "{count} berhasil",
+    "activeProjects": "Proyek Aktif",
+    "sandboxes": "Sandbox",
+    "activeCount": "{count} aktif"
+  },
+  "tokenUsage": {
+    "title": "Penggunaan Token",
+    "lastNDays": "{period} hari terakhir",
+    "tokensTooltip": "{count} token"
+  }
+}
