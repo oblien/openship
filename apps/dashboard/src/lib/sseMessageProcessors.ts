@@ -393,11 +393,13 @@ export const createLogMessageProcessor = (
           break;
 
         case "end":
-          // Container stream ended
-          if (message.exitCode !== undefined && message.exitCode !== 0) {
-            const exitMessage = message.message || `Container exited with code ${message.exitCode}`;
-            callbacks.onContainerExit?.(message.exitCode, exitMessage);
-          }
+          callbacks.onContainerExit?.(
+            message.exitCode ?? 0,
+            message.message ||
+              (message.exitCode
+                ? `Container exited with code ${message.exitCode}`
+                : "Log stream ended"),
+          );
           break;
 
         case "error":

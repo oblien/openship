@@ -751,6 +751,12 @@ export interface SslResult {
 
 export type LogCallback = (entry: LogEntry) => void;
 
+export interface RuntimeLogStreamOptions {
+  tail?: number;
+  /** Called once when the source closes without an explicit cleanup. */
+  onEnd?: () => void;
+}
+
 // ─── SSH configuration ──────────────────────────────────────────────────────
 
 /**

@@ -428,6 +428,33 @@ export async function runtimeLogStream(c: Context) {
   return streamSSE(c, async (sseStream) => {
     let cleanup: (() => void) | null = null;
     let serverId: string | null = null;
+    let finished = false;
+    let cleanupDone = false;
+    let endFramePending = false;
+    let retained = false;
+    let resolveHold: () => void;
+    const hold = new Promise<void>((resolve) => {
+      resolveHold = resolve;
+    });
+
+    const cleanupOnce = () => {
+      if (!cleanup || cleanupDone) return;
+      cleanupDone = true;
+      try {
+        cleanup();
+      } catch {
+        // The response is already ending; cleanup must not strand it.
+      }
+    };
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      cleanupOnce();
+      resolveHold();
+    };
+
+    sseStream.onAbort(finish);
 
     try {
       const result = await serviceService.streamServiceRuntimeLogs(
@@ -446,25 +473,43 @@ export async function runtimeLogStream(c: Context) {
             }),
           });
         },
-        { tail },
+        {
+          tail,
+          onEnd: () => {
+            if (finished || endFramePending) return;
+            endFramePending = true;
+            void sseStream
+              .writeSSE({
+                event: "end",
+                data: JSON.stringify({ exitCode: 0, message: "Log stream ended" }),
+              })
+              .catch(() => {})
+              .finally(() => finish());
+          },
+        },
       );
 
       cleanup = result.cleanup;
       serverId = result.serverId;
-      if (serverId) sshManager.retain(serverId);
+      if (finished) {
+        cleanupOnce();
+        return;
+      }
 
-      await new Promise<void>((resolve) => {
-        sseStream.onAbort(() => {
-          cleanup?.();
-          resolve();
-        });
-      });
+      if (serverId) {
+        sshManager.retain(serverId);
+        retained = true;
+      }
+      await hold;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to stream logs";
-      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: message }) });
-      cleanup?.();
+      if (!finished) {
+        const message = err instanceof Error ? err.message : "Failed to stream logs";
+        await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: message }) });
+      }
+      finish();
     } finally {
-      if (serverId) sshManager.release(serverId);
+      cleanupOnce();
+      if (retained && serverId) sshManager.release(serverId);
     }
   });
 }
