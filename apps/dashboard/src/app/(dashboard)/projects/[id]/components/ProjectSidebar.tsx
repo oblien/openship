@@ -305,36 +305,42 @@ export const ProjectMobileTabs = () => {
 
   return (
     <div className="lg:hidden sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/40 -mx-4 px-4 sm:-mx-6 sm:px-6">
-      <div className="flex items-center gap-1 overflow-x-auto py-2.5 scrollbar-hide">
-        {tabs.map((tab) => {
-          const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
-          const isActive = activeTab === tab.id;
-          return (
-            <Link
-              key={tab.id}
-              href={`/projects/${projectData.id}/${tab.id}`}
-              onClick={(e) => {
-                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                e.preventDefault();
-                handleTabChange(tab.id);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${
-                isActive
-                  ? "bg-foreground/[0.07] text-foreground"
-                  : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-              }`}
-            >
-              <Icon className="size-4 shrink-0" strokeWidth={1.7} />
-              {tab.label}
-              {tab.id === "domains" && domainsAttention && (
-                <span
-                  className="size-1.5 rounded-full bg-warning-solid"
-                  aria-label="Routing needs attention"
-                />
-              )}
-            </Link>
-          );
-        })}
+      <div className="relative">
+        <div className="flex items-center gap-1 overflow-x-auto py-2.5 scrollbar-hide">
+          {tabs.map((tab) => {
+            const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
+            const isActive = activeTab === tab.id;
+            return (
+              <Link
+                key={tab.id}
+                href={`/projects/${projectData.id}/${tab.id}`}
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
+                  handleTabChange(tab.id);
+                }}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${
+                  isActive
+                    ? "bg-foreground/[0.07] text-foreground"
+                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+                }`}
+              >
+                <Icon className="size-4 shrink-0" strokeWidth={1.7} />
+                {tab.label}
+                {tab.id === "domains" && domainsAttention && (
+                  <span
+                    className="size-1.5 rounded-full bg-warning-solid"
+                    aria-label="Routing needs attention"
+                  />
+                )}
+              </Link>
+            );
+          })}
+        </div>
+        {/* Fade edges hint that the strip scrolls - matches the container's
+            own bg-background so it blends instead of hard-cutting tabs. */}
+        <div className="pointer-events-none absolute inset-y-0 start-0 w-6 bg-gradient-to-r from-background to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 end-0 w-6 bg-gradient-to-l from-background to-transparent" />
       </div>
     </div>
   );

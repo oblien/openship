@@ -1009,7 +1009,11 @@ const ProjectSettingsContent = () => {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-4">
+        {/* Stacks below sm - the heading was truncating ("Overview" -> "Overv...")
+            to make room for the env selector + help menu sharing its row on a
+            phone-width viewport. Heading gets its own full-width row there;
+            the controls wrap to a second row instead of squeezing it. */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-foreground truncate">
               {tabs.find((tab) => tab.id === activeTab)?.label || t.projects.detail.overviewFallback}

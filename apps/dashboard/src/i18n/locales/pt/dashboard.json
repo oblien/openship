@@ -86,7 +86,9 @@
   },
   "sidebar": {
     "expand": "Expandir barra lateral",
-    "collapse": "Recolher barra lateral"
+    "collapse": "Recolher barra lateral",
+    "openMenu": "Abrir menu",
+    "closeMenu": "Fechar menu"
   },
   "user": {
     "logout": "Sair",
