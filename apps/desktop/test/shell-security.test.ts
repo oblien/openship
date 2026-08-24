@@ -5,6 +5,7 @@ import {
   classifyFrameNavigation,
   isAllowedFrameUrl,
   isAllowedUpdateAssetUrl,
+  isNavigationInterstitial,
   isRendererConfigKey,
   isSafeExternalUrl,
 } from "../src/main/security";
@@ -77,6 +78,19 @@ describe("classifyFrameNavigation", () => {
     expect(classifyFrameNavigation("javascript:alert(1)", LOCAL)).toBe("block");
     expect(classifyFrameNavigation("httpevil://attacker.tld", LOCAL)).toBe("block");
     expect(classifyFrameNavigation("garbage", LOCAL)).toBe("block");
+    // about:blank is not an allowed frame URL (a renderer must not park there
+    // to inherit the bridge). The shell still lets Chromium's loadURL
+    // interstitial through — see isNavigationInterstitial.
+    expect(classifyFrameNavigation("about:blank", LOCAL)).toBe("block");
+  });
+
+  it("recognises Chromium's loadURL interstitial so the splash can hand off", () => {
+    expect(isNavigationInterstitial("about:blank")).toBe(true);
+    expect(isNavigationInterstitial("about:blank#blocked")).toBe(true);
+    expect(isNavigationInterstitial("about:blank?foo=1")).toBe(true);
+    expect(isNavigationInterstitial("about:srcdoc")).toBe(false);
+    expect(isNavigationInterstitial("http://localhost:3001/")).toBe(false);
+    expect(isNavigationInterstitial("data:text/html,x")).toBe(false);
   });
 
   it("never returns 'allow' when the origin list is unusable", () => {
@@ -159,12 +173,17 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.met
 const main = read("../src/main/index.ts");
 const preload = read("../src/preload/index.ts");
 const updateWindow = read("../src/main/update-window.ts");
+const services = read("../src/main/services.ts");
 
 describe("main process navigation containment", () => {
   it("guards main-frame navigation with both will-navigate and will-redirect", () => {
     expect(main).toMatch(/\.on\(\s*["']will-navigate["']/);
     expect(main).toMatch(/\.on\(\s*["']will-redirect["']/);
     expect(main).toContain("classifyFrameNavigation");
+    // Cancelling Chromium's about:blank interstitial around loadURL is how
+    // the Windows zip stayed on the splash after the API was already up.
+    expect(main).toContain("isNavigationInterstitial");
+    expect(main).toMatch(/\.on\(\s*["']did-fail-load["']/);
   });
 
   it("exposes no renderer-driven navigation channel", () => {
@@ -190,6 +209,21 @@ describe("credential surface is off the bridge", () => {
 
   it("validates every config key crossing the bridge", () => {
     expect(main).toContain("isRendererConfigKey");
+  });
+});
+
+describe("Windows child-process spawn cannot deadlock the splash", () => {
+  it("hides the GUI-subsystem Electron console on spawn", () => {
+    // openship.exe is a GUI binary. spawn() with piped stdio and no
+    // windowsHide deadlocks the pipe handshake on Windows, so
+    // startLocalServices never returns and the splash never clears.
+    expect(services).toContain("windowsHide: true");
+    expect(services).toContain("spawnElectronAsNode");
+  });
+
+  it("does not spawn a second API while the first still holds the PGlite lock", () => {
+    expect(services).toContain("killAndWait");
+    expect(services).toContain("not spawning a second copy");
   });
 });
 

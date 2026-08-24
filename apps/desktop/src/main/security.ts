@@ -74,6 +74,18 @@ export function classifyFrameNavigation(
 }
 
 /**
+ * Chromium interstitial around a main-process `loadURL` (data: splash → http).
+ *
+ * `will-redirect` fires for this even though `will-navigate` does not fire for
+ * main-initiated navigation. Cancelling it leaves the splash on screen forever
+ * — the dashboard URL never commits. It is not an attacker origin (the GHSA
+ * path is an off-origin http(s) document inheriting the preload bridge).
+ */
+export function isNavigationInterstitial(url: string): boolean {
+  return url === "about:blank" || url.startsWith("about:blank?") || url.startsWith("about:blank#");
+}
+
+/**
  * Config keys the renderer may read and write — update preferences, and nothing
  * else. The same store holds `system` (SSH host/user/password/passphrase) and
  * `tunnel` tokens, which must never cross the bridge.

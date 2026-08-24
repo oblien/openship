@@ -50,6 +50,7 @@ import { closeUpdateWindow, openUpdateWindow } from "./update-window";
 import { buildAppMenu } from "./menu";
 import {
   classifyFrameNavigation,
+  isNavigationInterstitial,
   isRendererConfigKey,
   isSafeExternalUrl,
   type RendererConfigKey,
@@ -368,6 +369,9 @@ function createWindow() {
   // Resolve the origins per-event, never at registration: startLocalServices()
   // rewrites them with the dynamically bound ports after this window exists.
   const containNavigation = (e: Electron.Event, url: string) => {
+    // Chromium's about:blank interstitial around loadURL. Cancelling it is how
+    // the Windows zip stays on the boot splash forever after services are up.
+    if (isNavigationInterstitial(url)) return;
     const verdict = classifyFrameNavigation(url, [
       getLocalDashboardUrl(),
       getLocalApiUrl(),
@@ -379,6 +383,22 @@ function createWindow() {
   };
   window.webContents.on("will-navigate", containNavigation);
   window.webContents.on("will-redirect", containNavigation);
+
+  // Surface a real load failure instead of sitting on the splash with no
+  // dialog. ERR_ABORTED (-3) is a superseded navigation (redirect / new loadURL).
+  window.webContents.on(
+    "did-fail-load",
+    (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3) return;
+      console.error(`[openship] failed to load ${validatedURL}: ${errorCode} ${errorDescription}`);
+      if (!window.isDestroyed() && window.webContents.getURL().startsWith("data:")) {
+        dialog.showErrorBox(
+          "Openship failed to open",
+          `${errorDescription}\n\n${validatedURL}`,
+        );
+      }
+    },
+  );
 
   // Detect when onboarding completes via dashboard desktop-login redirect
   window.webContents.on("did-navigate", (_e, url) => {

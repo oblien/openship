@@ -139,24 +139,72 @@ function pipeLogs(
   proc.stderr?.on("data", (b: Buffer) => process.stderr.write(`[${name}] ${b}`));
 }
 
+const HEALTH_FETCH_MS = 2000;
+const HEALTH_POLL_MS = 500;
+/** First boot runs PGlite initdb + every SQL migration before listen(). Windows
+ *  Defender scanning the unpacked tree routinely pushes that past a minute. */
+const API_READY_MS = 180_000;
+const DASHBOARD_READY_MS = 90_000;
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Health check that cannot hang even if Electron's net.fetch ignores AbortSignal. */
+async function fetchOk(url: string): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const res = await Promise.race([
+      net.fetch(url, { signal: AbortSignal.timeout(HEALTH_FETCH_MS) }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("health-check-timeout")), HEALTH_FETCH_MS + 500);
+      }),
+    ]);
+    return res.status > 0;
+  } catch {
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Poll a URL until it answers (any HTTP response), or the child dies / times out. */
 async function waitForPort(
   url: string,
   isDead: () => boolean,
-  maxAttempts = 60,
-  intervalMs = 1000,
+  timeoutMs: number,
 ): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (isDead()) return false; // crashed before ready
-    try {
-      const res = await net.fetch(url, { signal: AbortSignal.timeout(2000) });
-      if (res.status > 0) return true;
-    } catch {
-      // not listening yet
-    }
-    await new Promise((r) => setTimeout(r, intervalMs));
+    if (await fetchOk(url)) return true;
+    await sleep(HEALTH_POLL_MS);
   }
   return false;
+}
+
+/**
+ * Re-run Electron as Node. `windowsHide` is load-bearing: `openship.exe` is a
+ * GUI-subsystem binary, and spawning one on Windows with piped stdio without
+ * it deadlocks the pipe handshake — the parent never returns from spawn() and
+ * the splash stays on "Starting Openship" forever.
+ */
+function spawnElectronAsNode(
+  entry: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): ChildProcess {
+  return spawn(process.execPath, [entry], {
+    cwd,
+    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+}
+
+async function killAndWait(p: NodeService, isDead: () => boolean, ms = 4000): Promise<boolean> {
+  killService(p);
+  const deadline = Date.now() + ms;
+  while (!isDead() && Date.now() < deadline) await sleep(100);
+  return isDead();
 }
 
 /**
@@ -194,27 +242,23 @@ async function startDashboard(
     console.log(`[openship] dashboard(utility) exited (code=${code})`);
   });
   pipeLogs("dashboard", up);
-  if (await waitForPort(url, () => upDead, 45)) return up;
+  if (await waitForPort(url, () => upDead, DASHBOARD_READY_MS)) return up;
 
-  // 2. Fallback — ELECTRON_RUN_AS_NODE spawn (works, but tiles the Dock).
-  try {
-    up.kill();
-  } catch {
-    // already gone
+  // Fallback only if the utility process actually died. A live sibling would
+  // bind the same port (or race it) and the splash would never clear.
+  if (!(await killAndWait(up, () => upDead))) {
+    console.warn("[openship] dashboard utilityProcess is still running after kill — not spawning a second copy");
+    return null;
   }
   console.log("[openship] dashboard utilityProcess did not start — falling back to node spawn");
-  const sp = spawn(process.execPath, [serverJs], {
-    cwd: dashboardDir,
-    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const sp = spawnElectronAsNode(serverJs, dashboardDir, env);
   let spDead = false;
   sp.on("exit", (code, signal) => {
     spDead = true;
     console.log(`[openship] dashboard exited (code=${code ?? "null"} signal=${signal ?? "none"})`);
   });
   pipeLogs("dashboard", sp);
-  if (await waitForPort(url, () => spDead, 60)) return sp;
+  if (await waitForPort(url, () => spDead, DASHBOARD_READY_MS)) return sp;
   return null;
 }
 
@@ -246,17 +290,18 @@ async function startApi(
     console.log(`[openship] api(utility) exited (code=${code})`);
   });
   pipeLogs("api", up);
-  if (await waitForPort(healthUrl, () => upDead)) return up;
+  if (await waitForPort(healthUrl, () => upDead, API_READY_MS)) return up;
 
-  // 2. Fallback — ELECTRON_RUN_AS_NODE spawn (works, but tiles the Dock).
-  killService(up);
+  // A live API still holds the PGlite lock. Spawning a second copy waits on
+  // that lock until the splash looks hung, then fails. Only fall back if this
+  // process is actually gone.
+  if (!(await killAndWait(up, () => upDead))) {
+    console.warn("[openship] api utilityProcess is still running after kill — not spawning a second copy");
+    return null;
+  }
   console.log("[openship] api utilityProcess did not start — falling back to node spawn");
   apiExited = false;
-  const sp = spawn(process.execPath, [apiEntry], {
-    cwd,
-    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const sp = spawnElectronAsNode(apiEntry, cwd, env);
   let spDead = false;
   sp.on("exit", (code, signal) => {
     spDead = true;
@@ -264,7 +309,7 @@ async function startApi(
     console.log(`[openship] api exited (code=${code ?? "null"} signal=${signal ?? "none"})`);
   });
   pipeLogs("api", sp);
-  if (await waitForPort(healthUrl, () => spDead)) return sp;
+  if (await waitForPort(healthUrl, () => spDead, API_READY_MS)) return sp;
   return null;
 }
 
