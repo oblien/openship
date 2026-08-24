@@ -239,6 +239,24 @@ export function composeServiceTally(services: readonly ServiceDeployStatus[]): {
   return { running, built, building, failed };
 }
 
+/**
+ * Which log feed a compose service tab shows (#667): the live runtime stream of
+ * the deployed container, or the recorded build logs. Runtime wins only when
+ * the deploy finished successfully with no held keep/reject decision AND this
+ * service's container is up — everything else (in-progress deploys, failures,
+ * static services that never run) stays on build history. The Prepare tab is
+ * not a service and never reaches this.
+ */
+export function serviceLogSource(opts: {
+  deploymentStatus: DeploymentStatus;
+  decisionPending?: boolean;
+  serviceStatus?: ServiceDeployStatus["status"];
+}): "runtime" | "build" {
+  if (opts.deploymentStatus !== "ready") return "build";
+  if (opts.decisionPending) return "build";
+  return opts.serviceStatus === "running" ? "runtime" : "build";
+}
+
 // ─── Build Strategy ──────────────────────────────────────────────────────────
 
 export type { BuildStrategy, RuntimeMode, DeployTarget } from "@repo/core";
