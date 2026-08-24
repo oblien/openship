@@ -659,8 +659,18 @@ export const STACKS = {
     category: "fullstack",
     outputDirectory: ".",
     defaultPort: 3000,
-    defaultBuildCommand: "bundle install && bundle exec rails assets:precompile",
-    defaultStartCommand: "bundle exec rails server -b 0.0.0.0",
+    // Precompile only — `bundle install` is already the install step. The dummy
+    // secret is what Rails' own Dockerfile sets: an app touching credentials
+    // during eager load raises without it.
+    defaultBuildCommand:
+      "RAILS_ENV=production SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile",
+    // Stock config/puma.rb reads PORT, but a trimmed one falls back to 3000.
+    defaultStartCommand: 'bundle exec rails server -b 0.0.0.0 -p "${PORT:-3000}"',
+    // Rails 8 keeps the SQLite database AND Active Storage here; Rails' own
+    // Dockerfile declares `VOLUME /rails/storage`. Not `db/` — it holds
+    // migrations, so mounting over it would shadow later releases'.
+    persistentPaths: ["storage"],
+    cacheDirs: ["tmp/cache", "tmp/pids"],
     detection: {
       // Rails: Gemfile is required; bin/rails or config/routes.rb confirms.
       // The conjunction is encoded as an override in stack-detector.
