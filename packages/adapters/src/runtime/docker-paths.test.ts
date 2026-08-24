@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   normalizeDockerRelativePath,
   normalizeDockerRootDirectory,
+  resolveDockerBuildWorkdir,
   resolveDockerfileCandidates,
   resolveWithinDirectory,
 } from "./docker-paths";
@@ -118,6 +119,59 @@ describe("resolveDockerfileCandidates", () => {
       "apps/web/Dockerfile",
       "Dockerfile",
     ]);
+  });
+});
+
+describe("resolveDockerBuildWorkdir", () => {
+  it("cds into rootDirectory when the Dockerfile lives under it", () => {
+    expect(
+      resolveDockerBuildWorkdir(
+        "/tmp/openship-build-abc",
+        "apps/mail",
+        "apps/mail/tinycld/Dockerfile",
+      ),
+    ).toEqual({
+      workdir: "/tmp/openship-build-abc/apps/mail",
+      dockerfilePath: "tinycld/Dockerfile",
+    });
+  });
+
+  it("keeps the clone root for a generated Dockerfile at the clone root", () => {
+    expect(
+      resolveDockerBuildWorkdir("/tmp/openship-build-abc", "apps/mail", "Dockerfile.openship"),
+    ).toEqual({
+      workdir: "/tmp/openship-build-abc",
+      dockerfilePath: "Dockerfile.openship",
+    });
+  });
+
+  it("keeps the clone root when rootDirectory is the repo root", () => {
+    expect(resolveDockerBuildWorkdir("/tmp/openship-build-abc", ".", "Dockerfile")).toEqual({
+      workdir: "/tmp/openship-build-abc",
+      dockerfilePath: "Dockerfile",
+    });
+  });
+
+  it("strips a trailing slash on the clone path", () => {
+    expect(
+      resolveDockerBuildWorkdir("/tmp/openship-build-abc/", "apps/web", "apps/web/Dockerfile"),
+    ).toEqual({
+      workdir: "/tmp/openship-build-abc/apps/web",
+      dockerfilePath: "Dockerfile",
+    });
+  });
+
+  it("keeps the clone root for a nested Dockerfile.openship adapter", () => {
+    expect(
+      resolveDockerBuildWorkdir(
+        "/tmp/openship-build-abc",
+        "apps/mail",
+        "apps/mail/tinycld/Dockerfile.openship",
+      ),
+    ).toEqual({
+      workdir: "/tmp/openship-build-abc",
+      dockerfilePath: "apps/mail/tinycld/Dockerfile.openship",
+    });
   });
 });
 

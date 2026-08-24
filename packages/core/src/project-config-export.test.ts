@@ -80,6 +80,12 @@ describe("operator recipe fixtures", () => {
     expect(mail.mountedRelease.enabled).toBe(false);
     expect(mail.activation.strategy).toBe("image-replace");
     expect(mail.monorepoPathPrefixes).toEqual(["apps/mail"]);
+    expect(mail.health).toEqual({
+      path: "/api/health",
+      port: 7090,
+      publicHttps: true,
+    });
+    expect(mail.persistPaths).toEqual([]);
   });
 
   it("scopes AE Public and Staff to their monorepo prefixes", () => {

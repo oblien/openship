@@ -142,6 +142,10 @@ const AdvancedSchema = Type.Object(
         Type.Null(),
       ]),
     ),
+    /** Compose `stop_signal`. Absent ⇒ Docker SIGTERM. */
+    stopSignal: Type.Optional(Type.Union([Type.String({ maxLength: 32 }), Type.Null()])),
+    /** Compose `stop_grace_period` duration string, e.g. `30s`. */
+    stopGracePeriod: Type.Optional(Type.Union([Type.String({ maxLength: 32 }), Type.Null()])),
   },
   { additionalProperties: false },
 );

@@ -136,6 +136,44 @@ export function resolveDockerfileCandidates(
   );
 }
 
+/**
+ * Where `docker build` should `cd` / what `-f` should be, given a clone-root
+ * context and a Dockerfile path that is also clone-root relative.
+ *
+ * Repository Dockerfiles under `rootDirectory` (the compose `build.context`,
+ * GHA `context: apps/mail`) have COPY paths relative to that directory. Clone-
+ * on-server used to `cd` the clone root and pass `-f apps/mail/tinycld/Dockerfile
+ * .`, so BuildKit looked for `tinycld/config/entrypoint.sh` at the repo root.
+ *
+ * Generated `Dockerfile.openship*` files live at the clone root and `COPY .`,
+ * so those keep the clone as context.
+ */
+export function resolveDockerBuildWorkdir(
+  contextRoot: string,
+  rootDirectory: string | null | undefined,
+  dockerfileName: string,
+): { workdir: string; dockerfilePath: string } {
+  const root = normalizeDockerRootDirectory(rootDirectory);
+  const dockerfile = normalizeDockerRelativePath(dockerfileName) || "Dockerfile";
+  const base = contextRoot.replace(/\/+$/, "") || contextRoot;
+
+  // `Dockerfile.openship` is a clone-root adapter (COPY apps/<pkg>/…) used
+  // until the control plane cds into rootDirectory. Do not cd into the app
+  // dir for it — COPY paths would double-prefix.
+  const cloneRootAdapter =
+    dockerfile === "Dockerfile.openship" || dockerfile.endsWith("/Dockerfile.openship");
+
+  if (root && dockerfile.startsWith(`${root}/`) && !cloneRootAdapter) {
+    const relativeDockerfile = dockerfile.slice(root.length + 1) || "Dockerfile";
+    return {
+      workdir: `${base}/${root}`,
+      dockerfilePath: relativeDockerfile,
+    };
+  }
+
+  return { workdir: base, dockerfilePath: dockerfile };
+}
+
 const ROOT_MANIFESTS = [
   "package.json",
   "pyproject.toml",

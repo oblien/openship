@@ -10,9 +10,9 @@
   "buildMode": "image",
   "persistPaths": [],
   "health": {
-    "path": "/",
-    "port": 25,
-    "publicHttps": false
+    "path": "/api/health",
+    "port": 7090,
+    "publicHttps": true
   },
   "activation": {
     "strategy": "image-replace",
@@ -22,7 +22,7 @@
   "monorepoPathPrefixes": [
     "apps/mail"
   ],
-  "migrationPolicy": "Workload is an immutable image release, not a mounted code tree. Keep mountedRelease.enabled false. Image or compose changes rebuild the runtime only. Mail-data volumes stay outside this recipe. A Mail change must never deploy Public or Staff code.",
+  "migrationPolicy": "Workload is an immutable GHCR image release, not a mounted code tree. Keep mountedRelease.enabled false. Image or compose changes rebuild the runtime only. Mail-data volumes stay outside this recipe. HTTP health is GET /api/health on container port 7090. Do not treat this as a port-25 mail-server app. A Mail change must never deploy Public or Staff code.",
   "rollbackPolicy": "Roll back by restoring the previous runtime image pointer. Do not flip a mounted current symlink. Unhealthy new image is not left serving.",
   "mountedRelease": {
     "enabled": false,

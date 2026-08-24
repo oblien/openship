@@ -33,6 +33,7 @@ import Dockerode from "dockerode";
 import * as tarFs from "tar-fs";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { sep } from "node:path";
 
 import type {
   BuildConfig,
@@ -133,7 +134,7 @@ import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import { createDockerBuildContext, prepareSourceTree, resolveServiceDockerfile } from "./docker-build-context";
 import { startExecStream, daemonConnectionFrom } from "./docker-exec-stream";
 import { resolveComposeCmd, resolveComposeEntrypoint } from "./compose-cmd";
-import { resolveDockerfileCandidates } from "./docker-paths";
+import { resolveDockerBuildWorkdir, resolveDockerfileCandidates } from "./docker-paths";
 import type { ContainerStabilitySample } from "./stability";
 import { generateDockerfile, staticBuilderOutputPath } from "./docker-build-plan";
 import { transferLocalDirectory } from "./transfer";
@@ -1265,8 +1266,18 @@ export class DockerRuntime implements RuntimeAdapter {
     )
       .map(([k, v]) => `--label ${sq(`${k}=${v}`)}`)
       .join(" ");
+    // Repository Dockerfiles under rootDirectory have COPY paths relative to
+    // that directory. `cd` there and pass `-f` relative to it so a monorepo
+    // compose service (`context: apps/mail`, `dockerfile: tinycld/Dockerfile`)
+    // is `docker build -f tinycld/Dockerfile .` inside apps/mail — not
+    // `-f apps/mail/tinycld/Dockerfile .` at the clone root.
+    const { workdir, dockerfilePath } = resolveDockerBuildWorkdir(
+      remoteContextDir,
+      config.rootDirectory,
+      dockerfileName,
+    );
     const dockerfileFlag =
-      dockerfileName && dockerfileName !== "Dockerfile" ? ` -f ${sq(dockerfileName)}` : "";
+      dockerfilePath && dockerfilePath !== "Dockerfile" ? ` -f ${sq(dockerfilePath)}` : "";
 
     // `cd` into the context dir FIRST so docker resolves `-f` and the context
     // `.` from the same place (BuildKit otherwise resolves `-f` against the SSH
@@ -1276,7 +1287,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // (an OOM-killed `bun install`, a tsup error, …), so a failed build surfaced only
     // as a bare "exited with code 1". Plain progress streams every line through.
     const buildCmd =
-      `cd ${sq(remoteContextDir)} && ` +
+      `cd ${sq(workdir)} && ` +
       `docker build --progress=plain -t ${sq(tag)}${dockerfileFlag} ` +
       `${labelArgs} ${buildArgs} --force-rm .`;
 
@@ -1318,7 +1329,12 @@ export class DockerRuntime implements RuntimeAdapter {
   ): Promise<void> {
     const installedCli = "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe";
     const dockerCli = existsSync(installedCli) ? installedCli : "docker.exe";
-    const args = ["build", "--progress=plain", "-t", tag, "-f", dockerfileName];
+    const { workdir, dockerfilePath } = resolveDockerBuildWorkdir(
+      contextDir.replace(/\\/g, "/"),
+      config.rootDirectory,
+      dockerfileName.replace(/\\/g, "/"),
+    );
+    const args = ["build", "--progress=plain", "-t", tag, "-f", dockerfilePath];
     for (const [key, value] of Object.entries(
       this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
     )) {
@@ -1335,7 +1351,7 @@ export class DockerRuntime implements RuntimeAdapter {
     log.log(`Running local Docker Desktop BuildKit build for ${tag}...\n`);
     const dockerCliDirectory = "C:\\Program Files\\Docker\\Docker\\resources\\bin";
     const child = spawn(dockerCli, args, {
-      cwd: contextDir,
+      cwd: workdir.split("/").join(sep),
       env: {
         ...process.env,
         DOCKER_BUILDKIT: "1",
