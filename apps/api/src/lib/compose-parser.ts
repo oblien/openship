@@ -768,8 +768,15 @@ function collectUnsupportedMounts(
  */
 function parseComposeMemory(raw: unknown): number | undefined {
   if (typeof raw === "number") {
-    // Bare number = bytes (compose treats an unsuffixed value as bytes).
-    return raw > 0 ? Math.floor(raw / (1024 * 1024)) : undefined;
+    // Bare number = bytes (compose treats an unsuffixed value as bytes). Apply
+    // the SAME sub-1-MB guard the string path uses below: a value that floors to
+    // 0 MB (e.g. `mem_limit: 512`, usually a typo for `512m`) must return
+    // undefined, not 0 — `memoryMb: 0` reads downstream as "no limit"
+    // (resources.ts hasMemoryLimit / UNLIMITED_RESOURCES), so returning 0 turns
+    // a tiny cap into an UNLIMITED one, the exact failure this parser documents
+    // it avoids. Without the guard the number and string paths disagree.
+    const mb = raw / (1024 * 1024);
+    return mb >= 1 ? Math.floor(mb) : undefined;
   }
   if (typeof raw !== "string") return undefined;
   const m = raw

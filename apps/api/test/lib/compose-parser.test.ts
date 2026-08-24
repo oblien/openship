@@ -1034,6 +1034,18 @@ describe("parseComposeFile — service resource limits", () => {
     expect(parsed.services[0]?.advanced?.resources).toBeUndefined();
   });
 
+  // A sub-1-MB numeric limit (often `mem_limit: 512` written meaning 512m) floors
+  // to 0 MB, and memoryMb:0 reads downstream as "no limit" — so it must be DROPPED
+  // like the equivalent string form already is, never kept as an accidental
+  // unlimited. The number and string byte paths must agree.
+  it("drops a numeric byte limit under 1 MB instead of reading it as unlimited", () => {
+    const mem = (v: string) =>
+      parseComposeFile(svc(`    mem_limit: ${v}\n`)).services[0]?.advanced?.resources?.memoryMb;
+    expect(mem("512")).toBeUndefined(); // 512 bytes → <1 MB
+    expect(mem("1048575")).toBeUndefined(); // one byte under 1 MB
+    expect(mem("1048576")).toBe(1); // exactly 1 MB still parses
+  });
+
   it("keeps a healthcheck and resources side by side in one advanced blob", () => {
     const parsed = parseComposeFile(
       svc("    mem_limit: 1g\n    healthcheck:\n      test: 'curl -f localhost'\n"),
