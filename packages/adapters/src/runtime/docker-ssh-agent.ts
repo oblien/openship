@@ -18,17 +18,13 @@ import { safeErrorMessage, withTimeout } from "@repo/core";
 const DEFAULT_REMOTE_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
 const resolvedDockerSocketPathCache = new WeakMap<DockerConnectionOptions, Promise<string>>();
 
-// One-time streamlocal capability probe per bridge. Short so the Bun-compiled
-// desktop (where streamlocal hangs) falls through to dial-stdio quickly instead
-// of stalling behind the 25s reachability cap on every connection.
-const STREAMLOCAL_PROBE_TIMEOUT_MS = 8_000;
 // Per-CHANNEL data-flow verification for a real bridge request (see
-// `bridgeClient`). The one-time probe above only proves the FIRST channel on a
-// connection can move data; some sshd/ssh2 combinations then open every later
-// channel "dead" (open resolves, no byte ever crosses). Bound both the open and
-// the first-byte wait with this — deliberately short so most of the caller's
-// reachability budget (e.g. the 25s migration-scan cap) is left for the
-// dial-stdio fallback to actually complete when a channel proves dead.
+// `bridgeClient`). Also used for the initial streamlocal probe to ensure
+// consistency between probe and real requests — some sshd/ssh2 combinations
+// then open every later channel "dead" (open resolves, no byte ever crosses).
+// Deliberately short so most of the caller's reachability budget (e.g. the
+// 25s migration-scan cap) is left for the dial-stdio fallback to actually
+// complete when a channel proves dead.
 const STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS = 3_000;
 // How long a dial-stdio channel may say nothing before we commit the socket to it anyway.
 // NOT a verification gate — there is no transport left to fall back to. It is a REPORTING
@@ -637,16 +633,18 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     // Docker `/_ping` and require a response within the window; no data → fall
     // back to `docker system dial-stdio` over an exec channel (the transport the
     // remote `docker build` already uses successfully).
+    // Use the same timeout as actual requests to ensure consistency between probe
+    // and real requests.
     let probe: Duplex | null = null;
     try {
       probe = await withTimeout(
         openStreamlocalUpstream(opts),
-        STREAMLOCAL_PROBE_TIMEOUT_MS,
-        `streamlocal open timed out after ${STREAMLOCAL_PROBE_TIMEOUT_MS / 1000}s`,
+        STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS,
+        `streamlocal open timed out after ${STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS / 1000}s`,
       );
       const stream = probe;
       const flowed = await new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => resolve(false), STREAMLOCAL_PROBE_TIMEOUT_MS);
+        const timer = setTimeout(() => resolve(false), STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS);
         const settle = (ok: boolean) => {
           clearTimeout(timer);
           resolve(ok);
