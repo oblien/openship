@@ -65,6 +65,13 @@ export const IN_FLIGHT_RUN_STATUSES: BackupRunStatus[] = [
   "verifying",
 ];
 
+const TERMINAL_RUN_STATUSES: BackupRunStatus[] = [
+  "succeeded",
+  "failed",
+  "cancelled",
+  "server_error",
+];
+
 export const IN_FLIGHT_RESTORE_STATUSES: BackupRestoreStatus[] = [
   "queued",
   "preparing",
@@ -110,7 +117,7 @@ async function persistTransition(
    * `succeeded` with `manifest_key` still null.
    */
   write: (values: Record<string, unknown>, guarded: boolean) => Promise<unknown>,
-): Promise<void> {
+): Promise<boolean> {
   const core_result = await write(core, true);
   // An empty `returning()` means the guarded WHERE matched nothing: the row is already
   // terminal and this transition lost the race. Logged, never swallowed — the write being
@@ -121,20 +128,20 @@ async function persistTransition(
       `[db] ${label} ${id}: refused transition to "${status}" — the row is already in a ` +
         `terminal state. Whoever finished it first owns the verdict; this write was dropped.`,
     );
-    return;
+    return false;
   }
-  if (!patch) return;
+  if (!patch) return true;
   // `status` never rides the payload — the core write above owns it.
   const rest: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     if (key !== "status") rest[key] = value;
   }
   const keys = Object.keys(rest);
-  if (keys.length === 0) return;
+  if (keys.length === 0) return true;
 
   try {
     await write(rest, false);
-    return;
+    return true;
   } catch (err) {
     console.error(
       `[db] ${label} ${id}: payload rejected (${detailOf(err)}) — status "${status}" is persisted; salvaging per column`,
@@ -158,6 +165,7 @@ async function persistTransition(
       console.error(`[db] ${label} ${id}: column ${key} rejected (${detail}) — left unset`);
     }
   }
+  return true;
 }
 
 // ─── Destination repo ────────────────────────────────────────────────────────
@@ -580,11 +588,10 @@ export function createBackupRunRepo(db: Database) {
       id: string,
       status: BackupRunStatus,
       patch?: Partial<Omit<NewBackupRun, "id" | "startedAt">>,
-    ): Promise<void> {
-      const TERMINAL: BackupRunStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
-      const finishing = TERMINAL.includes(status);
+    ): Promise<boolean> {
+      const finishing = TERMINAL_RUN_STATUSES.includes(status);
       const now = new Date();
-      await persistTransition(
+      return persistTransition(
         "backup_run",
         id,
         status,
@@ -603,11 +610,46 @@ export function createBackupRunRepo(db: Database) {
             // reaches terminal first.
             .where(
               guarded
-                ? and(eq(backupRun.id, id), notInArray(backupRun.status, TERMINAL))
+                ? and(eq(backupRun.id, id), notInArray(backupRun.status, TERMINAL_RUN_STATUSES))
                 : eq(backupRun.id, id),
             )
             .returning(),
       );
+    },
+
+    /**
+     * Mid-upload progress: cumulative `bytesTransferred` + a `lastEventAt`
+     * heartbeat while a run sits in `uploading` between artifact boundaries.
+     * Called throttled from the upload stream; NOT a transition — status is
+     * untouched, `finishedAt` is untouched.
+     *
+     * Two guards, both in the WHERE so the check is atomic with the write:
+     *   - only `uploading` accepts progress: a throttled write still in flight
+     *     after any later state must not mutate or heartbeat that state;
+     *   - the value must ADVANCE: writes are serialized by the orchestrator
+     *     but the monotonic clause is what makes a reordered or duplicated
+     *     delivery harmless instead of a backward-moving counter.
+     *
+     * A refused write is silent by design: progress is telemetry, and the only
+     * information it carried (a later heartbeat) is stale once the row is no
+     * longer uploading.
+     */
+    async recordUploadProgress(id: string, bytesTransferred: number): Promise<boolean> {
+      const result = await db
+        .update(backupRun)
+        .set({ bytesTransferred, lastEventAt: new Date() })
+        .where(
+          and(
+            eq(backupRun.id, id),
+            eq(backupRun.status, "uploading"),
+            or(
+              isNull(backupRun.bytesTransferred),
+              lt(backupRun.bytesTransferred, bytesTransferred),
+            ),
+          ),
+        )
+        .returning();
+      return result.length > 0;
     },
 
     /**
@@ -670,17 +712,12 @@ export function createBackupRunRepo(db: Database) {
      * durable in Redis. The 6h `ceilingCutoff` still applies as the genuine backstop —
      * a row that has sat queued that long is a real anomaly, not a busy queue.
      *
-     * `uploading` is deliberately NOT idle-swept. A single-artifact dump
-     * (pg_dump/mysqldump/mongodump) streams the whole payload through one
-     * `destination.put`, and the orchestrator writes `bytesTransferred` / bumps
-     * `lastEventAt` only at artifact boundaries — never mid-stream. So for the
-     * entire upload the row sits `(uploading, bytesTransferred=NULL,
-     * lastEventAt=frozen)`, which is indistinguishable by DB state alone from a
-     * wedge. Idle-sweeping it here would kill honest multi-GB uploads that
-     * legitimately run past `idleCutoff` — the exact managed-postgres case #516
-     * is about. A genuinely wedged upload is reaped in-process by the executor's
-     * per-stream idle watchdog (which also frees the worker slot); this sweep
-     * only backstops `uploading` via the 6h `ceilingCutoff`.
+     * `uploading` is deliberately NOT idle-swept even though it now heartbeats.
+     * This repository can decide that a row is stale, but it cannot abort the
+     * producer/destination promise holding the worker slot. Marking that row
+     * terminal would therefore report recovery without actually releasing the
+     * blocked work. Upload executors retain their in-process idle watchdogs; the
+     * database sweep can include this state only when capture has an abort path.
      */
     async sweepRunsWithStaleHeartbeat(params: {
       idleCutoff: Date;

@@ -47,20 +47,17 @@ Needs: cancel columns on `backup_run`, the route + controller + an orchestrator
 `cancel()`, a `signal` on `StreamPathOpts`/`ProducerOpts` threaded into `streamPath`
 so capture joins `createAbortWatch`, and a UI entry point.
 
-### No upload progress, and `uploading` stays out of the idle sweep
+### `uploading` still stays out of the idle sweep
 
-The idle predicate is `preparing | snapshotting | verifying`
-(`packages/db/src/repos/backup.repo.ts`); `uploading` is reachable only through the 6h
-absolute ceiling. Deliberate, because nothing heartbeats mid-stream:
-`HashingPassthrough` (`common/sha256-stream.ts:16-47`) has no progress callback and
-its byte count is readable only via `summary()`, which throws before the stream ends;
-`PutOpts` (`types.ts:450-464`) has no `onProgress`, so a destination cannot report
-upward (S3 tracks `httpUploadProgress` into a local counter only); and the
-orchestrator writes `bytesTransferred` only at artifact boundaries.
+Upload streams now report throttled cumulative `bytesTransferred` and bump
+`lastEventAt`, so the row can distinguish moving bytes from silence. That is not
+enough to sweep safely: changing the row to `server_error` does not abort the
+producer/destination promise holding the worker slot. It would report recovery
+without recovering capacity, and a resumed worker could race the terminal verdict.
 
-One change buys both halves: a throttled progress signal that writes
-`bytesTransferred` and bumps `lastEventAt` mid-upload, which lets `uploading` back
-into the idle branch and gives the UI real progress at the same time.
+Include `uploading` in the idle predicate only after capture cancellation above
+provides a durable abort request plus an in-process signal. The existing executor
+idle watchdogs and six-hour database ceiling remain the backstops meanwhile.
 
 ### A single artifact past ~281 GiB still cannot complete on S3
 

@@ -81,10 +81,29 @@ const TRUNCATE_ERROR = 4096;
 const TRUNCATE_HOOK_LOG = 64 * 1024;
 /** Cap on waiting for a finished hook's stdout to drain (see runHook). */
 const HOOK_DRAIN_TIMEOUT_MS = 500;
+
+/**
+ * Minimum gap between mid-upload progress writes. The stream reports per
+ * chunk; a chunk storm must not become a DB-write storm. One write per second
+ * per run keeps the SSE counter live and `lastEventAt` current. Artifact
+ * boundaries always persist through the `uploading` transition regardless of
+ * this window.
+ */
+const UPLOAD_PROGRESS_INTERVAL_MS = 1_000;
 /** Short form for the notification payload + destination verify note. */
 const TRUNCATE_ERROR_SUMMARY = 500;
 /** A `PutResult.etag` in this shape is a sha256 we can compare ours against. */
 const SHA256_HEX = /^[0-9a-f]{64}$/i;
+
+/** A different writer reached a terminal verdict first. The repository owns
+ *  that verdict; this worker must clean up and stop without publishing a
+ *  contradictory state. */
+class BackupRunFinalizedElsewhereError extends Error {
+  constructor(runId: string, attemptedStatus: BackupRunStatus) {
+    super(`Backup run ${runId} was finalized before transition to ${attemptedStatus}`);
+    this.name = "BackupRunFinalizedElsewhereError";
+  }
+}
 
 // ─── Public surface ──────────────────────────────────────────────────────────
 
@@ -285,6 +304,9 @@ export class BackupOrchestrator {
      */
     const uploadedKeys: string[] = [];
     let destination: ReturnType<typeof resolveDestination> | null = null;
+    /** Serialized because stream callbacks cannot await. */
+    let progressInFlight: Promise<void> | null = null;
+    let pendingProgress: { bytesTransferred: number; currentArtifact: string } | null = null;
 
     try {
       await this.transition(runId, "preparing");
@@ -443,11 +465,50 @@ export class BackupOrchestrator {
       // artifact whose recorded codec no restore can read. See that function.
       const producerOpts = sanitizeProducerOpts(policy.payloadConfig);
 
+      // Live upload progress. Cumulative across the WHOLE run — the current
+      // artifact's moving count rides on top of the bytes every finished
+      // artifact already landed, so the counter never resets per file.
+      let finishedArtifactBytes = 0;
+      let lastProgressWriteAt = 0;
+      const flushUploadProgress = () => {
+        if (progressInFlight) return;
+        progressInFlight = (async () => {
+          while (pendingProgress) {
+            const progress = pendingProgress;
+            pendingProgress = null;
+            await this.persistUploadProgress(
+              runId,
+              progress.bytesTransferred,
+              progress.currentArtifact,
+            );
+          }
+        })().finally(() => {
+          progressInFlight = null;
+        });
+      };
+      const reportUploadProgress = (artifactBytes: number, artifactName: string) => {
+        const now = Date.now();
+        if (now - lastProgressWriteAt < UPLOAD_PROGRESS_INTERVAL_MS) return;
+        lastProgressWriteAt = now;
+        pendingProgress = {
+          bytesTransferred: finishedArtifactBytes + artifactBytes,
+          currentArtifact: artifactName,
+        };
+        flushUploadProgress();
+      };
+
       for await (const artifact of producer.produce(serviceHandle, executor, producerOpts)) {
-        const recorded = await this.uploadArtifact(destination, baseKey, artifact);
+        const recorded = await this.uploadArtifact(destination, baseKey, artifact, (n) =>
+          reportUploadProgress(n, artifact.name),
+        );
         uploadedKeys.push(recorded.key);
         artifactsRecorded.push(recorded);
         totalBytes += recorded.sizeBytes;
+        finishedArtifactBytes = totalBytes;
+        // A throttled write may still be waiting on the database. Settle it
+        // before broadcasting the exact artifact boundary, otherwise its older
+        // SSE value could arrive afterwards and move the dashboard backward.
+        await progressInFlight;
         await this.transition(runId, "uploading", {
           artifacts: storableArtifacts(artifactsRecorded),
           bytesTransferred: totalBytes,
@@ -554,6 +615,11 @@ export class BackupOrchestrator {
         }
       }
 
+      // Flush the last throttled progress write before the terminal one: the
+      // value below is the exact uploaded total, and no in-flight estimate may
+      // land after it (the repo would refuse, but the run ends cleaner when the
+      // chain is settled — no pending write outlives the run).
+      await progressInFlight;
       await this.transition(runId, "succeeded", {
         manifestKey: manifestK,
         bytesTransferred: totalBytes,
@@ -575,12 +641,33 @@ export class BackupOrchestrator {
         },
       });
     } catch (err) {
+      // Settle any throttled progress write before the failed transition
+      // stamps `bytesTransferred: 0` — an in-flight estimate must not be the
+      // last byte count this run records (terminal-guarded in the repo too).
+      await progressInFlight;
       // Both forms are scrubbed independently: a second `.slice` over an
       // already-scrubbed string can split a surrogate pair back open.
       const raw = safeErrorMessage(err);
       const message = boundedStorableText(raw, TRUNCATE_ERROR);
       const summary = boundedStorableText(raw, TRUNCATE_ERROR_SUMMARY);
-      console.error(`[backup-orchestrator] run ${runId} failed: ${message}`);
+      const finalizedElsewhere = err instanceof BackupRunFinalizedElsewhereError;
+      if (finalizedElsewhere) {
+        console.warn(`[backup-orchestrator] run ${runId}: ${message}`);
+      } else {
+        console.error(`[backup-orchestrator] run ${runId} failed: ${message}`);
+      }
+
+      // A duplicate worker can lose to a genuinely succeeded run. Its keys are
+      // the same run-scoped keys as the winner's, so deleting them would destroy
+      // a valid restore point. For other known terminal verdicts the objects are
+      // unusable and should still be reclaimed. If the winner cannot be read,
+      // preserve data rather than risk deleting a successful backup.
+      const winningRun = finalizedElsewhere
+        ? await repos.backupRun.findById(runId).catch(() => undefined)
+        : undefined;
+      const mayReclaimObjects = finalizedElsewhere
+        ? winningRun !== undefined && winningRun.status !== "succeeded"
+        : true;
 
       // Reclaim every object this run put at the destination, whatever went wrong.
       //
@@ -588,7 +675,7 @@ export class BackupOrchestrator {
       // skips non-succeeded runs — so these bytes can only ever be billed, never used.
       // ONE place, so a future failure path cannot forget. Best-effort by construction: a
       // cleanup that fails must never replace the operator's real error.
-      if (destination && uploadedKeys.length > 0) {
+      if (mayReclaimObjects && destination && uploadedKeys.length > 0) {
         // `deleteMany` reports per-key failures instead of throwing, so catching alone
         // saw only a total collapse — a bucket policy that denies delete on half the
         // keys resolved cleanly and the orphans went unnamed.
@@ -611,6 +698,11 @@ export class BackupOrchestrator {
             ),
           );
       }
+
+      // The row is already terminal. Cleanup above still matters because this
+      // worker may have uploaded objects before losing the race, but the winning
+      // writer exclusively owns the status, SSE verdict, and notification.
+      if (finalizedElsewhere) return;
 
       // Only a destination that failed PREFLIGHT is marked unhealthy. Once preflight
       // has passed, this run has proved the destination reachable and writable, and
@@ -692,7 +784,11 @@ export class BackupOrchestrator {
     status: BackupRunStatus,
     patch?: Parameters<typeof repos.backupRun.transition>[2],
   ): Promise<void> {
-    await repos.backupRun.transition(runId, status, patch);
+    const applied = await repos.backupRun.transition(runId, status, patch);
+    // Only an explicit refusal means another writer already finalized the row.
+    if (applied === false) {
+      throw new BackupRunFinalizedElsewhereError(runId, status);
+    }
     try {
       backupRunBus.publish(runId, {
         type: "transition",
@@ -714,10 +810,45 @@ export class BackupOrchestrator {
     }
   }
 
+  /**
+   * One throttled progress write + its SSE echo. Telemetry, not FSM: a failed
+   * write is logged and swallowed — progress must never fail the backup it
+   * describes, and the bus must not either. Monotonicity and terminal refusal
+   * live in the repo (`recordUploadProgress`), so a late or reordered delivery
+   * is harmless by construction; callers coalesce and serialize samples so
+   * the SSE stream reads in order without a queue growing behind a slow DB.
+   */
+  private async persistUploadProgress(
+    runId: string,
+    bytesTransferred: number,
+    currentArtifact: string,
+  ): Promise<void> {
+    let applied: boolean;
+    try {
+      applied = await repos.backupRun.recordUploadProgress(runId, bytesTransferred);
+    } catch (err) {
+      console.warn(
+        `[backup-orchestrator] run ${runId}: progress write failed: ${safeErrorMessage(err)}`,
+      );
+      return;
+    }
+    // Never amplify a value the source of truth refused. Besides status races,
+    // this suppresses an older estimate that lost to an artifact-boundary write.
+    if (!applied) return;
+    try {
+      backupRunBus.publish(runId, { type: "progress", bytesTransferred, currentArtifact });
+    } catch {
+      // bus failures never block the FSM
+    }
+  }
+
   private async uploadArtifact(
     destination: ReturnType<typeof resolveDestination>,
     baseKey: { projectSlug: string; serviceName: string; runId: string },
     artifact: Artifact,
+    /** Per-chunk cumulative byte count for THIS artifact (throttled + aggregated
+     *  into the run total by the caller). */
+    onBytes?: (bytesWritten: number) => void,
   ): Promise<{
     name: string;
     key: string;
@@ -727,7 +858,7 @@ export class BackupOrchestrator {
     metadata: Record<string, unknown>;
   }> {
     const key = artifactKey(baseKey, artifact.name);
-    const hasher = new HashingPassthrough();
+    const hasher = new HashingPassthrough({ onBytes });
 
     // Pipe artifact stream → hasher → destination. The hasher computes
     // sha256 + byte count as bytes flow.

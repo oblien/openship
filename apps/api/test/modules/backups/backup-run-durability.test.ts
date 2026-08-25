@@ -325,10 +325,11 @@ describe("a terminal status is final — one owner per verdict", () => {
     const pg = makePgFake({ id: "bkr_9", status: "succeeded" });
     const repo = createBackupRunRepo(pg.db as never);
 
-    await repo.transition("bkr_9", "server_error", {
+    const applied = await repo.transition("bkr_9", "server_error", {
       errorMessage: "stale heartbeat ceiling",
     } as never);
 
+    expect(applied).toBe(false);
     expect(pg.row.status).toBe("succeeded");
     // And the payload does not sneak in behind the refused status.
     expect(pg.row.errorMessage).toBeUndefined();
@@ -338,8 +339,9 @@ describe("a terminal status is final — one owner per verdict", () => {
     const pg = makePgFake({ id: "bkr_10", status: "failed", errorMessage: "pg_dump exited 1" });
     const repo = createBackupRunRepo(pg.db as never);
 
-    await repo.transition("bkr_10", "succeeded", { bytesTransferred: 4096 } as never);
+    const applied = await repo.transition("bkr_10", "succeeded", { bytesTransferred: 4096 } as never);
 
+    expect(applied).toBe(false);
     expect(pg.row.status).toBe("failed");
     expect(pg.row.bytesTransferred).toBeUndefined();
   });
@@ -349,9 +351,9 @@ describe("a terminal status is final — one owner per verdict", () => {
     const pg = makePgFake({ id: "bkr_11", status: "queued" });
     const repo = createBackupRunRepo(pg.db as never);
 
-    await repo.transition("bkr_11", "uploading", { bytesTransferred: 10 } as never);
+    expect(await repo.transition("bkr_11", "uploading", { bytesTransferred: 10 } as never)).toBe(true);
     expect(pg.row.status).toBe("uploading");
-    await repo.transition("bkr_11", "succeeded", { bytesTransferred: 20 } as never);
+    expect(await repo.transition("bkr_11", "succeeded", { bytesTransferred: 20 } as never)).toBe(true);
     expect(pg.row.status).toBe("succeeded");
     expect(pg.row.bytesTransferred).toBe(20);
   });

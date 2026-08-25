@@ -51,7 +51,9 @@ vi.mock("@repo/db", () => ({
       }),
       transition: async (_id: string, status: string, patch?: Record<string, unknown>) => {
         Object.assign(h.row, { status }, patch ?? {});
+        return true;
       },
+      recordUploadProgress: async () => true,
     },
     backupPolicy: {
       findById: async () => ({
