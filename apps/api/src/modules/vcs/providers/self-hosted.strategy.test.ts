@@ -49,4 +49,8 @@ describe("SelfHostedStrategy", () => {
   it("should return null for parseWebhookPayload", () => {
     expect(strategy.parseWebhookPayload({}, "push")).toBeNull();
   });
+
+  it("should throw on verifyWebhookSignature", async () => {
+    await expect(strategy.verifyWebhookSignature("payload", {})).rejects.toThrow("Not implemented");
+  });
 });

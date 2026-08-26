@@ -940,6 +940,7 @@ export async function updateCheckRun(
   opts: {
     status: "completed";
     conclusion: "success" | "failure" | "cancelled" | "neutral" | "skipped";
+    detailsUrl?: string;
     output?: { title: string; summary: string; text?: string };
   },
 ): Promise<void> {
@@ -958,6 +959,7 @@ export async function updateCheckRun(
         status: opts.status,
         completed_at: new Date().toISOString(),
         conclusion: opts.conclusion,
+        ...(opts.detailsUrl ? { details_url: opts.detailsUrl } : {}),
         ...(opts.output ? { output: opts.output } : {}),
       },
     });

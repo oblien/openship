@@ -9,22 +9,24 @@ import type {
   GitHubTreeResponse as VcsTreeResponse,
   GitHubWebhook as VcsWebhook,
 } from "../../github/github.types";
+import { AppError } from "@repo/core";
 
 export class GitHubStrategy implements VcsProviderStrategy {
   async getRepository(ctx: RequestContext, owner: string, repo: string) {
     return githubService.getRepository(ctx, owner, repo);
   }
 
-  async verifyWebhookSignature(payload: string | Buffer, headers: Record<string, string>) {
-    // Github webhook verification is typically handled by the provider middleware directly,
-    // but we satisfy the interface here.
-    return { valid: true };
+  async verifyWebhookSignature(
+    payload: string | Buffer,
+    headers: Record<string, string>,
+  ): Promise<{ valid: boolean; error?: string }> {
+    throw new Error("Not implemented — verification is handled by the provider's webhook module");
   }
 
   async listRepositories(ctx: RequestContext, owner?: string) {
     const source = await import("../../github/sources").then((m) => m.createGitHubSource(ctx));
     const repos = await source.listReposForOwner(owner);
-    if (!repos) throw new Error("Not connected to GitHub");
+    if (!repos) throw new AppError("Not connected to GitHub", 400);
     return repos;
   }
 
@@ -57,8 +59,12 @@ export class GitHubStrategy implements VcsProviderStrategy {
     const tree = await githubService.listRepositoryTree(ctx, owner, repo, { branch: sha });
     return {
       sha,
+      // listRepositoryTree does not expose the native GitHub API's truncated signal
       truncated: false,
-      tree: tree as any,
+      tree: tree.map((entry) => ({
+        path: entry.path,
+        type: entry.type === "dir" ? "tree" : "blob",
+      })) as any,
     } as VcsTreeResponse;
   }
 
@@ -72,7 +78,10 @@ export class GitHubStrategy implements VcsProviderStrategy {
       repositories: [repo],
     });
     if (!token) {
-      throw new Error("No GitHub App installation token is available for this owner.");
+      throw new AppError(
+        "No GitHub App installation token is available for this owner. Connect the Openship GitHub App (cloud) for this account to use a clone token.",
+        409,
+      );
     }
     const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
     return { token, cloneUrl, command: `git clone ${cloneUrl}` };
@@ -131,7 +140,7 @@ export class GitHubStrategy implements VcsProviderStrategy {
       headSha: opts.headSha,
       status: opts.status,
       conclusion: opts.conclusion,
-      // detailsUrl: opts.detailsUrl,
+      detailsUrl: opts.detailsUrl,
       output: opts.output,
     });
     if (!result) return null;
@@ -166,7 +175,7 @@ export class GitHubStrategy implements VcsProviderStrategy {
     return githubService.updateCheckRun(ctx, owner, repo, checkRunId, {
       status: opts.status as any,
       conclusion: opts.conclusion as any,
-      // detailsUrl: opts.detailsUrl,
+      detailsUrl: opts.detailsUrl,
       output: opts.output,
     });
   }
@@ -180,7 +189,10 @@ export class GitHubStrategy implements VcsProviderStrategy {
   ): Promise<VcsWebhook | null> {
     const result = await githubService.registerWebhook(ctx, owner, repo, webhookUrl, opts);
     if (!result) return null;
-    return result as unknown as VcsWebhook;
+    return {
+      id: result.hookId as number, // hookId is expected to be returned as id
+      events: result.events,
+    } as VcsWebhook;
   }
 
   async listWebhooks(ctx: RequestContext, owner: string, repo: string): Promise<VcsWebhook[]> {
