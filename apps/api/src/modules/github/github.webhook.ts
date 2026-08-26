@@ -226,7 +226,7 @@ export const githubWebhookProvider: WebhookProvider = {
           result = await handleInstallation(payload as GitHubInstallationPayload);
           break;
         case "push":
-          result = await handlePush(payload as GitHubPushPayload, handledProjectIds);
+          result = await handlePush("github", payload as GitHubPushPayload, handledProjectIds);
           break;
         case "check_run":
           result = await handleCheckRun(payload as GitHubCheckRunPayload);
