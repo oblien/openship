@@ -10,6 +10,7 @@ export const SOURCE_PROVIDERS = [
   "github",
   "gitlab",
   "bitbucket",
+  "self-hosted",
   "local",
   "upload",
   "release",

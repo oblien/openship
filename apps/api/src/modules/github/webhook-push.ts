@@ -17,7 +17,7 @@ import { webhookActorCtx } from "./webhook-shared";
 import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
 import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
 import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
-import type { GitHubPushPayload } from "@repo/contracts";
+import type { VcsPushPayload } from "@repo/platform/engine/modules/vcs/vcs.types";
 
 // ─── Branch deployment events ────────────────────────────────────────────────
 
@@ -68,7 +68,7 @@ function recordPushDelivery(
 
 export async function handlePush(
   provider: string,
-  payload: GitHubPushPayload,
+  payload: VcsPushPayload,
   handledProjectIds: Set<string> = new Set(),
 ): Promise<WebhookHandlerResult> {
   const owner = payload.repository?.owner?.login;
@@ -116,7 +116,7 @@ interface BranchDeploymentTrigger {
   commitSha?: string;
   commitMessage?: string;
   /** Raw push payload — needed for smart per-service routing. */
-  payload?: GitHubPushPayload;
+  payload?: VcsPushPayload;
 }
 
 async function deployProjectFromPush(

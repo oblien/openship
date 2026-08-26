@@ -1,19 +1,25 @@
 import { VcsProviderStrategy, VcsCheckRun } from "../vcs.strategy";
-import type { WebhookStrategy } from "../vcs.types";
+import type {
+  WebhookStrategy,
+  VcsFileContent,
+  VcsTreeResponse,
+  VcsWebhook,
+  VcsPushPayload,
+  GetCloneCredentialsOptions,
+  VcsRepository,
+  VcsBranch,
+  VcsCommit,
+} from "../vcs.types";
 import type { RequestContext } from "../../../lib/request-context";
 import * as githubService from "../../github/github.service";
 import * as cloneAuth from "../../github/clone-auth";
-import type {
-  GitHubPushPayload,
-  GitHubFileContent as VcsFileContent,
-  GitHubTreeResponse as VcsTreeResponse,
-  GitHubWebhook as VcsWebhook,
-} from "../../github/github.types";
+import type { GitHubPushPayload } from "../../github/github.types";
 import { AppError } from "@repo/core";
 
 export class GitHubStrategy implements VcsProviderStrategy {
   async getRepository(ctx: RequestContext, owner: string, repo: string, opts?: { withBranches?: boolean }) {
-    return githubService.getRepository(ctx, owner, repo, opts);
+    const result = await githubService.getRepository(ctx, owner, repo, opts);
+    return result as VcsRepository;
   }
 
   async verifyWebhookSignature(
@@ -27,11 +33,12 @@ export class GitHubStrategy implements VcsProviderStrategy {
     const source = await import("../../github/sources").then((m) => m.createGitHubSource(ctx));
     const repos = await source.listReposForOwner(owner);
     if (!repos) throw new AppError("Not connected to GitHub", 400);
-    return repos;
+    return repos as unknown as VcsRepository[];
   }
 
   async getBranches(ctx: RequestContext, owner: string, repo: string) {
-    return githubService.listBranches(ctx, owner, repo);
+    const result = await githubService.listBranches(ctx, owner, repo);
+    return result as VcsBranch[];
   }
 
   async listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any> {
@@ -53,13 +60,10 @@ export class GitHubStrategy implements VcsProviderStrategy {
     ctx: RequestContext,
     owner: string,
     repo: string,
-    sha: string,
+    ref: string,
   ): Promise<VcsTreeResponse> {
-    const tree = await githubService.listRepositoryTree(ctx, owner, repo, { branch: sha });
+    const tree = await githubService.listRepositoryTree(ctx, owner, repo, { branch: ref });
     return {
-      sha,
-      // listRepositoryTree does not expose the native GitHub API's truncated signal
-      truncated: false,
       tree: tree.map((entry) => ({
         path: entry.path,
         type: entry.type === "dir" ? "tree" : "blob",
@@ -67,7 +71,7 @@ export class GitHubStrategy implements VcsProviderStrategy {
     } as VcsTreeResponse;
   }
 
-  async getCloneCredentials(opts: any) {
+  async getCloneCredentials(opts: GetCloneCredentialsOptions) {
     return cloneAuth.resolveBuildGitToken(opts);
   }
 
@@ -86,9 +90,10 @@ export class GitHubStrategy implements VcsProviderStrategy {
     return { token, cloneUrl, command: `git clone ${cloneUrl}` };
   }
 
-  parseWebhookPayload(payload: unknown, eventType: string): GitHubPushPayload | null {
+  parseWebhookPayload(payload: unknown, eventType: string): VcsPushPayload | null {
     if (eventType !== "push") return null;
-    return payload as GitHubPushPayload;
+    const p = payload as GitHubPushPayload;
+    return p as unknown as VcsPushPayload;
   }
 
   async getLatestCommit(ctx: RequestContext, owner: string, repo: string, branch: string) {
@@ -102,7 +107,8 @@ export class GitHubStrategy implements VcsProviderStrategy {
     branch: string,
     perPage = 10,
   ) {
-    return githubService.getRecentCommits(ctx, owner, repo, branch, perPage);
+    const result = await githubService.getRecentCommits(ctx, owner, repo, branch, perPage);
+    return result as VcsCommit[];
   }
 
   async compareCommits(
@@ -190,7 +196,6 @@ export class GitHubStrategy implements VcsProviderStrategy {
     if (!result) return null;
     return {
       id: result.hookId as number, // hookId is expected to be returned as id
-      events: result.events,
     } as VcsWebhook;
   }
 

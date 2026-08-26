@@ -13,14 +13,15 @@ export interface ProjectReader {
   listTree: () => Promise<RepoTreeEntry[]>;
 }
 
-export function createGitHubReader(
+export function createVcsReader(
+  provider: string,
   ctx: RequestContext,
   owner: string,
   repo: string,
   branch: string,
 ): ProjectReader {
   let treePromise: Promise<RepoTreeEntry[]> | null = null;
-  const vcs = VcsStrategyFactory.getStrategy("github");
+  const vcs = VcsStrategyFactory.getStrategy(provider);
 
   const readText = async (path: string) => {
     try {

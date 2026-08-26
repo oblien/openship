@@ -877,6 +877,7 @@ async function reconcileComposeSource(
         })
       : await resolveProjectInfo({
           source: "github",
+          provider: project.gitProvider || "github",
           owner: project.gitOwner!,
           repo: project.gitRepo!,
           branch,
@@ -930,6 +931,7 @@ async function resolveLifecycleSourceEnv(
       : await resolveProjectSourceEnv(
           {
             source: "github",
+            provider: project.gitProvider || "github",
             owner: project.gitOwner!,
             repo: project.gitRepo!,
             branch,

@@ -63,8 +63,6 @@ describe("GitHubStrategy", () => {
       branch: "sha-123",
     });
     expect(result).toEqual({
-      sha: "sha-123",
-      truncated: false,
       tree: [
         { path: "file.txt", type: "blob" },
         { path: "dir", type: "tree" },

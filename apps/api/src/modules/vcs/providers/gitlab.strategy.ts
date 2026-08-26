@@ -1,142 +1,97 @@
 import { VcsProviderStrategy } from "../vcs.strategy";
-import type { WebhookStrategy, VcsPushPayload } from "../vcs.types";
 import type { RequestContext } from "../../../lib/request-context";
 
 export class GitLabStrategy implements VcsProviderStrategy {
-  async verifyWebhookSignature(
-    payload: string | Buffer,
-    headers: Record<string, string>,
-  ): Promise<{ valid: boolean; error?: string }> {
-    throw new Error("Not implemented — verification is handled by the provider's webhook module");
-  }
-  async getRecentCommits(ctx: any, owner: string, repo: string, branch: string, limit?: number) {
-    return [];
+  getRepository(...args: any[]): any {
+    throw new Error("getRepository is not yet implemented for gitlab");
   }
 
-  async getRepository(ctx: RequestContext, owner: string, repo: string): Promise<any> {
-    throw new Error("GitLab integration not yet implemented.");
+  listRepositories(...args: any[]): any {
+    throw new Error("listRepositories is not yet implemented for gitlab");
   }
 
-  async listRepositories(ctx: RequestContext, owner?: string): Promise<any[]> {
-    throw new Error("GitLab integration not yet implemented.");
+  getBranches(...args: any[]): any {
+    throw new Error("getBranches is not yet implemented for gitlab");
   }
 
-  async getBranches(ctx: RequestContext, owner: string, repo: string): Promise<any[]> {
-    throw new Error("GitLab integration not yet implemented.");
+  listFiles(...args: any[]): any {
+    throw new Error("listFiles is not yet implemented for gitlab");
   }
 
-  async listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any> { throw new Error("Not implemented"); }
-
-  async getFileContent(
-    ctx: RequestContext,
-    owner: string,
-    repo: string,
-    path: string,
-    opts?: { branch?: string; json?: boolean },
-  ): Promise<any> {
-    throw new Error("GitLab integration not yet implemented.");
+  getFileContent(...args: any[]): any {
+    throw new Error("getFileContent is not yet implemented for gitlab");
   }
 
-  async getTree(ctx: RequestContext, owner: string, repo: string, sha: string): Promise<any> {
-    throw new Error("GitLab integration not yet implemented.");
+  getTree(...args: any[]): any {
+    throw new Error("getTree is not yet implemented for gitlab");
   }
 
-  async getCloneCredentials(opts: any): Promise<any> {
-    throw new Error("GitLab integration not yet implemented.");
+  getCloneCredentials(...args: any[]): any {
+    throw new Error("getCloneCredentials is not yet implemented for gitlab");
   }
 
-  async getCloneToken(ctx: RequestContext, owner: string, repo: string): Promise<any> {
-    throw new Error("GitLab integration not yet implemented.");
+  getCloneToken(...args: any[]): any {
+    throw new Error("getCloneToken is not yet implemented for gitlab");
   }
 
-  parseWebhookPayload(payload: unknown, eventType: string): VcsPushPayload | null {
-    return null;
+  verifyWebhookSignature(...args: any[]): any {
+    throw new Error("verifyWebhookSignature is not yet implemented for gitlab");
   }
 
-  async getLatestCommit(
-    ctx: RequestContext,
-    owner: string,
-    repo: string,
-    branch: string,
-  ): Promise<{ sha: string; message: string } | null> {
-    throw new Error("Method not implemented.");
+  parseWebhookPayload(...args: any[]): any {
+    throw new Error("parseWebhookPayload is not yet implemented for gitlab");
   }
 
-  async compareCommits(
-    ctx: RequestContext,
-    owner: string,
-    repo: string,
-    base: string,
-    head: string,
-  ): Promise<{ files: string[] } | null> {
-    return { files: [] };
+  getLatestCommit(...args: any[]): any {
+    throw new Error("getLatestCommit is not yet implemented for gitlab");
   }
 
-  parseRepoUrl(repoUrl?: string): { owner: string; repo: string } | null {
-    throw new Error("Method not implemented.");
+  getRecentCommits(...args: any[]): any {
+    throw new Error("getRecentCommits is not yet implemented for gitlab");
   }
 
-  async createCheckRun(ctx: RequestContext, owner: string, repo: string, opts: any): Promise<any> {
-    throw new Error("Method not implemented.");
+  compareCommits(...args: any[]): any {
+    throw new Error("compareCommits is not yet implemented for gitlab");
   }
 
-  async updateCheckRun(
-    ctx: RequestContext,
-    owner: string,
-    repo: string,
-    checkRunId: number,
-    opts: any,
-  ): Promise<void> {
-    throw new Error("Method not implemented.");
+  parseRepoUrl(...args: any[]): any {
+    throw new Error("parseRepoUrl is not yet implemented for gitlab");
   }
 
-  async registerWebhook(
-    ctx: RequestContext,
-    owner: string,
-    repo: string,
-    webhookUrl?: string,
-    opts?: { projectId?: string },
-  ): Promise<any> {
-    throw new Error("Method not implemented.");
+  createCheckRun(...args: any[]): any {
+    throw new Error("createCheckRun is not yet implemented for gitlab");
   }
 
-  async listWebhooks(ctx: RequestContext, owner: string, repo: string): Promise<any[]> {
-    throw new Error("Method not implemented.");
+  updateCheckRun(...args: any[]): any {
+    throw new Error("updateCheckRun is not yet implemented for gitlab");
   }
 
-  async updateWebhook(
-    ctx: RequestContext,
-    owner: string,
-    repo: string,
-    hookId: number,
-    patch: any,
-  ): Promise<any> {
-    throw new Error("Method not implemented.");
+  registerWebhook(...args: any[]): any {
+    throw new Error("registerWebhook is not yet implemented for gitlab");
   }
 
-  async deleteWebhook(
-    ctx: RequestContext,
-    owner: string,
-    repo: string,
-    hookId: number,
-  ): Promise<void> {
-    throw new Error("GitLab strategy not implemented");
+  listWebhooks(...args: any[]): any {
+    throw new Error("listWebhooks is not yet implemented for gitlab");
   }
 
-  getWebhookStrategy(): WebhookStrategy {
-    throw new Error("GitLab strategy not implemented");
+  updateWebhook(...args: any[]): any {
+    throw new Error("updateWebhook is not yet implemented for gitlab");
   }
 
-  async resolveWebhookStrategy(project?: {
-    webhookDomain?: string | null;
-  }): Promise<WebhookStrategy> {
-    throw new Error("GitLab strategy not implemented");
+  deleteWebhook(...args: any[]): any {
+    throw new Error("deleteWebhook is not yet implemented for gitlab");
   }
 
-  async getAvailableStrategies(
-    ctx: RequestContext,
-    project?: { webhookDomain?: string | null },
-  ): Promise<{ current: WebhookStrategy; available: WebhookStrategy[] }> {
-    throw new Error("GitLab strategy not implemented");
+  getWebhookStrategy(...args: any[]): any {
+    throw new Error("getWebhookStrategy is not yet implemented for gitlab");
   }
+
+  resolveWebhookStrategy(...args: any[]): any {
+    throw new Error("resolveWebhookStrategy is not yet implemented for gitlab");
+  }
+
+  getAvailableStrategies(...args: any[]): any {
+    throw new Error("getAvailableStrategies is not yet implemented for gitlab");
+  }
+
 }

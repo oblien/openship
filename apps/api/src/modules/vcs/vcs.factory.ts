@@ -2,6 +2,7 @@ import { VcsProviderStrategy } from "./vcs.strategy";
 import { GitHubStrategy } from "./providers/github.strategy";
 import { GitLabStrategy } from "./providers/gitlab.strategy";
 import { SelfHostedStrategy } from "./providers/self-hosted.strategy";
+import { UnknownVcsProviderError } from "./vcs.types";
 
 // We will register strategies here.
 const strategies = new Map<string, VcsProviderStrategy>();
@@ -29,14 +30,7 @@ export class VcsStrategyFactory {
     const strategy = strategies.get(safeProvider);
 
     if (!strategy) {
-      // Fallback to github if an unsupported one is requested during transition
-      const githubStrategy = strategies.get("github");
-      if (!githubStrategy) {
-        throw new Error(
-          `No VCS strategy registered for provider: ${safeProvider} and fallback github is also missing.`,
-        );
-      }
-      return githubStrategy;
+      throw new UnknownVcsProviderError(safeProvider);
     }
 
     return strategy;

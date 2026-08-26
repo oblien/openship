@@ -50,8 +50,8 @@ export const listRepos = (provider: string) => async (c: Context) => {
   const owner = c.req.query("owner");
   const strategy = VcsStrategyFactory.getStrategy(provider);
   const repos = await strategy.listRepositories(ctx, owner);
-  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
-  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
+  const allowed = await filterAllowedRepos(ctx, repos as any, repoKey);
+  return c.json(paginateRepoList(allowed as any, parseRepoListParams(c)));
 }
 
 export const listOrgRepos = (provider: string) => async (c: Context) => {
@@ -60,8 +60,8 @@ export const listOrgRepos = (provider: string) => async (c: Context) => {
   const org = param(c, "org");
   const strategy = VcsStrategyFactory.getStrategy(provider);
   const repos = await strategy.listRepositories(ctx, org);
-  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
-  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
+  const allowed = await filterAllowedRepos(ctx, repos as any, repoKey);
+  return c.json(paginateRepoList(allowed as any, parseRepoListParams(c)));
 }
 
 export const getRepo = (provider: string) => async (c: Context) => {
@@ -108,7 +108,7 @@ export const detectStack = (provider: string) => async (c: Context) => {
 
   // The prepare.service resolveProjectInfo currently only supports github as a remote source.
   const info = await resolveProjectInfo({
-    source: "github",
+    source: "github", provider: provider,
     owner,
     repo,
     ctx,
