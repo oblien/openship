@@ -19,7 +19,7 @@ describe("GitHubStrategy", () => {
   it("should delegate getRepository to githubService", async () => {
     vi.mocked(githubService.getRepository).mockResolvedValueOnce({ id: 1 } as any);
     const result = await strategy.getRepository(mockCtx, "owner", "repo");
-    expect(githubService.getRepository).toHaveBeenCalledWith(mockCtx, "owner", "repo");
+    expect(githubService.getRepository).toHaveBeenCalledWith(mockCtx, "owner", "repo", undefined);
     expect(result).toEqual({ id: 1 });
   });
 
@@ -41,7 +41,7 @@ describe("GitHubStrategy", () => {
       "owner",
       "repo",
       "path/to/file.txt",
-      "main",
+      { branch: "main" },
     );
     expect(githubService.getFileContent).toHaveBeenCalledWith(
       mockCtx,
@@ -50,12 +50,7 @@ describe("GitHubStrategy", () => {
       "path/to/file.txt",
       { branch: "main" },
     );
-    expect(result).toEqual({
-      content: "test",
-      name: "file.txt",
-      path: "path/to/file.txt",
-      type: "file",
-    });
+    expect(result).toEqual({ content: "test" });
   });
 
   it("should transform getTree response correctly", async () => {

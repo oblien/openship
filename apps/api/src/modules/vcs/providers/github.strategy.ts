@@ -12,8 +12,8 @@ import type {
 import { AppError } from "@repo/core";
 
 export class GitHubStrategy implements VcsProviderStrategy {
-  async getRepository(ctx: RequestContext, owner: string, repo: string) {
-    return githubService.getRepository(ctx, owner, repo);
+  async getRepository(ctx: RequestContext, owner: string, repo: string, opts?: { withBranches?: boolean }) {
+    return githubService.getRepository(ctx, owner, repo, opts);
   }
 
   async verifyWebhookSignature(
@@ -34,20 +34,19 @@ export class GitHubStrategy implements VcsProviderStrategy {
     return githubService.listBranches(ctx, owner, repo);
   }
 
+  async listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any> {
+    return githubService.listFiles(ctx, owner, repo, opts);
+  }
+
   async getFileContent(
     ctx: RequestContext,
     owner: string,
     repo: string,
     path: string,
-    ref?: string,
+    opts?: { branch?: string; json?: boolean },
   ): Promise<VcsFileContent> {
-    const result = await githubService.getFileContent(ctx, owner, repo, path, { branch: ref });
-    return {
-      ...result,
-      name: path.split("/").pop() || "",
-      path,
-      type: "file",
-    } as VcsFileContent;
+    const result = await githubService.getFileContent(ctx, owner, repo, path, opts);
+    return result as unknown as VcsFileContent;
   }
 
   async getTree(

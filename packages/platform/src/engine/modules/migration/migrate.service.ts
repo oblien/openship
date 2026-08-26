@@ -97,7 +97,7 @@ export async function parseRepoCompose(
         owner,
         repo,
         file,
-        branch,
+        { branch },
       );
       content = res?.content ?? null;
     } catch {
@@ -814,7 +814,7 @@ async function writeAttachedRuntime(opts: {
   serverId: string;
   placements: AttachPlacement[];
   /** The branch to record. Passed explicitly because the two callers legitimately know
-   *  different things: a re-import carries the group's tracked branch, a same-server reuse
+   *  different things: a re-import carries the group's tracked { branch }, a same-server reuse
    *  has no source to read one from. */
   branch: string;
   imageRef: string | null;

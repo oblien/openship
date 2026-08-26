@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
+import { AppError } from "@repo/core";
 import { VcsStrategyFactory } from "./vcs.factory";
 import { paginateRepoList, type RepoListParams } from "../github/repo-list";
 import { filterAllowedRepos, filterTreeEntries } from "../github/github-access";
@@ -10,6 +11,12 @@ import { resolveProjectInfo, projectInfoToScanResponse } from "../deployments/pr
 function repoKey(r: { full_name?: string; owner?: string; name?: string }) {
   const [owner, repo] = (r.full_name ?? "").split("/");
   return { owner: owner || r.owner || "", repo: repo || r.name || "" };
+}
+
+function validateProvider(provider: string) {
+  if (provider !== "github" && provider !== "gitlab" && provider !== "self-hosted") {
+    throw new AppError(`Unknown VCS provider: ${provider}`, 404, "NOT_FOUND");
+  }
 }
 
 function param(c: Context, name: string): string {
@@ -37,9 +44,9 @@ function parseRepoListParams(c: Context): RepoListParams {
   };
 }
 
-export async function listRepos(c: Context) {
+export const listRepos = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = c.req.query("owner");
   const strategy = VcsStrategyFactory.getStrategy(provider);
   const repos = await strategy.listRepositories(ctx, owner);
@@ -47,9 +54,9 @@ export async function listRepos(c: Context) {
   return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
 }
 
-export async function listOrgRepos(c: Context) {
+export const listOrgRepos = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const org = param(c, "org");
   const strategy = VcsStrategyFactory.getStrategy(provider);
   const repos = await strategy.listRepositories(ctx, org);
@@ -57,20 +64,21 @@ export async function listOrgRepos(c: Context) {
   return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
 }
 
-export async function getRepo(c: Context) {
+export const getRepo = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
 
   const strategy = VcsStrategyFactory.getStrategy(provider);
-  const data = await strategy.getRepository(ctx, owner, repo);
+  const withBranches = c.req.query("branches") === "true";
+  const data = await strategy.getRepository(ctx, owner, repo, { withBranches });
   return c.json({ data });
 }
 
-export async function listBranches(c: Context) {
+export const listBranches = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
 
@@ -79,9 +87,9 @@ export async function listBranches(c: Context) {
   return c.json({ data });
 }
 
-export async function getCloneToken(c: Context) {
+export const getCloneToken = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
 
@@ -90,18 +98,15 @@ export async function getCloneToken(c: Context) {
   return c.json(result);
 }
 
-export async function detectStack(c: Context) {
+export const detectStack = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
   const branch = c.req.query("branch")?.trim();
   const composePath = c.req.query("composePath")?.trim();
 
-  // We explicitly typecast provider as "github" | "gitlab" | "self-hosted" here
-  // because prepare.service expects these types.
-  const source = provider as "github" | "gitlab" | "self-hosted";
-
+  // The prepare.service resolveProjectInfo currently only supports github as a remote source.
   const info = await resolveProjectInfo({
     source: "github",
     owner,
@@ -114,21 +119,19 @@ export async function detectStack(c: Context) {
   return c.json({ data: projectInfoToScanResponse(info) });
 }
 
-export async function listFiles(c: Context) {
+export const listFiles = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
   const branch = c.req.query("branch");
   const path = c.get("sourcePath") as string | undefined;
 
   const strategy = VcsStrategyFactory.getStrategy(provider);
-  // strategy.getFileContent is actually what we need for listFiles if path points to a directory
-  // Wait, no. githubService.listFiles returns an array of entries.
-  // In VcsProviderStrategy, we don't have listFiles, only getFileContent and getTree.
-  // getFileContent in GithubStrategy delegates to githubService.getFileContent, which if pointing to a directory, might return an array...
-  // Let me check if getFileContent does this. I'll just use getFileContent for now.
-  const data = await strategy.getFileContent(ctx, owner, repo, path || "", branch ?? undefined);
+  const data = await strategy.listFiles(ctx, owner, repo, {
+    branch: branch ?? undefined,
+    path: path || undefined,
+  });
 
   const readPaths = (c.get("sourceReadPaths") as string[] | undefined) ?? [];
 
@@ -148,9 +151,9 @@ export async function listFiles(c: Context) {
   return c.json({ data: visible });
 }
 
-export async function listTree(c: Context) {
+export const listTree = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
   const branch = c.req.query("branch")?.trim();
@@ -168,9 +171,9 @@ export async function listTree(c: Context) {
   return c.json({ data: visible });
 }
 
-export async function getFile(c: Context) {
+export const getFile = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
   const branch = c.req.query("branch");
@@ -184,13 +187,16 @@ export async function getFile(c: Context) {
   }
 
   const strategy = VcsStrategyFactory.getStrategy(provider);
-  const data = await strategy.getFileContent(ctx, owner, repo, file, branch ?? undefined);
+  const data = await strategy.getFileContent(ctx, owner, repo, file, {
+    branch: branch ?? undefined,
+    json: file.endsWith(".json"),
+  });
   return c.json({ data });
 }
 
-export async function listWebhooks(c: Context) {
+export const listWebhooks = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
 
@@ -199,9 +205,9 @@ export async function listWebhooks(c: Context) {
   return c.json({ data });
 }
 
-export async function registerWebhook(c: Context) {
+export const registerWebhook = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const userId = ctx.userId;
   const organizationId = ctx.organizationId;
   const owner = param(c, "owner");
@@ -212,7 +218,7 @@ export async function registerWebhook(c: Context) {
 
   if (organizationId) {
     audit.recordAsync(auditContextFrom(c, organizationId, userId), {
-      eventType: "github.webhook.register", // should probably be templated, but leaving as is for backward compatibility or changing to `${provider}.webhook.register`
+      eventType: `${provider}.webhook.register` as any,
       resourceType: provider,
       resourceId: `${owner}/${repo}`,
       after: {
@@ -226,9 +232,9 @@ export async function registerWebhook(c: Context) {
   return c.json({ data });
 }
 
-export async function deleteWebhook(c: Context) {
+export const deleteWebhook = (provider: string) => async (c: Context) => {
+  validateProvider(provider);
   const ctx = getRequestContext(c);
-  const provider = c.req.param("provider");
   const owner = param(c, "owner");
   const repo = param(c, "repo");
   const body = await c.req.json();
@@ -242,7 +248,7 @@ export async function deleteWebhook(c: Context) {
 
   if (ctx.organizationId) {
     audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
-      eventType: "github.webhook.delete", // same here
+      eventType: `${provider}.webhook.delete` as any,
       resourceType: provider,
       resourceId: `${owner}/${repo}`,
       before: { owner, repo, hookId: body.hookId },
