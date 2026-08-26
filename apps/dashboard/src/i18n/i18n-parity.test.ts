@@ -253,7 +253,7 @@ describe("i18n locale parity vs the English source", () => {
   /**
    * The check the two above CANNOT make.
    *
-   * Both of them reason about key PRESENCE. A key that exists in all nine locales
+   * Both of them reason about key PRESENCE. A key that exists in all ten locales
    * while still holding the English sentence is invisible to them — the locale is
    * "complete", the suite is green, and the UI renders English. That is not
    * hypothetical: `verifyEmail.code*` sat like that in 7 of 8 locales, and when the
@@ -271,26 +271,30 @@ describe("i18n locale parity vs the English source", () => {
    * A namespace absent from this map must stay at zero.
    */
   const UNTRANSLATED_BASELINE: Record<string, number> = {
-    deploy: 133,
-    settings: 99,
-    projectSettings: 48,
-    importProject: 43,
+    // +N on several rows: `fa` keeps product names and machine placeholders
+    // identical to English (Openship Cloud, gh CLI, AWS S3, PEM headers, `npm start`,
+    // `{name}: {label}`), matching ar/tr. Those strings are multi-word so they
+    // count here; they are not leftover UI copy.
+    deploy: 139,
+    settings: 114,
+    projectSettings: 54,
+    importProject: 45,
     billing: 28,
-    onboarding: 24,
-    projectDetail: 19,
-    library: 18,
-    misc: 18,
+    onboarding: 27,
+    projectDetail: 21,
+    library: 19,
+    misc: 23,
     projects: 17,
-    deployments: 14,
+    deployments: 16,
     emailsAdmin: 12,
     overview: 12,
-    chrome: 10,
+    chrome: 11,
     widgets: 9,
     dashboard: 6,
     emails: 6,
-    servers: 6,
+    servers: 8,
     migration: 3,
-    jobs: 2,
+    jobs: 3,
     // `auth` is deliberately absent, i.e. pinned at 0: it was brought to zero when
     // password reset moved from a link to a code, and it is the flow where an
     // English-rendering string is most costly — somebody locked out of their account

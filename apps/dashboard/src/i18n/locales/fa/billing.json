@@ -1,0 +1,203 @@
+{
+  "capacity": {
+    "title": "ظرفیت و مصرف",
+    "subtitle": "ظرفیت گنجانده‌شده در طرح شما و میزان مصرف. ارقام زنده از Openship Cloud همگام می‌شوند.",
+    "routes": "مسیرهای رایگان",
+    "runningServices": "سرویس‌های در حال اجرا",
+    "projects": "پروژه‌ها",
+    "workspaces": "فضاهای کار",
+    "unlimited": "نامحدود",
+    "used": "مصرف‌شده",
+    "of": "از {max}",
+    "syncing": "همگام‌سازی از ابر"
+  },
+  "topupsComingSoon": "شارژ یک‌باره اعتبار به‌زودی می‌آید — می‌توانید اینجا اعتبار را روی سهمیه ماهانه اضافه کنید.",
+  "header": {
+    "credits": "اعتبار",
+    "creditsSuffix": "از {limit}",
+    "overQuota": "بیش از سهمیه",
+    "bandwidth": "پهنای باند",
+    "bandwidthNote": "ورودی + خروجی مجموع",
+    "build": "زمان ساخت",
+    "min": "دقیقه",
+    "capacity": "ظرفیت",
+    "workspaces": "فضای کار",
+    "vcpus": "vCPU",
+    "ram": "RAM",
+    "diskCap": "دیسک"
+  },
+  "tabs": {
+    "overview": "نمای کلی",
+    "usage": "مصرف",
+    "plans": "طرح‌ها",
+    "topups": "شارژ",
+    "payment": "روش پرداخت",
+    "invoices": "فاکتورها"
+  },
+  "portal": {
+    "openButton": "باز کردن پورتال Stripe",
+    "errorMissingUrl": "URL پورتال در پاسخ نبود",
+    "errorOpenFailed": "باز کردن پورتال Stripe ناموفق بود"
+  },
+  "unavailable": {
+    "notConnected": {
+      "title": "برای مدیریت صورتحساب به Openship Cloud متصل شوید",
+      "description": "نمونه محلی شما هنوز به Openship Cloud متصل نیست. برای دیدن وضعیت اشتراک، مصرف، فاکتورها و شارژ متصل شوید.",
+      "connect": "اتصال به Openship Cloud",
+      "connecting": "در انتظار ورود…"
+    },
+    "sessionExpired": {
+      "title": "نشست Openship Cloud منقضی شد",
+      "description": "هنوز پیوند دارید، اما توکن نشستی که Openship Cloud صادر کرده دیگر معتبر نیست. برای تازه‌سازی دوباره متصل شوید — نیازی به قطع اتصال قبلی نیست.",
+      "reconnect": "اتصال دوباره به Openship Cloud",
+      "connecting": "در انتظار ورود…"
+    },
+    "unreachable": {
+      "title": "به صورتحساب Openship Cloud نرسیدیم",
+      "description": "ممکن است نشست ابری منقضی شده باشد یا ابر موقتاً در دسترس نباشد. دوباره تلاش کنید، یا از تنظیمات → Cloud دوباره متصل شوید.",
+      "tryAgain": "تلاش دوباره",
+      "reconnect": "اتصال دوباره"
+    },
+    "notEnabled": {
+      "title": "صورتحساب برای این سازمان فعال نیست",
+      "description": "صورتحساب پیکربندی شده اما برای این سازمان فعال نیست. برای فعال‌سازی با مدیر تماس بگیرید."
+    }
+  },
+  "plansRoute": {
+    "loadError": "بارگذاری طرح‌ها ناموفق بود",
+    "genericError": "مشکلی پیش آمد",
+    "tryAgain": "تلاش دوباره",
+    "checkoutError": "شروع پرداخت ناموفق بود"
+  },
+  "pricing": {
+    "custom": "سفارشی",
+    "comingSoon": "به‌زودی",
+    "mostPopular": "محبوب‌ترین",
+    "currentPlan": "طرح فعلی",
+    "contactSales": "تماس با فروش",
+    "freeForever": "همیشه رایگان",
+    "upgrade": "ارتقا"
+  },
+  "topups": {
+    "loadError": "بارگذاری بسته‌های شارژ ناموفق بود",
+    "title": "شارژ اعتبار",
+    "description": "بسته‌های اعتبار یک‌باره که از طریق Stripe دریافت می‌شوند. اعتبار هرگز منقضی نمی‌شود و روی سهمیه ماهانه انباشته می‌شود.",
+    "tryAgain": "تلاش دوباره",
+    "credits": "اعتبار",
+    "redirecting": "در حال هدایت…",
+    "buy": "خرید",
+    "empty": "الان بسته شارژی موجود نیست.",
+    "receiptsTitle": "شارژهای اخیر",
+    "receiptsDescription": "رسیدها در Stripe مدیریت می‌شوند — پورتال صورتحساب را باز کنید تا تاریخچه فاکتور را ببینید و رسیدها را دانلود کنید.",
+    "opening": "در حال باز کردن…",
+    "openPortal": "باز کردن پورتال Stripe",
+    "checkoutError": "شروع پرداخت ناموفق بود",
+    "portalError": "باز کردن پورتال صورتحساب ناموفق بود"
+  },
+  "overview": {
+    "creditsLeft": "اعتبار باقی‌مانده",
+    "planLabel": "طرح {name}",
+    "usedThisPeriod": "مصرف این دوره",
+    "resets": "بازنشانی",
+    "resetsInDay": "تا {n} روز دیگر",
+    "resetsInDays": "تا {n} روز دیگر",
+    "none": "—",
+    "upgradeToPro": "ارتقا به Pro",
+    "recentActivity": "فعالیت اخیر",
+    "last7Days": "۷ روز گذشته",
+    "viewFullUsage": "مشاهده مصرف کامل",
+    "noUsageYet": "هنوز مصرفی نیست",
+    "usageError": "بارگذاری مصرف ناموفق بود",
+    "needMoreCredits": "اعتبار بیشتری نیاز دارید؟",
+    "oneTimeTopups": "شارژ یک‌باره، بدون تغییر اشتراک",
+    "seeAllPacks": "مشاهده همه بسته‌ها",
+    "packsError": "بارگذاری بسته‌ها ناموفق بود",
+    "noPacks": "بسته شارژی موجود نیست.",
+    "creditsAmount": "{n} اعتبار",
+    "oneTime": "{price} یک‌باره",
+    "buy": "خرید",
+    "checkoutError": "شروع پرداخت ناموفق بود"
+  },
+  "usage": {
+    "loadError": "بارگذاری مصرف ناموفق بود",
+    "kpi": {
+      "balance": "مانده",
+      "balanceSuffix": "از {limit} اعتبار",
+      "consumed": "مصرف این دوره",
+      "credits": "اعتبار",
+      "burnRate": "نرخ مصرف",
+      "burnRateSuffix": "اعتبار/روز (۷ روز اخیر)",
+      "projected": "پیش‌بینی پایان دوره",
+      "noPeriod": "دوره‌ای تنظیم نشده"
+    },
+    "granularity": {
+      "day": "روز",
+      "week": "هفته"
+    },
+    "chart": {
+      "title": "مصرف در طول زمان",
+      "subtitle": "واحدهای اندازه‌گیری‌شده انباشته به‌ازای هر {unit}."
+    },
+    "breakdown": {
+      "title": "تفکیک منابع",
+      "subtitle": "اعتبار به‌تناسب مصرف منابع اندازه‌گیری‌شده در بازه انتخابی نسبت داده شده است.",
+      "resource": "منبع",
+      "units": "واحد",
+      "credits": "اعتبار",
+      "percentOfTotal": "٪ از کل",
+      "loading": "در حال بارگذاری…",
+      "empty": "در بازه انتخابی مصرفی نیست."
+    },
+    "resources": {
+      "cpu": { "label": "زمان CPU", "units": "ساعت-vCPU" },
+      "memory": { "label": "حافظه", "units": "ساعت-GB" },
+      "disk": { "label": "IO دیسک", "units": "GB" },
+      "network": { "label": "شبکه", "units": "GB" }
+    },
+    "toolbar": {
+      "workspace": "فضای کار",
+      "workspaceTooltip": "تفکیک به‌ازای فضای کار در v1.1 می‌آید",
+      "allWorkspaces": "همه فضاهای کار",
+      "to": "تا"
+    },
+    "empty": "برای بازه انتخابی داده مصرفی نیست."
+  },
+  "chart": {
+    "cpu": "CPU",
+    "memory": "حافظه",
+    "diskIo": "IO دیسک",
+    "network": "شبکه",
+    "weekTick": "هفته {n}"
+  },
+  "layout": {
+    "title": "صورتحساب و مصرف",
+    "subtitle": "اشتراک، مصرف و روش‌های پرداخت را مدیریت کنید."
+  },
+  "sidebar": {
+    "planSuffix": "طرح {name}",
+    "status": "وضعیت",
+    "statusInactive": "غیرفعال",
+    "upgradeTo": "ارتقا به {name}",
+    "contactSales": "تماس با فروش",
+    "freeForever": "همیشه رایگان",
+    "perMonth": "${price}/ماه",
+    "statuses": {
+      "active": "فعال",
+      "trialing": "آزمایشی",
+      "past_due": "سررسید گذشته",
+      "canceled": "لغوشده",
+      "incomplete": "ناتمام",
+      "incomplete_expired": "منقضی",
+      "unpaid": "پرداخت‌نشده",
+      "paused": "متوقف"
+    }
+  },
+  "paymentPanel": {
+    "title": "روش پرداخت",
+    "description": "کارت‌ها، حساب‌های بانکی و جزئیات صورتحساب در پورتال مشتری Stripe مدیریت می‌شوند. پورتال را باز کنید تا روش‌های پرداخت را اضافه، حذف یا به‌روز کنید."
+  },
+  "invoicesPanel": {
+    "title": "فاکتورها",
+    "description": "فاکتورها و رسیدها در پورتال مشتری Stripe هستند. پورتال را باز کنید تا تاریخچه صورتحساب را ببینید و فاکتورهای PDF را دانلود کنید."
+  }
+}

@@ -42,13 +42,13 @@ import autoDns from "./locales/en/autoDns.json";
 export const baseDictionary = { brand, auth, dashboard, settings, servers, billing, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, issues, autoDns };
 export type Dictionary = typeof baseDictionary;
 
-export const locales = ["en", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr"] as const;
+export const locales = ["en", "ar", "fa", "es", "fr", "de", "pt", "ja", "zh", "tr"] as const;
 export type Locale = (typeof locales)[number];
 export const defaultLocale: Locale = "en";
 export const LOCALE_COOKIE = "openship-locale";
 
 /** RTL languages. */
-const rtlLocales = new Set<Locale>(["ar"]);
+const rtlLocales = new Set<Locale>(["ar", "fa"]);
 export function isRtl(locale: Locale): boolean {
   return rtlLocales.has(locale);
 }
