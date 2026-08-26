@@ -52,17 +52,11 @@ import { normalizeProjectRootDirectory } from "../../lib/project-root-detector";
 import { env } from "../../config/index";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
-import {
-  resolveDefaultBranch,
-  getBranch,
-  compareCommits,
-  getLatestCommit,
-  getWebhookStrategy,
-  resolveWebhookStrategy,
-} from "../github/github.service";
+import { getWebhookStrategy, resolveWebhookStrategy } from "../github/github.service";
 import { projectMatchesChanges } from "../github/webhook-changed-files";
 import { getInstallationIdByOrg, resolveInstallUrl } from "../github/github.auth";
 import { hasActiveGitHubSource, resolveGitHubWebBaseUrl } from "../github/github-source.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { domainWebhookUrl } from "../../lib/public-url";
 import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
 import {
@@ -1071,7 +1065,13 @@ export type LinkProjectRepoOutcome =
 export async function linkProjectRepo(
   ctx: RequestContext,
   projectId: string,
-  input: { owner: string; repo: string; branch?: string; installationId?: number },
+  input: {
+    owner: string;
+    repo: string;
+    branch?: string;
+    installationId?: number;
+    gitProvider?: string;
+  },
 ): Promise<LinkProjectRepoOutcome> {
   const { organizationId } = ctx;
   const owner = input.owner?.trim();
@@ -1088,13 +1088,19 @@ export async function linkProjectRepo(
         return { ok: false, code: "not_found" } as const;
       }
 
+      const gitProvider = input.gitProvider?.trim() || "github";
       const sourceWebBaseUrl = await resolveGitHubWebBaseUrl(organizationId, owner).catch(
         () => null,
       );
       const gitUrl = sourceWebBaseUrl
         ? `${sourceWebBaseUrl.replace(/\/+$/, "")}/${owner}/${repo}.git`
         : projectGitUrl(owner, repo);
-      const defaultBranch = await resolveDefaultBranch(ctx, owner, repo, input.branch);
+      // Keep resolveDefaultBranch's contract: an explicit branch wins, otherwise
+      // fall back to the repository's default.
+      const defaultBranch =
+        input.branch?.trim() ||
+        (await VcsStrategyFactory.getStrategy(gitProvider).getRepository(ctx, owner, repo))
+          .default_branch;
       // A project_app is one source identity even if an old/partial write left its
       // environments inconsistent. Linking Git converges the whole group, so clear
       // release-only class overrides when ANY sibling still carries that source.
@@ -1105,7 +1111,7 @@ export async function linkProjectRepo(
         : isReleaseProvider(project!.gitProvider);
 
       const gitFields: Record<string, unknown> = {
-        gitProvider: "github",
+        gitProvider,
         gitOwner: owner,
         gitRepo: repo,
         gitBranch: defaultBranch,
@@ -1128,7 +1134,8 @@ export async function linkProjectRepo(
         autoDeploy: false,
       };
 
-      const strategy = await resolveWebhookStrategy(project!, organizationId);
+      const strategy =
+        await VcsStrategyFactory.getStrategy(gitProvider).resolveWebhookStrategy(project!);
 
       if (strategy === "app") {
         const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
@@ -1157,7 +1164,7 @@ export async function linkProjectRepo(
 
       if (project!.groupId) {
         const sharedGitFields = {
-          gitProvider: "github",
+          gitProvider,
           gitOwner: owner,
           gitRepo: repo,
           gitUrl,
@@ -1175,7 +1182,7 @@ export async function linkProjectRepo(
           autoDeploy: Boolean(gitFields.autoDeploy),
         };
         await repos.project.updateSourceByApp(project!.groupId, sharedGitFields, {
-          gitProvider: "github",
+          gitProvider,
           gitOwner: owner,
           gitRepo: repo,
           gitUrl,
@@ -2000,7 +2007,15 @@ export async function createProjectEnvironment(
   if (!productionBranch && environmentType === "production" && base.gitOwner && base.gitRepo) {
     // userId here is the actor who triggered the action — used to authorize
     // the GitHub call against their installation token.
-    productionBranch = await resolveDefaultBranch(ctx, base.gitOwner, base.gitRepo);
+    // Provider precedence matches the column write below: the group's identity
+    // wins, falling back to this environment's own.
+    productionBranch = (
+      await VcsStrategyFactory.getStrategy(app?.gitProvider ?? base.gitProvider).getRepository(
+        ctx,
+        base.gitOwner,
+        base.gitRepo,
+      )
+    ).default_branch;
   }
 
   const gitBranch =
@@ -2008,8 +2023,11 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branch = await getBranch(ctx, base.gitOwner, base.gitRepo, gitBranch);
-    if (!branch) {
+    const branches = await VcsStrategyFactory.getStrategy(
+      app?.gitProvider ?? base.gitProvider,
+    ).getBranches(ctx, base.gitOwner, base.gitRepo);
+    const exists = branches.some((branch) => branch.name === gitBranch);
+    if (!exists) {
       throw new ValidationError(
         `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
       );
@@ -2316,7 +2334,9 @@ export async function resolveUpstreamDrift(
   }
 
   const head = ctx
-    ? await getLatestCommit(ctx, p.gitOwner!, p.gitRepo!, projectBranch(p)).catch(() => null)
+    ? await VcsStrategyFactory.getStrategy(p.gitProvider)
+        .getLatestCommit(ctx, p.gitOwner!, p.gitRepo!, projectBranch(p))
+        .catch(() => null)
     : null;
   return {
     supported: true,
@@ -2411,7 +2431,13 @@ export async function evaluateDrift(
     let behind = compareCommitSha(latestSha, deployedSha) === "different";
     const root = normalizeProjectRootDirectory(p.rootDirectory ?? undefined);
     if (behind && ctx && root) {
-      const compare = await compareCommits(ctx, p.gitOwner!, p.gitRepo!, deployedSha!, latestSha!);
+      const compare = await VcsStrategyFactory.getStrategy(p.gitProvider).compareCommits(
+        ctx,
+        p.gitOwner!,
+        p.gitRepo!,
+        deployedSha!,
+        latestSha!,
+      );
       if (compare && !compare.truncated) {
         behind = projectMatchesChanges(root, compare.files, p.monorepoSharedPaths);
       }

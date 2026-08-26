@@ -41,9 +41,9 @@ import {
 import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sync";
 import { cancelBuildSession } from "../deployments/build.service";
 import { restoreOrchestrator } from "../backups/restore.orchestrator";
-import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { env } from "../../config/index";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { cleanupWebmailInstall } from "../mail/webmail/webmail-install.service";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 
@@ -739,7 +739,12 @@ async function stepDeleteWebhook(
     return;
   }
   try {
-    await deleteGitHubWebhook(ctx, project.gitOwner, project.gitRepo, project.webhookId);
+    await VcsStrategyFactory.getStrategy(project.gitProvider).deleteWebhook(
+      ctx,
+      project.gitOwner,
+      project.gitRepo,
+      project.webhookId,
+    );
     push({ step: "github_webhook", status: "ok", details: `hook ${project.webhookId}` });
   } catch (err) {
     // GitHub returns 404 when the hook is already gone — treat as a

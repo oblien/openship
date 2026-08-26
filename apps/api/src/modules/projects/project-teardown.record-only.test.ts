@@ -136,7 +136,11 @@ vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
 vi.mock("@repo/platform/engine/modules/migration/migration.orchestrator", () => ({
   migrationOrchestrator: { cancel: h.cancelMigration },
 }));
-vi.mock("@repo/platform/engine/modules/github/github.service", () => ({ deleteWebhook: h.deleteGitHubWebhook }));
+vi.mock("@repo/platform/engine/modules/vcs/vcs.factory", () => ({
+  VcsStrategyFactory: {
+    getStrategy: vi.fn(() => ({ deleteWebhook: h.deleteGitHubWebhook })),
+  },
+}));
 vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   cleanupWebmailInstall: h.cleanupWebmailInstall,
 }));
