@@ -26,7 +26,7 @@ export interface VcsProviderStrategy {
   /**
    * Fetch detailed information about a single repository.
    */
-  getRepository(ctx: RequestContext, owner: string, repo: string): Promise<RepositoryDetail>;
+  getRepository(ctx: RequestContext, owner: string, repo: string, opts?: { withBranches?: boolean }): Promise<RepositoryDetail>;
 
   /**
    * List repositories accessible by the current context (user/org).
@@ -42,12 +42,14 @@ export interface VcsProviderStrategy {
   /**
    * Retrieve the contents of a specific file.
    */
+  listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any>;
+
   getFileContent(
     ctx: RequestContext,
     owner: string,
     repo: string,
     path: string,
-    ref?: string,
+    opts?: { branch?: string; json?: boolean },
   ): Promise<VcsFileContent>;
 
   /**

@@ -25,12 +25,14 @@ export class SelfHostedStrategy implements VcsProviderStrategy {
     throw new Error("Self-hosted Git integration not yet implemented.");
   }
 
+  async listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any> { throw new Error("Not implemented"); }
+
   async getFileContent(
     ctx: RequestContext,
     owner: string,
     repo: string,
     path: string,
-    ref?: string,
+    opts?: { branch?: string; json?: boolean },
   ): Promise<any> {
     throw new Error("Self-hosted Git integration not yet implemented.");
   }

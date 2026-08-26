@@ -659,60 +659,19 @@ export async function disconnect(c: Context) {
  *  Source resolution (App installation / gh CLI / user token) lives in ONE
  *  place — the GitHubSource adapter (createGitHubSource) — so this and
  *  listOrgRepos can't drift. null = no usable GitHub source → 400. */
-export async function listRepos(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = c.req.query("owner");
-  const repos = await (await createGitHubSource(ctx)).listReposForOwner(owner || undefined);
-  if (repos === null) return c.json({ error: "Not connected to GitHub" }, 400);
-  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
-  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
-}
+
 
 /** GET /github/orgs/:org/repos - List repos for an organisation.
  *  Same GitHubSource adapter as listRepos. */
-export async function listOrgRepos(c: Context) {
-  const ctx = getRequestContext(c);
-  const org = param(c, "org");
-  const repos = await (await createGitHubSource(ctx)).listReposForOwner(org);
-  if (repos === null) return c.json({ error: "Not connected to GitHub" }, 400);
-  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
-  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
-}
+
 
 /** Parse the repo-list query (page/perPage/search/visibility/sort). All
  *  optional: with no `perPage` the response is the full filtered set (+counts),
  *  so the MCP `list repos` tool and legacy callers are unaffected. */
-function parseRepoListParams(c: Context): RepoListParams {
-  const num = (raw?: string) => {
-    const n = Number(raw);
-    return raw && Number.isFinite(n) ? n : undefined;
-  };
-  const visibility = c.req.query("visibility");
-  const sort = c.req.query("sort");
-  return {
-    page: num(c.req.query("page")),
-    perPage: num(c.req.query("perPage")),
-    search: c.req.query("search") || undefined,
-    visibility:
-      visibility === "public" || visibility === "private" || visibility === "all"
-        ? visibility
-        : undefined,
-    sort: sort === "name" || sort === "stars" || sort === "updated" ? sort : undefined,
-  };
-}
+
 
 /** GET /github/repos/:owner/:repo - Get a single repository */
-export async function getRepo(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
-  const withBranches = c.req.query("branches") === "true";
 
-  const data = await githubService.getRepository(ctx, owner, repo, {
-    withBranches,
-  });
-  return c.json({ data });
-}
 
 /** POST /github/repos - Create a new repository */
 export async function createRepo(c: Context) {
@@ -760,14 +719,7 @@ export async function deleteRepo(c: Context) {
 // ─── Branches ────────────────────────────────────────────────────────────────
 
 /** GET /github/repos/:owner/:repo/branches - List branches */
-export async function listBranches(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
 
-  const data = await githubService.listBranches(ctx, owner, repo);
-  return c.json({ data });
-}
 
 /**
  * GET /github/repos/:owner/:repo/clone-token - mint a short-lived GitHub App
@@ -778,32 +730,7 @@ export async function listBranches(c: Context) {
  * token, so this 409s there. The token is installation-scoped (the same
  * credential the build pipeline clones with) and expires within the hour.
  */
-export async function getCloneToken(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
 
-  // Narrow the token to THIS repo. An installation token otherwise reaches every
-  // repo the installation covers, so a caller granted one repo would walk away
-  // with an owner-wide credential — broader than their grant, and long-lived
-  // enough to matter. The route also requires `content-whole`, because a clone
-  // cannot be path-filtered.
-  const token = await githubAuth.getInstallationToken(ctx, owner, undefined, {
-    repositories: [repo],
-  });
-  if (!token) {
-    return c.json(
-      {
-        error:
-          "No GitHub App installation token is available for this owner. Connect the Openship GitHub App (cloud) for this account to use a clone token.",
-      },
-      409,
-    );
-  }
-
-  const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-  return c.json({ token, cloneUrl, command: `git clone ${cloneUrl}` });
-}
 
 // ─── Stack detection ─────────────────────────────────────────────────────────
 
@@ -824,76 +751,12 @@ export async function getCloneToken(c: Context) {
  * side-channel for the content it replaces, and the wizard gets a payload shape
  * identical to the one it already consumes.
  */
-export async function detectStack(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
-  const branch = c.req.query("branch")?.trim();
-  const composePath = c.req.query("composePath")?.trim();
 
-  const info = await resolveProjectInfo({
-    source: "github",
-    owner,
-    repo,
-    ctx,
-    ...(branch ? { branch } : {}),
-    ...(composePath ? { composePath } : {}),
-  });
-
-  return c.json({ data: projectInfoToScanResponse(info) });
-}
 
 // ─── Files ───────────────────────────────────────────────────────────────────
 
 /** GET /github/repos/:owner/:repo/files - List files in a directory */
-export async function listFiles(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
-  const branch = c.req.query("branch");
-  // The NORMALISED path the middleware authorised (see getFile) — never the raw
-  // `?path=`, so the directory checked is the directory listed. "" is the repo
-  // root, which is what /files with no path lists.
-  const path = c.get("sourcePath") as string | undefined;
 
-  const data = await githubService.listFiles(ctx, owner, repo, {
-    branch: branch ?? undefined,
-    path: path || undefined,
-      });
-
-  // Filter to what this caller's source scope permits. The route declares
-  // `source: "content-tree"`, so the permission middleware already resolved the
-  // allow-list and stashed it — reuse it rather than resolving the grant twice.
-  //
-  // The middleware only proved this directory LEADS somewhere granted; without
-  // filtering, listing the root under a `src/**` grant would return every
-  // top-level name. Absent stash ⇒ empty list ⇒ nothing visible (fail closed).
-  const readPaths = (c.get("sourceReadPaths") as string[] | undefined) ?? [];
-
-  // GitHub's contents API returns a single OBJECT — the blob, base64 content
-  // included — when `path` names a FILE rather than a directory. So this endpoint
-  // can serve content, and `.filter` on a non-array would throw. `project-reader`
-  // guards the same shape. Normalise to an array, and treat the single-file case
-  // as a FILE so it must be granted outright rather than merely being an ancestor
-  // of something granted (which is all the `content-tree` tier proved).
-  const isDir = Array.isArray(data);
-  const entries = isDir ? data : [data as unknown as (typeof data)[number]];
-  const visible = filterTreeEntries(entries, readPaths, (entry) => ({
-    path: entry.path,
-    isDirectory: isDir ? entry.type === "dir" : false,
-  }));
-
-  // Preserve the response shape: an array for a directory, the entry itself for a
-  // file. A file the caller may not see is absent, not empty — same IDOR-safe 404
-  // convention the permission middleware uses.
-  if (!isDir) {
-    if (visible.length === 0) {
-      return c.json({ error: "Not found", code: "NOT_FOUND" }, 404);
-    }
-    return c.json({ data: visible[0] });
-  }
-  return c.json({ data: visible });
-}
 
 /**
  * GET /github/repos/:owner/:repo/tree — the whole tree, flat and recursive.
@@ -908,115 +771,18 @@ export async function listFiles(c: Context) {
  * member granting access to someone else can only ever offer paths they hold
  * themselves. `listRepositoryTree` handles GitHub's truncation for huge repos.
  */
-export async function listTree(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
-  const branch = c.req.query("branch")?.trim();
 
-  const entries = await githubService.listRepositoryTree(
-    ctx,
-    owner,
-    repo,
-    branch ? { branch } : {},
-  );
-
-  const readPaths = (c.get("sourceReadPaths") as string[] | undefined) ?? [];
-  const visible = filterTreeEntries(entries, readPaths, (entry) => ({
-    path: entry.path,
-    isDirectory: entry.type === "dir",
-  }));
-  return c.json({ data: visible });
-}
 
 /** GET /github/repos/:owner/:repo/file - Get a single file's content */
-export async function getFile(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
-  const branch = c.req.query("branch");
-  // Required, not defaulted. The permission middleware authorises the path in
-  // `?file=`; an implicit fallback here would mean the check and the read could
-  // disagree — a caller granted only `package.json` would be denied for the root
-  // while the handler went on to serve package.json anyway.
-  //
-  // Read the NORMALISED path the middleware authorised, not the raw query param,
-  // so the string checked and the string fetched are the same one. Absent stash ⇒
-  // the tier gate did not run ⇒ refuse rather than fall back to the raw value
-  // (fail closed: a route mounted without `source` must not serve content here).
-  const file = c.get("sourcePath") as string | undefined;
-  if (!file) {
-    return c.json(
-      { error: "Query parameter `file` is required", code: "FILE_PARAM_REQUIRED" },
-      400,
-    );
-  }
 
-  const data = await githubService.getFileContent(ctx, owner, repo, file, {
-    branch: branch ?? undefined,
-    json: file.endsWith(".json"),
-      });
-  return c.json({ data });
-}
 
 // ─── Webhooks ────────────────────────────────────────────────────────────────
 
 /** GET /github/repos/:owner/:repo/webhooks - List repo webhooks */
-export async function listWebhooks(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
 
-  const data = await githubService.listWebhooks(ctx, owner, repo);
-  return c.json({ data });
-}
 
 /** POST /github/repos/:owner/:repo/webhooks - Register a webhook (create or find existing) */
-export async function registerWebhook(c: Context) {
-  const ctx = getRequestContext(c);
-  const userId = ctx.userId;
-  const organizationId = ctx.organizationId;
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
 
-  const data = await githubService.registerWebhook(ctx, owner, repo);
-
-  if (organizationId) {
-    audit.recordAsync(auditContextFrom(c, organizationId, userId), {
-      eventType: "github.webhook.register",
-      resourceType: "github",
-      resourceId: `${owner}/${repo}`,
-      after: {
-        owner,
-        repo,
-        hookId: (data as { id?: number | string })?.id ?? null,
-      },
-    });
-  }
-
-  return c.json({ data });
-}
 
 /** DELETE /github/repos/:owner/:repo/webhooks - Delete a webhook */
-export async function deleteWebhook(c: Context) {
-  const ctx = getRequestContext(c);
-  const owner = param(c, "owner");
-  const repo = param(c, "repo");
-  const body = await c.req.json();
 
-  if (!body.hookId) {
-    return c.json({ error: "hookId is required" }, 400);
-  }
-
-  await githubService.deleteWebhook(ctx, owner, repo, body.hookId);
-
-  if (ctx.organizationId) {
-    audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
-      eventType: "github.webhook.delete",
-      resourceType: "github",
-      resourceId: `${owner}/${repo}`,
-      before: { owner, repo, hookId: body.hookId },
-    });
-  }
-  return c.json({ success: true });
-}

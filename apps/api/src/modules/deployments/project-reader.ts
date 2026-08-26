@@ -24,7 +24,7 @@ export function createGitHubReader(
 
   const readText = async (path: string) => {
     try {
-      const file = await vcs.getFileContent(ctx, owner, repo, path, branch);
+      const file = await vcs.getFileContent(ctx, owner, repo, path, { branch });
       return file?.content;
     } catch {
       return undefined;

@@ -25,12 +25,14 @@ export class GitLabStrategy implements VcsProviderStrategy {
     throw new Error("GitLab integration not yet implemented.");
   }
 
+  async listFiles(ctx: RequestContext, owner: string, repo: string, opts?: { branch?: string; path?: string }): Promise<any> { throw new Error("Not implemented"); }
+
   async getFileContent(
     ctx: RequestContext,
     owner: string,
     repo: string,
     path: string,
-    ref?: string,
+    opts?: { branch?: string; json?: boolean },
   ): Promise<any> {
     throw new Error("GitLab integration not yet implemented.");
   }

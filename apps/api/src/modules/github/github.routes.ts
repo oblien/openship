@@ -49,40 +49,26 @@ r.post("/disconnect", { tag: "github:admin" }, ctrl.disconnect);
 // identity; `github:admin` because it sets a credential for the whole instance.
 r.post("/instance-token", { tag: "github:admin", localOnly: true }, ctrl.setInstanceToken);
 
-// Inject provider="github" into request params before delegating to vcs.controller
-const setProvider = async (c: import("hono").Context, next: import("hono").Next) => {
-  const originalParam = c.req.param.bind(c.req);
-  (c.req as any).param = (key?: string) => {
-    if (key === "provider") return "github";
-    if (key === undefined) return { ...originalParam(), provider: "github" };
-    return originalParam(key);
-  };
-  await next();
-};
-
 /* ─── Accounts / Organisations ─────────────────────────────────────────── */
 // /home returns { state, accounts, repos } in one round trip — the
 // dashboard's only entry point.
 r.get(
   "/orgs/:org/repos",
   { tag: "github:list", mcp: { description: "List repositories in a GitHub org/account." } },
-  setProvider,
-  vcsCtrl.listOrgRepos,
+  vcsCtrl.listOrgRepos("github"),
 );
 
 /* ─── Repositories ─────────────────────────────────────────────────────── */
 r.get(
   "/repos",
   { tag: "github:list", mcp: { description: "List the connected account's GitHub repositories." } },
-  setProvider,
-  vcsCtrl.listRepos,
+  vcsCtrl.listRepos("github"),
 );
 r.post("/repos", { tag: "github:write" }, ctrl.createRepo);
 r.get(
   "/repos/:owner/:repo",
   { tag: "github:read", mcp: { description: "Get a GitHub repository's metadata." } },
-  setProvider,
-  vcsCtrl.getRepo,
+  vcsCtrl.getRepo("github"),
 );
 r.delete("/repos/:owner/:repo", { tag: "github:admin" }, ctrl.deleteRepo);
 
@@ -90,8 +76,7 @@ r.delete("/repos/:owner/:repo", { tag: "github:admin" }, ctrl.deleteRepo);
 r.get(
   "/repos/:owner/:repo/branches",
   { tag: "github:list", mcp: { description: "List a repository's branches." } },
-  setProvider,
-  vcsCtrl.listBranches,
+  vcsCtrl.listBranches("github"),
 );
 
 /* ─── Stack detection ──────────────────────────────────────────────────── */
@@ -108,8 +93,7 @@ r.get(
         "Detect a repo's build config without reading its files — framework, package manager, install/build/start commands, output directory, port, and compose services. Use this to configure a deploy; it needs no content access.",
     },
   },
-  setProvider,
-  vcsCtrl.detectStack,
+  vcsCtrl.detectStack("github"),
 );
 
 /* ─── Clone token (short-lived GitHub App installation token) ──────────── */
@@ -118,8 +102,7 @@ r.get(
 r.get(
   "/repos/:owner/:repo/clone-token",
   { tag: "github:read", source: "content-whole" },
-  setProvider,
-  vcsCtrl.getCloneToken,
+  vcsCtrl.getCloneToken("github"),
 );
 
 /* ─── Files ────────────────────────────────────────────────────────────── */
@@ -136,8 +119,7 @@ r.get(
         "List files/dirs at a path in a repo (query: path, ref). Requires repo content access.",
     },
   },
-  setProvider,
-  vcsCtrl.listFiles,
+  vcsCtrl.listFiles("github"),
 );
 // Recursive tree for the source-access path picker. `content-tree` like /files —
 // it lists paths, never bytes — and the handler filters to the caller's own reach.
@@ -146,8 +128,7 @@ r.get(
 r.get(
   "/repos/:owner/:repo/tree",
   { tag: "github:list", source: "content-tree" },
-  setProvider,
-  vcsCtrl.listTree,
+  vcsCtrl.listTree("github"),
 );
 r.get(
   "/repos/:owner/:repo/file",
@@ -159,8 +140,7 @@ r.get(
         "Read a single file's contents from a repo. Requires repo content access; prefer /detect for build config.",
     },
   },
-  setProvider,
-  vcsCtrl.getFile,
+  vcsCtrl.getFile("github"),
 );
 
 /* ─── Repo Webhooks ────────────────────────────────────────────────────── */
@@ -170,20 +150,17 @@ r.get(
     tag: "github:list",
     mcp: { description: "List a repo's webhooks (to check push auto-deploy wiring)." },
   },
-  setProvider,
-  vcsCtrl.listWebhooks,
+  vcsCtrl.listWebhooks("github"),
 );
 r.post(
   "/repos/:owner/:repo/webhooks",
   { tag: "github:write" },
-  setProvider,
-  vcsCtrl.registerWebhook,
+  vcsCtrl.registerWebhook("github"),
 );
 r.delete(
   "/repos/:owner/:repo/webhooks",
   { tag: "github:admin" },
-  setProvider,
-  vcsCtrl.deleteWebhook,
+  vcsCtrl.deleteWebhook("github"),
 );
 
 export const githubRoutes = r.hono;

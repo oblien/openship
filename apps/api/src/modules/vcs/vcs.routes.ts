@@ -10,27 +10,27 @@ const r = secureRouter(new Hono(), {
 /* ─── Accounts / Organisations ─────────────────────────────────────────── */
 r.get(
   "/:provider/orgs/:org/repos",
-  { tag: "github:list", mcp: { description: "List repositories in a VCS org/account." } },
-  ctrl.listOrgRepos,
+  { tag: "github:list" },
+  (c) => ctrl.listOrgRepos(c.req.param("provider")!)(c),
 );
 
 /* ─── Repositories ─────────────────────────────────────────────────────── */
 r.get(
   "/:provider/repos",
-  { tag: "github:list", mcp: { description: "List the connected account's VCS repositories." } },
-  ctrl.listRepos,
+  { tag: "github:list" },
+  (c) => ctrl.listRepos(c.req.param("provider")!)(c),
 );
 r.get(
   "/:provider/repos/:owner/:repo",
-  { tag: "github:read", mcp: { description: "Get a VCS repository's metadata." } },
-  ctrl.getRepo,
+  { tag: "github:read" },
+  (c) => ctrl.getRepo(c.req.param("provider")!)(c),
 );
 
 /* ─── Branches ─────────────────────────────────────────────────────────── */
 r.get(
   "/:provider/repos/:owner/:repo/branches",
-  { tag: "github:list", mcp: { description: "List a repository's branches." } },
-  ctrl.listBranches,
+  { tag: "github:list" },
+  (c) => ctrl.listBranches(c.req.param("provider")!)(c),
 );
 
 /* ─── Stack detection ──────────────────────────────────────────────────── */
@@ -38,18 +38,15 @@ r.get(
   "/:provider/repos/:owner/:repo/detect",
   {
     tag: "github:read",
-    mcp: {
-      description: "Detect a repo's build config without reading its files.",
-    },
   },
-  ctrl.detectStack,
+  (c) => ctrl.detectStack(c.req.param("provider")!)(c),
 );
 
 /* ─── Clone token (short-lived GitHub App installation token) ──────────── */
 r.get(
   "/:provider/repos/:owner/:repo/clone-token",
   { tag: "github:read", source: "content-whole" },
-  ctrl.getCloneToken,
+  (c) => ctrl.getCloneToken(c.req.param("provider")!)(c),
 );
 
 /* ─── Files ────────────────────────────────────────────────────────────── */
@@ -58,38 +55,30 @@ r.get(
   {
     tag: "github:list",
     source: "content-tree",
-    mcp: {
-      description:
-        "List files/dirs at a path in a repo (query: path, ref). Requires repo content access.",
-    },
   },
-  ctrl.listFiles,
+  (c) => ctrl.listFiles(c.req.param("provider")!)(c),
 );
 r.get(
   "/:provider/repos/:owner/:repo/tree",
   { tag: "github:list", source: "content-tree" },
-  ctrl.listTree,
+  (c) => ctrl.listTree(c.req.param("provider")!)(c),
 );
 r.get(
   "/:provider/repos/:owner/:repo/file",
   {
     tag: "github:read",
     source: "content",
-    mcp: {
-      description:
-        "Read a single file's contents from a repo. Requires repo content access; prefer /detect for build config.",
-    },
   },
-  ctrl.getFile,
+  (c) => ctrl.getFile(c.req.param("provider")!)(c),
 );
 
 /* ─── Repo Webhooks ────────────────────────────────────────────────────── */
 r.get(
   "/:provider/repos/:owner/:repo/webhooks",
-  { tag: "github:list", mcp: { description: "List a repo's webhooks." } },
-  ctrl.listWebhooks,
+  { tag: "github:list" },
+  (c) => ctrl.listWebhooks(c.req.param("provider")!)(c),
 );
-r.post("/:provider/repos/:owner/:repo/webhooks", { tag: "github:write" }, ctrl.registerWebhook);
-r.delete("/:provider/repos/:owner/:repo/webhooks", { tag: "github:admin" }, ctrl.deleteWebhook);
+r.post("/:provider/repos/:owner/:repo/webhooks", { tag: "github:write" }, (c) => ctrl.registerWebhook(c.req.param("provider")!)(c));
+r.delete("/:provider/repos/:owner/:repo/webhooks", { tag: "github:admin" }, (c) => ctrl.deleteWebhook(c.req.param("provider")!)(c));
 
 export const vcsRoutes = r.hono;
