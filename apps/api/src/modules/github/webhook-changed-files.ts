@@ -25,7 +25,7 @@
  * modified | removed).
  */
 
-import type { GitHubPushPayload } from "./github.types";
+import type { VcsPushPayload } from "../vcs/vcs.types";
 
 export interface ChangedFilesResult {
   files: Set<string>;
@@ -91,7 +91,7 @@ function normalizeSharedPrefix(p: string): string {
 }
 
 export async function extractChangedFiles(
-  payload: GitHubPushPayload,
+  payload: VcsPushPayload,
   opts: ExtractOptions = {},
 ): Promise<ChangedFilesResult> {
   const owner = payload.repository?.owner?.login;
@@ -202,7 +202,7 @@ export function routeServicesByChanges(
   return { mode: "services", serviceIds: matched };
 }
 
-function unionCommitFiles(commits: GitHubPushPayload["commits"] = []): Set<string> {
+function unionCommitFiles(commits: VcsPushPayload["commits"] = []): Set<string> {
   const out = new Set<string>();
   for (const c of commits ?? []) {
     for (const f of c.added ?? []) out.add(f);

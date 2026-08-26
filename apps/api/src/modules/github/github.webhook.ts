@@ -20,6 +20,7 @@ import { verifyHmacSha256 } from "../webhooks/webhook.service";
 import { handleInstallation } from "./webhook-installation";
 import { handlePush } from "./webhook-push";
 import { handleCheckRun } from "./webhook-check-run";
+import type { VcsPushPayload } from "../vcs/vcs.types";
 import type {
   WebhookProvider,
   WebhookVerifyResult,
@@ -28,7 +29,7 @@ import type {
 import type {
   GitHubCheckRunPayload,
   GitHubInstallationPayload,
-  GitHubPushPayload,
+  
 } from "./github.types";
 
 // ─── Per-project webhook secret resolution ──────────────────────────────────
@@ -185,7 +186,7 @@ export const githubWebhookProvider: WebhookProvider = {
         result = await handleInstallation(payload as GitHubInstallationPayload);
         break;
       case "push":
-        result = await handlePush("github", payload as GitHubPushPayload);
+        result = await handlePush("github", payload as unknown as VcsPushPayload);
         break;
       case "check_run":
         result = await handleCheckRun(payload as GitHubCheckRunPayload);

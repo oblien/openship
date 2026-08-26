@@ -25,9 +25,8 @@ describe("VcsStrategyFactory", () => {
     expect(strategy).toBeInstanceOf(SelfHostedStrategy);
   });
 
-  it("should fallback to GitHubStrategy for unknown providers to maintain backwards compatibility", () => {
-    const strategy = VcsStrategyFactory.getStrategy("unknown-provider");
-    expect(strategy).toBeInstanceOf(GitHubStrategy);
+  it("should throw UnknownVcsProviderError for unknown providers", () => {
+    expect(() => VcsStrategyFactory.getStrategy("unknown-provider")).toThrowError("Unknown VCS provider: unknown-provider");
   });
 
   it("should allow registering a new strategy", () => {

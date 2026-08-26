@@ -5,7 +5,6 @@
  * No database writes, no deployment logic.
  */
 
-import * as githubService from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
 import {
@@ -49,7 +48,8 @@ import {
   resolveTierResources,
 } from "@repo/core";
 import { env } from "../../config";
-import { createGitHubReader, type ProjectReader } from "./project-reader";
+import { createVcsReader, type ProjectReader } from "./project-reader";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 
 const PREPARE_FILE_CONTENTS = [
@@ -68,6 +68,7 @@ const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml
 export type Source =
   | {
       source: "github";
+      provider: string;
       owner: string;
       repo: string;
       branch?: string;
@@ -182,9 +183,9 @@ function pickDeclaredComposeFile(
 export interface ProjectInfo {
   repository: {
     name: string;
-    full_name: string;
+    full_name?: string;
     owner: { login: string };
-    private: boolean;
+    private?: boolean;
     default_branch: string;
     selected_branch?: string;
     clone_url?: string;
@@ -744,7 +745,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     if (!input.ctx) {
       throw new Error("resolveProjectInfo(github): ctx is required");
     }
-    return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
+    return resolveFromGit(input.provider, input.ctx, input.owner, input.repo, input.branch, {
       composePath: input.composePath,
       env: input.env,
     });
@@ -877,28 +878,30 @@ export async function resolveFromReader(
   return overlaid;
 }
 
-async function resolveFromGitHub(
+async function resolveFromGit(
+  provider: string,
   ctx: RequestContext,
   owner: string,
   repo: string,
   branch?: string,
   opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
-  const repository = await githubService.getRepository(ctx, owner, repo, {
+  const vcs = VcsStrategyFactory.getStrategy(provider);
+  const repository = await vcs.getRepository(ctx, owner, repo, {
     withBranches: true,
   });
   const requestedBranch = branch?.trim();
   const selectedBranch = requestedBranch || repository.default_branch;
 
   if (requestedBranch) {
-    const head = await githubService.getLatestCommit(ctx, owner, repo, selectedBranch);
+    const head = await vcs.getLatestCommit(ctx, owner, repo, selectedBranch);
     if (!head) {
       throw new Error(`Branch "${selectedBranch}" was not found for ${owner}/${repo}`);
     }
   }
 
   return resolveFromReader(
-    createGitHubReader(ctx, owner, repo, selectedBranch),
+    createVcsReader(provider, ctx, owner, repo, selectedBranch),
     repository,
     selectedBranch,
     opts,
@@ -908,9 +911,9 @@ async function resolveFromGitHub(
 function toProjectInfo(
   repo: {
     name: string;
-    full_name: string;
+    full_name?: string;
     owner: string;
-    private: boolean;
+    private?: boolean;
     default_branch: string;
     selected_branch?: string;
     clone_url?: string;
@@ -997,9 +1000,9 @@ function toProjectInfo(
   return {
     repository: {
       name: repo.name,
-      full_name: repo.full_name,
+      full_name: repo.full_name || repo.name,
       owner: { login: repo.owner },
-      private: repo.private,
+      private: repo.private ?? true,
       default_branch: repo.default_branch,
       selected_branch: selectedBranch || repo.default_branch,
       clone_url: repo.clone_url,

@@ -1,56 +1,29 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { GitLabStrategy } from "./gitlab.strategy";
-import type { RequestContext } from "../../../lib/request-context";
 
 describe("GitLabStrategy", () => {
-  let strategy: GitLabStrategy;
-  const mockCtx = {} as RequestContext;
+  const strategy = new GitLabStrategy();
 
-  beforeEach(() => {
-    strategy = new GitLabStrategy();
-  });
+  const methods = [
+    "getRepository", "listRepositories", "getBranches", "listFiles",
+    "getFileContent", "getTree", "getCloneCredentials", "getCloneToken",
+    "verifyWebhookSignature", "parseWebhookPayload", "getLatestCommit",
+    "getRecentCommits", "compareCommits", "parseRepoUrl", "createCheckRun",
+    "updateCheckRun", "registerWebhook", "listWebhooks", "updateWebhook",
+    "deleteWebhook", "getWebhookStrategy", "resolveWebhookStrategy", "getAvailableStrategies"
+  ] as const;
 
-  it("should throw not implemented for getRepository", async () => {
-    await expect(strategy.getRepository(mockCtx, "owner", "repo")).rejects.toThrow(
-      "GitLab integration not yet implemented.",
-    );
-  });
-
-  it("should throw not implemented for listRepositories", async () => {
-    await expect(strategy.listRepositories(mockCtx)).rejects.toThrow(
-      "GitLab integration not yet implemented.",
-    );
-  });
-
-  it("should throw not implemented for getBranches", async () => {
-    await expect(strategy.getBranches(mockCtx, "owner", "repo")).rejects.toThrow(
-      "GitLab integration not yet implemented.",
-    );
-  });
-
-  it("should throw not implemented for getFileContent", async () => {
-    await expect(strategy.getFileContent(mockCtx, "owner", "repo", "path")).rejects.toThrow(
-      "GitLab integration not yet implemented.",
-    );
-  });
-
-  it("should throw not implemented for getTree", async () => {
-    await expect(strategy.getTree(mockCtx, "owner", "repo", "sha")).rejects.toThrow(
-      "GitLab integration not yet implemented.",
-    );
-  });
-
-  it("should throw not implemented for getCloneCredentials", async () => {
-    await expect(strategy.getCloneCredentials({} as any)).rejects.toThrow(
-      "GitLab integration not yet implemented.",
-    );
-  });
-
-  it("should return null for parseWebhookPayload", () => {
-    expect(strategy.parseWebhookPayload({}, "push")).toBeNull();
-  });
-
-  it("should throw on verifyWebhookSignature", async () => {
-    await expect(strategy.verifyWebhookSignature("payload", {})).rejects.toThrow("Not implemented");
-  });
+  for (const method of methods) {
+    it(`should throw not implemented for ${method}`, async () => {
+      const expected = `${method} is not yet implemented for gitlab`;
+      // Sync methods throw on call; async ones return a rejected promise. Await
+      // BOTH shapes through the same assertion — an un-awaited `.rejects` would
+      // let a method that resolves (the `compareCommits` -> {files: []} bug these
+      // tests exist to prevent) pass silently.
+      await expect(
+        (async () =>
+          strategy[method](null as any, null as any, null as any, null as any, null as any))(),
+      ).rejects.toThrowError(expected);
+    });
+  }
 });

@@ -1,14 +1,16 @@
 import type { RequestContext } from "../../lib/request-context";
 import type { BuildGitCredential } from "../github/clone-auth";
 import type {
-  MappedRepository,
-  RepositoryDetail,
-  GitHubBranch as VcsBranch,
-  GitHubFileContent as VcsFileContent,
-  GitHubPushPayload as VcsPushPayload,
-  GitHubTreeResponse as VcsTreeResponse,
-  GitHubWebhook as VcsWebhook,
-} from "../github/github.types";
+  VcsRepository,
+  VcsBranch,
+  VcsFileContent,
+  VcsPushPayload,
+  VcsTreeResponse,
+  VcsWebhook,
+  WebhookStrategy,
+  GetCloneCredentialsOptions,
+  VcsCommit,
+} from "./vcs.types";
 
 export interface VcsCheckRun {
   id: number;
@@ -17,8 +19,6 @@ export interface VcsCheckRun {
   htmlUrl?: string;
 }
 
-import type { WebhookStrategy } from "./vcs.types";
-
 /**
  * Strategy interface for interacting with different Version Control Systems.
  */
@@ -26,13 +26,13 @@ export interface VcsProviderStrategy {
   /**
    * Fetch detailed information about a single repository.
    */
-  getRepository(ctx: RequestContext, owner: string, repo: string, opts?: { withBranches?: boolean }): Promise<RepositoryDetail>;
+  getRepository(ctx: RequestContext, owner: string, repo: string, opts?: { withBranches?: boolean }): Promise<VcsRepository>;
 
   /**
    * List repositories accessible by the current context (user/org).
    * @param owner - Optional. If provided, list repos for this owner/org only.
    */
-  listRepositories(ctx: RequestContext, owner?: string): Promise<MappedRepository[]>;
+  listRepositories(ctx: RequestContext, owner?: string): Promise<VcsRepository[]>;
 
   /**
    * Get all branches for a repository.
@@ -55,9 +55,9 @@ export interface VcsProviderStrategy {
   /**
    * Get a directory tree.
    */
-  getTree(ctx: RequestContext, owner: string, repo: string, sha: string): Promise<VcsTreeResponse>;
+  getTree(ctx: RequestContext, owner: string, repo: string, ref: string): Promise<VcsTreeResponse>;
 
-  getCloneCredentials(opts: any): Promise<BuildGitCredential>;
+  getCloneCredentials(opts: GetCloneCredentialsOptions): Promise<BuildGitCredential>;
 
   /**
    * Mint a short-lived clone token for a specific repository.
@@ -98,7 +98,7 @@ export interface VcsProviderStrategy {
     repo: string,
     branch: string,
     perPage?: number,
-  ): Promise<any[]>;
+  ): Promise<VcsCommit[]>;
 
   /**
    * Compare two commits to find files changed.

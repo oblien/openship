@@ -340,7 +340,8 @@ export async function buildRespond(c: Context) {
 /**
  * POST /deployments/prepare - resolve project info from GitHub or local path.
  *
- * Body (GitHub): { source: "github", owner, repo, branch? }
+ * Body (GitHub): { source: "github",
+        provider: body.provider ?? "github", owner, repo, branch? }
  * Body (local):  { source: "local", path: "/abs/path" }
  * Callers may omit `source` and send { owner, repo }; treated as GitHub.
  */
@@ -348,6 +349,7 @@ export async function prepare(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{
     source?: "github" | "local";
+    provider?: string;
     owner?: string;
     repo?: string;
     branch?: string;
@@ -372,6 +374,7 @@ export async function prepare(c: Context) {
       }
       input = {
         source: "github",
+        provider: body.provider ?? "github",
         owner: body.owner,
         repo: body.repo,
         branch: body.branch,

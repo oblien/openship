@@ -645,7 +645,7 @@ async function reconcileComposeDrift(
       return; // this push didn't touch the compose file → no drift possible
     }
     const info = await resolveProjectInfo({
-      source: "github",
+      source: "github", provider: project.gitProvider || "github",
       owner: project.gitOwner,
       repo: project.gitRepo,
       branch,
