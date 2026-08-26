@@ -4,7 +4,11 @@ import { explainEdgeDown } from "../system/edge-exec-error";
 
 const logger = { log: vi.fn(), step: vi.fn() } as any;
 const routeTarget = { targetUrl: "http://127.0.0.1:12345" };
-const domain = (hostname: string): RoutedDomainInput => ({ hostname, tls: false, targetPort: 3000 });
+const domain = (hostname: string): RoutedDomainInput => ({
+  hostname,
+  tls: false,
+  targetPort: 3000,
+});
 
 const RESTARTING =
   "Error response from daemon: Container abc123 is restarting, wait until the container is running";
@@ -136,6 +140,60 @@ describe("registerResolvedRoutes — transient container-restart handling", () =
   });
 });
 
+describe("registerResolvedRoutes — SSL provisioning is visible in the deploy log", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const tlsDomain = (over: Partial<RoutedDomainInput> = {}): RoutedDomainInput => ({
+    hostname: "app.example.com",
+    tls: true,
+    provisionSsl: true,
+    targetPort: 3000,
+    ...over,
+  });
+
+  it("logs that HTTP is live before requesting the cert, then issues it", async () => {
+    const order: string[] = [];
+    const routing = {
+      registerRoute: vi.fn(async () => {
+        order.push("register");
+      }),
+    } as any;
+    const ssl = {
+      provisionCert: vi.fn(async () => {
+        order.push("provision");
+        return { verified: true };
+      }),
+    } as any;
+
+    const warnings = await registerResolvedRoutes(logger, routing, ssl, [tlsDomain()], routeTarget);
+
+    expect(warnings).toEqual([]);
+    expect(order).toEqual(["register", "provision"]);
+    const logged = logger.log.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(logged).toContain(
+      "Route live on HTTP for app.example.com — provisioning the certificate, HTTPS in ~1 min",
+    );
+    expect(ssl.provisionCert).toHaveBeenCalledWith("app.example.com");
+  });
+
+  it("does not claim a cert is coming when provisionSsl is off", async () => {
+    const routing = { registerRoute: vi.fn(async () => {}) } as any;
+    const ssl = { provisionCert: vi.fn(async () => ({ verified: true })) } as any;
+
+    await registerResolvedRoutes(
+      logger,
+      routing,
+      ssl,
+      [tlsDomain({ provisionSsl: false })],
+      routeTarget,
+    );
+
+    const logged = logger.log.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(logged).not.toContain("HTTPS in ~1 min");
+    expect(ssl.provisionCert).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * Reverse-proxy tunables are a property of the PROJECT, not of any one upstream, so
  * they arrive as a registration option and land on every domain's vhost. Threading
@@ -168,7 +226,13 @@ describe("registerResolvedRoutes — proxy tunables", () => {
   it("omits `proxy` entirely when none is configured, so nginx defaults apply", async () => {
     const routing = { registerRoute: vi.fn(async () => {}) } as any;
 
-    await registerResolvedRoutes(logger, routing, undefined, [domain("a.example.com")], routeTarget);
+    await registerResolvedRoutes(
+      logger,
+      routing,
+      undefined,
+      [domain("a.example.com")],
+      routeTarget,
+    );
 
     expect(routing.registerRoute.mock.calls[0][0].proxy).toBeUndefined();
   });
@@ -216,7 +280,13 @@ describe("registerResolvedRoutes — compiled vercel.json rules", () => {
       },
     ],
     redirects: [
-      { path: "/blog/", exact: false, statusCode: 308, destination: "/news/$1", pattern: "/blog/(.*)" },
+      {
+        path: "/blog/",
+        exact: false,
+        statusCode: 308,
+        destination: "/news/$1",
+        pattern: "/blog/(.*)",
+      },
     ],
     headerRules: [{ path: "/api/", headers: [{ key: "Cache-Control", value: "no-store" }] }],
     cleanUrls: true,
@@ -274,7 +344,13 @@ describe("registerResolvedRoutes — compiled vercel.json rules", () => {
     const bare = { registerRoute: vi.fn(async () => {}) } as any;
     await registerResolvedRoutes(logger, bare, undefined, [domain("c.example.com")], routeTarget);
     const cfg = bare.registerRoute.mock.calls[0][0];
-    for (const key of ["proxyLocations", "redirects", "headerRules", "cleanUrls", "trailingSlash"]) {
+    for (const key of [
+      "proxyLocations",
+      "redirects",
+      "headerRules",
+      "cleanUrls",
+      "trailingSlash",
+    ]) {
       expect(cfg).not.toHaveProperty(key);
     }
   });
