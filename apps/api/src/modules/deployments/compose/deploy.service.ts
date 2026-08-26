@@ -1912,9 +1912,13 @@ async function deployComposeServicesUnlocked(
           // Kept OUT of the try above so a cert failure can never be reported as a
           // route-registration failure.
           if (route.provisionSsl) {
-            logger.log(`Checking SSL for ${route.hostname}...\n`, "info", {
-              serviceName: svc.name,
-            });
+            logger.log(
+              `Route live on HTTP for ${route.hostname} — provisioning the certificate, HTTPS in ~1 min\n`,
+              "info",
+              {
+                serviceName: svc.name,
+              },
+            );
             await routeContext.trackedSsl.provisionCert(route.hostname).catch((err) => {
               logger.log(
                 `SSL provisioning failed for ${route.hostname} (route is up on HTTP, retry from ` +
