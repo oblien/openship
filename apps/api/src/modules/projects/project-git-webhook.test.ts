@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   findByGitRepo.mockResolvedValue([]);
   projectUpdate.mockResolvedValue(undefined);
-  registerWebhook.mockResolvedValue({ id: 100, events: [] });
+  registerWebhook.mockResolvedValue({ hookId: 100, events: [] });
   updateWebhook.mockResolvedValue(undefined);
 });
 
@@ -54,7 +54,7 @@ describe("ensureSharedWebhook", () => {
   it("deactivates a superseded hook when the repo already had a different one", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const project = { id: "p1", organizationId: "o1", webhookId: 55 } as any;
-    registerWebhook.mockResolvedValue({ id: 100, events: [] });
+    registerWebhook.mockResolvedValue({ hookId: 100, events: [] });
 
     await ensureSharedWebhook(ctx, project, "acme", "app");
 
@@ -62,7 +62,7 @@ describe("ensureSharedWebhook", () => {
   });
 
   it("returns null and fans out nothing when registration yields no hook", async () => {
-    registerWebhook.mockResolvedValue({ id: null, events: [] });
+    registerWebhook.mockResolvedValue({ hookId: null, events: [] });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const project = { id: "p1", organizationId: "o1", webhookId: null } as any;
 

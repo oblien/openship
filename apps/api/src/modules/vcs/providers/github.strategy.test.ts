@@ -23,10 +23,8 @@ describe("GitHubStrategy", () => {
     expect(result).toEqual({ id: 1 });
   });
 
-  it("should delegate listRepositories to createGitHubSource", async () => {
-    // we just mock it to pass the test for now or skip it if it's too complex to mock dynamic imports
-    // The easiest is just to vi.spyOn or something, but since we have import("../../github/sources"),
-    // it's tricky to mock dynamically. So let's just delete this test or mock the factory.
+  it("should throw on verifyWebhookSignature", async () => {
+    await expect(strategy.verifyWebhookSignature("payload", {})).rejects.toThrow("Not implemented");
   });
 
   it("should delegate getBranches to githubService", async () => {
@@ -62,7 +60,8 @@ describe("GitHubStrategy", () => {
 
   it("should transform getTree response correctly", async () => {
     vi.mocked(githubService.listRepositoryTree).mockResolvedValueOnce([
-      { path: "file.txt" },
+      { path: "file.txt", type: "file" },
+      { path: "dir", type: "dir" },
     ] as any);
     const result = await strategy.getTree(mockCtx, "owner", "repo", "sha-123");
     expect(githubService.listRepositoryTree).toHaveBeenCalledWith(mockCtx, "owner", "repo", {
@@ -71,7 +70,10 @@ describe("GitHubStrategy", () => {
     expect(result).toEqual({
       sha: "sha-123",
       truncated: false,
-      tree: [{ path: "file.txt" }],
+      tree: [
+        { path: "file.txt", type: "blob" },
+        { path: "dir", type: "tree" },
+      ],
     });
   });
 
@@ -90,5 +92,39 @@ describe("GitHubStrategy", () => {
   it("should return null for non-push webhooks", () => {
     const payload = { action: "opened" };
     expect(strategy.parseWebhookPayload(payload, "pull_request")).toBeNull();
+  });
+
+  it("should pass detailsUrl to createCheckRun", async () => {
+    vi.mocked(githubService.createCheckRun).mockResolvedValueOnce({
+      id: 123,
+      htmlUrl: "url",
+    } as any);
+    await strategy.createCheckRun(mockCtx, "owner", "repo", {
+      name: "test",
+      headSha: "sha",
+      status: "in_progress",
+      detailsUrl: "https://example.com/details",
+    });
+    expect(githubService.createCheckRun).toHaveBeenCalledWith(
+      mockCtx,
+      "owner",
+      "repo",
+      expect.objectContaining({ detailsUrl: "https://example.com/details" }),
+    );
+  });
+
+  it("should pass detailsUrl to updateCheckRun", async () => {
+    vi.mocked(githubService.updateCheckRun).mockResolvedValueOnce({} as any);
+    await strategy.updateCheckRun(mockCtx, "owner", "repo", 123, {
+      status: "completed",
+      detailsUrl: "https://example.com/details",
+    });
+    expect(githubService.updateCheckRun).toHaveBeenCalledWith(
+      mockCtx,
+      "owner",
+      "repo",
+      123,
+      expect.objectContaining({ detailsUrl: "https://example.com/details" }),
+    );
   });
 });

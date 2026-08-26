@@ -3,8 +3,11 @@ import type { WebhookStrategy, VcsPushPayload } from "../vcs.types";
 import type { RequestContext } from "../../../lib/request-context";
 
 export class SelfHostedStrategy implements VcsProviderStrategy {
-  async verifyWebhookSignature(payload: string | Buffer, headers: Record<string, string>) {
-    return { valid: true };
+  async verifyWebhookSignature(
+    payload: string | Buffer,
+    headers: Record<string, string>,
+  ): Promise<{ valid: boolean; error?: string }> {
+    throw new Error("Not implemented — verification is handled by the provider's webhook module");
   }
   async getRecentCommits(ctx: any, owner: string, repo: string, branch: string, limit?: number) {
     return [];
