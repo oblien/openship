@@ -8,7 +8,7 @@
 /** Supported webhook providers */
 // Stripe is handled by its own billing route (SDK-verified), not this generic
 // provider registry — so the only provider name here is GitHub.
-export type WebhookProviderName = "github";
+export type WebhookProviderName = "github" | "gitlab" | "self-hosted" | "bitbucket";
 
 /** Result of verifying a webhook signature */
 export interface WebhookVerifyResult {

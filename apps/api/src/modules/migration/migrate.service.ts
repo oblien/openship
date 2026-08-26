@@ -22,7 +22,7 @@ import { COMPOSE_SENTINEL } from "../../lib/container-ref";
 import { isControlPlaneProject } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { ensureProject, createServicesProjectWithId } from "../projects/project-crud.service";
-import { getFileContent } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import {
   blockingComposeFields,
   describeBlockingComposeFields,
@@ -79,6 +79,7 @@ export async function parseRepoCompose(
   owner: string,
   repo: string,
   branch?: string,
+  provider: string = "github",
 ): Promise<RepoComposeService[]> {
   // NB: we deliberately do NOT read the repo's `.env` for `${VAR}` interpolation.
   // Secrets live in Openship's ENCRYPTED env store — captured from the running
@@ -89,7 +90,13 @@ export async function parseRepoCompose(
   for (const file of REPO_COMPOSE_FILES) {
     let content: string | null = null;
     try {
-      const res = await getFileContent(ctx, owner, repo, file, { branch });
+      const res = await VcsStrategyFactory.getStrategy(provider).getFileContent(
+        ctx,
+        owner,
+        repo,
+        file,
+        branch,
+      );
       content = res?.content ?? null;
     } catch {
       continue; // not found at this name → try the next

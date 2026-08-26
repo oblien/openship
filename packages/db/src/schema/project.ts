@@ -110,7 +110,7 @@ export const project = pgTable(
 
     /* ── Git source ─────────────────────────────────────────────────────── */
     /**
-     * Source discriminator: "github" | "gitlab" | "bitbucket" | "local" | "upload" | "release".
+     * Source discriminator: "github" | "gitlab" | "bitbucket" | "self-hosted" | "local" | "upload" | "release".
      * (Free-text; canonical set = SOURCE_PROVIDERS in @repo/core.)
      *   - "local"  → folder on a filesystem the API can read (desktop/self-hosted),
      *                path in `localPath`.

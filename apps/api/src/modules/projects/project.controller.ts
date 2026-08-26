@@ -68,12 +68,10 @@ import {
   updateWebhook,
   deleteWebhook,
   getWebhookStrategy,
-  resolveWebhookStrategy,
-  getAvailableStrategies,
-  getRecentCommits,
   resolveDefaultBranch,
   listBranches as listGitHubBranches,
 } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { getInstallUrl } from "../github/github.auth";
 import { ensureSharedWebhook } from "./project-git-webhook";
 import { parseProjectDeleteOptions } from "./project-delete-options";
@@ -1435,7 +1433,10 @@ export async function getGitInfo(c: Context) {
     await projectService.resolveProjectWebhookState(organizationId, info);
 
   // Get available strategies for the UI
-  const strategies = await getAvailableStrategies(ctx, info);
+  const strategies = await VcsStrategyFactory.getStrategy(info.gitProvider).getAvailableStrategies(
+    ctx,
+    info,
+  );
 
   // Get project domains for webhook domain picker
   const domains = await repos.domain.listByProject(id);
@@ -1448,7 +1449,13 @@ export async function getGitInfo(c: Context) {
     branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
   }
   const commits = branch
-    ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
+    ? await VcsStrategyFactory.getStrategy(info.gitProvider).getRecentCommits(
+        ctx,
+        info.gitOwner,
+        info.gitRepo,
+        branch,
+        10,
+      )
     : [];
 
   return c.json({
@@ -1658,7 +1665,9 @@ export async function setAutoDeploy(c: Context) {
       return c.json({ success: false, error: "No repository linked" }, 400);
     }
 
-    const strategy = await resolveWebhookStrategy(project);
+    const strategy = await VcsStrategyFactory.getStrategy(
+      project.gitProvider,
+    ).resolveWebhookStrategy(project);
 
     // In "none" mode, auto-deploy can't work - suggest options
     if (strategy === "none" && enabled) {

@@ -45,7 +45,8 @@ import { resolveEnvDirtyServiceIds } from "./env-drift";
 import type { TBuildAccessBody } from "./deployment.schema";
 import { platform } from "../../lib/controller-helpers";
 import { encrypt } from "../../lib/encryption";
-import { getCommitByRef, getLatestCommit, getRepository } from "../github/github.service";
+import { getCommitByRef } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { resolveSmartRoute } from "./smart-route";
 import { snapshotNeedsGitSource, withoutPinnedArtifacts } from "./pinned-artifacts";
@@ -527,7 +528,8 @@ async function resolveLatestCommitInfo(ctx: RequestContext, project: Project, br
     return {};
   }
 
-  const head = await getLatestCommit(ctx, project.gitOwner, project.gitRepo, branch);
+  const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
+  const head = await vcs.getLatestCommit(ctx, project.gitOwner, project.gitRepo, branch);
   return head ? { commitSha: head.sha, commitMessage: head.message } : {};
 }
 
@@ -566,7 +568,8 @@ async function resolveProjectBranch(ctx: RequestContext, project: Project, branc
   if (configuredBranch) return configuredBranch;
 
   if (project.gitOwner && project.gitRepo) {
-    const repository = await getRepository(ctx, project.gitOwner, project.gitRepo);
+    const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
+    const repository = await vcs.getRepository(ctx, project.gitOwner, project.gitRepo);
     return repository.default_branch;
   }
 

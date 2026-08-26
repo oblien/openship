@@ -18,7 +18,8 @@ import { verifyHmacSha256 } from "../webhooks/webhook.service";
 // resolveProjectWebhookSecret (github.service) was the old single-secret reader;
 // verify() now collects ALL candidate secrets via collectDeliverySecrets below.
 import { handleInstallation } from "./webhook-installation";
-import { handlePush } from "./webhook-push";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
+import { handlePush as handleVcsPush } from "../vcs/vcs.webhook.processor";
 import { handleCheckRun } from "./webhook-check-run";
 import type {
   WebhookProvider,
@@ -185,7 +186,15 @@ export const githubWebhookProvider: WebhookProvider = {
         result = await handleInstallation(payload as GitHubInstallationPayload);
         break;
       case "push":
-        result = await handlePush(payload as GitHubPushPayload);
+        const vcsPayload = VcsStrategyFactory.getStrategy("github").parseWebhookPayload(
+          payload,
+          "push",
+        );
+        if (!vcsPayload) {
+          result = { success: false, event: "push", message: "Failed to parse webhook payload" };
+          break;
+        }
+        result = await handleVcsPush("github", vcsPayload);
         break;
       case "check_run":
         result = await handleCheckRun(payload as GitHubCheckRunPayload);

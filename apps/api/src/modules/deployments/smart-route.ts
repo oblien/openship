@@ -1,7 +1,7 @@
 import { repos, type Project } from "@repo/db";
 import { compareCommitSha } from "@repo/core";
 import { type RequestContext } from "../../lib/request-context";
-import { compareCommits } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { classifyChangedFiles, routeServicesByChanges } from "../github/webhook-changed-files";
 
 /**
@@ -61,13 +61,16 @@ export async function resolveSmartRoute(
       // single-app, same commit, config-only, or no diffable repo → rebuild all
       resolvedForceAll = true;
     } else {
-      const compare = await compareCommits(
-        ctx,
-        project.gitOwner,
-        project.gitRepo,
-        opts.commitShaBefore,
-        opts.commitSha,
-      ).catch(() => null);
+      const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
+      const compare = await vcs
+        .compareCommits(
+          ctx,
+          project.gitOwner,
+          project.gitRepo,
+          opts.commitShaBefore,
+          opts.commitSha,
+        )
+        .catch(() => null);
       if (!compare) {
         resolvedForceAll = true; // can't determine the diff → safe full rebuild
       } else {

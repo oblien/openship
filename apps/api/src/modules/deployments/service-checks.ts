@@ -3,7 +3,7 @@ import { isServiceSuccessStatus, isServiceFailureStatus } from "@repo/core";
 import { runtimeTarget } from "../../config";
 import { buildBackgroundContext } from "../../lib/request-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
-import { createCheckRun, updateCheckRun } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 
 // Per-service GitHub-Checks + service_deployment fan-out for a multi-service
 // deploy. Extracted from build-pipeline; all best-effort (never blocks a deploy).
@@ -123,8 +123,9 @@ export async function emitServiceCheckRun(opts: {
   // `conclusion` is optional in this signature — so default once, for both
   // branches, instead of only defending the update path.
   const finalConclusion = conclusion ?? "neutral";
+  const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
   if (sd?.checkRunId) {
-    await updateCheckRun(actorCtx, project.gitOwner, project.gitRepo, sd.checkRunId, {
+    await vcs.updateCheckRun(actorCtx, project.gitOwner, project.gitRepo, sd.checkRunId, {
       status: "completed",
       conclusion: finalConclusion,
       output,
@@ -141,7 +142,7 @@ export async function emitServiceCheckRun(opts: {
   // gating this on `neutral` meant only SKIPPED services ever reached GitHub,
   // and a full (unscoped) deploy — which pre-creates no rows at all — posted
   // nothing whatsoever.
-  const result = await createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
+  const result = await vcs.createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
     name: `build:${serviceName}`,
     headSha: dep.commitSha,
     status: "completed",
