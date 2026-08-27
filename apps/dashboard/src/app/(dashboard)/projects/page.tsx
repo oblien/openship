@@ -77,8 +77,6 @@ export default function ProjectsPage() {
   const hasServers = projects.some((p) => p.deployTarget === "server");
 
   const filteredProjects = projects.filter((p) => {
-    // Apps (catalog-installed: Convex, webmail, …) live under the Apps tab.
-    if (p.isApp) return false;
     if (!projectMatchesFilter(p, filter)) return false;
     const q = searchQuery.toLowerCase();
     return (

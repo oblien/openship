@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { FolderUp, Github, Link2, Sparkles, Boxes } from "lucide-react";
+import { FolderUp, Github, Link2, Sparkles, Boxes, Building2, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useGitHub } from "@/context/GitHubContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
@@ -17,11 +18,12 @@ import { UrlImport } from "./components/UrlImport";
 import { TemplateGrid } from "./components/TemplateGrid";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HelpMenu } from "@/components/HelpMenu";
+import { AppLogo } from "@/components/AppLogo";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
 
-type Tab = "folder" | "repositories" | "url" | "template" | "server";
+type Tab = "folder" | "repositories" | "url" | "template" | "server" | "apps";
 
 /** One-time gh-CLI repo-read consent flag (per browser — desktop is single-user). */
 const GH_CLI_CONSENT_KEY = "openship.gh-cli-consent";
@@ -63,6 +65,8 @@ export default function LibraryPage() {
   // are one click away for local/self-hosted deploys.
   const [activeTab, setActiveTab] = useState<Tab>("repositories");
   const [showMigrate, setShowMigrate] = useState(false);
+  const [appCatalog, setAppCatalog] = useState<any[]>([]);
+  const [appCatalogLoading, setAppCatalogLoading] = useState(false);
 
   // First-run consent before the gh-CLI source lists repos. The gh path runs
   // entirely on this machine (nothing to the cloud), but we ask once so the
@@ -84,12 +88,35 @@ export default function LibraryPage() {
     (state.sources.ghCli.method ?? "host-cli") === "host-cli" &&
     !ghCliConsent;
 
+  useEffect(() => {
+    if (activeTab !== "apps") return;
+    let cancelled = false;
+    setAppCatalogLoading(true);
+    import("@/lib/api").then(({ appsApi }) =>
+      appsApi
+        .catalog()
+        .then((r) => {
+          if (!cancelled) setAppCatalog(r.data ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setAppCatalog([]);
+        })
+        .finally(() => {
+          if (!cancelled) setAppCatalogLoading(false);
+        }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
+
   // One "Folder" tab, environment-dependent behavior:
   //   - self-hosted / desktop → deploy straight from a path on the box (native
   //     picker, no upload, no stack pick — the local pipeline reads it).
   //   - SaaS → upload the folder to a cloud build workspace (stack picked up
   //     front so we know which image to provision).
   const tabs: TabItem[] = [
+    { key: "apps", label: t.dashboard.pages.apps.title, icon: Building2 },
     { key: "folder", label: t.library.page.tabs.folder, icon: FolderUp },
     { key: "repositories", label: t.library.page.tabs.github, icon: Github },
     { key: "url", label: t.library.page.tabs.url, icon: Link2 },
@@ -140,7 +167,34 @@ export default function LibraryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
         {/* ── LEFT COLUMN ────────────────────────────────────────── */}
         <div className="space-y-6 min-w-0">
-          {activeTab === "server" ? (
+          {activeTab === "apps" ? (
+            appCatalogLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="h-24 rounded-xl bg-muted/40 animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {appCatalog.map((app) => (
+                  <Link
+                    key={app.id}
+                    href={`/apps/new/${app.id}`}
+                    className="group flex items-center gap-3 rounded-xl border border-border/50 bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                  >
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
+                      <AppLogo appId={app.id} className="size-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">{app.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{app.description}</p>
+                    </div>
+                    <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground" />
+                  </Link>
+                ))}
+              </div>
+            )
+          ) : activeTab === "server" ? (
             // Clean centered empty state, matching the GitHub tab's ConnectPrompt
             // (bg-card + illustration-style icon + heading/desc + primary button).
             <div className="bg-card rounded-2xl border border-border/50">
