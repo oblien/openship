@@ -43,6 +43,75 @@ describe("service sync — compose config JSON mapping", () => {
     expect(svc.ports).toEqual(["127.0.0.1:8080:80"]);
   });
 
+  it("keeps normalized per-service build args, including bare values (#689)", () => {
+    const errors: string[] = [];
+    const svc = mapComposeService(
+      "api",
+      {
+        build: {
+          context: "/repo",
+          dockerfile: "services/shared/Dockerfile",
+          args: { APP_PACKAGE: "@myorg/api", EMPTY: "", FROM_ENV: null },
+        },
+      },
+      "/repo",
+      errors,
+    );
+    expect(svc).toMatchObject({
+      build: ".",
+      dockerfile: "services/shared/Dockerfile",
+      buildArgs: { APP_PACKAGE: "@myorg/api", EMPTY: "", FROM_ENV: null },
+      advanced: { buildArgTemplateKeys: [] },
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it("refuses unsupported build behavior instead of silently dropping it", () => {
+    const errors: string[] = [];
+    mapComposeService(
+      "api",
+      {
+        build: {
+          context: "/repo",
+          target: "release-with-private-token",
+          ssh: ["default=super-secret-ssh-material"],
+        },
+      },
+      "/repo",
+      errors,
+    );
+
+    expect(errors).toHaveLength(2);
+    expect(errors.join("\n")).toContain("build.target");
+    expect(errors.join("\n")).toContain("build.ssh");
+    expect(errors.join("\n")).not.toContain("release-with-private-token");
+    expect(errors.join("\n")).not.toContain("super-secret-ssh-material");
+  });
+
+  it("refuses malformed build args without echoing their names or values", () => {
+    const errors: string[] = [];
+    mapComposeService(
+      "api",
+      {
+        build: {
+          context: "/repo",
+          args: {
+            "INVALID-SECRET-NAME": "never-print-this-value",
+            VALID_NAME: { secret: "never-print-this-object" },
+          },
+        },
+      },
+      "/repo",
+      errors,
+    );
+
+    expect(errors).toHaveLength(2);
+    expect(errors.every((message) => message.includes("build.args"))).toBe(true);
+    expect(errors.join("\n")).not.toContain("INVALID-SECRET-NAME");
+    expect(errors.join("\n")).not.toContain("never-print-this-value");
+    expect(errors.join("\n")).not.toContain("never-print-this-object");
+  });
+
   it("carries shared namespaces instead of dropping the advanced blob", () => {
     const errors: string[] = [];
     const svc = mapComposeService(
@@ -60,7 +129,12 @@ describe("service sync — compose config JSON mapping", () => {
     // these and exits non-zero, so the stack is never left describing something
     // the file didn't ask for.
     const errors: string[] = [];
-    const svc = mapComposeService("agent", { image: "prom/node-exporter", network_mode: "host" }, "/repo", errors);
+    const svc = mapComposeService(
+      "agent",
+      { image: "prom/node-exporter", network_mode: "host" },
+      "/repo",
+      errors,
+    );
     expect(svc.advanced).toBeUndefined();
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("agent");

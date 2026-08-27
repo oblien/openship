@@ -42,7 +42,11 @@ vi.mock("../../../src/config/env", () => ({ env: {}, runtimeTarget: { id: "local
 
 vi.mock("@octokit/auth-oauth-device", () => ({ createOAuthDeviceAuth: vi.fn() }));
 
-import { getLocalGhStatus } from "../../../src/modules/github/github.local-auth";
+import {
+  getLocalGhStatus,
+  ghAuthTokenViaConfig,
+  resolveGhHostsPath,
+} from "../../../src/modules/github/github.local-auth";
 
 /** GitHub's /user answering with `status`. */
 function githubUserReturns(status: number, body: unknown = {}) {
@@ -74,6 +78,103 @@ beforeEach(() => {
     ghDeviceTokenMethod: "token",
   });
   decrypt.mockReturnValue("ghp_live_token");
+});
+
+describe("GitHub CLI config isolation", () => {
+  it("applies GitHub CLI's documented config-path precedence", () => {
+    expect(
+      resolveGhHostsPath(
+        { GH_CONFIG_DIR: "/isolated/gh", XDG_CONFIG_HOME: "/isolated/xdg" },
+        "/home/operator",
+        "linux",
+      ),
+    ).toBe("/isolated/gh/hosts.yml");
+
+    expect(
+      resolveGhHostsPath({ XDG_CONFIG_HOME: "/isolated/xdg" }, "/home/operator", "linux"),
+    ).toBe("/isolated/xdg/gh/hosts.yml");
+
+    expect(resolveGhHostsPath({}, "/home/operator", "linux")).toBe(
+      "/home/operator/.config/gh/hosts.yml",
+    );
+
+    expect(
+      resolveGhHostsPath(
+        { APPDATA: "C:\\Users\\operator\\AppData\\Roaming" },
+        "C:\\Users\\operator",
+        "win32",
+      ),
+    ).toBe("C:\\Users\\operator\\AppData\\Roaming\\GitHub CLI\\hosts.yml");
+  });
+
+  it.each([
+    {
+      name: "GH_CONFIG_DIR",
+      environment: { GH_CONFIG_DIR: "/isolated/gh" },
+      expected: "/isolated/gh/hosts.yml",
+    },
+    {
+      name: "XDG_CONFIG_HOME",
+      environment: { XDG_CONFIG_HOME: "/isolated/xdg" },
+      expected: "/isolated/xdg/gh/hosts.yml",
+    },
+  ])(
+    "does not fall back to another user's home when $name is set",
+    async ({ environment, expected }) => {
+      const read = vi.fn(async (path: string) => {
+        if (path === "/home/other-user/.config/gh/hosts.yml") {
+          return "github.com:\n  oauth_token: ghp_wrong_user\n";
+        }
+        throw Object.assign(new Error("missing isolated config"), { code: "ENOENT" });
+      });
+
+      await expect(
+        ghAuthTokenViaConfig({
+          environment,
+          homeDirectory: "/home/other-user",
+          platform: "linux",
+          read,
+        }),
+      ).resolves.toBeNull();
+
+      expect(read).toHaveBeenCalledOnce();
+      expect(read).toHaveBeenCalledWith(expected, "utf-8");
+    },
+  );
+
+  it("does not fall back when the authoritative config exists without a GitHub token", async () => {
+    const read = vi.fn(async (path: string) => {
+      if (path === "/isolated/gh/hosts.yml") return "example.com:\n  oauth_token: other\n";
+      return "github.com:\n  oauth_token: ghp_wrong_user\n";
+    });
+
+    await expect(
+      ghAuthTokenViaConfig({
+        environment: { GH_CONFIG_DIR: "/isolated/gh" },
+        homeDirectory: "/home/other-user",
+        platform: "linux",
+        read,
+      }),
+    ).resolves.toBeNull();
+
+    expect(read).toHaveBeenCalledOnce();
+    expect(read).toHaveBeenCalledWith("/isolated/gh/hosts.yml", "utf-8");
+  });
+
+  it("still reads the normal home config when no override is present", async () => {
+    const read = vi.fn(async () => "github.com:\n  oauth_token: ghp_expected_user\n");
+
+    await expect(
+      ghAuthTokenViaConfig({
+        environment: {},
+        homeDirectory: "/home/operator",
+        platform: "linux",
+        read,
+      }),
+    ).resolves.toBe("ghp_expected_user");
+
+    expect(read).toHaveBeenCalledWith("/home/operator/.config/gh/hosts.yml", "utf-8");
+  });
 });
 
 describe("getLocalGhStatus — credential health", () => {

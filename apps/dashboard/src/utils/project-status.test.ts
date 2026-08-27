@@ -142,7 +142,9 @@ describe("projectDisplayDomain — only a persisted route", () => {
   });
 
   it("returns the persisted primary route", () => {
-    expect(projectDisplayDomain({ primaryDomain: "convex.example.com" })).toBe("convex.example.com");
+    expect(projectDisplayDomain({ primaryDomain: "convex.example.com" })).toBe(
+      "convex.example.com",
+    );
   });
 });
 
@@ -198,7 +200,11 @@ describe("getProjectStatus — paused", () => {
       "live",
     );
     expect(
-      getProjectStatus({ enabled: true, activeDeploymentId: "d1", latestDeploymentStatus: "ready" }),
+      getProjectStatus({
+        enabled: true,
+        activeDeploymentId: "d1",
+        latestDeploymentStatus: "ready",
+      }),
     ).toBe("live");
   });
 
@@ -243,7 +249,14 @@ describe("a project with a live migration", () => {
   const live = { enabled: true, activeDeploymentId: "d1", latestDeploymentStatus: "ready" };
 
   it("reads Migrating through every phase that is making progress", () => {
-    for (const status of ["queued", "adopting", "moving_data", "deploying", "verifying", "cutover"]) {
+    for (const status of [
+      "queued",
+      "adopting",
+      "moving_data",
+      "deploying",
+      "verifying",
+      "cutover",
+    ]) {
       expect(getProjectStatus({ ...live, ...migrating(status) }), status).toBe("migrating");
     }
   });
@@ -252,7 +265,11 @@ describe("a project with a live migration", () => {
     // The run deploys onto the target, so the project's newest deployment row genuinely reads
     // `deploying`. "Deploying" is true of that deploy and misleading about the project.
     expect(
-      getProjectStatus({ ...live, latestDeploymentStatus: "deploying", ...migrating("moving_data") }),
+      getProjectStatus({
+        ...live,
+        latestDeploymentStatus: "deploying",
+        ...migrating("moving_data"),
+      }),
     ).toBe("migrating");
   });
 
@@ -267,9 +284,9 @@ describe("a project with a live migration", () => {
   });
 
   it("yields to teardown, the only thing more final than a move", () => {
-    expect(getProjectStatus({ ...live, deletionInProgress: true, ...migrating("moving_data") })).toBe(
-      "deleting",
-    );
+    expect(
+      getProjectStatus({ ...live, deletionInProgress: true, ...migrating("moving_data") }),
+    ).toBe("deleting");
   });
 
   it("reads Action Required — not Migrating — once the run PARKS for the operator", () => {
@@ -281,10 +298,24 @@ describe("a project with a live migration", () => {
     expect(getProjectStatus({ ...live, ...migrating("partial") })).toBe("attention");
   });
 
+  it("reads Action Required when a destructive cutover failed and can only be retried", () => {
+    const activeMigration = {
+      id: "r",
+      status: "cutover",
+      mode: "project_move",
+      needsAction: true,
+    };
+
+    expect(getProjectStatus({ ...live, activeMigration })).toBe("attention");
+    expect(getProjectAttentionReason({ ...live, activeMigration })).toBe("migrationCutover");
+  });
+
   it("names the action in the pill's hint, so the amber is not a dead end", () => {
     const hint = projectStatusHint({ ...live, ...migrating("awaiting_cutover") }, en as never);
     expect(hint).toBe(en.projects.migrationAwaitingHint);
-    expect(getProjectAttentionReason({ ...live, ...migrating("partial") })).toBe("migrationCutover");
+    expect(getProjectAttentionReason({ ...live, ...migrating("partial") })).toBe(
+      "migrationCutover",
+    );
   });
 
   it("stops overriding anything the moment the run is terminal (payload drops the field)", () => {
@@ -301,9 +332,13 @@ describe("a project with a live migration", () => {
   it("exposes the parked question, so a panel need not re-list the phases", () => {
     // Two copies of "which phases are parked" would drift, and the symptom would be a card
     // calling a run "in progress" beside a pill saying it needs attention.
-    expect(migrationNeedsOperator({ id: "r", status: "awaiting_cutover", mode: "project_move" })).toBe(true);
+    expect(
+      migrationNeedsOperator({ id: "r", status: "awaiting_cutover", mode: "project_move" }),
+    ).toBe(true);
     expect(migrationNeedsOperator({ id: "r", status: "partial", mode: "project_move" })).toBe(true);
-    expect(migrationNeedsOperator({ id: "r", status: "moving_data", mode: "project_move" })).toBe(false);
+    expect(migrationNeedsOperator({ id: "r", status: "moving_data", mode: "project_move" })).toBe(
+      false,
+    );
     expect(migrationNeedsOperator(null)).toBe(false);
     expect(migrationNeedsOperator(undefined)).toBe(false);
   });

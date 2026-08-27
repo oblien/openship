@@ -22,13 +22,20 @@
  *                      health gate and the stabilization watch all come from
  *                      the deploy pipeline rather than being re-implemented.
  *
+ *   "reacquire-image" A single-app release image aged out locally, but the
+ *                      target's frozen snapshot recorded its concrete registry
+ *                      reference (normally an immutable repo digest). Replay
+ *                      that snapshot so the normal prebuilt-image path pulls
+ *                      the exact artifact again — no repository, commit, or
+ *                      current release template involved.
+ *
  *   "rebuild"          No artifact left, but we know the commit. Same deploy
  *                      call, minus the pinned images: it re-clones and rebuilds
  *                      that commit. Slower, always correct.
  *
- * INVARIANT: a rollback never dead-ends. If the target's commit is known it is
- * restorable; the only question is instant vs rebuild. That's why "the artifact
- * was pruned" is not an error here — it's just the slower branch.
+ * INVARIANT: a rollback never dead-ends when it has a reproducible source. A
+ * frozen release-image ref is reacquired; a known commit is rebuilt. That's why
+ * "the artifact was pruned" is not itself an error — it selects a slower branch.
  *
  * Pure and synchronous by construction (image presence is resolved by the
  * caller and passed in), so every branch is unit-testable without a daemon —
@@ -46,8 +53,7 @@ export const ROLLBACK_ERROR_CODES = {
   UNSUPPORTED_RUNTIME: "ROLLBACK_UNSUPPORTED_RUNTIME",
 } as const;
 
-export type RollbackErrorCode =
-  (typeof ROLLBACK_ERROR_CODES)[keyof typeof ROLLBACK_ERROR_CODES];
+export type RollbackErrorCode = (typeof ROLLBACK_ERROR_CODES)[keyof typeof ROLLBACK_ERROR_CODES];
 
 /**
  * Does this project want past artifacts held so a restore can skip the build?
@@ -79,6 +85,11 @@ export type RestorePlan =
       /** Services whose image is gone; they rebuild inside the same deploy
        *  (a service with no pinned image simply falls into the buildable set). */
       rebuildServices: string[];
+    }
+  | {
+      mode: "reacquire-image";
+      /** Concrete reference frozen by the successful target deployment. */
+      releaseImageRef: string;
     }
   | { mode: "rebuild"; commitSha: string }
   | { mode: "ineligible"; code: RollbackErrorCode; message: string };
@@ -118,9 +129,7 @@ export interface RestorePlanInput {
  * container/workspace id — the same convention `DockerRuntime.destroy` and
  * `cleanupBuildArtifact` key off. Its artifact is that directory of built files.
  */
-export function staticReleaseDir(target: {
-  containerId: string | null;
-}): string | null {
+export function staticReleaseDir(target: { containerId: string | null }): string | null {
   const id = target.containerId?.trim();
   return id && id.startsWith("/") ? id : null;
 }
@@ -216,6 +225,27 @@ export function planRestore(input: RestorePlanInput): RestorePlan {
     };
   }
 
+  // A tracked single-app release image is reproducible without source code. A
+  // successful deploy freezes the concrete ref it actually prepared (Docker
+  // replaces a mutable tag with its repo digest), so replaying this snapshot can
+  // pull those exact bytes after local image GC. Do this BEFORE the commit
+  // fallback: release-image projects legitimately have no commit, and rebuilding
+  // a now-linked repository would restore a different source entirely.
+  const frozen = target.meta as
+    | { releaseImageRef?: unknown; serviceDeploymentMode?: unknown }
+    | null
+    | undefined;
+  const frozenReleaseImageRef =
+    typeof frozen?.releaseImageRef === "string" ? usableRef(frozen.releaseImageRef) : null;
+  const hasNamedServices = (input.serviceImages ?? []).some((row) => !!row.serviceName?.trim());
+  const composeRelease =
+    target.imageRef?.trim() === COMPOSE_SENTINEL ||
+    frozen?.serviceDeploymentMode === "services" ||
+    hasNamedServices;
+  if (frozenReleaseImageRef && !composeRelease) {
+    return { mode: "reacquire-image", releaseImageRef: frozenReleaseImageRef };
+  }
+
   // Nothing retained — but the commit is the other artifact.
   if (target.commitSha) {
     return { mode: "rebuild", commitSha: target.commitSha };
@@ -229,8 +259,9 @@ export function planRestore(input: RestorePlanInput): RestorePlan {
   };
 }
 
-/** Does this plan need the repository? Only a rebuild clones — which is what
- *  lets an instant restore skip the GitHub-access gate and the git token. */
+/** Does this plan need the repository? Only a rebuild (including a mixed compose
+ *  restore) clones. Reacquiring a frozen registry image needs the registry, not
+ *  a Git repository, commit, or source token. */
 export function planNeedsRepository(plan: RestorePlan): boolean {
   if (plan.mode === "rebuild") return true;
   if (plan.mode === "redeploy-pinned") return plan.rebuildServices.length > 0;

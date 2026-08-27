@@ -45,10 +45,13 @@ vi.mock("@repo/db", () => ({
         id: "bkr_live",
         status: "queued",
         policyId: "pol_mail",
+        projectId: null,
         serviceId: null,
         mailServerId: "mail_1",
         organizationId: "org_1",
       }),
+      claimExecution: async () => "claimed",
+      acknowledgeExecutionFinished: async () => {},
       transition: async (_id: string, status: string, patch?: Record<string, unknown>) => {
         Object.assign(h.row, { status }, patch ?? {});
       },
@@ -105,11 +108,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
         stdout.end(Buffer.from("ARCHIVE-BYTES"));
         return { stdout, awaitExit: Promise.resolve({ code: 0, stderr: "" }) };
       },
-      pipeIntoCommand: async (
-        _svc: unknown,
-        argv: string[],
-        body: NodeJS.ReadableStream,
-      ) => {
+      pipeIntoCommand: async (_svc: unknown, argv: string[], body: NodeJS.ReadableStream) => {
         const chunks: Buffer[] = [];
         for await (const chunk of body) chunks.push(Buffer.from(chunk as Buffer));
         h.pipedInto.push({

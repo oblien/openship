@@ -648,3 +648,10 @@ export function invalidateProjectCaches(id: string) {
   }
   bumpRevision(id);
 }
+
+/** Invalidate a shared environment-list mutation once for every affected project. */
+export function invalidateProjectCachesFor(ids: Iterable<string>) {
+  for (const id of new Set(ids)) {
+    if (id) invalidateProjectCaches(id);
+  }
+}

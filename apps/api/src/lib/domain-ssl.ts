@@ -1,11 +1,23 @@
 import type { Domain, Project } from "@repo/db";
-import type { ManualCert, SslProvider, SslResult } from "@repo/adapters";
-import { ForbiddenError, NotFoundError, SYSTEM, safeErrorMessage } from "@repo/core";
+import type { ManualCert, SslProvider, SslResult, ProvisionCertOptions } from "@repo/adapters";
+import {
+  ForbiddenError,
+  NotFoundError,
+  SYSTEM,
+  isWildcardHostname,
+  safeErrorMessage,
+} from "@repo/core";
 import { repos } from "@repo/db";
 import { env } from "../config/env";
 import { platform } from "./controller-helpers";
 import { createProvisionLock } from "./provision-lock";
-import { disposePlatform, resolveDeploymentPlatform, type DeploymentMeta } from "./deployment-runtime";
+import { withLiveProjectRuntimeMutation } from "./project-runtime-lock";
+import {
+  disposePlatform,
+  resolveDeploymentPlatform,
+  type DeploymentMeta,
+} from "./deployment-runtime";
+import { resolveDnsManager, type MatchedDnsManager } from "../modules/dns/dns-credential.service";
 
 /**
  * The per-domain issuance lock key. EVERY path that can open an ACME order
@@ -91,10 +103,7 @@ export function tlsIssuedElsewhere(domain: {
 }
 
 /** Operator-facing one-liner for {@link tlsIssuedElsewhere}. */
-export function describeTlsIssuedElsewhere(
-  where: TlsIssuedElsewhere,
-  hostname: string,
-): string {
+export function describeTlsIssuedElsewhere(where: TlsIssuedElsewhere, hostname: string): string {
   switch (where) {
     case "external_ingress":
       return `TLS for ${hostname} terminates at your own ingress — no certificate is issued here.`;
@@ -105,7 +114,7 @@ export function describeTlsIssuedElsewhere(
   }
 }
 
-interface DomainSslOptions {
+export interface DomainSslOptions {
   action: DomainSslAction;
   /** Restrict to a specific project (defense-in-depth; route layer
    *  already verified access). */
@@ -114,6 +123,12 @@ interface DomainSslOptions {
    *  path (self-hosted verifyDomain) sets this — there, issuing the cert IS the
    *  verification, so it necessarily runs before `verified` is set. */
   allowUnverified?: boolean;
+  /** Force a specific challenge type: "http-01" | "dns-01" */
+  challenge?: "http-01" | "dns-01";
+  /** Optional custom DNS auth hook command/script */
+  dnsAuthHook?: string;
+  /** Optional custom DNS cleanup hook command/script */
+  dnsCleanupHook?: string;
 }
 
 /** The lock scope for the box the API itself runs on. */
@@ -153,7 +168,10 @@ type SslOwner =
 export async function resolveMailOwner(
   hostname: string,
 ): Promise<Extract<SslOwner, { kind: "mail" }> | null> {
-  const base = hostname.trim().toLowerCase().replace(/^mail\./, "");
+  const base = hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^mail\./, "");
   if (base === hostname.trim().toLowerCase()) return null; // not a mail.<base> host
   const mail = await repos.mailServer.findByDomain(base).catch(() => undefined);
   if (!mail) return null;
@@ -201,6 +219,31 @@ async function resolveAuthorizedDomain(hostname: string, opts: DomainSslOptions)
   assertVerified(domainRecord, opts);
 
   return { domainRecord, owner: { kind: "project", project } as SslOwner };
+}
+
+type AuthorizedDomain = Awaited<ReturnType<typeof resolveAuthorizedDomain>>;
+
+/**
+ * Run a remote domain mutation under the same project lock as teardown.
+ *
+ * The first resolution identifies and authorizes the owner. Project-owned rows
+ * are then resolved again under the lock so an operation queued behind DELETE
+ * cannot recreate a certificate or vhost after the project row was removed.
+ * Mail certificates have no project lifecycle and therefore run directly.
+ */
+async function withAuthorizedDomainRuntime<T>(
+  hostname: string,
+  opts: DomainSslOptions,
+  mutate: (authorized: AuthorizedDomain) => Promise<T>,
+): Promise<T> {
+  const authorized = await resolveAuthorizedDomain(hostname, opts);
+  if (authorized.owner.kind === "mail") return mutate(authorized);
+
+  const result = await withLiveProjectRuntimeMutation(authorized.owner.project.id, async () =>
+    mutate(await resolveAuthorizedDomain(hostname, opts)),
+  );
+  if (result === undefined) throw new NotFoundError("Domain", hostname);
+  return result;
 }
 
 /**
@@ -274,10 +317,7 @@ async function persistSslResult(
  * succeeded — the certificate is on disk either way, and a missed row is recoverable
  * by re-running the step, whereas a failed step is not.
  */
-export async function recordMailCertDomain(
-  hostname: string,
-  result: SslResult,
-): Promise<void> {
+export async function recordMailCertDomain(hostname: string, result: SslResult): Promise<void> {
   try {
     const row = await repos.domain.findOrCreate({
       hostname,
@@ -383,7 +423,10 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
   // `lockScope` is the server id so mail issuance takes the same per-box ACME lock
   // as the apps sharing that edge (they contend for one standalone challenge port).
   if (owner.kind === "mail") {
-    const ssl = await resolveSslOnly({ serverId: owner.serverId } as DeploymentMeta, owner.organizationId);
+    const ssl = await resolveSslOnly(
+      { serverId: owner.serverId } as DeploymentMeta,
+      owner.organizationId,
+    );
     return { ssl, lockScope: owner.serverId };
   }
 
@@ -456,18 +499,128 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
   return { ssl: platform().ssl, lockScope: LOCAL_ACME_SCOPE };
 }
 
+export interface DnsHookScripts {
+  authHookScript: string;
+  cleanupHookScript: string;
+}
+
+/** Build hook bodies only. NginxProvider writes them through its executor, so
+ * they exist in the same local/SSH/container filesystem in which Certbot runs. */
+export function createDnsHookScripts(manager: MatchedDnsManager): DnsHookScripts {
+  // Both values are embedded in a POSIX script. Cloudflare issues identifiers
+  // and API tokens from this alphabet; reject anything else rather than allow a
+  // malformed credential to become shell syntax on the edge host.
+  if (!/^[A-Za-z0-9_-]+$/.test(manager.zone.id)) {
+    throw new Error("DNS provider returned an invalid zone identifier");
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(manager.credentials.apiToken)) {
+    throw new Error("DNS provider returned an invalid API token");
+  }
+  const authScript = `#!/bin/sh
+set -e
+DOMAIN="\${CERTBOT_DOMAIN#\\*.}"
+RECORD_NAME="_acme-challenge.\${DOMAIN}"
+RES=$(curl -s -S -X POST "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records" \\
+  -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
+  -H "Content-Type: application/json" \\
+  --data "{\\"type\\":\\"TXT\\",\\"name\\":\\"\${RECORD_NAME}\\",\\"content\\":\\"\${CERTBOT_VALIDATION}\\",\\"ttl\\":60,\\"comment\\":\\"Managed by Openship\\"}")
+if ! echo "$RES" | grep -q '"success":true'; then
+  echo "Cloudflare rejected the ACME TXT record request" >&2
+  echo "$RES" >&2
+  exit 1
+fi
+RECORD_ID=$(echo "$RES" | grep -o '"id":"[^"]*' | head -n 1 | cut -d'"' -f4)
+if [ -z "$RECORD_ID" ]; then
+  echo "Cloudflare created no ACME TXT record id" >&2
+  exit 1
+fi
+echo "$RECORD_ID" > "$OPENSHIP_DNS_RECORD_FILE"
+
+# Wait for the public resolver to observe the exact value. A fixed sleep makes
+# issuance flaky when provider propagation is slower than usual.
+ATTEMPT=0
+while [ "$ATTEMPT" -lt 30 ]; do
+  ANSWER=$(curl -s -S --get "https://cloudflare-dns.com/dns-query" \\
+    -H "Accept: application/dns-json" \\
+    --data-urlencode "name=\${RECORD_NAME}" --data-urlencode "type=TXT" || true)
+  if echo "$ANSWER" | grep -Fq "$CERTBOT_VALIDATION"; then
+    exit 0
+  fi
+  ATTEMPT=$((ATTEMPT + 1))
+  sleep 2
+done
+echo "Timed out waiting for \${RECORD_NAME} TXT propagation" >&2
+exit 1
+`;
+
+  const cleanupScript = `#!/bin/sh
+if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
+  RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
+  if [ -n "$RECORD_ID" ]; then
+    curl -s -S -X DELETE "https://api.cloudflare.com/client/v4/zones/${manager.zone.id}/dns_records/\${RECORD_ID}" \\
+      -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
+      -H "Content-Type: application/json" || true
+  fi
+  rm -f "$OPENSHIP_DNS_RECORD_FILE"
+fi
+`;
+  return { authHookScript: authScript, cleanupHookScript: cleanupScript };
+}
+
+async function resolveDns01Hooks(
+  organizationId: string,
+  domainRecord: Domain,
+  opts?: { dnsAuthHook?: string; dnsCleanupHook?: string },
+): Promise<
+  Pick<
+    ProvisionCertOptions,
+    "dnsAuthHook" | "dnsCleanupHook" | "dnsAuthHookScript" | "dnsCleanupHookScript"
+  >
+> {
+  if (opts?.dnsAuthHook) {
+    return {
+      dnsAuthHook: opts.dnsAuthHook,
+      dnsCleanupHook: opts.dnsCleanupHook,
+    };
+  }
+
+  const dnsLookup = await resolveDnsManager(organizationId, domainRecord.hostname);
+  if (dnsLookup.status === "matched") {
+    const hooks = createDnsHookScripts(dnsLookup.manager);
+    return {
+      dnsAuthHookScript: hooks.authHookScript,
+      dnsCleanupHookScript: hooks.cleanupHookScript,
+    };
+  }
+
+  if (dnsLookup.status === "unauthorized") {
+    throw new Error(`DNS provider credential rejected: ${dnsLookup.reason}`);
+  }
+  if (dnsLookup.status === "unavailable") {
+    throw new Error(`DNS provider unavailable: ${dnsLookup.reason}`);
+  }
+  throw new Error(
+    `DNS-01 challenge for ${domainRecord.hostname} requires a connected DNS provider (e.g. Cloudflare) in Settings → DNS.`,
+  );
+}
+
 async function executeSslAction(
   ssl: SslProvider,
   hostname: string,
   action: DomainSslAction,
+  opts?: ProvisionCertOptions,
 ): Promise<SslResult> {
+  const hasOpts = opts && Object.keys(opts).length > 0;
   switch (action) {
     case "renew":
-      return ssl.renewCert(hostname);
+      // HTTP renewal keeps the historical one-argument contract. DNS renewal
+      // must receive the fresh generated hooks because its prior paths were
+      // intentionally removed after issuance.
+      return opts?.challenge === "dns-01" ? ssl.renewCert(hostname, opts) : ssl.renewCert(hostname);
     case "verify":
       return ssl.verifyCert(hostname);
     default:
-      return ssl.provisionCert(hostname);
+      return hasOpts ? ssl.provisionCert(hostname, opts) : ssl.provisionCert(hostname);
   }
 }
 
@@ -487,8 +640,15 @@ export async function manageDomainSsl(
   hostname: string,
   opts: DomainSslOptions,
 ): Promise<SslResult> {
-  const { domainRecord, owner } = await resolveAuthorizedDomain(hostname, opts);
+  return withAuthorizedDomainRuntime(hostname, opts, (authorized) =>
+    manageAuthorizedDomainSsl(authorized, opts),
+  );
+}
 
+async function manageAuthorizedDomainSsl(
+  { domainRecord, owner }: AuthorizedDomain,
+  opts: DomainSslOptions,
+): Promise<SslResult> {
   // THE gate, and it lives here rather than in each caller: this is the single
   // entrypoint that can open an ACME order (manual Provision/Verify, the ssl:renew
   // scheduler, the self-app edge provisioner, the boot reconcile), and it used to
@@ -517,10 +677,30 @@ export async function manageDomainSsl(
     return result;
   }
 
+  const isDns =
+    opts.challenge === "dns-01" ||
+    domainRecord.sslChallenge === "dns-01" ||
+    isWildcardHostname(domainRecord.hostname);
+
+  let dnsHooks: Awaited<ReturnType<typeof resolveDns01Hooks>> = {};
+  if (isDns) {
+    const orgId = owner.kind === "project" ? owner.project.organizationId : owner.organizationId;
+    dnsHooks = await resolveDns01Hooks(orgId, domainRecord, {
+      dnsAuthHook: opts.dnsAuthHook,
+      dnsCleanupHook: opts.dnsCleanupHook,
+    });
+  }
+
+  const provOpts: ProvisionCertOptions = {
+    ...(opts.action === "renew" ? { force: true } : {}),
+    ...(isDns ? { challenge: "dns-01" } : opts.challenge ? { challenge: opts.challenge } : {}),
+    ...dnsHooks,
+  };
+
   try {
     const result = await createProvisionLock(sslIssueLockKey(domainRecord.hostname)).run(() =>
       createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
-        executeSslAction(ssl, domainRecord.hostname, opts.action),
+        executeSslAction(ssl, domainRecord.hostname, opts.action, provOpts),
       ),
     );
     await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
@@ -545,14 +725,51 @@ export async function manageDomainSsl(
  */
 export async function provisionDomainCertForVerify(
   hostname: string,
-  opts: { projectId?: string; onLog?: (line: string) => void; force?: boolean } = {},
+  opts: {
+    projectId?: string;
+    onLog?: (line: string) => void;
+    force?: boolean;
+    challenge?: "http-01" | "dns-01";
+    dnsAuthHook?: string;
+    dnsCleanupHook?: string;
+  } = {},
 ): Promise<SslResult> {
-  const { domainRecord, owner } = await resolveAuthorizedDomain(hostname, {
+  const authorization: DomainSslOptions = {
     action: "provision",
     projectId: opts.projectId,
     allowUnverified: true,
-  });
+  };
+  return withAuthorizedDomainRuntime(hostname, authorization, (authorized) =>
+    provisionAuthorizedDomainCert(authorized, opts),
+  );
+}
+
+async function provisionAuthorizedDomainCert(
+  { domainRecord, owner }: AuthorizedDomain,
+  opts: {
+    projectId?: string;
+    onLog?: (line: string) => void;
+    force?: boolean;
+    challenge?: "http-01" | "dns-01";
+    dnsAuthHook?: string;
+    dnsCleanupHook?: string;
+  },
+): Promise<SslResult> {
   const { ssl, lockScope } = await resolveSslProvider(owner);
+
+  const isDns =
+    opts.challenge === "dns-01" ||
+    domainRecord.sslChallenge === "dns-01" ||
+    isWildcardHostname(domainRecord.hostname);
+
+  let dnsHooks: Awaited<ReturnType<typeof resolveDns01Hooks>> = {};
+  if (isDns) {
+    const orgId = owner.kind === "project" ? owner.project.organizationId : owner.organizationId;
+    dnsHooks = await resolveDns01Hooks(orgId, domainRecord, {
+      dnsAuthHook: opts.dnsAuthHook,
+      dnsCleanupHook: opts.dnsCleanupHook,
+    });
+  }
 
   // Serialize issuance per-hostname, and re-check the cert INSIDE the lock.
   // This closes the TOCTOU: two concurrent Verify hits (or Verify racing the
@@ -565,26 +782,33 @@ export async function provisionDomainCertForVerify(
   // the same box (the www sibling, the pending-SSL sweep) running certbot at the
   // same time and losing the race for the shared standalone port.
   try {
-    const result = await createProvisionLock(sslIssueLockKey(domainRecord.hostname)).run(async () => {
-      if (!opts.force) {
-        const existing = await ssl.verifyCert(domainRecord.hostname).catch(() => null);
-        if (existing && certComfortablyValid(existing)) {
-          opts.onLog?.(
-            `A valid certificate is already present for ${domainRecord.hostname}` +
-              (existing.expiresAt ? ` (expires ${existing.expiresAt.slice(0, 10)})` : "") +
-              " — reusing it. No new certificate requested.",
-          );
-          return existing;
+    const result = await createProvisionLock(sslIssueLockKey(domainRecord.hostname)).run(
+      async () => {
+        if (!opts.force) {
+          const existing = await ssl.verifyCert(domainRecord.hostname).catch(() => null);
+          if (existing && certComfortablyValid(existing)) {
+            opts.onLog?.(
+              `A valid certificate is already present for ${domainRecord.hostname}` +
+                (existing.expiresAt ? ` (expires ${existing.expiresAt.slice(0, 10)})` : "") +
+                " — reusing it. No new certificate requested.",
+            );
+            return existing;
+          }
         }
-      }
-      // Decided to issue (missing / near-expiry / forced): pass `force` so the
-      // adapter runs certbot even when a stale cert file is present on disk —
-      // otherwise its file-exists short-circuit would return the old cert and a
-      // near-expiry renewal would silently no-op.
-      return createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
-        ssl.provisionCert(domainRecord.hostname, { onLog: opts.onLog, force: true }),
-      );
-    });
+        // Decided to issue (missing / near-expiry / forced): pass `force` so the
+        // adapter runs certbot even when a stale cert file is present on disk —
+        // otherwise its file-exists short-circuit would return the old cert and a
+        // near-expiry renewal would silently no-op.
+        return createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
+          ssl.provisionCert(domainRecord.hostname, {
+            onLog: opts.onLog,
+            force: true,
+            challenge: isDns ? "dns-01" : "http-01",
+            ...dnsHooks,
+          }),
+        );
+      },
+    );
 
     await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
     return result;
@@ -613,13 +837,15 @@ export async function installDomainCert(
   cert: ManualCert,
   opts: { projectId?: string; allowUnverified?: boolean } = {},
 ): Promise<SslResult> {
-  const { domainRecord, owner } = await resolveAuthorizedDomain(hostname, {
+  const authorization: DomainSslOptions = {
     action: "provision",
     projectId: opts.projectId,
     allowUnverified: opts.allowUnverified,
+  };
+  return withAuthorizedDomainRuntime(hostname, authorization, async ({ domainRecord, owner }) => {
+    const { ssl } = await resolveSslProvider(owner);
+    return ssl.installCert(domainRecord.hostname, cert);
   });
-  const { ssl } = await resolveSslProvider(owner);
-  return ssl.installCert(domainRecord.hostname, cert);
 }
 
 /**

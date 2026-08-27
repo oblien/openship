@@ -1,6 +1,6 @@
 {
   "name": "@repo/email",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "private": true,
   "description": "Self-hosted email - iRedMail (engine) + Zero Email (server + client). Orchestrator package: install and run server + client together.",
   "scripts": {

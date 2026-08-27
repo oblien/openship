@@ -13,6 +13,12 @@ import { apiRequest, paginate, ApiError } from "../lib/api-client";
 import { sseRequest } from "../lib/sse";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
+import {
+  renderReleaseImage,
+  validateReleaseRepository,
+  validateReleaseVersionUrl,
+  type ReleaseSource,
+} from "@repo/core";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -40,7 +46,10 @@ function printProject(project: Record<string, unknown>): void {
     ["name", project.name],
     ["slug", project.slug],
     ["framework", project.framework],
-    ["gitRepo", project.gitOwner && project.gitRepo ? `${project.gitOwner}/${project.gitRepo}` : null],
+    [
+      "gitRepo",
+      project.gitOwner && project.gitRepo ? `${project.gitOwner}/${project.gitRepo}` : null,
+    ],
     ["gitBranch", project.gitBranch],
     ["autoDeploy", project.autoDeploy],
     ["status", project.status],
@@ -52,6 +61,61 @@ function printProject(project: Record<string, unknown>): void {
 }
 
 const ENVIRONMENTS = ["production", "preview", "development"];
+
+interface ReleaseImageOptions {
+  imageTemplate: string;
+  githubRepo?: string;
+  versionUrl?: string;
+  pin?: string;
+}
+
+/** Build the complete source-transition payload before touching the API. */
+export function releaseImageSourceFromOptions(opts: ReleaseImageOptions): ReleaseSource {
+  const imageTemplate = opts.imageTemplate.trim();
+  const repo = opts.githubRepo?.trim() || undefined;
+  const versionUrl = opts.versionUrl?.trim() || undefined;
+  const pinnedVersion = opts.pin?.trim() || undefined;
+  const validationTag = pinnedVersion ?? "v1.2.3";
+  renderReleaseImage(imageTemplate, {
+    version: validationTag.replace(/^v/i, ""),
+    tag: validationTag,
+  });
+
+  // Repository and external URL are competing discovery modes. A pin is valid
+  // for either mode: it intentionally overrides discovery without discarding
+  // where future/latest releases come from when the pin is later removed.
+  if (repo && versionUrl) {
+    throw new Error("--github-repo cannot be combined with --version-url.");
+  }
+  if (repo) {
+    const invalidRepo = validateReleaseRepository(repo);
+    if (invalidRepo)
+      throw new Error(invalidRepo.replace("GitHub release repository", "--github-repo"));
+    return {
+      artifactKind: "image",
+      mode: "github",
+      imageTemplate,
+      repo,
+      ...(pinnedVersion ? { pinnedVersion } : {}),
+    };
+  }
+
+  if (!versionUrl && !pinnedVersion) {
+    throw new Error("Pass --github-repo, --version-url, or --pin.");
+  }
+  if (versionUrl) {
+    const invalidUrl = validateReleaseVersionUrl(versionUrl);
+    if (invalidUrl) throw new Error(invalidUrl.replace("Release version URL", "--version-url"));
+  }
+
+  return {
+    artifactKind: "image",
+    mode: "url",
+    imageTemplate,
+    ...(versionUrl ? { versionUrl } : {}),
+    ...(pinnedVersion ? { pinnedVersion } : {}),
+  };
+}
 
 // ─── list ────────────────────────────────────────────────────────────────────
 // GET /api/projects → { data, total, page, perPage } (project.routes.ts:46)
@@ -88,6 +152,39 @@ const getCmd = new Command("get")
     }),
   );
 
+// ─── release-image ───────────────────────────────────────────────────────────
+// PUT /api/projects/:id/release-image-source — atomic source transition.
+const releaseImageCmd = new Command("release-image")
+  .description("Track and deploy a versioned prebuilt container image")
+  .argument("<id>", "Project ID")
+  .requiredOption(
+    "--image-template <reference>",
+    "Image reference with {tag} or {version}, e.g. ghcr.io/acme/api:{tag}",
+  )
+  .option("--github-repo <owner/repo>", "Resolve versions from GitHub Releases")
+  .option("--version-url <https-url>", "HTTPS endpoint returning a version or tag")
+  .option("--pin <version>", "Deploy a fixed version instead of the discovered latest release")
+  .action(
+    action(async (id: string, opts: ReleaseImageOptions) => {
+      const source = releaseImageSourceFromOptions(opts);
+      const result = await apiRequest<{ data: Record<string, unknown> }>(
+        `/projects/${encodeURIComponent(id)}/release-image-source`,
+        { method: "PUT", body: JSON.stringify(source) },
+      );
+      if (isJsonMode()) {
+        printJson(result.data);
+        return;
+      }
+      const upstream =
+        source.mode === "github"
+          ? `GitHub Releases (${source.repo})`
+          : source.versionUrl
+            ? `version URL (${source.versionUrl})`
+            : `pinned version (${source.pinnedVersion})`;
+      ok(`\n  Project ${id} now deploys ${source.imageTemplate} from ${upstream}\n`);
+    }),
+  );
+
 // ─── create ──────────────────────────────────────────────────────────────────
 // POST /api/projects → { data } 201 (project.routes.ts:47, body = CreateProjectBody)
 const createCmd = new Command("create")
@@ -100,10 +197,7 @@ const createCmd = new Command("create")
   .option("--framework <framework>", "Stack/framework id")
   .option("--local-path <path>", "Local source path")
   .option("--port <port>", "Container port", (v) => Number(v))
-  .option(
-    "--type <type>",
-    "Project type: app | docker | services | monorepo",
-  )
+  .option("--type <type>", "Project type: app | docker | services | monorepo")
   .action(
     action(async (opts) => {
       const body: Record<string, unknown> = { name: opts.name };
@@ -507,7 +601,9 @@ const logsCmd = new Command("logs")
         return;
       }
 
-      for await (const ev of sseRequest(`/projects/${encodeURIComponent(id)}/logs/stream${tailQs}`)) {
+      for await (const ev of sseRequest(
+        `/projects/${encodeURIComponent(id)}/logs/stream${tailQs}`,
+      )) {
         if (ev.event === "error") {
           const parsed = safeParse(ev.data);
           err(`  ${(parsed?.error as string) ?? ev.data}`);
@@ -596,6 +692,7 @@ export const projectCommand = new Command("project")
 
 projectCommand.addCommand(listCmd);
 projectCommand.addCommand(getCmd);
+projectCommand.addCommand(releaseImageCmd);
 projectCommand.addCommand(createCmd);
 projectCommand.addCommand(deleteCmd);
 projectCommand.addCommand(envCmd);

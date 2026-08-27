@@ -60,6 +60,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   repos: {
     project: {
       findById: async () => ({ ...h.project }),
@@ -108,9 +109,7 @@ const dockerPathIdError = () =>
  */
 vi.mock("../../lib/deployment-runtime", () => ({
   deploymentContainerIds: async (dep: { containerId: string | null }) => {
-    const fromServices = h.serviceRows
-      .map((r) => r.containerId)
-      .filter((id): id is string => !!id);
+    const fromServices = h.serviceRows.map((r) => r.containerId).filter((id): id is string => !!id);
     if (fromServices.length > 0) return fromServices;
     return dep.containerId ? [dep.containerId] : [];
   },
@@ -140,7 +139,14 @@ vi.mock("../../lib/deployment-runtime", () => ({
   },
   withDeploymentPlatform: async (
     _dep: unknown,
-    fn: (resolved: { routing: unknown; serverId: string | null }) => Promise<unknown>,
+    fn: (resolved: {
+      routing: unknown;
+      executor: {
+        exec: (command: string) => Promise<{ stdout: string; stderr: string; code: number }>;
+      };
+      effectiveTarget: "server";
+      serverId: string | null;
+    }) => Promise<unknown>,
   ) => {
     try {
       return await fn({
@@ -150,6 +156,8 @@ vi.mock("../../lib/deployment-runtime", () => ({
             await h.removeRoute(hostname);
           },
         },
+        executor: { exec: async () => ({ stdout: "", stderr: "", code: 0 }) },
+        effectiveTarget: "server",
         serverId: "srv_1",
       });
     } finally {
@@ -176,7 +184,16 @@ vi.mock("../../lib/managed-edge-proxy", () => ({
   syncManagedEdgeRoutes: async () => ({ failures: [] }),
   edgeUnsyncedWarning: () => "",
 }));
-vi.mock("../../lib/routing-domains", () => ({ resolveManagedHostname: () => ({ isManaged: false }) }));
+vi.mock("../../lib/edge-reconcile", () => ({
+  reconcileServerEdge: async () => ({
+    converted: false,
+    updated: false,
+    edgeDown: false,
+  }),
+}));
+vi.mock("../../lib/routing-domains", () => ({
+  resolveManagedHostname: () => ({ isManaged: false }),
+}));
 vi.mock("../../lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: async (_serverId: string, fn: (executor: unknown) => Promise<unknown>) =>
@@ -191,7 +208,8 @@ vi.mock("../domains/project-route.service", () => ({
 const load = () => import("./project-runtime.service");
 
 /** dockerode's shape for "you asked me to stop a stopped container". */
-const notModified = () => Object.assign(new Error("container already stopped"), { statusCode: 304 });
+const notModified = () =>
+  Object.assign(new Error("container already stopped"), { statusCode: 304 });
 
 describe("project pause / resume", () => {
   beforeEach(() => {

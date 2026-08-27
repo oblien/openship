@@ -21,8 +21,10 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GithubReleasePayload, ReleaseSource } from "@repo/core";
 import { renderAssetName } from "@repo/core";
+import { env } from "../config/env";
 import { APP_VERSION } from "./app-version";
-import { assertPublicHttps, fetchAndExtractRelease } from "./release-download";
+import { fetchAndExtractRelease } from "./release-download";
+import { safeFetch } from "./safe-fetch";
 
 const __dirname = (() => {
   try {
@@ -68,7 +70,11 @@ function computeDataDir(): string {
 
 export class ReleaseDistMissingError extends Error {
   readonly code = "RELEASE_DIST_MISSING" as const;
-  constructor(public readonly name: string, distPath: string, options?: { cause?: unknown }) {
+  constructor(
+    public readonly name: string,
+    distPath: string,
+    options?: { cause?: unknown },
+  ) {
     super(
       `Release dist for "${name}" not found at ${distPath}. Build it locally, ` +
         `set its env override to a prebuilt dir, or ensure the release asset exists.`,
@@ -103,7 +109,7 @@ export interface ReleaseDistResult {
 
 /** Resolve (and download on miss) the prebuilt dist directory for a release source. */
 export async function resolveReleaseDist(spec: ReleaseDistSpec): Promise<ReleaseDistResult> {
-  const version = spec.version.replace(/^v/, "");
+  const version = spec.version.replace(/^v/i, "");
   const tag = `v${version}`;
 
   // Slot 1: env override.
@@ -156,7 +162,7 @@ export async function resolveReleaseDist(spec: ReleaseDistSpec): Promise<Release
 
 /** Non-throwing, no-download variant (env + repo-local + already-cached only). */
 export function resolveReleaseDistOrNull(spec: ReleaseDistSpec): string | null {
-  const version = spec.version.replace(/^v/, "");
+  const version = spec.version.replace(/^v/i, "");
   if (spec.envOverride) {
     const raw = process.env[spec.envOverride];
     if (raw) {
@@ -175,6 +181,43 @@ function subst(s: string, version: string, tag: string): string {
 
 // ─── Latest-version lookup (drift) ─────────────────────────────────────────────
 
+/**
+ * Both identities a published release carries.
+ *
+ * `version` is normalized for drift comparison and persistence; `tag` is the
+ * publisher's exact value for templates. Keeping both is load-bearing for
+ * container releases: GitHub tag `v1.2.3` must render `{tag}` as `v1.2.3`, not
+ * as the normalized `1.2.3`.
+ */
+export interface ResolvedReleaseVersion {
+  version: string;
+  tag: string;
+}
+
+export class ReleaseVersionUnavailableError extends Error {
+  readonly code = "RELEASE_VERSION_UNAVAILABLE" as const;
+
+  constructor(source: ReleaseSource) {
+    const target =
+      source.mode === "github"
+        ? source.repo
+          ? `GitHub repository ${source.repo}`
+          : "the configured GitHub repository"
+        : "the configured version URL";
+    super(
+      `Could not resolve a release version from ${target}. ` +
+        "Set pinnedVersion or make the upstream version source available.",
+    );
+    this.name = "ReleaseVersionUnavailableError";
+  }
+}
+
+function resolvedVersion(raw: string | null | undefined): ResolvedReleaseVersion | null {
+  const tag = raw?.trim();
+  if (!tag) return null;
+  return { version: tag.replace(/^v/i, ""), tag };
+}
+
 /** Fetch a repo's latest published release (best-effort; null on any failure). */
 export async function fetchLatestRelease(repo: string): Promise<GithubReleasePayload | null> {
   try {
@@ -191,11 +234,17 @@ export async function fetchLatestRelease(repo: string): Promise<GithubReleasePay
   }
 }
 
-/** Latest release tag (leading "v" stripped), or null. */
-export async function resolveLatestReleaseTag(repo: string): Promise<string | null> {
+/** Latest published GitHub tag with both normalized + exact identities. */
+export async function resolveLatestGitHubReleaseVersion(
+  repo: string,
+): Promise<ResolvedReleaseVersion | null> {
   const release = await fetchLatestRelease(repo);
-  const tag = release?.tag_name?.trim();
-  return tag ? tag.replace(/^v/, "") : null;
+  return resolvedVersion(release?.tag_name);
+}
+
+/** Latest release tag (leading "v" stripped), or null. Compatibility wrapper. */
+export async function resolveLatestReleaseTag(repo: string): Promise<string | null> {
+  return (await resolveLatestGitHubReleaseVersion(repo))?.version ?? null;
 }
 
 /**
@@ -203,26 +252,53 @@ export async function resolveLatestReleaseTag(repo: string): Promise<string | nu
  * github → latest release tag; url → a `versionUrl` returning either JSON
  * (`version`/`tag_name`) or a bare version string. Ignores `pinnedVersion` —
  * this is "what's the newest out there", the drift banner's `latest`. SSRF-
- * guarded (public HTTPS only), best-effort (null on any failure).
+ * guarded (HTTPS + DNS pinning; private networks only on self-hosted),
+ * best-effort (null on any failure).
  */
-export async function resolveLatestVersion(source: ReleaseSource): Promise<string | null> {
+export async function resolveLatestReleaseVersion(
+  source: ReleaseSource,
+): Promise<ResolvedReleaseVersion | null> {
   if (source.mode === "url") {
     if (!source.versionUrl) return null;
     return fetchVersionFromUrl(source.versionUrl);
   }
-  return source.repo ? resolveLatestReleaseTag(source.repo) : null;
+  return source.repo ? resolveLatestGitHubReleaseVersion(source.repo) : null;
 }
 
-async function fetchVersionFromUrl(url: string): Promise<string | null> {
+/**
+ * Resolve the version a deployment should ship. Explicit webhook/manual input
+ * wins, then a configured pin, then the latest upstream release. An unavailable
+ * arbitrary upstream never silently borrows Openship's own API version.
+ */
+export async function resolveReleaseVersion(
+  source: ReleaseSource,
+  opts?: { version?: string },
+): Promise<ResolvedReleaseVersion> {
+  const resolved =
+    resolvedVersion(opts?.version) ??
+    resolvedVersion(source.pinnedVersion) ??
+    (await resolveLatestReleaseVersion(source));
+  if (!resolved) throw new ReleaseVersionUnavailableError(source);
+  return resolved;
+}
+
+/** Newest normalized version, or null. Compatibility wrapper for drift callers. */
+export async function resolveLatestVersion(source: ReleaseSource): Promise<string | null> {
+  return (await resolveLatestReleaseVersion(source))?.version ?? null;
+}
+
+async function fetchVersionFromUrl(url: string): Promise<ResolvedReleaseVersion | null> {
   try {
-    assertPublicHttps(url, "releaseSource.versionUrl");
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 10_000);
-    const res = await fetch(url, {
+    // User-controlled URL: safeFetch resolves once, validates + pins the chosen
+    // IP, and repeats that validation for every redirect. Self-hosted installs
+    // may intentionally use a LAN release feed; multi-tenant cloud never may.
+    const res = await safeFetch(url, {
       headers: { "User-Agent": "openship" },
-      redirect: "follow",
-      signal: ctl.signal,
-    }).finally(() => clearTimeout(timer));
+      timeoutMs: 10_000,
+      maxRedirects: 5,
+      maxBodyBytes: 8192,
+      allowPrivate: !env.CLOUD_MODE,
+    });
     if (!res.ok) return null;
     const body = (await res.text()).trim();
     if (!body) return null;
@@ -231,12 +307,12 @@ async function fetchVersionFromUrl(url: string): Promise<string | null> {
       try {
         const parsed = JSON.parse(body) as { version?: unknown; tag_name?: unknown };
         const v = typeof parsed.version === "string" ? parsed.version : parsed.tag_name;
-        return typeof v === "string" && v.trim() ? v.trim().replace(/^v/, "") : null;
+        return typeof v === "string" ? resolvedVersion(v) : null;
       } catch {
         return null;
       }
     }
-    return body.replace(/^v/, "");
+    return resolvedVersion(body);
   } catch {
     return null;
   }

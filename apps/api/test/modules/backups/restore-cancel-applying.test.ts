@@ -21,7 +21,8 @@
  * cancel it there. What they pin is not "cancel works" but which of the two
  * promises each interruption point produces — including the two that decline to
  * cancel at all (past the last write, and cancel on an already-terminal row),
- * and the forced path that exists so a wedged row can always be cleared.
+ * and the rule that an unacknowledged applying writer stays blocking rather
+ * than being made to look quiescent by a DB-only status change.
  */
 
 import { Readable } from "node:stream";
@@ -75,6 +76,8 @@ const h = vi.hoisted(() => {
     /** Everything published on the live channel, in order. */
     events: [] as Array<Record<string, unknown>>,
     row: null as Record<string, unknown> | null,
+    claimResult: null as null | "claimed" | "project_unavailable" | "state_changed",
+    cancelInterleaveToApplying: false,
     waiters: [] as Array<{ pred: (t: Tr) => boolean; resolve: (t: Tr) => void }>,
   };
 });
@@ -107,10 +110,23 @@ vi.mock("@repo/db", () => ({
         return h.row;
       },
       findById: async () => h.row,
+      claimApply: async () => {
+        if (h.claimResult) return h.claimResult;
+        if (h.row?.status !== "prepared" || h.row.cancelRequested === true) {
+          return "state_changed";
+        }
+        h.row.status = "applying";
+        return "claimed";
+      },
       // Mirrors the repo's `coalesce(cancel_requested_at, now())`: the FIRST
       // press is the one that starts the force-cancel clock, so a second press
       // must not push the deadline back out.
       requestCancel: async () => {
+        if (h.cancelInterleaveToApplying) {
+          // Preserve the object returned by cancel's first read, then model an
+          // apply claim winning before requestCancel takes its UPDATE lock.
+          h.row = { ...h.row!, status: "applying" };
+        }
         h.row!.cancelRequested = true;
         h.row!.cancelRequestedAt ??= new Date();
         return h.row;
@@ -322,10 +338,52 @@ beforeEach(() => {
   h.transitions.length = 0;
   h.events.length = 0;
   h.row = null;
+  h.claimResult = null;
+  h.cancelInterleaveToApplying = false;
   h.waiters.length = 0;
 });
 
 describe("cancelling before the first write costs nothing", () => {
+  it("does not schedule destructive work when project deletion wins apply admission", async () => {
+    h.row = {
+      id: "bks_blocked",
+      runId: "bkr_1",
+      projectId: "prj_1",
+      organizationId: "org_1",
+      status: "prepared",
+      confirmationToken: TOKEN,
+      meta: {},
+    };
+    h.claimResult = "project_unavailable";
+
+    await expect(new RestoreOrchestrator().apply(CTX, "bks_blocked", TOKEN)).rejects.toThrow(
+      /project is being deleted/i,
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(h.calls).toEqual([]);
+    expect(h.transitions).toEqual([]);
+  });
+
+  it("treats a prepared-to-applying race as cooperative, not immediately terminal", async () => {
+    h.row = {
+      id: "bks_racing",
+      runId: "bkr_1",
+      projectId: "prj_1",
+      organizationId: "org_1",
+      status: "prepared",
+      confirmationToken: TOKEN,
+      meta: {},
+    };
+    h.cancelInterleaveToApplying = true;
+
+    const outcome = await new RestoreOrchestrator().cancel(CTX, "bks_racing");
+
+    expect(outcome).toMatchObject({ status: "applying", forced: false });
+    expect(h.transitions).toEqual([]);
+    expect(h.row).toMatchObject({ status: "applying", cancelRequested: true });
+  });
+
   it("does not let `prepared` overwrite a cancel taken during prepare", async () => {
     // The old bug, verbatim: cancel wrote the row, runPrepare kept going and
     // stamped `prepared` over it, and the restore was applyable again.
@@ -358,7 +416,6 @@ describe("cancelling before the first write costs nothing", () => {
     expect(h.calls).toEqual(["stop", "start"]);
     expect(h.running).toBe(true);
   });
-
 });
 
 describe("cancelling mid-write says so, and leaves the service down", () => {
@@ -401,10 +458,7 @@ describe("cancelling mid-write says so, and leaves the service down", () => {
     // wiped-and-replaced, the second was never touched. Reporting this as a clean
     // cancel would be a straightforward lie.
     h.running = true;
-    h.artifacts = [
-      volumeArtifact("openship-shop-pgdata"),
-      volumeArtifact("openship-shop-uploads"),
-    ];
+    h.artifacts = [volumeArtifact("openship-shop-pgdata"), volumeArtifact("openship-shop-uploads")];
 
     const { last } = await cancelAtGate("receive-end", { abortThrows: false });
 
@@ -471,11 +525,10 @@ describe("the two cancels that decline", () => {
   });
 });
 
-describe("the forced path exists so a wedged row can always be cleared", () => {
-  it("force-terminals an apply that ignored its cancel window", async () => {
-    // No checkpoint answered — the apply is gone, or stuck somewhere with no
-    // checkpoint ahead of it. The row has to become terminal regardless: while
-    // it is `applying` it blocks deleting the project.
+describe("an applying writer remains blocking until the worker acknowledges cancellation", () => {
+  it("never terminalizes an old applying row from a request", async () => {
+    // Age is not proof the writer stopped. Taking only the DB row terminal would
+    // let project teardown destroy this target while the old writer still runs.
     h.row = {
       id: "bks_wedged",
       organizationId: "org_1",
@@ -488,20 +541,9 @@ describe("the forced path exists so a wedged row can always be cleared", () => {
 
     const outcome = await new RestoreOrchestrator().cancel(CTX, "bks_wedged");
 
-    expect(outcome).toMatchObject({ accepted: true, status: "cancelled", forced: true });
-    const last = h.transitions.at(-1)!;
-    expect(last.status).toBe("cancelled");
-    // Identical partial-data wording to the cooperative path, plus the one thing
-    // it knows less about: whether the write kept going after this.
-    expect(String(last.patch?.errorMessage)).toContain('volume "openship-shop-pgdata"');
-    expect(String(last.patch?.errorMessage)).toContain("partial data");
-    expect(String(last.patch?.errorMessage)).toContain("force-cancelled");
-    expect(metaOf(last)).toMatchObject({
-      forced: true,
-      destructive: true,
-      partialWrite: true,
-      serviceLeftStopped: true,
-    });
+    expect(outcome).toMatchObject({ accepted: true, status: "applying", forced: false });
+    expect(h.transitions).toEqual([]);
+    expect(h.row).toMatchObject({ status: "applying", cancelRequested: true });
   });
 
   it("does not force one that has not had its window yet", async () => {
@@ -523,7 +565,7 @@ describe("the forced path exists so a wedged row can always be cleared", () => {
     expect(h.transitions).toEqual([]);
   });
 
-  it("does not let a second press push the force deadline back out", async () => {
+  it("keeps the first cancel timestamp without using it to fake quiescence", async () => {
     const firstPress = new Date(Date.now() - 5 * 60 * 1000);
     h.row = {
       id: "bks_wedged",
@@ -537,10 +579,10 @@ describe("the forced path exists so a wedged row can always be cleared", () => {
 
     await new RestoreOrchestrator().cancel(CTX, "bks_wedged");
 
-    // requestCancel coalesces, so the clock still runs from the first press —
-    // otherwise an impatient operator pressing every 30s could never reach the
-    // force path at all.
+    // requestCancel still coalesces for audit/history, but no amount of elapsed
+    // wall time converts an unacknowledged abort into proof the writer stopped.
     expect(h.row!.cancelRequestedAt).toBe(firstPress);
-    expect(h.transitions.at(-1)!.status).toBe("cancelled");
+    expect(h.row!.status).toBe("applying");
+    expect(h.transitions).toEqual([]);
   });
 });

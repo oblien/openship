@@ -18,6 +18,7 @@ import {
   DEFAULT_RESOURCE_CONFIG,
   cloudCpus,
   type BuildConfig,
+  type ImageArtifactConfig,
   type DeployConfig,
   type BuildResult,
   type DeploymentResult,
@@ -59,9 +60,14 @@ import {
   sq,
   type BuildEnvironment,
 } from "./build-pipeline";
-import { CloudComposeSupport, resolveCloudWorkloadCmd, type CloudBuiltArtifact } from "./cloud/compose";
+import {
+  CloudComposeSupport,
+  resolveCloudWorkloadCmd,
+  type CloudBuiltArtifact,
+} from "./cloud/compose";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
 import { createDockerBuildContext } from "./docker-build-context";
+import { resolveDockerBuildArgs } from "./docker-build-args";
 import {
   dockerBuildContextDirectory,
   normalizeDockerRelativePath,
@@ -75,7 +81,19 @@ import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "
 import { checkGit } from "../system/checks";
 import { installGit } from "../system/installer";
 import { isRuntimeNotFoundError } from "../system/errors";
-import { STACKS, TRANSFER_EXCLUDES, buildOutputTransferExcludes, SYSTEM, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, nodeBinPathExport, type StackId, type StackDefinition, type ComposeAdvanced } from "@repo/core";
+import {
+  STACKS,
+  TRANSFER_EXCLUDES,
+  buildOutputTransferExcludes,
+  SYSTEM,
+  safeErrorMessage,
+  missingOutputDirectoryMessage,
+  packageManagerEnsureCommand,
+  nodeBinPathExport,
+  type StackId,
+  type StackDefinition,
+  type ComposeAdvanced,
+} from "@repo/core";
 
 type CloudWorkspaceRuntime = Awaited<ReturnType<WorkspaceHandle["runtime"]>>;
 const DOCKERFILE_SOURCE_IMAGE = "node:22";
@@ -93,7 +111,9 @@ function formatCloudError(err: unknown): string {
   if (!err || typeof err !== "object") return base;
   const e = err as { status?: number; code?: string; requestId?: string; details?: unknown };
   const tags: string[] = [];
-  const codePart = [e.code, typeof e.status === "number" ? `HTTP ${e.status}` : null].filter(Boolean).join(" ");
+  const codePart = [e.code, typeof e.status === "number" ? `HTTP ${e.status}` : null]
+    .filter(Boolean)
+    .join(" ");
   if (codePart) tags.push(codePart);
   if (e.requestId) tags.push(`requestId=${e.requestId}`);
   let detail = "";
@@ -155,7 +175,9 @@ export interface CloudAdminProxy {
   deletePage?: (slug: string) => Promise<void>;
 }
 
-function primaryPublicEndpoint(config: Pick<DeployConfig, "publicEndpoints">): DeployPrimaryEndpoint | undefined {
+function primaryPublicEndpoint(
+  config: Pick<DeployConfig, "publicEndpoints">,
+): DeployPrimaryEndpoint | undefined {
   return config.publicEndpoints?.[0];
 }
 
@@ -169,8 +191,11 @@ function endpointCustomDomain(endpoint?: DeployPrimaryEndpoint): string | undefi
   return endpoint?.domainType === "custom" && domain ? domain : undefined;
 }
 
-function fallbackRuntimeName(config: Pick<DeployConfig, "runtimeName" | "projectId" | "deploymentId">): string {
-  const raw = config.runtimeName ?? `${config.projectId.slice(0, 20)}-${config.deploymentId.slice(0, 8)}`;
+function fallbackRuntimeName(
+  config: Pick<DeployConfig, "runtimeName" | "projectId" | "deploymentId">,
+): string {
+  const raw =
+    config.runtimeName ?? `${config.projectId.slice(0, 20)}-${config.deploymentId.slice(0, 8)}`;
   const normalized = raw
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
@@ -327,6 +352,17 @@ function cloudBuildContextPath(config: BuildConfig): string {
   return dockerBuildContextDirectory(config) || normalizeDockerRelativePath(config.rootDirectory);
 }
 
+/** Compile a cloud Dockerfile with the exact same effective build arguments as
+ * Docker socket/TCP/SSH builds. Exported as a pure seam for regression tests. */
+export function compileCloudDockerfilePlan(
+  source: string,
+  config: Pick<BuildConfig, "envVars" | "buildArgs">,
+): WorkspaceBuildPlan {
+  return compileDockerfileToWorkspacePlan(source, {
+    buildArgs: resolveDockerBuildArgs(config),
+  });
+}
+
 // ─── CloudRuntime ────────────────────────────────────────────────────────────
 
 /** containerId prefix marking a static-page cloud deployment (`page:<slug>`),
@@ -375,7 +411,10 @@ export async function provisionCloudWorkspace(
       },
     });
   } catch (err) {
-    logger?.log(`Failed to create workspace from image "${config.image}": ${formatCloudError(err)}\n`, "error");
+    logger?.log(
+      `Failed to create workspace from image "${config.image}": ${formatCloudError(err)}\n`,
+      "error",
+    );
     throw err;
   }
 
@@ -383,7 +422,11 @@ export async function provisionCloudWorkspace(
   try {
     if (config.mode === "temporary" && config.ttl) {
       try {
-        await ws.lifecycle.makeTemporary({ ttl: config.ttl, ttl_action: "remove", remove_on_exit: true });
+        await ws.lifecycle.makeTemporary({
+          ttl: config.ttl,
+          ttl_action: "remove",
+          remove_on_exit: true,
+        });
       } catch {
         // TTL failure is non-fatal - workspace will be cleaned up eventually.
       }
@@ -438,6 +481,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
   readonly name = "cloud";
   readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
     "build",
+    "prebuiltImage",
     "deploy",
     "multiServiceDeploy",
     "stop",
@@ -466,7 +510,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
    * here (A1); host-level keys — caps/devices/privileged/sysctls/ulimits/
    * logging/dns — join this set as they're added in later phases.
    */
-  readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced> = new Set<keyof ComposeAdvanced>([
+  readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced> = new Set<
+    keyof ComposeAdvanced
+  >([
     "healthcheck",
     // Namespace sharing has no Oblien equivalent — a workspace is not a container
     // whose netns/pidns a peer can join. Declared here so the deploy warns once
@@ -490,10 +536,13 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
   // `this.client` already has the needed scope there.
   private readonly adminProxy?: CloudAdminProxy;
   private readonly builtArtifacts = new Map<string, CloudBuiltArtifact>();
-  private readonly activeBuilds = new Map<string, {
-    abort: AbortController;
-    workspaceIds: Set<string>;
-  }>();
+  private readonly activeBuilds = new Map<
+    string,
+    {
+      abort: AbortController;
+      workspaceIds: Set<string>;
+    }
+  >();
   private readonly compose: CloudComposeSupport;
 
   /**
@@ -507,10 +556,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
    */
   private readonly allowHostBuild: boolean;
 
-  constructor(
-    client: Oblien,
-    opts?: { adminProxy?: CloudAdminProxy; allowHostBuild?: boolean },
-  ) {
+  constructor(client: Oblien, opts?: { adminProxy?: CloudAdminProxy; allowHostBuild?: boolean }) {
     this.client = client;
     this.adminProxy = opts?.adminProxy;
     this.allowHostBuild = opts?.allowHostBuild ?? false;
@@ -587,7 +633,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
         level: "info",
         message: `Reassigning ${domain} from the previous deployment...\n`,
       });
-      await this.ws(owner.owner_id).domains.disconnect().catch(() => {});
+      await this.ws(owner.owner_id)
+        .domains.disconnect()
+        .catch(() => {});
       await ws.domains.connect({ domain, port });
     }
   }
@@ -601,8 +649,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     const routes = res?.data ?? [];
     const match = routes.find(
       (r) =>
-        (r.hostname ?? "").toLowerCase() === target ||
-        (r.domain ?? "").toLowerCase() === target,
+        (r.hostname ?? "").toLowerCase() === target || (r.domain ?? "").toLowerCase() === target,
     );
     return match ? { owner_id: match.owner_id, owner_type: match.owner_type } : null;
   }
@@ -625,6 +672,106 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
   }
 
   // ── Build lifecycle ────────────────────────────────────────────────────
+
+  /**
+   * Materialize a prebuilt container image as the same opaque artifact Cloud's
+   * deploy path already understands: a temporary workspace id.
+   *
+   * Unlike a source build, no command is executed in the workspace. Creating it
+   * directly from the application image preserves the image's own ENTRYPOINT,
+   * CMD and WORKDIR; deploy keeps those defaults when `prebuiltImage` is set.
+   */
+  async prepareImage(config: ImageArtifactConfig, logger?: BuildLogger): Promise<BuildResult> {
+    const log = logger ?? new BuildLogger();
+    const startedAt = Date.now();
+    const activeBuild = this.createActiveBuild(config.sessionId);
+    let workspaceId: string | undefined;
+
+    const discardWorkspace = async (): Promise<void> => {
+      if (!workspaceId) return;
+      await this.ws(workspaceId)
+        .delete()
+        .catch(() => {});
+      this.builtArtifacts.delete(workspaceId);
+      this.untrackActiveBuildWorkspace(config.sessionId, workspaceId);
+    };
+
+    const cancelled = async (): Promise<BuildResult> => {
+      await discardWorkspace();
+      log.step("build", "failed", "Image preparation cancelled");
+      return {
+        sessionId: config.sessionId,
+        status: "cancelled",
+        // Keep the ref even after our best-effort delete: the pipeline can make
+        // an idempotent cleanup retry if that delete failed mid-cancellation.
+        imageRef: workspaceId,
+        durationMs: Date.now() - startedAt,
+        artifactOwned: true,
+      };
+    };
+
+    try {
+      if (activeBuild.abort.signal.aborted) return await cancelled();
+
+      const imageRef = config.imageRef.trim();
+      if (!imageRef) throw new Error("Prebuilt image reference is required");
+
+      log.step("build", "running", `Creating workspace from prebuilt image ${imageRef}`);
+      const provisioned = await this.provisionWorkspace(
+        {
+          name: config.slug ?? `image-${config.projectId.slice(0, 20)}`,
+          image: imageRef,
+          mode: "temporary",
+          resources: config.resources,
+          env: config.envVars,
+          ttl: "15m",
+        },
+        log,
+      );
+      workspaceId = provisioned.workspaceId;
+      this.trackActiveBuildWorkspace(config.sessionId, workspaceId);
+
+      if (activeBuild.abort.signal.aborted) return await cancelled();
+
+      // The runtime plan is intentionally empty: any command/workdir we invent
+      // here would replace the application image's baked-in process contract.
+      this.builtArtifacts.set(workspaceId, {
+        workspaceId,
+        runtime: {
+          workdir: "/",
+          env: {},
+          exposedPorts: [],
+          baseImage: imageRef,
+        },
+      });
+
+      log.step("build", "completed", `Prebuilt image workspace ${workspaceId} is ready`);
+      return {
+        sessionId: config.sessionId,
+        status: "deploying",
+        imageRef: workspaceId,
+        durationMs: Date.now() - startedAt,
+        artifactOwned: true,
+      };
+    } catch (err) {
+      if (activeBuild.abort.signal.aborted) return await cancelled();
+      await discardWorkspace();
+      const message = formatCloudError(err);
+      log.step("build", "failed", `Image preparation failed: ${message}`);
+      return {
+        sessionId: config.sessionId,
+        status: "failed",
+        // Same retry contract as cancellation. Undefined means provisioning
+        // failed before Oblien handed us an owned workspace.
+        imageRef: workspaceId,
+        durationMs: Date.now() - startedAt,
+        errorMessage: `Image preparation failed: ${message}`,
+        artifactOwned: true,
+      };
+    } finally {
+      this.activeBuilds.delete(config.sessionId);
+    }
+  }
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
     const log = logger ?? new BuildLogger();
@@ -653,7 +800,6 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
           "run this project's install and build commands on the machine this API runs on",
         );
       }
-
 
       // 1. Provision workspace + acquire runtime token (logs to terminal).
       //    Folder-upload flow: adopt the workspace the browser already uploaded
@@ -713,7 +859,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
                 resolveProjectDir(buildDir, config.rootDirectory),
               );
               if (selfContained) {
-                log.log("Detected self-contained build output — uploading the bundle (no install on cloud).\n");
+                log.log(
+                  "Detected self-contained build output — uploading the bundle (no install on cloud).\n",
+                );
                 await transferLocalDirectory(
                   selfContained.bundleDir,
                   { kind: "cloud-runtime", runtime: rt, path: "/app" },
@@ -764,7 +912,11 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
                 log.log("Installing production dependencies on cloud...\n");
                 const pmEnsure = packageManagerEnsureCommand(config.packageManager);
                 const fullInstall = pmEnsure ? `${pmEnsure} && ${installCmd}` : installCmd;
-                await this.execAndStream(rt, ["sh", "-c", `cd /app && ${fullInstall}`], log.callback);
+                await this.execAndStream(
+                  rt,
+                  ["sh", "-c", `cd /app && ${fullInstall}`],
+                  log.callback,
+                );
               }
             },
           });
@@ -872,7 +1024,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     try {
       log.log("Build strategy: Dockerfile plan (build in Oblien workspaces)\n");
       source = await this.resolveDockerfileBuildSource(config, log);
-      const plan = compileDockerfileToWorkspacePlan(source.dockerfile);
+      const plan = compileCloudDockerfilePlan(source.dockerfile, config);
 
       const blocking = plan.diagnostics.filter(
         (item) => item.severity === "error" || item.severity === "unsupported",
@@ -988,10 +1140,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     // normalizers reject `..` upstream; this is the backstop at the sink.
     // `dockerfileName` is relative to the resolved BUILD context, which is the tree
     // root unless the config narrowed it (a compose service's `build:`).
-    const dockerfilePath = resolveWithinDirectory(
-      context.buildContextDir,
-      context.dockerfileName,
-    );
+    const dockerfilePath = resolveWithinDirectory(context.buildContextDir, context.dockerfileName);
     const dockerfile = await readFile(dockerfilePath, "utf-8");
 
     const contextRoot = context.contextSubdir
@@ -1073,11 +1222,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
         logger.log(`Checking Dockerfile candidate: ${candidate}\n`);
         const dockerfile = await executor
           .exec(
-            [
-              `cd ${sq(sourceDir)}`,
-              `test -f ${sq(candidate)}`,
-              `cat ${sq(candidate)}`,
-            ].join(" && "),
+            [`cd ${sq(sourceDir)}`, `test -f ${sq(candidate)}`, `cat ${sq(candidate)}`].join(
+              " && ",
+            ),
             { timeout: 30_000 },
           )
           .catch(() => null);
@@ -1371,7 +1518,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       'echo "Dockerfile context prepared."',
     ].join("\n");
 
-    logger.log(`Preparing Dockerfile build workspace for repository clone (branch: ${config.branch})...\n`);
+    logger.log(
+      `Preparing Dockerfile build workspace for repository clone (branch: ${config.branch})...\n`,
+    );
     await this.ensureWorkspaceGit(targetRuntime, logger, "Dockerfile build workspace");
     logger.log(`Cloning Dockerfile context in build workspace (branch: ${config.branch})...\n`);
     await this.execAndStream(targetRuntime, ["sh", "-c", cloneCommand], logger.callback, 900);
@@ -1701,9 +1850,13 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
 
     // 3. Prepare production directory - copy only what's needed at runtime
     const builtArtifact = this.builtArtifacts.get(workspaceId);
-    const prodPaths = config.productionPaths;
-    const workDir =
-      builtArtifact?.runtime.workdir ?? (prodPaths?.length ? "/app/production" : "/app");
+    // productionPaths belongs to source/buildpack output. Moving paths around
+    // inside a prebuilt application image mutates its filesystem contract and
+    // can break its baked-in WORKDIR before its default process even starts.
+    const prodPaths = config.prebuiltImage ? undefined : config.productionPaths;
+    const workDir = config.prebuiltImage
+      ? "/"
+      : (builtArtifact?.runtime.workdir ?? (prodPaths?.length ? "/app/production" : "/app"));
 
     if (prodPaths?.length) {
       try {
@@ -1777,7 +1930,10 @@ fi`;
     }
 
     // 4. Create a workload for the application process
-    const startCommand = builtArtifact?.runtime.startCommand || config.startCommand || "npm start";
+    const startCommand =
+      builtArtifact?.runtime.startCommand ||
+      config.startCommand ||
+      (config.prebuiltImage ? undefined : "npm start");
     const projectEnv = splitRuntimeEnv(config.envVars);
     if (projectEnv.dropped.length > 0) {
       onLog?.({
@@ -1805,34 +1961,51 @@ fi`;
     // Roots are `[workDir, "/app"]`, not `[workDir]`: a stack with
     // productionPaths runs from /app/production while node_modules stays at /app.
     //
-    // Gated on the BUILDPACK arm only. `builtArtifacts` is populated solely by
-    // buildDockerfileWorkspace, so a truthy builtArtifact means the user's own
-    // repository Dockerfile produced this image and both workDir and startCommand
-    // came out of it — that image owns its PATH, exactly the reason
-    // resolveCloudWorkloadCmd skips the prelude for a compose service's argv.
-    // Prepending ours there would shadow its binaries for no benefit.
+    // Gated on the BUILDPACK arm only. A Dockerfile-built artifact owns its PATH,
+    // exactly the reason resolveCloudWorkloadCmd skips the prelude for a compose
+    // service's argv. A prebuilt image is also tracked in `builtArtifacts`, and
+    // the explicit prebuiltImage check makes the same ownership rule clear even
+    // if that bookkeeping changes later. Prepending ours would shadow image
+    // binaries for no benefit.
     //
-    // Non-null: the builder returns undefined only for an empty start command,
-    // and `startCommand` above has a `|| "npm start"` fallback.
+    // A prebuilt image with no explicit override deliberately resolves to
+    // undefined: not creating an Oblien workload is what leaves its baked-in
+    // CMD, ENTRYPOINT and WORKDIR untouched.
     const workloadCmd = resolveCloudWorkloadCmd({
       startCommand,
       workdir: workDir,
-      binPathExport: builtArtifact
-        ? ""
-        : nodeBinPathExport(config.packageManager, [workDir, "/app"]),
-    })!;
+      binPathExport:
+        builtArtifact || config.prebuiltImage
+          ? ""
+          : nodeBinPathExport(config.packageManager, [workDir, "/app"]),
+    });
 
-    try {
-      await ws.workloads.create({
-        name: "app",
-        cmd: workloadCmd,
-        working_dir: workDir,
-        env: [...envArray, `PORT=${config.port}`],
-        restart_policy: restartPolicy,
-        max_restarts: 10,
+    if (workloadCmd) {
+      try {
+        // A workspace created directly from an application image may already
+        // have its default `app` workload. An explicit command is a REPLACEMENT,
+        // not a second process competing for the same port. This matches the
+        // image-only compose path's replace-before-create contract.
+        if (config.prebuiltImage) {
+          await ws.workloads.delete("app").catch(() => {});
+        }
+        await ws.workloads.create({
+          name: "app",
+          cmd: workloadCmd,
+          working_dir: workDir,
+          env: [...envArray, `PORT=${config.port}`],
+          restart_policy: restartPolicy,
+          max_restarts: 10,
+        });
+      } catch (err) {
+        throw new Error(`Failed to create workload: ${err instanceof Error ? err.message : err}`);
+      }
+    } else {
+      log({
+        timestamp: now(),
+        level: "info",
+        message: "Using the prebuilt image's default command and working directory.\n",
       });
-    } catch (err) {
-      throw new Error(`Failed to create workload: ${err instanceof Error ? err.message : err}`);
     }
 
     // 5. Expose the primary configured public endpoint, if any.
@@ -2011,7 +2184,9 @@ fi`;
         pg = result.page;
       } catch (err) {
         if (isOutputPathError(err)) throw outputDirError();
-        throw new Error(`Failed to create static page for slug "${pageSlug}": ${safeErrorMessage(err)}`);
+        throw new Error(
+          `Failed to create static page for slug "${pageSlug}": ${safeErrorMessage(err)}`,
+        );
       }
       return { ...pg, url: undefined };
     };
@@ -2043,7 +2218,9 @@ fi`;
         });
         page = result.page;
       } catch (err) {
-        throw new Error(`Failed to redeploy static page for slug "${pageSlug}": ${safeErrorMessage(err)}`);
+        throw new Error(
+          `Failed to redeploy static page for slug "${pageSlug}": ${safeErrorMessage(err)}`,
+        );
       }
     } else {
       if (existingPage) {
@@ -2511,10 +2688,7 @@ fi`;
    * workspace id (see how cloud.ts already passes containerId into
    * `this.ws(containerId)` throughout this file).
    */
-  async openServiceShell(
-    containerId: string,
-    opts?: ShellOptions,
-  ): Promise<ShellSession> {
+  async openServiceShell(containerId: string, opts?: ShellOptions): Promise<ShellSession> {
     const cols = clampShellWindow(opts?.cols, 80, 1, 1000);
     const rows = clampShellWindow(opts?.rows, 24, 1, 500);
     const shellPath = "/bin/sh"; // Oblien workspaces ship busybox; bash often unavailable
@@ -2635,10 +2809,7 @@ fi`;
     return this.compose.deployServiceWorkload(group, config, onLog);
   }
 
-  async finalizeServiceGroup(
-    group: MultiServiceGroupHandle,
-    onLog?: LogCallback,
-  ): Promise<void> {
+  async finalizeServiceGroup(group: MultiServiceGroupHandle, onLog?: LogCallback): Promise<void> {
     return this.compose.finalizeGroup(group.id, onLog);
   }
 
@@ -2662,7 +2833,10 @@ fi`;
    * Check whether a subdomain slug is available on opsh.io.
    * Uses Oblien's standalone `domain.checkSlug()` - no workspace needed.
    */
-  async checkSlug(slug: string, domain: string = SYSTEM.DOMAINS.CLOUD_DOMAIN): Promise<{ available: boolean; url: string }> {
+  async checkSlug(
+    slug: string,
+    domain: string = SYSTEM.DOMAINS.CLOUD_DOMAIN,
+  ): Promise<{ available: boolean; url: string }> {
     const result = await this.client.domain.checkSlug({ slug, domain });
     return { available: result.available, url: result.url };
   }

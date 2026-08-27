@@ -15,6 +15,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
   commandToArgv,
+  composeBuildIssues,
   composeMountIssues,
   composeMountToSpec,
   composePortToSpec,
@@ -199,10 +200,7 @@ const createCmd = stackCommand("create")
   .option("--depends-on <service>", "Service this depends on (repeatable)", collect, [])
   .option("--env <KEY=VALUE>", "Compose environment default (repeatable)", collect, [])
   .option("--command <command>", "Override the container command")
-  .option(
-    "--restart <policy>",
-    "Restart policy: no | always | on-failure | unless-stopped",
-  )
+  .option("--restart <policy>", "Restart policy: no | always | on-failure | unless-stopped")
   .option("--expose", "Expose the service publicly through managed routing")
   .option("--exposed-port <port>", "Container port to expose publicly")
   .option("--domain <label>", "Free subdomain label (with --expose)")
@@ -335,6 +333,18 @@ function mapDependsOn(deps: unknown): string[] {
   return [];
 }
 
+function mapBuildArgs(raw: unknown): Record<string, string | null> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const args: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value === null || value === undefined) args[key] = null;
+    else if (["string", "number", "boolean"].includes(typeof value)) {
+      args[key] = String(value);
+    }
+  }
+  return Object.keys(args).length > 0 ? args : undefined;
+}
+
 /**
  * Shared namespaces for the sync payload, refusing what can't be honored.
  *
@@ -372,12 +382,22 @@ export function mapComposeService(
   if (typeof d.image === "string") svc.image = d.image;
 
   const build = d.build;
+  // `docker compose config` has already normalized local contexts to absolute
+  // paths, so those are safe here (and are relativized back below). Everything
+  // else follows the same fail-closed build policy as the API YAML importer:
+  // syncing must not silently discard a target, secret/SSH contract, malformed
+  // arg, or another build option that can change the produced image.
+  for (const issue of composeBuildIssues(build, { allowAbsoluteContext: true })) {
+    if (issue.blocking) errors.push(`  ${name}: ${issue.reason}`);
+  }
   if (typeof build === "string") {
     svc.build = relativizeContext(build, baseDir);
   } else if (build && typeof build === "object") {
     const b = build as Record<string, unknown>;
     svc.build = relativizeContext(typeof b.context === "string" ? b.context : ".", baseDir);
     if (typeof b.dockerfile === "string") svc.dockerfile = b.dockerfile;
+    const buildArgs = mapBuildArgs(b.args);
+    if (buildArgs) svc.buildArgs = buildArgs;
   }
 
   const ports = mapPorts(d.ports);
@@ -405,13 +425,25 @@ export function mapComposeService(
   // namespaces the same way it lost read-only mounts.
   const { advanced, errors: namespaceErrors } = mapNamespaces(name, d);
   errors.push(...namespaceErrors);
+  // `docker compose config` has already expanded args, including turning `$$`
+  // into a literal `$`. An explicit empty marker prevents the API from ever
+  // treating that normalized literal as a raw template on a later deploy.
+  if (
+    build &&
+    typeof build === "object" &&
+    Object.hasOwn(build as Record<string, unknown>, "args")
+  ) {
+    advanced.buildArgTemplateKeys = [];
+  }
   if (Object.keys(advanced).length > 0) svc.advanced = advanced;
 
   return svc;
 }
 
 const syncCmd = stackCommand("sync")
-  .description("Sync a stack's services from a docker-compose file (services not in the file are removed)")
+  .description(
+    "Sync a stack's services from a docker-compose file (services not in the file are removed)",
+  )
   .argument("<compose-file>", "Path to docker-compose.yml / compose.yaml")
   .option("-y, --yes", "Skip the confirmation prompt")
   .action(async (composeFile: string, opts) => {
@@ -419,11 +451,10 @@ const syncCmd = stackCommand("sync")
     // No YAML dependency in the CLI: let Docker Compose parse + interpolate,
     // then map its normalized JSON to the sync payload.
     const abs = path.resolve(composeFile);
-    const proc = spawnSync(
-      "docker",
-      ["compose", "-f", abs, "config", "--format", "json"],
-      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-    );
+    const proc = spawnSync("docker", ["compose", "-f", abs, "config", "--format", "json"], {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
     if (proc.error) {
       if ((proc.error as NodeJS.ErrnoException).code === "ENOENT") {
         err("  `docker` not found. `service sync` uses Docker Compose to parse the file.");
@@ -642,12 +673,13 @@ const envSetCmd = stackCommand("set")
   .description("Set a service's environment variables for one environment")
   .argument("<service>", "Service name or id")
   .argument("<pairs...>", "KEY=VALUE pairs")
-  .option("-e, --env <environment>", "Environment: production | preview | development", "production")
-  .option("--secret", "Mark the provided variables as secret")
   .option(
-    "--replace",
-    "Replace ALL variables for this environment with only the given pairs",
+    "-e, --env <environment>",
+    "Environment: production | preview | development",
+    "production",
   )
+  .option("--secret", "Mark the provided variables as secret")
+  .option("--replace", "Replace ALL variables for this environment with only the given pairs")
   .action(async (service: string, pairs: string[], opts) => {
     requireAuth();
     try {
@@ -664,7 +696,9 @@ const envSetCmd = stackCommand("set")
       if (opts.replace) {
         vars = Object.entries(desired).map(([key, value]) => ({ key, value, isSecret }));
       } else {
-        const cur = await apiRequest<{ vars: { key: string; value: string; isSecret?: boolean }[] }>(
+        const cur = await apiRequest<{
+          vars: { key: string; value: string; isSecret?: boolean }[];
+        }>(
           `/projects/${projectId}/services/${svc.id}/env?environment=${encodeURIComponent(environment)}`,
         );
         const existing = cur.vars ?? [];
@@ -714,7 +748,8 @@ function printLogEntry(entry: { timestamp?: string; message?: string; level?: st
     return;
   }
   const ts = entry.timestamp ? chalk.dim(entry.timestamp) : "";
-  const line = entry.level === "error" ? chalk.red(msg) : entry.level === "warn" ? chalk.yellow(msg) : msg;
+  const line =
+    entry.level === "error" ? chalk.red(msg) : entry.level === "warn" ? chalk.yellow(msg) : msg;
   process.stdout.write(`${ts ? ts + " " : ""}${line}\n`);
 }
 
@@ -731,9 +766,9 @@ const logsCmd = stackCommand("logs")
       const tail = opts.tail ? `?tail=${encodeURIComponent(opts.tail)}` : "";
 
       if (!opts.follow) {
-        const res = await apiRequest<{ data: { timestamp?: string; message?: string; level?: string }[] }>(
-          `/projects/${projectId}/services/${svc.id}/logs${tail}`,
-        );
+        const res = await apiRequest<{
+          data: { timestamp?: string; message?: string; level?: string }[];
+        }>(`/projects/${projectId}/services/${svc.id}/logs${tail}`);
         const entries = res.data ?? [];
         if (isJsonMode()) {
           printJson(entries);
@@ -743,14 +778,17 @@ const logsCmd = stackCommand("logs")
         return;
       }
 
-      for await (const ev of sseRequest(`/projects/${projectId}/services/${svc.id}/logs/stream${tail}`)) {
+      for await (const ev of sseRequest(
+        `/projects/${projectId}/services/${svc.id}/logs/stream${tail}`,
+      )) {
         if (ev.event === "error") {
           const parsed = safeParse(ev.data);
           throw new ApiError((parsed?.error as string) || "Log stream error", 0, parsed);
         }
         if (ev.event === "log") {
           const parsed = safeParse(ev.data);
-          if (parsed) printLogEntry(parsed as { timestamp?: string; message?: string; level?: string });
+          if (parsed)
+            printLogEntry(parsed as { timestamp?: string; message?: string; level?: string });
         }
       }
     } catch (e) {

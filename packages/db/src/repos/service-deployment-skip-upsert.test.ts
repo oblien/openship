@@ -85,6 +85,7 @@ async function seedCarriedForwardRow() {
     imageDigest: "sha256:deadbeef",
     containerId: "container_abc",
     hostPort: 9411,
+    hostPorts: { "9411": 19411, "9412": 19412 },
     ip: "172.18.0.7",
   });
 }
@@ -142,6 +143,7 @@ describe("markServiceDeploymentSkipped", () => {
     expect(row?.imageRef).toBe("openship/worker:v3");
     expect(row?.imageDigest).toBe("sha256:deadbeef");
     expect(row?.hostPort).toBe(9411);
+    expect(row?.hostPorts).toEqual({ "9411": 19411, "9412": 19412 });
     expect(row?.ip).toBe("172.18.0.7");
   });
 
@@ -179,6 +181,7 @@ describe("upsertServiceDeployment over a pre-created skipped row", () => {
         imageRef: "openship/worker:v4",
         imageDigest: "sha256:cafebabe",
         hostPort: 9411,
+        hostPorts: { "3000": 9411, "3001": 9412 },
         ip: "172.18.0.9",
       }),
     ).resolves.not.toThrow();
@@ -188,6 +191,7 @@ describe("upsertServiceDeployment over a pre-created skipped row", () => {
     expect(row?.status).toBe("success");
     expect(row?.containerId).toBe("container_new");
     expect(row?.imageDigest).toBe("sha256:cafebabe");
+    expect(row?.hostPorts).toEqual({ "3000": 9411, "3001": 9412 });
     // The stale skip bookkeeping must not outlive the row's new meaning.
     expect(row?.reason).toBeNull();
     expect(row?.reasonSkipped).toBeNull();

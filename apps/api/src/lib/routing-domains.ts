@@ -705,7 +705,7 @@ export async function ensureRouteDomainRecord(opts: {
   projectId: string;
   route: PlannedRouteDomain;
   domainByHostname: Map<string, Domain>;
-}): Promise<Domain | null> {
+}): Promise<{ domain: Domain | null; created: boolean }> {
   const { projectId, route, domainByHostname } = opts;
   const key = route.hostname.toLowerCase();
 
@@ -728,7 +728,9 @@ export async function ensureRouteDomainRecord(opts: {
   // to a hostname with no row at all, and inside the `owner &&` branch this would fall
   // through to `findOrCreate` and MINT a project-owned row for the very host the claim
   // exists to protect.
-  if (await routableWithoutOwnership(route.hostname, projectId, owner)) return null;
+  if (await routableWithoutOwnership(route.hostname, projectId, owner)) {
+    return { domain: null, created: false };
+  }
 
   if (owner && owner.projectId !== projectId) {
     throw new ConflictError(
@@ -769,20 +771,20 @@ export async function ensureRouteDomainRecord(opts: {
       await repos.domain.update(existing.id, patch);
       const updated = { ...existing, ...patch } as Domain;
       domainByHostname.set(key, updated);
-      return updated;
+      return { domain: updated, created: false };
     }
 
-    return existing;
+    return { domain: existing, created: false };
   }
 
   if (!route.createIfMissing) {
-    return null;
+    return { domain: null, created: false };
   }
 
   // A custom domain minted at deploy time (no prior add) starts PENDING with a
   // challenge token so the Verify pipe can run; host-managed routes go active.
   const isNewCustom = route.domainType === "custom";
-  const created = await repos.domain.findOrCreate({
+  const result = await repos.domain.findOrCreateWithStatus({
     projectId,
     serviceId: route.serviceId,
     hostname: route.hostname,
@@ -797,8 +799,16 @@ export async function ensureRouteDomainRecord(opts: {
     verifiedAt: isNewCustom ? null : new Date(),
     verificationToken: isNewCustom ? generateToken(route.hostname) : undefined,
   });
-  domainByHostname.set(key, created);
-  return created;
+  // The ownership read above and the insert are separate statements. If a
+  // foreign project won that race, findOrCreateWithStatus returns its row; it
+  // must not be installed in this project's route map or edge configuration.
+  if (result.domain.projectId !== projectId) {
+    throw new ConflictError(
+      `Hostname ${route.hostname} is routed by another project and cannot be claimed here.`,
+    );
+  }
+  domainByHostname.set(key, result.domain);
+  return result;
 }
 
 /**

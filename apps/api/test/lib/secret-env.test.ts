@@ -197,6 +197,7 @@ describe("maskEnvironmentMeta", () => {
           source: "missing",
           variable: "POSTGRES_PASSWORD",
           required: true,
+          unresolvedVariables: ["POSTGRES_PASSWORD"],
           resolvedValue: "",
         },
       }),
@@ -205,6 +206,7 @@ describe("maskEnvironmentMeta", () => {
         source: "missing",
         variable: "POSTGRES_PASSWORD",
         required: true,
+        unresolvedVariables: ["POSTGRES_PASSWORD"],
         resolvedValue: "",
       },
     });
@@ -223,6 +225,25 @@ describe("maskScanService", () => {
     expect(masked.environmentMeta).toEqual({ PASSWORD: { source: "env-file", resolvedValue: ENV_MASK } });
     // input untouched
     expect(svc.environment.PASSWORD).toBe("secret");
+  });
+
+  test("never returns transient raw environment expressions", () => {
+    const expression = "postgres://user:${PASSWORD:-literal-secret}@db/app";
+    const masked = maskScanService({
+      name: "api",
+      environment: { DATABASE_URL: "postgres://user:literal-secret@db/app" },
+      environmentTemplates: { DATABASE_URL: expression },
+      advanced: {
+        environmentTemplateKeys: ["DATABASE_URL"],
+        readiness: { enabled: true },
+      },
+    });
+
+    expect(masked.environment.DATABASE_URL).toBe(ENV_MASK);
+    expect("environmentTemplates" in masked).toBe(false);
+    expect(masked.advanced).toEqual({ readiness: { enabled: true } });
+    expect(JSON.stringify(masked)).not.toContain(expression);
+    expect(JSON.stringify(masked)).not.toContain("literal-secret");
   });
 });
 

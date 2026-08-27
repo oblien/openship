@@ -16,8 +16,7 @@ import { UpdateProjectBody } from "../../src/modules/projects/project.schema";
  * would save successfully and then silently do nothing.
  */
 
-const validate = (proxy: unknown) =>
-  Value.Check(UpdateProjectBody, { routingConfig: { proxy } });
+const validate = (proxy: unknown) => Value.Check(UpdateProjectBody, { routingConfig: { proxy } });
 
 describe("ProxySettings — the API schema and the renderer agree", () => {
   const GOOD = [
@@ -35,19 +34,21 @@ describe("ProxySettings — the API schema and the renderer agree", () => {
   it("accepts every valid shape, and the renderer keeps it", () => {
     for (const proxy of GOOD) {
       expect(validate(proxy), `schema rejected ${JSON.stringify(proxy)}`).toBe(true);
-      expect(sanitizeProxySettings(proxy), `renderer dropped ${JSON.stringify(proxy)}`).toEqual(proxy);
+      expect(sanitizeProxySettings(proxy), `renderer dropped ${JSON.stringify(proxy)}`).toEqual(
+        proxy,
+      );
     }
   });
 
   const BAD = [
-    { clientMaxBodySize: "25" },        // no unit — nginx would read it as bytes
-    { clientMaxBodySize: "25mb" },      // not an nginx size suffix
-    { clientMaxBodySize: "0m" },        // leading zero excluded by the regex
+    { clientMaxBodySize: "25" }, // no unit — nginx would read it as bytes
+    { clientMaxBodySize: "25mb" }, // not an nginx size suffix
+    { clientMaxBodySize: "0m" }, // leading zero excluded by the regex
     { clientMaxBodySize: "-5m" },
     { clientMaxBodySize: "25m; root /etc" }, // the injection this guards against
-    { proxyReadTimeout: "300" },        // no unit
-    { proxyReadTimeout: "300ms" },      // not one of the accepted time forms
-    { clientMaxBodySize: 25 },          // wrong type
+    { proxyReadTimeout: "300" }, // no unit
+    { proxyReadTimeout: "300ms" }, // not one of the accepted time forms
+    { clientMaxBodySize: 25 }, // wrong type
   ];
 
   it("rejects malformed values at the API, and the renderer drops them too", () => {
@@ -55,7 +56,8 @@ describe("ProxySettings — the API schema and the renderer agree", () => {
       expect(validate(proxy), `schema accepted ${JSON.stringify(proxy)}`).toBe(false);
       // Belt and braces: even if one slipped past the schema, nothing reaches config.
       expect(
-        sanitizeProxySettings(proxy)?.clientMaxBodySize ?? sanitizeProxySettings(proxy)?.proxyReadTimeout,
+        sanitizeProxySettings(proxy)?.clientMaxBodySize ??
+          sanitizeProxySettings(proxy)?.proxyReadTimeout,
       ).toBeUndefined();
     }
   });
@@ -131,7 +133,9 @@ describe("ProxySettings — every directive in the table is wired end to end", (
       const proxy = { [spec.key]: badFor(spec) };
       expect(validate(proxy), `schema accepted bad ${spec.directive}`).toBe(false);
       expect(
-        sanitizeProxySettings(proxy)?.[spec.key as keyof ReturnType<typeof sanitizeProxySettings> & string],
+        sanitizeProxySettings(proxy)?.[
+          spec.key as keyof ReturnType<typeof sanitizeProxySettings> & string
+        ],
         `renderer kept bad ${spec.directive}`,
       ).toBeUndefined();
     }
@@ -145,7 +149,10 @@ describe("ProxySettings — every directive in the table is wired end to end", (
       for (const attack of attacks) {
         const proxy = { [spec.key]: attack };
         expect(validate(proxy), `schema accepted ${spec.directive}=${attack}`).toBe(false);
-        expect(sanitizeProxySettings(proxy), `renderer kept ${spec.directive}=${attack}`).toBeUndefined();
+        expect(
+          sanitizeProxySettings(proxy),
+          `renderer kept ${spec.directive}=${attack}`,
+        ).toBeUndefined();
       }
     }
   });
@@ -338,8 +345,8 @@ describe("compiled vercel.json rules — the live reconcile writers carry them t
     // Spreading the compiled fields over a fan-out register would ASSIGN over its
     // per-path upstreams: the domain keeps serving, with `/v3` quietly pointing at the
     // root service instead of the API. Same order as the deploy path — fan-out first.
-    expect(source("../../src/modules/domains/routing-apply.service.ts")).toContain(
-      "[...(reg.proxyLocations ?? []), ...(routingFields.proxyLocations ?? [])]",
-    );
+    expect(
+      source("../../src/modules/domains/routing-apply.service.ts").replace(/\s+/g, ""),
+    ).toContain("...(reg.proxyLocations??[]),...(routingFields.proxyLocations??[])");
   });
 });

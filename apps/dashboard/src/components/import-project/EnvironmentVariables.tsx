@@ -26,7 +26,7 @@ import type { Dictionary } from "@/i18n";
 // a save round-trips it and the backend restores the stored secret; "show
 // values" reveals real values into a display-only overlay; editing a revealed
 // row replaces the sentinel with the typed value.
-type EnvironmentVariableRow = { key: string; value: string; visible: boolean };
+type EnvironmentVariableRow = { sourceId?: string; key: string; value: string; visible: boolean };
 
 type EnvironmentVariableMeta = {
   source: "env-file" | "default" | "missing" | "interpolated";
@@ -34,6 +34,8 @@ type EnvironmentVariableMeta = {
   defaultValue?: string;
   resolvedValue: string;
   expression?: string;
+  required?: boolean;
+  unresolvedVariables?: string[];
 };
 
 interface EnvironmentVariablesPropsOptional {
@@ -1008,7 +1010,7 @@ function getEnvResolutionState(meta: EnvironmentVariableMeta | undefined, value:
   if (!meta) return null;
   const res = t.importProject.environmentVariables.resolution;
 
-  if (meta.source === "missing" && !value) {
+  if (meta.required || (meta.source === "missing" && !value)) {
     return {
       icon: AlertTriangle,
       label: res.needsValue,

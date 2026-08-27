@@ -121,3 +121,22 @@ describe("EnvironmentVariables hideTitle", () => {
     expect(out).toContain("None set");
   });
 });
+
+describe("EnvironmentVariables embedded Compose requirements (#673)", () => {
+  it("marks a partially interpolated row as needing a value", () => {
+    const value = "postgresql://user:@db/app";
+    const html = render({
+      envVars: [{ key: "DATABASE_URL", value, visible: true }],
+      envMeta: {
+        DATABASE_URL: {
+          source: "interpolated",
+          resolvedValue: value,
+          required: true,
+          unresolvedVariables: ["POSTGRES_PASSWORD"],
+        },
+      },
+    });
+
+    expect(text(html)).toContain("Needs value");
+  });
+});

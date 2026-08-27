@@ -4,6 +4,70 @@
     "save": "حفظ",
     "cancel": "إلغاء"
   },
+  "releaseImageSource": {
+    "validationInvalid": "مصدر صورة الإصدار غير صالح.",
+    "toast": {
+      "saved": "تم حفظ مصدر إصدار الحاوية.",
+      "saveFailed": "تعذّر حفظ مصدر إصدار الحاوية."
+    },
+    "status": {
+      "notDeployed": "لم يُنشر بعد",
+      "checking": "جارٍ التحقق…",
+      "unavailable": "غير متاح"
+    },
+    "switchToImage": {
+      "title": "التبديل إلى مصدر صورة جاهزة",
+      "description": "يستبدل الحفظ مصدر Git أو المصدر المحلي الحالي في كل البيئات. تبقى عمليات النشر الحالية وسجل التراجع متاحين.",
+      "keep": "الاحتفاظ بالمصدر الحالي"
+    },
+    "switchToGit": {
+      "title": "التبديل إلى مصدر Git",
+      "description": "لن يتغير شيء حتى تربط مستودعًا. يستبدل الربط مصدر الصورة المتتبع في كل البيئات.",
+      "back": "العودة إلى مصدر الصورة"
+    },
+    "entry": {
+      "shortButton": "استخدام صورة جاهزة",
+      "button": "تتبع صورة حاوية جاهزة",
+      "description": "انشر صورة ذات إصدار من السجل مباشرةً، بدون نسخ مستودع أو بنائه."
+    },
+    "summary": {
+      "title": "صورة حاوية متتبعة",
+      "badge": "جاهزة",
+      "description": "ينشر صورة منشورة مباشرةً. لا يُنسخ أي مستودع ولا يُشغّل أي أمر بناء.",
+      "linkGit": "ربط مستودع Git",
+      "image": "الصورة",
+      "versionSource": "مصدر الإصدار",
+      "githubReleases": "إصدارات GitHub",
+      "pinnedVersion": "إصدار مثبّت",
+      "currentVersion": "الإصدار الحالي",
+      "targetVersion": "الإصدار المستهدف",
+      "latestVersion": "أحدث إصدار",
+      "updateAvailable": "يتوفر تحديث"
+    },
+    "editor": {
+      "trackingTitle": "تتبع الإصدارات",
+      "configureTitle": "إعداد صورة جاهزة",
+      "templateHint": "استخدم {tag} للاحتفاظ بوسم الناشر الدقيق، أو {version} للإصدار الموحّد.",
+      "provider": "مزوّد الإصدار",
+      "githubTitle": "إصدارات GitHub",
+      "githubDescription": "تابع أحدث وسم إصدار منشور.",
+      "urlTitle": "رابط الإصدار أو تثبيته",
+      "urlDescription": "اقرأ نقطة نهاية للإصدار أو انشر إصدارًا ثابتًا.",
+      "imageTemplate": "قالب الصورة",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "مستودع GitHub",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "رابط الإصدار",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "نقطة نهاية HTTPS تُعيد نصًا أو JSON يحتوي على version/tag_name.",
+      "pinnedVersion": "إصدار مثبّت",
+      "pinnedPlaceholder": "اختياري، مثل v2.4.1",
+      "pinnedHint": "يتجاوز أحدث إصدار مكتشف؛ اتركه فارغًا لتتبّع التحديثات.",
+      "appliesAll": "تسري التغييرات على كل بيئات هذا المشروع.",
+      "saving": "جارٍ الحفظ…",
+      "save": "حفظ المصدر"
+    }
+  },
   "appSettings": {
     "modeApp": "إعدادات التطبيق",
     "modeDeployment": "النشر",
@@ -667,6 +731,9 @@
       "defaultAppName": "my-app",
       "mapsToPort": "يُوجَّه إلى المنفذ",
       "includeWww": "تضمين www",
+      "dnsChallenge": "استخدام تحدي DNS-01",
+      "dnsChallengeDesc": "إصدار الشهادة وتجديدها عبر مزود DNS المتصل. استخدمه عندما يتعذر الوصول إلى المنفذ 80.",
+      "dnsChallengeWildcardDesc": "تتطلب شهادات النطاق الشامل DNS-01 ومزود DNS متصلًا.",
       "includeWwwDesc": "أنشئ أيضًا سجلات لـ www.{domain}",
       "includeWwwFallback": "yourdomain.com",
       "adding": "جارٍ الإضافة...",

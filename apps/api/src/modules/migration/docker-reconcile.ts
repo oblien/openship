@@ -60,6 +60,7 @@ export interface DiscoveredService {
   /** compose build context (set → adoption builds this Dockerfile). */
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   /** compose-style "host:container[/proto]" strings, from actual bindings. */
   ports: string[];
   env: Record<string, string>;
@@ -568,6 +569,7 @@ export function toDiscoveredService(
     imageId: detail.imageId,
     build: declared?.build,
     dockerfile: declared?.dockerfile,
+    buildArgs: declared?.buildArgs,
     ports,
     env,
     ...(Object.keys(envImageDefaults).length > 0 && { envImageDefaults }),

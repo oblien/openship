@@ -82,7 +82,8 @@ const envRecordsEqual = (a: Record<string, string>, b: Record<string, string>) =
 
 const missingEnvCount = (service: ComposeServiceInfo) =>
   Object.entries(service.environmentMeta ?? {}).filter(
-    ([key, meta]) => meta.source === "missing" && !service.environment[key],
+    ([key, meta]) =>
+      meta.required || (meta.source === "missing" && !service.environment[key]),
   ).length;
 
 const portDisplay = (port: string) => parseContainerPort(port) || port;

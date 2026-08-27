@@ -12,6 +12,8 @@ const withExecutor = vi.hoisted(() => vi.fn());
 const applyProjectRouting = vi.hoisted(() => vi.fn());
 const reapplyProjectLiveRoutes = vi.hoisted(() => vi.fn());
 const syncManagedEdgeRoutes = vi.hoisted(() => vi.fn());
+const withDeploymentPlatform = vi.hoisted(() => vi.fn());
+const reconcileServerEdge = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
@@ -35,7 +37,10 @@ vi.mock("../../../src/lib/managed-edge-proxy", () => ({
 
 vi.mock("../../../src/lib/deployment-runtime", () => ({
   resolveDeploymentRuntime: vi.fn(),
+  withDeploymentPlatform,
 }));
+
+vi.mock("../../../src/lib/edge-reconcile", () => ({ reconcileServerEdge }));
 
 vi.mock("../../../src/modules/domains/routing-apply.service", () => ({
   applyProjectRouting,
@@ -95,6 +100,11 @@ describe("retryProjectRouting — safe self-heal", () => {
     applyProjectRouting.mockResolvedValue(undefined);
     reapplyProjectLiveRoutes.mockResolvedValue(undefined);
     syncManagedEdgeRoutes.mockResolvedValue({ failures: [] });
+    reconcileServerEdge.mockResolvedValue({ converted: false, updated: false, edgeDown: false });
+    withDeploymentPlatform.mockImplementation(
+      async (_dep: unknown, fn: (resolved: { executor: unknown; effectiveTarget: string }) => Promise<unknown>) =>
+        fn({ executor: {}, effectiveTarget: "server" }),
+    );
     // withExecutor(serverId, fn) → run fn with a dummy executor.
     withExecutor.mockImplementation(async (_serverId: string, fn: (e: unknown) => Promise<unknown>) =>
       fn({}),
@@ -130,6 +140,47 @@ describe("retryProjectRouting — safe self-heal", () => {
     expect(domainRepo.update).toHaveBeenCalledWith("dom_api", { targetPort: 4000 });
   });
 
+  it("revives a stopped or missing edge before applying any route configuration (#693)", async () => {
+    domainRepo.listByProject.mockResolvedValue([nulledCustomRow({ targetPort: 4000 })]);
+
+    const result = await retryProjectRouting("proj_1", "org_1");
+
+    expect(result).toEqual({ ok: true });
+    expect(reconcileServerEdge).toHaveBeenCalledOnce();
+    expect(checkEdge).toHaveBeenCalled();
+    expect(reconcileServerEdge.mock.invocationCallOrder[0]).toBeLessThan(
+      reapplyProjectLiveRoutes.mock.invocationCallOrder[0]!,
+    );
+    expect(reconcileServerEdge.mock.invocationCallOrder[0]).toBeLessThan(
+      applyProjectRouting.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("fails fast with the recovery reason instead of issuing edge commands when revival fails (#693)", async () => {
+    domainRepo.listByProject.mockResolvedValue([nulledCustomRow({ targetPort: 4000 })]);
+    reconcileServerEdge.mockResolvedValue({
+      converted: false,
+      updated: false,
+      edgeDown: true,
+      error: "docker start openship-edge failed",
+    });
+
+    const result = await retryProjectRouting("proj_1", "org_1");
+
+    expect(result).toEqual({
+      ok: false,
+      warning: "Couldn't restore the edge before retrying routing: docker start openship-edge failed",
+    });
+    expect(reapplyProjectLiveRoutes).not.toHaveBeenCalled();
+    expect(applyProjectRouting).not.toHaveBeenCalled();
+    expect(checkEdge).not.toHaveBeenCalled();
+    expect(deploymentRepo.updateStatus).toHaveBeenCalledWith(
+      "dep_1",
+      "ready",
+      { meta: expect.objectContaining({ edgeUnsynced: true }) },
+    );
+  });
+
   it("leaves the row unchanged when the edge has no live upstream (never guesses)", async () => {
     domainRepo.listByProject.mockResolvedValue([nulledCustomRow()]);
     siteFor.mockResolvedValue(null);
@@ -157,6 +208,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     const result = await retryProjectRouting("proj_1", "org_1");
 
     expect(result).toEqual({ ok: true });
+    expect(reconcileServerEdge).not.toHaveBeenCalled();
     expect(withExecutor).not.toHaveBeenCalled();
     expect(domainRepo.update).not.toHaveBeenCalled();
   });

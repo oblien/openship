@@ -156,6 +156,10 @@ describe("backupRun.transition — status must not ride a payload that can fail"
 
 const h = vi.hoisted(() => ({
   run: null as Record<string, unknown> | null,
+  executionRow: null as Record<string, unknown> | null,
+  claimResults: ["claimed"] as Array<"claimed" | "project_unavailable" | "state_changed">,
+  claimCalls: 0,
+  acknowledgements: [] as Array<{ runId: string; status: string }>,
   transition: null as
     | null
     | ((id: string, status: string, patch?: Record<string, unknown>) => Promise<void>),
@@ -170,6 +174,16 @@ vi.mock("@repo/db", () => ({
   repos: {
     backupRun: {
       findById: async () => h.run,
+      claimExecution: async () => {
+        h.claimCalls++;
+        return h.claimResults.shift() ?? "state_changed";
+      },
+      acknowledgeExecutionFinished: async (runId: string) => {
+        h.acknowledgements.push({
+          runId,
+          status: String(h.executionRow?.status ?? "unknown"),
+        });
+      },
       transition: async (id: string, status: string, patch?: Record<string, unknown>) =>
         h.transition!(id, status, patch),
     },
@@ -209,13 +223,11 @@ vi.mock("@repo/adapters", async () => {
   // Pulled from the real (side-effect-free) leaf module rather than restated, so a
   // key added to the canonical set cannot go missing in the mock and silently let a
   // recorded command get credential-scrubbed again.
-  const { PRESERVED_ARTIFACT_METADATA_KEYS } = await import(
-    "../../../../../packages/adapters/src/backup/common/artifact-metadata"
-  );
+  const { PRESERVED_ARTIFACT_METADATA_KEYS } =
+    await import("../../../../../packages/adapters/src/backup/common/artifact-metadata");
   // Likewise the real sanitizer, not a passthrough stub.
-  const { sanitizeProducerOpts } = await import(
-    "../../../../../packages/adapters/src/backup/common/producer-opts"
-  );
+  const { sanitizeProducerOpts } =
+    await import("../../../../../packages/adapters/src/backup/common/producer-opts");
   class FakeHasher extends PassThrough {
     summary() {
       return { sha256: "d0", bytesWritten: 11 };
@@ -299,15 +311,21 @@ function wireRun(): PgFake {
     id: "bkr_live",
     status: "queued",
     policyId: "pol_1",
+    projectId: null,
     serviceId: null,
     mailServerId: "mail_1",
     organizationId: "org_1",
   };
+  h.executionRow = pg.row;
   h.transition = (id, status, patch) => repo.transition(id, status as never, patch as never);
   return pg;
 }
 
 beforeEach(() => {
+  h.executionRow = null;
+  h.claimResults = ["claimed"];
+  h.claimCalls = 0;
+  h.acknowledgements.length = 0;
   h.hookStdout = "hook ran\n";
   h.hookExit = { code: 0, stderr: "" };
   h.artifactMetadata = {};
@@ -358,6 +376,19 @@ describe("a terminal status is final — one owner per verdict", () => {
 });
 
 describe("BackupOrchestrator.execute — hook output cannot fail the backup", () => {
+  it("runs one pipeline for duplicate deliveries and acknowledges only its owner", async () => {
+    const pg = wireRun();
+    h.claimResults = ["claimed", "state_changed"];
+    const orchestrator = new BackupOrchestrator();
+
+    await Promise.all([orchestrator.execute("bkr_live"), orchestrator.execute("bkr_live")]);
+
+    expect(h.claimCalls).toBe(2);
+    expect(h.notifications.map((n) => n.eventType)).toEqual(["backup_run.succeeded"]);
+    expect(pg.row.status).toBe("succeeded");
+    expect(h.acknowledgements).toEqual([{ runId: "bkr_live", status: "succeeded" }]);
+  });
+
   it("records a successful backup as succeeded when the pre-hook printed a NUL", async () => {
     h.hookStdout = "snapshot done\u0000 (pg_dump)\n";
     const pg = wireRun();

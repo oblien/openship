@@ -1,6 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { DiscoveredService } from "./docker-reconcile";
-import { buildAdoptedServiceRows, type RepoComposeService } from "./migrate.service";
+
+const getFileContent = vi.hoisted(() => vi.fn());
+
+vi.mock("../github/github.service", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getFileContent,
+}));
+
+import {
+  buildAdoptedServiceRows,
+  parseRepoCompose,
+  type RepoComposeService,
+} from "./migrate.service";
 
 const repoSvc = (over: Partial<RepoComposeService> & { name: string }): RepoComposeService => ({
   ports: [],
@@ -24,9 +36,73 @@ const svc = (over: Partial<DiscoveredService> & { name: string }): DiscoveredSer
     ...over,
   }) as DiscoveredService;
 
+describe("parseRepoCompose — build args (#689)", () => {
+  it("keeps distinct args for services that share a Dockerfile", async () => {
+    getFileContent.mockReset();
+    getFileContent.mockResolvedValueOnce({
+      content: `
+services:
+  api:
+    build:
+      context: ../../
+      dockerfile: services/shared/Dockerfile
+      args:
+        APP_PACKAGE: "@myorg/api"
+        FROM_ENV:
+        CHANNEL: "\${RELEASE_CHANNEL:-stable}"
+  worker:
+    build:
+      context: ../../
+      dockerfile: services/shared/Dockerfile
+      args:
+        APP_PACKAGE: "@myorg/worker"
+`,
+    });
+
+    const services = await parseRepoCompose(
+      {} as Parameters<typeof parseRepoCompose>[0],
+      "myorg",
+      "monorepo",
+      "main",
+    );
+
+    expect(
+      services.map(({ name, build, dockerfile, buildArgs, advanced }) => ({
+        name,
+        build,
+        dockerfile,
+        buildArgs,
+        advanced,
+      })),
+    ).toEqual([
+      {
+        name: "api",
+        build: "../../",
+        dockerfile: "services/shared/Dockerfile",
+        buildArgs: {
+          APP_PACKAGE: "@myorg/api",
+          FROM_ENV: null,
+          CHANNEL: "${RELEASE_CHANNEL:-stable}",
+        },
+        advanced: { buildArgTemplateKeys: ["CHANNEL"] },
+      },
+      {
+        name: "worker",
+        build: "../../",
+        dockerfile: "services/shared/Dockerfile",
+        buildArgs: { APP_PACKAGE: "@myorg/worker" },
+        advanced: { buildArgTemplateKeys: [] },
+      },
+    ]);
+  });
+});
+
 describe("buildAdoptedServiceRows — adoption never host-publishes an adopted port (#388)", () => {
   it("drops a bare/expose-only container port so an internal DB (e.g. postgres 5432) isn't re-published on a random host port", () => {
-    const { rows } = buildAdoptedServiceRows([svc({ name: "postgres", ports: ["5432"] })], new Set(["postgres"]));
+    const { rows } = buildAdoptedServiceRows(
+      [svc({ name: "postgres", ports: ["5432"] })],
+      new Set(["postgres"]),
+    );
     expect(rows[0]?.ports ?? []).toEqual([]);
   });
 
@@ -35,7 +111,10 @@ describe("buildAdoptedServiceRows — adoption never host-publishes an adopted p
     // would bind a random loopback port). `exposedPort` records what the container
     // LISTENS on without publishing anything, which is what both the Domains tab's
     // findServiceByPort and the project-level route resolver match on (#618).
-    const { rows } = buildAdoptedServiceRows([svc({ name: "postgres", ports: ["5432"] })], new Set(["postgres"]));
+    const { rows } = buildAdoptedServiceRows(
+      [svc({ name: "postgres", ports: ["5432"] })],
+      new Set(["postgres"]),
+    );
     expect(rows[0]?.ports ?? []).toEqual([]);
     expect(rows[0]?.exposedPort).toBe("5432");
   });
@@ -76,7 +155,10 @@ describe("buildAdoptedServiceRows — adoption never host-publishes an adopted p
   });
 
   it("keeps the container port for an edge-owned 80/443 publish (OpenResty routes to it)", () => {
-    const { rows } = buildAdoptedServiceRows([svc({ name: "web", ports: ["80:3000"] })], new Set(["web"]));
+    const { rows } = buildAdoptedServiceRows(
+      [svc({ name: "web", ports: ["80:3000"] })],
+      new Set(["web"]),
+    );
     expect(rows[0]?.ports).toEqual(["3000"]);
   });
 
@@ -91,7 +173,9 @@ describe("buildAdoptedServiceRows — adoption never host-publishes an adopted p
   it("warns the operator once per service, naming the stripped host ports and the route path", () => {
     const service = svc({ name: "web", ports: ["8080:80"] });
     buildAdoptedServiceRows([service], new Set(["web"]));
-    expect(service.warnings.some((w) => w.includes("8080") && w.includes("Domains tab"))).toBe(true);
+    expect(service.warnings.some((w) => w.includes("8080") && w.includes("Domains tab"))).toBe(
+      true,
+    );
   });
 
   it("flags an off-box publish as external exposure that was dropped (the security-meaningful signal)", () => {
@@ -138,16 +222,18 @@ describe("buildAdoptedServiceRows — repo-service rename (migration mapping)", 
         name: "postgres",
         image: "postgres:16-alpine",
         volumes: [
-          { type: "volume", source: "openship-openship-postgres", target: "/var/lib/postgresql/data", rw: true },
+          {
+            type: "volume",
+            source: "openship-openship-postgres",
+            target: "/var/lib/postgresql/data",
+            rw: true,
+          },
         ] as DiscoveredService["volumes"],
       }),
     ];
-    const { rows, renames } = buildAdoptedServiceRows(
-      chosen,
-      new Set(["postgres"]),
-      undefined,
-      { postgres: "db" },
-    );
+    const { rows, renames } = buildAdoptedServiceRows(chosen, new Set(["postgres"]), undefined, {
+      postgres: "db",
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.name).toBe("db"); // adopted under the repo service name
     expect(rows[0]!.volumes).toEqual(["openship-openship-postgres:/var/lib/postgresql/data"]); // volume verbatim
@@ -166,7 +252,12 @@ describe("buildAdoptedServiceRows — repo-service rename (migration mapping)", 
   });
 
   it("falls back to the discovered name when unmapped (identity renames)", () => {
-    const { rows, renames, handover } = buildAdoptedServiceRows([svc({ name: "web" })], new Set(["web"]), undefined, undefined);
+    const { rows, renames, handover } = buildAdoptedServiceRows(
+      [svc({ name: "web" })],
+      new Set(["web"]),
+      undefined,
+      undefined,
+    );
     expect(rows[0]!.name).toBe("web");
     expect(renames).toEqual({ web: "web" });
     expect(handover).toEqual({}); // no repo → legacy image-only, nothing handed over
@@ -180,7 +271,16 @@ describe("buildAdoptedServiceRows — native rows from the mapped repo compose",
     // reclones + rebuilds), NOT the frozen tag — and the running image is reused
     // exactly once via `handover`.
     const chosen = [svc({ name: "openship-api", image: "openship/openship-api:bld_stale" })];
-    const repoServices = new Map([["api", repoSvc({ name: "api", build: "./apps/api" })]]);
+    const repoServices = new Map([
+      [
+        "api",
+        repoSvc({
+          name: "api",
+          build: "./apps/api",
+          buildArgs: { APP_PACKAGE: "@myorg/api", FROM_ENV: null },
+        }),
+      ],
+    ]);
     const { rows, handover } = buildAdoptedServiceRows(
       chosen,
       new Set(["openship-api"]),
@@ -190,13 +290,16 @@ describe("buildAdoptedServiceRows — native rows from the mapped repo compose",
     );
     expect(rows[0]!.name).toBe("api");
     expect(rows[0]!.build).toBe("./apps/api"); // native source → Redeploy rebuilds
+    expect(rows[0]!.buildArgs).toEqual({ APP_PACKAGE: "@myorg/api", FROM_ENV: null });
     expect(rows[0]!.image).toBeUndefined(); // NOT the stale bld_ tag
     expect(handover).toEqual({ api: "openship/openship-api:bld_stale" }); // reuse once
   });
 
   it("an image: repo service (postgres) → pulls its registry image, no build, no handover", () => {
     const chosen = [svc({ name: "postgres", image: "postgres:16-alpine" })];
-    const repoServices = new Map([["postgres", repoSvc({ name: "postgres", image: "postgres:16-alpine" })]]);
+    const repoServices = new Map([
+      ["postgres", repoSvc({ name: "postgres", image: "postgres:16-alpine" })],
+    ]);
     const { rows, handover } = buildAdoptedServiceRows(
       chosen,
       new Set(["postgres"]),

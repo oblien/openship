@@ -3,7 +3,7 @@ import { getTableColumns } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 
 import { db } from "./client";
-import { dumpSubgraph, restoreSubgraph, topoOrderedTables, type TableSpec } from "./dump";
+import { countInstanceSubgraphTables, dumpSubgraph, restoreSubgraph, topoOrderedTables, type TableSpec } from "./dump";
 
 // The test the data-transfer feature never had: does a whole-instance dump actually
 // RESTORE?
@@ -166,6 +166,13 @@ describe("whole-instance dump → restore round trip", () => {
     seeded = await seedOneRowPerTable();
   });
 
+  it("previews per-table counts without materializing a dump", async () => {
+    const counts = await countInstanceSubgraphTables();
+    expect(counts.project).toBe(1);
+    expect(counts.servers).toBe(1);
+    expect(counts.resource_usage).toBe(1);
+  });
+
   it("restores a fully FK-populated instance through the JSON envelope", async () => {
     // Guard the FIXTURE first. If the seeder failed to populate the FK that broke in
     // production, everything below would pass on a dump that never exercised it.
@@ -199,6 +206,37 @@ describe("whole-instance dump → restore round trip", () => {
     )) as Array<Record<string, unknown>>;
     expect(domain?.serviceId).toBe(seeded.get("domain")?.serviceId);
     expect(domain?.serviceId).toBeTruthy();
+  });
+
+  it("skips explicitly excluded history tables at query time", async () => {
+    const excluded = [
+      "server_analytics",
+      "server_analytics_geo",
+      "resource_usage",
+      "audit_event",
+      "notification_delivery",
+      "backup_run",
+      "backup_restore",
+      "service_incident",
+      "docker_migration_run",
+    ];
+    const dump = await dumpSubgraph(
+      { kind: "instance" },
+      { excludeTables: excluded },
+    );
+
+    for (const table of excluded) expect(dump.tables).not.toHaveProperty(table);
+    expect(dump.tables["project"]).toHaveLength(1);
+    expect(dump.tables["servers"]).toHaveLength(1);
+
+    // A core-only filtered file remains a valid wipe import: omitted history is
+    // cleared, while the durable graph restores without dangling FKs.
+    await restoreSubgraph(JSON.parse(JSON.stringify(dump)) as typeof dump, { mode: "wipe" });
+    for (const table of excluded) {
+      const spec = topoOrderedTables().find((entry) => entry.sqlName === table)!;
+      expect(await rowCount(spec), `${table} should stay omitted`).toBe(0);
+    }
+    expect(await rowCount(topoOrderedTables().find((entry) => entry.sqlName === "project")!)).toBe(1);
   });
 
   it("chunks inserts past the bind-parameter cap", async () => {

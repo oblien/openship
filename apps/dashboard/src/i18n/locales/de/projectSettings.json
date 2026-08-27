@@ -4,6 +4,70 @@
     "save": "Speichern",
     "cancel": "Abbrechen"
   },
+  "releaseImageSource": {
+    "validationInvalid": "Die Release-Image-Quelle ist ungültig.",
+    "toast": {
+      "saved": "Die Container-Release-Quelle wurde gespeichert.",
+      "saveFailed": "Die Container-Release-Quelle konnte nicht gespeichert werden."
+    },
+    "status": {
+      "notDeployed": "Noch nicht bereitgestellt",
+      "checking": "Wird geprüft…",
+      "unavailable": "Nicht verfügbar"
+    },
+    "switchToImage": {
+      "title": "Zu einer vorgefertigten Image-Quelle wechseln",
+      "description": "Beim Speichern wird die aktuelle Git- oder lokale Quelle in allen Umgebungen ersetzt. Bestehende Bereitstellungen und der Rollback-Verlauf bleiben verfügbar.",
+      "keep": "Aktuelle Quelle behalten"
+    },
+    "switchToGit": {
+      "title": "Zu einer Git-Quelle wechseln",
+      "description": "Bis zum Verknüpfen eines Repositorys ändert sich nichts. Die Verknüpfung ersetzt die verfolgte Image-Quelle in allen Umgebungen.",
+      "back": "Zurück zur Image-Quelle"
+    },
+    "entry": {
+      "shortButton": "Vorgefertigtes Image verwenden",
+      "button": "Vorgefertigtes Container-Image verfolgen",
+      "description": "Ein versioniertes Registry-Image direkt bereitstellen, ohne ein Repository zu klonen oder zu bauen."
+    },
+    "summary": {
+      "title": "Verfolgtes Container-Image",
+      "badge": "Vorgefertigt",
+      "description": "Stellt ein veröffentlichtes Image direkt bereit. Es wird kein Repository geklont und kein Build-Befehl ausgeführt.",
+      "linkGit": "Git-Repository verknüpfen",
+      "image": "Image",
+      "versionSource": "Versionsquelle",
+      "githubReleases": "GitHub-Veröffentlichungen",
+      "pinnedVersion": "Angeheftete Version",
+      "currentVersion": "Aktuelle Version",
+      "targetVersion": "Zielversion",
+      "latestVersion": "Neueste Version",
+      "updateAvailable": "Update verfügbar"
+    },
+    "editor": {
+      "trackingTitle": "Release-Verfolgung",
+      "configureTitle": "Vorgefertigtes Image konfigurieren",
+      "templateHint": "Mit {tag} bleibt das genaue Tag des Herausgebers erhalten; {version} verwendet die normalisierte Version.",
+      "provider": "Versionsanbieter",
+      "githubTitle": "GitHub-Veröffentlichungen",
+      "githubDescription": "Dem neuesten veröffentlichten Release-Tag folgen.",
+      "urlTitle": "Versions-URL oder feste Version",
+      "urlDescription": "Eine Versionsschnittstelle lesen oder eine feste Version bereitstellen.",
+      "imageTemplate": "Image-Vorlage",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub-Repository",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "Versions-URL",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "HTTPS-Endpunkt, der Text oder JSON mit version/tag_name zurückgibt.",
+      "pinnedVersion": "Angeheftete Version",
+      "pinnedPlaceholder": "Optional, z. B. v2.4.1",
+      "pinnedHint": "Überschreibt die ermittelte neueste Version; leer lassen, um Updates zu verfolgen.",
+      "appliesAll": "Änderungen gelten für alle Umgebungen dieses Projekts.",
+      "saving": "Wird gespeichert…",
+      "save": "Quelle speichern"
+    }
+  },
   "appSettings": {
     "modeApp": "App-Einstellungen",
     "modeDeployment": "Deployment",
@@ -667,6 +731,9 @@
       "defaultAppName": "my-app",
       "mapsToPort": "Verweist auf Port",
       "includeWww": "www einbeziehen",
+      "dnsChallenge": "DNS-01-Challenge verwenden",
+      "dnsChallengeDesc": "Zertifikat über den verbundenen DNS-Anbieter ausstellen und erneuern. Verwenden, wenn Port 80 nicht erreichbar ist.",
+      "dnsChallengeWildcardDesc": "Wildcard-Zertifikate erfordern DNS-01 und einen verbundenen DNS-Anbieter.",
       "includeWwwDesc": "Auch Einträge für www.{domain} erzeugen",
       "includeWwwFallback": "ihredomain.de",
       "adding": "Wird hinzugefügt...",

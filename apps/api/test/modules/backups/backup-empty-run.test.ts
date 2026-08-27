@@ -40,10 +40,13 @@ vi.mock("@repo/db", () => ({
         id: "bkr_live",
         status: "queued",
         policyId: "pol_1",
+        projectId: "prj_1",
         serviceId: "svc_1",
         mailServerId: null,
         organizationId: "org_1",
       }),
+      claimExecution: async () => "claimed",
+      acknowledgeExecutionFinished: async () => {},
       transition: async (_id: string, status: string, patch?: Record<string, unknown>) => {
         Object.assign(h.row, { status }, patch ?? {});
       },
@@ -107,16 +110,14 @@ vi.mock("@repo/adapters", async () => {
   // Pulled from the real (side-effect-free) leaf module rather than restated, so a
   // key added to the canonical set cannot go missing in the mock and silently let a
   // recorded command get credential-scrubbed again.
-  const { PRESERVED_ARTIFACT_METADATA_KEYS } = await import(
-    "../../../../../packages/adapters/src/backup/common/artifact-metadata"
-  );
+  const { PRESERVED_ARTIFACT_METADATA_KEYS } =
+    await import("../../../../../packages/adapters/src/backup/common/artifact-metadata");
   // Same reason: the REAL sanitizer, from its side-effect-free leaf. A stub that
   // returned the config unchanged would let a compression value the pipeline
   // cannot build reach a producer here and pass, which is the whole thing it
   // exists to stop.
-  const { sanitizeProducerOpts } = await import(
-    "../../../../../packages/adapters/src/backup/common/producer-opts"
-  );
+  const { sanitizeProducerOpts } =
+    await import("../../../../../packages/adapters/src/backup/common/producer-opts");
   /**
    * Counts the bytes it actually saw and passes them through — the same contract as the
    * real HashingPassthrough.

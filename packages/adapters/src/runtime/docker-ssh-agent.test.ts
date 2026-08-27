@@ -58,6 +58,33 @@ describe("createDockerSshBridge — a failed request is answered, not reset", ()
     return channel;
   }
 
+  /** A tiny Docker-shaped channel that answers after `delayMs`. Delaying only the first
+   *  probe lets the test distinguish the cached transport without involving real SSH. */
+  function httpChannel(body: string, delayMs = 0) {
+    let answered = false;
+    let responseTimer: ReturnType<typeof setTimeout> | null = null;
+    const channel = new Duplex({
+      read() {},
+      write(_chunk, _enc, cb) {
+        if (!answered) {
+          answered = true;
+          responseTimer = setTimeout(() => {
+            channel.push(
+              `HTTP/1.1 200 OK\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`,
+            );
+            // Let the bridge attach its post-first-byte pipe before EOF arrives.
+            setImmediate(() => channel.push(null));
+          }, delayMs);
+        }
+        cb();
+      },
+    });
+    channel.once("close", () => {
+      if (responseTimer) clearTimeout(responseTimer);
+    });
+    return channel;
+  }
+
   /** Send one Docker API request through a started bridge and return the whole raw reply.
    *  `start()` binds the listener and is called once per bridge, as the transport does. */
   async function request(bridge: { start: () => Promise<{ host: string; port: number }> }) {
@@ -245,6 +272,37 @@ describe("createDockerSshBridge — a failed request is answered, not reset", ()
     expect(reply).toBe("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
     expect(reply).not.toContain("502");
   });
+
+  it("does not select streamlocal when its probe exceeds the real-channel verify window", async () => {
+    let streamlocalOpens = 0;
+    let dialStdioOpens = 0;
+    const bridge = createDockerSshBridge({
+      host: "test-host",
+      username: "root",
+      dockerSocketPath: "/var/run/docker.sock",
+      executor: {
+        forwardUnixSocket: async (): Promise<Duplex> => {
+          streamlocalOpens += 1;
+          // The capability probe answers after the 3s deadline used by every real
+          // streamlocal channel. Accepting it under the old 8s probe deadline cached a
+          // transport that the bridge itself considered unusable for later requests.
+          return httpChannel("probe", streamlocalOpens === 1 ? 3_200 : 0);
+        },
+        openDockerDialStdio: async (): Promise<Duplex> => {
+          dialStdioOpens += 1;
+          return httpChannel("dial-stdio");
+        },
+      },
+    } as unknown as DockerConnectionOptions);
+    bridges.push(bridge);
+
+    await bridge.probe();
+    const reply = await request(bridge);
+
+    expect(reply).toContain("dial-stdio");
+    expect(streamlocalOpens).toBe(1);
+    expect(dialStdioOpens).toBe(1);
+  }, 15_000);
 
   /**
    * Downgrading streamlocal → dial-stdio REPLAYS the buffered request, which is only free

@@ -23,19 +23,42 @@ import {
   MigrationAlreadyInProgressError,
   MigrationLockAcquireError,
 } from "../migration/migration-lock";
-import { exportInstance } from "./export.service";
+import { exportInstance, previewInstanceExport } from "./export.service";
 import { CloudInstanceNotTransferableError } from "./errors";
 import { importInstance, InvalidTransferFileError } from "./import.service";
 import { WrongPassphraseError } from "./passphrase-crypto";
-import type { DataTransferFile, ImportMode } from "./types";
+import { InvalidExportSelectionError } from "./selection";
+import {
+  createDirectReceiveSession,
+  DirectTransferDestinationError,
+  DirectTransferSessionError,
+  InvalidDirectTransferCodeError,
+  receiveDirectTransfer,
+  sendDirectTransfer,
+} from "./direct-transfer.service";
+import type {
+  DataTransferFile,
+  DirectTransferEnvelope,
+  ExportSelection,
+  ImportMode,
+} from "./types";
 
 interface ExportBody {
   passphrase?: string;
+  selection?: ExportSelection;
 }
 interface ImportBody {
   file?: DataTransferFile;
   passphrase?: string;
   mode?: ImportMode;
+}
+interface CreateReceiveBody {
+  apiBase?: string;
+  mode?: ImportMode;
+}
+interface SendDirectBody {
+  code?: string;
+  selection?: ExportSelection;
 }
 
 function readPassphrase(v: unknown): string | undefined {
@@ -50,10 +73,16 @@ export async function exportInstanceHandler(c: Context) {
 
   let file: DataTransferFile;
   try {
-    file = await exportInstance({ passphrase: readPassphrase(body.passphrase) });
+    file = await exportInstance({
+      passphrase: readPassphrase(body.passphrase),
+      selection: body.selection,
+    });
   } catch (err) {
     if (err instanceof CloudInstanceNotTransferableError) {
       return c.json({ error: err.message, code: err.code }, 403);
+    }
+    if (err instanceof InvalidExportSelectionError) {
+      return c.json({ error: err.message, code: err.code }, 400);
     }
     throw err;
   }
@@ -61,10 +90,127 @@ export async function exportInstanceHandler(c: Context) {
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "instance.data.exported",
     resourceType: "instance",
-    after: { hasSecrets: !!file.secrets, tableCount: Object.keys(file.dump.tables).length },
+    after: {
+      hasSecrets: !!file.secrets,
+      tableCount: Object.keys(file.dump.tables).length,
+      rowCount: file.summary?.rows,
+      history: file.selection?.history,
+    },
   });
 
   return c.json(file);
+}
+
+export async function previewInstanceExportHandler(c: Context) {
+  const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
+  try {
+    return c.json(await previewInstanceExport());
+  } catch (err) {
+    if (err instanceof CloudInstanceNotTransferableError) {
+      return c.json({ error: err.message, code: err.code }, 403);
+    }
+    throw err;
+  }
+}
+
+export async function createDirectReceiveSessionHandler(c: Context) {
+  const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
+  const body = ((await c.req.json<CreateReceiveBody>().catch(() => ({}))) ?? {}) as CreateReceiveBody;
+  if (typeof body.apiBase !== "string") {
+    return c.json({ error: "Missing destination API URL.", code: "INVALID_DIRECT_TRANSFER_CODE" }, 400);
+  }
+  try {
+    const session = createDirectReceiveSession({
+      apiBase: body.apiBase,
+      mode: body.mode === "merge" ? "merge" : "wipe",
+    });
+    audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+      eventType: "instance.data.receive_code_created",
+      resourceType: "instance",
+      after: { mode: session.mode, expiresAt: session.expiresAt },
+    });
+    return c.json(session);
+  } catch (err) {
+    if (err instanceof InvalidDirectTransferCodeError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    if (err instanceof DirectTransferSessionError) {
+      return c.json({ error: err.message, code: err.code }, 409);
+    }
+    throw err;
+  }
+}
+
+export async function sendDirectTransferHandler(c: Context) {
+  const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
+  const body = ((await c.req.json<SendDirectBody>().catch(() => ({}))) ?? {}) as SendDirectBody;
+  if (typeof body.code !== "string") {
+    return c.json({ error: "Missing receive code.", code: "INVALID_DIRECT_TRANSFER_CODE" }, 400);
+  }
+  try {
+    const result = await sendDirectTransfer({ code: body.code, selection: body.selection });
+    audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+      eventType: "instance.data.sent",
+      resourceType: "instance",
+      after: {
+        destination: result.destination,
+        rowsRestored: result.rowsRestored,
+        secretsRehydrated: result.secretsRehydrated,
+      },
+    });
+    return c.json(result);
+  } catch (err) {
+    if (
+      err instanceof InvalidDirectTransferCodeError ||
+      err instanceof DirectTransferSessionError ||
+      err instanceof DirectTransferDestinationError
+    ) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    if (err instanceof CloudInstanceNotTransferableError) {
+      return c.json({ error: err.message, code: err.code }, 403);
+    }
+    if (err instanceof InvalidExportSelectionError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    throw err;
+  }
+}
+
+/** Public capability endpoint: the encrypted receive code is the authorization. */
+export async function receiveDirectTransferHandler(c: Context) {
+  let envelope: DirectTransferEnvelope;
+  try {
+    envelope = await c.req.json<DirectTransferEnvelope>();
+  } catch {
+    return c.json({ error: "Invalid encrypted transfer body.", code: "INVALID_DIRECT_TRANSFER_CODE" }, 400);
+  }
+  try {
+    return c.json(await receiveDirectTransfer(envelope));
+  } catch (err) {
+    if (err instanceof InvalidDirectTransferCodeError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    if (err instanceof DirectTransferSessionError) {
+      return c.json({ error: err.message, code: err.code }, 410);
+    }
+    if (err instanceof CloudInstanceNotTransferableError) {
+      return c.json({ error: err.message, code: err.code }, 403);
+    }
+    if (err instanceof InvalidTransferFileError || err instanceof WrongPassphraseError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    if (err instanceof PkCollisionError) {
+      return c.json({ error: err.message, code: "PK_COLLISION" }, 409);
+    }
+    if (err instanceof MigrationAlreadyInProgressError || err instanceof MigrationLockAcquireError) {
+      return c.json({ error: "The destination is busy. Generate a new code and try again shortly.", code: "BUSY" }, 503);
+    }
+    throw err;
+  }
 }
 
 export async function importInstanceHandler(c: Context) {

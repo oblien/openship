@@ -18,13 +18,14 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, userInfo } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import {
   LocalExecutor,
@@ -69,6 +70,44 @@ const EDGE_SITES_HOST_DIR = `${EDGE_HOST_STATE_DIR}/sites-enabled`;
 const EDGE_ACME_HOST_DIR = `${EDGE_HOST_STATE_DIR}/acme`;
 
 /**
+ * Physical bind source for the local Docker daemon.
+ *
+ * Docker Desktop and OrbStack need macOS's physical `/private/var` and
+ * `/private/etc` paths; handing the daemon their `/var` and `/etc` symlink aliases
+ * can mount empty VM directories instead (#692). Resolve as deeply as the local
+ * filesystem allows so a first install still works before the leaf exists.
+ * Linux deliberately keeps the stable logical paths used by existing installs.
+ */
+export function canonicalComposeHostPath(
+  target: string,
+  platform: NodeJS.Platform = process.platform,
+  resolvePath: (path: string) => string = realpathSync,
+): string {
+  if (platform !== "darwin") return target;
+  try {
+    return resolvePath(target);
+  } catch {
+    let parent = target;
+    while (parent !== dirname(parent)) {
+      parent = dirname(parent);
+      try {
+        return join(resolvePath(parent), relative(parent, target));
+      } catch {
+        // Keep walking to the closest existing ancestor.
+      }
+    }
+    throw new Error(`Could not resolve edge bind-mount source ${target} on this Mac.`);
+  }
+}
+
+function composeEdgeMounts(): ReadonlyArray<{ host: string; container: string }> {
+  return EDGE_CONTAINER_MOUNTS.map((mount) => ({
+    ...mount,
+    host: canonicalComposeHostPath(mount.host),
+  }));
+}
+
+/**
  * The edge's bind mounts as compose YAML lines.
  *
  * Generated from `EDGE_CONTAINER_MOUNTS` — the same array `buildEdgeRunCommand`
@@ -80,7 +119,7 @@ const EDGE_ACME_HOST_DIR = `${EDGE_HOST_STATE_DIR}/acme`;
  * `:z` relabels for SELinux-enforcing hosts; a no-op elsewhere.
  */
 function edgeVolumeYaml(indent: string): string {
-  return EDGE_CONTAINER_MOUNTS.map((m) => `${indent}- ${m.host}:${m.container}:z`).join("\n");
+  return composeEdgeMounts().map((m) => `${indent}- ${m.host}:${m.container}:z`).join("\n");
 }
 
 /** Marker the API service's volume list carries until {@link renderComposeYaml} fills it. */
@@ -3164,7 +3203,7 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
     secretRotation: opts.resetSecrets ? null : secretRotationRisk(prev),
     pgDataRisk: pgDataDetectionRisk(prev),
     existing: Object.keys(prev).length > 0,
-    mountDirs: EDGE_CONTAINER_MOUNTS.map((m) => m.host),
+    mountDirs: composeEdgeMounts().map((m) => m.host),
     buildDir,
     hostChannel,
   };
@@ -3323,7 +3362,7 @@ export function composePrefetch(opts: ComposeUpOpts): ComposePrefetchResult {
  */
 function ensureEdgeMountDirs(): string[] {
   const failed: string[] = [];
-  for (const { host } of EDGE_CONTAINER_MOUNTS) {
+  for (const { host } of composeEdgeMounts()) {
     try {
       mkdirSync(host, { recursive: true });
     } catch (err) {

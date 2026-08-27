@@ -45,6 +45,7 @@ import { composeDeployMadeNoChanges, deployComposeServices } from "./deploy.serv
 import { COMPOSE_SENTINEL } from "../../../lib/container-ref";
 import { safeErrorMessage } from "@repo/core";
 import * as sessionManager from "../session-manager";
+import type { HostPortTargetIdentity } from "../../../lib/host-port-target";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -62,6 +63,8 @@ export interface ComposePipelineOpts {
   /** The target IS this machine (`platform.localHost`) — host-path writes go
    *  through the host channel, not `executor`. */
   localHost?: boolean;
+  /** Physical TCP bind namespace resolved from the actual deployment target. */
+  hostPortTarget?: HostPortTargetIdentity | null;
   usesManagedRouting: boolean;
   logger: BuildLogger;
   ctx: LifecycleContext;
@@ -99,6 +102,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     system,
     executor,
     localHost,
+    hostPortTarget,
     usesManagedRouting,
     logger,
     ctx,
@@ -163,7 +167,10 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
       await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
         const detail = safeErrorMessage(err);
-        logger.log(`Warning: failed to clean up built service image ${serviceId}: ${detail}\n`, "warn");
+        logger.log(
+          `Warning: failed to clean up built service image ${serviceId}: ${detail}\n`,
+          "warn",
+        );
       });
     }
     await onCancelled(ctx, composeBuild.durationMs);
@@ -193,6 +200,8 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     system,
     executor,
     localHost,
+    hostPortTarget,
+    promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
     usesManagedRouting,
     serverId: snapshot.serverId,
     targetServiceIds,
@@ -223,7 +232,10 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
       await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
         const detail = safeErrorMessage(err);
-        logger.log(`Warning: failed to clean up built service image ${serviceId}: ${detail}\n`, "warn");
+        logger.log(
+          `Warning: failed to clean up built service image ${serviceId}: ${detail}\n`,
+          "warn",
+        );
       });
     }
     await onFailure(ctx, composeResult.error ?? "Compose deploy failed", composeBuild.durationMs);
@@ -249,7 +261,10 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     if (deployedServiceIds.has(serviceId)) continue;
     await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
       const detail = safeErrorMessage(err);
-      logger.log(`Warning: failed to clean up unused service image ${serviceId}: ${detail}\n`, "warn");
+      logger.log(
+        `Warning: failed to clean up unused service image ${serviceId}: ${detail}\n`,
+        "warn",
+      );
     });
   }
 
@@ -259,10 +274,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // → project attention + Domains-tab dot), cleared by Retry routing / next deploy.
   const routingWarning =
     composeResult.routeWarnings?.length || composeResult.tlsPendingDomains?.length
-      ? routeIssuesWarning(
-          composeResult.routeWarnings ?? [],
-          composeResult.tlsPendingDomains ?? [],
-        )
+      ? routeIssuesWarning(composeResult.routeWarnings ?? [], composeResult.tlsPendingDomains ?? [])
       : undefined;
   const successWarning = routingWarning ?? composeResult.warning;
   sessionManager.broadcastInstallPhase(dep.id, { id: "ready", status: "done" });
@@ -300,5 +312,3 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     },
   });
 }
-
-

@@ -8,10 +8,11 @@
  *   restore      — restore history (sibling of run)
  */
 
-import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { backupDestination, backupPolicy, backupRestore, backupRun } from "../schema";
 import { detailOf } from "./storable-detail";
+import { withProjectWorkAdmission } from "./project-work-admission";
 
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
@@ -35,17 +36,18 @@ export type BackupRunStatus =
   | "cancelled"
   | "server_error";
 
+/** Result of atomically admitting one queued backup worker. */
+export type BackupRunExecutionClaim = "claimed" | "project_unavailable" | "state_changed";
+
 /**
  * Restore FSM: queued → preparing → prepared → applying → terminal.
  *
- *   preparing  Downloading artifact + verifying sha256 into a staging
- *              area (Docker named volume or Cloud workspace sub-path).
- *              Service stays running, untouched.
- *   prepared   Staging complete. Waiting for user to confirm + apply.
- *              Can sit indefinitely. User can also cancel here and
- *              the staging area gets cleaned up.
- *   applying   Destructive phase: stop service → swap volume contents
- *              from staging → start service → verify health.
+ *   preparing  Verifies the remote artifact and target while leaving the
+ *              service untouched. Nothing is staged locally today.
+ *   prepared   Verification complete. Waiting for user confirmation; this
+ *              state may sit indefinitely and is safe to cancel immediately.
+ *   applying   Destructive phase: stop service → stream into the target →
+ *              start service → verify health.
  */
 export type BackupRestoreStatus =
   | "queued"
@@ -56,6 +58,9 @@ export type BackupRestoreStatus =
   | "failed"
   | "cancelled"
   | "server_error";
+
+/** Result of atomically admitting the destructive half of a restore. */
+export type BackupRestoreApplyClaim = "claimed" | "project_unavailable" | "state_changed";
 
 export const IN_FLIGHT_RUN_STATUSES: BackupRunStatus[] = [
   "queued",
@@ -73,6 +78,12 @@ export const IN_FLIGHT_RESTORE_STATUSES: BackupRestoreStatus[] = [
 // Note: `prepared` is INTENTIONALLY not in-flight — it's a quiescent
 // waiting state. Boot sweep doesn't kill prepared restores, the user
 // gets to apply them after a restart.
+
+/** A terminal-looking outcome is still active until its winning worker exits. */
+const liveBackupExecution = and(
+  isNotNull(backupRun.executionStartedAt),
+  isNull(backupRun.executionFinishedAt),
+);
 
 // ─── Transition durability ───────────────────────────────────────────────────
 
@@ -516,9 +527,7 @@ export function createBackupRunRepo(db: Database) {
     /** Storage rollup per destination for one org: bytes actually stored
      *  (succeeded, non-deleted runs), total run count, and the most recent run
      *  time. Powers the Backups page's per-destination size monitoring. */
-    async statsByDestination(
-      organizationId: string,
-    ): Promise<
+    async statsByDestination(organizationId: string): Promise<
       Array<{
         destinationId: string | null;
         storedBytes: number;
@@ -544,13 +553,19 @@ export function createBackupRunRepo(db: Database) {
       }));
     },
 
-    /** Every run for a project still in a non-terminal state. Used by the
-     *  atomic project-teardown gate to decide whether to reject or force. */
+    /**
+     * Every run that can still mutate project resources.
+     *
+     * The execution lease intentionally outlives a terminal FSM outcome. A
+     * heartbeat sweep may record `server_error` while the original upload is
+     * still unwinding; teardown must continue to see that worker until its
+     * outermost finally acknowledges completion.
+     */
     async listInFlightByProject(projectId: string): Promise<BackupRun[]> {
       return db.query.backupRun.findMany({
         where: and(
           eq(backupRun.projectId, projectId),
-          inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES),
+          or(inArray(backupRun.status, IN_FLIGHT_RUN_STATUSES), liveBackupExecution),
           isNull(backupRun.deletedAt),
         ),
       });
@@ -562,15 +577,117 @@ export function createBackupRunRepo(db: Database) {
      *  through the backlog in FIFO order. */
     async listQueued(limit = 50): Promise<BackupRun[]> {
       return db.query.backupRun.findMany({
-        where: eq(backupRun.status, "queued"),
+        where: and(eq(backupRun.status, "queued"), isNull(backupRun.executionStartedAt)),
         orderBy: (t, { asc }) => [asc(t.startedAt)],
         limit,
       });
     },
 
     async create(data: NewBackupRun): Promise<BackupRun> {
-      const [row] = await db.insert(backupRun).values(data).returning();
+      const row = await withProjectWorkAdmission(
+        db,
+        data.projectId,
+        data.organizationId,
+        async (tx) => (await tx.insert(backupRun).values(data).returning())[0]!,
+      );
+      if (!row) {
+        throw new Error("Cannot start backup: project is being deleted or no longer exists");
+      }
       return row;
+    },
+
+    /**
+     * Atomically give exactly one worker ownership of a queued run.
+     *
+     * The project row is locked through the same admission gate used by run
+     * creation. If execution wins, project deletion waits and then observes the
+     * newly-opened lease. If deletion wins, its predicate is re-evaluated after
+     * the wait and no worker starts. The backup-row predicates also make an
+     * in-process fast path, poller, BullMQ retry, and inline enqueue fallback all
+     * converge on one owner.
+     */
+    async claimExecution(
+      id: string,
+      projectId: string | null,
+      organizationId: string,
+    ): Promise<BackupRunExecutionClaim> {
+      const claimed = await withProjectWorkAdmission(db, projectId, organizationId, async (tx) => {
+        const now = new Date();
+        const projectMatches = projectId
+          ? eq(backupRun.projectId, projectId)
+          : isNull(backupRun.projectId);
+        const [row] = await tx
+          .update(backupRun)
+          .set({
+            status: "preparing",
+            executionStartedAt: now,
+            executionFinishedAt: null,
+            lastEventAt: now,
+          })
+          .where(
+            and(
+              eq(backupRun.id, id),
+              eq(backupRun.organizationId, organizationId),
+              projectMatches,
+              eq(backupRun.status, "queued"),
+              isNull(backupRun.executionStartedAt),
+              isNull(backupRun.executionFinishedAt),
+              isNull(backupRun.deletedAt),
+            ),
+          )
+          .returning();
+        return Boolean(row);
+      });
+      if (claimed === undefined) return "project_unavailable";
+      return claimed ? "claimed" : "state_changed";
+    },
+
+    /**
+     * Cancel a queued run before any worker owns it.
+     *
+     * Project teardown has already closed work admission when it calls this.
+     * This CAS races safely with `claimExecution`: exactly one side can change
+     * the queued/unclaimed row. A claimed capture is deliberately untouched;
+     * teardown must wait for that worker's execution lease to close.
+     */
+    async cancelQueuedBeforeExecution(
+      id: string,
+      projectId: string,
+      organizationId: string,
+    ): Promise<boolean> {
+      const now = new Date();
+      const [cancelled] = await db
+        .update(backupRun)
+        .set({
+          status: "cancelled",
+          finishedAt: now,
+          lastEventAt: now,
+        })
+        .where(
+          and(
+            eq(backupRun.id, id),
+            eq(backupRun.projectId, projectId),
+            eq(backupRun.organizationId, organizationId),
+            eq(backupRun.status, "queued"),
+            isNull(backupRun.executionStartedAt),
+            isNull(backupRun.executionFinishedAt),
+            isNull(backupRun.deletedAt),
+          ),
+        )
+        .returning();
+      return Boolean(cancelled);
+    },
+
+    /**
+     * Close the durable execution lease. This is intentionally separate from
+     * every status transition and is called only by the worker's outermost
+     * finally, after all source/destination cleanup and notifications return.
+     */
+    async acknowledgeExecutionFinished(id: string): Promise<void> {
+      await db
+        .update(backupRun)
+        .set({ executionFinishedAt: new Date() })
+        .where(and(eq(backupRun.id, id), liveBackupExecution));
     },
 
     /** FSM state transition. Always bumps lastEventAt; sets finishedAt
@@ -579,7 +696,9 @@ export function createBackupRunRepo(db: Database) {
     async transition(
       id: string,
       status: BackupRunStatus,
-      patch?: Partial<Omit<NewBackupRun, "id" | "startedAt">>,
+      patch?: Partial<
+        Omit<NewBackupRun, "id" | "startedAt" | "executionStartedAt" | "executionFinishedAt">
+      >,
     ): Promise<void> {
       const TERMINAL: BackupRunStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
       const finishing = TERMINAL.includes(status);
@@ -624,25 +743,41 @@ export function createBackupRunRepo(db: Database) {
      * ran and reported a crash that had not touched them.
      */
     async sweepStaleRuns(reason: string): Promise<number> {
-      const result = await db
-        .update(backupRun)
-        .set({
-          status: "server_error",
-          finishedAt: new Date(),
-          lastEventAt: new Date(),
-          errorMessage: reason,
-        })
-        .where(
-          and(
-            inArray(
-              backupRun.status,
-              IN_FLIGHT_RUN_STATUSES.filter((s) => s !== "queued"),
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        const terminalized = await tx
+          .update(backupRun)
+          .set({
+            status: "server_error",
+            finishedAt: now,
+            lastEventAt: now,
+            errorMessage: reason,
+          })
+          .where(
+            and(
+              inArray(
+                backupRun.status,
+                IN_FLIGHT_RUN_STATUSES.filter((s) => s !== "queued"),
+              ),
+              isNull(backupRun.finishedAt),
             ),
-            isNull(backupRun.finishedAt),
-          ),
-        )
-        .returning();
-      return result.length;
+          )
+          .returning();
+
+        // This method is boot-only and only called for a self-hosted,
+        // single-process installation. Process start is therefore proof that
+        // the previous in-process worker is gone. Unlike heartbeat sweeps, this
+        // is allowed to close an orphaned execution lease. Preserve any terminal
+        // verdict that landed just before the crash by keeping this a separate
+        // lease-only write.
+        const acknowledged = await tx
+          .update(backupRun)
+          .set({ executionFinishedAt: now })
+          .where(liveBackupExecution)
+          .returning();
+
+        return new Set([...terminalized, ...acknowledged].map((row) => row.id)).size;
+      });
     },
 
     /**
@@ -832,7 +967,15 @@ export function createBackupRestoreRepo(db: Database) {
     },
 
     async create(data: NewBackupRestore): Promise<BackupRestore> {
-      const [row] = await db.insert(backupRestore).values(data).returning();
+      const row = await withProjectWorkAdmission(
+        db,
+        data.projectId,
+        data.organizationId,
+        async (tx) => (await tx.insert(backupRestore).values(data).returning())[0]!,
+      );
+      if (!row) {
+        throw new Error("Cannot start restore: project is being deleted or no longer exists");
+      }
       return row;
     },
 
@@ -877,6 +1020,44 @@ export function createBackupRestoreRepo(db: Database) {
         .where(eq(backupRestore.id, id))
         .returning();
       return row;
+    },
+
+    /**
+     * Atomically move a prepared restore into its destructive phase while
+     * serializing with project deletion.
+     *
+     * A restore row is created during prepare, potentially hours before the
+     * operator applies it, so creation-time work admission is not enough. This
+     * update must take the same project-row lock as `project.claimDeletion()`:
+     * if apply wins, teardown's in-lock active query sees `applying`; if delete
+     * wins, apply is refused. The cancel predicate also prevents a durable
+     * cancel request from being crossed by a late apply transition.
+     */
+    async claimApply(
+      id: string,
+      projectId: string | null,
+      organizationId: string,
+    ): Promise<BackupRestoreApplyClaim> {
+      const projectMatches = projectId
+        ? eq(backupRestore.projectId, projectId)
+        : isNull(backupRestore.projectId);
+      const rows = await withProjectWorkAdmission(db, projectId, organizationId, (tx) =>
+        tx
+          .update(backupRestore)
+          .set({ status: "applying", lastEventAt: new Date() })
+          .where(
+            and(
+              eq(backupRestore.id, id),
+              eq(backupRestore.organizationId, organizationId),
+              projectMatches,
+              eq(backupRestore.status, "prepared"),
+              eq(backupRestore.cancelRequested, false),
+            ),
+          )
+          .returning(),
+      );
+      if (!rows) return "project_unavailable";
+      return rows.length === 1 ? "claimed" : "state_changed";
     },
 
     async transition(

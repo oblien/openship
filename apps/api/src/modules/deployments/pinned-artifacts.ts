@@ -14,8 +14,9 @@
  * (`build-pipeline.ts`) and the commit resolver (`build.service.ts`) can't drift
  * on what counts as pinned.
  *
- * A pinned image is a HINT, never a guarantee: the tag may have been reclaimed
- * since. Every consumer treats a missing image as "build it normally".
+ * Rollback/migration pins are hints: if retention reclaimed one, consumers may
+ * build normally. A refresh marker is a promise not to rebuild; its consumer
+ * fails closed when the active artifact is unavailable.
  */
 
 import { classNeedsGitSource } from "@repo/core";
@@ -30,6 +31,13 @@ export interface PinnedArtifactSnapshot extends SnapshotClassInput {
   handoverImages?: Record<string, string>;
   /** Single-app equivalent: the whole release is this one image. */
   handoverAppImage?: string;
+  /**
+   * Env-only single-app refresh: reuse the ACTIVE deployment's retained
+   * artifact. Docker pairs this with handoverAppImage; Bare resolves the
+   * deployment's release directory itself. Unlike rollback pins, absence is a
+   * hard refresh failure — refresh must never silently become a source build.
+   */
+  refreshAppDeploymentId?: string;
   /**
    * STATIC releases have no image: their artifact is a release DIRECTORY on the
    * host that the edge serves (see BareRuntime.deployStatic). Pinning it lets a
@@ -67,6 +75,12 @@ export function pinnedAppImage(
   return nonEmpty(snapshot?.handoverAppImage);
 }
 
+export function refreshAppDeploymentId(
+  snapshot: PinnedArtifactSnapshot | null | undefined,
+): string | undefined {
+  return nonEmpty(snapshot?.refreshAppDeploymentId);
+}
+
 /** The pinned release DIRECTORY for a static deploy, if any. Absolute by
  *  construction — a relative value is not a host path and is ignored. */
 export function pinnedStaticDir(
@@ -78,7 +92,9 @@ export function pinnedStaticDir(
 
 /** Does this snapshot pin anything at all? */
 export function hasPinnedArtifacts(snapshot: PinnedArtifactSnapshot | null | undefined): boolean {
-  if (pinnedAppImage(snapshot) || pinnedStaticDir(snapshot)) return true;
+  if (pinnedAppImage(snapshot) || pinnedStaticDir(snapshot) || refreshAppDeploymentId(snapshot)) {
+    return true;
+  }
   return Object.values(snapshot?.handoverImages ?? {}).some((ref) => !!nonEmpty(ref));
 }
 
@@ -88,6 +104,7 @@ export function withoutPinnedArtifacts<T extends PinnedArtifactSnapshot>(snapsho
     handoverImages: _images,
     handoverAppImage: _app,
     handoverStaticDir: _static,
+    refreshAppDeploymentId: _refreshApp,
     ...rest
   } = snapshot;
   return rest as T;
@@ -125,7 +142,11 @@ export function snapshotNeedsGitSource(
   // token. `source === "git"` is true iff there's a repo to fetch (non-empty
   // repoUrl, not an upload/release), so a localPath/upload/image deploy stays
   // git-free and a public repo still resolves anonymously downstream.
-  return classNeedsGitSource(snapshotToClass(snapshot)) && !pinnedAppImage(snapshot);
+  return (
+    classNeedsGitSource(snapshotToClass(snapshot)) &&
+    !pinnedAppImage(snapshot) &&
+    !refreshAppDeploymentId(snapshot)
+  );
 }
 
 /**

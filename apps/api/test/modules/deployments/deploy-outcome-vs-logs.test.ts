@@ -99,9 +99,8 @@ vi.mock("../../../src/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: async () => {},
 }));
 
-const { onSuccess, onFailure, reportPipelineError } = await import(
-  "../../../src/modules/deployments/deployment-lifecycle"
-);
+const { onSuccess, onFailure, reportPipelineError } =
+  await import("../../../src/modules/deployments/deployment-lifecycle");
 type LifecycleContext = Parameters<typeof onSuccess>[0];
 
 function ctxFor(): LifecycleContext {
@@ -134,7 +133,10 @@ const statusPairs = () => h.statusWrites.map((w) => `${w.id}:${w.status}`);
 
 function loggerSpy() {
   const lines: Array<{ message: string; level?: string }> = [];
-  return { lines, logger: { log: (message: string, level?: string) => lines.push({ message, level }) } };
+  return {
+    lines,
+    logger: { log: (message: string, level?: string) => lines.push({ message, level }) },
+  };
 }
 
 beforeEach(() => {
@@ -365,20 +367,27 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
     const { writes, repo } = fakeDb();
     const poisoned = [{ timestamp: "t", level: "warn", message: `Admin key: ${NUL}x` }];
 
-    await expect(repo.finishBuildSession("bld_1", "ready", 4321, poisoned)).resolves.toBeUndefined();
+    await expect(
+      repo.finishBuildSession("bld_1", "ready", 4321, poisoned),
+    ).resolves.toBeUndefined();
 
     expect(writes).toHaveLength(2);
     for (const w of writes) {
       expect(w.status).toBe("ready");
       expect(w.durationMs).toBe(4321);
-      expect(w.finishedAt).toBeInstanceOf(Date);
+      // Terminal outcome is not worker completion. The pipeline's outermost
+      // finally stamps finishedAt only after all host-writing hooks return, so
+      // project teardown cannot race detached deploy work.
+      expect(w).not.toHaveProperty("finishedAt");
     }
     expect(JSON.stringify(writes[1].logs)).toContain("Build logs could not be stored");
   });
 
   it("sheds a lone-surrogate payload too, not just a NUL", async () => {
     const { writes, repo } = fakeDb();
-    const poisoned = [{ timestamp: "t", level: "warn", message: `half ${String.fromCharCode(0xd83d)}` }];
+    const poisoned = [
+      { timestamp: "t", level: "warn", message: `half ${String.fromCharCode(0xd83d)}` },
+    ];
 
     await expect(repo.finishBuildSession("bld_1", "ready", 1, poisoned)).resolves.toBeUndefined();
 

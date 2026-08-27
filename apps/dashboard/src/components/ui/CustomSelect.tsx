@@ -161,7 +161,7 @@ export function CustomSelect<T extends string>({
         <div
           ref={menuRef}
           role="listbox"
-          className="fixed z-[10050] overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
+          className="fixed z-[10050] flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
           style={{
             left: menuPosition.left,
             width: menuPosition.width,
@@ -171,7 +171,15 @@ export function CustomSelect<T extends string>({
               : { bottom: menuPosition.bottom }),
           }}
         >
-          <div className="max-h-full overflow-y-auto py-1.5">
+          {/*
+            `max-h-full` does not constrain a percentage-sized child when its
+            parent only has `max-height`. With a long branch list the options
+            therefore grew past the menu and were clipped by the outer
+            `overflow-hidden`, leaving no scrollable area (#710). A flex child
+            with `min-h-0` takes the remaining bounded menu height instead;
+            the footer stays visible and the list owns vertical scrolling.
+          */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5 touch-pan-y">
             {options.map((option) => {
               const isSelected = option.value === value;
               return (

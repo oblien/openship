@@ -65,6 +65,34 @@ async function deploy(rt: BareRuntime, cfg: DeployConfig) {
 }
 
 describe("BareRuntime persistent paths", () => {
+  it("resolves only an existing, path-safe retained release", async () => {
+    const retained = `${WORK}/releases/dep_live`;
+    const { executor } = makeExecutor([retained]);
+    const rt = new BareRuntime({ workDir: WORK, executor });
+
+    await expect(rt.retainedReleaseArtifact("dep_live")).resolves.toBe(retained);
+    await expect(rt.retainedReleaseArtifact("dep_missing")).resolves.toBeNull();
+    await expect(rt.retainedReleaseArtifact("../escape")).resolves.toBeNull();
+    await expect(rt.retainedReleaseArtifact("nested/dep")).resolves.toBeNull();
+  });
+
+  it("copies a retained release for refresh without consuming the active release", async () => {
+    const activeRelease = `${WORK}/releases/dep_live`;
+    const nextRelease = `${WORK}/releases/dep_next`;
+    const { executor, removed } = makeExecutor([activeRelease]);
+    const rt = new BareRuntime({ workDir: WORK, executor });
+
+    await deploy(rt, {
+      ...config([]),
+      deploymentId: "dep_next",
+      previousDeploymentId: "dep_live",
+      imageRef: activeRelease,
+    });
+
+    expect(removed).toContain(nextRelease);
+    expect(removed).not.toContain(activeRelease);
+  });
+
   it("seeds shared/ from the release the first time, then symlinks the path in", async () => {
     // The release ships a storage/ skeleton; shared/ doesn't exist yet.
     const { executor, calls, removed } = makeExecutor([`${RELEASE}/storage`]);

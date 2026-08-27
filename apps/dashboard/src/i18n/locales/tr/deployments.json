@@ -169,6 +169,7 @@
     "unpinFailed": "Dağıtım sabitlemesi kaldırılamadı",
     "rollbackModeInstant": "Anında geri yükleme — bu sürümün saklanan imajı kullanılır, yeniden derleme yok.",
     "rollbackModeRebuild": "Yeniden derleme — bu sürümün imajı sunucuda yok, commit'i tekrar derlenecek.",
+    "rollbackModeReacquireImage": "Kayıt deposundan geri yükleme — bu sürüm için kaydedilen tam imaj referansını yeniden çeker; kaynak yeniden derlenmez.",
     "rollbackModeMixed": "Çoğunlukla anında — {count} servis imajını yitirdi ve yeniden derlenecek."
   },
   "rollbackConfirm": {

@@ -22,8 +22,9 @@ export interface RoutingProvider {
   /** Register a reverse-proxy route (domain → container/process) */
   registerRoute(route: RouteConfig): Promise<void>;
 
-  /** Remove a reverse-proxy route */
-  removeRoute(domain: string): Promise<void>;
+  /** Remove a reverse-proxy route. Providers that can roll back a failed
+   * removal must not recreate it after the caller has abandoned the attempt. */
+  removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void>;
 
   /**
    * Re-emit vhosts an older generator wrote, so a fix to the EMITTED config shape reaches
@@ -90,19 +91,28 @@ export interface RoutingProvider {
 
 // ─── SSL ─────────────────────────────────────────────────────────────────────
 
+export interface ProvisionCertOptions {
+  onLog?: (line: string) => void;
+  force?: boolean;
+  challenge?: "http-01" | "dns-01";
+  /** Existing hook commands already present in the Certbot execution environment. */
+  dnsAuthHook?: string;
+  dnsCleanupHook?: string;
+  /** Hook bodies that the provider must materialize beside Certbot on its target. */
+  dnsAuthHookScript?: string;
+  dnsCleanupHookScript?: string;
+}
+
 export interface SslProvider {
   /** Provision a new TLS certificate for a domain. `onLog`, when given, streams
    *  certbot's output line-by-line (powers the live-log verify modal). `force`
    *  bypasses the "cert already on disk" short-circuit and passes certbot
    *  `--force-renewal`, so a present-but-stale/near-expiry cert is actually
    *  reissued instead of returned as-is. */
-  provisionCert(
-    domain: string,
-    opts?: { onLog?: (line: string) => void; force?: boolean },
-  ): Promise<SslResult>;
+  provisionCert(domain: string, opts?: ProvisionCertOptions): Promise<SslResult>;
 
   /** Renew an existing TLS certificate */
-  renewCert(domain: string): Promise<SslResult>;
+  renewCert(domain: string, opts?: ProvisionCertOptions): Promise<SslResult>;
 
   /**
    * Install an operator-supplied certificate (bring-your-own / Cloudflare

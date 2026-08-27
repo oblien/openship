@@ -17,8 +17,15 @@ import { readFileSync } from "node:fs";
  */
 const orch = readFileSync(new URL("./migration.orchestrator.ts", import.meta.url), "utf8");
 const request = (() => {
-  const from = orch.indexOf("const dep = await requestBuildAccess(ctx, {");
-  return orch.slice(from, orch.indexOf("});", from));
+  // Anchor on semantic statements, not Prettier's current argument layout.
+  // `requestBuildAccess(ctx, {` may be one line or several; the assignment
+  // immediately after the call is the stable boundary for this request.
+  const from = orch.indexOf("const dep = await requestBuildAccess(");
+  const to = orch.indexOf("deploymentId = dep.deployment_id;", from);
+  if (from < 0 || to < 0) {
+    throw new Error("Could not locate the migration target deployment request");
+  }
+  return orch.slice(from, to);
 })();
 
 describe("the migration's target deploy", () => {
@@ -69,7 +76,8 @@ describe("no git source is fetched when the image is pinned", () => {
   );
 
   it("the clone decision reads the pin", () => {
-    expect(pinned).toContain("classNeedsGitSource(snapshotToClass(snapshot)) && !pinnedAppImage(snapshot)");
+    expect(pinned).toContain("classNeedsGitSource(snapshotToClass(snapshot))");
+    expect(pinned).toContain("!pinnedAppImage(snapshot)");
   });
 
   it("and the pipeline asks that one resolver rather than deciding again", () => {

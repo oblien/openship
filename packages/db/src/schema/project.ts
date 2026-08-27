@@ -117,8 +117,9 @@ export const project = pgTable(
      *   - "upload" → source came from a browser folder-upload; no durable origin
      *                (re-upload to redeploy). Can be switched to "github" later via
      *                the repo-link flow, becoming a normal git project.
-     *   - "release" → a prebuilt DIST (no repo, no build). Redeploys track a
-     *                VERSION, not a commit. Config lives in `releaseSource`.
+     *   - "release" → a prebuilt archive or container image (no clone/build).
+     *                Redeploys track a VERSION, not a commit. Config lives in
+     *                `releaseSource`.
      */
     gitProvider: text("git_provider").default("github"),
     /** Owner/org on the git provider */
@@ -143,9 +144,9 @@ export const project = pgTable(
     cloneTokenSetAt: timestamp("clone_token_set_at"),
 
     /**
-     * Release/dist source config (only when gitProvider === "release"). Either a
-     * GitHub-Releases asset (repo + assetTemplate) or an external HTTPS tarball
-     * (distUrl + sha256). `trackReleases` opts the project into release-webhook
+     * Release source config (only when gitProvider === "release"). The artifact
+     * is either an archive (GitHub asset or checksummed HTTPS tarball) or a
+     * versioned registry image. `trackReleases` is reserved for release-webhook
      * auto-deploy. See ReleaseSource in @repo/core.
      */
     releaseSource: jsonb("release_source").$type<ReleaseSource | null>(),
@@ -327,9 +328,7 @@ export const project = pgTable(
      * is available either way — images are retained by the rollback-window keep
      * set regardless of this setting.
      */
-    defaultRollbackStrategy: text("default_rollback_strategy")
-      .notNull()
-      .default("git"),
+    defaultRollbackStrategy: text("default_rollback_strategy").notNull().default("git"),
     /**
      * One-shot "rebuild every service on the next deploy regardless of
      * what changed" flag. Used by the dashboard's force-deploy toggle.
@@ -518,30 +517,34 @@ export const project = pgTable(
  * Values are encrypted at rest (application-level encryption).
  * Each var can be scoped to specific environments.
  */
-export const envVar = pgTable("env_var", {
-  id: text("id").primaryKey(), // "env_..."
-  projectId: text("project_id")
-    .notNull()
-    .references(() => project.id, { onDelete: "cascade" }),
-  /** Service ID for service-scoped env vars (null = project-level / all services) */
-  serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
+export const envVar = pgTable(
+  "env_var",
+  {
+    id: text("id").primaryKey(), // "env_..."
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    /** Service ID for service-scoped env vars (null = project-level / all services) */
+    serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
 
-  /** Variable key (e.g. "DATABASE_URL") */
-  key: text("key").notNull(),
-  /** Encrypted value */
-  value: text("value").notNull(),
-  /** Environments where this var is active */
-  environment: text("environment").notNull().default("production"), // production | preview | development
+    /** Variable key (e.g. "DATABASE_URL") */
+    key: text("key").notNull(),
+    /** Encrypted value */
+    value: text("value").notNull(),
+    /** Environments where this var is active */
+    environment: text("environment").notNull().default("production"), // production | preview | development
 
-  /** Preview-only: don't include in production builds */
-  isSecret: boolean("is_secret").notNull().default(false),
+    /** Preview-only: don't include in production builds */
+    isSecret: boolean("is_secret").notNull().default(false),
 
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (t) => [
-  // Env resolution runs on every build — covers project + service +
-  // environment filtering used by buildPipelineEnv.
-  index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
-  // Backup / restore reads all vars for a project.
-  index("idx_env_var_project").on(t.projectId),
-]);
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Env resolution runs on every build — covers project + service +
+    // environment filtering used by buildPipelineEnv.
+    index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
+    // Backup / restore reads all vars for a project.
+    index("idx_env_var_project").on(t.projectId),
+  ],
+);

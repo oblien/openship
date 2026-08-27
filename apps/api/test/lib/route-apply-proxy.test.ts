@@ -24,7 +24,16 @@ const project = (proxy?: unknown) => ({
   routingConfig: proxy ? ({ proxy } as never) : null,
 });
 
-const REGISTER = [{ hostname: "app.example.com", targetUrl: "http://127.0.0.1:3000", isCustomDomain: false }];
+// Request-limit behavior is independent of host-port ownership. Use a bridge
+// upstream so this focused test does not bypass the loopback route guard with
+// invented ownership metadata.
+const REGISTER = [
+  {
+    hostname: "app.example.com",
+    targetUrl: "http://172.18.0.2:3000",
+    isCustomDomain: false,
+  },
+];
 
 function fakeRouting() {
   const registerRoute = vi.fn(async () => {});
@@ -84,7 +93,13 @@ describe("reconcileProjectRoutes — project request limits", () => {
 
     await reconcileProjectRoutes(project({ clientMaxBodySize: "50m" }), {
       routing,
-      registers: [{ hostname: "site.example.com", staticRoot: "/opt/openship/static/site", isCustomDomain: false }],
+      registers: [
+        {
+          hostname: "site.example.com",
+          staticRoot: "/opt/openship/static/site",
+          isCustomDomain: false,
+        },
+      ],
     });
 
     expect(registerRoute.mock.calls[0][0]).toMatchObject({

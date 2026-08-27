@@ -20,7 +20,11 @@ export {
   type CreatePatInput,
 } from "./personal-access-token.repo";
 export { createOAuthRepo } from "./oauth.repo";
-export { createProjectGroupRepo, type ProjectGroup, type NewProjectGroup } from "./project-group.repo";
+export {
+  createProjectGroupRepo,
+  type ProjectGroup,
+  type NewProjectGroup,
+} from "./project-group.repo";
 export {
   createProjectRepo,
   type Project,
@@ -41,16 +45,28 @@ export {
   type DnsCredential,
   type NewDnsCredential,
 } from "./dns-credential.repo";
-export {
-  createCredentialRepo,
-  type Credential,
-  type NewCredential,
-} from "./credential.repo";
+export { createCredentialRepo, type Credential, type NewCredential } from "./credential.repo";
 export { createRouteRuleRepo, type RouteRule, type NewRouteRule } from "./route-rule.repo";
-export { createWebhookSourceRepo, type WebhookSource, type NewWebhookSource } from "./webhook-source.repo";
-export { createIncomingWebhookRepo, type IncomingWebhook, type NewIncomingWebhook } from "./incoming-webhook.repo";
-export { createSystemNoticeRepo, type SystemNotice, type NewSystemNotice } from "./system-notice.repo";
-export { createUpdateStatusRepo, type UpdateStatus, type NewUpdateStatus } from "./update-status.repo";
+export {
+  createWebhookSourceRepo,
+  type WebhookSource,
+  type NewWebhookSource,
+} from "./webhook-source.repo";
+export {
+  createIncomingWebhookRepo,
+  type IncomingWebhook,
+  type NewIncomingWebhook,
+} from "./incoming-webhook.repo";
+export {
+  createSystemNoticeRepo,
+  type SystemNotice,
+  type NewSystemNotice,
+} from "./system-notice.repo";
+export {
+  createUpdateStatusRepo,
+  type UpdateStatus,
+  type NewUpdateStatus,
+} from "./update-status.repo";
 export {
   createServerModuleStatusRepo,
   type ServerModuleStatus,
@@ -122,11 +138,7 @@ export {
   type ServerTunnel,
   type NewServerTunnel,
 } from "./server-tunnel.repo";
-export {
-  createMailServerRepo,
-  type MailServer,
-  type NewMailServer,
-} from "./mail-server.repo";
+export { createMailServerRepo, type MailServer, type NewMailServer } from "./mail-server.repo";
 export {
   createMailInboundRepo,
   type MailInboundRule,
@@ -199,6 +211,17 @@ export {
   type OrphanedResource,
   type NewOrphanedResource,
 } from "./orphaned-resource.repo";
+export {
+  createHostPortClaimRepo,
+  HostPortClaimConflictError,
+  HOST_PORT_QUARANTINE_OWNER,
+  type HostPortClaim,
+  type NewHostPortClaim,
+  type HostPortTargetKey,
+  type HostPortClaimIdentity,
+  type HostPortClaimOwner,
+  type PruneHostPortClaimsInput,
+} from "./host-port-claim.repo";
 export {
   createResourceGrantRepo,
   type ResourceGrant,
@@ -297,6 +320,7 @@ import { createAuditSettingsRepo } from "./audit-settings.repo";
 import { createJobRunRepo } from "./job-run.repo";
 import { createJobRepo } from "./job.repo";
 import { createOrphanedResourceRepo } from "./orphaned-resource.repo";
+import { createHostPortClaimRepo } from "./host-port-claim.repo";
 import { createResourceGrantRepo } from "./resource-grant.repo";
 import { createInvitationPendingGrantRepo } from "./invitation-pending-grant.repo";
 import { createOrganizationRepo } from "./organization.repo";
@@ -378,6 +402,7 @@ export const repos = {
   jobRun: createJobRunRepo(db),
   job: createJobRepo(db),
   orphanedResource: createOrphanedResourceRepo(db),
+  hostPortClaim: createHostPortClaimRepo(db),
   resourceGrant: createResourceGrantRepo(db),
   invitationPendingGrant: createInvitationPendingGrantRepo(db),
   organization: createOrganizationRepo(db),

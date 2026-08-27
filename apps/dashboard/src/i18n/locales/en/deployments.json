@@ -169,6 +169,7 @@
     "unpinFailed": "Failed to unpin deployment",
     "rollbackModeInstant": "Instant restore — reuses this version's retained image, no rebuild.",
     "rollbackModeRebuild": "Rebuild — this version's image is no longer on the host, so its commit is built again.",
+    "rollbackModeReacquireImage": "Registry restore — pulls the exact image reference recorded for this release; no source rebuild.",
     "rollbackModeMixed": "Mostly instant — {count} service(s) lost their image and will be rebuilt."
   },
   "rollbackConfirm": {

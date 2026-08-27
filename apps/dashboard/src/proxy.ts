@@ -21,6 +21,7 @@ const PUBLIC_ROUTES = [
   // `returnTo`/`callback`), so intercepting it stranded the user on `/` and the
   // MCP client's flow never completed.
   "/mcp/authorize",
+  "/accept-invite",
 ];
 
 const SESSION_COOKIE_SUFFIX = ".session_token";

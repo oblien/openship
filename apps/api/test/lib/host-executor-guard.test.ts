@@ -106,8 +106,14 @@ describe("target resolution never registers this box", () => {
  * the call site names `loopback-port`, and matching that would pass for the wrong reason.
  */
 const PIPELINES = [
-  "../../src/modules/deployments/build-pipeline.ts",
-  "../../src/modules/deployments/compose/deploy.service.ts",
+  {
+    file: "../../src/modules/deployments/build-pipeline.ts",
+    executionScope: "async function executeBuildAndDeploy",
+  },
+  {
+    file: "../../src/modules/deployments/compose/deploy.service.ts",
+    executionScope: "async function deployComposeServicesUnlocked",
+  },
 ];
 
 /** Drop block and line comments so an index comparison reads CODE positions. */
@@ -116,9 +122,16 @@ function code(src: string): string {
 }
 
 describe("both deploy pipelines announce a demoted host channel", () => {
-  for (const rel of PIPELINES) {
-    it(`${rel} emits the notice before any host touchpoint, on every route strategy`, () => {
-      const src = code(read(rel));
+  for (const { file, executionScope } of PIPELINES) {
+    it(`${file} emits the notice before any host touchpoint, on every route strategy`, () => {
+      const fileSource = code(read(file));
+      const scope = fileSource.indexOf(executionScope);
+      expect(scope, `${executionScope} is missing`).toBeGreaterThan(-1);
+      // Scope the ordering check to the function that actually performs the
+      // deployment. The Compose public wrapper may inspect routeStrategy to choose
+      // the target-wide allocation lock, but it performs no host operation; the
+      // unlocked implementation remains the one place that fans out to them.
+      const src = fileSource.slice(scope);
       const notice = src.indexOf("hostChannelDeployNotice(");
       expect(notice, "hostChannelDeployNotice() is never called").toBeGreaterThan(-1);
       // Before the port allocation and the routing preflight, whose own hints are the

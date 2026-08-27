@@ -19,6 +19,7 @@ export {
   createProject,
   updateProject,
   linkProjectRepo,
+  setProjectReleaseImageSource,
   getGitInfo,
   resolveProjectWebhookState,
   setBranch,

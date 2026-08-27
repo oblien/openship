@@ -349,9 +349,13 @@ export const DomainSettings = () => {
   const [newDomainPath, setNewDomainPath] = useState("/");
   const [showCustomDomainSection, setShowCustomDomainSection] = useState(false);
   const [includeWww, setIncludeWww] = useState(false);
+  const [sslChallenge, setSslChallenge] = useState<"http-01" | "dns-01">("http-01");
   // TLS + ingress handled upstream (Cloudflare Tunnel / LB): verify via TXT
   // only, skip certbot, serve plain HTTP. The domain need not resolve to us.
   const [externalIngress, setExternalIngress] = useState(false);
+  const wildcardDomain = newDomain.trim().toLowerCase().startsWith("*.");
+  const effectiveSslChallenge = wildcardDomain ? "dns-01" : sslChallenge;
+  const effectiveIncludeWww = wildcardDomain ? false : includeWww;
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Hostname of the row currently running its Renew action. Null when no
   // renew is in flight. Per-row so multi-domain projects can renew one
@@ -820,7 +824,12 @@ export const DomainSettings = () => {
       // up front. persist (below) then attaches the port and lists it; the
       // backend keeps it pending until /verify.
       if (isCustom) {
-        const result = await projectsApi.connectDomain(id, { domain: host, includeWww, externalIngress });
+        const result = await projectsApi.connectDomain(id, {
+          domain: host,
+          includeWww: effectiveIncludeWww,
+          externalIngress,
+          sslChallenge: effectiveSslChallenge,
+        });
         if (!result.success) {
           showToast(
             result.error || t.projectSettings.domains.toast.addDomainFailed,
@@ -1956,10 +1965,35 @@ export const DomainSettings = () => {
                   </div>
                   <button
                     onClick={() => setIncludeWww((value) => !value)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${includeWww ? "bg-primary" : "bg-muted"}`}
+                    disabled={wildcardDomain}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${effectiveIncludeWww ? "bg-primary" : "bg-muted"}`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${includeWww ? "translate-x-6" : "translate-x-1"}`}
+                      className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${effectiveIncludeWww ? "translate-x-6" : "translate-x-1"}`}
+                    />
+                  </button>
+                </div>
+              )}
+
+              {newDomainType === "custom" && !externalIngress && (
+                <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/25 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-foreground">{t.projectSettings.domains.add.dnsChallenge}</p>
+                    <p className="text-[12px] text-muted-foreground">
+                      {wildcardDomain
+                        ? t.projectSettings.domains.add.dnsChallengeWildcardDesc
+                        : t.projectSettings.domains.add.dnsChallengeDesc}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSslChallenge((value) => (value === "dns-01" ? "http-01" : "dns-01"))}
+                    disabled={wildcardDomain}
+                    aria-pressed={effectiveSslChallenge === "dns-01"}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${effectiveSslChallenge === "dns-01" ? "bg-primary" : "bg-muted"}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${effectiveSslChallenge === "dns-01" ? "translate-x-6" : "translate-x-1"}`}
                     />
                   </button>
                 </div>

@@ -1,15 +1,10 @@
 /**
- * `cancel(..., { force: true })` — the door project teardown needs.
+ * Cancelling an applying restore is cooperative, including during project deletion.
  *
- * A cooperative cancel on an `applying` restore deliberately leaves the row in
- * `applying`: it sets the durable flag, aborts the in-process extract, and lets the
- * running phase carry the row terminal at its next checkpoint. That is right for an
- * operator clicking cancel, and wrong for a force-delete — the teardown destroys the
- * volumes seconds later, so a row still claiming to write outlives its own target.
- *
- * Forcing must not read as the reassuring outcome. It knows strictly LESS about the
- * target's state than a cooperative cancel, so it carries the same partial-write
- * wording and the `partialWrite` / `serviceLeftStopped` flags.
+ * The request sets the durable flag and aborts the local extract, but the row remains
+ * `applying` until the worker unwinds and records its real outcome. A DB-only forced
+ * terminal state is not proof the writer stopped; treating it as quiescent lets teardown
+ * destroy a volume while the old writer can still mutate it.
  */
 
 import { db, repos, schema } from "@repo/db";
@@ -59,58 +54,45 @@ beforeEach(async () => {
   orchestrator = new RestoreOrchestrator();
 });
 
-describe("a forced cancel of an applying restore", () => {
-  it("takes the row terminal instead of leaving it in applying", async () => {
+describe("safe cancellation of an applying restore", () => {
+  it("keeps the row applying until its worker acknowledges the abort", async () => {
     const id = await seedRestore("applying");
 
-    // The cooperative call first, so this asserts the DIFFERENCE and not just that
-    // some cancel works: a fresh cancel request is nowhere near FORCE_CANCEL_AFTER_MS.
-    const cooperative = await orchestrator.cancel(ctx(), id);
-    expect(cooperative).toMatchObject({ accepted: true, status: "applying", forced: false });
-
-    const forced = await orchestrator.cancel(ctx(), id, { force: true });
-    expect(forced).toMatchObject({ accepted: true, status: "cancelled", forced: true });
-    expect((await repos.backupRestore.findById(id))!.status).toBe("cancelled");
+    const outcome = await orchestrator.cancel(ctx(), id);
+    expect(outcome).toMatchObject({ accepted: true, status: "applying", forced: false });
+    expect(await repos.backupRestore.findById(id)).toMatchObject({
+      status: "applying",
+      cancelRequested: true,
+    });
   });
 
   it("aborts the in-flight extract rather than only writing the row", async () => {
     const id = await seedRestore("applying");
     const controller = registerInFlight(id);
-    await orchestrator.cancel(ctx(), id, { force: true });
+    await orchestrator.cancel(ctx(), id);
     expect(controller.signal.aborted).toBe(true);
   });
 
-  it("says the write may have continued, and flags the volume, when it had begun writing", async () => {
+  it("preserves destructive facts without inventing a terminal outcome", async () => {
     const id = await seedRestore("applying", {
       destructive: true,
       destructiveSource: "the volume pgdata",
     });
-    const forced = await orchestrator.cancel(ctx(), id, { force: true });
-    expect(forced.destructive).toBe(true);
+    const outcome = await orchestrator.cancel(ctx(), id);
+    expect(outcome).toMatchObject({ status: "applying", destructive: true, forced: false });
 
     const row = (await repos.backupRestore.findById(id))!;
-    expect(row.errorMessage).toContain("holds partial data");
-    expect(row.errorMessage).toContain("the volume pgdata");
-    expect(row.meta).toMatchObject({
-      forced: true,
+    expect(row.status).toBe("applying");
+    expect(row.errorMessage).toBeNull();
+    expect(row.meta).toEqual({
       destructive: true,
-      partialWrite: true,
-      serviceLeftStopped: true,
+      destructiveSource: "the volume pgdata",
     });
-  });
-
-  it("does not claim partial data when nothing had been written yet", async () => {
-    const id = await seedRestore("applying");
-    await orchestrator.cancel(ctx(), id, { force: true });
-    const row = (await repos.backupRestore.findById(id))!;
-    expect(row.errorMessage).toContain("Cancelled before any data was written");
-    expect(row.meta).toMatchObject({ forced: true });
-    expect((row.meta as { partialWrite?: boolean }).partialWrite).toBeUndefined();
   });
 
   it("is a no-op on a row that already finished", async () => {
     const id = await seedRestore("succeeded");
-    const out = await orchestrator.cancel(ctx(), id, { force: true });
+    const out = await orchestrator.cancel(ctx(), id);
     expect(out).toMatchObject({ accepted: false, status: "succeeded" });
     expect((await repos.backupRestore.findById(id))!.status).toBe("succeeded");
   });
@@ -119,9 +101,7 @@ describe("a forced cancel of an applying restore", () => {
     const id = await seedRestore("applying");
     const other = (await seedOrg()).organizationId;
     await expect(
-      orchestrator.cancel({ organizationId: other, userId: "usr_2" } as never, id, {
-        force: true,
-      }),
+      orchestrator.cancel({ organizationId: other, userId: "usr_2" } as never, id),
     ).rejects.toThrow(/not found/i);
     expect((await repos.backupRestore.findById(id))!.status).toBe("applying");
   });

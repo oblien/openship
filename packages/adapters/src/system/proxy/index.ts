@@ -40,11 +40,23 @@ export {
   completeEdgeTakeover,
 } from "./takeover-journal";
 export type { RegisterImportedSitesOptions } from "./takeover";
-export { scanImportableSites, canImportProxy, scanOpenshipEdge, detectInstalledProxy } from "./import";
+export {
+  scanImportableSites,
+  canImportProxy,
+  scanOpenshipEdge,
+  scanOpenshipEdgeStrict,
+  detectInstalledProxy,
+} from "./import";
 // The READ api — prefer this over re-assembling probeEdge + importSites + your own
 // cert reader at the call site (see ./api.ts for why it exists).
 export { edgeProxy, edgeProxyFor, buildProxyRouteIndex, collectProxyCerts } from "./api";
-export type { EdgeProxyApi, ProxySiteRoute, ProxySiteRouteSsl, AdoptedCert, CertCandidate } from "./api";
+export type {
+  EdgeProxyApi,
+  ProxySiteRoute,
+  ProxySiteRouteSsl,
+  AdoptedCert,
+  CertCandidate,
+} from "./api";
 export { validateCertFor, readDeclaredPair, isSafeCertPath } from "./cert-material";
 export type {
   EdgeClassification,
@@ -110,7 +122,10 @@ export function describeEdgeOwner(occupants: EdgeStatus["occupants"]): string {
   const labels: string[] = [];
   const seen = new Set<string>();
   for (const o of occupants) {
-    const identity = o.systemdUnit ?? o.containerName ?? (o.pid ? `pid:${o.pid}` : o.command ?? `port:${o.port}`);
+    const identity =
+      o.systemdUnit ??
+      o.containerName ??
+      (o.pid ? `pid:${o.pid}` : (o.command ?? `port:${o.port}`));
     if (seen.has(identity)) continue;
     seen.add(identity);
     labels.push(
@@ -194,7 +209,13 @@ export async function takeoverOnMigrate(
   );
   const takeover = await runEdgeTakeover(
     executor,
-    { status: migrate.status, sites: migrate.sites, acmeEmail: opts.acmeEmail, nginx: opts.nginx, extraRoutes: opts.extraRoutes },
+    {
+      status: migrate.status,
+      sites: migrate.sites,
+      acmeEmail: opts.acmeEmail,
+      nginx: opts.nginx,
+      extraRoutes: opts.extraRoutes,
+    },
     opts.onLog,
   );
   for (const w of [...migrate.warnings, ...takeover.warnings]) opts.onLog(sysLog(w, "warn"));

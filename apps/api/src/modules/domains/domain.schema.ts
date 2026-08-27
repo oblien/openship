@@ -23,7 +23,7 @@ export const AddDomainBody = Type.Object({
   hostname: Type.String({
     minLength: 1,
     maxLength: 253,
-    pattern: "^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$",
+    pattern: "^(\\*\\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$",
   }),
   isPrimary: Type.Optional(Type.Boolean({ default: false })),
   /** Externally-managed ingress + TLS (Cloudflare Tunnel, LB): verify via TXT
@@ -49,6 +49,8 @@ export const AddDomainBody = Type.Object({
   redirectTo: Type.Optional(Type.String({ minLength: 1, maxLength: 253 })),
   /** 301 (default) | 302 | 307 | 308. Only meaningful with `redirectTo`. */
   redirectStatus: Type.Optional(Type.Integer({ minimum: 300, maximum: 399 })),
+  /** ACME challenge method: "http-01" (default) | "dns-01" (required for wildcards). */
+  sslChallenge: Type.Optional(Type.Union([Type.Literal("http-01"), Type.Literal("dns-01")])),
 });
 
 /** Operator-supplied certificate (BYO / Cloudflare Origin CA) to install for a
@@ -61,6 +63,13 @@ export const UploadCertBody = Type.Object({
 /** POST /preview — side-effect-free DNS-records preview for a hostname. */
 export const PreviewDomainBody = Type.Object({
   hostname: Type.String({ minLength: 1, maxLength: 253, description: "Hostname to preview DNS records for." }),
+  serverId: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 128,
+      description: "Selected self-hosted deployment target whose public host should populate A records.",
+    }),
+  ),
   includeWww: Type.Optional(
     Type.Boolean({
       description:

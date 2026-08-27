@@ -118,7 +118,9 @@ describe("ensureProject compose services", () => {
     );
 
     expect(result.created).toBe(true);
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", scannedServices);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", scannedServices, {
+      composeAuthoritative: true,
+    });
   });
 
   it("re-syncs the services when updating an existing project", async () => {
@@ -136,7 +138,9 @@ describe("ensureProject compose services", () => {
     );
 
     expect(result.created).toBe(false);
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_1", scannedServices);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_1", scannedServices, {
+      composeAuthoritative: true,
+    });
   });
 
   it("leaves the service table alone when the request carries no services", async () => {
@@ -205,9 +209,11 @@ describe("ensureProject compose services — masked env", () => {
       "org_1",
     );
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", [
-      expect.objectContaining({ environment: { DB_PASSWORD: "s3cret" } }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_new",
+      [expect.objectContaining({ environment: { DB_PASSWORD: "s3cret" } })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("restores from the stored row when re-ensuring an existing project", async () => {
@@ -221,17 +227,21 @@ describe("ensureProject compose services — masked env", () => {
       "org_1",
     );
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_1", [
-      expect.objectContaining({ environment: { DB_PASSWORD: "from-row" } }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_1",
+      [expect.objectContaining({ environment: { DB_PASSWORD: "from-row" } })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("drops a masked value with no source instead of persisting the sentinel", async () => {
     await ensureProject({ name: "my-stack", services: maskedServices } as any, "org_1");
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", [
-      expect.objectContaining({ environment: {} }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_new",
+      [expect.objectContaining({ environment: {} })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("ignores an upload session belonging to another org", async () => {
@@ -242,9 +252,11 @@ describe("ensureProject compose services — masked env", () => {
       "org_1",
     );
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", [
-      expect.objectContaining({ environment: {} }),
-    ]);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith(
+      "proj_new",
+      [expect.objectContaining({ environment: {} })],
+      { composeAuthoritative: true },
+    );
   });
 
   it("passes revealed/edited values through untouched", async () => {
@@ -256,7 +268,9 @@ describe("ensureProject compose services — masked env", () => {
       "org_1",
     );
 
-    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", edited);
+    expect(serviceRepo.syncFromCompose).toHaveBeenCalledWith("proj_new", edited, {
+      composeAuthoritative: true,
+    });
     // No mask anywhere → no need to read rows back at all.
     expect(serviceRepo.listByProject).not.toHaveBeenCalled();
   });

@@ -19,16 +19,18 @@
  * ── Restore ──────────────────────────────────────────────────────────────
  *
  * `rollback(id)` asks `planRestore` how this particular release can come back
- * (see restore-plan.ts for the three modes and why), then executes:
+ * (see restore-plan.ts for the modes and why), then executes:
  *
- *   redeploy-pinned / rebuild → ONE `triggerDeployment` call carrying the
- *     target's frozen config + env, with its images pinned when they're still
- *     on the host. A restore is a real deployment: it gets the deploy pipeline's
- *     env, ports, volumes, labels, network, routing, health gate and
- *     stabilization watch for free, its own logs and SSE stream, and — because
- *     `onSuccess` reuses the version number for a commit — rolling back to v2
- *     shows up as v2 again. The active pointer only ever moves FORWARD on
- *     success, so a failed restore leaves the current release serving.
+ *   redeploy-pinned / reacquire-image / rebuild → ONE `triggerDeployment` call
+ *     carrying the target's frozen config + env. Retained images are pinned;
+ *     an expired release image is pulled again from its frozen concrete ref;
+ *     only a source rebuild uses the commit/repository. A restore is a real
+ *     deployment: it gets the deploy pipeline's env, ports, volumes, labels,
+ *     network, routing, health gate and stabilization watch for free, its own
+ *     logs and SSE stream, and — because `onSuccess` reuses the version number
+ *     for a commit — rolling back to v2 shows up as v2 again. The active pointer
+ *     only ever moves FORWARD on success, so a failed restore leaves the current
+ *     release serving.
  *
  *   unit-swap → `runtime.makeActive`, then probe and commit the pointer, with
  *     a compensating swap-back if the DB write fails.
@@ -143,8 +145,8 @@ export async function onDeploymentReady(opts: {
  * Resolve HOW a rollback to this deployment would run, without running it.
  *
  * Shared by `rollback()` and the restore-plan endpoint, so the confirm dialog's
- * copy ("instant" vs "rebuild"), the GitHub-access gate and the executor can
- * never disagree about the mode.
+ * copy (instant, registry reacquisition, or source rebuild), the GitHub-access
+ * gate and the executor can never disagree about the mode.
  */
 export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
   target: Deployment;
@@ -188,9 +190,9 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
     if (staticDir) staticDirPresent = await hostPathExists(target, staticDir);
   } catch (err) {
     // Host unreachable / server row gone: we can't prove an artifact is there, so
-    // plan the safe branch (rebuild) rather than promising an instant restore.
+    // plan a safe non-retained recovery rather than promising an instant restore.
     console.warn(
-      `[rollback] Could not inspect the host for ${target.id}; planning a rebuild: ${safeErrorMessage(err)}`,
+      `[rollback] Could not inspect the host for ${target.id}; planning artifact recovery: ${safeErrorMessage(err)}`,
     );
   }
 
@@ -285,7 +287,8 @@ export async function rollback(targetDeploymentId: string): Promise<void> {
 
 /**
  * Restore by deploying the target's frozen snapshot again, with its retained
- * images pinned (`redeploy-pinned`) or rebuilt from its commit (`rebuild`).
+ * images pinned (`redeploy-pinned`), a frozen release image pulled again
+ * (`reacquire-image`), or source rebuilt from its commit (`rebuild`).
  *
  * Calls `triggerDeployment` (build.service) directly — no cycle: the
  * orchestrator already statically depends on build.service (for
@@ -295,7 +298,7 @@ export async function rollback(targetDeploymentId: string): Promise<void> {
 async function restoreViaRedeploy(
   target: Deployment,
   project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
-  plan: Extract<RestorePlan, { mode: "redeploy-pinned" | "rebuild" }>,
+  plan: Extract<RestorePlan, { mode: "redeploy-pinned" | "reacquire-image" | "rebuild" }>,
 ): Promise<void> {
   // Where are we rolling back FROM? The currently-active release's commit —
   // recorded so this restore is itself reversible.
@@ -315,15 +318,24 @@ async function restoreViaRedeploy(
   // Ship the target's CAPTURED config + env verbatim — not a fresh snapshot from
   // the project's current columns / env_var table — so the restore runs exactly
   // what originally ran. `handoverImages` / `handoverAppImage` are the only
-  // fields we overwrite: they pin the retained artifacts so the deploy skips the
-  // build (and, when everything is pinned, the clone and git token too).
+  // fields we overwrite: handover fields pin retained artifacts; the reacquire
+  // branch reasserts the exact release ref selected from this same snapshot.
   const frozen = (target.meta ?? {}) as DeploymentConfigSnapshot;
   const meta = withoutPinnedArtifacts({ ...frozen });
   if (plan.mode === "redeploy-pinned") {
     if (Object.keys(plan.handoverImages).length > 0) meta.handoverImages = plan.handoverImages;
     if (plan.handoverAppImage) meta.handoverAppImage = plan.handoverAppImage;
     if (plan.handoverStaticDir) meta.handoverStaticDir = plan.handoverStaticDir;
+  } else if (plan.mode === "reacquire-image") {
+    // Carry the ref selected by the pure plan back onto the cloned snapshot. Do
+    // not call the release resolver here: today's project template/source may
+    // differ, while this digest is the artifact the target actually ran.
+    meta.releaseImageRef = plan.releaseImageRef;
   }
+  const replayBranch =
+    plan.mode === "reacquire-image"
+      ? (typeof meta.branch === "string" && meta.branch.trim()) || target.branch?.trim() || "main"
+      : target.branch;
 
   // Attribute the deploy to an org member so token resolution has an actor; the
   // triggerer is the system.
@@ -338,8 +350,13 @@ async function restoreViaRedeploy(
 
   await triggerDeployment(rollbackCtx, {
     projectId: target.projectId,
-    branch: target.branch,
-    commitSha: target.commitSha ?? undefined,
+    // Supplying a concrete frozen/default branch also prevents the generic
+    // trigger path from asking today's linked repository for its default branch.
+    branch: replayBranch,
+    // A release-image reacquisition is intentionally commit-free. Passing even
+    // a display-only abbreviated SHA makes triggerDeployment canonicalize it
+    // through the project's CURRENT repository, violating rollback isolation.
+    commitSha: plan.mode === "reacquire-image" ? undefined : (target.commitSha ?? undefined),
     commitMessage:
       target.commitMessage ??
       (target.commitSha ? `Rollback to ${target.commitSha.slice(0, 7)}` : "Rollback"),
@@ -609,10 +626,7 @@ export const PIN_ERROR_CODES = {
   ARTIFACT_GONE: "PIN_ARTIFACT_GONE",
 } as const;
 
-export async function setPin(
-  deploymentId: string,
-  pinned: boolean,
-): Promise<void> {
+export async function setPin(deploymentId: string, pinned: boolean): Promise<void> {
   const dep = await repos.deployment.findById(deploymentId);
   if (!dep) {
     throw new AppError("Deployment not found", 404, "DEPLOYMENT_NOT_FOUND");

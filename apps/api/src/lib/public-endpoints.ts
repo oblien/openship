@@ -2,6 +2,7 @@ import type { Domain, Project, Service, ServicePublicEndpoint } from "@repo/db";
 import {
   SYSTEM,
   ValidationError,
+  isLoopbackHost as isCoreLoopbackHost,
   resolveServiceHostnameLabel,
   resolveRedirectStatus,
   normalizeCustomHostname,
@@ -33,8 +34,7 @@ export function isReservedLoopbackPort(port: number): boolean {
 
 /** True for a loopback host (the only place isReservedLoopbackPort applies). */
 export function isLoopbackHost(host: string): boolean {
-  const h = host.trim().toLowerCase();
-  return h === "localhost" || h === "::1" || /^127(?:\.\d{1,3}){3}$/.test(h);
+  return isCoreLoopbackHost(host);
 }
 
 export interface StoredPublicEndpoint {
@@ -252,11 +252,14 @@ function routeRowsToPublicEndpoints(
 
 function primaryProjectDomain(projectDomains?: ProjectDomainRow[] | null): string | undefined {
   const projectLevelDomains = (projectDomains ?? []).filter(
-    (domain) => !domain.serviceId && inferPublicRouteDomainType(domain.hostname, domain.domainType) === "custom",
+    (domain) =>
+      !domain.serviceId &&
+      inferPublicRouteDomainType(domain.hostname, domain.domainType) === "custom",
   );
-  const primaryDomain = projectLevelDomains.find((domain) => domain.isPrimary)
-    ?? projectLevelDomains.find((domain) => domain.verified)
-    ?? projectLevelDomains[0];
+  const primaryDomain =
+    projectLevelDomains.find((domain) => domain.isPrimary) ??
+    projectLevelDomains.find((domain) => domain.verified) ??
+    projectLevelDomains[0];
 
   return normalizeCustomDomain(primaryDomain?.hostname);
 }
@@ -272,12 +275,10 @@ function normalizeStoredPublicEndpoint(
   const port = normalizePort(endpoint.port);
   const targetPath = normalizeTargetPath(endpoint.targetPath);
   const domainType = endpoint.domainType === "custom" ? "custom" : "free";
-  const domain = domainType === "free"
-    ? normalizeSlug(endpoint.domain ?? opts?.freeDomainFallback)
-    : undefined;
-  const customDomain = domainType === "custom"
-    ? normalizeCustomDomain(endpoint.customDomain)
-    : undefined;
+  const domain =
+    domainType === "free" ? normalizeSlug(endpoint.domain ?? opts?.freeDomainFallback) : undefined;
+  const customDomain =
+    domainType === "custom" ? normalizeCustomDomain(endpoint.customDomain) : undefined;
   const hasPortTarget = port !== null;
   const hasPathTarget = Boolean(targetPath);
 
@@ -302,15 +303,15 @@ export function normalizeStoredPublicEndpoints(
   if (!endpoints?.length) return [];
 
   return endpoints
-    .map((endpoint, index) => normalizeStoredPublicEndpoint(
-      endpoint,
-      index === 0 && opts?.primaryFreeDomainFallback
-        ? { freeDomainFallback: opts.primaryFreeDomainFallback }
-        : undefined,
-    ))
-    .filter(
-    (endpoint): endpoint is StoredPublicEndpoint => endpoint !== null,
-  );
+    .map((endpoint, index) =>
+      normalizeStoredPublicEndpoint(
+        endpoint,
+        index === 0 && opts?.primaryFreeDomainFallback
+          ? { freeDomainFallback: opts.primaryFreeDomainFallback }
+          : undefined,
+      ),
+    )
+    .filter((endpoint): endpoint is StoredPublicEndpoint => endpoint !== null);
 }
 
 function alignPrimaryStoredPublicEndpoint(
@@ -345,19 +346,22 @@ export function resolveStoredPublicEndpoints(opts: {
   const explicitTargetPort = normalizePort(opts.targetPort);
   const explicitTargetPath = normalizeTargetPath(opts.targetPath);
 
-  const explicitTarget = (explicitTargetPort !== null) !== Boolean(explicitTargetPath)
-    ? (explicitTargetPort !== null
+  const explicitTarget =
+    (explicitTargetPort !== null) !== Boolean(explicitTargetPath)
+      ? explicitTargetPort !== null
         ? { port: explicitTargetPort }
-        : { targetPath: explicitTargetPath! })
-    : null;
+        : { targetPath: explicitTargetPath! }
+      : null;
 
   if (explicitCustomDomain) {
     return explicitTarget
-      ? [{
-          customDomain: explicitCustomDomain,
-          ...explicitTarget,
-          domainType: "custom",
-        } satisfies StoredPublicEndpoint]
+      ? [
+          {
+            customDomain: explicitCustomDomain,
+            ...explicitTarget,
+            domainType: "custom",
+          } satisfies StoredPublicEndpoint,
+        ]
       : [];
   }
 
@@ -374,11 +378,13 @@ export function resolveStoredPublicEndpoints(opts: {
   const primaryCustomDomain = primaryProjectDomain(opts.projectDomains);
   if (primaryCustomDomain) {
     return explicitTarget
-      ? [{
-          customDomain: primaryCustomDomain,
-          ...explicitTarget,
-          domainType: "custom",
-        } satisfies StoredPublicEndpoint]
+      ? [
+          {
+            customDomain: primaryCustomDomain,
+            ...explicitTarget,
+            domainType: "custom",
+          } satisfies StoredPublicEndpoint,
+        ]
       : [];
   }
 
@@ -393,11 +399,13 @@ export function resolveStoredPublicEndpoints(opts: {
     return [];
   }
 
-  return [{
-    ...explicitTarget,
-    domain: slug,
-    domainType: "free",
-  } satisfies StoredPublicEndpoint];
+  return [
+    {
+      ...explicitTarget,
+      domain: slug,
+      domainType: "free",
+    } satisfies StoredPublicEndpoint,
+  ];
 }
 
 export function syncStoredPublicEndpoints(opts: {
@@ -487,9 +495,9 @@ export function storedPublicEndpointsNeedCloud(
   // `domainType` is intentionally NOT read below — classification is purely by
   // hostname truth (customDomain / domain). Accepting it as OPTIONAL lets deploy
   // preflight and stale/migrated rows (domainType absent) reuse this one predicate.
-  endpoints?:
-    | Array<Partial<Pick<StoredPublicEndpoint, "domainType" | "domain" | "customDomain">>>
-    | null,
+  endpoints?: Array<
+    Partial<Pick<StoredPublicEndpoint, "domainType" | "domain" | "customDomain">>
+  > | null,
 ): boolean {
   if (!endpoints?.length) return false;
   return endpoints.some((endpoint) => cloudManagedHostnameOf(endpoint) !== null);
@@ -518,7 +526,13 @@ export function storedPublicEndpointsNeedCloud(
 export function resolveServicePublicEndpoints(
   service: Pick<
     Service,
-    "exposed" | "exposedPort" | "ports" | "domain" | "customDomain" | "domainType" | "publicEndpoints"
+    | "exposed"
+    | "exposedPort"
+    | "ports"
+    | "domain"
+    | "customDomain"
+    | "domainType"
+    | "publicEndpoints"
   > & { name?: string | null; kind?: string | null },
   opts?: { projectSlug?: string },
 ): StoredPublicEndpoint[] {
@@ -618,8 +632,8 @@ function primaryScalars(primary: ServicePublicEndpoint): {
 } {
   return {
     exposedPort: String(primary.port),
-    domain: primary.domainType === "free" ? primary.domain ?? null : null,
-    customDomain: primary.domainType === "custom" ? primary.customDomain ?? null : null,
+    domain: primary.domainType === "free" ? (primary.domain ?? null) : null,
+    customDomain: primary.domainType === "custom" ? (primary.customDomain ?? null) : null,
     domainType: primary.domainType,
   };
 }
@@ -715,11 +729,15 @@ export function mergeServiceRoutingPatch(opts: {
   // disagreed with that test about what "named" means.
   const domain =
     domainType === "free"
-      ? (patch.domain !== undefined ? patch.domain : stored?.domain ?? null)
+      ? patch.domain !== undefined
+        ? patch.domain
+        : (stored?.domain ?? null)
       : null;
   const customDomain =
     domainType === "custom"
-      ? (patch.customDomain !== undefined ? patch.customDomain : stored?.customDomain ?? null)
+      ? patch.customDomain !== undefined
+        ? patch.customDomain
+        : (stored?.customDomain ?? null)
       : null;
 
   const scalars = { exposed, exposedPort, domain, customDomain, domainType } as const;
@@ -786,12 +804,14 @@ export function mergeServiceRoutingPatch(opts: {
   // owns this hostname (that IS a port change, and replacing it in place keeps
   // the primary primary). Otherwise this is a new route: append.
   const byPort = current.findIndex((route) => route.port === upserted.port);
-  const at = byPort >= 0
-    ? byPort
-    : current.findIndex((route) => routeIdentity(route) === routeIdentity(upserted));
-  const next = at >= 0
-    ? current.map((route, index) => (index === at ? upserted : route))
-    : [...current, upserted];
+  const at =
+    byPort >= 0
+      ? byPort
+      : current.findIndex((route) => routeIdentity(route) === routeIdentity(upserted));
+  const next =
+    at >= 0
+      ? current.map((route, index) => (index === at ? upserted : route))
+      : [...current, upserted];
   const upsertedAt = at >= 0 ? at : next.length - 1;
   // Backstop for a row that already held the same hostname on two ports.
   const deduped = next.filter(
@@ -936,9 +956,9 @@ export interface ProjectAccess {
  *  verified row, else none. The single primary-selection rule the detail Access
  *  URL, the list card's primaryDomain, and the favicon refresh all share, so
  *  those surfaces can never disagree on which domain is "the" one. */
-export function pickCanonicalDomainRow<
-  T extends Pick<ProjectDomainRow, "verified" | "isPrimary">,
->(rows: T[] | null | undefined): T | null {
+export function pickCanonicalDomainRow<T extends Pick<ProjectDomainRow, "verified" | "isPrimary">>(
+  rows: T[] | null | undefined,
+): T | null {
   const verified = (rows ?? []).filter((row) => row.verified);
   return verified.find((row) => row.isPrimary) ?? verified[0] ?? null;
 }

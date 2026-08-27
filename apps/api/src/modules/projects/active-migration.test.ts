@@ -31,11 +31,12 @@ describe("readActiveMigration", () => {
     expect(readActiveMigration(undefined)).toBeNull();
   });
 
-  it("carries exactly id, status and mode", () => {
+  it("carries only display fields plus the server-derived action flag", () => {
     expect(readActiveMigration(run)).toEqual({
       id: "dmr_1",
       status: "moving_data",
       mode: "project_move",
+      needsAction: false,
     });
   });
 
@@ -60,8 +61,25 @@ describe("readActiveMigration", () => {
     expect(Object.keys(readActiveMigration(withNewSecret) ?? {}).sort()).toEqual([
       "id",
       "mode",
+      "needsAction",
       "status",
     ]);
+  });
+
+  it("surfaces a failed cutover as actionable without exposing its error", () => {
+    const failedCutover = {
+      ...run,
+      status: "cutover",
+      errorMessage: "ssh://secret-host failed",
+    } as unknown as DockerMigrationRun;
+
+    expect(readActiveMigration(failedCutover)).toEqual({
+      id: "dmr_1",
+      status: "cutover",
+      mode: "project_move",
+      needsAction: true,
+    });
+    expect(JSON.stringify(readActiveMigration(failedCutover))).not.toContain("secret-host");
   });
 
   it("passes a duplicate's mode through, so a client can tell the two apart", () => {

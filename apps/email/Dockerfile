@@ -149,7 +149,7 @@ RUN mkdir -p /opt/openship-mail/seed \
     && cp -a /etc/postfix       /opt/openship-mail/seed/postfix      2>/dev/null || true \
     && cp -a /etc/dovecot       /opt/openship-mail/seed/dovecot      2>/dev/null || true \
     && cp -a /etc/amavis/conf.d /opt/openship-mail/seed/amavis-confd 2>/dev/null || true \
-    && chmod +x /opt/openship-mail/entrypoint.sh
+    && chmod +x /opt/openship-mail/entrypoint.sh /opt/openship-mail/postfix-chroot-etc.sh
 
 # ClamAV signatures, fetched into the SEED dir (issue #565).
 #

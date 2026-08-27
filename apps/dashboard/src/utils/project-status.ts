@@ -15,7 +15,7 @@ export type ProjectStatus =
 
 /**
  * The live migration run for this project, as the project payload carries it (API
- * `readActiveMigration` — id, status, mode, nothing else).
+ * `readActiveMigration` — an explicit, non-secret allowlist).
  *
  * Present here, in the shared status source, rather than fetched by whichever panel cares:
  * a project being moved to another server is a fact about the PROJECT, so the cards, the
@@ -29,6 +29,8 @@ export type ActiveMigration = {
   status: string;
   /** `project_move` (relocating this project) | `project_copy` (building a second one). */
   mode: string;
+  /** Server-derived because only the migration service may inspect failure details. */
+  needsAction?: boolean;
 };
 
 /**
@@ -50,7 +52,7 @@ const MIGRATION_AWAITING_OPERATOR = new Set(["awaiting_cutover", "partial"]);
  * be a card calling a run "in progress" next to a pill that says it needs attention.
  */
 export function migrationNeedsOperator(run: ActiveMigration | null | undefined): boolean {
-  return Boolean(run && MIGRATION_AWAITING_OPERATOR.has(run.status));
+  return Boolean(run && (run.needsAction ?? MIGRATION_AWAITING_OPERATOR.has(run.status)));
 }
 
 export type ProjectStatusSource = {

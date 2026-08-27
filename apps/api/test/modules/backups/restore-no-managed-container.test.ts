@@ -101,6 +101,13 @@ vi.mock("@repo/db", () => ({
         return h.row;
       },
       findById: async () => h.row,
+      claimApply: async () => {
+        if (h.row?.status !== "prepared" || h.row.cancelRequested === true) {
+          return "state_changed";
+        }
+        h.row.status = "applying";
+        return "claimed";
+      },
       requestCancel: async () => h.row,
       transition: async (_id: string, status: string, patch?: Record<string, unknown>) => {
         const tr: Tr = { status, patch };

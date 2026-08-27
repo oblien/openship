@@ -21,8 +21,13 @@ export {
   resolveReleaseDist,
   resolveReleaseDistOrNull,
   fetchLatestRelease,
+  resolveLatestGitHubReleaseVersion,
   resolveLatestReleaseTag,
+  resolveLatestReleaseVersion,
   resolveLatestVersion,
+  resolveReleaseVersion,
+  ReleaseVersionUnavailableError,
   type ReleaseDistSpec,
   type ReleaseDistResult,
+  type ResolvedReleaseVersion,
 } from "./release-resolver";

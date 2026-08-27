@@ -45,7 +45,8 @@ vi.mock("./provision-lock", () => ({
   createProvisionLock: () => ({ run: (f: () => unknown) => f() }),
 }));
 
-const { resolveServerExecutor, hostChannelDeployNotice } = await import("./deployment-runtime");
+const { resolvePlannedTargetTopology, resolveServerExecutor, hostChannelDeployNotice } =
+  await import("./deployment-runtime");
 const { HostChannelUnavailableError } = await import("@repo/adapters");
 
 const resolve = () => resolveServerExecutor("srv-local", "org1");
@@ -56,6 +57,13 @@ beforeEach(() => {
 });
 
 describe("resolveServerExecutor — local row with no host channel", () => {
+  it("plans socket Docker source without acquiring a host command channel", async () => {
+    await expect(
+      resolvePlannedTargetTopology("server", "srv-local", "org1"),
+    ).resolves.toEqual({ serverId: "srv-local", dockerTransport: "socket" });
+    expect(h.acquire).not.toHaveBeenCalled();
+  });
+
   it("still resolves when host control is switched off", async () => {
     h.acquire.mockRejectedValue(
       new HostChannelUnavailableError("disabled", "Host control is disabled on this instance."),

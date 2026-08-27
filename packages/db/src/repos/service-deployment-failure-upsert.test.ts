@@ -23,9 +23,9 @@ const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../d
  *
  * The other half is just as important: the row it collides with holds the LIVE
  * runtime details of a container that is still running (`container_id`,
- * `image_digest`, `host_port`, `ip`). A full-row upsert would blank those, which is
- * why this cannot simply reuse `upsertServiceDeployment` — recording that service B
- * failed must not erase what service A is running.
+ * `image_digest`, `host_port`, `host_ports`, `ip`). A full-row upsert would blank
+ * those, which is why this cannot simply reuse `upsertServiceDeployment` — recording
+ * that service B failed must not erase what service A is running.
  */
 async function fresh() {
   const client = new PGlite("memory://");
@@ -75,6 +75,7 @@ async function seedCarriedForwardRow() {
     imageDigest: "sha256:deadbeef",
     containerId: "container_abc",
     hostPort: 5432,
+    hostPorts: { "5432": 15432, "5433": 15433 },
     ip: "172.18.0.5",
   });
 }
@@ -134,6 +135,7 @@ describe("markServiceDeploymentFailed", () => {
     expect(row?.containerId).toBe("container_abc");
     expect(row?.imageDigest).toBe("sha256:deadbeef");
     expect(row?.hostPort).toBe(5432);
+    expect(row?.hostPorts).toEqual({ "5432": 15432, "5433": 15433 });
     expect(row?.ip).toBe("172.18.0.5");
   });
 

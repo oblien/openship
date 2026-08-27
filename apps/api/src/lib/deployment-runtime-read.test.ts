@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   /** Every DockerRuntime.create — transport plus, for ssh, the host it dialed. */
   creates: [] as Array<{ transport: string; host?: string }>,
   platformCalls: 0,
+  serverGets: [] as string[],
+  serverLists: 0,
 }));
 
 vi.mock("@repo/adapters", () => ({
@@ -31,11 +33,16 @@ vi.mock("@repo/adapters", () => ({
     },
   },
   createHostExecutor: () => ({}),
-  createPlatform: async () => {
+  createPlatform: async (config: { executor?: unknown; localHost?: boolean }) => {
     // Standing in for the expensive build this resolver exists to avoid: if a
     // read path ever reaches it for an on-box target, the count catches it.
     h.platformCalls++;
-    return { target: "selfhosted", runtime: { name: "platform-runtime" } };
+    return {
+      target: "selfhosted",
+      runtime: { name: "platform-runtime" },
+      executor: config.executor ?? null,
+      localHost: config.localHost ?? false,
+    };
   },
 }));
 
@@ -44,7 +51,14 @@ vi.mock("./controller-helpers", () => ({
 }));
 
 vi.mock("./ssh-manager", () => ({
-  sshManager: { acquire: async () => ({}) },
+  sshManager: {
+    acquire: async () => ({
+      readFile: async (path: string) => {
+        if (path === "/etc/machine-id") return "0123456789abcdef0123456789abcdef\n";
+        throw new Error("missing");
+      },
+    }),
+  },
   // Echo the server's host so the ssh transport reveals WHICH server was picked.
   buildSshConfig: async (server: { sshHost: string }) => ({
     host: server.sshHost,
@@ -53,16 +67,30 @@ vi.mock("./ssh-manager", () => ({
   }),
 }));
 
-vi.mock("./provision-lock", () => ({ createProvisionLock: () => ({ run: (f: () => unknown) => f() }) }));
+vi.mock("./provision-lock", () => ({
+  createProvisionLock: () => ({ run: (f: () => unknown) => f() }),
+}));
 vi.mock("./cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
 vi.mock("./cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
 vi.mock("@repo/db", () => ({
   repos: {
     server: {
-      getInOrganization: async (id: string) => ({ id, isLocal: false, sshHost: `host-of-${id}`, sshPort: 22, sshUser: "root" }),
-      listByOrganization: async () => [
-        { id: "only-server", isLocal: false, sshHost: "host-of-only-server", sshPort: 22, sshUser: "root" },
-      ],
+      getInOrganization: async (id: string) => {
+        h.serverGets.push(id);
+        return { id, isLocal: false, sshHost: `host-of-${id}`, sshPort: 22, sshUser: "root" };
+      },
+      listByOrganization: async () => {
+        h.serverLists++;
+        return [
+          {
+            id: "only-server",
+            isLocal: false,
+            sshHost: "host-of-only-server",
+            sshPort: 22,
+            sshUser: "root",
+          },
+        ];
+      },
     },
   },
 }));
@@ -80,9 +108,42 @@ beforeEach(() => {
   h.baseTarget = "selfhosted";
   h.creates = [];
   h.platformCalls = 0;
+  h.serverGets = [];
+  h.serverLists = 0;
 });
 
 describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without the platform", () => {
+  it("plans the concrete transport and server id for an implicit single-server target", async () => {
+    await expect(mod.resolvePlannedTargetTopology("server", undefined, "org1")).resolves.toEqual({
+      serverId: "only-server",
+      dockerTransport: "ssh",
+    });
+  });
+
+  it("uses that concrete fallback server as the host-port collision domain", async () => {
+    const resolved = await mod.resolveDeploymentPlatform(
+      { deployTarget: "server", runtimeMode: "docker" },
+      {
+        organizationId: "org1",
+        basePlatform: {
+          target: "selfhosted",
+          runtime: { name: "docker" },
+        } as never,
+      },
+    );
+
+    expect(resolved.serverId).toBe("only-server");
+    expect(resolved.hostPortTarget).toEqual({
+      targetKey: expect.stringMatching(/^host:[0-9a-f]{64}$/),
+      legacyTargetKeys: ["server:only-server"],
+      stable: true,
+    });
+    // One fallback selection feeds platform construction and host identity. No
+    // second get-by-id round trip rebuilds the same target from the database.
+    expect(h.serverLists).toBe(1);
+    expect(h.serverGets).toEqual([]);
+  });
+
   it("server target → the pinned server's docker, never the local socket", async () => {
     await read({ deployTarget: "server", serverId: "srv-9" });
     expect(sshHosts()).toEqual(["host-of-srv-9"]);
@@ -93,9 +154,11 @@ describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without
   it("REGRESSION: server target with NO serverId still goes to the server resolver", async () => {
     // resolveServerExecutor falls back to the org's single server; short-circuiting
     // to the socket here would read containers off the orchestrator instead.
-    await read({ deployTarget: "server" });
+    const resolved = await read({ deployTarget: "server" });
     expect(sshHosts()).toEqual(["host-of-only-server"]);
     expect(socketCalls()).toBe(0);
+    expect(resolved.serverId).toBe("only-server");
+    expect(resolved.hostPortTarget?.legacyTargetKeys).toEqual(["server:only-server"]);
   });
 
   it("a recorded serverId wins even when deployTarget says otherwise", async () => {

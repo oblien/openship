@@ -86,6 +86,7 @@ export type RawComposeService = {
   image?: string | null;
   build?: string | null;
   dockerfile?: string | null;
+  buildArgs?: Record<string, string | null> | null;
   ports?: string[] | null;
   dependsOn?: string[] | null;
   environment?: Record<string, string> | null;
@@ -145,6 +146,7 @@ export function normalizeComposeService(raw: RawComposeService): ComposeServiceI
     image: raw.image ?? undefined,
     build: raw.build ?? undefined,
     dockerfile: raw.dockerfile ?? undefined,
+    buildArgs: raw.buildArgs ?? undefined,
     ports: raw.ports ?? [],
     dependsOn: raw.dependsOn ?? [],
     environment: raw.environment ?? {},

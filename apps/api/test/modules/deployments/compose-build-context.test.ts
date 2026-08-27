@@ -61,17 +61,30 @@ describe("resolveComposeBuildContext", () => {
   });
 
   describe("paths that escape the clone root", () => {
-    // There is no such directory in the checkout, so there is nothing to build
-    // there. Fall back to the compose directory rather than emitting a path that
-    // walks out of the clone.
-    it("falls back to the compose directory", () => {
-      expect(resolveComposeBuildContext("deploy", "../../../etc")).toBe("deploy");
-      expect(resolveComposeBuildContext("deploy/docker-compose", "../../../..")).toBe(
-        "deploy/docker-compose",
+    it.each([
+      ["deploy", "../../../etc"],
+      ["deploy/docker-compose", "../../../.."],
+      ["", "../outside"],
+      [".", "../outside"],
+    ])("refuses compose directory %j with context %j", (composeDirectory, context) => {
+      expect(() => resolveComposeBuildContext(composeDirectory, context)).toThrow(
+        /escapes the linked repository/i,
       );
-      expect(resolveComposeBuildContext("", "../outside")).toBe("");
-      expect(resolveComposeBuildContext(".", "../outside")).toBe("");
     });
+  });
+
+  it.each([
+    "https://github.com/acme/app.git",
+    "git@github.com:acme/app.git",
+    "/srv/app",
+    "~/app",
+    "C:\\app",
+    "",
+    "   ",
+  ])("refuses non-repository context %j", (context) => {
+    expect(() => resolveComposeBuildContext("deploy", context)).toThrow(
+      /invalid compose build context/i,
+    );
   });
 
   it("handles backslash separators in a declared context", () => {
@@ -89,9 +102,11 @@ describe("resolveComposeBuildContext", () => {
     expect(resolveComposeBuildContext("/deploy/", "api")).toBe("deploy/api");
   });
 
-  it("keeps the escape fallback consistent for every spelling of the root", () => {
+  it("keeps root-relative validation consistent for every spelling of the root", () => {
     for (const root of ["", ".", "./"]) {
-      expect(resolveComposeBuildContext(root, "../outside")).toBe("");
+      expect(() => resolveComposeBuildContext(root, "../outside")).toThrow(
+        /escapes the linked repository/i,
+      );
       expect(resolveComposeBuildContext(root, "./api")).toBe("api");
     }
   });

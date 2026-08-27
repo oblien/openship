@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   onReconciling: vi.fn(async () => {}),
   onSuccess: vi.fn(async () => {}),
   setDeploymentStatus: vi.fn(async () => {}),
+  promptUser: vi.fn(async () => "migrate"),
 }));
 
 vi.mock("@repo/db", () => ({ repos: {} }));
@@ -30,6 +31,7 @@ vi.mock("../deployment-lifecycle", () => ({
 vi.mock("../session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
+  promptUser: mocks.promptUser,
 }));
 
 import { executeComposePipeline } from "./pipeline";
@@ -147,5 +149,9 @@ describe("executeComposePipeline — cancellation", () => {
 
     expect(mocks.onCancelled).not.toHaveBeenCalled();
     expect(mocks.setDeploymentStatus).toHaveBeenCalledWith("d1", "deploying", expect.anything());
+    const deployOpts = mocks.deployComposeServices.mock.calls[0]?.[4];
+    const prompt = { promptId: "edge_conflict" };
+    await expect(deployOpts.promptUser(prompt)).resolves.toBe("migrate");
+    expect(mocks.promptUser).toHaveBeenCalledWith("d1", prompt);
   });
 });

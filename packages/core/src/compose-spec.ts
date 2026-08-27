@@ -23,7 +23,147 @@
  */
 
 /** Identity — the CLI's input is already interpolated by `docker compose config`. */
+import { isValidEnvKey } from "./utils";
+
 const asIs = (s: string) => s;
+
+/** A Compose `build:` declaration Openship cannot honor faithfully. Values are
+ * deliberately never included: build args and SSH/secret configuration may be
+ * sensitive even though Docker ARG itself is not a secret channel. */
+export type ComposeBuildIssue = {
+  field: string;
+  reason: string;
+  blocking?: boolean;
+};
+
+const REMOTE_BUILD_CONTEXT_RE = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|[^@\s]+@[^:\s]+:)/;
+const ABSOLUTE_BUILD_CONTEXT_RE = /^(?:[\\/]|~(?:[\\/]|$)|[A-Za-z]:[\\/]|\\\\)/;
+
+function composeOptionRequestsSomething(value: unknown): boolean {
+  if (value === undefined || value === null || value === false || value === "" || value === 0) {
+    return false;
+  }
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as object).length > 0;
+  return true;
+}
+
+/**
+ * Validate the Compose build subsection shared by both importers.
+ *
+ * Openship currently models exactly `context`, `dockerfile`, and `args`. Every
+ * other requested key fails closed: ignoring `target`, `additional_contexts`,
+ * `ssh`, `secrets`, architecture, network, cache/provenance, or a future Compose
+ * key can produce a different artifact or silently omit a security contract.
+ */
+export function composeBuildIssues(
+  build: unknown,
+  options: {
+    allowAbsoluteContext?: boolean;
+    interpolate?: (value: string) => string;
+  } = {},
+): ComposeBuildIssue[] {
+  if (build === undefined || build === null) return [];
+  const issues: ComposeBuildIssue[] = [];
+  const block = (field: string, reason: string) => issues.push({ field, reason, blocking: true });
+
+  const validateContext = (context: string) => {
+    const resolved = (options.interpolate?.(context) ?? context).trim();
+    if (!resolved) {
+      block("build.context", "build.context must not be empty.");
+    } else if (REMOTE_BUILD_CONTEXT_RE.test(resolved)) {
+      block(
+        "build.context",
+        "build.context uses a remote URL, which Openship cannot build as a repository-relative context.",
+      );
+    } else if (!options.allowAbsoluteContext && ABSOLUTE_BUILD_CONTEXT_RE.test(resolved)) {
+      block(
+        "build.context",
+        "build.context is absolute or home-relative; Openship requires a path inside the linked repository.",
+      );
+    }
+  };
+
+  if (typeof build === "string") {
+    validateContext(build);
+    return issues;
+  }
+  if (typeof build !== "object" || Array.isArray(build)) {
+    block("build", "build must be a context string or an object.");
+    return issues;
+  }
+
+  const value = build as Record<string, unknown>;
+  if (value.context !== undefined) {
+    if (typeof value.context !== "string") {
+      block("build.context", "build.context must be a string.");
+    } else {
+      validateContext(value.context);
+    }
+  }
+  if (value.dockerfile !== undefined) {
+    if (typeof value.dockerfile !== "string") {
+      block("build.dockerfile", "build.dockerfile must be a string.");
+    } else {
+      const dockerfile = (options.interpolate?.(value.dockerfile) ?? value.dockerfile).trim();
+      if (!dockerfile) {
+        block("build.dockerfile", "build.dockerfile must not be empty.");
+      } else if (
+        REMOTE_BUILD_CONTEXT_RE.test(dockerfile) ||
+        ABSOLUTE_BUILD_CONTEXT_RE.test(dockerfile) ||
+        dockerfile.split(/[\\/]/).includes("..")
+      ) {
+        block("build.dockerfile", "build.dockerfile must be a path inside its build context.");
+      }
+    }
+  }
+
+  const args = value.args;
+  if (args !== undefined) {
+    if (Array.isArray(args)) {
+      args.forEach((entry, index) => {
+        if (typeof entry !== "string") {
+          block(`build.args[${index}]`, "build.args list entries must be strings.");
+          return;
+        }
+        const resolvedEntry = options.interpolate?.(entry) ?? entry;
+        const equals = resolvedEntry.indexOf("=");
+        const key = (equals >= 0 ? resolvedEntry.slice(0, equals) : resolvedEntry).trim();
+        if (!isValidEnvKey(key)) {
+          block(`build.args[${index}]`, "build.args contains an invalid argument name.");
+        }
+      });
+    } else if (args && typeof args === "object") {
+      for (const [key, argValue] of Object.entries(args as Record<string, unknown>)) {
+        if (!isValidEnvKey(key)) {
+          block("build.args", "build.args contains an invalid argument name.");
+        }
+        if (
+          argValue !== null &&
+          argValue !== undefined &&
+          !["string", "number", "boolean"].includes(typeof argValue)
+        ) {
+          block(`build.args.${key}`, "build.args values must be scalar or null.");
+        }
+      }
+    } else {
+      block("build.args", "build.args must be a list of strings or a scalar/null map.");
+    }
+  }
+
+  const modeled = new Set(["context", "dockerfile", "args"]);
+  for (const [key, optionValue] of Object.entries(value)) {
+    if (modeled.has(key) || /^x-/i.test(key) || !composeOptionRequestsSomething(optionValue)) {
+      continue;
+    }
+    block(
+      `build.${key}`,
+      `build.${key} is not supported; ignoring it could change the produced image or omit requested build behavior.`,
+    );
+  }
+
+  return issues;
+}
 
 /**
  * Long-form mount object → short-form spec, or undefined when it isn't one.
@@ -194,7 +334,11 @@ export function composePortToSpec(
   // reads HostPort "0" and "" identically), so the reading that changes no existing
   // behavior is the right one.
   const hasPublished =
-    published !== undefined && published !== null && published !== "" && published !== 0 && published !== "0";
+    published !== undefined &&
+    published !== null &&
+    published !== "" &&
+    published !== 0 &&
+    published !== "0";
   const hostPart = hasPublished
     ? hostIp
       ? `${hostIp}:${published}:`

@@ -144,11 +144,8 @@ export class BackupOrchestrator {
     // the explicit fallback keeps cron/webhook triggers working when
     // a destination has a NULL organizationId. Mail-server policies have
     // no project, so they always fall through to the destination's org.
-    const policyProject = policy.projectId
-      ? await repos.project.findById(policy.projectId)
-      : null;
-    const organizationId =
-      policyProject?.organizationId ?? destination.organizationId ?? null;
+    const policyProject = policy.projectId ? await repos.project.findById(policy.projectId) : null;
+    const organizationId = policyProject?.organizationId ?? destination.organizationId ?? null;
 
     // Resolve which SOURCE(s) this trigger backs up:
     //  - explicit serviceId (a fan-out child call) → that one service
@@ -158,15 +155,33 @@ export class BackupOrchestrator {
     //    service of the project, one child run each. Single-app projects have
     //    no service rows → nothing to back up (surfaced as an error).
     if (input.serviceId) {
-      const runId = await this.spawnRun(policy, destination, organizationId, { serviceId: input.serviceId }, input.trigger);
+      const runId = await this.spawnRun(
+        policy,
+        destination,
+        organizationId,
+        { serviceId: input.serviceId },
+        input.trigger,
+      );
       return { runId, runIds: [runId] };
     }
     if (policy.sourceKind === "mail_server") {
-      const runId = await this.spawnRun(policy, destination, organizationId, { mailServerId: policy.mailServerId ?? null }, input.trigger);
+      const runId = await this.spawnRun(
+        policy,
+        destination,
+        organizationId,
+        { mailServerId: policy.mailServerId ?? null },
+        input.trigger,
+      );
       return { runId, runIds: [runId] };
     }
     if (policy.serviceId) {
-      const runId = await this.spawnRun(policy, destination, organizationId, { serviceId: policy.serviceId }, input.trigger);
+      const runId = await this.spawnRun(
+        policy,
+        destination,
+        organizationId,
+        { serviceId: policy.serviceId },
+        input.trigger,
+      );
       return { runId, runIds: [runId] };
     }
 
@@ -182,7 +197,13 @@ export class BackupOrchestrator {
     for (const svc of services) {
       try {
         runIds.push(
-          await this.spawnRun(policy, destination, organizationId, { serviceId: svc.id }, input.trigger),
+          await this.spawnRun(
+            policy,
+            destination,
+            organizationId,
+            { serviceId: svc.id },
+            input.trigger,
+          ),
         );
       } catch (err) {
         console.warn(
@@ -223,9 +244,7 @@ export class BackupOrchestrator {
       status: "queued",
       triggeredBy: trigger.source,
       triggeredByUserId:
-        trigger.source === "manual" || trigger.source === "webhook"
-          ? trigger.userId
-          : null,
+        trigger.source === "manual" || trigger.source === "webhook" ? trigger.userId : null,
       clientIp: trigger.clientIp ?? null,
     });
 
@@ -238,9 +257,7 @@ export class BackupOrchestrator {
       );
       setImmediate(() => {
         void this.execute(runId).catch((execErr) => {
-          console.error(
-            `[backup-orchestrator] run ${runId} crashed: ${safeErrorMessage(execErr)}`,
-          );
+          console.error(`[backup-orchestrator] run ${runId} crashed: ${safeErrorMessage(execErr)}`);
         });
       });
     }
@@ -249,8 +266,8 @@ export class BackupOrchestrator {
   }
 
   /**
-   * Drive a queued run through its FSM. Updates the row at each
-   * transition. Exported so a worker (Chunk 2) can call it directly.
+   * Atomically claim and drive a queued run through its FSM. Exported so every
+   * worker backend uses the same database-owned execution boundary.
    */
   async execute(runId: string): Promise<void> {
     const run = await repos.backupRun.findById(runId);
@@ -262,6 +279,24 @@ export class BackupOrchestrator {
       console.warn(`[backup-orchestrator] run ${runId} already in status=${run.status}`);
       return;
     }
+
+    // More than one delivery is normal here: the in-process fast path races its
+    // DB poller, BullMQ retries, and an enqueue that reached Redis but timed out
+    // also schedules the inline fallback. The durable conditional update — not
+    // any runner-local Set/jobId — is the one execution owner across all of them.
+    const claim = await repos.backupRun.claimExecution(runId, run.projectId, run.organizationId);
+    if (claim === "project_unavailable") {
+      // Returning success here makes BullMQ drop its only delivery while the DB
+      // row remains queued forever. Throw so the durable queue retries after a
+      // graceful delete releases its short-lived admission fence; force delete
+      // atomically cancels the queued row before the retry.
+      throw new Error(`Backup run ${runId} is temporarily blocked by project deletion`);
+    }
+    if (claim !== "claimed") {
+      console.warn(`[backup-orchestrator] run ${runId} execution refused: ${claim}`);
+      return;
+    }
+    this.publishTransition(runId, "preparing");
 
     let policy = null as Awaited<ReturnType<typeof repos.backupPolicy.findById>> | null;
     let executor: BackupExecutor | null = null;
@@ -287,8 +322,6 @@ export class BackupOrchestrator {
     let destination: ReturnType<typeof resolveDestination> | null = null;
 
     try {
-      await this.transition(runId, "preparing");
-
       // 1. Reload policy + destination + service.
       if (!run.policyId) throw new Error("Run has no policyId");
       policy = (await repos.backupPolicy.findById(run.policyId)) ?? null;
@@ -329,9 +362,7 @@ export class BackupOrchestrator {
         // per-service policies and project-default fan-out children), so a
         // project-default policy resolves to a real service here.
         if (!run.serviceId) {
-          throw new Error(
-            `Backup run ${run.id} has no service to back up`,
-          );
+          throw new Error(`Backup run ${run.id} has no service to back up`);
         }
         const serviceRow = await repos.service.findById(run.serviceId);
         if (!serviceRow) throw new Error(`Service ${run.serviceId} disappeared`);
@@ -400,7 +431,14 @@ export class BackupOrchestrator {
       const hookLog: string[] = [];
       if (policy.preHook) {
         await this.transition(runId, "snapshotting");
-        await this.runHook(serviceHandle, executor, policy.preHook, "pre", hookLog, policy.hookTimeoutSeconds);
+        await this.runHook(
+          serviceHandle,
+          executor,
+          policy.preHook,
+          "pre",
+          hookLog,
+          policy.hookTimeoutSeconds,
+        );
       } else {
         await this.transition(runId, "snapshotting");
       }
@@ -548,9 +586,7 @@ export class BackupOrchestrator {
             policy.hookTimeoutSeconds,
           );
         } catch (err) {
-          hookLog.push(
-            `[post-hook] continued past failure: ${safeErrorMessage(err)}`,
-          );
+          hookLog.push(`[post-hook] continued past failure: ${safeErrorMessage(err)}`);
         }
       }
 
@@ -676,6 +712,11 @@ export class BackupOrchestrator {
       }
     } finally {
       disposeRuntime(sourceRuntime);
+      // Status says what happened; this acknowledgement says the worker can no
+      // longer mutate project resources. It must be the last durable write in
+      // the outermost worker boundary so project teardown never treats an early
+      // terminal/stale verdict as quiescence.
+      await repos.backupRun.acknowledgeExecutionFinished(runId);
     }
   }
 
@@ -693,6 +734,15 @@ export class BackupOrchestrator {
     patch?: Parameters<typeof repos.backupRun.transition>[2],
   ): Promise<void> {
     await repos.backupRun.transition(runId, status, patch);
+    this.publishTransition(runId, status, patch);
+  }
+
+  /** Publish a transition already persisted by either the FSM or atomic claim. */
+  private publishTransition(
+    runId: string,
+    status: BackupRunStatus,
+    patch?: Parameters<typeof repos.backupRun.transition>[2],
+  ): void {
     try {
       backupRunBus.publish(runId, {
         type: "transition",
@@ -796,11 +846,9 @@ export class BackupOrchestrator {
     timeoutSeconds: number,
   ): Promise<void> {
     log.push(`[${phase}-hook] $ ${command}`);
-    const { stdout, awaitExit } = await executor.execStream(
-      service,
-      ["sh", "-c", command],
-      { timeoutMs: timeoutSeconds * 1000 },
-    );
+    const { stdout, awaitExit } = await executor.execStream(service, ["sh", "-c", command], {
+      timeoutMs: timeoutSeconds * 1000,
+    });
     // Collect stdout for the hook log.
     const chunks: Buffer[] = [];
     stdout.on("data", (chunk: Buffer) => {
@@ -824,7 +872,9 @@ export class BackupOrchestrator {
       }),
     ]);
     if (drainTimer) clearTimeout(drainTimer);
-    const stdoutText = Buffer.concat(chunks).toString("utf8").slice(0, 8 * 1024);
+    const stdoutText = Buffer.concat(chunks)
+      .toString("utf8")
+      .slice(0, 8 * 1024);
     log.push(stdoutText);
     if (exit.stderr) log.push(`[${phase}-hook stderr] ${exit.stderr.slice(0, 4 * 1024)}`);
     // An UNKNOWN exit status is not success. Executors can surface a null exit
@@ -861,10 +911,7 @@ export class BackupOrchestrator {
       mailServerId,
       destinationOrgId,
     );
-    const executor = resolveExecutor(
-      targetPlatform.runtime.name,
-      targetPlatform.runtime,
-    );
+    const executor = resolveExecutor(targetPlatform.runtime.name, targetPlatform.runtime);
 
     const handle: ServiceHandle = {
       id: mailServerId,

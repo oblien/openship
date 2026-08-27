@@ -31,9 +31,24 @@ const h = vi.hoisted(() => ({
     environmentSlug: "production",
     environmentType: "production",
     gitProvider: "github",
+    framework: "node",
     gitOwner: "acme",
     gitRepo: "site",
     gitBranch: "main",
+    gitUrl: "https://github.com/acme/site.git",
+    installationId: 42 as number | null,
+    localPath: null as string | null,
+    releaseSource: null as Record<string, unknown> | null,
+    sourceKind: null as string | null,
+    buildKind: null as string | null,
+    workloadType: "web",
+    runtimeMode: null as string | null,
+    hasBuild: true,
+    hasServer: true,
+    startCommand: "npm start" as string | null,
+    webhookId: 17 as number | null,
+    webhookDomain: "hooks.example.com" as string | null,
+    autoDeploy: true,
     isApp: false,
     activeDeploymentId: null as string | null,
     serverId: null as string | null,
@@ -43,6 +58,7 @@ const h = vi.hoisted(() => ({
   siblings: [] as Array<Record<string, unknown>>,
   branches: [{ name: "main" }, { name: "staging" }] as Array<{ name: string }>,
   creates: [] as Array<Record<string, unknown>>,
+  groupCreates: [] as Array<Record<string, unknown>>,
   freeGateCalls: 0,
   persistedRoutes: [] as Array<unknown>,
 }));
@@ -62,6 +78,12 @@ vi.mock("@repo/db", () => ({
     projectGroup: {
       findById: async () => ({ id: "grp_1", name: "Site", slug: "site" }),
       findBySlugInOrg: async () => null,
+      listByOrganization: async () => ({ rows: [], total: 0 }),
+      create: async (input: Record<string, unknown>) => {
+        h.groupCreates.push(input);
+        return { ...input, id: "grp_new" };
+      },
+      softDelete: async () => {},
     },
     deployment: { findById: async () => null, listByProject: async () => ({ rows: [] }) },
     service: { listByProject: async () => [] },
@@ -123,9 +145,28 @@ const ctx = { userId: "user_1", organizationId: "org_1" } as never;
 
 describe("createProjectEnvironment", () => {
   beforeEach(() => {
+    Object.assign(h.base, {
+      gitProvider: "github",
+      framework: "node",
+      gitOwner: "acme",
+      gitRepo: "site",
+      gitUrl: "https://github.com/acme/site.git",
+      installationId: 42,
+      localPath: null,
+      releaseSource: null,
+      sourceKind: null,
+      buildKind: null,
+      runtimeMode: null,
+      hasBuild: true,
+      startCommand: "npm start",
+      webhookId: 17,
+      webhookDomain: "hooks.example.com",
+      autoDeploy: true,
+    });
     h.siblings = [{ ...h.base }];
     h.branches = [{ name: "main" }, { name: "staging" }];
     h.creates = [];
+    h.groupCreates = [];
     h.freeGateCalls = 0;
     h.persistedRoutes = [];
   });
@@ -185,5 +226,233 @@ describe("createProjectEnvironment", () => {
     expect(h.creates[0]!.gitBranch).toBe("staging");
     expect(h.creates[0]!.groupId).toBe("grp_1");
     expect(env.gitBranch).toBe("staging");
+  });
+
+  it("copies a release image's source and runtime class into a new environment", async () => {
+    const releaseSource = {
+      mode: "github",
+      artifactKind: "image",
+      repo: "acme/site",
+      imageTemplate: "ghcr.io/acme/site:{tag}",
+      pinnedVersion: "v2.0.0",
+      trackReleases: true,
+    };
+    Object.assign(h.base, {
+      gitProvider: "release",
+      gitOwner: null,
+      gitRepo: null,
+      gitUrl: null,
+      installationId: null,
+      localPath: null,
+      releaseSource,
+      sourceKind: "image",
+      buildKind: "prebuilt",
+      runtimeMode: "docker",
+      hasBuild: false,
+      startCommand: null,
+    });
+
+    const { createProjectEnvironment } = await load();
+    await createProjectEnvironment("proj_prod", ctx, {
+      environmentName: "Staging",
+      sourceMode: "branch",
+    } as never);
+
+    expect(h.creates).toHaveLength(1);
+    expect(h.creates[0]).toMatchObject({
+      gitProvider: "release",
+      gitOwner: null,
+      gitRepo: null,
+      gitUrl: null,
+      installationId: null,
+      localPath: null,
+      releaseSource,
+      sourceKind: "image",
+      buildKind: "prebuilt",
+      runtimeMode: "docker",
+      hasBuild: false,
+      workloadType: "web",
+      startCommand: null,
+      // A new environment never inherits webhook bookkeeping.
+      webhookId: null,
+      webhookDomain: null,
+    });
+  });
+});
+
+describe("createProject — release image source", () => {
+  beforeEach(() => {
+    Object.assign(h.base, {
+      gitProvider: "github",
+      framework: "node",
+      gitOwner: "acme",
+      gitRepo: "site",
+      gitUrl: "https://github.com/acme/site.git",
+      installationId: 42,
+      localPath: null,
+      releaseSource: null,
+      sourceKind: null,
+      buildKind: null,
+      runtimeMode: null,
+      hasBuild: true,
+      startCommand: "npm start",
+      webhookId: 17,
+      webhookDomain: "hooks.example.com",
+      autoDeploy: true,
+    });
+    h.creates = [];
+    h.groupCreates = [];
+    h.siblings = [];
+  });
+
+  it("persists the complete source and freezes image/prebuilt/docker as one class", async () => {
+    const releaseSource = {
+      mode: "github",
+      artifactKind: "image",
+      repo: "acme/release-app",
+      imageTemplate: "ghcr.io/acme/release-app:{tag}",
+      pinnedVersion: "v3.4.5",
+      trackReleases: true,
+    };
+    const { createProject } = await load();
+
+    await createProject(
+      {
+        name: "Release App",
+        gitProvider: "release",
+        releaseSource,
+        framework: "node",
+        workloadType: "web",
+        port: 8080,
+      } as never,
+      "org_1",
+    );
+
+    expect(h.groupCreates).toHaveLength(1);
+    expect(h.creates).toHaveLength(1);
+    expect(h.creates[0]).toMatchObject({
+      gitProvider: "release",
+      releaseSource,
+      hasBuild: false,
+      sourceKind: "image",
+      buildKind: "prebuilt",
+      runtimeMode: "docker",
+      workloadType: "web",
+      hasServer: true,
+    });
+    expect(h.creates[0]?.gitOwner).toBeUndefined();
+    expect(h.creates[0]?.gitRepo).toBeUndefined();
+    expect(h.creates[0]?.gitUrl).toBeUndefined();
+    expect(h.creates[0]?.localPath).toBeUndefined();
+  });
+
+  it("normalizes only the supported release-source contract", async () => {
+    const { createProject } = await load();
+
+    await createProject(
+      {
+        name: "Normalized Release App",
+        gitProvider: "release",
+        releaseSource: {
+          mode: "github",
+          artifactKind: "image",
+          repo: "  acme/release-app  ",
+          imageTemplate: "  ghcr.io/acme/release-app:{tag}  ",
+          pinnedVersion: "  v3.4.5  ",
+          trackReleases: false,
+          unrecognizedInternalField: "must-not-persist",
+        },
+        framework: "node",
+        workloadType: "web",
+      } as never,
+      "org_1",
+    );
+
+    expect(h.creates[0]?.releaseSource).toEqual({
+      mode: "github",
+      artifactKind: "image",
+      repo: "acme/release-app",
+      imageTemplate: "ghcr.io/acme/release-app:{tag}",
+      pinnedVersion: "v3.4.5",
+      trackReleases: false,
+    });
+  });
+
+  it("rejects an unsafe external version source before writing any rows", async () => {
+    const { createProject } = await load();
+
+    await expect(
+      createProject(
+        {
+          name: "Unsafe Release App",
+          gitProvider: "release",
+          releaseSource: {
+            mode: "url",
+            artifactKind: "image",
+            versionUrl: "http://metadata.internal/latest",
+            imageTemplate: "registry.example.com/acme/app:{tag}",
+          },
+          framework: "node",
+          workloadType: "web",
+          port: 8080,
+        } as never,
+        "org_1",
+      ),
+    ).rejects.toThrow(/must use HTTPS/);
+
+    expect(h.groupCreates).toHaveLength(0);
+    expect(h.creates).toHaveLength(0);
+  });
+
+  it("rejects a pinned tag that cannot produce a valid image reference", async () => {
+    const { createProject } = await load();
+
+    await expect(
+      createProject(
+        {
+          name: "Invalid Release App",
+          gitProvider: "release",
+          releaseSource: {
+            mode: "url",
+            artifactKind: "image",
+            pinnedVersion: "release/1.2.3",
+            imageTemplate: "registry.example.com/acme/app:{tag}",
+          },
+          framework: "node",
+          workloadType: "web",
+          port: 8080,
+        } as never,
+        "org_1",
+      ),
+    ).rejects.toThrow(/invalid/);
+
+    expect(h.groupCreates).toHaveLength(0);
+    expect(h.creates).toHaveLength(0);
+  });
+
+  it("rejects a services-class framework before writing any rows", async () => {
+    const { createProject } = await load();
+
+    await expect(
+      createProject(
+        {
+          name: "Compose Release App",
+          gitProvider: "release",
+          releaseSource: {
+            mode: "github",
+            artifactKind: "image",
+            repo: "acme/release-app",
+            imageTemplate: "ghcr.io/acme/release-app:{tag}",
+          },
+          framework: "docker-compose",
+          workloadType: "web",
+          port: 8080,
+        } as never,
+        "org_1",
+      ),
+    ).rejects.toThrow(/individual services/);
+
+    expect(h.groupCreates).toHaveLength(0);
+    expect(h.creates).toHaveLength(0);
   });
 });

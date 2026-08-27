@@ -30,6 +30,7 @@ import { join } from "node:path";
 import { createServer } from "node:net";
 import { DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
 import { repos } from "@repo/db";
+import { LOCAL_HOST_PORT_TARGET } from "../../src/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import {
   seedOrg,
@@ -159,6 +160,9 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
       runtimeMode: "docker" as const,
       usesManagedRouting: false,
       serverId: null,
+      // Match the real local resolver: compose and single-container deploys
+      // must contend in the same physical host-port namespace.
+      hostPortTarget: LOCAL_HOST_PORT_TARGET,
     };
     vi.doMock("../../src/lib/deployment-runtime", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
@@ -178,6 +182,18 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     vi.doMock("../../src/lib/controller-helpers", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return { ...actual, platform: () => localPlatform.platform };
+    });
+    // This fixture deliberately has no edge daemon. Feed the allocation path
+    // the strict scanner's authoritative empty result; all port claims,
+    // reservations, Docker binds, and rollback lifecycle remain real.
+    vi.doMock("@repo/adapters", async (importOriginal) => {
+      const actual = (await importOriginal()) as Record<string, unknown>;
+      return {
+        ...actual,
+        edgeProxyFor: () => ({
+          listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+        }),
+      };
     });
     vi.doMock("../../src/modules/deployments/service-checks", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
@@ -344,6 +360,18 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
               `[compose restore ${fresh.id}] ${fresh.errorMessage ?? "no error"}\n` +
                 logs.slice(-40).map((l) => l.message).join(""),
             );
+          }
+          if (fresh.status === "ready") {
+            let quiescent = false;
+            while (Date.now() < deadline) {
+              const inFlight = await repos.deployment.listInFlightByProject(projectId);
+              if (!inFlight.some((row) => row.id === fresh.id)) {
+                quiescent = true;
+                break;
+              }
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            if (!quiescent) throw new Error(`deploy ${fresh.id} became ready but never quiesced`);
           }
           return fresh as never;
         }

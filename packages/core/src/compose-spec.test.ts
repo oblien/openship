@@ -1,5 +1,54 @@
 import { describe, it, expect } from "vitest";
-import { composeMountToSpec, composePortToSpec } from "./compose-spec";
+import { composeBuildIssues, composeMountToSpec, composePortToSpec } from "./compose-spec";
+
+describe("composeBuildIssues", () => {
+  it("accepts the modeled context/dockerfile/args forms", () => {
+    expect(
+      composeBuildIssues({
+        context: "../..",
+        dockerfile: "services/shared/Dockerfile",
+        args: { APP_PACKAGE: "@myorg/api", FROM_ENV: null, FLAG: true },
+        "x-note": { owner: "platform" },
+      }),
+    ).toEqual([]);
+    expect(composeBuildIssues({ args: ["APP_PACKAGE=@myorg/api", "FROM_ENV", "EMPTY="] })).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    "target",
+    "dockerfile_inline",
+    "additional_contexts",
+    "ssh",
+    "secrets",
+    "network",
+    "extra_hosts",
+    "platforms",
+    "no_cache",
+    "pull",
+    "cache_from",
+    "cache_to",
+    "provenance",
+    "sbom",
+  ])("fails closed on unsupported build.%s", (key) => {
+    expect(
+      composeBuildIssues({ context: ".", [key]: key === "no_cache" ? true : ["x"] }),
+    ).toContainEqual(expect.objectContaining({ field: `build.${key}`, blocking: true }));
+  });
+
+  it("rejects malformed args without exposing their values", () => {
+    const issues = composeBuildIssues({ args: ["BAD-KEY=secret", 42] });
+    expect(issues.map((issue) => issue.field)).toEqual(["build.args[0]", "build.args[1]"]);
+    expect(JSON.stringify(issues)).not.toContain("secret");
+  });
+
+  it("rejects remote and raw absolute contexts but permits CLI-normalized absolute paths", () => {
+    expect(composeBuildIssues("https://github.com/acme/app.git")[0]?.field).toBe("build.context");
+    expect(composeBuildIssues("/srv/app")[0]?.field).toBe("build.context");
+    expect(composeBuildIssues("/srv/app", { allowAbsoluteContext: true })).toEqual([]);
+  });
+});
 
 describe("composeMountToSpec", () => {
   it("keeps read-only intent — the whole reason this is shared", () => {

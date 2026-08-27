@@ -23,11 +23,7 @@ import {
   type DiscoveredService,
 } from "./docker-inspect.service";
 import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "./migrate.service";
-import {
-  assertProjectMovable,
-  ProjectMoveRefused,
-  type ProjectMoveIntent,
-} from "./project-move";
+import { assertProjectMovable, ProjectMoveRefused, type ProjectMoveIntent } from "./project-move";
 import { maskEnv, maskServicesEnv } from "../../lib/secret-env";
 import { buildMigrationPreview } from "./migration-preflight";
 import { migrationOrchestrator } from "./migration.orchestrator";
@@ -102,12 +98,21 @@ async function assertServersWritable(
  */
 export async function repoCompose(c: Context) {
   const ctx = getRequestContext(c);
-  const { owner, repo, branch } = await c.req.json<{ owner?: string; repo?: string; branch?: string }>();
+  const { owner, repo, branch } = await c.req.json<{
+    owner?: string;
+    repo?: string;
+    branch?: string;
+  }>();
   if (!owner?.trim() || !repo?.trim()) {
     return c.json({ error: "owner and repo are required" }, 400);
   }
   try {
-    const services = await parseRepoCompose(ctx, owner.trim(), repo.trim(), branch?.trim() || undefined);
+    const services = await parseRepoCompose(
+      ctx,
+      owner.trim(),
+      repo.trim(),
+      branch?.trim() || undefined,
+    );
     return c.json({ success: true, services: maskServicesEnv(services) });
   } catch (err) {
     return c.json({ error: `Failed to parse repo compose: ${safeErrorMessage(err)}` }, 502);
@@ -172,11 +177,17 @@ export async function scanServerStream(c: Context) {
         serverId,
         ctx.organizationId,
         (message) => {
-          void s.writeSSE({ event: "progress", data: JSON.stringify({ type: "progress", message }) });
+          void s.writeSSE({
+            event: "progress",
+            data: JSON.stringify({ type: "progress", message }),
+          });
         },
         { flatDocker },
       );
-      await s.writeSSE({ event: "result", data: JSON.stringify({ type: "result", stack: maskDiscoveredStack(stack) }) });
+      await s.writeSSE({
+        event: "result",
+        data: JSON.stringify({ type: "result", stack: maskDiscoveredStack(stack) }),
+      });
     } catch (err) {
       await s.writeSSE({
         event: "error",
@@ -248,7 +259,16 @@ export async function adoptServer(c: Context) {
      *  share service names like `app`/`db`/`redis`. */
     composeProject?: string | null;
   }>();
-  const { serverId, projectName, serviceNames, serviceContainerIds, flatDocker, volumeStrategies, serviceSubpaths, serviceEnv } = body;
+  const {
+    serverId,
+    projectName,
+    serviceNames,
+    serviceContainerIds,
+    flatDocker,
+    volumeStrategies,
+    serviceSubpaths,
+    serviceEnv,
+  } = body;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
   if (!projectName?.trim()) return c.json({ error: "projectName is required" }, 400);
   if (!Array.isArray(serviceNames) || serviceNames.length === 0) {
@@ -422,7 +442,9 @@ export async function startMigration(c: Context) {
   // Per-run override wins over the user's Settings default; both fall back to
   // "auto" (topology-aware) inside the transfer core.
   const prefs = await getTransferPrefs(ctx.userId);
-  const transferMode = isValidTransferMode(body.transferMode) ? body.transferMode : prefs.transferMode;
+  const transferMode = isValidTransferMode(body.transferMode)
+    ? body.transferMode
+    : prefs.transferMode;
   const transferCompression = isValidTransferCompression(body.transferCompression)
     ? body.transferCompression
     : prefs.transferCompression;
@@ -498,7 +520,9 @@ async function assertProjectMoveAllowed(
   if (!project) return c.json({ error: "Project not found" }, 404);
   if (!project.serverId) {
     return c.json(
-      { error: `"${project.name}" isn't bound to a server, so there's no source host to move it from.` },
+      {
+        error: `"${project.name}" isn't bound to a server, so there's no source host to move it from.`,
+      },
       400,
     );
   }
@@ -556,7 +580,9 @@ export async function startProjectMove(c: Context) {
 
   const ctx = getRequestContext(c);
   const prefs = await getTransferPrefs(ctx.userId);
-  const transferMode = isValidTransferMode(body.transferMode) ? body.transferMode : prefs.transferMode;
+  const transferMode = isValidTransferMode(body.transferMode)
+    ? body.transferMode
+    : prefs.transferMode;
   const transferCompression = isValidTransferCompression(body.transferCompression)
     ? body.transferCompression
     : prefs.transferCompression;
@@ -585,9 +611,11 @@ export async function startProjectMove(c: Context) {
       // So a "same server" refusal can NAME where the project actually is. Read here rather
       // than inside the pure assert, which takes already-fetched data by design.
       sourceServerName: guard.project.serverId
-        ? ((await repos.server
-            .getInOrganization(guard.project.serverId, guard.organizationId)
-            .catch(() => null))?.name ?? null)
+        ? ((
+            await repos.server
+              .getInOrganization(guard.project.serverId, guard.organizationId)
+              .catch(() => null)
+          )?.name ?? null)
         : null,
     });
 
@@ -728,7 +756,8 @@ export async function streamMigration(c: Context) {
  * POST /migration/migrations/:id/cutover  { confirmationToken, kill? }
  *
  * Confirm the destructive teardown of the originals (kill=true) or finish the
- * migration keeping them stopped (kill=false). Only valid from awaiting_cutover.
+ * migration keeping them stopped (kill=false). A failed destructive cutover can
+ * be retried with kill=true; it can never be changed back to the keep choice.
  */
 export async function confirmCutover(c: Context) {
   const ctx = getRequestContext(c);
@@ -788,8 +817,7 @@ export async function resumeMigration(c: Context) {
   const body = await c.req
     .json<{ overrides?: Record<string, string>; skip?: string[] }>()
     .catch(() => ({}) as { overrides?: Record<string, string>; skip?: string[] });
-  const overrides =
-    body.overrides && typeof body.overrides === "object" ? body.overrides : {};
+  const overrides = body.overrides && typeof body.overrides === "object" ? body.overrides : {};
   const skip = Array.isArray(body.skip) ? body.skip.filter((s) => typeof s === "string") : [];
   const result = await migrationOrchestrator.resume(ctx, param(c, "id"), ctx.organizationId, {
     overrides,

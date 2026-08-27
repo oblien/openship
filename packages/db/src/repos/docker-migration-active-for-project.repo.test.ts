@@ -42,6 +42,8 @@ async function addRun(
     source?: string | null;
     startedAt?: Date;
     finishedAt?: Date | null;
+    executionStartedAt?: Date | null;
+    executionFinishedAt?: Date | null;
   },
 ) {
   await ctx.db.insert(dockerMigrationRun).values({
@@ -54,6 +56,8 @@ async function addRun(
     mode: run.mode ?? "project_move",
     projectId: run.projectId ?? null,
     finishedAt: run.finishedAt ?? null,
+    executionStartedAt: run.executionStartedAt ?? null,
+    executionFinishedAt: run.executionFinishedAt ?? null,
     startedAt: run.startedAt ?? new Date("2026-01-01T00:00:00Z"),
     inputSnapshot: run.source
       ? { projectMove: { projectId: run.source, intent: "copy" }, organizationId: "org1" }
@@ -101,6 +105,20 @@ describe("findActiveForProject", () => {
       projectId: "p1",
       finishedAt: new Date("2026-01-01T01:00:00Z"),
     });
+    expect(await ctx.repo.findActiveForProject("p1")).toBeNull();
+  });
+
+  it("keeps a terminal outcome active until its remote worker acknowledges exit", async () => {
+    await addRun(ctx, {
+      id: "settling",
+      status: "succeeded",
+      projectId: "p1",
+      finishedAt: new Date("2026-01-01T01:00:00Z"),
+      executionStartedAt: new Date("2026-01-01T00:30:00Z"),
+    });
+
+    expect((await ctx.repo.findActiveForProject("p1"))?.id).toBe("settling");
+    await ctx.repo.acknowledgeExecutionFinished("settling");
     expect(await ctx.repo.findActiveForProject("p1")).toBeNull();
   });
 

@@ -34,6 +34,7 @@ import { createServer } from "node:net";
 import { DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { encrypt } from "../../src/lib/encryption";
+import { LOCAL_HOST_PORT_TARGET } from "../../src/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
 
@@ -68,6 +69,16 @@ async function get(url: string, attempts = 60): Promise<string> {
   throw new Error(`${url} never answered: ${String(lastErr)}`);
 }
 
+async function publishedPort(runtime: DockerRuntime, containerId: string): Promise<number> {
+  const info = await runtime.docker.getContainer(containerId).inspect();
+  const binding = info.NetworkSettings.Ports?.[`${APP_PORT}/tcp`]?.[0]?.HostPort;
+  const port = Number(binding);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`container ${containerId} has no valid ${APP_PORT}/tcp host publish`);
+  }
+  return port;
+}
+
 /** The deploy runs in the background (kickoffBuild fires and forgets), so wait
  *  for the row the restore created to reach a terminal status. */
 async function waitForRestore(
@@ -89,6 +100,21 @@ async function waitForRestore(
     if (fresh) {
       last = fresh.status;
       if (["ready", "partial_failure", "failed", "cancelled"].includes(fresh.status)) {
+        // `ready` means traffic may flow; the build worker can still be finishing
+        // lifecycle cleanup. A following rollback must wait for the stronger
+        // repository quiescence acknowledgement used by production admission.
+        if (fresh.status === "ready") {
+          let quiescent = false;
+          while (Date.now() < deadline) {
+            const inFlight = await repos.deployment.listInFlightByProject(projectId);
+            if (!inFlight.some((row) => row.id === fresh.id)) {
+              quiescent = true;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 100));
+          }
+          if (!quiescent) throw new Error(`restore ${fresh.id} became ready but never quiesced`);
+        }
         return fresh as never;
       }
     }
@@ -182,6 +208,9 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
       runtimeMode: "docker" as const,
       usesManagedRouting: false,
       serverId: null,
+      // Match the real local resolver: host-port allocation is serialized by
+      // the physical bind namespace, not by a nullable server-row id.
+      hostPortTarget: LOCAL_HOST_PORT_TARGET,
     };
     vi.doMock("../../src/lib/deployment-runtime", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
@@ -205,7 +234,20 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
         platform: () => localPlatform.platform,
       };
     });
-    // 2. GitHub check runs: there's no installation in a test org.
+    // 2. This fixture deliberately has no edge daemon. Preserve the production
+    // strict-inventory contract, but provide its authoritative empty result so
+    // the rollback test can exercise loopback allocation without provisioning
+    // unrelated edge infrastructure.
+    vi.doMock("@repo/adapters", async (importOriginal) => {
+      const actual = (await importOriginal()) as Record<string, unknown>;
+      return {
+        ...actual,
+        edgeProxyFor: () => ({
+          listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+        }),
+      };
+    });
+    // 3. GitHub check runs: there's no installation in a test org.
     // Keep everything real except the GitHub calls (no installation in a test org).
     vi.doMock("../../src/modules/deployments/service-checks", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
@@ -344,10 +386,14 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     // needed source could not have succeeded.
     expect((await repos.project.findById(project.id))!.gitUrl).toBeFalsy();
 
-    // And v1's bytes are serving again, through the pipeline's own deploy step.
-    expect(await get(`http://127.0.0.1:${hostPort}/version.txt`)).toBe("v1");
-
     const info = await runtime.docker.getContainer(row.containerId!).inspect();
+    const restoredPort = await publishedPort(runtime, row.containerId!);
+    // The allocator is authoritative under parallel E2E load: another suite may
+    // claim the sampled preferred port between freePort() and this rollback.
+    // Persistence, Docker's real bind, and the reachable endpoint must agree.
+    expect((await repos.project.findById(project.id))!.hostPort).toBe(restoredPort);
+    expect(await get(`http://127.0.0.1:${restoredPort}/version.txt`)).toBe("v1");
+
     expect(info.Config.Env).toContain("APP_VERSION=v1"); // frozen env, not today's
     expect(info.HostConfig.Binds ?? []).toContain(`openship-${project.slug}-data:/data`);
     expect(info.Config.Labels["openship.deployment"]).toBe(restore.id);
@@ -364,13 +410,18 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     const { rows } = await repos.deployment.listByProject(project.id, { perPage: 50 });
     const v2 = rows.find((r) => r.imageRef === TAG_V2)!;
     const known = new Set(rows.map((r) => r.id));
+    const previousPort = (await repos.project.findById(project.id))!.hostPort;
 
     await rollbackMod.rollback(v2.id);
 
     const restore = await waitForRestore(project.id, known);
     expect(restore.status, restore.errorMessage ?? "no error recorded").toBe("ready");
     expect(restore.imageRef).toBe(TAG_V2);
-    expect(await get(`http://127.0.0.1:${hostPort}/version.txt`)).toBe("v2");
+    const row = (await repos.deployment.findById(restore.id))!;
+    const restoredPort = await publishedPort(runtime, row.containerId!);
+    expect(restoredPort).toBe(previousPort);
+    expect((await repos.project.findById(project.id))!.hostPort).toBe(restoredPort);
+    expect(await get(`http://127.0.0.1:${restoredPort}/version.txt`)).toBe("v2");
     // Version numbering follows the COMMIT, so this is v2 again — not v4.
     expect((await repos.deployment.findById(restore.id))!.version).toBe(2);
   }, 300_000);

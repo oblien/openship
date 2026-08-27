@@ -173,6 +173,17 @@ export class BareRuntime implements RuntimeAdapter {
     return this.executor;
   }
 
+  /**
+   * Resolve a retained application release for an env-only refresh.
+   * Deployment ids originate in our database, but reject path-shaped input at
+   * this boundary so an imported/corrupt row cannot escape releases/.
+   */
+  async retainedReleaseArtifact(deploymentId: string): Promise<string | null> {
+    if (!deploymentId || deploymentId.includes("/") || deploymentId.includes("\\")) return null;
+    const path = this.releaseDir(deploymentId);
+    return (await this.executor.exists(path).catch(() => false)) ? path : null;
+  }
+
   /** Get or lazily initialise the process supervisor. */
   private async supervisor(): Promise<ProcessSupervisor> {
     if (this._supervisor) return this._supervisor;

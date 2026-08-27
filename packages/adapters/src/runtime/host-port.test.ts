@@ -15,6 +15,25 @@ describe("pickHostPort", () => {
     expect(pickHostPort(new Set([20500]), { preferred: 20500 })).toBe(20000);
   });
 
+  it("reuses an occupied preferred port only when the caller proved ownership", () => {
+    expect(
+      pickHostPort(new Set([20500]), {
+        preferred: 20500,
+        reuseOccupiedPreferred: true,
+      }),
+    ).toBe(20500);
+  });
+
+  it("never lets proven ownership override another owner's avoid claim", () => {
+    expect(
+      pickHostPort(new Set([20500]), {
+        preferred: 20500,
+        reuseOccupiedPreferred: true,
+        avoid: [20500],
+      }),
+    ).toBe(20000);
+  });
+
   it("skips occupied + avoided ports", () => {
     const occupied = new Set([20000, 20001]);
     expect(pickHostPort(occupied, { avoid: [20002, 20003] })).toBe(20004);
@@ -29,9 +48,9 @@ describe("pickHostPort", () => {
   });
 
   it("throws when the range is exhausted", () => {
-    expect(() => pickHostPort(new Set([30000, 30001]), { rangeStart: 30000, rangeEnd: 30001 })).toThrow(
-      /No free host port/,
-    );
+    expect(() =>
+      pickHostPort(new Set([30000, 30001]), { rangeStart: 30000, rangeEnd: 30001 }),
+    ).toThrow(/No free host port/);
   });
 });
 

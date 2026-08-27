@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import { resolveUpstreamUrl, resolveRouteStrategy } from "../../src/lib/upstream-url";
 
 const dockerRuntime = {
+  name: "docker",
   supports: (c: string) => c === "containerIp",
   getContainerIp: async () => "172.18.0.5",
 };
 const bareRuntime = {
+  name: "bare",
   supports: (c: string) => c === "containerIp",
   getContainerIp: async () => "127.0.0.1",
 };
@@ -58,7 +60,7 @@ describe("resolveUpstreamUrl", () => {
   it("returns null when the container IP can't be resolved", async () => {
     const url = await resolveUpstreamUrl({
       strategy: "container-ip",
-      runtime: { supports: () => true, getContainerIp: async () => null },
+      runtime: { name: "docker", supports: () => true, getContainerIp: async () => null },
       containerId: "gone",
       containerPort: 3000,
     });

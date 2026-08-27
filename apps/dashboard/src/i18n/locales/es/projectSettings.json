@@ -4,6 +4,70 @@
     "save": "Guardar",
     "cancel": "Cancelar"
   },
+  "releaseImageSource": {
+    "validationInvalid": "La fuente de la imagen de versión no es válida.",
+    "toast": {
+      "saved": "Se guardó la fuente de versión del contenedor.",
+      "saveFailed": "No se pudo guardar la fuente de versión del contenedor."
+    },
+    "status": {
+      "notDeployed": "Aún no desplegada",
+      "checking": "Comprobando…",
+      "unavailable": "No disponible"
+    },
+    "switchToImage": {
+      "title": "Cambiar a una fuente de imagen precompilada",
+      "description": "Al guardar se sustituye la fuente Git o local actual en todos los entornos. Los despliegues existentes y el historial de restauración seguirán disponibles.",
+      "keep": "Conservar la fuente actual"
+    },
+    "switchToGit": {
+      "title": "Cambiar a una fuente Git",
+      "description": "Nada cambiará hasta que vincules un repositorio. Al vincularlo se sustituye la fuente de imagen seguida en todos los entornos.",
+      "back": "Volver a la fuente de imagen"
+    },
+    "entry": {
+      "shortButton": "Usar imagen precompilada",
+      "button": "Seguir una imagen de contenedor precompilada",
+      "description": "Despliega directamente una imagen de registro versionada, sin clonar ni compilar un repositorio."
+    },
+    "summary": {
+      "title": "Imagen de contenedor seguida",
+      "badge": "Precompilada",
+      "description": "Despliega directamente una imagen publicada. No se clona ningún repositorio ni se ejecuta ningún comando de compilación.",
+      "linkGit": "Vincular repositorio Git",
+      "image": "Imagen",
+      "versionSource": "Fuente de la versión",
+      "githubReleases": "Versiones de GitHub",
+      "pinnedVersion": "Versión fijada",
+      "currentVersion": "Versión actual",
+      "targetVersion": "Versión de destino",
+      "latestVersion": "Versión más reciente",
+      "updateAvailable": "Actualización disponible"
+    },
+    "editor": {
+      "trackingTitle": "Seguimiento de versiones",
+      "configureTitle": "Configurar imagen precompilada",
+      "templateHint": "Usa {tag} para conservar la etiqueta exacta del editor o {version} para la versión normalizada.",
+      "provider": "Proveedor de versión",
+      "githubTitle": "Versiones de GitHub",
+      "githubDescription": "Sigue la etiqueta de la última versión publicada.",
+      "urlTitle": "URL de versión o versión fijada",
+      "urlDescription": "Lee un punto de versión o despliega una versión fija.",
+      "imageTemplate": "Plantilla de imagen",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "Repositorio de GitHub",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "URL de versión",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "Punto HTTPS que devuelve texto o JSON con version/tag_name.",
+      "pinnedVersion": "Versión fijada",
+      "pinnedPlaceholder": "Opcional, p. ej., v2.4.1",
+      "pinnedHint": "Sustituye la última versión detectada; déjalo vacío para seguir las actualizaciones.",
+      "appliesAll": "Los cambios se aplican a todos los entornos de este proyecto.",
+      "saving": "Guardando…",
+      "save": "Guardar fuente"
+    }
+  },
   "appSettings": {
     "modeApp": "Configuración de la aplicación",
     "modeDeployment": "Despliegue",
@@ -660,6 +724,9 @@
       "defaultAppName": "mi-app",
       "mapsToPort": "Se asigna al puerto",
       "includeWww": "Incluir www",
+      "dnsChallenge": "Usar desafío DNS-01",
+      "dnsChallengeDesc": "Emite y renueva el certificado mediante tu proveedor DNS conectado. Úsalo cuando el puerto 80 no sea accesible.",
+      "dnsChallengeWildcardDesc": "Los certificados comodín requieren DNS-01 y un proveedor DNS conectado.",
       "includeWwwDesc": "También generar registros para www.{domain}",
       "includeWwwFallback": "tudominio.com",
       "adding": "Añadiendo...",

@@ -4,6 +4,70 @@
     "save": "Enregistrer",
     "cancel": "Annuler"
   },
+  "releaseImageSource": {
+    "validationInvalid": "La source de l'image de version est incorrecte.",
+    "toast": {
+      "saved": "La source de version du conteneur a été enregistrée.",
+      "saveFailed": "Impossible d'enregistrer la source de version du conteneur."
+    },
+    "status": {
+      "notDeployed": "Pas encore déployée",
+      "checking": "Vérification…",
+      "unavailable": "Indisponible"
+    },
+    "switchToImage": {
+      "title": "Passer à une source d'image préconstruite",
+      "description": "L'enregistrement remplace la source Git ou locale actuelle dans tous les environnements. Les déploiements existants et l'historique de restauration restent disponibles.",
+      "keep": "Conserver la source actuelle"
+    },
+    "switchToGit": {
+      "title": "Passer à une source Git",
+      "description": "Rien ne change tant qu'aucun dépôt n'est lié. La liaison remplace la source d'image suivie dans tous les environnements.",
+      "back": "Revenir à la source d'image"
+    },
+    "entry": {
+      "shortButton": "Utiliser une image préconstruite",
+      "button": "Suivre une image de conteneur préconstruite",
+      "description": "Déployez directement une image de registre versionnée, sans cloner ni construire de dépôt."
+    },
+    "summary": {
+      "title": "Image de conteneur suivie",
+      "badge": "Préconstruite",
+      "description": "Déploie directement une image publiée. Aucun dépôt n'est cloné et aucune commande de construction n'est exécutée.",
+      "linkGit": "Lier un dépôt Git",
+      "image": "Image",
+      "versionSource": "Source de la version",
+      "githubReleases": "Versions GitHub",
+      "pinnedVersion": "Version épinglée",
+      "currentVersion": "Version actuelle",
+      "targetVersion": "Version cible",
+      "latestVersion": "Dernière version",
+      "updateAvailable": "Mise à jour disponible"
+    },
+    "editor": {
+      "trackingTitle": "Suivi des versions",
+      "configureTitle": "Configurer l'image préconstruite",
+      "templateHint": "Utilisez {tag} pour conserver le tag exact de l'éditeur, ou {version} pour la version normalisée.",
+      "provider": "Fournisseur de version",
+      "githubTitle": "Versions GitHub",
+      "githubDescription": "Suivre le dernier tag de version publié.",
+      "urlTitle": "URL de version ou version épinglée",
+      "urlDescription": "Lire un point de terminaison de version ou déployer une version fixe.",
+      "imageTemplate": "Modèle d'image",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "Dépôt GitHub",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "URL de version",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "Point de terminaison HTTPS renvoyant du texte ou du JSON avec version/tag_name.",
+      "pinnedVersion": "Version épinglée",
+      "pinnedPlaceholder": "Facultatif, par ex. v2.4.1",
+      "pinnedHint": "Remplace la dernière version détectée ; laissez vide pour suivre les mises à jour.",
+      "appliesAll": "Les modifications s'appliquent à tous les environnements de ce projet.",
+      "saving": "Enregistrement…",
+      "save": "Enregistrer la source"
+    }
+  },
   "appSettings": {
     "modeApp": "Paramètres de l'application",
     "modeDeployment": "Déploiement",
@@ -678,6 +742,9 @@
       "servesPathRedeploy": "Les nouveaux chemins prennent effet au prochain déploiement.",
       "externalIngress": "Ingress et TLS externes",
       "externalIngressDesc": "Le TLS se termine en amont (Cloudflare Tunnel, équilibreur de charge). Vérification par TXT uniquement — le domaine n'a pas besoin de pointer vers ce serveur, et nous n'émettrons pas de certificat.",
+      "dnsChallenge": "Utiliser le défi DNS-01",
+      "dnsChallengeDesc": "Émettez et renouvelez le certificat via votre fournisseur DNS connecté. Utilisez cette option si le port 80 est inaccessible.",
+      "dnsChallengeWildcardDesc": "Les certificats génériques nécessitent DNS-01 et un fournisseur DNS connecté.",
       "noWww": "Saisissez le domaine sans « www. » — activez « Inclure www » ci-dessous pour l'ajouter."
     },
     "dns": {

@@ -16,6 +16,7 @@ export type {
   ContainerStatus,
   BuildStrategy,
   BuildConfig,
+  ImageArtifactConfig,
   DeployPublicEndpoint,
   DeployConfig,
   BuildResult,
@@ -77,7 +78,12 @@ export type {
   ContainerLifecycleEvent,
 } from "./runtime/types";
 export { assertCapability, isMultiServiceRuntime } from "./runtime/types";
-export { DockerRuntime, buildNetworkAliases, type DockerConnectionOptions } from "./runtime/docker";
+export {
+  DockerRuntime,
+  buildNetworkAliases,
+  ownsBuiltImage,
+  type DockerConnectionOptions,
+} from "./runtime/docker";
 // The pull-auth shape, so the API can type the credential resolver it injects (#581).
 export type { DockerRegistryAuth } from "./runtime/docker-auth";
 export {
@@ -159,7 +165,7 @@ export {
 } from "./runtime/volume-namespace";
 
 // ─── Infrastructure layer ────────────────────────────────────────────────────
-export type { RoutingProvider, SslProvider } from "./infra/types";
+export type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./infra/types";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
 export {
   compileVercelRouting,
@@ -170,10 +176,7 @@ export {
   type CompiledRedirect,
   type CompiledHeaderRule,
 } from "./infra/vercel-routing";
-export {
-  compileRoutingToOblien,
-  type OblienRoutingContext,
-} from "./runtime/oblien-routing";
+export { compileRoutingToOblien, type OblienRoutingContext } from "./runtime/oblien-routing";
 export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
 export {
@@ -303,11 +306,22 @@ export {
   completeEdgeTakeover,
 } from "./system/proxy/takeover-journal";
 // The consolidated reverse-proxy / edge facade (single point for the chain).
-export { detectEdge, importSites, takeoverOnMigrate, foreignProxyOnEdge, ensureEdge } from "./system/proxy";
+export {
+  detectEdge,
+  importSites,
+  takeoverOnMigrate,
+  foreignProxyOnEdge,
+  ensureEdge,
+} from "./system/proxy";
 export { unreachableStaticRoots } from "./system/proxy/import";
 export type { UnreachableStaticRoot } from "./system/proxy/import";
 // The reverse-proxy READ api: sites, by-port index, per-host vhost + cert.
-export { edgeProxy, edgeProxyFor, buildProxyRouteIndex, collectProxyCerts } from "./system/proxy/api";
+export {
+  edgeProxy,
+  edgeProxyFor,
+  buildProxyRouteIndex,
+  collectProxyCerts,
+} from "./system/proxy/api";
 export type {
   EdgeProxyApi,
   ProxySiteRoute,

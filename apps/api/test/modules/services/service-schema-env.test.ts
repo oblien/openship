@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ENV_MASK } from "@repo/core";
 import {
   CreateServiceBody,
+  SetServiceEnvVarsBody,
   SyncServicesBody,
   UpdateServiceBody,
 } from "../../../src/modules/services/service.schema";
@@ -63,5 +64,14 @@ describe("create and sync stay non-nullable", () => {
     expect(checkSync({ DROP: null })).toBe(false);
     expect(checkSync(null)).toBe(false);
     expect(checkSync({ NODE_ENV: "production" })).toBe(true);
+  });
+});
+
+describe("SetServiceEnvVarsBody masked-row identity", () => {
+  it("accepts the source row id used to rename an unrevealed secret", () => {
+    expect(Value.Check(SetServiceEnvVarsBody, {
+      environment: "production",
+      vars: [{ sourceId: "env_1", key: "RENAMED_TOKEN", value: ENV_MASK, isSecret: true }],
+    })).toBe(true);
   });
 });

@@ -15,7 +15,18 @@
  */
 
 import { repos, normalizeRoutingFields, type Domain, type Project } from "@repo/db";
-import { AppError, NotFoundError, ConflictError, ValidationError, safeErrorMessage, normalizeCustomHostname, isValidCustomHostname, wwwSiblingHostname, SYSTEM } from "@repo/core";
+import {
+  AppError,
+  NotFoundError,
+  ConflictError,
+  ValidationError,
+  safeErrorMessage,
+  normalizeCustomHostname,
+  isValidCustomHostname,
+  isWildcardHostname,
+  wwwSiblingHostname,
+  SYSTEM,
+} from "@repo/core";
 import { platform, assertResourceInOrg } from "../../lib/controller-helpers";
 import { buildBackgroundContext, type RequestContext } from "../../lib/request-context";
 import {
@@ -27,12 +38,19 @@ import {
 } from "../../lib/domain-ssl";
 import { getRoutingBaseDomain } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
-import { resolveProjectServerHost, resolveLocalServerHost, resolveInstancePublicIp, isLoopbackHost } from "../../lib/server-target";
+import {
+  resolveProjectServerHost,
+  resolveLocalServerHost,
+  resolveInstancePublicIp,
+  resolveServerHost,
+  isLoopbackHost,
+} from "../../lib/server-target";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
 import { generateToken } from "../../lib/domain-token";
 import { routableWithoutOwnership } from "../../lib/domain-claims";
 import { untrackedSiteFor } from "../../lib/edge-orphans.service";
+import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import type { UntrackedEdgeSite } from "@repo/core";
 import { publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
 import { sshManager } from "../../lib/ssh-manager";
@@ -198,13 +216,12 @@ export async function addDomain(
     // still running), retrying must resume from the existing row instead of
     // trapping the user behind a same-project "already in use" conflict.
     const patch: Partial<Domain> = {};
-    if (
-      data.externalIngress !== undefined &&
-      existing.externalIngress !== data.externalIngress
-    ) {
+    if (data.sslChallenge !== undefined && existing.sslChallenge !== data.sslChallenge) {
+      patch.sslChallenge = data.sslChallenge;
+    }
+    if (data.externalIngress !== undefined && existing.externalIngress !== data.externalIngress) {
       patch.externalIngress = data.externalIngress;
     }
-    // Only ever SET a redirect here; `redirectTo: undefined` (the common case —
     // a plain re-save) must not clear one the operator configured separately.
     if (redirect.redirectTo && existing.redirectTo !== redirect.redirectTo) {
       patch.redirectTo = redirect.redirectTo;
@@ -259,6 +276,9 @@ export async function addDomain(
 
   const token = generateToken(hostname);
 
+  const isWildcard = isWildcardHostname(hostname);
+  const sslChallenge = data.sslChallenge ?? (isWildcard ? "dns-01" : "http-01");
+
   const domain = await repos.domain.create({
     projectId: data.projectId,
     hostname,
@@ -271,6 +291,7 @@ export async function addDomain(
     status: "pending",
     isPrimary: data.isPrimary ?? false,
     externalIngress: data.externalIngress ?? false,
+    sslChallenge,
     verificationToken: token,
     redirectTo: redirect.redirectTo,
     redirectStatus: redirect.redirectStatus,
@@ -421,15 +442,13 @@ export async function ensurePendingServiceDomain(opts: {
   }
 
   if (foreign) {
-    throw new ConflictError(
-      `The domain "${hostname}" is already connected to another project.`,
-    );
+    throw new ConflictError(`The domain "${hostname}" is already connected to another project.`);
   }
 
   // findOrCreate (not create) so a concurrent insert of the same brand-new
   // hostname races safely to the existing row instead of throwing 23505 — the
   // caller path (createService) isn't wrapped in a try/catch.
-  const row = await repos.domain.findOrCreate({
+  const result = await repos.domain.findOrCreateWithStatus({
     projectId: opts.projectId,
     serviceId: opts.serviceId,
     hostname,
@@ -438,9 +457,13 @@ export async function ensurePendingServiceDomain(opts: {
     verified: false,
     status: "pending",
     isPrimary: false,
+    sslChallenge: isWildcardHostname(hostname) ? "dns-01" : "http-01",
     verificationToken: generateToken(hostname),
   });
-  return { created: true, domainId: row?.id ?? null };
+  if (result.domain.projectId !== opts.projectId) {
+    throw new ConflictError(`The domain "${hostname}" is already connected to another project.`);
+  }
+  return { created: result.created, domainId: result.domain.id };
 }
 
 /**
@@ -465,15 +488,16 @@ export async function removeServiceDomain(opts: {
   }
 }
 
-// ─── Preview records (no auth, no DB write) ──────────────────────────────────
+// ─── Preview records (no DB write) ───────────────────────────────────────────
 
 export async function previewRecords(
   hostname: string,
   organizationId?: string,
   includeWww = false,
+  serverId?: string,
 ) {
   const token = generateToken(hostname);
-  return buildRecords(hostname, token, undefined, false, organizationId, includeWww);
+  return buildRecords(hostname, token, undefined, false, organizationId, includeWww, serverId);
 }
 
 // ─── Get DNS records (existing domain) ───────────────────────────────────────
@@ -517,10 +541,7 @@ async function desiredDnsInputs(
 }
 
 /** Dry-run: what auto-configuring this domain's DNS would do. Reads only. */
-export async function planDomainDns(
-  ctx: RequestContext,
-  domainId: string,
-): Promise<DnsPlanResult> {
+export async function planDomainDns(ctx: RequestContext, domainId: string): Promise<DnsPlanResult> {
   const { hostname, inputs } = await desiredDnsInputs(ctx, domainId);
   return planRecords(ctx.organizationId, hostname, inputs);
 }
@@ -577,9 +598,10 @@ async function markDomainVerifiedActive(
   domainId: string,
   ssl: { issuer?: string; expiresAt?: string; manualSsl?: boolean },
 ): Promise<void> {
-  const promote = (await shouldPromoteToPrimary(domain, domainId)) && domain.projectId
-    ? { projectId: domain.projectId }
-    : undefined;
+  const promote =
+    (await shouldPromoteToPrimary(domain, domainId)) && domain.projectId
+      ? { projectId: domain.projectId }
+      : undefined;
   await repos.domain.markVerifiedActive(domainId, {
     sslStatus: "active",
     ...(ssl.manualSsl ? { manualSsl: true } : {}),
@@ -609,20 +631,24 @@ async function edgeHostUnreachable(ctx: RequestContext, project: Project): Promi
   // the FIRST, feedback-less blocking call and make verify look hung).
   const serverId = await resolveServerIdForProject(project);
   if (!serverId) return false;
-  const server = await repos.server.getInOrganization(serverId, ctx.organizationId).catch(() => null);
+  const server = await repos.server
+    .getInOrganization(serverId, ctx.organizationId)
+    .catch(() => null);
   if (!server?.isLocal) return false;
-  return sshManager
-    .withHostExecutor(
-      async (exec) =>
-        (await exec.exists("/.dockerenv").catch(() => false)) ||
-        (await exec.exists("/run/.containerenv").catch(() => false)),
-    )
-    // Acquiring the host channel THROWS when the API is containerized with no
-    // channel provisioned — which is precisely this function's "unreachable" case,
-    // so it must answer TRUE. Answering false would let verify march on to a
-    // certbot attempt that fails far from the cause, instead of surfacing
-    // HOST_CHANNEL_HINT below.
-    .catch(() => true);
+  return (
+    sshManager
+      .withHostExecutor(
+        async (exec) =>
+          (await exec.exists("/.dockerenv").catch(() => false)) ||
+          (await exec.exists("/run/.containerenv").catch(() => false)),
+      )
+      // Acquiring the host channel THROWS when the API is containerized with no
+      // channel provisioned — which is precisely this function's "unreachable" case,
+      // so it must answer TRUE. Answering false would let verify march on to a
+      // certbot attempt that fails far from the cause, instead of surfacing
+      // HOST_CHANNEL_HINT below.
+      .catch(() => true)
+  );
 }
 
 const HOST_CHANNEL_HINT =
@@ -661,7 +687,10 @@ function isPathSafeHostname(hostname: string): boolean {
  * Self-hosted only; best-effort + non-fatal (domains never fail a deploy, see
  * [[domains-never-fail-deploy]]). Returns true when it adopted a cert.
  */
-export async function reuseServerCertForDomain(ctx: RequestContext, domainId: string): Promise<boolean> {
+export async function reuseServerCertForDomain(
+  ctx: RequestContext,
+  domainId: string,
+): Promise<boolean> {
   try {
     const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
     if (domain.verified) return true; // already good — nothing to reuse
@@ -844,7 +873,8 @@ export async function verifyDomain(
         recordVerified: true,
         cnameVerified: true,
         txtVerified: true,
-        message: "Domain verified — TLS is handled by your external ingress; no certificate is issued here.",
+        message:
+          "Domain verified — TLS is handled by your external ingress; no certificate is issued here.",
         sslStatus: "external",
       };
     }
@@ -855,7 +885,14 @@ export async function verifyDomain(
     if (await edgeHostUnreachable(ctx, project)) {
       log(HOST_CHANNEL_HINT);
       const attempts = await repos.domain.recordVerifyFailure(domainId, HOST_CHANNEL_HINT);
-      return { verified: false, recordVerified: false, cnameVerified: false, txtVerified: false, attempts, message: HOST_CHANNEL_HINT };
+      return {
+        verified: false,
+        recordVerified: false,
+        cnameVerified: false,
+        txtVerified: false,
+        attempts,
+        message: HOST_CHANNEL_HINT,
+      };
     }
 
     // Fast-fail a dead/slow REMOTE server (~2.5s TCP probe) with a clear message
@@ -863,7 +900,9 @@ export async function verifyDomain(
     // connect timeout while the modal sits on a blank "Connecting…".
     const serverId = await resolveServerIdForProject(project);
     if (serverId) {
-      const server = await repos.server.getInOrganization(serverId, ctx.organizationId).catch(() => null);
+      const server = await repos.server
+        .getInOrganization(serverId, ctx.organizationId)
+        .catch(() => null);
       if (server && !server.isLocal) {
         log(`Connecting to ${server.name || server.sshHost || "the server"}…`);
         const reachable = await sshManager.probeReachable(serverId).catch(() => false);
@@ -871,7 +910,14 @@ export async function verifyDomain(
           const message = `Can't reach ${server.sshHost || "the server"} over SSH — check it's online and reachable, then Verify again.`;
           log(message);
           const attempts = await repos.domain.recordVerifyFailure(domainId, message);
-          return { verified: false, recordVerified: false, cnameVerified: false, txtVerified: false, attempts, message };
+          return {
+            verified: false,
+            recordVerified: false,
+            cnameVerified: false,
+            txtVerified: false,
+            attempts,
+            message,
+          };
         }
       }
     }
@@ -903,18 +949,25 @@ export async function verifyDomain(
           recordVerified: true,
           cnameVerified: true,
           txtVerified: true,
-          message: "Domain verified — a valid certificate is already present; no new certificate was requested.",
+          message:
+            "Domain verified — a valid certificate is already present; no new certificate was requested.",
           sslStatus: "active",
         };
       }
     }
 
     try {
-      log(`Requesting a certificate for ${domain.hostname} (standalone HTTP-01 via the edge)…`);
+      const isDns = domain.sslChallenge === "dns-01" || isWildcardHostname(domain.hostname);
+      log(
+        `Requesting a certificate for ${domain.hostname} (${
+          isDns ? "DNS-01 via connected DNS provider" : "standalone HTTP-01 via the edge"
+        })…`,
+      );
       const result = await provisionDomainCertForVerify(domain.hostname, {
         projectId: domain.projectId ?? undefined,
         onLog: opts.onLog,
         force: opts.force,
+        challenge: isDns ? "dns-01" : "http-01",
       });
       if (result.verified) {
         log("Certificate issued — marking the domain verified and SSL active.");
@@ -941,13 +994,27 @@ export async function verifyDomain(
         `Couldn't confirm a certificate (${detail}). Make sure the domain points at this server (a CDN like ` +
         `Cloudflare in front is fine) and ports 80/443 are reachable, then Verify again.`;
       const attempts = await repos.domain.recordVerifyFailure(domainId, message);
-      return { verified: false, recordVerified: false, cnameVerified: false, txtVerified: false, attempts, message };
+      return {
+        verified: false,
+        recordVerified: false,
+        cnameVerified: false,
+        txtVerified: false,
+        attempts,
+        message,
+      };
     } catch (err) {
       // summarizeCertbotFailure (adapters) already mapped this to the real cause
       // — DNS not resolving, :80 firewalled, or a proxy 404. Surface it verbatim.
       const message = safeErrorMessage(err);
       const attempts = await repos.domain.recordVerifyFailure(domainId, message);
-      return { verified: false, recordVerified: false, cnameVerified: false, txtVerified: false, attempts, message };
+      return {
+        verified: false,
+        recordVerified: false,
+        cnameVerified: false,
+        txtVerified: false,
+        attempts,
+        message,
+      };
     }
   }
 
@@ -967,7 +1034,8 @@ export async function verifyDomain(
         verified: true,
         cnameVerified: true,
         txtVerified: true,
-        message: "Domain verified — TLS is handled by your external ingress; no certificate is issued here.",
+        message:
+          "Domain verified — TLS is handled by your external ingress; no certificate is issued here.",
         sslStatus: "external",
       };
     }
@@ -979,22 +1047,30 @@ export async function verifyDomain(
     // Log before firing — this produces a visible "[DOMAIN] provisioning HTTPS"
     // line in the deploy log so operators know the ~1 min window is expected,
     // not a sign that SSL is broken (two users reported it as such: TODO.md).
-    console.log(`[DOMAIN] provisioning HTTPS for ${domain.hostname} — route is live on HTTP; certificate expected in ~1 min`);
+    console.log(
+      `[DOMAIN] provisioning HTTPS for ${domain.hostname} — route is live on HTTP; certificate expected in ~1 min`,
+    );
     void manageDomainSsl(domain.hostname, {
       action: "provision",
       projectId: domain.projectId ?? undefined,
-    }).then((result) => {
-      if (result.verified) {
-        console.log(`[DOMAIN] HTTPS certificate issued for ${domain.hostname}${result.expiresAt ? ` (expires ${new Date(result.expiresAt).toISOString().slice(0, 10)})` : ""}`);
-      } else {
-        console.warn(`[DOMAIN] HTTPS provisioning completed but cert not verified for ${domain.hostname}`);
-      }
-    }).catch((err) => {
-      console.error(
-        `[DOMAIN] Background SSL provisioning failed for ${domain.hostname}:`,
-        safeErrorMessage(err),
-      );
-    });
+    })
+      .then((result) => {
+        if (result.verified) {
+          console.log(
+            `[DOMAIN] HTTPS certificate issued for ${domain.hostname}${result.expiresAt ? ` (expires ${new Date(result.expiresAt).toISOString().slice(0, 10)})` : ""}`,
+          );
+        } else {
+          console.warn(
+            `[DOMAIN] HTTPS provisioning completed but cert not verified for ${domain.hostname}`,
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(
+          `[DOMAIN] Background SSL provisioning failed for ${domain.hostname}:`,
+          safeErrorMessage(err),
+        );
+      });
 
     return {
       verified: true,
@@ -1024,8 +1100,20 @@ export async function verifyDomain(
 // ─── Remove ──────────────────────────────────────────────────────────────────
 
 export async function removeDomain(ctx: RequestContext, domainId: string) {
-  const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const { project } = await getDomainWithAuth(domainId, ctx.organizationId);
 
+  await withLiveProjectRuntimeMutation(project.id, async (liveProject) => {
+    assertResourceInOrg(liveProject, "Domain", ctx.organizationId, domainId);
+    const domain = await repos.domain.findById(domainId);
+    if (!domain || domain.projectId !== liveProject.id) {
+      throw new NotFoundError("Domain", domainId);
+    }
+    await removeLiveDomain(ctx, domain, liveProject);
+  });
+}
+
+/** The complete domain + edge mutation, held under the project's runtime lock. */
+async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Project) {
   try {
     // Tear the route down on the RIGHT host (remote server / cloud), not the
     // local orchestrator's OpenResty — reconcileProjectRoutes resolves the
@@ -1057,10 +1145,7 @@ export async function removeDomain(ctx: RequestContext, domainId: string) {
   if (released.reason) {
     // Not fatal: a domain must stay removable from Openship when the provider is
     // unreachable. An orphan record is visible in the zone; a blocked delete isn't.
-    console.warn(
-      `[dns] could not fully clean up records for ${domain.hostname}:`,
-      released.reason,
-    );
+    console.warn(`[dns] could not fully clean up records for ${domain.hostname}:`, released.reason);
   }
 
   // ── Release the Cloud edge route BEFORE dropping the row ─────────────────────
@@ -1107,14 +1192,14 @@ export async function removeDomain(ctx: RequestContext, domainId: string) {
     : null;
 
   if (domain.serviceId && serviceRouting) {
-    await repos.domain.removeWithServiceRouting(domainId, {
+    await repos.domain.removeWithServiceRouting(domain.id, {
       serviceId: domain.serviceId,
       routing: serviceRouting,
     });
     return;
   }
 
-  await repos.domain.remove(domainId);
+  await repos.domain.remove(domain.id);
 }
 
 /**
@@ -1202,11 +1287,7 @@ export async function verifyDomainSsl(ctx: RequestContext, domainId: string) {
  * from the uploaded cert and never runs certbot — the piece that gives an
  * externalIngress domain (Cloudflare Full-strict) a real cert at origin.
  */
-export async function uploadDomainCert(
-  ctx: RequestContext,
-  domainId: string,
-  cert: ManualCert,
-) {
+export async function uploadDomainCert(ctx: RequestContext, domainId: string, cert: ManualCert) {
   const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
 
   const result = await installDomainCert(domain.hostname, cert, {
@@ -1423,7 +1504,10 @@ export async function verifyPendingDomains(opts?: {
 }
 
 export async function renewOrgCerts(ctx: RequestContext) {
-  const projects = await repos.project.listByOrganization(ctx.organizationId, { page: 1, perPage: 1000 });
+  const projects = await repos.project.listByOrganization(ctx.organizationId, {
+    page: 1,
+    perPage: 1000,
+  });
   const results: Array<{ domain: string; status: string; error?: string }> = [];
 
   for (const p of projects.rows) {
@@ -1553,6 +1637,8 @@ async function buildRecords(
    *  the panel must show ITS record too. Without this the user turned www on and
    *  saw only the apex record, then wondered why www never resolved. */
   includeWww = false,
+  /** Explicit pre-deploy target. Existing domain rows resolve through project. */
+  previewServerId?: string,
 ): Promise<{ mode: "cloud" | "selfhosted" | "external"; records: DnsRecord[] }> {
   const wwwHostname = includeWww ? wwwSiblingHostname(hostname) : null;
   const { target, runtime } = platform();
@@ -1571,7 +1657,9 @@ async function buildRecords(
       const cloud = runtime as CloudRuntime;
       const result = await cloud.verifyDomain(hostname);
       cnameTarget = result.requiredRecords.cname.target;
-    } catch { /* Oblien unreachable */ }
+    } catch {
+      /* Oblien unreachable */
+    }
 
     const records: DnsRecord[] = [
       { type: "CNAME", host: routeHost, name: routeName, value: cnameTarget ?? "" },
@@ -1610,16 +1698,19 @@ async function buildRecords(
   // box's public address (resolved once at ensure-server): the deployed project's
   // server, else this org's "This Server" row for the pre-deploy preview.
   let serverIp =
-    (await resolveProjectServerHost(project)) ??
-    (organizationId ? await resolveLocalServerHost(organizationId) : null);
+    previewServerId && organizationId
+      ? await resolveServerHost(organizationId, previewServerId).catch(() => null)
+      : ((await resolveProjectServerHost(project)) ??
+        (organizationId ? await resolveLocalServerHost(organizationId) : null));
   // A loopback is the local row's display host when no public IP was known at
   // registration — useless as "point your domain here". Re-detect live for this
   // (user-initiated, off-hot-path) preview; leave EMPTY so the UI shows a
   // placeholder rather than a dead `127.0.0.1` the operator would copy verbatim.
-  if (!serverIp || isLoopbackHost(serverIp)) {
+  if ((!serverIp || isLoopbackHost(serverIp)) && !previewServerId) {
     const detected = await resolveInstancePublicIp().catch(() => null);
     serverIp = detected && !isLoopbackHost(detected) ? detected : null;
   }
+  if (isLoopbackHost(serverIp)) serverIp = null;
   const records: DnsRecord[] = [
     { type: "A", host: routeHost, name: routeName, value: serverIp ?? "" },
   ];

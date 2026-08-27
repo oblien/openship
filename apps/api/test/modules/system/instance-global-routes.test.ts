@@ -76,6 +76,9 @@ const INSTANCE_GLOBAL: Array<[string, string]> = [
   ["post", "/migration/start-cloud"],
   ["post", "/migration/start-tunnel"],
   ["post", "/migration/switch-back"],
+  ["get", "/data-transfer/preview"],
+  ["post", "/data-transfer/direct/session"],
+  ["post", "/data-transfer/direct/send"],
   ["post", "/data-transfer/export"],
   ["post", "/data-transfer/import"],
 ];

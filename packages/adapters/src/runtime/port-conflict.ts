@@ -36,6 +36,13 @@ export interface PortOccupant {
   pid: number | null;
   command: string;
   rawCommand?: string;
+  /** Whether `/proc/<pid>/cgroup` produced a non-empty snapshot. `false` is
+   *  deliberately distinct from "no container id": callers that may signal a
+   *  process must not treat an unreadable cgroup as proof it is host-owned. */
+  cgroupVerified?: boolean;
+  /** The verified snapshot used to bind a safety decision to this process. Kept
+   *  internal to runtime code (it is intentionally omitted from error details). */
+  processCgroup?: string;
   systemdUnit?: string;
   systemdDescription?: string;
   deploymentId?: string;
@@ -62,22 +69,38 @@ export interface PortOccupant {
 async function resolveListenerOwner(
   executor: CommandExecutor,
   pid: number,
-): Promise<Pick<PortOccupant, "systemdUnit" | "systemdDescription" | "deploymentId" | "isManagedDeployment" | "containerId">> {
-  const cgroup = await tryExec(executor, `cat /proc/${pid}/cgroup 2>/dev/null || true`);
+): Promise<
+  Pick<
+    PortOccupant,
+    | "systemdUnit"
+    | "systemdDescription"
+    | "deploymentId"
+    | "isManagedDeployment"
+    | "containerId"
+    | "cgroupVerified"
+    | "processCgroup"
+  >
+> {
+  // Do not append `|| true`: a permission/read failure must remain different from
+  // a readable host cgroup with no container id. `/proc/<pid>/cgroup` is non-empty
+  // for every live Linux process, including the root cgroup (`0::/`).
+  const cgroup = (await tryExec(executor, `cat /proc/${pid}/cgroup 2>/dev/null`))?.trim();
+  if (!cgroup) return { cgroupVerified: false };
+  const evidence = { cgroupVerified: true as const, processCgroup: cgroup };
 
   // A process INSIDE a container: the cgroup names the container, and any `*.service`
   // leaf above it belongs to the daemon that started it. Return the container and
   // NOTHING else — attributing that unit to the workload is the whole of #628, and it
   // is also how a host-networked edge's OpenResty ended up a bare `kill -9` target.
   const containerId = containerIdFromCgroup(cgroup);
-  if (containerId) return { containerId };
+  if (containerId) return { ...evidence, containerId };
 
   // Reject anything that isn't a plain systemd unit name — the value is parsed from
   // /proc text and later interpolated into `systemctl` commands. Quoted at the call
   // site as well; this keeps a crafted cgroup leaf from being carried around at all.
   const systemdUnit = cgroup?.match(/(?:^|\/)([^/\n]+\.service)(?:$|\n|\/)/m)?.[1]?.trim();
   if (!systemdUnit || !/^[A-Za-z0-9@._:-]+\.service$/.test(systemdUnit)) {
-    return {};
+    return evidence;
   }
 
   const description = await tryExec(
@@ -87,9 +110,12 @@ async function resolveListenerOwner(
   const deploymentId = managedDeploymentIdFromUnit(systemdUnit);
 
   return {
+    ...evidence,
     systemdUnit,
     systemdDescription: description?.trim() || undefined,
-    ...(deploymentId ? { deploymentId, isManagedDeployment: true } : { isManagedDeployment: false }),
+    ...(deploymentId
+      ? { deploymentId, isManagedDeployment: true }
+      : { isManagedDeployment: false }),
   };
 }
 
@@ -213,48 +239,194 @@ async function freePortOccupant(
   // either way. Say so: the re-probe that follows reads an unreadable host as "free",
   // and a deploy that then fails to bind should not be the first hint of that.
   if (!checked) {
-    logger.log(`Couldn't confirm port ${port} was released (socket table unreadable) — continuing.\n`, "warn");
+    logger.log(
+      `Couldn't confirm port ${port} was released (socket table unreadable) — continuing.\n`,
+      "warn",
+    );
   }
 }
 
 /**
  * Find who (if anyone) is LISTENing on `port`, via a tiered fallback so the
  * probe behaves consistently regardless of which tools a host ships:
- *   1. `ss -l`             — Linux (iproute2, ~always present); yields the PID.
- *   2. `lsof -sTCP:LISTEN` — macOS + any Linux with lsof; yields the PID.
+ *   1. `ss -l` / `lsof`    — ordinary unprivileged ownership probe.
+ *   2. `sudo -n ss`/`lsof` — targeted read-only retry only when tier 1 saw a
+ *                            listener but Linux hid its PID.
  *   3. `/proc/net/tcp{,6}` — tool-free kernel socket table; presence only.
  *
  * Every tier is LISTEN-state filtered, so an outbound/ESTABLISHED socket on the
  * port (e.g. a daemon dialing a remote :443) is never mistaken for an occupant —
- * that filtering is the whole point of keeping this in ONE place. Tiers 1–2 are
- * a single exec; tier 3 (reused from `port-listen`) runs only when no PID
- * surfaced, and is what prevents a false "port free" on a host missing both `ss`
- * and `lsof`, or when non-root `ss` prints the listener but hides its PID.
+ * that filtering is the whole point of keeping this in ONE place. Tier 3 (reused
+ * from `port-listen`) runs only when no PID surfaced. Positive tier-1 evidence is
+ * retained even if every later probe is unreadable, so losing ownership detail can
+ * never turn an occupied port into a free one.
  */
 async function resolveListener(
   executor: CommandExecutor,
   port: number,
-): Promise<{ pid: number | null; occupied: boolean }> {
+): Promise<{ pid: number | null; occupied: boolean; checked: boolean }> {
   const out = await tryExec(
     executor,
     `ss -tlnp sport = :${port} 2>/dev/null | grep LISTEN || lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`,
   );
-  if (out) {
-    const ssMatch = out.match(/pid=(\d+)/);
+  const listenerPid = (output: string | null): number | null => {
+    if (!output) return null;
+    const ssMatch = output.match(/pid=(\d+)/);
     // lsof -ti prints one bare PID per line; take the first. An ss LISTEN line
     // is never a bare number, so this can't mis-parse the ss branch.
-    const lsofMatch = !ssMatch ? out.match(/^\s*(\d+)\s*$/m) : null;
-    const pid = ssMatch
-      ? parseInt(ssMatch[1], 10)
-      : lsofMatch
-        ? parseInt(lsofMatch[1], 10)
-        : null;
-    if (pid) return { pid, occupied: true };
+    const lsofMatch = !ssMatch ? output.match(/^\s*(\d+)\s*$/m) : null;
+    const parsed = ssMatch?.[1] ?? lsofMatch?.[1];
+    if (!parsed) return null;
+    const pid = Number.parseInt(parsed, 10);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+  };
+
+  const pid = listenerPid(out);
+  if (pid) return { pid, occupied: true, checked: true };
+
+  const observedListener = Boolean(out?.trim());
+  if (observedListener) {
+    // A non-root `ss` still prints the LISTEN socket but commonly hides
+    // `users:((...,pid=...))`. Ask for just this socket table entry through
+    // passwordless sudo; `-n` guarantees this read-only probe can never block on
+    // a password prompt. Hosts without that permission simply fall through to
+    // the presence-only result below.
+    const privilegedOut = await tryExec(
+      executor,
+      `sudo -n ss -tlnp sport = :${port} 2>/dev/null | grep LISTEN || sudo -n lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`,
+      { timeout: 5_000 },
+    );
+    const privilegedPid = listenerPid(privilegedOut);
+    if (privilegedPid) return { pid: privilegedPid, occupied: true, checked: true };
   }
-  // Tier 3: authoritative presence check with no tool dependency. `true` = a
-  // LISTEN socket exists; `false`/`null` (no signal) → treat as free.
+
+  // Tier 3: presence check with no tool dependency. A listener already observed
+  // by ss remains occupied even if procfs is unreadable or races to an empty
+  // result; losing its PID must never turn positive evidence into "port free".
   const listening = await probePortListeningOnce(executor, port);
-  return { pid: null, occupied: listening === true };
+  return {
+    pid: null,
+    occupied: observedListener || listening === true,
+    checked: observedListener || listening !== null,
+  };
+}
+
+export interface ListeningPortProbe {
+  /** Null only when no listener was found or the probe was inconclusive. */
+  occupant: PortOccupant | null;
+  /** False means every authoritative ownership/presence probe failed. */
+  checked: boolean;
+}
+
+export interface ListeningPortOwnersProbe {
+  occupants: PortOccupant[];
+  /** False when every socket-table probe failed. */
+  checked: boolean;
+  /** False when a listener was visible but every distinct PID was not proven. */
+  ownershipComplete: boolean;
+}
+
+function parseListenerPids(output: string | null): {
+  observed: boolean;
+  complete: boolean;
+  pids: number[];
+} {
+  const lines = (output ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return { observed: false, complete: true, pids: [] };
+
+  const pids = new Set<number>();
+  let complete = true;
+  for (const line of lines) {
+    const matches = [...line.matchAll(/pid=(\d+)/g)].map((match) => match[1]);
+    const bare = matches.length === 0 ? line.match(/^(\d+)$/)?.[1] : undefined;
+    const values = bare ? [bare] : matches;
+    if (values.length === 0) complete = false;
+    for (const value of values) {
+      const pid = Number.parseInt(value!, 10);
+      if (Number.isSafeInteger(pid) && pid > 0) pids.add(pid);
+      else complete = false;
+    }
+  }
+  return { observed: true, complete, pids: [...pids] };
+}
+
+/**
+ * Enumerate every visible owner of one listening port.
+ *
+ * The ordinary UI probe intentionally returns one representative occupant.
+ * Reload safety is stricter: SO_REUSEPORT/address-specific binds can put a
+ * managed and a foreign master on the same port, so signalling based on the
+ * first PID would miss the foreign owner.
+ */
+export async function probeListeningPortOwners(
+  executor: CommandExecutor,
+  port: number,
+): Promise<ListeningPortOwnersProbe> {
+  const command =
+    `ss -tlnp sport = :${port} 2>/dev/null | grep LISTEN || ` +
+    `lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`;
+  const ordinary = parseListenerPids(await tryExec(executor, command));
+  let evidence = ordinary;
+
+  if (ordinary.observed && !ordinary.complete) {
+    const privileged = parseListenerPids(
+      await tryExec(
+        executor,
+        `sudo -n ss -tlnp sport = :${port} 2>/dev/null | grep LISTEN || ` +
+          `sudo -n lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null`,
+        { timeout: 5_000 },
+      ),
+    );
+    if (privileged.observed && privileged.complete) evidence = privileged;
+    else {
+      evidence = {
+        observed: true,
+        complete: false,
+        pids: [...new Set([...ordinary.pids, ...privileged.pids])],
+      };
+    }
+  }
+
+  if (!evidence.observed) {
+    const listening = await probePortListeningOnce(executor, port);
+    if (listening === null) return { occupants: [], checked: false, ownershipComplete: false };
+    if (!listening) return { occupants: [], checked: true, ownershipComplete: true };
+    return { occupants: [], checked: true, ownershipComplete: false };
+  }
+
+  const described = await Promise.all(
+    evidence.pids.map((pid) => describeProcess(executor, pid).catch(() => null)),
+  );
+  const occupants = described.filter((row): row is PortOccupant => row !== null);
+  return {
+    occupants,
+    checked: true,
+    ownershipComplete: evidence.complete && occupants.length === evidence.pids.length,
+  };
+}
+
+/**
+ * Strict counterpart to {@link probeListeningPort}. It preserves whether a null
+ * result was a real "not listening" reading or merely an unreadable socket table,
+ * for callers that must not treat probe failure as proof a daemon is stopped.
+ */
+export async function probeListeningPortState(
+  executor: CommandExecutor,
+  port: number,
+): Promise<ListeningPortProbe> {
+  try {
+    const { pid, occupied, checked } = await resolveListener(executor, port);
+    if (!checked || !occupied) return { occupant: null, checked };
+    if (pid === null) {
+      return { occupant: { pid: null, command: "unknown listener" }, checked: true };
+    }
+    return { occupant: await describeProcess(executor, pid), checked: true };
+  } catch {
+    return { occupant: null, checked: false };
+  }
 }
 
 /**
@@ -273,14 +445,7 @@ export async function probeListeningPort(
   executor: CommandExecutor,
   port: number,
 ): Promise<PortOccupant | null> {
-  try {
-    const { pid, occupied } = await resolveListener(executor, port);
-    if (!occupied) return null;
-    if (pid === null) return { pid: null, command: "unknown listener" };
-    return await describeProcess(executor, pid);
-  } catch {
-    return null;
-  }
+  return (await probeListeningPortState(executor, port)).occupant;
 }
 
 /**
@@ -387,9 +552,16 @@ export async function resolvePortOwner(
     // container published on `127.0.0.1:<port>`; overwriting apache2 with that
     // container would name the wrong owner AND offer to stop it.
     const listenerIsProxyForOwner =
-      !listener || listener.dockerPublished || Boolean(listener.containerId) || listener.pid === null;
+      !listener ||
+      listener.dockerPublished ||
+      Boolean(listener.containerId) ||
+      listener.pid === null;
     if (listenerIsProxyForOwner) {
-      return await withContainer(executor, listener ?? { pid: null, command: "unknown listener" }, onPort.container);
+      return await withContainer(
+        executor,
+        listener ?? { pid: null, command: "unknown listener" },
+        onPort.container,
+      );
     }
     return listener;
   }
@@ -570,7 +742,10 @@ export async function ensurePortAvailable(
     throw new DeployError(reason, "PORT_IN_USE", portOccupantDetails(port, occupant, stopTarget));
   }
 
-  logger.log(`Port ${port} is occupied by ${occupant.command}. Waiting for user decision...\n`, "warn");
+  logger.log(
+    `Port ${port} is occupied by ${occupant.command}. Waiting for user decision...\n`,
+    "warn",
+  );
 
   const action = await promptUser({
     promptId: `port_in_use:${port}`,

@@ -40,8 +40,11 @@ import {
   BareRuntime,
   BuildLogger,
   DockerRuntime,
+  ensureEdge,
+  ownsBuiltImage,
   STATIC_RELEASE_BASE,
   allocateHostPort,
+  edgeProxyFor,
   rootOrDegrade,
   resolveEnvironment,
   runDeployPipeline,
@@ -53,6 +56,7 @@ import {
   type MultiServiceDeployConfig,
   type MultiServiceDeployResult,
   type MultiServiceRuntimeAdapter,
+  type PromptUserFn,
   type ResourceConfig,
   type RouteRegistrationOptions,
   type RoutingProvider,
@@ -64,11 +68,7 @@ import { isLoopbackHost, resolveServerHost } from "../../../lib/server-target";
 import { resolveEdgeTargetHost } from "../../../lib/edge-target";
 import { containerIdForService } from "../../services/service-container";
 import { isConnectionLoss } from "../../../lib/remote-state";
-import {
-  appConfigHostPath,
-  withAppConfigHost,
-  writeAppConfigFile,
-} from "./app-config-host";
+import { appConfigHostPath, withAppConfigHost, writeAppConfigFile } from "./app-config-host";
 import {
   auditRoutedDomainTls,
   buildProjectRouteDomains,
@@ -87,10 +87,26 @@ import {
 } from "../../../lib/public-endpoints";
 import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 import { ensureRoutingReady } from "../../../lib/edge-reconcile";
+import { resolveAcmeProviderOptions } from "../../../lib/acme-config";
 import * as sessionManager from "../session-manager";
-import { isStaticService, parseServicePort, serviceAliasExtras } from "../../../lib/deployable-service";
+import {
+  isStaticService,
+  parseServicePort,
+  serviceAliasExtras,
+} from "../../../lib/deployable-service";
 import { computeKeepSet } from "../image-gc";
 import { auditPorts } from "../port-audit.service";
+import {
+  allocateAndReservePinnedHostPort,
+  convergeTargetHostPortClaims,
+  convergeTargetHostPortClaimsUnlocked,
+  prepareTargetPinnedHostPorts,
+  releaseNewPinnedHostPortClaims,
+  withHostPortTargetLock,
+  type AllocatedPinnedHostPort,
+} from "../pinned-host-ports";
+import type { HostPortTargetIdentity } from "../../../lib/host-port-target";
+import { reserveResolvedLoopbackRoutes } from "../observed-host-port-claims";
 import {
   recordUnstableServices,
   verifyDeployedContainers,
@@ -99,10 +115,7 @@ import {
 } from "../stability-audit.service";
 import { resolveReadinessGate, type ResolvedReadinessGate } from "../readiness-gate";
 import { probeDeployedReadiness } from "../readiness-probe";
-import {
-  hostChannelDeployNotice,
-  type PortCheckResult,
-} from "../../../lib/deployment-runtime";
+import { hostChannelDeployNotice, type PortCheckResult } from "../../../lib/deployment-runtime";
 import {
   buildProjectServiceUpstream,
   describeCandidatePorts,
@@ -113,17 +126,19 @@ import { resolveServicePort } from "./domain-helpers";
 import { mergeServiceDeployEnv } from "./service-env-layers";
 import { compileProjectRoutingFields } from "../../../lib/project-routing-fields";
 import { buildCompositeRegistration, buildDomainFanoutRegistrations } from "./composite-route";
+import { collectComposeRoutePortDemands } from "./route-port-demands";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
 import {
   OUT_OF_SCOPE_SKIP_REASON,
   isUntargetedAndUndeployable,
   resolveDeployImage,
 } from "./service-scope";
-import { buildUpstreamUrl, resolveRouteStrategy } from "../../../lib/upstream-url";
 import {
-  withLoopbackPublishAll,
-  upstreamHostPortFor,
-} from "../../../lib/loopback-publish";
+  buildUpstreamUrl,
+  resolveRouteStrategy,
+  usesHostLoopbackUpstream,
+} from "../../../lib/upstream-url";
+import { withLoopbackPublishAll, upstreamHostPortFor } from "../../../lib/loopback-publish";
 
 export interface ComposeDeployResult {
   /** `reconciling` when at least one service's outcome is UNKNOWN because the
@@ -160,7 +175,7 @@ export interface ComposeDeployResult {
     containerId?: string;
     status: string;
     ip?: string;
-    /** The ONE host port `service_deployment` persists — the pinned/primary one. */
+    /** Compatibility scalar for the pinned/primary host port. */
     hostPort?: number;
     /**
      * Every published binding, keyed by CONTAINER port → host port.
@@ -168,8 +183,8 @@ export interface ComposeDeployResult {
      * The scalar above cannot answer "what is port N published on" for a container
      * publishing several: it is the pinned PRIMARY, so a project-level route on any
      * other port was dialed at the primary's publish and reached a different app.
-     * `service_deployment` holds one number, so this lives on the in-memory result
-     * and is re-read live by the routing paths that run later.
+     * Persisted in `service_deployment.host_ports` and also carried on the live
+     * result so routing in this pass does not need to read it back.
      */
     hostPortByContainerPort?: Record<number, number>;
     error?: string;
@@ -580,7 +595,6 @@ function resolveServiceResources(
   };
 }
 
-
 function createServiceRuntimeConfig(opts: {
   project: Project;
   dep: Deployment;
@@ -726,12 +740,13 @@ async function prepareServiceRoutes(opts: {
     const domainKey = route.hostname.toLowerCase();
     const beforeRecord = routeContext.domainByHostname.get(domainKey);
     try {
-      const domainRecord = await ensureRouteDomainRecord({
+      const ensureResult = await ensureRouteDomainRecord({
         projectId: project.id,
         route,
         domainByHostname: routeContext.domainByHostname,
       });
-      if (!beforeRecord && domainRecord) {
+      const domainRecord = ensureResult.domain;
+      if (ensureResult.created && domainRecord) {
         logger.log(`Created domain record for "${route.hostname}".\n`, "info", {
           serviceName: service.name,
         });
@@ -760,48 +775,85 @@ async function prepareServiceRoutes(opts: {
   return { routes: ensured, warnings };
 }
 
+export interface ComposeDeployOptions {
+  builtImages?: Map<string, string>;
+  buildFailures?: Map<string, string>;
+  resources?: ResourceConfig;
+  buildSessionId?: string;
+  routing?: RoutingProvider;
+  ssl?: SslProvider;
+  system?: SystemManager | null;
+  usesManagedRouting?: boolean;
+  serverId?: string;
+  /** Smart (partial) redeploy: recreate ONLY these services; leave the
+   *  rest running and carry their previous runtime row forward. Undefined
+   *  = full deploy (recreate every enabled service). */
+  targetServiceIds?: Set<string>;
+  /** Decoupled single-service provision (add/Start one app, reusing the
+   *  ACTIVE deployment id — not a fresh one). Strictly scopes the run to
+   *  `targetServiceIds`: non-targets are never (re)deployed, marked
+   *  unavailable, or reaped, and the target's row is UPSERTed (the reused
+   *  deployment id may already carry a row for it). Never set by the full/
+   *  partial deploy pipeline (which always runs against a fresh deployment). */
+  strictScope?: boolean;
+  routeOptions?: RouteRegistrationOptions;
+  /** Target host command executor (SSH for a server, local for this machine).
+   *  Used to write an app template's generated config files (`advanced.files`)
+   *  onto the Docker host so they can be bind-mounted read-only into the
+   *  service. Null on cloud (no host bind-mount) → file services are skipped. */
+  executor?: CommandExecutor | null;
+  /** The deploy target is the machine this process runs on (`platform.localHost`).
+   *  Host-path writes then go through the host channel instead of `executor`,
+   *  which for a plain local target is a LocalExecutor — the CONTAINER's own
+   *  filesystem on a Compose install. */
+  localHost?: boolean;
+  /** Physical TCP bind namespace resolved from the actual deployment target. */
+  hostPortTarget?: HostPortTargetIdentity | null;
+  /** Interactive edge-conflict hold for a full project deploy. Direct service
+   *  starts omit it and fail closed instead of guessing about a foreign proxy. */
+  promptUser?: PromptUserFn;
+}
+
 /**
  * Deploy all services for a compose project.
  * Called from the compose pipeline after the build phase.
+ *
+ * Allocation, Docker bind, route registration, and persistence are one
+ * target-serialized critical section. This wrapper is intentionally the lock
+ * boundary so direct single-service Start/Add calls cannot bypass it.
  */
 export async function deployComposeServices(
   project: Project,
   dep: Deployment,
   runtime: MultiServiceRuntimeAdapter,
   logger: BuildLogger,
-  opts?: {
-    builtImages?: Map<string, string>;
-    buildFailures?: Map<string, string>;
-    resources?: ResourceConfig;
-    buildSessionId?: string;
-    routing?: RoutingProvider;
-    ssl?: SslProvider;
-    system?: SystemManager | null;
-    usesManagedRouting?: boolean;
-    serverId?: string;
-    /** Smart (partial) redeploy: recreate ONLY these services; leave the
-     *  rest running and carry their previous runtime row forward. Undefined
-     *  = full deploy (recreate every enabled service). */
-    targetServiceIds?: Set<string>;
-    /** Decoupled single-service provision (add/Start one app, reusing the
-     *  ACTIVE deployment id — not a fresh one). Strictly scopes the run to
-     *  `targetServiceIds`: non-targets are never (re)deployed, marked
-     *  unavailable, or reaped, and the target's row is UPSERTed (the reused
-     *  deployment id may already carry a row for it). Never set by the full/
-     *  partial deploy pipeline (which always runs against a fresh deployment). */
-    strictScope?: boolean;
-    routeOptions?: RouteRegistrationOptions;
-    /** Target host command executor (SSH for a server, local for this machine).
-     *  Used to write an app template's generated config files (`advanced.files`)
-     *  onto the Docker host so they can be bind-mounted read-only into the
-     *  service. Null on cloud (no host bind-mount) → file services are skipped. */
-    executor?: CommandExecutor | null;
-    /** The deploy target is the machine this process runs on (`platform.localHost`).
-     *  Host-path writes then go through the host channel instead of `executor`,
-     *  which for a plain local target is a LocalExecutor — the CONTAINER's own
-     *  filesystem on a Compose install. */
-    localHost?: boolean;
-  },
+  opts?: ComposeDeployOptions,
+): Promise<ComposeDeployResult> {
+  const needsHostPortLock = usesHostLoopbackUpstream(
+    resolveRouteStrategy(project.routeStrategy),
+    runtime,
+  );
+  if (!needsHostPortLock) {
+    return deployComposeServicesUnlocked(project, dep, runtime, logger, opts);
+  }
+  if (!opts?.executor) {
+    throw new Error("Cannot deploy loopback-routed services without a physical target executor");
+  }
+  const target = opts?.hostPortTarget;
+  if (!target) {
+    throw new Error("Cannot deploy loopback-routed services without a physical host identity");
+  }
+  return withHostPortTargetLock(target, () =>
+    deployComposeServicesUnlocked(project, dep, runtime, logger, opts),
+  );
+}
+
+async function deployComposeServicesUnlocked(
+  project: Project,
+  dep: Deployment,
+  runtime: MultiServiceRuntimeAdapter,
+  logger: BuildLogger,
+  opts?: ComposeDeployOptions,
 ): Promise<ComposeDeployResult> {
   // Generated app secrets, BEFORE any env is read below. A catalog app whose install died
   // part-way keeps a service row with the generated values missing, and the installer only
@@ -865,6 +917,13 @@ export async function deployComposeServices(
   const hostNotice = hostChannelDeployNotice(opts?.executor);
   if (hostNotice) logger.log(`${hostNotice}\n`, "warn");
 
+  const routeStrategy = resolveRouteStrategy(project.routeStrategy);
+  const usesHostLoopback = usesHostLoopbackUpstream(routeStrategy, runtime);
+  // All route writers use the same effective topology that drove the pre-bind
+  // lock, inventory, and allocation. The stored preference can say
+  // `container-ip` while a bare/no-containerIp runtime still requires loopback.
+  const upstreamStrategy = usesHostLoopback ? "loopback-port" : "container-ip";
+
   logger.log("Preparing shared service group for project services...\n");
 
   const group = await runtime.ensureServiceGroup({
@@ -924,20 +983,38 @@ export async function deployComposeServices(
         usesManagedRouting: opts.usesManagedRouting ?? false,
       }),
     ];
+    const needsStrictLoopbackInventory = usesHostLoopback && Boolean(opts.executor);
 
     await opts.system.ensureFeature("deploy", systemLog);
     // Routing/SSL toolchain is best-effort — domains are optional, so failing to
     // install OpenResty/certbot must NOT fail the deploy. The services still run;
     // routing is flagged action-required and retried later.
     try {
-      if (plannedRoutes.length > 0) {
+      if (plannedRoutes.length > 0 || needsStrictLoopbackInventory) {
         // Components + edge convergence as ONE step — see ensureRoutingReady for why
         // the second half can't live inside ensureFeature. Without an executor
         // there's no box to converge (cloud), so components alone are correct.
         if (opts.executor) {
-          await ensureRoutingReady(opts.executor, opts.system, {
-            onLog: systemLog,
-          });
+          const edge = await ensureEdge(
+            opts.executor,
+            (promptUser) =>
+              ensureRoutingReady(opts.executor!, opts.system!, {
+                onLog: systemLog,
+                promptUser,
+              }),
+            {
+              promptUser: opts.promptUser,
+              onLog: systemLog,
+              nginx: resolveAcmeProviderOptions(),
+            },
+          );
+          if (edge.migrated && !edge.ok) {
+            logger.log(
+              "Edge migration failed and the previous proxy was restored. " +
+                "Loopback-routed services will not allocate a port unless its routes can be inventoried safely.\n",
+              "warn",
+            );
+          }
         } else {
           await opts.system.ensureFeature("routing", systemLog);
         }
@@ -957,7 +1034,9 @@ export async function deployComposeServices(
     }
   }
 
-  const projectEnvMap = await repos.project.getEnvMap(project.id, dep.environment);
+  // Service-scoped rows are loaded separately below and must not leak into the
+  // project layer or another service.
+  const projectEnvMap = await repos.project.getEnvMap(project.id, dep.environment, null);
   const decryptedProjectEnv = decryptEnvMap(projectEnvMap, (key) => {
     logger.log(`Warning: failed to decrypt project env var "${key}", skipping.\n`, "warn");
   });
@@ -1099,6 +1178,23 @@ export async function deployComposeServices(
     };
   }
 
+  // Compute the COMPLETE loopback demand before any container starts. Service
+  // hostnames are only one source: project domains, the monorepo composite, and
+  // migration fan-out can all dial an otherwise-unexposed service. Those routes
+  // are registered after the service loop, which is too late to add a publish or
+  // reserve it safely; their ports must enter the same allocation path now.
+  const hostLoopbackRoutePortDemands =
+    routeContext && usesHostLoopback
+      ? collectComposeRoutePortDemands({
+          project,
+          services: enabled,
+          domainRows: [...domainByHostname.values()],
+          previousRows: previousServiceDeps,
+          runtimeName: runtime.name,
+          usesManagedRouting: routeContext.usesManagedRouting,
+        })
+      : new Map<string, Set<number>>();
+
   const results: ComposeDeployResult["services"] = [];
   const portChecks: PortCheckResult[] = [];
   /** Exposed services to port-probe, collected in the deploy loop and run together
@@ -1119,6 +1215,11 @@ export async function deployComposeServices(
   // Per-domain routing failures across all services (domains are optional —
   // never fatal). Aggregated into the deployment's routing action-required signal.
   const composeRouteWarnings: string[] = [];
+  let hostPortClaimWarning: string | undefined;
+  // Claim convergence is the final ownership cutover. If an obsolete
+  // workload cannot be stopped, its route may still be restored later, so its
+  // host-port ownership must remain reserved even though the new routes are up.
+  let hostPortClaimReapSafe = true;
   let successful = 0;
   /**
    * Names of services a scoped deploy left alone because it did not target them and they
@@ -1201,14 +1302,25 @@ export async function deployComposeServices(
     composeRouteWarnings.push(message);
   };
 
-  // loopback-port routing (compose): host ports pinned this deploy, so two
-  // services in the same pass never collide on an allocation. Seed with every
-  // previous service's port so a fresh allocation never lands on one that a
-  // later service is about to reuse.
-  const usedHostPorts = new Set<number>();
-  for (const prev of previousByServiceId.values()) {
-    if (prev.hostPort) usedHostPorts.add(prev.hostPort);
-  }
+  // Durable claims cover stopped/crashed containers that a live socket scan
+  // cannot see. They are host-scoped: two different servers may safely use the
+  // same loopback port. Allocations from THIS pass are tracked separately so a
+  // carried claim can be released only for its owner without erasing a sibling.
+  const hostPortTarget = opts?.hostPortTarget ?? null;
+  const pinnedHostPortClaims =
+    usesHostLoopback && opts?.executor
+      ? hostPortTarget
+        ? await prepareTargetPinnedHostPorts({
+            target: hostPortTarget,
+            edgeProxy: edgeProxyFor(opts.executor, "openresty", { ours: true }),
+          })
+        : (() => {
+            throw new Error(
+              "Cannot allocate a loopback-routed service port without a physical host identity",
+            );
+          })()
+      : [];
+  const allocatedHostPorts = new Set<number>();
 
   // #438: app-template config files (`advanced.files`) are host-side state living
   // under `/var/lib/openship`, the root-owned tree the edge's own vhosts sit in.
@@ -1308,6 +1420,11 @@ export async function deployComposeServices(
             ? null
             : (carried.hostPort ?? live.hostPort)
           : (carried.hostPort ?? null);
+        const carriedHostPorts = live
+          ? Object.keys(live.hostPortByContainerPort ?? {}).length > 0
+            ? (live.hostPortByContainerPort ?? null)
+            : null
+          : (carried.hostPorts ?? null);
         await repos.service.upsertServiceDeployment({
           deploymentId: dep.id,
           serviceId: svc.id,
@@ -1316,6 +1433,7 @@ export async function deployComposeServices(
           status: "success",
           imageRef: carried.imageRef ?? null,
           hostPort: carriedHostPort,
+          hostPorts: carriedHostPorts,
           ip: carriedIp,
         });
         // The #506 correction above has to land on the ACTIVE deployment's row too:
@@ -1328,10 +1446,16 @@ export async function deployComposeServices(
         // scanner needs to see a moved mutable tag — on the LIVE release's row.
         if (
           project.activeDeploymentId !== dep.id &&
-          (carriedIp !== (carried.ip ?? null) || carriedHostPort !== (carried.hostPort ?? null))
+          (carriedIp !== (carried.ip ?? null) ||
+            carriedHostPort !== (carried.hostPort ?? null) ||
+            JSON.stringify(carriedHostPorts ?? {}) !== JSON.stringify(carried.hostPorts ?? {}))
         ) {
           await repos.service
-            .updateServiceDeployment(carried.id, { ip: carriedIp, hostPort: carriedHostPort })
+            .updateServiceDeployment(carried.id, {
+              ip: carriedIp,
+              hostPort: carriedHostPort,
+              hostPorts: carriedHostPorts,
+            })
             .catch(() => {});
         }
         // Decoupled single-service add on a mesh runtime (cloud): this peer is
@@ -1354,6 +1478,9 @@ export async function deployComposeServices(
           status: carried.status,
           ip: carriedIp ?? undefined,
           hostPort: carriedHostPort ?? undefined,
+          ...(carriedHostPorts
+            ? { hostPortByContainerPort: carriedHostPorts as Record<number, number> }
+            : {}),
           carried: true,
         });
         // A carried-forward container is a valid namespace provider — it's running,
@@ -1505,10 +1632,41 @@ export async function deployComposeServices(
         project: decryptedProjectEnv,
         frozen: depEnv,
         inline: (svc.environment as Record<string, string>) ?? {},
+        templateKeys: svc.advanced?.environmentTemplateKeys,
         service: decryptedServiceEnv,
       },
       frozenEnvWins,
     );
+    if (layered.missingRequired.length > 0) {
+      const names = [...new Set(layered.missingRequired.map((item) => item.variable))];
+      const message =
+        `Required Compose environment ${names.length === 1 ? "variable is" : "variables are"} ` +
+        `not configured: ${names.join(", ")}`;
+      logger.log(`Service "${svc.name}" failed: ${message}\n`, "error", {
+        serviceName: svc.name,
+      });
+      sessionManager.broadcastServiceStatus(dep.id, {
+        serviceName: svc.name,
+        serviceId: svc.id,
+        status: "failed",
+        error: message,
+      });
+      await repos.service.markServiceDeploymentFailed({
+        deploymentId: dep.id,
+        serviceId: svc.id,
+        serviceName: svc.name,
+        imageRef: opts?.builtImages?.get(svc.id) ?? svc.image ?? null,
+        errorMessage: message,
+      });
+      results.push({
+        serviceId: svc.id,
+        serviceName: svc.name,
+        status: "failed",
+        error: message,
+      });
+      unavailableServiceNames.add(svc.name);
+      continue;
+    }
     // Say so when a variable is not what any UI shows. The service Env tab and
     // the wizard both keep rendering the empty value this merge ignored, so the
     // deploy log is the only surface that can explain the container — same
@@ -1533,7 +1691,9 @@ export async function deployComposeServices(
         svc.name,
         `no public URL is known for ${unresolvedEnvUrls
           .map((u) => `${u.key}=${u.tokens.join("")}`)
-          .join(", ")} — ${unresolvedEnvUrls.length === 1 ? "that variable is" : "those variables are"} left UNSET rather than blank`,
+          .join(
+            ", ",
+          )} — ${unresolvedEnvUrls.length === 1 ? "that variable is" : "those variables are"} left UNSET rather than blank`,
       );
     }
 
@@ -1974,7 +2134,10 @@ export async function deployComposeServices(
     // just belongs on the service that owns the interfaces, and the log says so.
     if (hasNoRoutableAddress) {
       const providers = composeNamespaceDependencies(svc.advanced as ComposeAdvanced | null);
-      const where = providers.length > 0 ? `shares ${providers.join(", ")}'s network namespace` : "has no network of its own";
+      const where =
+        providers.length > 0
+          ? `shares ${providers.join(", ")}'s network namespace`
+          : "has no network of its own";
       logger.log(
         `Service "${svc.name}" ${where}, so it has no address to route to — skipping its ` +
           `domains and its published ports. Move them to the service it shares.\n`,
@@ -2033,76 +2196,114 @@ export async function deployComposeServices(
     // pinning only `proxyRoutes[0]` while `resolveTargetUrl` returned that single
     // port for every route made each extra subdomain silently proxy to the FIRST
     // route's port. minio's s3 host served the console; convex's http host served
-    // the 3210 API. Only the primary port is persisted (`service_deployment`
-    // holds one), which is why the extras are re-pinned and re-registered on
-    // every deploy rather than carried.
-    const composeRouteStrategy = resolveRouteStrategy(project.routeStrategy);
+    // the 3210 API. Every mapping is now claimed and persisted, so stopped
+    // secondary routes are just as durable as the primary.
     const routedContainerPorts = [
       ...new Set(
-        proxyRoutes
-          .map((r) => r.targetPort)
-          .filter((p): p is number => typeof p === "number" && p > 0),
+        [
+          ...proxyRoutes.map((route) => route.targetPort),
+          ...(hostLoopbackRoutePortDemands.get(svc.id) ?? []),
+        ].filter((port): port is number => typeof port === "number" && port > 0),
       ),
     ];
     const primaryRoutedPort = routedContainerPorts[0];
     /** routed container port → the loopback host port WE pinned for it. */
     const pinnedHostPortByContainerPort = new Map<number, number>();
+    const serviceHostPortAllocations: Array<
+      Pick<AllocatedPinnedHostPort, "claim" | "previousClaim">
+    > = [];
     let servicePinnedHostPort: number | undefined;
     if (
-      composeRouteStrategy === "loopback-port" &&
-      runtime.name !== "cloud" &&
+      usesHostLoopback &&
       primaryRoutedPort !== undefined &&
       // A container with no endpoint of its own publishes nothing — allocating a
       // host port would burn it and pin a route to an upstream that never binds.
       !hasNoRoutableAddress &&
       opts?.executor
     ) {
-      for (const containerPort of routedContainerPorts) {
-        // Only the primary reuses the carried port: it is the one persisted, so
-        // it is the only one whose previous value is knowable.
-        const carried =
-          containerPort === primaryRoutedPort
-            ? previousByServiceId.get(svc.id)?.hostPort
-            : undefined;
-        /**
-         * A carried port is a PREFERENCE, never a given.
-         *
-         * It used to be taken verbatim whenever one existed, which is right for the case it was
-         * written for — a redeploy on the same host, where the port was ours and still is. It is
-         * wrong the moment the host changes: a MIGRATION carries the source's port to a target
-         * that knows nothing about it, and if anything there holds it Docker refuses the bind
-         * with "port is already allocated" and the service (plus everything depending on it)
-         * fails. A host port is a property of the HOST, not of the project, so it cannot travel
-         * with one.
-         *
-         * `preferred` is the allocator's own word for exactly this: keep it if it's free, pick
-         * another if it isn't. Passing it there rather than branching around the allocator means
-         * one rule for both cases and no second place that decides what a free port is.
-         */
-        const allocation = await allocateHostPort(opts.executor, {
-          preferred: carried,
-          avoid: usedHostPorts,
-        });
-        const hostPort = allocation.port;
-        if (carried && hostPort !== carried) {
-          logger.log(
-            `Host port ${carried} for ${svc.name} is taken on this server — using ${hostPort}. ` +
-              `(Expected when a project moves to a different host.)\n`,
-          );
+      try {
+        for (const containerPort of routedContainerPorts) {
+          // Every routed port is persisted now. Legacy releases know only the
+          // primary scalar, so that remains the fallback for old rows.
+          const previousRow = previousByServiceId.get(svc.id);
+          const owner = {
+            projectId: project.id,
+            serviceId: svc.id,
+            containerPort,
+          } as const;
+          const mapped = previousRow?.hostPorts?.[String(containerPort)];
+          const cachedPreferred =
+            typeof mapped === "number" && mapped > 0
+              ? mapped
+              : containerPort === primaryRoutedPort
+                ? previousRow?.hostPort
+                : undefined;
+          /**
+           * A carried port is a PREFERENCE, never a given.
+           *
+           * It used to be taken verbatim whenever one existed, which is right for the case it was
+           * written for — a redeploy on the same host, where the port was ours and still is. It is
+           * wrong the moment the host changes: a MIGRATION carries the source's port to a target
+           * that knows nothing about it, and if anything there holds it Docker refuses the bind
+           * with "port is already allocated" and the service (plus everything depending on it)
+           * fails. A host port is a property of the HOST, not of the project, so it cannot travel
+           * with one.
+           *
+           * `preferred` is the allocator's own word for exactly this: keep it if it's free, pick
+           * another if it isn't. Passing it there rather than branching around the allocator means
+           * one rule for both cases and no second place that decides what a free port is.
+           */
+          const allocation = await allocateAndReservePinnedHostPort({
+            target: hostPortTarget!,
+            claims: pinnedHostPortClaims,
+            owner,
+            cachedPreferred,
+            // A scalar has no container-port identity. It represented the primary
+            // route historically, so never let it stand in for a secondary route.
+            allowLegacyContainerPort: containerPort === primaryRoutedPort,
+            additionalAvoid: allocatedHostPorts,
+            allocate: (allocationOptions) => allocateHostPort(opts.executor!, allocationOptions),
+          });
+          serviceHostPortAllocations.push(allocation);
+          const carried = allocation.preferred;
+          const hostPort = allocation.port;
+          if (carried && hostPort !== carried) {
+            logger.log(
+              `Host port ${carried} for ${svc.name} is taken on this server — using ${hostPort}. ` +
+                `(Expected when a project moves to a different host.)\n`,
+            );
+          }
+          // "Couldn't read occupancy" is not "nothing is listening" — without this the
+          // bind failure that follows blames Docker for an unreachable host (#490).
+          if (!allocation.scanned) {
+            logger.log(
+              `Couldn't read live port occupancy on the target, so ${allocation.port} for ` +
+                `${svc.name} avoids database-pinned ports and ports this deploy already took. ` +
+                `If publishing it fails ` +
+                `as "already allocated", check that Openship can reach this host ` +
+                `(Servers → this box).\n`,
+              "warn",
+            );
+          }
+
+          // Keep this pass's newly committed claim visible to the next service.
+          pinnedHostPortClaims.push(allocation.claim);
+          allocatedHostPorts.add(hostPort);
+          pinnedHostPortByContainerPort.set(containerPort, hostPort);
         }
-        // "Couldn't read occupancy" is not "nothing is listening" — without this the
-        // bind failure that follows blames Docker for an unreachable host (#490).
-        if (!allocation.scanned) {
-          logger.log(
-            `Couldn't read live port occupancy on the target, so ${allocation.port} for ` +
-              `${svc.name} avoids only ports this deploy already took. If publishing it fails ` +
-              `as "already allocated", check that Openship can reach this host ` +
-              `(Servers → this box).\n`,
-            "warn",
-          );
-        }
-        usedHostPorts.add(hostPort);
-        pinnedHostPortByContainerPort.set(containerPort, hostPort);
+      } catch (allocationError) {
+        // No container or route exists yet. Roll back only reservations this
+        // attempt created; carried claims may still protect an older vhost.
+        await releaseNewPinnedHostPortClaims(hostPortTarget!, serviceHostPortAllocations).catch(
+          (releaseError) =>
+            logger.log(
+              `Warning: failed to release unrouted host-port reservations for "${svc.name}": ` +
+                `${safeErrorMessage(releaseError)}\n`,
+              "warn",
+              { serviceName: svc.name },
+            ),
+        );
+        throw allocationError;
       }
       serviceRuntimeConfig.ports = withLoopbackPublishAll(
         serviceRuntimeConfig.ports,
@@ -2113,9 +2314,12 @@ export async function deployComposeServices(
 
     let deployedContainerId: string | undefined;
     let deployedContainerCleaned = false;
+    // Kept outside the try so a connection loss after Docker returned can still
+    // persist every binding reported before the transport disappeared.
+    let serviceResult: MultiServiceDeployResult | undefined;
+    let pipelineReachedReady = false;
     try {
       const previous = previousByServiceId.get(svc.id);
-      let serviceResult: MultiServiceDeployResult | undefined;
       const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
       const routeDomains = toRoutedDomainInputs(proxyRoutes);
       const deployEnv: DeployEnvironment = {
@@ -2137,7 +2341,6 @@ export async function deployComposeServices(
         resolveTargetUrl:
           proxyRoutes.length > 0
             ? async (containerId, port) => {
-                const strategy = resolveRouteStrategy(project.routeStrategy);
                 const sameSvc = serviceResult?.containerId === containerId;
                 // Prefer the port WE pinned+published for THIS container port
                 // (deterministic); fall back to the port the deploy result
@@ -2151,13 +2354,27 @@ export async function deployComposeServices(
                   resultHostPort: serviceResult?.hostPort,
                   sameService: sameSvc,
                 });
-                // loopback-port → the service's published host port; else the
-                // container IP (cached from the deploy result when we can).
-                if (strategy === "loopback-port" && hostPort) {
-                  return buildUpstreamUrl({ strategy, hostPort, containerPort: port });
-                }
-                const ip = sameSvc ? serviceResult?.ip : await runtime.getContainerIp(containerId);
-                return buildUpstreamUrl({ strategy, ip, hostPort, containerPort: port });
+                // The effective topology, not only the stored preference, decides
+                // whether to dial the reserved publish or the container IP.
+                const targetUrl =
+                  usesHostLoopback && hostPort
+                    ? buildUpstreamUrl({
+                        strategy: upstreamStrategy,
+                        hostPort,
+                        containerPort: port,
+                      })
+                    : buildUpstreamUrl({
+                        strategy: upstreamStrategy,
+                        ip: sameSvc ? serviceResult?.ip : await runtime.getContainerIp(containerId),
+                        hostPort,
+                        containerPort: port,
+                      });
+                await reserveResolvedLoopbackRoutes({
+                  target: hostPortTarget,
+                  projectId: project.id,
+                  routes: [{ targetUrl, serviceId: svc.id, containerPort: port }],
+                });
+                return targetUrl;
               }
             : undefined,
       };
@@ -2216,6 +2433,7 @@ export async function deployComposeServices(
         }
         throw new Error(deployResult.error ?? `Failed to deploy service "${svc.name}"`);
       }
+      pipelineReachedReady = true;
 
       const result = serviceResult ?? {
         containerId: deployResult.containerId!,
@@ -2225,6 +2443,10 @@ export async function deployComposeServices(
       // happened to report first, so the persisted value matches the live route
       // and the next redeploy reuses the same target.
       const persistedHostPort = servicePinnedHostPort ?? result.hostPort ?? null;
+      const persistedHostPorts: Record<number, number> = {
+        ...(serviceResult?.hostPortByContainerPort ?? {}),
+        ...Object.fromEntries(pinnedHostPortByContainerPort),
+      };
 
       // UPSERT, never a plain insert — a row for this (deployment, service) pair may
       // already exist by the time we get here, from either of two writers:
@@ -2244,6 +2466,7 @@ export async function deployComposeServices(
         imageRef: image,
         imageDigest: result.imageDigest ?? null,
         hostPort: persistedHostPort,
+        hostPorts: Object.keys(persistedHostPorts).length > 0 ? persistedHostPorts : null,
         ip: result.ip ?? null,
       });
 
@@ -2257,13 +2480,9 @@ export async function deployComposeServices(
         // The per-port map the runtime reported, UNIONED with the pins this pass
         // published — the pins are what the vhosts dial, and they are the answer for
         // any port docker had not bound yet when it was inspected.
-        ...(() => {
-          const byPort: Record<number, number> = {
-            ...(serviceResult?.hostPortByContainerPort ?? {}),
-            ...Object.fromEntries(pinnedHostPortByContainerPort),
-          };
-          return Object.keys(byPort).length ? { hostPortByContainerPort: byPort } : {};
-        })(),
+        ...(Object.keys(persistedHostPorts).length > 0
+          ? { hostPortByContainerPort: persistedHostPorts }
+          : {}),
       });
       // Now resolvable as a namespace provider for the services after it. Set only
       // on success: a dependent must never be pointed at a container that failed.
@@ -2322,7 +2541,12 @@ export async function deployComposeServices(
       // tag, so two deployment rows legitimately reference one image; removing
       // "the previous one" then deletes an image another retained release (or the
       // one we just restored FROM, if the user rolls forward again) still needs.
-      if (previous?.imageRef && previous.imageRef !== image && runtime instanceof DockerRuntime) {
+      if (
+        previous?.imageRef &&
+        previous.imageRef !== image &&
+        runtime instanceof DockerRuntime &&
+        ownsBuiltImage(previous.imageRef)
+      ) {
         const keep = await retentionKeepSet();
         if (keep.has(previous.imageRef)) {
           logger.log(
@@ -2403,6 +2627,11 @@ export async function deployComposeServices(
         // Upsert for the same reason as the success write above: this pair may already
         // carry a pre-created `skipped` row, and a unique violation here would replace an
         // unknown-but-probably-fine outcome with a hard deploy failure.
+        const indeterminateHostPorts: Record<number, number> = {
+          ...(serviceResult?.hostPortByContainerPort ?? {}),
+          ...Object.fromEntries(pinnedHostPortByContainerPort),
+        };
+        const indeterminateHostPort = servicePinnedHostPort ?? serviceResult?.hostPort ?? null;
         await repos.service.upsertServiceDeployment({
           deploymentId: dep.id,
           serviceId: svc.id,
@@ -2410,17 +2639,27 @@ export async function deployComposeServices(
           containerId: deployedContainerId,
           status: "indeterminate",
           imageRef: image,
+          hostPort: indeterminateHostPort,
+          hostPorts: Object.keys(indeterminateHostPorts).length > 0 ? indeterminateHostPorts : null,
         });
         results.push({
           serviceId: svc.id,
           serviceName: svc.name,
           containerId: deployedContainerId,
           status: "indeterminate",
+          hostPort: indeterminateHostPort ?? undefined,
+          ...(Object.keys(indeterminateHostPorts).length > 0
+            ? { hostPortByContainerPort: indeterminateHostPorts }
+            : {}),
         });
         indeterminateServiceNames.add(svc.name);
       } else {
         if (deployedContainerId && !deployedContainerCleaned) {
-          await runtime.destroy(deployedContainerId).catch((destroyErr) => {
+          try {
+            await runtime.destroy(deployedContainerId);
+            deployedContainerCleaned = true;
+          } catch (destroyErr) {
+            hostPortClaimReapSafe = false;
             const destroyMessage =
               destroyErr instanceof Error ? destroyErr.message : "Unknown error";
             logger.log(
@@ -2430,7 +2669,32 @@ export async function deployComposeServices(
                 serviceName: svc.name,
               },
             );
-          });
+          }
+        }
+        if (!pipelineReachedReady && hostPortTarget && serviceHostPortAllocations.length > 0) {
+          if (!deployedContainerId) {
+            // Activation never returned a workload id, so no route could have
+            // been resolved or written. This is the one post-allocation failure
+            // boundary where direct rollback is provably pre-route.
+            await releaseNewPinnedHostPortClaims(hostPortTarget, serviceHostPortAllocations).catch(
+              (releaseError) =>
+                logger.log(
+                  `Warning: failed to release unrouted host-port reservations for "${svc.name}": ` +
+                    `${safeErrorMessage(releaseError)}\n`,
+                  "warn",
+                  { serviceName: svc.name },
+                ),
+            );
+          } else {
+            // Once activation returned, retain the reservation even when the
+            // best-effort destroy succeeded. A later full strict convergence
+            // can prove the edge/workload transition; this catch block cannot.
+            logger.log(
+              `Host-port reservations for "${svc.name}" were retained until the next successful reconciliation.\n`,
+              "warn",
+              { serviceName: svc.name },
+            );
+          }
         }
         logger.log(`Service "${svc.name}" failed: ${message}\n`, "error", {
           serviceName: svc.name,
@@ -2476,9 +2740,7 @@ export async function deployComposeServices(
     const probes = Promise.all(
       portAuditTargets.map(async (target) => {
         const [pc] = await auditPorts(runtime, target.containerId, [target.port], logger);
-        return pc
-          ? { ...pc, serviceId: target.serviceId, serviceName: target.serviceName }
-          : null;
+        return pc ? { ...pc, serviceId: target.serviceId, serviceName: target.serviceName } : null;
       }),
     );
     const audited = await Promise.race([
@@ -2575,9 +2837,7 @@ export async function deployComposeServices(
         f.target.serviceId &&
         readinessByServiceId.get(f.target.serviceId)?.onFailure === "fail",
     );
-    for (const finding of findings.filter(
-      (f) => !f.verdict.ok && !vetoing.includes(f),
-    )) {
+    for (const finding of findings.filter((f) => !f.verdict.ok && !vetoing.includes(f))) {
       // "warn": say what didn't hold, but leave the service's deploy result alone
       // so the stack stays up. Opting into the watch to get the signal must not
       // also opt into a veto.
@@ -2839,9 +3099,7 @@ export async function deployComposeServices(
     const domainRows = needsDomainMap
       ? [...domainByHostname.values()]
       : await repos.domain.listByProject(project.id).catch(() => []);
-    const candidates = enabled.filter((svc) =>
-      withContainer.some((r) => r.serviceId === svc.id),
-    );
+    const candidates = enabled.filter((svc) => withContainer.some((r) => r.serviceId === svc.id));
     const primaryId = pickPrimaryServiceId(candidates, domainRows);
     return (
       withContainer.find((r) => r.serviceId === primaryId)?.containerId ??
@@ -2935,7 +3193,7 @@ export async function deployComposeServices(
         // just created and their publishing is what is about to be persisted. The port's
         // owning service is picked by the resolver the live re-apply shares.
         const resolved = buildProjectServiceUpstream({
-          strategy: resolveRouteStrategy(project.routeStrategy),
+          strategy: upstreamStrategy,
           port: route.targetPort,
           services: enabled,
           rowByService: projectUpstreamRows,
@@ -2970,6 +3228,17 @@ export async function deployComposeServices(
         );
         seenRouteDomains.add(routeKey);
         try {
+          await reserveResolvedLoopbackRoutes({
+            target: hostPortTarget,
+            projectId: project.id,
+            routes: [
+              {
+                targetUrl: resolved.url,
+                serviceId: resolved.owner.serviceId,
+                containerPort: resolved.owner.containerPort,
+              },
+            ],
+          });
           await routeContext.routing.registerRoute({
             domain: route.hostname,
             targetUrl: resolved.url,
@@ -3035,17 +3304,37 @@ export async function deployComposeServices(
     try {
       // Reusable routing core (shared with the routing API): resolve each
       // service's live upstream from this deploy's results.
+      const resolvedRouteOwners = new Map<
+        string,
+        {
+          targetUrl: string;
+          serviceId: string;
+          containerPort: number;
+        }
+      >();
       const resolveTargetUrl = (serviceId: string) => {
         const svc = enabled.find((s) => s.id === serviceId);
         const res = results.find((r) => r.serviceId === serviceId);
-        const port = svc ? resolveServicePublicPort(svc) : undefined;
+        // Composite/fan-out config itself is the exposure demand. Do not gate it
+        // on the service owning a separate hostname (`service.exposed`): project
+        // routes intentionally reach internal services.
+        const port = svc ? (resolveServicePort(svc, project.port) ?? undefined) : undefined;
         if (!port) return null;
-        return buildUpstreamUrl({
-          strategy: resolveRouteStrategy(project.routeStrategy),
+        const targetUrl = buildUpstreamUrl({
+          strategy: upstreamStrategy,
           ip: res?.ip,
           hostPort: res?.hostPort,
+          hostPorts: res?.hostPortByContainerPort,
           containerPort: port,
         });
+        if (targetUrl) {
+          resolvedRouteOwners.set(`${serviceId}\0${port}`, {
+            targetUrl,
+            serviceId,
+            containerPort: port,
+          });
+        }
+        return targetUrl;
       };
       const composite = buildCompositeRegistration({
         services: enabled,
@@ -3070,6 +3359,18 @@ export async function deployComposeServices(
             ? { hostname: domain.hostname, isCustomDomain: domain.domainType === "custom" }
             : null;
         },
+      });
+      const fanoutRegistrations = buildDomainFanoutRegistrations({
+        routes: project.compositeRoutes,
+        resolveTargetUrl,
+      });
+      // Resolve every topology-aware target first, then validate the complete
+      // set before the first vhost is mutated. A conflict cannot leave half of a
+      // composite/fan-out route set pointing at an unowned loopback port.
+      await reserveResolvedLoopbackRoutes({
+        target: hostPortTarget,
+        projectId: project.id,
+        routes: resolvedRouteOwners.values(),
       });
       if (composite) {
         const r = composite.register;
@@ -3110,15 +3411,15 @@ export async function deployComposeServices(
       // These hostnames ARE project domains, so the live path (project-route.service) puts
       // the project's vercel.json rules on them. Spread them here too or the deploy would
       // strip what a live re-apply installed.
-      for (const reg of buildDomainFanoutRegistrations({
-        routes: project.compositeRoutes,
-        resolveTargetUrl,
-      })) {
+      for (const reg of fanoutRegistrations) {
         // CONCATENATED, not overwritten: spreading the fan-out's locations after the
         // compiled ones would ASSIGN over them, silently dropping a vercel.json external
         // rewrite on a path-routed domain. Fan-out first, so its explicit per-path
         // upstreams are matched ahead of a broader compiled rule.
-        const proxyLocations = [...(reg.proxyLocations ?? []), ...(routingFields.proxyLocations ?? [])];
+        const proxyLocations = [
+          ...(reg.proxyLocations ?? []),
+          ...(routingFields.proxyLocations ?? []),
+        ];
         await routeContext.routing.registerRoute({
           domain: reg.hostname,
           tls: true,
@@ -3153,6 +3454,7 @@ export async function deployComposeServices(
         mutated = true;
         logger.log(`Stopped disabled service container (${previous.containerId.slice(0, 12)}).\n`);
       } catch (err) {
+        hostPortClaimReapSafe = false;
         const message = err instanceof Error ? err.message : "Unknown error";
         logger.log(`Warning: failed to stop disabled service container: ${message}\n`, "warn");
       }
@@ -3191,8 +3493,77 @@ export async function deployComposeServices(
         mutated = true;
         logger.log(`Stopped previous single-app container (${prevContainerId.slice(0, 12)}).\n`);
       } catch (err) {
+        hostPortClaimReapSafe = false;
         const message = err instanceof Error ? err.message : "Unknown error";
         logger.log(`Warning: failed to stop previous single-app container: ${message}\n`, "warn");
+      }
+    }
+  }
+
+  // Every route writer and every old-workload reap has now settled. Only here
+  // can a superseded claim be released: before this point an old vhost can still
+  // dial its port, or a failed reap can leave a workload that a later repair may
+  // put back behind that vhost.
+  //
+  // Do not converge an indeterminate deployment. A dropped connection means we
+  // do not know which route writes reached the target, so retaining every claim
+  // until reconciliation is the only safe answer.
+  const hasIndeterminateHostPortOutcome = results.some(
+    (result) => result.status === "indeterminate",
+  );
+  if (hostPortTarget && opts?.executor && successful > 0 && !opts?.strictScope) {
+    if (hasIndeterminateHostPortOutcome) {
+      logger.log(
+        "Host-port reservation cleanup deferred until deployment reconciliation; all reservations were retained.\n",
+        "warn",
+      );
+    } else if (!hostPortClaimReapSafe) {
+      hostPortClaimWarning =
+        "Host-port reservation cleanup was deferred because an obsolete workload could not be stopped; reservations were retained safely.";
+      logger.log(`${hostPortClaimWarning}\n`, "warn");
+    } else {
+      // Build the desired set only after the final successful route writers and
+      // reaps. A result recorded earlier is not sufficient authority to release
+      // ownership while either of those later stages is still pending.
+      const resultByServiceId = new Map(results.map((result) => [result.serviceId, result]));
+      const desiredPublishes = usesHostLoopback
+        ? [...hostLoopbackRoutePortDemands].flatMap(([serviceId, containerPorts]) => {
+            const result = resultByServiceId.get(serviceId);
+            if (!result || result.status === "failed") return [];
+            return [...containerPorts].flatMap((containerPort, index) => {
+              const mappedHostPort = result.hostPortByContainerPort?.[containerPort];
+              // Legacy releases persisted only one scalar. It is attributable
+              // only when this service has exactly one routed demand; with two
+              // or more ports there is no safe way to know which one it means.
+              const hostPort =
+                mappedHostPort ??
+                (containerPorts.size === 1 && index === 0 ? result.hostPort : undefined);
+              return hostPort !== undefined ? [{ serviceId, containerPort, hostPort }] : [];
+            });
+          })
+        : [];
+      const convergence = {
+        target: hostPortTarget,
+        projectId: project.id,
+        desiredPublishes,
+        edgeProxy: edgeProxyFor(opts.executor, "openresty", { ours: true }),
+      };
+      try {
+        // The public wrapper took the target lock for the current loopback
+        // topology. A container-IP/static transition did not, and must acquire
+        // it here while converging to an intentionally empty desired set.
+        const converged = usesHostLoopback
+          ? await convergeTargetHostPortClaimsUnlocked(convergence)
+          : await convergeTargetHostPortClaims(convergence);
+        if (converged.released > 0) {
+          logger.log(
+            `Released ${converged.released} obsolete host-port reservation${converged.released === 1 ? "" : "s"}.\n`,
+          );
+        }
+      } catch (error) {
+        hostPortClaimWarning =
+          "Host-port reservation cleanup was deferred; uncertain reservations were retained safely.";
+        logger.log(`${hostPortClaimWarning} ${safeErrorMessage(error)}\n`, "warn");
       }
     }
   }
@@ -3231,6 +3602,7 @@ export async function deployComposeServices(
           ? stabilityWarnings.join("; ")
           : undefined,
       skipNotice,
+      hostPortClaimWarning,
     ]
       .filter(Boolean)
       .join("; ") || undefined;

@@ -275,6 +275,22 @@ r.post("/migration/switch-back", { tag: "settings:admin" }, requireInstanceAdmin
  * that check resolves a caller-selected org and every user is owner of their
  * own personal org (GHSA-rwq6-r63g-3c8h). Do not "restore" it here.
  */
+r.get("/data-transfer/preview", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.previewInstanceExportHandler);
+r.post("/data-transfer/direct/session", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.createDirectReceiveSessionHandler);
+r.post("/data-transfer/direct/send", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.sendDirectTransferHandler);
+r.public(
+  "post",
+  "/data-transfer/direct/receive",
+  {
+    reason: "One-time instance receive capability — payload is ECDH-encrypted and authorized by the expiring token inside it.",
+    rateLimit: "auth-tight",
+  },
+  bodyLimit({
+    maxSize: 700_000_000,
+    onError: (c) => c.json({ error: "Direct transfer exceeds the 700MB limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  dataTransfer.receiveDirectTransferHandler,
+);
 r.post("/data-transfer/export", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.exportInstanceHandler);
 r.use(
   "/data-transfer/import",
@@ -286,4 +302,3 @@ r.use(
 r.post("/data-transfer/import", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.importInstanceHandler);
 
 export const systemRoutes = r.hono;
-

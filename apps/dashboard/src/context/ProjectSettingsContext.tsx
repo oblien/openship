@@ -9,15 +9,24 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { isServicesFramework, type WorkloadType } from "@repo/core";
+import { isServicesFramework, type ReleaseSource, type WorkloadType } from "@repo/core";
 import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { projectsApi, servicesApi, type Service } from "@/lib/api";
-import { PROJECT_INFO_NOT_FOUND, useProjectInfo } from "@/hooks/useProjectEndpoints";
+import {
+  invalidateProjectCachesFor,
+  PROJECT_INFO_NOT_FOUND,
+  useProjectInfo,
+} from "@/hooks/useProjectEndpoints";
 import type { ActiveMigration } from "@/utils/project-status";
 import { dedupeServerLogs } from "./server-log-dedup";
+import {
+  projectEnvironmentIds,
+  reconcileCreatedProjectEnvironment,
+  removeProjectEnvironment,
+} from "./project-environments";
 import { beginServicesFetch, failServicesFetch } from "./services-fetch-state";
 
 interface ProjectDomain {
@@ -90,6 +99,8 @@ interface BasicProjectData {
   cloudWorkspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;
+  /** Source metadata for prebuilt release/image projects. */
+  releaseSource?: ReleaseSource | null;
   /**
    * Push auto-deploy, straight from the `auto_deploy` column — the same field
    * the push webhook handler gates on. Typed here (not left to the index
@@ -105,7 +116,6 @@ interface BasicProjectData {
   rollbackWindow?: number | null;
   [key: string]: any;
 }
-
 
 interface DomainsData {
   domains: any[];
@@ -267,6 +277,8 @@ interface ProjectSettingsContextType {
     gitBranch?: string;
     sourceMode?: "branch" | "manual";
   }) => Promise<ProjectEnvironment | null>;
+  /** Apply a confirmed server-side deletion to the shared list and caches. */
+  removeEnvironment: (environmentId: string) => void;
   domain: string;
   /** The canonical access URL — server-computed, correct for service-scoped-only
    *  projects and target-aware for the localhost fallback. What display surfaces
@@ -286,7 +298,6 @@ interface ProjectSettingsContextType {
 }
 
 const ProjectSettingsContext = createContext<ProjectSettingsContextType | undefined>(undefined);
-
 
 interface ProviderProps {
   children: ReactNode;
@@ -502,8 +513,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         ? "server"
         : (projectData.deployTarget ?? "local");
     if (target === "local") {
-      const port =
-        Number((projectData as any).port ?? projectData.options?.productionPort) || 3000;
+      const port = Number((projectData as any).port ?? projectData.options?.productionPort) || 3000;
       const host = `localhost:${port}`;
       return { url: `http://${host}`, host, kind: "local", isLocal: true, urls: [] };
     }
@@ -519,9 +529,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     const available = (projectData.domains || [])
       .map((d: any) => d?.domain)
       .filter((d: unknown): d is string => typeof d === "string" && d.length > 0);
-    setSelectedDomain((current) =>
-      current && available.includes(current) ? current : domain,
-    );
+    setSelectedDomain((current) => (current && available.includes(current) ? current : domain));
   }, [domain, projectData.domains]);
 
   // Derived: do we have multi-service rendering paths to enable?
@@ -788,12 +796,13 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     return promise;
   }, [id]);
 
-  const refreshEnvironments = useCallback(async () => {
-    if (!id) return;
+  const fetchEnvironments = useCallback(async (): Promise<ProjectEnvironment[]> => {
+    if (!id) return [];
     const response = await projectsApi.getEnvironments(id);
-    if (response.success) {
-      setEnvironments(response.data || []);
+    if (!response.success) {
+      throw new Error("Failed to refresh environments");
     }
+    return (response.data || []) as ProjectEnvironment[];
   }, [id]);
 
   const createEnvironment = useCallback(
@@ -809,10 +818,30 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       if (!response.success || !response.data) {
         throw new Error(response.error || "Failed to create environment");
       }
-      await refreshEnvironments();
-      return response.data as ProjectEnvironment;
+      const created = response.data as ProjectEnvironment;
+      await reconcileCreatedProjectEnvironment({
+        currentId: id,
+        environments,
+        created,
+        refresh: fetchEnvironments,
+        commit: setEnvironments,
+        invalidate: invalidateProjectCachesFor,
+        onRefreshError: (error) =>
+          console.warn("Failed to reconcile project environments after create", error),
+      });
+
+      return created;
     },
-    [id, refreshEnvironments],
+    [environments, fetchEnvironments, id],
+  );
+
+  const removeEnvironment = useCallback(
+    (environmentId: string) => {
+      const remaining = removeProjectEnvironment(environments, environmentId);
+      setEnvironments(remaining);
+      invalidateProjectCachesFor(projectEnvironmentIds(environmentId, environments));
+    },
+    [environments],
   );
 
   // Terminal Logs Management
@@ -1023,6 +1052,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       id,
       environments,
       createEnvironment,
+      removeEnvironment,
       domain,
       access,
       selectedDomain,
@@ -1063,6 +1093,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       id,
       environments,
       createEnvironment,
+      removeEnvironment,
       domain,
       access,
       selectedDomain,

@@ -153,14 +153,20 @@ describe("addDomain retries", () => {
   // once it has its own row.
   it("materializes the www variant as its own row when includeWww is set", async () => {
     domainRepo.findByHostname.mockResolvedValue(null);
-    domainRepo.create.mockImplementation(async (data: any) => ({ id: `dom_${data.hostname}`, ...data }));
+    domainRepo.create.mockImplementation(async (data: any) => ({
+      id: `dom_${data.hostname}`,
+      ...data,
+    }));
 
-    await addDomain(context as any, {
-      projectId: project.id,
-      hostname: "example.com",
-      isPrimary: true,
-      includeWww: true,
-    } as any);
+    await addDomain(
+      context as any,
+      {
+        projectId: project.id,
+        hostname: "example.com",
+        isPrimary: true,
+        includeWww: true,
+      } as any,
+    );
 
     expect(domainRepo.create.mock.calls.map(([data]: [any]) => data.hostname)).toEqual([
       "example.com",
@@ -185,14 +191,20 @@ describe("addDomain retries", () => {
   // issued, and every deploy retries a hostname that was set up to fail.
   it("returns the www sibling's DNS record and row id, not just the apex's", async () => {
     domainRepo.findByHostname.mockResolvedValue(null);
-    domainRepo.create.mockImplementation(async (data: any) => ({ id: `dom_${data.hostname}`, ...data }));
+    domainRepo.create.mockImplementation(async (data: any) => ({
+      id: `dom_${data.hostname}`,
+      ...data,
+    }));
 
-    const result = await addDomain(context as any, {
-      projectId: project.id,
-      hostname: "example.com",
-      isPrimary: true,
-      includeWww: true,
-    } as any);
+    const result = await addDomain(
+      context as any,
+      {
+        projectId: project.id,
+        hostname: "example.com",
+        isPrimary: true,
+        includeWww: true,
+      } as any,
+    );
 
     expect(result.records.records).toEqual([
       { type: "A", host: "@", name: "example.com", value: "203.0.113.10" },
@@ -205,19 +217,25 @@ describe("addDomain retries", () => {
   // A sibling that can't be claimed must not silently look like success — the apex
   // is still what the caller asked for, so it stands, and the failure is reported.
   it("keeps the apex and REPORTS the reason when the www sibling can't be claimed", async () => {
-    domainRepo.create.mockImplementation(async (data: any) => ({ id: `dom_${data.hostname}`, ...data }));
+    domainRepo.create.mockImplementation(async (data: any) => ({
+      id: `dom_${data.hostname}`,
+      ...data,
+    }));
     domainRepo.findByHostname.mockImplementation(async (hostname: string) =>
       hostname === "www.example.com"
         ? { ...existingDomain, id: "dom_foreign", hostname, projectId: "proj_other" }
         : null,
     );
 
-    const result = await addDomain(context as any, {
-      projectId: project.id,
-      hostname: "example.com",
-      isPrimary: true,
-      includeWww: true,
-    } as any);
+    const result = await addDomain(
+      context as any,
+      {
+        projectId: project.id,
+        hostname: "example.com",
+        isPrimary: true,
+        includeWww: true,
+      } as any,
+    );
 
     expect(result.domain.hostname).toBe("example.com");
     expect(result.www).toBeUndefined();
@@ -233,16 +251,74 @@ describe("addDomain retries", () => {
 
   it("never stacks www on www", async () => {
     domainRepo.findByHostname.mockResolvedValue(null);
-    domainRepo.create.mockImplementation(async (data: any) => ({ id: `dom_${data.hostname}`, ...data }));
+    domainRepo.create.mockImplementation(async (data: any) => ({
+      id: `dom_${data.hostname}`,
+      ...data,
+    }));
 
-    await addDomain(context as any, {
-      projectId: project.id,
-      hostname: "www.example.com",
-      includeWww: true,
-    } as any);
+    await addDomain(
+      context as any,
+      {
+        projectId: project.id,
+        hostname: "www.example.com",
+        includeWww: true,
+      } as any,
+    );
 
     expect(domainRepo.create.mock.calls.map(([data]: [any]) => data.hostname)).toEqual([
       "www.example.com",
+    ]);
+  });
+  it("supports explicit sslChallenge: 'dns-01'", async () => {
+    domainRepo.findByHostname.mockResolvedValue(null);
+    domainRepo.create.mockImplementation(async (data: any) => ({
+      id: `dom_${data.hostname}`,
+      ...data,
+    }));
+
+    const result = await addDomain(
+      context as any,
+      {
+        projectId: project.id,
+        hostname: "app.example.com",
+        sslChallenge: "dns-01",
+      } as any,
+    );
+
+    expect(domainRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostname: "app.example.com",
+        sslChallenge: "dns-01",
+      }),
+    );
+    expect(result.domain.sslChallenge).toBe("dns-01");
+  });
+
+  it("automatically assigns sslChallenge: 'dns-01' to wildcard domains", async () => {
+    domainRepo.findByHostname.mockResolvedValue(null);
+    domainRepo.create.mockImplementation(async (data: any) => ({
+      id: `dom_${data.hostname}`,
+      ...data,
+    }));
+
+    const result = await addDomain(
+      context as any,
+      {
+        projectId: project.id,
+        hostname: "*.example.com",
+      } as any,
+    );
+
+    expect(domainRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostname: "*.example.com",
+        sslChallenge: "dns-01",
+      }),
+    );
+    expect(result.domain.sslChallenge).toBe("dns-01");
+    // Wildcard should produce host: "*"
+    expect(result.records.records).toEqual([
+      { type: "A", host: "*", name: "*.example.com", value: "203.0.113.10" },
     ]);
   });
 });

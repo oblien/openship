@@ -39,6 +39,14 @@ function publishedPort(c: DockerContainerSummary): number | null {
   return null;
 }
 
+/** Every published binding in the durable service-deployment JSON shape. */
+function publishedPorts(c: DockerContainerSummary): Record<string, number> | null {
+  const entries = (c.ports ?? [])
+    .filter((port) => port.publicPort)
+    .map((port) => [String(port.privatePort), port.publicPort!] as const);
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
+}
+
 /** Compose spec strings for a container's published ports (`3001:3001`). */
 export function portSpecs(c: DockerContainerSummary): string[] {
   const seen = new Set<string>();
@@ -134,6 +142,7 @@ export async function linkSelfAppServices(
             status: container.state === "running" ? "success" : "failure",
             imageRef: container.image ?? null,
             hostPort: publishedPort(container),
+            hostPorts: publishedPorts(container),
             ip: container.ip ?? null,
           })
           .catch(() => {});

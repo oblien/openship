@@ -5,20 +5,23 @@
 #   1. seed-if-absent: copy baked config into empty bind mounts, never overwrite
 #      operator edits (config dirs are host bind mounts; the queue/maildir/DKIM
 #      data dirs start empty and are left alone — except ClamAV's signature
-#      database, which is data clamd cannot start without: see 6).
-#   2. reconcile: rewrite the baked placeholders in every daemon config to the
+#      database, which is data clamd cannot start without: see 7).
+#   2. reconcile the persistent Postfix chroot's DNS/NSS files from the running
+#      container. The spool bind mount hides the copy made during image build;
+#      without this, chrooted smtpd rejects inbound mail when DNS checks run.
+#   3. reconcile: rewrite the baked placeholders in every daemon config to the
 #      real per-install values from the --env-file — the `build-placeholder` DB
 #      password (shared role) and the `build.invalid` domain (-> $FIRST_DOMAIN),
 #      the latter also writing /etc/mailname + an /etc/hosts FQDN entry.
-#   3. bootstrap the mail databases (roles + schema + first domain) if the vmail
+#   4. bootstrap the mail databases (roles + schema + first domain) if the vmail
 #      schema isn't there yet — see db-bootstrap.sh, which owns the wait for the
 #      sidecar and never re-inits an existing DB. FATAL on failure: an engine
 #      without its schema cannot serve, and pretending otherwise is GH-562.
-#   4. pre-create the log files fail2ban tails (rsyslog fills them once daemons
+#   5. pre-create the log files fail2ban tails (rsyslog fills them once daemons
 #      log; a jail whose logpath is missing at start would crash-loop).
-#   5. reuse-or-generate the DKIM key on its bind mount (never regenerate — a new
+#   6. reuse-or-generate the DKIM key on its bind mount (never regenerate — a new
 #      selector breaks DMARC until DNS repropagates).
-#   6. ClamAV: seed the signature database onto its bind mount from the baked copy
+#   7. ClamAV: seed the signature database onto its bind mount from the baked copy
 #      (no network), hand the mount to the `clamav` user, and create clamd's socket
 #      directory. Without a database clamd exits 1, and amavis — whose only scanner
 #      it is — then defers every inbound message (issue #565).
@@ -51,7 +54,13 @@ seed dovecot /etc/dovecot
 seed amavis-confd /etc/amavis/conf.d
 mkdir -p /var/vmail /var/spool/postfix /var/lib/dkim /var/lib/clamav
 
-# 2. reconcile baked placeholder secrets -> the real shared role password.
+# 2. Recreate the resolver view inside Postfix's persistent chroot on EVERY boot.
+# The iRedMail installer does this at image-build time, but /var/spool/postfix is
+# replaced by the queue bind mount at runtime. Refreshing rather than seed-once
+# also follows Docker DNS changes after a container recreate (GH-686).
+bash /opt/openship-mail/postfix-chroot-etc.sh /etc /var/spool/postfix/etc
+
+# 3. reconcile baked placeholder secrets -> the real shared role password.
 #    The image is built with `build-placeholder` in every daemon's DB config; all
 #    five mail roles share one password (loopback-only sidecar; privsep via
 #    GRANTs — see db-bootstrap.sh), so one global replace wires postfix/dovecot/
@@ -77,7 +86,7 @@ if [ -n "${VMAIL_DB_BIND_PASSWD:-}" ]; then
   unset _OPENSHIP_MAIL_PW
 fi
 
-# 2b. reconcile the baked placeholder DOMAIN -> the real FIRST_DOMAIN.
+# 3b. reconcile the baked placeholder DOMAIN -> the real FIRST_DOMAIN.
 #     The image is built with FIRST_DOMAIN=build.invalid (docker/build-config), so
 #     every config iRedMail laid down at build carries `build.invalid` /
 #     `mail.build.invalid` — most importantly amavis's
@@ -134,7 +143,7 @@ if [ -n "$FIRST_DOMAIN" ]; then
   esac
 fi
 
-# 3. bootstrap the mail databases (idempotent; skips if the vmail schema exists).
+# 4. bootstrap the mail databases (idempotent; skips if the vmail schema exists).
 #
 # The wait for the sidecar lives INSIDE db-bootstrap.sh, which polls `SELECT 1` until
 # the database actually answers. This used to be an `nc -z` loop here, and that was
@@ -157,7 +166,7 @@ if ! bash /opt/openship-mail/db-bootstrap.sh; then
   exit 1
 fi
 
-# 4. pre-create the log files the fail2ban jails tail, so a jail never starts
+# 5. pre-create the log files the fail2ban jails tail, so a jail never starts
 #    against a missing path (rsyslog populates them as the daemons log).
 mkdir -p /var/log/dovecot /var/log/iredapd /var/log/supervisor
 touch /var/log/mail.log \
@@ -166,7 +175,7 @@ touch /var/log/mail.log \
       /var/log/iredapd/iredapd.log
 chown -R iredapd:iredapd /var/log/iredapd 2>/dev/null || true
 
-# 5. DKIM: reuse the key on the mount, else generate one (per domain).
+# 6. DKIM: reuse the key on the mount, else generate one (per domain).
 if [ -n "$FIRST_DOMAIN" ] && [ ! -s "/var/lib/dkim/${FIRST_DOMAIN}.pem" ]; then
   log "generating DKIM key for ${FIRST_DOMAIN}"
   # Debian ships the daemon as `amavisd` (no `amavisd-new` executable); try it
@@ -177,7 +186,7 @@ if [ -n "$FIRST_DOMAIN" ] && [ ! -s "/var/lib/dkim/${FIRST_DOMAIN}.pem" ]; then
 fi
 chown -R amavis:amavis /var/lib/dkim 2>/dev/null || true
 
-# 6. ClamAV: signatures onto the mount, and clamd's runtime directory.
+# 7. ClamAV: signatures onto the mount, and clamd's runtime directory.
 #
 #    The seed is NOT allowed to be fatal, unlike the config seeds above: this one copies
 #    a few hundred MB onto a host bind mount, so a full or read-only disk would take

@@ -914,6 +914,8 @@ export function useDeploymentBuild(
               image: service.image,
               build: service.build,
               dockerfile: service.dockerfile,
+              buildArgs: service.buildArgs,
+              advanced: service.advanced,
               ports: service.ports,
               dependsOn: service.dependsOn,
               environment: service.environment,

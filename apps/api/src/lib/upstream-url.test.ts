@@ -4,6 +4,7 @@ import {
   resolveLiveUpstreamUrl,
   resolveRouteStrategy,
   resolveUpstreamUrl,
+  usesHostLoopbackUpstream,
 } from "./upstream-url";
 
 /** A docker-shaped runtime whose live inspect we control. */
@@ -26,14 +27,19 @@ function dockerRuntime(opts: {
 describe("buildUpstreamUrl", () => {
   it("dials the loopback host port when the workload publishes one", () => {
     expect(
-      buildUpstreamUrl({ strategy: "loopback-port", ip: "172.19.0.2", hostPort: 4000, containerPort: 3001 }),
+      buildUpstreamUrl({
+        strategy: "loopback-port",
+        ip: "172.19.0.2",
+        hostPort: 4000,
+        containerPort: 3001,
+      }),
     ).toBe("http://127.0.0.1:4000");
   });
 
   it("falls back to the container IP when nothing is published", () => {
-    expect(buildUpstreamUrl({ strategy: "loopback-port", ip: "172.19.0.2", containerPort: 3001 })).toBe(
-      "http://172.19.0.2:3001",
-    );
+    expect(
+      buildUpstreamUrl({ strategy: "loopback-port", ip: "172.19.0.2", containerPort: 3001 }),
+    ).toBe("http://172.19.0.2:3001");
   });
 
   it("returns null when neither a host port nor an ip is known", () => {
@@ -42,8 +48,48 @@ describe("buildUpstreamUrl", () => {
 
   it("ignores a published host port under the container-ip strategy", () => {
     expect(
-      buildUpstreamUrl({ strategy: "container-ip", ip: "172.19.0.2", hostPort: 4000, containerPort: 3001 }),
+      buildUpstreamUrl({
+        strategy: "container-ip",
+        ip: "172.19.0.2",
+        hostPort: 4000,
+        containerPort: 3001,
+      }),
     ).toBe("http://172.19.0.2:3001");
+  });
+
+  it("selects the persisted publish for the requested container port", () => {
+    expect(
+      buildUpstreamUrl({
+        strategy: "loopback-port",
+        ip: "172.19.0.2",
+        hostPort: 4000,
+        hostPorts: { "3000": 4000, "3001": 4001 },
+        containerPort: 3001,
+      }),
+    ).toBe("http://127.0.0.1:4001");
+  });
+
+  it("does not borrow the scalar when a persisted map proves this port is unpublished", () => {
+    expect(
+      buildUpstreamUrl({
+        strategy: "loopback-port",
+        ip: "172.19.0.2",
+        hostPort: 4000,
+        hostPorts: { "3000": 4000 },
+        containerPort: 3001,
+      }),
+    ).toBe("http://172.19.0.2:3001");
+  });
+
+  it("keeps scalar-only migrated rows backwards compatible", () => {
+    expect(
+      buildUpstreamUrl({
+        strategy: "loopback-port",
+        hostPort: 4000,
+        hostPorts: { __legacy__: 4000 },
+        containerPort: 3001,
+      }),
+    ).toBe("http://127.0.0.1:4000");
   });
 });
 
@@ -55,6 +101,23 @@ describe("resolveRouteStrategy", () => {
     ["container-ip", "container-ip"],
   ])("%s → %s", (setting, expected) => {
     expect(resolveRouteStrategy(setting)).toBe(expected);
+  });
+});
+
+describe("usesHostLoopbackUpstream", () => {
+  const topologyRuntime = (name: string, containerIp: boolean) => ({
+    name,
+    supports: (capability: string) => capability === "containerIp" && containerIp,
+  });
+
+  it("accounts for runtime topology instead of trusting only the stored strategy", () => {
+    expect(usesHostLoopbackUpstream("container-ip", topologyRuntime("docker", true))).toBe(false);
+    expect(usesHostLoopbackUpstream("loopback-port", topologyRuntime("docker", true))).toBe(true);
+    expect(usesHostLoopbackUpstream("container-ip", topologyRuntime("bare", true))).toBe(true);
+    expect(usesHostLoopbackUpstream("container-ip", topologyRuntime("host-only", false))).toBe(
+      true,
+    );
+    expect(usesHostLoopbackUpstream("loopback-port", topologyRuntime("cloud", true))).toBe(false);
   });
 });
 
@@ -82,6 +145,27 @@ describe("resolveUpstreamUrl", () => {
         containerPort: 3001,
       }),
     ).resolves.toBe("http://172.19.0.2:3001");
+  });
+
+  it("uses the reserved host port when container IP is unsupported", async () => {
+    const getContainerIp = vi.fn(async () => {
+      throw new Error("container IP is unavailable");
+    });
+
+    await expect(
+      resolveUpstreamUrl({
+        strategy: "container-ip",
+        runtime: {
+          name: "host-only",
+          supports: () => false,
+          getContainerIp,
+        },
+        containerId: "c1",
+        containerPort: 3001,
+        hostPort: 20_041,
+      }),
+    ).resolves.toBe("http://127.0.0.1:20041");
+    expect(getContainerIp).not.toHaveBeenCalled();
   });
 });
 
@@ -143,6 +227,48 @@ describe("resolveLiveUpstreamUrl", () => {
         stored: { ip: "172.19.0.2", hostPort: 4000 },
       }),
     ).resolves.toBe("http://127.0.0.1:4000");
+  });
+
+  it("route writers refuse a cached host port when live inspection is unavailable", async () => {
+    await expect(
+      resolveLiveUpstreamUrl({
+        strategy: "loopback-port",
+        runtime: dockerRuntime({ ip: null }),
+        containerId: "c1",
+        containerPort: 3001,
+        stored: { ip: "172.19.0.2", hostPort: 4000 },
+        requireLiveObservation: true,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("route writers refuse a stopped container's retained HostConfig publish", async () => {
+    await expect(
+      resolveLiveUpstreamUrl({
+        strategy: "loopback-port",
+        runtime: dockerRuntime({ info: { status: "stopped", hostPort: 4000 } }),
+        containerId: "c1",
+        containerPort: 3001,
+        stored: { hostPort: 4000 },
+        requireLiveObservation: true,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("uses the requested port's durable binding when live inspection is unavailable", async () => {
+    await expect(
+      resolveLiveUpstreamUrl({
+        strategy: "loopback-port",
+        runtime: dockerRuntime({ ip: null }),
+        containerId: "c1",
+        containerPort: 3001,
+        stored: {
+          ip: "172.19.0.2",
+          hostPort: 4000,
+          hostPorts: { "3000": 4000, "3001": 4001 },
+        },
+      }),
+    ).resolves.toBe("http://127.0.0.1:4001");
   });
 
   it("keeps the last-known ip when the container cannot be inspected and nothing was published", async () => {
@@ -248,13 +374,16 @@ describe("resolveLiveUpstreamUrl — multi-port containers", () => {
   const multiPortRuntime = (map: Record<number, number>, scalar?: number) => ({
     name: "docker" as const,
     supports: (cap: string) => cap === "containerIp" || cap === "containerInfo",
-    getContainerInfo: vi.fn(async () => ({
-      containerId: "c1",
-      status: "running",
-      ip: "172.19.0.9",
-      hostPort: scalar,
-      hostPortByContainerPort: map,
-    }) as never),
+    getContainerInfo: vi.fn(
+      async () =>
+        ({
+          containerId: "c1",
+          status: "running",
+          ip: "172.19.0.9",
+          hostPort: scalar,
+          hostPortByContainerPort: map,
+        }) as never,
+    ),
     getContainerIp: vi.fn(async () => "172.19.0.9"),
   });
 
@@ -322,12 +451,15 @@ describe("resolveLiveUpstreamUrl — multi-port containers", () => {
     const legacy = {
       name: "docker" as const,
       supports: (cap: string) => cap === "containerIp" || cap === "containerInfo",
-      getContainerInfo: vi.fn(async () => ({
-        containerId: "c1",
-        status: "running",
-        ip: "172.19.0.9",
-        hostPort: 4000,
-      }) as never),
+      getContainerInfo: vi.fn(
+        async () =>
+          ({
+            containerId: "c1",
+            status: "running",
+            ip: "172.19.0.9",
+            hostPort: 4000,
+          }) as never,
+      ),
       getContainerIp: vi.fn(async () => "172.19.0.9"),
     };
     expect(

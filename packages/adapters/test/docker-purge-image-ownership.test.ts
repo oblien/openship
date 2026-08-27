@@ -35,6 +35,7 @@ describe("ownsBuiltImage", () => {
     expect(ownsBuiltImage("postgres:17")).toBe(false);
     expect(ownsBuiltImage("redis:7-alpine")).toBe(false);
     expect(ownsBuiltImage("ghcr.io/acme/api:v1")).toBe(false);
+    expect(ownsBuiltImage("openship/agent:v1")).toBe(false);
     // Near-misses must not pass: a registry HOST that merely contains our name,
     // or a repo whose owner is called "openship" on some other registry.
     expect(ownsBuiltImage("registry.io/openship/app:1")).toBe(false);

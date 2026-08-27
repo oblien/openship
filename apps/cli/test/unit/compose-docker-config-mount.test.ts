@@ -33,6 +33,7 @@ vi.mock("node:child_process", () => ({
 vi.mock("node:fs", () => ({
   existsSync: (p: string) => h.existing.has(String(p)),
   mkdirSync: () => undefined,
+  realpathSync: (p: string) => String(p),
   readFileSync: (p: string) => h.written.get(String(p)) ?? "",
   writeFileSync: (p: string, data: string) => {
     h.written.set(String(p), String(data));

@@ -4,6 +4,70 @@
     "save": "保存",
     "cancel": "キャンセル"
   },
+  "releaseImageSource": {
+    "validationInvalid": "リリースイメージのソースが無効です。",
+    "toast": {
+      "saved": "コンテナリリースのソースを保存しました。",
+      "saveFailed": "コンテナリリースのソースを保存できませんでした。"
+    },
+    "status": {
+      "notDeployed": "未デプロイ",
+      "checking": "確認中…",
+      "unavailable": "利用できません"
+    },
+    "switchToImage": {
+      "title": "ビルド済みイメージのソースに切り替える",
+      "description": "保存すると、すべての環境で現在の Git またはローカルソースが置き換えられます。既存のデプロイとロールバック履歴は引き続き利用できます。",
+      "keep": "現在のソースを維持"
+    },
+    "switchToGit": {
+      "title": "Git ソースに切り替える",
+      "description": "リポジトリをリンクするまで何も変更されません。リンクすると、すべての環境で追跡中のイメージソースが置き換えられます。",
+      "back": "イメージソースに戻る"
+    },
+    "entry": {
+      "shortButton": "ビルド済みイメージを使用",
+      "button": "ビルド済みコンテナイメージを追跡",
+      "description": "リポジトリをクローンまたはビルドせずに、バージョン付きレジストリイメージを直接デプロイします。"
+    },
+    "summary": {
+      "title": "追跡中のコンテナイメージ",
+      "badge": "ビルド済み",
+      "description": "公開済みイメージを直接デプロイします。リポジトリのクローンもビルドコマンドの実行も行いません。",
+      "linkGit": "Git リポジトリをリンク",
+      "image": "イメージ",
+      "versionSource": "バージョンソース",
+      "githubReleases": "GitHub リリース",
+      "pinnedVersion": "固定バージョン",
+      "currentVersion": "現在のバージョン",
+      "targetVersion": "対象バージョン",
+      "latestVersion": "最新バージョン",
+      "updateAvailable": "更新があります"
+    },
+    "editor": {
+      "trackingTitle": "リリース追跡",
+      "configureTitle": "ビルド済みイメージを設定",
+      "templateHint": "{tag} を使うと発行元の正確なタグを保持し、{version} を使うと正規化されたバージョンを使用します。",
+      "provider": "バージョンプロバイダー",
+      "githubTitle": "GitHub リリース",
+      "githubDescription": "最新の公開リリースタグを追跡します。",
+      "urlTitle": "バージョン URL または固定",
+      "urlDescription": "バージョンエンドポイントを読み取るか、固定バージョンをデプロイします。",
+      "imageTemplate": "イメージテンプレート",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub リポジトリ",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "バージョン URL",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "version/tag_name を含むテキストまたは JSON を返す HTTPS エンドポイントです。",
+      "pinnedVersion": "固定バージョン",
+      "pinnedPlaceholder": "任意。例: v2.4.1",
+      "pinnedHint": "検出された最新バージョンより優先されます。更新を追跡する場合は空欄にします。",
+      "appliesAll": "変更はこのプロジェクトのすべての環境に適用されます。",
+      "saving": "保存中…",
+      "save": "ソースを保存"
+    }
+  },
   "appSettings": {
     "modeApp": "アプリ設定",
     "modeDeployment": "デプロイ",
@@ -660,6 +724,9 @@
       "defaultAppName": "my-app",
       "mapsToPort": "マッピング先ポート",
       "includeWww": "www を含める",
+      "dnsChallenge": "DNS-01 チャレンジを使用",
+      "dnsChallengeDesc": "接続済みの DNS プロバイダーで証明書を発行・更新します。ポート 80 に到達できない場合に使用してください。",
+      "dnsChallengeWildcardDesc": "ワイルドカード証明書には DNS-01 と接続済みの DNS プロバイダーが必要です。",
       "includeWwwDesc": "www.{domain} 用のレコードも生成します",
       "includeWwwFallback": "yourdomain.com",
       "adding": "追加中...",

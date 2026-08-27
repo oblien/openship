@@ -11,13 +11,13 @@ import {
   servicesApi,
   type Service,
   type ServiceContainer,
+  type ServiceEnvVar,
   type ServiceInput,
   type ServiceVolumeSizes,
 } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
 import { formatBytes } from "@/lib/formatBytes";
-import { serviceEnvPatch } from "@/lib/service-env-payload";
-import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
+import { internalServiceAddress, effectiveServiceAlias, looksLikeSecretKey, type ComposeAdvanced } from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import {
   Play,
@@ -69,18 +69,16 @@ const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
   { key: "backup", label: "Backup", icon: DatabaseBackup },
 ];
 const SERVICE_TABS = SERVICE_TAB_DEFS.map((t) => t.key);
+const SERVICE_ENVIRONMENT = "production" as const;
 
-type EnvRow = { key: string; value: string; visible: boolean };
-const envRowsFromRecord = (value?: Record<string, string> | null): EnvRow[] =>
-  Object.entries(value ?? {}).map(([key, val]) => ({ key, value: val, visible: true }));
-const envRecordFromRows = (rows: EnvRow[]): Record<string, string> => {
-  const out: Record<string, string> = {};
-  for (const r of rows) {
-    const k = r.key.trim();
-    if (k) out[k] = r.value;
-  }
-  return out;
-};
+type EnvRow = { sourceId?: string; key: string; value: string; visible: boolean; isSecret?: boolean };
+const envRowsFromVars = (vars: ServiceEnvVar[]): EnvRow[] =>
+  vars.map((v) => ({ sourceId: v.id, key: v.key, value: v.value, visible: !v.isSecret, isSecret: v.isSecret }));
+const comparableEnvRows = (rows: EnvRow[]) =>
+  rows
+    .map((row) => ({ sourceId: row.sourceId, key: row.key.trim(), value: row.value, isSecret: row.isSecret ?? looksLikeSecretKey(row.key) }))
+    .filter((row) => row.key)
+    .sort((a, b) => a.key.localeCompare(b.key));
 
 /* ── Props ──────────────────────────────────────────────────────────── */
 
@@ -243,26 +241,44 @@ export function ServiceDetailPanel({
     else router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
   };
 
-  // ── Env tab state (editable; the panel used to show env read-only) ────
-  const [envRows, setEnvRows] = useState<EnvRow[]>(() => envRowsFromRecord(service.environment));
+  // Compose inline env is the imported/default layer. This editor owns only
+  // service-scoped env_var rows, which deploy after compose and survive reparse.
+  const [envRows, setEnvRows] = useState<EnvRow[]>([]);
+  const [savedEnvRows, setSavedEnvRows] = useState<EnvRow[]>([]);
+  const [envLoading, setEnvLoading] = useState(true);
   const [envSaving, setEnvSaving] = useState(false);
   useEffect(() => {
-    setEnvRows(envRowsFromRecord(service.environment));
-  }, [service.id, service.environment]);
+    let cancelled = false;
+    setEnvLoading(true);
+    servicesApi.getEnv(projectId, service.id, SERVICE_ENVIRONMENT)
+      .then((result) => {
+        if (cancelled) return;
+        const rows = envRowsFromVars(result.vars ?? []);
+        setEnvRows(rows);
+        setSavedEnvRows(rows);
+      })
+      .catch((err) => {
+        if (!cancelled) showToast(err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed, "error");
+      })
+      .finally(() => { if (!cancelled) setEnvLoading(false); });
+    return () => { cancelled = true; };
+  }, [projectId, service.id, showToast, t.projectDetail.services.detail.toast.envSaveFailed]);
   const envDirty = useMemo(
-    () => JSON.stringify(envRecordFromRows(envRows)) !== JSON.stringify(service.environment ?? {}),
-    [envRows, service.environment],
+    () => JSON.stringify(comparableEnvRows(envRows)) !== JSON.stringify(comparableEnvRows(savedEnvRows)),
+    [envRows, savedEnvRows],
   );
   const handleSaveEnv = async () => {
     setEnvSaving(true);
     try {
-      const result = await servicesApi.update(projectId, service.id, {
-        // Merge semantics on the API side: name the removed keys as null, or
-        // deleting a variable here would silently no-op (#619).
-        environment: serviceEnvPatch(envRows, service.environment),
+      const result = await servicesApi.setEnv(projectId, service.id, {
+        environment: SERVICE_ENVIRONMENT,
+        vars: comparableEnvRows(envRows),
       });
       if (!result.success) throw new Error(t.projectDetail.services.detail.toast.envSaveFailed);
-      await onRefresh();
+      const refreshed = await servicesApi.getEnv(projectId, service.id, SERVICE_ENVIRONMENT);
+      const rows = envRowsFromVars(refreshed.vars ?? []);
+      setEnvRows(rows);
+      setSavedEnvRows(rows);
       showToast(t.projectDetail.services.detail.toast.envUpdated, "success", service.name);
     } catch (err) {
       showToast(err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed, "error");
@@ -784,7 +800,7 @@ export function ServiceDetailPanel({
               // actually opens (the endpoint is write-gated, so read-only members
               // can't reveal at all).
               onReveal={async (keys) =>
-                (await servicesApi.revealEnv(projectId, service.id, keys)).environment
+                (await servicesApi.revealEnv(projectId, service.id, keys, SERVICE_ENVIRONMENT)).environment
               }
               borderless
             />
@@ -792,7 +808,7 @@ export function ServiceDetailPanel({
           <div className="flex justify-end">
             <button
               onClick={handleSaveEnv}
-              disabled={envSaving || !envDirty}
+              disabled={envLoading || envSaving || !envDirty}
               className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {envSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}

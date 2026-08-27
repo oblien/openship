@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildEdgeRunCommand,
   ensureContainerEdge,
+  resolveEdgeContainerMounts,
   resolveEdgeImage,
 } from "./ensure-container-edge";
+import { EDGE_CONTAINER_MOUNTS } from "../../infra/openresty-lua";
 import { setManagedImagesFromSource } from "../managed-image";
 import { JOURNAL_PATH } from "./takeover-journal";
 import type { CommandExecutor } from "../../types";
@@ -51,6 +53,10 @@ interface BoxOpts {
    * Flips the pull gate: present ⇒ no pull, absent (prod) ⇒ pull.
    */
   imagePresent?: boolean;
+  /** Physical path returned by `cd <host> && pwd -P`, keyed by logical host path. */
+  canonicalMounts?: Record<string, string>;
+  /** Bind sources reported by Docker for an existing edge, keyed by container path. */
+  mountedSources?: Record<string, string>;
 }
 
 /** procfs socket table rows: state 0A = LISTEN, hex 0050 = 80, 01BB = 443. */
@@ -108,7 +114,19 @@ function box(opts: BoxOpts = {}) {
     // `imageExistsLocally` — `docker image inspect -f '{{.Id}}' <ref>`. Non-empty
     // means the ref is on the box. Must precede the generic inspect catch.
     if (cmd.includes("{{.Id}}")) return localImageId;
+    if (cmd.includes("range .HostConfig.Binds")) {
+      return EDGE_CONTAINER_MOUNTS.map((mount) => {
+        const source = opts.mountedSources?.[mount.container] ??
+          opts.canonicalMounts?.[mount.host] ??
+          mount.host;
+        return `${source}:${mount.container}:z`;
+      }).join("\n");
+    }
     if (cmd.startsWith("docker inspect")) return "";
+    if (cmd.startsWith("cd ") && cmd.endsWith(" && pwd -P")) {
+      const logical = EDGE_CONTAINER_MOUNTS.find((mount) => cmd.includes(`'${mount.host}'`))?.host;
+      return logical ? (opts.canonicalMounts?.[logical] ?? logical) : "";
+    }
     if (cmd.startsWith("docker logs")) return opts.crashLog ?? "";
     if (cmd.startsWith("docker rm -f") || cmd.startsWith("docker stop")) {
       edgeState = "";
@@ -231,6 +249,50 @@ describe("buildEdgeRunCommand", () => {
     expect(cmd).toContain("'/var/lib/openship/edge/acme:/var/www/acme:z'");
     expect(cmd).toContain("'/opt/openship/static:/opt/openship/static:z'");
   });
+
+  it("uses target-resolved sources without changing container paths (#692)", () => {
+    const cmd = buildEdgeRunCommand("openship-edge", IMAGE, [
+      {
+        host: "/private/var/lib/openship/edge/sites-enabled",
+        container: "/usr/local/openresty/nginx/conf/sites-enabled",
+      },
+      { host: "/private/etc/letsencrypt", container: "/etc/letsencrypt" },
+    ]);
+
+    expect(cmd).toContain(
+      "'/private/var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z'",
+    );
+    expect(cmd).toContain("'/private/etc/letsencrypt:/etc/letsencrypt:z'");
+  });
+});
+
+describe("resolveEdgeContainerMounts", () => {
+  it("canonicalizes on the executor's host, not in the API process (#692)", async () => {
+    const exec = vi.fn(async (command: string) => {
+      if (command.includes("'/var/lib/openship/edge/sites-enabled'")) {
+        return "/private/var/lib/openship/edge/sites-enabled\n";
+      }
+      if (command.includes("'/var/lib/openship/edge/acme'")) {
+        return "/private/var/lib/openship/edge/acme\n";
+      }
+      if (command.includes("'/etc/letsencrypt'")) return "/private/etc/letsencrypt\n";
+      if (command.includes("'/opt/openship/static'")) return "/opt/openship/static\n";
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await expect(resolveEdgeContainerMounts({ exec })).resolves.toEqual([
+      {
+        host: "/private/var/lib/openship/edge/sites-enabled",
+        container: "/usr/local/openresty/nginx/conf/sites-enabled",
+      },
+      { host: "/private/etc/letsencrypt", container: "/etc/letsencrypt" },
+      { host: "/private/var/lib/openship/edge/acme", container: "/var/www/acme" },
+      { host: "/opt/openship/static", container: "/opt/openship/static" },
+    ]);
+    expect(exec).toHaveBeenCalledWith(
+      "cd '/var/lib/openship/edge/sites-enabled' && pwd -P",
+    );
+  });
 });
 
 describe("ensureContainerEdge", () => {
@@ -243,6 +305,34 @@ describe("ensureContainerEdge", () => {
 
     expect(result).toEqual({ container: "openship-edge", image: IMAGE, converted: false });
     expect(commands.some((c) => c.startsWith("docker pull"))).toBe(false);
+  });
+
+  it("recreates a healthy-looking edge whose macOS bind sources are stale (#692)", async () => {
+    const canonicalMounts = {
+      "/var/lib/openship/edge/sites-enabled": "/private/var/lib/openship/edge/sites-enabled",
+      "/etc/letsencrypt": "/private/etc/letsencrypt",
+      "/var/lib/openship/edge/acme": "/private/var/lib/openship/edge/acme",
+      "/opt/openship/static": "/opt/openship/static",
+    };
+    const mountedSources = Object.fromEntries(
+      EDGE_CONTAINER_MOUNTS.map((mount) => [mount.container, mount.host]),
+    );
+    const { executor, commands, onLog } = box({
+      edgeContainer: "openship-edge",
+      edgeContainerImage: IMAGE,
+      canonicalMounts,
+      mountedSources,
+      imagePresent: true,
+    });
+
+    const result = await ensureContainerEdge(executor, { onLog, image: IMAGE });
+
+    expect(result.container).toBe("openship-edge");
+    const run = commands.find((command) => command.startsWith("docker run -d"));
+    expect(run).toContain(
+      "'/private/var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z'",
+    );
+    expect(run).toContain("'/private/etc/letsencrypt:/etc/letsencrypt:z'");
   });
 
   // Docker calls a crash loop "running": `.State.Running == true`, and it shows up in

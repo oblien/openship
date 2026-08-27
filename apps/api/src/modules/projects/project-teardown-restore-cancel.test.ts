@@ -11,30 +11,28 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  *
  * The wiring pinned here:
  *   • the cancel goes through the orchestrator, which aborts the extract
- *   • an `applying` restore gets the quiesce poll as its cooperative window…
- *   • …and is FORCED terminal if it does not answer, because the teardown barrels on
- *     and destroys the target either way
+ *   • an `applying` restore gets the quiesce poll as its cooperative window
+ *   • an apply that does not acknowledge cancellation KEEPS the project/resources;
+ *     force-terminalizing only the row cannot prove extraction stopped
  *   • a restore that cancelled cleanly is never forced
  */
 
 const h = vi.hoisted(() => ({
   /** In-flight restores, served until the row is cancelled. */
   restores: [] as Array<{ id: string; status: string }>,
-  cancel: vi.fn(
-    async (_ctx: unknown, restoreId: string, opts?: { force?: boolean }) => {
-      const row = h.restores.find((r) => r.id === restoreId);
-      // The real orchestrator leaves an `applying` row alone on a cooperative cancel
-      // and takes it terminal when forced.
-      const stopped = row?.status !== "applying" || opts?.force === true;
-      if (row && stopped) row.status = "cancelled";
-      return {
-        accepted: true,
-        status: stopped ? "cancelled" : "applying",
-        destructive: false,
-        forced: opts?.force === true,
-      };
-    },
-  ),
+  cancel: vi.fn(async (_ctx: unknown, restoreId: string, opts?: { force?: boolean }) => {
+    const row = h.restores.find((r) => r.id === restoreId);
+    // The real orchestrator leaves an `applying` row alone on a cooperative cancel
+    // and takes it terminal when forced.
+    const stopped = row?.status !== "applying" || opts?.force === true;
+    if (row && stopped) row.status = "cancelled";
+    return {
+      accepted: true,
+      status: stopped ? "cancelled" : "applying",
+      destructive: false,
+      forced: opts?.force === true,
+    };
+  }),
   restoreTransition: vi.fn(async () => {}),
   project: null as Record<string, unknown> | null,
 }));
@@ -49,13 +47,21 @@ vi.mock("@repo/db", () => ({
       listByGroup: vi.fn(async () => [{ id: "p1" }]),
     },
     projectGroup: { softDelete: vi.fn(async () => {}) },
-    deployment: { listByProject: vi.fn(async () => ({ rows: [] })) },
-    backupRun: { listInFlightByProject: vi.fn(async () => []) },
+    deployment: { listInFlightByProject: vi.fn(async () => []) },
+    backupRun: {
+      listInFlightByProject: vi.fn(async () => []),
+      cancelQueuedBeforeExecution: vi.fn(async () => false),
+    },
     backupRestore: {
       listInFlightByProject: vi.fn(async () => h.restores.filter((r) => r.status !== "cancelled")),
       transition: h.restoreTransition,
     },
-    orphanedResource: { create: vi.fn(async () => {}) },
+    dockerMigrationRun: { findActiveForProject: vi.fn(async () => null) },
+    orphanedResource: {
+      create: vi.fn(async () => {}),
+      delete: vi.fn(async () => {}),
+      listByProject: vi.fn(async () => []),
+    },
     projectConnection: { listBySource: vi.fn(async () => []) },
   },
 }));
@@ -70,6 +76,10 @@ vi.mock("./project-connection.service", () => ({
 vi.mock("./project-cleanup.service", () => ({
   collectProjectManifest: vi.fn(async () => ({ projectId: "p1", resources: [] })),
   executeCleanup: vi.fn(async () => ({ total: 0, succeeded: 0, failed: [] })),
+  hasPendingTimedOutCleanup: vi.fn(() => false),
+}));
+vi.mock("../../lib/project-runtime-lock", () => ({
+  withProjectRuntimeLock: async (_projectId: string, run: () => Promise<unknown>) => run(),
 }));
 vi.mock("../../lib/openship-manifest-sync", () => ({
   removeProjectFromServerManifests: vi.fn(async () => {}),
@@ -88,7 +98,10 @@ import { teardownProject, type TeardownStep } from "./project-teardown";
 const ctx = { organizationId: "org1", userId: "u1" } as never;
 
 const run = () =>
-  teardownProject(ctx, "p1", { force: true }) as Promise<{ steps: TeardownStep[] }>;
+  teardownProject(ctx, "p1", { force: true }) as Promise<{
+    steps: TeardownStep[];
+    rowDeleted: boolean;
+  }>;
 
 const stepOf = (steps: TeardownStep[], name: string) => steps.find((s) => s.step === name);
 
@@ -122,14 +135,14 @@ describe("force teardown vs. an in-flight restore", () => {
     expect(stepOf(steps, "cancel_in_flight")?.status).toBe("ok");
   });
 
-  it("forces an applying restore that does not answer the quiesce window", async () => {
+  it("keeps the project when an applying restore does not answer the quiesce window", async () => {
     h.restores = [{ id: "bks_1", status: "applying" }];
-    const { steps } = await run();
+    const result = await run();
 
-    expect(h.cancel).toHaveBeenNthCalledWith(1, ctx, "bks_1");
-    expect(h.cancel).toHaveBeenNthCalledWith(2, ctx, "bks_1", { force: true });
-    // Reported, not swallowed: the operator's data may be half-written.
-    expect(stepOf(steps, "cancel_in_flight")?.error).toMatch(/force-cancelled 1 restore/);
+    expect(h.cancel).toHaveBeenCalledOnce();
+    expect(h.cancel).toHaveBeenCalledWith(ctx, "bks_1");
+    expect(result.rowDeleted).toBe(false);
+    expect(stepOf(result.steps, "cancel_in_flight")?.error).toMatch(/cancellation pending/);
   });
 
   it("does not force one that cancelled cleanly", async () => {
@@ -154,9 +167,9 @@ describe("force teardown vs. an in-flight restore", () => {
       "bks_2",
       "bks_3",
     ]);
-    // bks_1 threw, so it never left the in-flight list — the poll times out and it is
-    // forced, and the error is surfaced rather than dropped on the timeout path.
-    expect(h.cancel).toHaveBeenCalledWith(ctx, "bks_1", { force: true });
+    // bks_1 threw, so it never left the in-flight list. The timeout is surfaced,
+    // but no DB-only force transition may pretend the writer stopped.
+    expect(h.cancel.mock.calls.some((call) => call[2]?.force === true)).toBe(false);
     expect(stepOf(steps, "cancel_in_flight")?.error).toMatch(/backup_restore bks_1: gone/);
   });
 

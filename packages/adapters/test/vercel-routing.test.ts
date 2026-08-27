@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { compileVercelRouting, sourceToLocation, sourceToPattern } from "../src/infra/vercel-routing";
+import {
+  compileVercelRouting,
+  sourceToLocation,
+  sourceToPattern,
+} from "../src/infra/vercel-routing";
 
 describe("sourceToLocation", () => {
   it("reduces a path-to-regexp source to a prefix", () => {
@@ -61,7 +65,9 @@ describe("compileVercelRouting", () => {
       },
       { backendTargetUrl: "http://10.0.0.5:3000" },
     );
-    expect(out.proxyLocations).toEqual([{ pathPrefix: "/api/", targetUrl: "http://10.0.0.5:3000" }]);
+    expect(out.proxyLocations).toEqual([
+      { pathPrefix: "/api/", targetUrl: "http://10.0.0.5:3000" },
+    ]);
     expect(out.spaFallback).toBe(true);
   });
 
@@ -72,6 +78,20 @@ describe("compileVercelRouting", () => {
     expect(out.proxyLocations).toEqual([
       { pathPrefix: "/proxy/", external: true, targetUrl: "https://api.example.com/fixed" },
     ]);
+  });
+
+  it("refuses raw loopback rewrite destinations from repo configuration", () => {
+    const out = compileVercelRouting({
+      rewrites: [
+        { source: "/ipv4/(.*)", destination: "http://127.0.0.1:23000/$1" },
+        { source: "/ipv6/(.*)", destination: "http://[::ffff:127.0.0.1]:23001/$1" },
+        { source: "/wildcard/(.*)", destination: "http://0.0.0.0:23002/$1" },
+      ],
+    });
+
+    expect(out.proxyLocations).toEqual([]);
+    expect(out.skipped).toHaveLength(3);
+    expect(out.skipped.every((note) => note.includes("loopback destinations"))).toBe(true);
   });
 
   // Previously the destination was handed to `proxy_pass` verbatim, so `$1` expanded to
@@ -186,9 +206,27 @@ describe("compileVercelRouting", () => {
       ],
     });
     expect(out.redirects).toEqual([
-      { path: "/docs/", exact: false, statusCode: 308, destination: "/documentation/$1", pattern: "/docs/(.*)" },
-      { path: "/blog/", exact: false, statusCode: 308, destination: "/news/$1", pattern: "/blog/(.*)" },
-      { path: "/", exact: false, statusCode: 308, destination: "/$1/new/$2", pattern: "/([^/]+)/old/(.*)" },
+      {
+        path: "/docs/",
+        exact: false,
+        statusCode: 308,
+        destination: "/documentation/$1",
+        pattern: "/docs/(.*)",
+      },
+      {
+        path: "/blog/",
+        exact: false,
+        statusCode: 308,
+        destination: "/news/$1",
+        pattern: "/blog/(.*)",
+      },
+      {
+        path: "/",
+        exact: false,
+        statusCode: 308,
+        destination: "/$1/new/$2",
+        pattern: "/([^/]+)/old/(.*)",
+      },
     ]);
   });
 
@@ -294,7 +332,9 @@ describe("compileVercelRouting", () => {
       cleanUrls: true,
       trailingSlash: false,
     });
-    expect(out.headerRules).toEqual([{ path: "/", headers: [{ key: "X-Frame-Options", value: "DENY" }] }]);
+    expect(out.headerRules).toEqual([
+      { path: "/", headers: [{ key: "X-Frame-Options", value: "DENY" }] },
+    ]);
     expect(out.cleanUrls).toBe(true);
     expect(out.trailingSlash).toBe(false);
   });
@@ -310,7 +350,9 @@ describe("compileVercelRouting", () => {
       {
         rewrites: [{ source: "/evil; } location / { proxy_pass http://x; }", destination: "/api" }],
         redirects: [{ source: "/r", destination: "/y; return 200 'pwned'" }],
-        headers: [{ source: "/(.*)", headers: [{ key: "X-Bad", value: 'a"; add_header Evil "1' }] }],
+        headers: [
+          { source: "/(.*)", headers: [{ key: "X-Bad", value: 'a"; add_header Evil "1' }] },
+        ],
       },
       { backendTargetUrl: "http://10.0.0.5:3000" },
     );

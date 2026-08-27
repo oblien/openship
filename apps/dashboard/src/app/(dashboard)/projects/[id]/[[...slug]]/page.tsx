@@ -32,6 +32,11 @@ import { DraftProjectView } from "../components/DraftProjectView";
 import { environmentErrorMessage, environmentWizardHref } from "../components/environment-next";
 import { getProjectStatus } from "@/utils/project-status";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import {
+  firstProjectEnvironment,
+  projectEnvironmentHref,
+  removeProjectEnvironment,
+} from "@/context/project-environments";
 import { useProjectInfo, PROJECT_INFO_NOT_FOUND } from "@/hooks/useProjectEndpoints";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -553,6 +558,7 @@ const ProjectSettingsContent = () => {
     // Read to tell the delete toast the truth: teardown drops THIS environment and
     // only retires the app row when it was the last one.
     environments,
+    removeEnvironment,
   } = useProjectSettings();
   // Project shell waits for project info specifically (not analytics).
   // Analytics is per-card now; the page-level gate is about whether we
@@ -563,6 +569,24 @@ const ProjectSettingsContent = () => {
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
+
+  const finishEnvironmentDeletion = useCallback(
+    (deletedId: string) => {
+      const nextEnvironment = firstProjectEnvironment(
+        removeProjectEnvironment(environments, deletedId),
+      );
+      // Schedule navigation before invalidating the mounted deleted id. Its
+      // expected 404 refetch must not win a race against the sibling route.
+      router.replace(
+        nextEnvironment
+          ? projectEnvironmentHref(nextEnvironment.id, activeTab)
+          : "/",
+      );
+      removeEnvironment(deletedId);
+      invalidateSidebarNavCounts();
+    },
+    [activeTab, environments, removeEnvironment, router],
+  );
 
   // Keep the delete state honest: while this project reads as "deleting"
   // (server flag or optimistic), poll for completion so a finished teardown
@@ -578,13 +602,12 @@ const ProjectSettingsContent = () => {
         if (err instanceof ApiError && err.status === 404) {
           clearInterval(iv);
           showToast(t.projects.delete.alreadyDeleted, "success");
-          invalidateSidebarNavCounts();
-          router.push("/");
+          finishEnvironmentDeletion(id);
         }
       }
     }, 3000);
     return () => clearInterval(iv);
-  }, [id, isDeleting, router, showToast, t.projects.delete.alreadyDeleted]);
+  }, [finishEnvironmentDeletion, id, isDeleting, showToast, t.projects.delete.alreadyDeleted]);
 
   const handleDeleteProject = async (
     wipeVolumes = false,
@@ -650,8 +673,7 @@ const ProjectSettingsContent = () => {
             t.projects.delete.unlinkedTitle,
           );
         }
-        invalidateSidebarNavCounts();
-        router.push("/");
+        finishEnvironmentDeletion(projectData.id);
         return;
       }
       // 207: rowDeleted=true but unrecoverable steps surfaced. Toast as
@@ -666,8 +688,7 @@ const ProjectSettingsContent = () => {
           "success",
           t.projects.delete.partialCleanupTitle,
         );
-        invalidateSidebarNavCounts();
-        router.push("/");
+        finishEnvironmentDeletion(projectData.id);
         return;
       }
       // Defensive: 2xx with ok=false but no unrecoverable list. Treat as failure.
@@ -678,7 +699,15 @@ const ProjectSettingsContent = () => {
         t.projects.delete.failed,
       );
     } catch (err) {
-      // Always revert optimistic deletion on any failure - project still exists.
+      // A 404 means another request/tab completed the deletion successfully.
+      // Run the same state/cache/navigation transition as every other success.
+      if (err instanceof ApiError && err.status === 404) {
+        showToast(t.projects.delete.alreadyDeleted, "success");
+        finishEnvironmentDeletion(projectData.id);
+        return;
+      }
+
+      // Actual failure: the project still exists, so undo the optimistic status.
       setProjectData((prev: any) => ({ ...prev, deletedAt: null }));
 
       if (err instanceof ApiError && err.status === 409) {
@@ -781,14 +810,6 @@ const ProjectSettingsContent = () => {
           "error",
           t.projects.delete.cleanupFailedTitle,
         );
-        return;
-      }
-
-      // 404: someone else already deleted the project in another tab.
-      if (err instanceof ApiError && err.status === 404) {
-        showToast(t.projects.delete.alreadyDeleted, "success");
-        invalidateSidebarNavCounts();
-        router.push("/");
         return;
       }
 

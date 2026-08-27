@@ -216,6 +216,9 @@ export interface BuildConfig {
   staticOutDir?: string;
   /** Environment variables injected at build time */
   envVars: Record<string, string>;
+  /** Explicit image-build arguments. Kept separate from runtime/container env;
+   * compose services sharing one Dockerfile may carry different values. */
+  buildArgs?: Record<string, string>;
   /** Resources allocated for the build container */
   resources: ResourceConfig;
   /** Ephemeral token for cloning private repos - never persisted */
@@ -262,6 +265,32 @@ export interface BuildConfig {
   cloneOnServer?: boolean;
 }
 
+/**
+ * Acquire an already-built container image as this runtime's deployable artifact.
+ *
+ * This is deliberately separate from {@link BuildConfig}: `buildImage` is the
+ * builder container (for example `node:22`), while `imageRef` here is the
+ * application artifact the runtime must run verbatim. Keeping the two types
+ * separate makes it impossible for a prebuilt release to become a Dockerfile
+ * `FROM` image by accident.
+ */
+export interface ImageArtifactConfig {
+  /** Build/deploy session that owns any runtime resource created while acquiring the image. */
+  sessionId: string;
+  /** Project identifier, used for runtime naming and ownership metadata. */
+  projectId: string;
+  /** Human-readable/runtime-safe project slug when available. */
+  slug?: string;
+  /** Registry image reference to pull/use verbatim. */
+  imageRef: string;
+  /** Runtime environment available when a cloud workspace starts the image default process. */
+  envVars: Record<string, string>;
+  /** Production resources; there is no build tier for a prebuilt image. */
+  resources: ResourceConfig;
+  /** Refresh a mutable tag even when it is already present on the target. */
+  forcePull?: boolean;
+}
+
 export interface DeployPublicEndpoint {
   port?: number;
   targetPath?: string;
@@ -279,6 +308,14 @@ export interface DeployConfig {
   buildSessionId: string;
   /** Opaque reference to the built artifact (workspace ID, docker image tag, etc.) */
   imageRef?: string;
+  /**
+   * The artifact came from an already-built container image rather than a
+   * source build. Docker naturally preserves the image's CMD/WORKDIR when no
+   * start command is supplied; Cloud needs this explicit signal so it does not
+   * manufacture the buildpack-only `npm start` fallback and replace the image's
+   * own process contract.
+   */
+  prebuiltImage?: boolean;
   /** "production" | "preview" */
   environment: string;
   /** Port the application listens on */
@@ -381,6 +418,15 @@ export interface BuildResult {
   status: ContainerStatus;
   /** Opaque reference to the built image / snapshot */
   imageRef?: string;
+  /**
+   * Does this deploy exclusively own the returned artifact and therefore may
+   * delete it if deployment fails or is cancelled?
+   *
+   * Undefined preserves the historical answer (`true`) for source builds.
+   * A Docker registry image is shared/foreign and returns `false`; a temporary
+   * Cloud workspace created from that image returns `true`.
+   */
+  artifactOwned?: boolean;
   durationMs?: number;
   /** Human-readable error description when status is "failed" */
   errorMessage?: string;
@@ -411,7 +457,13 @@ export interface DeploymentResult {
  */
 export type BuildStep = "prepare" | "clone" | "install" | "build" | "deploy";
 
-export const BUILD_STEPS: readonly BuildStep[] = ["prepare", "clone", "install", "build", "deploy"] as const;
+export const BUILD_STEPS: readonly BuildStep[] = [
+  "prepare",
+  "clone",
+  "install",
+  "build",
+  "deploy",
+] as const;
 
 export interface LogEntry {
   timestamp: string;

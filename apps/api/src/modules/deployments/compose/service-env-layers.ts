@@ -8,22 +8,23 @@
  * the deploy no longer used. One rule, imported.
  */
 
+import {
+  resolveComposeEnvironmentTemplates,
+  type ComposeMissingVariable,
+} from "../../../lib/compose-parser";
+
 /** The four env layers a compose service is deployed with, before token resolution. */
 export interface ServiceEnvLayers {
   /**
    * Project-scoped rows, live.
-   *
-   * NOTE the deploy caller builds this with an UNSCOPED `getEnvMap(projectId,
-   * environment)`, so today it is really project rows ∪ every other service's
-   * service-scoped rows. That is a pre-existing defect in the caller, not in this
-   * layering, but it is why {@link mergeServiceDeployEnv} describes what it
-   * compares against as "already layered" rather than "the project's".
    */
   project: Record<string, string>;
   /** This deployment's frozen capture (`dep.envVars`, decrypted). Flat, unscoped. */
   frozen: Record<string, string>;
   /** The compose file's inline `environment:` for this service. */
   inline: Record<string, string>;
+  /** Names of inline values stored as their original Compose expressions. */
+  templateKeys?: readonly string[];
   /** Service-scoped rows for this service, live. */
   service: Record<string, string>;
 }
@@ -42,32 +43,20 @@ export interface MergedServiceEnv {
    * displaying the empty value this merge decided to ignore.
    */
   deferredEmpty: string[];
+  /** Required Compose variables still absent after every env layer was merged. */
+  missingRequired: ComposeMissingVariable[];
 }
 
 /**
  * Whether an inline compose empty value yields to a value an earlier layer
  * already supplied.
  *
- * The rule, in one sentence an operator can predict: **an empty inline value
- * never clears a configured one.** It exists because compose's passthrough idiom
- * (`FOO: ${FOO:-}` / `FOO: ${FOO}`) parses to `""` whenever nothing resolved the
- * placeholder, and that `""` is persisted onto the service row with its
- * provenance stripped — the row has no `environmentMeta`, so by deploy time
- * "the author wrote an empty literal" and "nothing filled this placeholder in"
- * are the same three characters. Before this rule the placeholder won, so the
- * project-level value the operator had just typed was replaced with `""` —
- * which is worse than unset, since `FOO=` also masks the image's own `ENV`
- * default (issue #614).
- *
- * The cost, accepted deliberately: an inline empty that WAS authored on purpose
- * no longer clears a project-level value for that one service. `advanced` JSONB
- * could carry the parser's `environmentMeta.source` onto the row and let this
- * decide on recorded intent instead of value shape (the `entrypoint`/#575
- * precedent) — that is the endgame, and it is what would also fix the sibling
- * case this cannot: a PARTIALLY interpolated value, where `postgres://${USER}:
- * ${PASS}@db/${DB}` resolves to the non-empty garbage `postgres://:@db/` and
- * still wins. Until then the escape hatch for a deliberate blank is an empty
- * SERVICE-SCOPED env row, which is layered after this and never skipped.
+ * This is now a LEGACY-row fallback. Provenance-aware rows persist their raw
+ * expressions plus `environmentTemplateKeys`; those are resolved after all env
+ * layers exist, while an authored empty literal correctly remains empty. Rows
+ * created before that marker cannot distinguish an unresolved passthrough from
+ * an authored blank, so they retain the conservative issue-#614 behavior: an
+ * empty inline value does not erase an already configured non-empty value.
  */
 export function inlineEmptyDefers(
   inlineValue: string,
@@ -81,10 +70,10 @@ export function inlineEmptyDefers(
 }
 
 /**
- * Layer a service's env. Service rows beat inline compose env beats project rows
- * — so the compose UI can override a global per service — with the ONE exception
- * that an empty inline value defers instead of clearing ({@link
- * inlineEmptyDefers}).
+ * Layer a service's env. Service rows beat inline compose env beats project rows.
+ * Raw Compose templates resolve after those layers exist, which lets an embedded
+ * `${VAR}` consume a project- or service-scoped value. Only an unmarked legacy
+ * empty value uses {@link inlineEmptyDefers}.
  *
  * `frozenWins` moves the frozen layer LAST, which is what makes a rollback replay
  * the release it restores instead of running old code against today's config —
@@ -110,11 +99,17 @@ export function mergeServiceDeployEnv(
 ): MergedServiceEnv {
   const env: Record<string, string> = { ...layers.project };
   const deferredEmpty: string[] = [];
+  const templateKeys = new Set(layers.templateKeys ?? []);
+  const hasTemplateProvenance = layers.templateKeys !== undefined;
 
   if (!frozenWins) Object.assign(env, layers.frozen);
 
   for (const [key, value] of Object.entries(layers.inline)) {
-    if (inlineEmptyDefers(value, env[key])) {
+    // A template is evaluated after all layers exist, so it can consume a
+    // service-scoped secret. Do not let its scan-time/raw representation become
+    // part of the lookup first (especially for self-passthrough `${KEY}`).
+    if (templateKeys.has(key)) continue;
+    if (!hasTemplateProvenance && inlineEmptyDefers(value, env[key])) {
       deferredEmpty.push(key);
       continue;
     }
@@ -127,9 +122,24 @@ export function mergeServiceDeployEnv(
 
   if (frozenWins) Object.assign(env, layers.frozen);
 
+  const higherPriorityTemplateTargets = new Set(Object.keys(layers.service));
+  if (frozenWins) {
+    for (const key of Object.keys(layers.frozen)) higherPriorityTemplateTargets.add(key);
+  }
+  const templates = Object.fromEntries(
+    [...templateKeys]
+      .filter((key) => !higherPriorityTemplateTargets.has(key) && key in layers.inline)
+      .map((key) => [key, layers.inline[key]!]),
+  );
+  const dynamic = resolveComposeEnvironmentTemplates(env, templates);
+
   // A key that a later layer supplied anyway was never really "deferred" —
   // reporting it would name a variable whose value this decision didn't pick.
   const decidedLater = (key: string) =>
     key in layers.service || (frozenWins && key in layers.frozen);
-  return { env, deferredEmpty: deferredEmpty.filter((key) => !decidedLater(key)) };
+  return {
+    env: dynamic.env,
+    deferredEmpty: deferredEmpty.filter((key) => !decidedLater(key)),
+    missingRequired: dynamic.missingRequired,
+  };
 }

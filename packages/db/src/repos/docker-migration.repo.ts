@@ -4,9 +4,10 @@
  * transition / sweepStaleRuns).
  */
 
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { dockerMigrationRun } from "../schema";
+import { withProjectWorkAdmission } from "./project-work-admission";
 
 export type DockerMigrationRun = typeof dockerMigrationRun.$inferSelect;
 export type NewDockerMigrationRun = typeof dockerMigrationRun.$inferInsert;
@@ -80,23 +81,143 @@ function runProjectIds(row: DockerMigrationRun): string[] {
   );
 }
 
-const TERMINAL_MIGRATION_STATUSES: DockerMigrationStatus[] = [
-  "succeeded",
-  "failed",
-  "rolled_back",
-];
+const TERMINAL_MIGRATION_STATUSES: DockerMigrationStatus[] = ["succeeded", "failed", "rolled_back"];
+
+/** A terminal-looking outcome is still active until its winning callback exits. */
+const liveExecution = and(
+  isNotNull(dockerMigrationRun.executionStartedAt),
+  isNull(dockerMigrationRun.executionFinishedAt),
+);
+
+const activeMigration = or(
+  and(
+    inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
+    isNull(dockerMigrationRun.finishedAt),
+  ),
+  liveExecution,
+);
 
 export function createDockerMigrationRunRepo(db: Database) {
   return {
-    async create(data: NewDockerMigrationRun): Promise<DockerMigrationRun> {
-      const [row] = await db.insert(dockerMigrationRun).values(data).returning();
-      return row;
+    /**
+     * Admit project-owned migration work through the same project-row barrier
+     * as deployments and backups. A move/copy can stop the source project's
+     * containers before it creates its target deployment, so guarding only that
+     * later deployment is too late.
+     *
+     * Scan/adopt runs have no project yet and pass null; once they create one,
+     * the run is bound through `bindProject` below before further destructive
+     * project work continues.
+     */
+    async create(data: NewDockerMigrationRun): Promise<DockerMigrationRun | undefined> {
+      return withProjectWorkAdmission(db, data.projectId, data.organizationId, async (tx) => {
+        const [row] = await tx.insert(dockerMigrationRun).values(data).returning();
+        return row as DockerMigrationRun;
+      });
+    },
+
+    /**
+     * Attach an adopt/duplicate run to a project only while that project is
+     * still live. This closes the short adoption gap where the new project row
+     * exists before the migration row names it.
+     */
+    async bindProject(
+      id: string,
+      projectId: string,
+      organizationId: string,
+      patch: Partial<Omit<NewDockerMigrationRun, "id" | "startedAt" | "projectId">> = {},
+    ): Promise<boolean> {
+      const bound = await withProjectWorkAdmission(db, projectId, organizationId, async (tx) => {
+        const [row] = await tx
+          .update(dockerMigrationRun)
+          .set({ projectId, lastEventAt: new Date(), ...patch })
+          .where(
+            and(
+              eq(dockerMigrationRun.id, id),
+              eq(dockerMigrationRun.organizationId, organizationId),
+              inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
+              isNull(dockerMigrationRun.finishedAt),
+            ),
+          )
+          .returning();
+        return Boolean(row);
+      });
+      return bound === true;
     },
 
     async findById(id: string): Promise<DockerMigrationRun | undefined> {
       return db.query.dockerMigrationRun.findFirst({
         where: eq(dockerMigrationRun.id, id),
       });
+    },
+
+    /**
+     * Atomically claim one parked-state action and its durable worker lease.
+     *
+     * The state CAS gives resume/cutover exactly one winner. Admission locks
+     * every project the run touches (subject plus duplicate source) against
+     * deletion before changing state, so the winning remote worker cannot start
+     * after teardown has claimed either side.
+     */
+    async claimExecution(input: {
+      id: string;
+      organizationId: string;
+      from: "partial" | "awaiting_cutover" | "cutover";
+      to: "moving_data" | "awaiting_cutover" | "cutover";
+    }): Promise<DockerMigrationRun | undefined> {
+      const snapshot = await db.query.dockerMigrationRun.findFirst({
+        where: and(
+          eq(dockerMigrationRun.id, input.id),
+          eq(dockerMigrationRun.organizationId, input.organizationId),
+        ),
+      });
+      if (!snapshot) return undefined;
+
+      const claimed = await withProjectWorkAdmission(
+        db,
+        [...new Set(runProjectIds(snapshot))],
+        input.organizationId,
+        async (tx) => {
+          const now = new Date();
+          const [row] = await tx
+            .update(dockerMigrationRun)
+            .set({
+              status: input.to,
+              lastEventAt: now,
+              executionStartedAt: now,
+              executionFinishedAt: null,
+              errorMessage: null,
+            })
+            .where(
+              and(
+                eq(dockerMigrationRun.id, input.id),
+                eq(dockerMigrationRun.organizationId, input.organizationId),
+                eq(dockerMigrationRun.status, input.from),
+                or(
+                  isNull(dockerMigrationRun.executionStartedAt),
+                  isNotNull(dockerMigrationRun.executionFinishedAt),
+                ),
+              ),
+            )
+            .returning();
+          return row as DockerMigrationRun | undefined;
+        },
+      );
+      return claimed;
+    },
+
+    /** Outermost worker-finally acknowledgement; outcome transitions never own it. */
+    async acknowledgeExecutionFinished(id: string): Promise<void> {
+      await db
+        .update(dockerMigrationRun)
+        .set({ executionFinishedAt: new Date(), lastEventAt: new Date() })
+        .where(
+          and(
+            eq(dockerMigrationRun.id, id),
+            isNotNull(dockerMigrationRun.executionStartedAt),
+            isNull(dockerMigrationRun.executionFinishedAt),
+          ),
+        );
     },
 
     async listByOrganization(
@@ -115,7 +236,12 @@ export function createDockerMigrationRunRepo(db: Database) {
     async transition(
       id: string,
       status: DockerMigrationStatus,
-      patch?: Partial<Omit<NewDockerMigrationRun, "id" | "startedAt">>,
+      patch?: Partial<
+        Omit<
+          NewDockerMigrationRun,
+          "id" | "startedAt" | "executionStartedAt" | "executionFinishedAt"
+        >
+      >,
     ): Promise<void> {
       const finishing = TERMINAL_MIGRATION_STATUSES.includes(status);
       await db
@@ -209,10 +335,7 @@ export function createDockerMigrationRunRepo(db: Database) {
      *  the source containers before marking each rolled_back. */
     async listInFlight(): Promise<DockerMigrationRun[]> {
       return db.query.dockerMigrationRun.findMany({
-        where: and(
-          inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
-          isNull(dockerMigrationRun.finishedAt),
-        ),
+        where: activeMigration,
       });
     },
 
@@ -221,8 +344,7 @@ export function createDockerMigrationRunRepo(db: Database) {
     async findActiveForServer(serverId: string): Promise<DockerMigrationRun[]> {
       return db.query.dockerMigrationRun.findMany({
         where: and(
-          inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
-          isNull(dockerMigrationRun.finishedAt),
+          activeMigration,
           or(
             eq(dockerMigrationRun.sourceServerId, serverId),
             eq(dockerMigrationRun.targetServerId, serverId),
@@ -242,11 +364,7 @@ export function createDockerMigrationRunRepo(db: Database) {
      */
     async findActiveForProject(projectId: string): Promise<DockerMigrationRun | null> {
       const rows = await db.query.dockerMigrationRun.findMany({
-        where: and(
-          runTouchesProject(projectId),
-          inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
-          isNull(dockerMigrationRun.finishedAt),
-        ),
+        where: and(runTouchesProject(projectId), activeMigration),
         orderBy: (t, { desc }) => [desc(t.startedAt)],
         limit: 1,
       });
@@ -270,10 +388,12 @@ export function createDockerMigrationRunRepo(db: Database) {
             inArray(dockerMigrationRun.projectId, projectIds),
             // `inArray` over the extracted path, not a hand-written `= ANY(...)`: it renders a
             // bound list drizzle already knows how to parameterise for both Postgres and PGlite.
-            inArray(sql`${dockerMigrationRun.inputSnapshot} #>> ${SOURCE_PROJECT_PATH}`, projectIds),
+            inArray(
+              sql`${dockerMigrationRun.inputSnapshot} #>> ${SOURCE_PROJECT_PATH}`,
+              projectIds,
+            ),
           ),
-          inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
-          isNull(dockerMigrationRun.finishedAt),
+          activeMigration,
         ),
         orderBy: (t, { desc }) => [desc(t.startedAt)],
       });

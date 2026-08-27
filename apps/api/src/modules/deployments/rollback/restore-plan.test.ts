@@ -7,6 +7,8 @@ import {
   type RestorePlanInput,
 } from "./restore-plan";
 
+const FROZEN_RELEASE_IMAGE = `ghcr.io/acme/app@sha256:${"a".repeat(64)}`;
+
 /** A restorable single-app release on a Docker host, unless overridden. */
 const input = (over: Partial<RestorePlanInput> = {}): RestorePlanInput => ({
   target: {
@@ -75,6 +77,62 @@ describe("planRestore — docker (image is the artifact)", () => {
   it("degrades to a rebuild when the image is gone from the host", () => {
     const plan = planRestore(input({ imagePresent: () => false }));
     expect(plan).toEqual({ mode: "rebuild", commitSha: "abc1234def" });
+  });
+
+  it("keeps the retained-image path instant for a release image", () => {
+    const plan = planRestore(
+      input({
+        target: {
+          imageRef: FROZEN_RELEASE_IMAGE,
+          meta: { releaseImageRef: FROZEN_RELEASE_IMAGE, serviceDeploymentMode: "single" },
+        } as never,
+      }),
+    );
+    expect(plan).toEqual({
+      mode: "redeploy-pinned",
+      handoverImages: {},
+      handoverAppImage: FROZEN_RELEASE_IMAGE,
+      rebuildServices: [],
+    });
+  });
+
+  it("reacquires the immutable frozen release image when local retention expired", () => {
+    const plan = planRestore(
+      input({
+        target: {
+          imageRef: "ghcr.io/acme/app:v1.2.3",
+          meta: {
+            // This is what the successful deploy actually prepared. The tag in
+            // imageRef (and today's project template) must not replace it.
+            releaseImageRef: FROZEN_RELEASE_IMAGE,
+            serviceDeploymentMode: "single",
+          },
+        } as never,
+        imagePresent: () => false,
+      }),
+    );
+    expect(plan).toEqual({
+      mode: "reacquire-image",
+      releaseImageRef: FROZEN_RELEASE_IMAGE,
+    });
+    expect(planNeedsRepository(plan)).toBe(false);
+  });
+
+  it("reacquires a frozen release image without a commit", () => {
+    const plan = planRestore(
+      input({
+        target: {
+          imageRef: FROZEN_RELEASE_IMAGE,
+          commitSha: null,
+          meta: { releaseImageRef: FROZEN_RELEASE_IMAGE },
+        } as never,
+        imagePresent: () => false,
+      }),
+    );
+    expect(plan).toEqual({
+      mode: "reacquire-image",
+      releaseImageRef: FROZEN_RELEASE_IMAGE,
+    });
   });
 
   it("never treats the compose sentinel as a real image", () => {
@@ -153,6 +211,24 @@ describe("planRestore — compose (per-service images)", () => {
     expect(plan).toEqual({ mode: "rebuild", commitSha: "abc1234def" });
   });
 
+  it("never treats a stray single-app release ref as a compose fallback", () => {
+    const plan = planRestore(
+      input({
+        target: {
+          imageRef: COMPOSE_SENTINEL,
+          commitSha: null,
+          meta: { releaseImageRef: FROZEN_RELEASE_IMAGE, serviceDeploymentMode: "services" },
+        } as never,
+        serviceImages: services,
+        imagePresent: () => false,
+      }),
+    );
+    expect(plan).toMatchObject({
+      mode: "ineligible",
+      code: ROLLBACK_ERROR_CODES.ARTIFACT_GONE,
+    });
+  });
+
   it("skips rows with no service name (nothing to key a handover by)", () => {
     const plan = planRestore(
       input({
@@ -229,9 +305,7 @@ describe("planRestore — bare/cloud (the unit is the artifact)", () => {
   });
 
   it("falls back when the unit id is gone", () => {
-    const plan = planRestore(
-      input({ unitRestore: true, target: { containerId: null } as never }),
-    );
+    const plan = planRestore(input({ unitRestore: true, target: { containerId: null } as never }));
     expect(plan.mode).toBe("redeploy-pinned");
   });
 });
@@ -247,6 +321,21 @@ describe("planNeedsRepository — what gates the clone + GitHub access", () => {
 
   it("is true for a rebuild", () => {
     expect(planNeedsRepository(planRestore(input({ imagePresent: () => false })))).toBe(true);
+  });
+
+  it("is false when an immutable release image will be reacquired", () => {
+    const plan = planRestore(
+      input({
+        target: {
+          imageRef: FROZEN_RELEASE_IMAGE,
+          commitSha: null,
+          meta: { releaseImageRef: FROZEN_RELEASE_IMAGE },
+        } as never,
+        imagePresent: () => false,
+      }),
+    );
+    expect(plan.mode).toBe("reacquire-image");
+    expect(planNeedsRepository(plan)).toBe(false);
   });
 
   it("is false for an ineligible plan (nothing will run)", () => {

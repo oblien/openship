@@ -74,7 +74,9 @@ export interface UntrackedEdgeSite {
  * plus label length and total length bounds this never had.
  */
 function isReportableHostname(raw: string): boolean {
-  return isValidCustomHostname(normalizeServedHostname(raw));
+  const norm = normalizeServedHostname(raw);
+  if (norm.startsWith("*.")) return false;
+  return isValidCustomHostname(norm);
 }
 
 /**
@@ -104,7 +106,9 @@ export function findUntrackedEdgeSites(input: {
   const seen = new Set<string>();
 
   for (const site of input.sites) {
-    const names = (site.serverNames ?? []).filter(isReportableHostname).map(normalizeServedHostname);
+    const names = (site.serverNames ?? [])
+      .filter(isReportableHostname)
+      .map(normalizeServedHostname);
     if (names.length === 0) continue;
     // Any known name ⇒ the vhost is accounted for.
     if (names.some((n) => known.has(n))) continue;

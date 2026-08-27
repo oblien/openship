@@ -75,15 +75,21 @@ describe("the log panel", () => {
     // destructured-props brace four lines into the signature and returned a 54-character slice.
     return wizard.slice(from, wizard.indexOf("\n}\n", from));
   })();
+  const normalizedPanel = panel.replace(/\s+/g, " ");
 
   it("renders through the parser, never the stored line", () => {
     expect(panel).toContain("parseSessionLog(run.logs)");
     expect(panel).not.toContain("run.logs.split");
   });
 
-  it("shows the time only for a terminal run", () => {
+  it("shows the time only for a finished or parked partial run", () => {
     expect(panel).toContain("{logShowsTime && (");
-    expect(wizard).toContain('status === "succeeded" || status === "failed" || status === "rolled_back"');
+    // `partial` is resumable, but no work runs while it waits for the operator to resolve its
+    // pending paths. Collapse formatting whitespace so Prettier line wrapping cannot change the
+    // meaning of this source-level render assertion.
+    expect(normalizedPanel).toContain(
+      'const logShowsTime = status === "succeeded" || status === "failed" || status === "rolled_back" || status === "partial";',
+    );
   });
 
   it("gives the time its own non-shrinking column, so it can't wrap into the message", () => {

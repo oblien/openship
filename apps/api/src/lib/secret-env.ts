@@ -142,15 +142,38 @@ export function hasMaskedValue(
  * shallow copy — the caller's stored object is left untouched. Anything without
  * an `environment` map passes through unchanged.
  */
-export function maskServiceEnv<T extends { environment?: Record<string, string> | null }>(
+export function maskServiceEnv<
+  T extends {
+    environment?: Record<string, string> | null;
+    environmentTemplates?: Record<string, string> | null;
+    advanced?: { environmentTemplateKeys?: string[]; [key: string]: unknown } | null;
+  },
+>(
   svc: T | null | undefined,
 ): T | null | undefined {
-  if (!svc || !svc.environment) return svc;
-  return { ...svc, environment: maskEnv(svc.environment) };
+  if (!svc) return svc;
+  if (!svc.environment && !svc.environmentTemplates) return svc;
+  // `environmentTemplates` is transient parser provenance. Its expressions can
+  // contain literal defaults, so never serialize it even though the persisted
+  // raw copy is already protected by blanket environment masking.
+  const { environmentTemplates: _templates, ...publicService } = svc;
+  const advanced = svc.advanced ? { ...svc.advanced } : svc.advanced;
+  if (advanced) delete advanced.environmentTemplateKeys;
+  return {
+    ...publicService,
+    ...(svc.environment ? { environment: maskEnv(svc.environment) } : {}),
+    ...(advanced !== undefined ? { advanced } : {}),
+  } as T;
 }
 
 /** Map `maskServiceEnv` over a list, tolerating null/undefined. */
-export function maskServicesEnv<T extends { environment?: Record<string, string> | null }>(
+export function maskServicesEnv<
+  T extends {
+    environment?: Record<string, string> | null;
+    environmentTemplates?: Record<string, string> | null;
+    advanced?: { environmentTemplateKeys?: string[]; [key: string]: unknown } | null;
+  },
+>(
   svcs: T[] | null | undefined,
 ): T[] {
   if (!svcs) return [];
@@ -166,6 +189,7 @@ interface EnvMetaLike {
   resolvedValue?: string;
   expression?: string;
   required?: boolean;
+  unresolvedVariables?: string[];
 }
 
 /**
@@ -185,6 +209,9 @@ export function maskEnvironmentMeta(
       ...(m.source !== undefined && { source: m.source }),
       ...(m.variable !== undefined && { variable: m.variable }),
       ...(m.required !== undefined && { required: m.required }),
+      ...(m.unresolvedVariables !== undefined && {
+        unresolvedVariables: [...m.unresolvedVariables],
+      }),
       ...(m.resolvedValue !== undefined && { resolvedValue: maskValue(m.resolvedValue) }),
       ...(m.defaultValue !== undefined && { defaultValue: maskValue(m.defaultValue) }),
     };
@@ -200,7 +227,9 @@ export function maskEnvironmentMeta(
 export function maskScanService<
   T extends {
     environment?: Record<string, string> | null;
+    environmentTemplates?: Record<string, string> | null;
     environmentMeta?: Record<string, EnvMetaLike> | null;
+    advanced?: { environmentTemplateKeys?: string[]; [key: string]: unknown } | null;
   },
 >(svc: T): T {
   // svc is always a concrete service here (mapped from a scan list).

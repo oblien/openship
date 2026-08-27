@@ -1,5 +1,12 @@
 import { eq, and, asc, inArray, sql } from "drizzle-orm";
-import { commandToArgv, generateId, mergeAdvanced, normalizeCustomHostname, resolveCommandArgv, type ComposeAdvanced } from "@repo/core";
+import {
+  commandToArgv,
+  generateId,
+  mergeAdvanced,
+  normalizeCustomHostname,
+  resolveCommandArgv,
+  type ComposeAdvanced,
+} from "@repo/core";
 import type { Database } from "../client";
 import { project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
@@ -29,22 +36,34 @@ export function toComposeSpec(s: {
   image?: string | null;
   build?: string | null;
   dockerfile?: string | null;
+  buildArgs?: Record<string, string | null> | null;
   ports?: string[] | null;
   dependsOn?: string[] | null;
   environment?: Record<string, string> | null;
+  environmentTemplates?: Record<string, string> | null;
   volumes?: string[] | null;
   command?: string | null;
   commandArgv?: string[] | null;
   restart?: string | null;
   advanced?: ComposeAdvanced | null;
 }): ComposeServiceSpec {
+  const advanced: ComposeAdvanced = { ...(s.advanced ?? {}) };
+  const environment = { ...(s.environment ?? {}) };
+  if (s.environmentTemplates) {
+    for (const [key, expression] of Object.entries(s.environmentTemplates)) {
+      environment[key] = expression;
+    }
+    advanced.environmentTemplateKeys = Object.keys(s.environmentTemplates);
+  }
+
   return {
     image: s.image ?? null,
     build: s.build ?? null,
     dockerfile: s.dockerfile ?? null,
+    buildArgs: s.buildArgs ?? {},
     ports: s.ports ?? [],
     dependsOn: s.dependsOn ?? [],
-    environment: s.environment ?? {},
+    environment,
     volumes: s.volumes ?? [],
     command: s.command ?? null,
     // #332: derive argv from the text `command` when a row has no explicit
@@ -53,7 +72,7 @@ export function toComposeSpec(s: {
     // canonicalize identically instead of flagging a phantom string↔argv change.
     commandArgv: s.commandArgv ?? commandToArgv(s.command ?? null),
     restart: s.restart ?? "unless-stopped",
-    advanced: s.advanced ?? {},
+    advanced,
   };
 }
 
@@ -101,15 +120,45 @@ export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) 
  */
 export function composeWritePatch(
   parsed: ParsedComposeService,
-  stored?:
-    | { advanced?: ComposeAdvanced | null; command?: string | null; commandArgv?: string[] | null }
-    | null,
+  stored?: {
+    advanced?: ComposeAdvanced | null;
+    buildArgs?: Record<string, string | null> | null;
+    command?: string | null;
+    commandArgv?: string[] | null;
+  } | null,
   /** `parsed` is a full re-read of the compose FILE, so an absent compose-owned
    *  key means the author deleted it. See {@link COMPOSE_OWNED_ADVANCED_KEYS}. */
   composeAuthoritative = false,
-): ComposeServiceSpec {
-  const advanced = mergeAdvanced(stored?.advanced ?? null, parsed.advanced);
+): ComposeServiceSpec & { advanced: ComposeAdvanced } {
+  // Raw parser rows name their template keys. Every other writer (manual API,
+  // CLI-normalized config, old snapshot) means its supplied values literally;
+  // stamp that fact so a stale stored marker cannot reinterpret a later edit.
+  const hasBuildArgMarker = Object.hasOwn(parsed.advanced ?? {}, "buildArgTemplateKeys");
+  const suppliedBuildArgCount = Object.keys(parsed.buildArgs ?? {}).length;
+  const parsedAdvanced =
+    parsed.buildArgs !== undefined && suppliedBuildArgCount > 0 && !hasBuildArgMarker
+      ? { ...(parsed.advanced ?? {}), buildArgTemplateKeys: [] }
+      : parsed.advanced;
+  const advanced = mergeAdvanced(stored?.advanced ?? null, parsedAdvanced);
+  // An explicit empty map clears build args and any stale template provenance,
+  // but should not add metadata to an otherwise byte-for-byte snapshot replay.
+  if (parsed.buildArgs !== undefined && suppliedBuildArgCount === 0 && !hasBuildArgMarker) {
+    delete advanced.buildArgTemplateKeys;
+  }
   const spec = toComposeSpec(parsed);
+  // A deploy/rollback can replay a snapshot produced before buildArgs existed.
+  // Its omission means "this writer has no opinion", not "delete every arg".
+  // A fresh authoritative compose parse is different: an absent args block is a
+  // real deletion and must clear the stored map. The provenance marker is also
+  // an explicit opinion: a current `build:` declaration with no args has no
+  // buildArgs values to carry, but the parser emits `buildArgTemplateKeys: []`
+  // so this path can distinguish it from a legacy snapshot that never modeled
+  // build args at all.
+  const hasBuildArgsOpinion = parsed.buildArgs !== undefined || hasBuildArgMarker;
+  const buildArgs =
+    composeAuthoritative || hasBuildArgsOpinion
+      ? spec.buildArgs
+      : ((stored?.buildArgs as Record<string, string | null> | null) ?? {});
   // #332: several wire shapes into this path carry `command` as a STRING only
   // (BuildServiceInput on the deploy request, the sync endpoint), and the stored
   // string is a lossy display join for a list command. toComposeSpec's fallback
@@ -124,8 +173,9 @@ export function composeWritePatch(
   });
   return {
     ...spec,
+    buildArgs,
     ...(commandArgv !== undefined ? { commandArgv } : {}),
-    advanced: composeAuthoritative ? clearComposeOwnedKeys(advanced, parsed.advanced) : advanced,
+    advanced: composeAuthoritative ? clearComposeOwnedKeys(advanced, parsedAdvanced) : advanced,
   };
 }
 
@@ -153,7 +203,13 @@ export function composeWritePatch(
  * namespace on the next deploy. Removal on the git path already propagates the
  * right way, through `reconcileFromCompose` applying `theirs` wholesale.
  */
-const COMPOSE_OWNED_ADVANCED_KEYS = ["networkMode", "pidMode", "entrypoint"] as const;
+const COMPOSE_OWNED_ADVANCED_KEYS = [
+  "networkMode",
+  "pidMode",
+  "entrypoint",
+  "environmentTemplateKeys",
+  "buildArgTemplateKeys",
+] as const;
 
 function clearComposeOwnedKeys(
   merged: ComposeAdvanced,
@@ -169,7 +225,18 @@ function clearComposeOwnedKeys(
 /** Per-field diff of two specs — powers the drift UI. */
 export function composeSpecDiff(base: ComposeServiceSpec, next: ComposeServiceSpec) {
   const fields: (keyof ComposeServiceSpec)[] = [
-    "image", "build", "dockerfile", "ports", "dependsOn", "environment", "volumes", "command", "commandArgv", "restart", "advanced",
+    "image",
+    "build",
+    "dockerfile",
+    "buildArgs",
+    "ports",
+    "dependsOn",
+    "environment",
+    "volumes",
+    "command",
+    "commandArgv",
+    "restart",
+    "advanced",
   ];
   // Compare each field key-order-insensitively (matching canonicalSpec/
   // composeSpecsEqual) so a reordered `environment` or nested `advanced` block
@@ -196,9 +263,11 @@ export type ParsedComposeService = {
   image?: string;
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   ports?: string[];
   dependsOn?: string[];
   environment?: Record<string, string>;
+  environmentTemplates?: Record<string, string>;
   volumes?: string[];
   command?: string;
   commandArgv?: string[] | null;
@@ -243,11 +312,19 @@ export function normalizeServicePublicEndpoints(
     if (port === null || seenPorts.has(port)) continue;
     const domainType = endpoint.domainType === "custom" ? "custom" : "free";
     const domain = domainType === "free" ? endpoint.domain?.trim() || undefined : undefined;
-    const customDomain = domainType === "custom" ? normalizeCustomHostname(endpoint.customDomain ?? "") || undefined : undefined;
+    const customDomain =
+      domainType === "custom"
+        ? normalizeCustomHostname(endpoint.customDomain ?? "") || undefined
+        : undefined;
     if (domainType === "free" && !domain) continue;
     if (domainType === "custom" && !customDomain) continue;
     seenPorts.add(port);
-    out.push({ port, domainType, ...(domain ? { domain } : {}), ...(customDomain ? { customDomain } : {}) });
+    out.push({
+      port,
+      domainType,
+      ...(domain ? { domain } : {}),
+      ...(customDomain ? { customDomain } : {}),
+    });
   }
   return out;
 }
@@ -300,8 +377,8 @@ export function normalizeRoutingFields(input: {
     return {
       exposed,
       exposedPort: String(primary.port),
-      domain: primary.domainType === "free" ? primary.domain ?? null : null,
-      customDomain: primary.domainType === "custom" ? primary.customDomain ?? null : null,
+      domain: primary.domainType === "free" ? (primary.domain ?? null) : null,
+      customDomain: primary.domainType === "custom" ? (primary.customDomain ?? null) : null,
       domainType: primary.domainType,
       publicEndpoints: endpoints,
     };
@@ -314,7 +391,8 @@ export function normalizeRoutingFields(input: {
     exposed,
     exposedPort: trimOrNull(input.exposedPort),
     domain: domainType === "free" ? trimOrNull(input.domain) : null,
-    customDomain: domainType === "custom" ? normalizeCustomHostname(input.customDomain ?? "") || null : null,
+    customDomain:
+      domainType === "custom" ? normalizeCustomHostname(input.customDomain ?? "") || null : null,
     domainType,
     publicEndpoints: [],
   };
@@ -335,7 +413,8 @@ export function createServiceRepo(db: Database) {
     /** Batch id → display name, for naming services in list responses. */
     async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
       if (ids.length === 0) return [];
-      return db.select({ id: service.id, name: service.name })
+      return db
+        .select({ id: service.id, name: service.name })
         .from(service)
         .where(inArray(service.id, ids));
     },
@@ -478,7 +557,8 @@ export function createServiceRepo(db: Database) {
 
         const routing = normalizeRoutingFields({
           exposed: app.exposed ?? ex?.exposed ?? true,
-          exposedPort: app.exposedPort ?? ex?.exposedPort ?? (app.port != null ? String(app.port) : null),
+          exposedPort:
+            app.exposedPort ?? ex?.exposedPort ?? (app.port != null ? String(app.port) : null),
           domain: app.domain ?? ex?.domain,
           customDomain: app.customDomain ?? ex?.customDomain,
           domainType: app.domainType ?? ex?.domainType,
@@ -705,15 +785,54 @@ export function createServiceRepo(db: Database) {
         // sortOrder is NEVER reset by reconcile — it's user-editable (dashboard
         // reordering) and the compose file has no ordering to authoritatively sync.
         if (base === null) {
-          await this.update(ex.id, { importedSpec: theirs, driftSpec: null });
+          // Older/import-wizard rows may hold scan-time interpolation results.
+          // Adopt the raw expression only where that result is still untouched;
+          // a value the operator changed remains intact, but is marked as a
+          // template target so deploy can consume final scoped env consistently.
+          const environment = {
+            ...((ex.environment as Record<string, string> | null) ?? {}),
+          };
+          for (const [key, expression] of Object.entries(p.environmentTemplates ?? {})) {
+            if (environment[key] === p.environment?.[key]) environment[key] = expression;
+          }
+          const storedBuildArgs = (ex.buildArgs as Record<string, string | null> | null) ?? {};
+          const buildArgs =
+            Object.keys(storedBuildArgs).length > 0 ? storedBuildArgs : (theirs.buildArgs ?? {});
+          const buildArgTemplateKeys = (theirs.advanced?.buildArgTemplateKeys ?? []).filter(
+            (key) => buildArgs[key] === theirs.buildArgs?.[key],
+          );
+          const advanced = mergeAdvanced(ex.advanced as ComposeAdvanced | null, {
+            environmentTemplateKeys: theirs.advanced?.environmentTemplateKeys ?? [],
+            // A manually changed arg is a literal override, not the raw repo
+            // expression whose provenance this marker describes.
+            buildArgTemplateKeys: Object.hasOwn(theirs.advanced ?? {}, "buildArgTemplateKeys")
+              ? buildArgTemplateKeys
+              : null,
+          });
+          await this.update(ex.id, {
+            environment,
+            // buildArgs is new compose-owned state. Every pre-#689 row has the
+            // column default `{}`, so keeping "ours" here would permanently
+            // strand affected rows: the baseline advances to `theirs`, the next
+            // reconcile sees repo===baseline, and the args never apply.
+            buildArgs,
+            advanced,
+            importedSpec: theirs,
+            driftSpec: null,
+          });
           continue;
         }
 
         // Repo unchanged → keep ours. Only write to clear a stale drift (repo
-        // reverted to base); otherwise skip entirely so we don't churn updatedAt
-        // on every deploy.
+        // reverted to base). A pre-#689 baseline also gets normalized once: its
+        // missing `buildArgs` key is the deployment layer's version marker for
+        // deciding whether a code-only webhook may skip the repo scan.
         if (composeSpecsEqual(theirs, base)) {
-          if (ex.driftSpec) await this.update(ex.id, { driftSpec: null });
+          if (!Object.hasOwn(base, "buildArgs")) {
+            await this.update(ex.id, { importedSpec: theirs, driftSpec: null });
+          } else if (ex.driftSpec) {
+            await this.update(ex.id, { driftSpec: null });
+          }
           continue;
         }
 
@@ -823,6 +942,7 @@ export function createServiceRepo(db: Database) {
             imageRef: data.imageRef ?? null,
             imageDigest: data.imageDigest ?? null,
             hostPort: data.hostPort ?? null,
+            hostPorts: data.hostPorts ?? null,
             ip: data.ip ?? null,
             reason: data.reason ?? null,
             reasonSkipped: data.reasonSkipped ?? null,
@@ -838,7 +958,8 @@ export function createServiceRepo(db: Database) {
      * Why this exists next to `upsertServiceDeployment` rather than reusing it: a
      * smart/partial redeploy pre-creates a `skipped` row for every service it did not
      * target (service-checks.ts), and that row carries the LIVE runtime details of a
-     * container that is still running — `containerId`, `imageDigest`, `hostPort`, `ip`.
+     * container that is still running — `containerId`, `imageDigest`, `hostPort`,
+     * `hostPorts`, `ip`.
      * `upsertServiceDeployment` coalesces all of those to null, so using it here would
      * erase the record of a running container just because a *different* service
      * failed. Using a plain insert instead is what violated
@@ -904,9 +1025,9 @@ export function createServiceRepo(db: Database) {
      * `skipped` row a smart/partial deploy pre-created (service-checks.ts), or one
      * carrying the LIVE runtime details of a container that is still running. The `set`
      * below therefore lists ONLY the skip facts, so `containerId` / `imageRef` /
-     * `imageDigest` / `hostPort` / `ip` survive by OMISSION. That is the load-bearing
-     * detail, and the reason this cannot be `upsertServiceDeployment` (a full-row writer
-     * that coalesces every one of those to null).
+     * `imageDigest` / `hostPort` / `hostPorts` / `ip` survive by OMISSION. That is the
+     * load-bearing detail, and the reason this cannot be `upsertServiceDeployment` (a
+     * full-row writer that coalesces every one of those to null).
      */
     async markServiceDeploymentSkipped(data: {
       deploymentId: string;

@@ -84,12 +84,10 @@ r.get(
   ctrl.getById,
 );
 r.post(
-  // #336: real (unmasked) compose env for the keys named in the body — never the
-  // whole map. Write-gated on purpose: read-only callers only ever see the masked
-  // map from GET /:serviceId. POST, not GET, because the requested key names are
-  // a body (out of proxy access logs and browser history) and are unbounded by
-  // URL length. No mcp block: revealing secrets stays a dashboard action, off the
-  // automation surface.
+  // #336: real env for named keys only. With `environment`, reads service-scoped
+  // env_var rows; without it, reads compose-inline values for import/config forms.
+  // Write-gated on purpose. POST keeps key names out of URLs and proxy logs.
+  // No mcp block: revealing secrets stays a dashboard action, off automation.
   "/:serviceId/env-reveal",
   { tag: "project:service:write" },
   cloudProjectProxy,

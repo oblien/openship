@@ -200,9 +200,7 @@ async function recordOutcome(
   extra: Partial<NewDeployment>,
   sheddable: ReadonlyArray<keyof NewDeployment> = [],
 ): Promise<{ state: "applied" | "refused" | "failed"; error: string | null }> {
-  const attempts: Array<{ label: string; extra: Partial<NewDeployment> }> = [
-    { label: "", extra },
-  ];
+  const attempts: Array<{ label: string; extra: Partial<NewDeployment> }> = [{ label: "", extra }];
   const shed = { ...extra };
   for (const key of sheddable) delete shed[key];
   if (Object.keys(shed).length < Object.keys(extra).length) {
@@ -429,17 +427,11 @@ export async function onFailure(
     try {
       await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {
-      console.error(
-        `[DEPLOY] Failed to destroy ${provisioned.imageRef} on failure:`,
-        destroyErr,
-      );
+      console.error(`[DEPLOY] Failed to destroy ${provisioned.imageRef} on failure:`, destroyErr);
       // Retry once after a short delay
       await new Promise((r) => setTimeout(r, 2000));
       await cleanupBuildArtifact(runtime, provisioned.imageRef).catch((retryErr) => {
-        console.error(
-          `[DEPLOY] Retry destroy also failed for ${provisioned.imageRef}:`,
-          retryErr,
-        );
+        console.error(`[DEPLOY] Retry destroy also failed for ${provisioned.imageRef}:`, retryErr);
       });
     }
   }
@@ -517,7 +509,10 @@ export async function onFailure(
   // Notify — dispatch to every subscribed channel (per-user prefs +
   // org defaults). Fire-and-forget: the dispatcher fans out across
   // email/webhook/in-app/slack based on each member's subscriptions.
-  const lastLogs = collapsed.slice(-50).map((l) => l.message).join("\n");
+  const lastLogs = collapsed
+    .slice(-50)
+    .map((l) => l.message)
+    .join("\n");
   notification.emit({
     organizationId: dep.organizationId,
     eventType: "deployment.failed",
@@ -562,20 +557,14 @@ export async function onFailure(
   );
 }
 
-export async function onCancelled(
-  ctx: LifecycleContext,
-  durationMs?: number,
-): Promise<void> {
+export async function onCancelled(ctx: LifecycleContext, durationMs?: number): Promise<void> {
   const { runtime, dep, buildSessionId, provisioned } = ctx;
 
   if (runtime && provisioned.imageRef) {
     try {
       await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {
-      console.error(
-        `[DEPLOY] Failed to destroy ${provisioned.imageRef} on cancel:`,
-        destroyErr,
-      );
+      console.error(`[DEPLOY] Failed to destroy ${provisioned.imageRef} on cancel:`, destroyErr);
       await new Promise((r) => setTimeout(r, 2000));
       await cleanupBuildArtifact(runtime, provisioned.imageRef).catch(() => {});
     }
@@ -583,15 +572,17 @@ export async function onCancelled(
 
   // Destroy service containers and broadcast failed status (mirrors onFailure)
   const serviceDeps = await repos.service.listByDeployment(dep.id).catch(() => []);
-  const services = serviceDeps.length > 0
-    ? await repos.service.listByProject(dep.projectId).catch(() => [])
-    : [];
+  const services =
+    serviceDeps.length > 0 ? await repos.service.listByProject(dep.projectId).catch(() => []) : [];
   const serviceNameMap = new Map(services.map((s) => [s.id, s.name]));
 
   for (const serviceDep of serviceDeps) {
     if (runtime && serviceDep.containerId) {
       await runtime.destroy(serviceDep.containerId).catch((err) => {
-        console.error(`[DEPLOY] Failed to destroy service container ${serviceDep.containerId} on cancel:`, err);
+        console.error(
+          `[DEPLOY] Failed to destroy service container ${serviceDep.containerId} on cancel:`,
+          err,
+        );
       });
     }
     sessionManager.broadcastServiceStatus(dep.id, {
@@ -848,6 +839,10 @@ export async function onSuccess(
 
   // Webmail on Openship Cloud, routed on the mail server's own `mail.<domain>`:
   // the mail VPS proxies that hostname to the cloud URL, which can only be
-  // registered once the URL exists. Returns immediately for every other deploy.
-  void onWebmailDeployed(project, result.url);
+  // registered once the URL exists. Await it so the deployment execution lease
+  // brackets this remote route/certificate write; otherwise project deletion
+  // could observe a finished worker, remove the route, and have this detached
+  // hook recreate it afterwards. The hook catches/logs its own failures and
+  // returns immediately for every non-webmail deploy.
+  await onWebmailDeployed(project, result.url);
 }

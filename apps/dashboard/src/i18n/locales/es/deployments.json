@@ -169,6 +169,7 @@
     "unpinFailed": "No se pudo desfijar el despliegue",
     "rollbackModeInstant": "Restauración instantánea: reutiliza la imagen retenida de esta versión, sin recompilar.",
     "rollbackModeRebuild": "Recompilación: la imagen de esta versión ya no está en el host, así que se compila su commit.",
+    "rollbackModeReacquireImage": "Restauración desde el registro: descarga la referencia exacta de imagen guardada para esta versión, sin recompilar el código fuente.",
     "rollbackModeMixed": "Casi instantáneo: {count} servicio(s) perdieron su imagen y se recompilarán."
   },
   "rollbackConfirm": {

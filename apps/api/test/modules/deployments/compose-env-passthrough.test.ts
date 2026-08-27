@@ -160,27 +160,89 @@ services:
     expect(merged.deferredEmpty).toEqual(["HTTP_PROXY"]);
   });
 
-  it("KNOWN GAP: a partially interpolated value is not empty, so it still wins", () => {
-    // The same bug class as #614 with a one-line-different compose file. A
-    // value-shaped rule cannot reach it; only carrying the parser's meta can.
-    // Pinned so the gap is visible rather than assumed fixed.
-    const inline =
-      parseComposeFile(`
+  it("resolves an embedded expression against the final service-scoped env (#673)", () => {
+    const service = parseComposeFile(`
 services:
   api:
     image: my-app:latest
     environment:
-      DATABASE_URL: postgres://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@db:5432/\${POSTGRES_DB}
-`).services[0]?.environment ?? {};
-
-    expect(inline.DATABASE_URL).toBe("postgres://:@db:5432/");
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      DATABASE_URL: postgresql://username:\${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/app
+`).services[0]!;
+    const inline = { ...service.environment, ...service.environmentTemplates };
 
     const merged = mergeServiceDeployEnv(
-      layers({ project: { DATABASE_URL: "postgres://real:s3cret@db:5432/prod" }, inline }),
+      layers({
+        inline,
+        templateKeys: service.advanced?.environmentTemplateKeys,
+        service: { POSTGRES_PASSWORD: "service-secret" },
+      }),
       false,
     );
 
-    expect(merged.env.DATABASE_URL).toBe("postgres://:@db:5432/");
+    expect(merged.env.POSTGRES_PASSWORD).toBe("service-secret");
+    expect(merged.env.DATABASE_URL).toBe(
+      "postgresql://username:service-secret@postgres:5432/app",
+    );
+    expect(merged.missingRequired).toEqual([]);
+    expect(merged.deferredEmpty).toEqual([]);
+  });
+
+  it("reports a required embedded variable when no layer provides it", () => {
+    const service = parseComposeFile(`
+services:
+  api:
+    image: my-app:latest
+    environment:
+      DATABASE_URL: postgresql://username:\${POSTGRES_PASSWORD:?set it}@postgres:5432/app
+`).services[0]!;
+
+    const merged = mergeServiceDeployEnv(
+      layers({
+        inline: { ...service.environment, ...service.environmentTemplates },
+        templateKeys: service.advanced?.environmentTemplateKeys,
+      }),
+      false,
+    );
+
+    expect(merged.missingRequired).toEqual([
+      { variable: "POSTGRES_PASSWORD", message: "set it" },
+    ]);
+  });
+
+  it("lets a higher-priority service value replace the templated target entirely", () => {
+    const service = parseComposeFile(`
+services:
+  api:
+    image: my-app:latest
+    environment:
+      DATABASE_URL: postgresql://username:\${POSTGRES_PASSWORD:?set it}@postgres:5432/app
+`).services[0]!;
+
+    const merged = mergeServiceDeployEnv(
+      layers({
+        inline: { ...service.environment, ...service.environmentTemplates },
+        templateKeys: service.advanced?.environmentTemplateKeys,
+        service: { DATABASE_URL: "manual-service-url" },
+      }),
+      false,
+    );
+
+    expect(merged.env.DATABASE_URL).toBe("manual-service-url");
+    expect(merged.missingRequired).toEqual([]);
+  });
+
+  it("honors an authored empty literal when parser provenance is available", () => {
+    const merged = mergeServiceDeployEnv(
+      layers({
+        project: { HTTP_PROXY: "http://corp:3128" },
+        inline: { HTTP_PROXY: "" },
+        templateKeys: [],
+      }),
+      false,
+    );
+
+    expect(merged.env.HTTP_PROXY).toBe("");
     expect(merged.deferredEmpty).toEqual([]);
   });
 

@@ -20,6 +20,12 @@ const COMPOSE = `
 services:
   web:
     image: myapp-web:latest
+    build:
+      context: ../../
+      dockerfile: services/shared/Dockerfile
+      args:
+        APP_PACKAGE: "@myorg/web"
+        INHERIT_FROM_ENV:
     depends_on: [db]
     ports: ["8080:3000"]
   db:
@@ -55,7 +61,12 @@ const DB: DockerContainerDetail = {
   networks: ["myapp_default", "myapp_backend"],
   mounts: [
     { type: "volume", name: "myapp_pgdata", destination: "/var/lib/postgresql/data", rw: true },
-    { type: "bind", source: "/etc/myapp/pg.conf", destination: "/etc/postgresql/postgresql.conf", rw: false },
+    {
+      type: "bind",
+      source: "/etc/myapp/pg.conf",
+      destination: "/etc/postgresql/postgresql.conf",
+      rw: false,
+    },
   ],
   ports: [{ privatePort: 5432, type: "tcp" }],
   restart: { name: "always" },
@@ -141,6 +152,12 @@ describe("reconcileStack", () => {
   it("merges compose declaration with inspect truth for compose services", () => {
     const web = stack.services.find((s) => s.name === "web")!;
     expect(web.source).toBe("compose");
+    expect(web.build).toBe("../../");
+    expect(web.dockerfile).toBe("services/shared/Dockerfile");
+    expect(web.buildArgs).toEqual({
+      APP_PACKAGE: "@myorg/web",
+      INHERIT_FROM_ENV: null,
+    });
     expect(web.dependsOn).toEqual(["db"]);
     expect(web.ports).toEqual(["8080:3000"]);
     // PATH is filtered as docker-injected noise; app env survives.
@@ -207,9 +224,7 @@ services:
   });
 
   it("reports only in-use named volumes, with their consumers", () => {
-    expect(stack.volumes).toEqual([
-      { name: "myapp_pgdata", driver: "local", inUseBy: ["db"] },
-    ]);
+    expect(stack.volumes).toEqual([{ name: "myapp_pgdata", driver: "local", inUseBy: ["db"] }]);
   });
 
   it("warns about custom networks it will flatten", () => {

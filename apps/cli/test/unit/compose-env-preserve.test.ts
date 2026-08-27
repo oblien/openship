@@ -104,6 +104,7 @@ vi.mock("node:fs", () => ({
   chmodSync: () => undefined,
   existsSync: (p: string) => h.existing.has(String(p)),
   mkdirSync: () => undefined,
+  realpathSync: (p: string) => String(p),
   rmSync: (p: string) => {
     h.written.delete(String(p));
     h.existing.delete(String(p));
@@ -158,6 +159,7 @@ vi.mock("@repo/adapters", async () => {
 });
 
 import {
+  canonicalComposeHostPath,
   composeEnvPorts,
   composeHeldPorts,
   composePaths,
@@ -380,6 +382,31 @@ describe("the host alias is overridable in the compose file", () => {
     expect(yaml).toContain(
       'extra_hosts: ["host.docker.internal:${OPENSHIP_HOST_GATEWAY:-host-gateway}"]',
     );
+  });
+});
+
+describe("macOS edge bind sources (#692)", () => {
+  it("resolves through the closest existing symlinked ancestor", () => {
+    const realpath = (path: string): string => {
+      if (path === "/var") return "/private/var";
+      throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
+    };
+
+    expect(
+      canonicalComposeHostPath(
+        "/var/lib/openship/edge/sites-enabled",
+        "darwin",
+        realpath,
+      ),
+    ).toBe("/private/var/lib/openship/edge/sites-enabled");
+  });
+
+  it("does not rewrite Linux mount paths", () => {
+    const realpath = vi.fn(() => "/should-not-be-read");
+    expect(canonicalComposeHostPath("/var/lib/openship/edge", "linux", realpath)).toBe(
+      "/var/lib/openship/edge",
+    );
+    expect(realpath).not.toHaveBeenCalled();
   });
 });
 

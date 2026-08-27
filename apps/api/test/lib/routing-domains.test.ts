@@ -7,8 +7,14 @@ vi.mock("@repo/db", () => ({
       updateSsl: vi.fn(),
       markVerifiedActive: vi.fn(),
       findOrCreate: vi.fn(),
+      findOrCreateWithStatus: vi.fn(),
+      findByHostname: vi.fn(),
     },
   },
+}));
+
+vi.mock("../../src/lib/domain-claims", () => ({
+  routableWithoutOwnership: vi.fn().mockResolvedValue(false),
 }));
 
 // The per-host ACME lock talks to Postgres in prod; make it a pass-through here.
@@ -26,10 +32,60 @@ import {
   serviceCustomHostnames,
   getRoutingBaseDomain,
   createTrackedSslProvider,
+  ensureRouteDomainRecord,
   resolveRouteDestination,
   resolveServiceEndpointHostname,
   withEnsuredDomainRecord,
 } from "../../src/lib/routing-domains";
+
+describe("ensureRouteDomainRecord", () => {
+  const route = {
+    hostname: "app.example.com",
+    domainType: "custom",
+    targetPort: 3000,
+    createIfMissing: true,
+  } as any;
+
+  beforeEach(() => {
+    vi.mocked(repos.domain.findByHostname).mockReset().mockResolvedValue(undefined);
+    vi.mocked(repos.domain.findOrCreateWithStatus).mockReset();
+  });
+
+  it("returns database-authoritative creation provenance", async () => {
+    const domain = {
+      id: "dom_app",
+      projectId: "proj_a",
+      hostname: route.hostname,
+      domainType: "custom",
+    } as any;
+    vi.mocked(repos.domain.findOrCreateWithStatus).mockResolvedValue({ domain, created: true });
+    const domainByHostname = new Map();
+
+    await expect(
+      ensureRouteDomainRecord({ projectId: "proj_a", route, domainByHostname }),
+    ).resolves.toEqual({ domain, created: true });
+    expect(domainByHostname.get(route.hostname)).toBe(domain);
+  });
+
+  it("rejects a foreign project that wins the create race", async () => {
+    const raced = {
+      id: "dom_foreign",
+      projectId: "proj_b",
+      hostname: route.hostname,
+      domainType: "custom",
+    } as any;
+    vi.mocked(repos.domain.findOrCreateWithStatus).mockResolvedValue({
+      domain: raced,
+      created: false,
+    });
+    const domainByHostname = new Map();
+
+    await expect(
+      ensureRouteDomainRecord({ projectId: "proj_a", route, domainByHostname }),
+    ).rejects.toThrow("another project");
+    expect(domainByHostname.size).toBe(0);
+  });
+});
 
 const customSvc = {
   id: "svc_web",

@@ -48,7 +48,8 @@ const SETTLED_STATUS_GUARDS: Array<{
   {
     what: "startBuild idempotency guard",
     file: "apps/api/src/modules/deployments/build.service.ts",
-    anchor: '"building", "deploying", "ready", "failed", "cancelled", "action_required"',
+    anchor:
+      '[\n      "building",\n      "deploying",\n      "ready",\n      "failed",\n      "cancelled",\n      "action_required",',
     breaks: "POST /:id/build re-runs the build on an already-settled row",
   },
   {
@@ -146,9 +147,8 @@ describe("the in-flight vocabulary stays one vocabulary", () => {
     // `action_required` is settled — the artifact is gone and clearing the blocker
     // starts a NEW deploy. If it leaked into this set, the row would hold the
     // one-in-flight-per-project slot forever and block every future deploy.
-    const { IN_FLIGHT_DEPLOY_STATUSES, deploymentIsInFlight } = await import(
-      "../../../src/modules/projects/deployment-flags"
-    );
+    const { IN_FLIGHT_DEPLOY_STATUSES, deploymentIsInFlight } =
+      await import("../../../src/modules/projects/deployment-flags");
     expect(IN_FLIGHT_DEPLOY_STATUSES.has("action_required")).toBe(false);
     expect(deploymentIsInFlight({ status: "action_required" } as never)).toBe(false);
     expect(deploymentIsInFlight({ status: "deploying" } as never)).toBe(true);

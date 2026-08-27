@@ -4,6 +4,70 @@
     "save": "保存",
     "cancel": "取消"
   },
+  "releaseImageSource": {
+    "validationInvalid": "发行镜像来源无效。",
+    "toast": {
+      "saved": "容器发行来源已保存。",
+      "saveFailed": "无法保存容器发行来源。"
+    },
+    "status": {
+      "notDeployed": "尚未部署",
+      "checking": "正在检查…",
+      "unavailable": "不可用"
+    },
+    "switchToImage": {
+      "title": "切换到预构建镜像来源",
+      "description": "保存会替换所有环境中的当前 Git 或本地来源。现有部署和回滚历史仍可用。",
+      "keep": "保留当前来源"
+    },
+    "switchToGit": {
+      "title": "切换到 Git 来源",
+      "description": "在链接仓库前不会发生任何更改。链接仓库会替换所有环境中跟踪的镜像来源。",
+      "back": "返回镜像来源"
+    },
+    "entry": {
+      "shortButton": "使用预构建镜像",
+      "button": "跟踪预构建容器镜像",
+      "description": "直接部署带版本的镜像仓库镜像，无需克隆或构建仓库。"
+    },
+    "summary": {
+      "title": "跟踪的容器镜像",
+      "badge": "预构建",
+      "description": "直接部署已发布的镜像。不克隆仓库，也不运行构建命令。",
+      "linkGit": "链接 Git 仓库",
+      "image": "镜像",
+      "versionSource": "版本来源",
+      "githubReleases": "GitHub 发行版",
+      "pinnedVersion": "固定版本",
+      "currentVersion": "当前版本",
+      "targetVersion": "目标版本",
+      "latestVersion": "最新版本",
+      "updateAvailable": "有可用更新"
+    },
+    "editor": {
+      "trackingTitle": "发行版跟踪",
+      "configureTitle": "配置预构建镜像",
+      "templateHint": "使用 {tag} 保留发布者的准确标签，或使用 {version} 采用规范化版本。",
+      "provider": "版本提供方",
+      "githubTitle": "GitHub 发行版",
+      "githubDescription": "跟踪最新已发布的发行版标签。",
+      "urlTitle": "版本 URL 或固定版本",
+      "urlDescription": "读取版本端点或部署固定版本。",
+      "imageTemplate": "镜像模板",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub 仓库",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "版本 URL",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "返回包含 version/tag_name 的文本或 JSON 的 HTTPS 端点。",
+      "pinnedVersion": "固定版本",
+      "pinnedPlaceholder": "可选，例如 v2.4.1",
+      "pinnedHint": "会覆盖检测到的最新版本；留空即可跟踪更新。",
+      "appliesAll": "更改会应用到此项目的所有环境。",
+      "saving": "正在保存…",
+      "save": "保存来源"
+    }
+  },
   "appSettings": {
     "modeApp": "应用设置",
     "modeDeployment": "部署",
@@ -660,6 +724,9 @@
       "defaultAppName": "my-app",
       "mapsToPort": "映射到端口",
       "includeWww": "包含 www",
+      "dnsChallenge": "使用 DNS-01 验证",
+      "dnsChallengeDesc": "通过已连接的 DNS 提供商签发和续期证书。端口 80 无法访问时使用此选项。",
+      "dnsChallengeWildcardDesc": "通配符证书需要 DNS-01 和已连接的 DNS 提供商。",
       "includeWwwDesc": "同时为 www.{domain} 生成记录",
       "includeWwwFallback": "yourdomain.com",
       "adding": "添加中...",

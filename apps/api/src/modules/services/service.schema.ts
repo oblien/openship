@@ -15,6 +15,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
+import { EnvironmentScopeSchema } from "../../lib/environment-scope";
 import { MonorepoSubAppFieldsSchema } from "../projects/project.schema";
 
 export const ServiceIdParam = Type.Object({
@@ -86,9 +87,7 @@ const AdvancedSchema = Type.Object(
             timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 600 })),
             stabilization: Type.Optional(Type.Boolean()),
             stabilizationSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 600 })),
-            onFailure: Type.Optional(
-              Type.Union([Type.Literal("warn"), Type.Literal("fail")]),
-            ),
+            onFailure: Type.Optional(Type.Union([Type.Literal("warn"), Type.Literal("fail")])),
           },
           { additionalProperties: false },
         ),
@@ -137,10 +136,15 @@ const AdvancedSchema = Type.Object(
      * (back to the image default).
      */
     entrypoint: Type.Optional(
-      Type.Union([
-        Type.Array(Type.String({ maxLength: 2000 }), { maxItems: 100 }),
-        Type.Null(),
-      ]),
+      Type.Union([Type.Array(Type.String({ maxLength: 2000 }), { maxItems: 100 }), Type.Null()]),
+    ),
+    /** Names-only provenance for raw Compose build-arg expressions. It must
+     * round-trip with a service so a read/edit/write cannot turn an escaped
+     * literal `$` into a second interpolation at deploy time. */
+    buildArgTemplateKeys: Type.Optional(
+      Type.Array(Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" }), {
+        maxItems: 500,
+      }),
     ),
   },
   { additionalProperties: false },
@@ -155,6 +159,7 @@ const ComposeFieldsBlock = {
   image: Type.Optional(Type.String({ maxLength: 500 })),
   build: Type.Optional(Type.String({ maxLength: 500 })),
   dockerfile: Type.Optional(Type.String({ maxLength: 500 })),
+  buildArgs: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]))),
   ports: Type.Optional(Type.Array(Type.String({ maxLength: 100 }), { maxItems: 50 })),
   dependsOn: Type.Optional(Type.Array(Type.String({ maxLength: 120 }), { maxItems: 50 })),
   environment: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -293,6 +298,9 @@ export const SyncServicesBody = Type.Object({
           Type.String({ description: "Build context, relative to the compose file." }),
         ),
         dockerfile: Type.Optional(Type.String()),
+        buildArgs: Type.Optional(
+          Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()])),
+        ),
         ports: Type.Optional(
           Type.Array(Type.String(), { description: 'Compose port mappings, e.g. "8080:80".' }),
         ),
@@ -366,14 +374,11 @@ export const SyncServicesBody = Type.Object({
 
 export const SetServiceEnvVarsBody = Type.Object(
   {
-    environment: Type.Union([
-      Type.Literal("production"),
-      Type.Literal("preview"),
-      Type.Literal("development"),
-    ]),
+    environment: EnvironmentScopeSchema,
     vars: Type.Array(
       Type.Object(
         {
+          sourceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
           key: Type.String({ minLength: 1, maxLength: 256 }),
           value: Type.String({ maxLength: 10000 }),
           isSecret: Type.Optional(Type.Boolean({ default: false })),

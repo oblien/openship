@@ -1,3 +1,5 @@
+import type { ReleaseSource } from "@repo/core";
+
 /**
  * Shared domain types used across the dashboard.
  *
@@ -16,6 +18,8 @@ export interface Project {
   gitOwner?: string | null;
   gitRepo?: string | null;
   gitBranch?: string | null;
+  /** Prebuilt release/archive or tracked registry-image source. */
+  releaseSource?: ReleaseSource | null;
 
   /* ── Build configuration ────────────────────────────────── */
   framework: string;

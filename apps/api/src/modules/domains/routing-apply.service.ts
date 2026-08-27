@@ -3,21 +3,21 @@
  * rebuild — the counterpart to the deploy-time composite registration, used when
  * the user edits routing from the Routing/Domains tab (`PUT /projects/:id/routing`).
  *
- * Two emitters over one parsed `RoutingConfig`:
- *   - Self-hosted → `buildCompositeRegistration` → OpenResty via the shared
- *     `reconcileProjectRoutes` dispatch.
+ * Two emitters over the persisted live topology:
+ *   - Self-hosted → canonical service-owned routes followed by composite and
+ *     migration fan-out overlays → OpenResty through `reconcileProjectRoutes`.
  *   - Cloud → `compileRoutingToOblien` → the Oblien edge via `routes.set`.
  * `routes.set` ATOMICALLY REPLACES a hostname's edge behavior, so the cloud path
  * always compiles the COMPLETE table (what backs `/` + overrides) — never a
- * partial one. Both paths cover the same shape (the 1-static + 1-server monorepo
- * composite) and are best-effort: the config row is already persisted by the
- * caller, so a live-apply failure logs and defers to the next deploy.
+ * partial one. Both paths are best-effort: the project edit is already persisted
+ * by the caller, so a live-apply failure logs and defers to the next deploy.
  */
 
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import {
   CloudRuntime,
+  edgeProxyFor,
   PAGE_CONTAINER_PREFIX,
   compileRoutingToOblien,
   type OblienRoutingContext,
@@ -34,17 +34,18 @@ import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import { resolveServicePort } from "../../lib/deployable-service";
 import { isArtifactRef } from "../../lib/container-ref";
-import { buildServiceRouteDomain } from "../../lib/routing-domains";
+import { buildServiceRouteDomain, buildServiceRouteDomains } from "../../lib/routing-domains";
+import { resolveRouteRedirect } from "../../lib/domain-redirect";
 import {
   buildCompositeRegistration,
   buildDomainFanoutRegistrations,
   planCompositeRoute,
 } from "../deployments/compose/composite-route";
+import { resolveLiveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import {
-  buildUpstreamUrl,
-  resolveLiveUpstreamUrl,
-  resolveRouteStrategy,
-} from "../../lib/upstream-url";
+  observedLoopbackPublishFromUrl,
+  type ObservedLoopbackPublish,
+} from "../deployments/observed-host-port-claims";
 
 export async function applyProjectRouting(projectId: string): Promise<void> {
   const project = await repos.project.findById(projectId);
@@ -78,43 +79,100 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
 
     // Self-hosted: compile to OpenResty locations and reconcile the domain.
     if (!routing) return;
+    const domainRows = await repos.domain.listByProject(project.id);
     const rowByService = new Map(liveRows.map((row) => [row.serviceId, row]));
+    const domainByHostname = new Map(
+      domainRows.map((domain) => [domain.hostname.toLowerCase(), domain]),
+    );
     const routeStrategy = resolveRouteStrategy(project.routeStrategy);
+    const observedByUrl = new Map<string, ObservedLoopbackPublish[]>();
+    const rememberObservedPublish = (
+      serviceId: string,
+      containerPort: number,
+      targetUrl: string | null | undefined,
+    ) => {
+      const observed = observedLoopbackPublishFromUrl({
+        targetUrl,
+        serviceId,
+        containerPort,
+      });
+      if (!observed || !targetUrl) return;
+      const current = observedByUrl.get(targetUrl) ?? [];
+      if (
+        !current.some(
+          (item) =>
+            item.serviceId === observed.serviceId && item.containerPort === observed.containerPort,
+        )
+      ) {
+        current.push(observed);
+        observedByUrl.set(targetUrl, current);
+      }
+    };
 
-    // One live-upstream resolver, shared by the vercel composite AND the migration
-    // path-fan-out. Resolved from the LIVE container (not the service_deployment
-    // row) so a workload with no loopback publish — migrated, adopted in place —
-    // routes at its container IP instead of a dead 127.0.0.1:<port>. Awaited up
-    // front because the composite/fan-out builders take a sync resolver.
+    // Build service-owned routes with the same canonical planner used by deploy
+    // and service edits. A strategy-only project save must rewrite these vhosts
+    // too; otherwise an unchanged Compose service can be carried forever behind
+    // the old topology.
+    const serviceRoutePlans = defs
+      .filter((def) => def.enabled)
+      .flatMap((def) =>
+        buildServiceRouteDomains({
+          project,
+          service: def,
+          runtimeName: runtime.name,
+          usesManagedRouting: managed,
+          domainByHostname,
+        }).map((route) => ({ def, route })),
+      );
+    const liveServiceHostnames = serviceRoutePlans.map(({ route }) => route.hostname);
+
+    // One live-upstream inventory, shared by service routes, the vercel
+    // composite, and migration fan-out. Resolve every distinct (service, port)
+    // up front because the composite/fan-out builders take a synchronous resolver.
+    // Live observation is mandatory: cached bridge IPs and host ports can be
+    // reassigned after a container disappears.
+    const portsByService = new Map<string, Set<number>>();
+    const requirePort = (serviceId: string, port: number | null | undefined) => {
+      if (!port) return;
+      const ports = portsByService.get(serviceId) ?? new Set<number>();
+      ports.add(port);
+      portsByService.set(serviceId, ports);
+    };
+    for (const { def, route } of serviceRoutePlans) requirePort(def.id, route.targetPort);
+    for (const def of defs) requirePort(def.id, resolveServicePort(def, project.port));
+
+    const upstreamKey = (serviceId: string, containerPort: number) =>
+      `${serviceId}\0${containerPort}`;
     const liveUpstreams = new Map<string, string | null>();
     await Promise.all(
-      defs.map(async (def) => {
-        const row = rowByService.get(def.id);
-        const port = resolveServicePort(def, project.port);
-        if (!port || !row?.containerId) return;
-        liveUpstreams.set(
-          def.id,
-          await resolveLiveUpstreamUrl({
-            strategy: routeStrategy,
-            runtime,
-            containerId: row.containerId,
-            containerPort: port,
-            stored: { ip: row.ip, hostPort: row.hostPort },
-          }),
-        );
+      [...portsByService].flatMap(([serviceId, ports]) => {
+        const row = rowByService.get(serviceId);
+        if (!row?.containerId) return [];
+        return [...ports].map(async (containerPort) => {
+          liveUpstreams.set(
+            upstreamKey(serviceId, containerPort),
+            await resolveLiveUpstreamUrl({
+              strategy: routeStrategy,
+              runtime,
+              containerId: row.containerId!,
+              containerPort,
+              stored: { ip: row.ip, hostPort: row.hostPort, hostPorts: row.hostPorts },
+              requireLiveObservation: true,
+            }),
+          );
+        });
       }),
     );
 
+    const resolveTargetUrlForPort = (serviceId: string, containerPort: number) => {
+      const targetUrl = liveUpstreams.get(upstreamKey(serviceId, containerPort)) ?? null;
+      rememberObservedPublish(serviceId, containerPort, targetUrl);
+      return targetUrl;
+    };
     const resolveTargetUrl = (serviceId: string) => {
-      // A service with no container to inspect (cloud peer, not yet deployed)
-      // still resolves from its persisted row.
-      const live = liveUpstreams.get(serviceId);
-      if (live !== undefined) return live;
-      const def = defs.find((s) => s.id === serviceId);
-      const row = rowByService.get(serviceId);
+      const def = defs.find((candidate) => candidate.id === serviceId);
       const port = def ? resolveServicePort(def, project.port) : null;
-      if (!port) return null;
-      return buildUpstreamUrl({ strategy: routeStrategy, ip: row?.ip, hostPort: row?.hostPort, containerPort: port });
+      return port ? resolveTargetUrlForPort(serviceId, port) : null;
     };
 
     /**
@@ -135,21 +193,46 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
       return isArtifactRef(ref) ? ref!.trim() : null;
     };
 
+    const routingFields = compileProjectRoutingFields(project.routingConfig);
+    const serviceRegisters = serviceRoutePlans.flatMap(({ def, route }) => {
+      if (!route.targetPort) return [];
+      const redirectHost = resolveRouteRedirect(route, liveServiceHostnames);
+      const staticRoot = resolveStaticRoot(def.id);
+      const targetUrl = staticRoot ? null : resolveTargetUrlForPort(def.id, route.targetPort);
+      // A failed live inspection is not authority to replace a working vhost
+      // with a cached address. Leave this one untouched; a later retry/deploy can
+      // re-observe it. Static services are authoritative through their release dir.
+      if (!redirectHost && !staticRoot && !targetUrl) return [];
+      const observed = targetUrl
+        ? observedLoopbackPublishFromUrl({
+            targetUrl,
+            serviceId: def.id,
+            containerPort: route.targetPort,
+          })
+        : null;
+      return [
+        {
+          ...routingFields,
+          hostname: route.hostname,
+          port: route.targetPort,
+          isCustomDomain: route.domainType === "custom",
+          ...(staticRoot ? { staticRoot } : targetUrl ? { targetUrl } : {}),
+          ...(redirectHost ? { redirectHost } : {}),
+          // Redirect vhosts render no upstream at all. Do not describe the
+          // service's otherwise-live target as dialled ownership; the shared
+          // reconciler also filters this defensively from rendered URLs.
+          ...(!redirectHost && observed ? { observedLoopbackPublishes: [observed] } : {}),
+        },
+      ];
+    });
+
     const composite = buildCompositeRegistration({
       services: defs,
       routingConfig: project.routingConfig,
       resolveTargetUrl,
       resolveStaticRoot,
       resolveDomain: (serviceId) => {
-        const def = defs.find((s) => s.id === serviceId);
-        const domain = def
-          ? buildServiceRouteDomain({
-              project,
-              service: def,
-              runtimeName: runtime.name,
-              usesManagedRouting: managed,
-            })
-          : null;
+        const domain = serviceRoutePlans.find(({ def }) => def.id === serviceId)?.route ?? null;
         return domain
           ? { hostname: domain.hostname, isCustomDomain: domain.domainType === "custom" }
           : null;
@@ -192,7 +275,6 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
     // EXCEPT the fan-out one, and the deploy path (which does carry them) then
     // disagreed with the live path about the same vhost. The composite is left alone:
     // it compiles its own topology-aware superset with the backend it resolved.
-    const routingFields = compileProjectRoutingFields(project.routingConfig);
     const fanout = buildDomainFanoutRegistrations({
       routes: project.compositeRoutes,
       resolveTargetUrl,
@@ -200,13 +282,40 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
       // CONCATENATED, not overwritten — same rule and same order as the deploy path:
       // the fan-out's explicit per-path upstreams first, then the compiled rules, or
       // the spread would ASSIGN over them and drop a vercel.json external rewrite.
-      const proxyLocations = [...(reg.proxyLocations ?? []), ...(routingFields.proxyLocations ?? [])];
+      const proxyLocations = [
+        ...(reg.proxyLocations ?? []),
+        ...(routingFields.proxyLocations ?? []),
+      ];
       return { ...reg, ...routingFields, ...(proxyLocations.length ? { proxyLocations } : {}) };
     });
 
-    const registers = [...(composite ? [composite.register] : []), ...fanout];
+    const topologyRegisters = [...(composite ? [composite.register] : []), ...fanout].map(
+      (register) => {
+        const observedLoopbackPublishes = register.redirectHost
+          ? []
+          : [
+              register.targetUrl,
+              ...(register.proxyLocations?.map((location) => location.targetUrl) ?? []),
+            ].flatMap((url) => (url ? (observedByUrl.get(url) ?? []) : []));
+        return observedLoopbackPublishes.length > 0
+          ? { ...register, observedLoopbackPublishes }
+          : register;
+      },
+    );
+    // Last-writer order is part of the routing contract. A composite/fan-out
+    // registration is richer than a service's base vhost, so it must overwrite
+    // the service register when they intentionally share a hostname.
+    const registers = [...serviceRegisters, ...topologyRegisters];
     if (registers.length > 0) {
-      await reconcileProjectRoutes(project, { deployment, routing, registers });
+      await reconcileProjectRoutes(project, {
+        deployment,
+        routing,
+        hostPortTarget: resolved.hostPortTarget,
+        ...(resolved.platform.executor
+          ? { edgeProxy: edgeProxyFor(resolved.platform.executor, "openresty", { ours: true }) }
+          : {}),
+        registers,
+      });
     }
   } catch (err) {
     console.warn(

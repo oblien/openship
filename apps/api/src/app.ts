@@ -98,10 +98,10 @@ function requestScopedMetadata(
       // Non-JSON (an upstream error page): pass the plugin's own body through.
       return new Response(body, { status: res.status, headers });
     }
-    return new Response(
-      JSON.stringify(rewriteMetadataOrigin(metadata, publicOriginFor(req))),
-      { status: res.status, headers },
-    );
+    return new Response(JSON.stringify(rewriteMetadataOrigin(metadata, publicOriginFor(req))), {
+      status: res.status,
+      headers,
+    });
   };
 }
 
@@ -276,9 +276,8 @@ setupWebSocket(app);
 // exec via the Docker runtime adapter. The controller picks via
 // resolveDeploymentRuntime() from the service's active deployment.
 {
-  const { serviceTerminalRoutes } = await import(
-    "./modules/service-terminal/service-terminal.routes"
-  );
+  const { serviceTerminalRoutes } =
+    await import("./modules/service-terminal/service-terminal.routes");
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
@@ -340,38 +339,43 @@ if (env.CLOUD_MODE) {
 // desktop installs. The runner is module-singleton; first access
 // here triggers Redis detection.
 {
-  const sweepStale = repos.backupRun.sweepStaleRuns(
-    "API restart while backup in flight",
-  );
-  const sweepStaleRestores = repos.backupRestore.sweepStaleRestores(
-    "API restart while restore in flight",
-  );
-  // A deploy is an in-process task driven by an in-memory build session, so a
-  // restart orphans any deployment still building/deploying/queued — the UI
-  // would otherwise hang on "Building" forever. Flip those to cancelled at boot
-  // (reconciling is left for the reconcile scheduler). Fire-and-forget.
-  void repos.deployment
-    .sweepStaleInFlight("Interrupted by a server restart — redeploy to try again.")
-    .then((n) => {
-      if (n > 0) console.log(`[boot] cancelled ${n} stale in-flight deployment(s)`);
-    })
-    .catch((err) => console.warn("[boot] sweepStaleInFlight failed:", err));
-  // A project's deletionInProgress flag can only survive from a teardown that
-  // died mid-flight (no teardown outlives a restart), so clear stuck locks at
-  // boot — otherwise the project refuses all deletes forever ("Another delete
-  // is already running"). Fire-and-forget; logs the count if any were stuck.
-  void repos.project.clearStaleDeletions().then((n) => {
-    if (n > 0) console.log(`[boot] cleared ${n} stale project deletion lock(s)`);
-  }).catch((err) => console.warn("[boot] clearStaleDeletions failed:", err));
+  // These rows represent process-owned work. A self-hosted instance has one API
+  // process, so its boot proves the previous owner died. CLOUD_MODE has several
+  // replicas sharing the same DB: one replica starting proves nothing about a
+  // worker or teardown on another, and sweeping it would manufacture false
+  // quiescence while that other process can still mutate runtime resources.
+  if (!env.CLOUD_MODE) {
+    // A self-hosted process restart proves every in-process worker from the old
+    // process is gone. Complete reconciliation BEFORE starting the runner: a
+    // fire-and-forget sweep can otherwise terminalize a backup/deploy/restore
+    // that the new process has already claimed.
+    const [runs, restores, deployments] = await Promise.all([
+      repos.backupRun.sweepStaleRuns("API restart while backup in flight"),
+      repos.backupRestore.sweepStaleRestores("API restart while restore in flight"),
+      repos.deployment.sweepStaleInFlight(
+        "Interrupted by a server restart — redeploy to try again.",
+      ),
+    ]);
+    if (runs > 0 || restores > 0) {
+      console.log(`[boot] swept ${runs} stale backup runs + ${restores} stale restores`);
+    }
+    if (deployments > 0) {
+      console.log(`[boot] cancelled ${deployments} stale in-flight deployment(s)`);
+    }
+
+    // Stale project deletion flags are reclaimed under the project advisory
+    // lock by the next teardown attempt. A blanket boot sweep can overlap work
+    // started by this process and clear a fresh fence, so it is deliberately
+    // not used here.
+  }
   // A Docker migration is an in-memory FSM that quiesces (stops) the source
   // containers before the target deploy — a restart mid-migration would strand
   // a stopped production stack forever. Restart the originals + roll back any
   // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
   // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
   if (!env.CLOUD_MODE) {
-    void import("./modules/migration/migration.orchestrator")
-      .then(({ migrationOrchestrator }) => migrationOrchestrator.recoverInterruptedMigrations())
-      .catch((err) => console.warn("[boot] migration recovery failed:", err));
+    const { migrationOrchestrator } = await import("./modules/migration/migration.orchestrator");
+    await migrationOrchestrator.recoverInterruptedMigrations();
   }
 
   const runner = await getJobRunner();
@@ -384,9 +388,7 @@ if (env.CLOUD_MODE) {
   // prunes, deployment reconcile) into the `job` table and register every
   // enabled row on the runner. Operator cron/enabled overrides survive restarts.
   void reconcileJobs()
-    .then((stats) =>
-      console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`),
-    )
+    .then((stats) => console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`))
     .catch((err) => console.warn("[boot] reconcileJobs failed:", err));
 
   // Self-hosted (single box): any job_run still "running" at boot was orphaned
@@ -486,14 +488,6 @@ if (env.CLOUD_MODE) {
       `[boot] backup schedules: ${stats.registered} registered, ${stats.skipped} skipped`,
     ),
   );
-
-  void Promise.all([sweepStale, sweepStaleRestores]).then(([runs, restores]) => {
-    if (runs > 0 || restores > 0) {
-      console.log(
-        `[boot] swept ${runs} stale backup runs + ${restores} stale restores`,
-      );
-    }
-  });
 }
 
 // ─── Notification delivery runner ───────────────────────────────────

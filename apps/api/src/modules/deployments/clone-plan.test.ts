@@ -9,6 +9,7 @@ const base: ClonePlanInput = {
   buildStrategy: "server",
   isDesktop: true,
   repoIsGithub: true,
+  dockerTransport: "ssh",
 };
 
 describe("resolveClonePlan — relayEligible (forward is the default on desktop)", () => {
@@ -37,5 +38,13 @@ describe("resolveClonePlan — relayEligible (forward is the default on desktop)
         repoIsGithub: false,
       }).relayEligible,
     ).toBe(false);
+  });
+
+  it("is NOT eligible when Docker uses a local socket with no target clone channel", () => {
+    const plan = resolveClonePlan({ ...base, dockerTransport: "socket" });
+    expect(plan.sourceLocation).toBe("api-host");
+    expect(plan.cloneRunsOnTarget).toBe(false);
+    expect(plan.cloneCredentialPurpose).toBe("local");
+    expect(plan.relayEligible).toBe(false);
   });
 });

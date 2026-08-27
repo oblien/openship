@@ -19,7 +19,7 @@ vi.mock("../session-manager", () => ({
   broadcastInstallPhase: vi.fn(),
 }));
 
-import { buildComposeImages } from "./build.service";
+import { buildComposeImages, resolveComposeBuildArgs } from "./build.service";
 
 /**
  * These pin the AUTHOR-FACING contract of an inline catalog build (`advanced.build`):
@@ -82,10 +82,12 @@ function repoService(
     kind: string;
     build: string | null;
     dockerfile: string | null;
+    buildArgs: Record<string, string | null> | null;
     rootDirectory: string | null;
     buildCommand: string | null;
     startCommand: string | null;
     framework: string | null;
+    advanced: { buildArgTemplateKeys?: string[] } | null;
   }> = {},
 ) {
   // Spread, not `??` per field: an explicit `build: null` (a monorepo row) has to
@@ -124,6 +126,7 @@ async function run(
   services: unknown[],
   onContext?: (root: string, item: Captured) => void | Promise<void>,
   snapshotOverrides?: Partial<typeof SNAPSHOT>,
+  buildEnvVars: Record<string, string> = {},
 ) {
   listByProjectMock.mockResolvedValue(services);
   const captured: Captured[] = [];
@@ -162,7 +165,7 @@ async function run(
     logger: new BuildLogger(() => {}),
     snapshot: { ...SNAPSHOT, ...snapshotOverrides } as never,
     buildSessionId: "sess",
-    buildEnvVars: {},
+    buildEnvVars,
     buildResources: DEFAULT_RESOURCE_CONFIG,
   });
   return { result, captured };
@@ -314,6 +317,85 @@ describe("buildComposeImages — inline catalog build materialization", () => {
  * These pin the producer side: which rows get a narrowed context, and which must not.
  */
 describe("buildComposeImages — declared build context", () => {
+  it("isolates build args for services sharing one context and Dockerfile (#689)", async () => {
+    const shared = {
+      build: "../../",
+      dockerfile: "services/shared/Dockerfile",
+    };
+    const { captured } = await run(
+      [
+        repoService({
+          id: "svc-api",
+          name: "api",
+          ...shared,
+          buildArgs: {
+            APP_PACKAGE: "@myorg/api",
+            SHARED_VERSION: null,
+            CHANNEL: "${RELEASE_CHANNEL:-stable}",
+            VERSIONED: "pkg-${SHARED_VERSION}",
+          },
+          advanced: { buildArgTemplateKeys: ["CHANNEL", "VERSIONED"] },
+        }),
+        repoService({
+          id: "svc-worker",
+          name: "worker",
+          ...shared,
+          buildArgs: { APP_PACKAGE: "@myorg/worker", UNSET: null },
+        }),
+      ],
+      undefined,
+      { rootDirectory: "deploy/docker-compose" },
+      { SHARED_VERSION: "1.2.3" },
+    );
+
+    expect(captured).toHaveLength(2);
+    expect(captured.map(({ config }) => config.buildContextDirectory)).toEqual(["", ""]);
+    expect(captured.map(({ config }) => config.dockerfilePath)).toEqual([
+      "services/shared/Dockerfile",
+      "services/shared/Dockerfile",
+    ]);
+    expect(captured[0].config.buildArgs).toEqual({
+      APP_PACKAGE: "@myorg/api",
+      SHARED_VERSION: "1.2.3",
+      CHANNEL: "stable",
+      VERSIONED: "pkg-1.2.3",
+    });
+    expect(captured[1].config.buildArgs).toEqual({ APP_PACKAGE: "@myorg/worker" });
+  });
+
+  it("reports missing required build-arg variables without values", () => {
+    expect(() =>
+      resolveComposeBuildArgs({ TOKEN: "${BUILD_TOKEN:?set BUILD_TOKEN}" }, {}, ["TOKEN"]),
+    ).toThrow(/BUILD_TOKEN/);
+  });
+
+  it("resolves only raw-parser templates against the invocation environment", () => {
+    expect(
+      resolveComposeBuildArgs(
+        {
+          A: "one",
+          B: "${A:-two}",
+          C: "${HOST}",
+          SELF: "${SELF:-fallback}",
+          CLI_LITERAL: "$HOME",
+          ESCAPED: "$$HOME",
+        },
+        { HOST: "host", SELF: "env-self", HOME: "/private/home" },
+        ["B", "C", "SELF", "ESCAPED"],
+      ),
+    ).toEqual({
+      A: "one",
+      // Compose uses the invocation environment, not sibling build args.
+      B: "two",
+      C: "host",
+      SELF: "env-self",
+      // CLI-normalized/direct values are literal even when they contain `$`.
+      CLI_LITERAL: "$HOME",
+      // Raw Compose `$$` becomes one literal dollar exactly once.
+      ESCAPED: "$HOME",
+    });
+  });
+
   it("hands the runtime the service's build directory as the docker context", async () => {
     const { captured } = await run([repoService()]);
 

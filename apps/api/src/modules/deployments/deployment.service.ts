@@ -141,10 +141,7 @@ export async function listDeployments(
   return { ...result, rows: enriched };
 }
 
-export async function getDeployment(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function getDeployment(deploymentId: string, organizationId: string) {
   const dep = await repos.deployment.findById(deploymentId);
   assertResourceInOrg(dep, "Deployment", organizationId, deploymentId);
 
@@ -162,16 +159,16 @@ export async function getDeployment(
 // delete / pin would either be meaningless or detach the live app. Build and
 // redeploy are blocked separately, in build.service's triggerDeployment.
 
-export async function deleteDeployment(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function deleteDeployment(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
 
   const project = await repos.project.findById(dep.projectId);
   assertNotControlPlane(project);
 
-  if (["queued", "building", "deploying"].includes(dep.status)) {
+  if (
+    ["queued", "building", "deploying"].includes(dep.status) ||
+    (await repos.deployment.hasLiveBuildExecution(dep.id, dep.projectId))
+  ) {
     throw new ForbiddenError("Cannot delete a deployment that is in progress. Cancel it first.");
   }
 
@@ -195,17 +192,16 @@ export async function deleteDeployment(
     await repos.project.setActiveDeployment(project.id, null);
   }
 
-  await repos.deployment.deleteDeployment(deploymentId);
+  if (!(await repos.deployment.deleteDeployment(deploymentId))) {
+    throw new ForbiddenError("Cannot delete a deployment whose worker is still finishing.");
+  }
 }
 
 // Thin wrapper around the RollbackOrchestrator. The orchestrator owns
 // the policy + the runtime primitive calls; this service just adds the
 // per-org ownership check via getDeployment.
 
-export async function rollbackDeployment(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function rollbackDeployment(deploymentId: string, organizationId: string) {
   // Existence + org-scope check (throws if deployment isn't in this org).
   const dep = await getDeployment(deploymentId, organizationId);
   await assertNotControlPlaneById(dep.projectId);
@@ -344,10 +340,7 @@ export async function setDeploymentPin(
   return (await repos.deployment.findById(dep.id)) ?? dep;
 }
 
-export async function rejectDeployment(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function rejectDeployment(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
 
   // Reject targets a FINISHED deploy: a fully-ready one, or a partial-failure
@@ -430,10 +423,7 @@ export async function rejectDeployment(
  * marker so the deploy stops reading as "Action Required" and settles as a
  * kept partial. Idempotent — re-keeping an already-resolved deploy is a no-op.
  */
-export async function keepDeployment(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function keepDeployment(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
 
   if (dep.status !== "partial_failure") {
@@ -545,10 +535,7 @@ export async function getDeploymentLogs(
   return [];
 }
 
-export async function restartDeployment(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function restartDeployment(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
   await assertNotControlPlaneById(dep.projectId);
 
@@ -569,10 +556,7 @@ export async function restartDeployment(
   return dep;
 }
 
-export async function getContainerInfo(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function getContainerInfo(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
@@ -597,10 +581,7 @@ export async function getContainerInfo(
  * `detectOpenRestyPaths` and the edge-Lua self-heal inside the provision lock,
  * which is not something a status read should contend on.
  */
-export async function getContainerUsage(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function getContainerUsage(deploymentId: string, organizationId: string) {
   const dep = await getDeployment(deploymentId, organizationId);
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
@@ -612,10 +593,7 @@ export async function getContainerUsage(
   });
 }
 
-export async function getBuildLogs(
-  deploymentId: string,
-  organizationId: string,
-) {
+export async function getBuildLogs(deploymentId: string, organizationId: string) {
   await getDeployment(deploymentId, organizationId);
 
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(deploymentId);
@@ -624,5 +602,3 @@ export async function getBuildLogs(
   }
   return buildSession.logs as LogEntry[];
 }
-
-

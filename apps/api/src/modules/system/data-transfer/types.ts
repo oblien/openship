@@ -11,6 +11,24 @@ import type { DatabaseDump } from "@repo/db";
 
 export type ImportMode = "wipe" | "merge";
 
+export type ExportHistoryCategory =
+  | "analytics"
+  | "activity"
+  | "backups"
+  | "incidents"
+  | "migrations";
+
+export interface ExportSelection {
+  /** Optional history groups. Durable configuration is always included. */
+  history: ExportHistoryCategory[];
+}
+
+export interface ExportPreview {
+  core: number;
+  history: Record<ExportHistoryCategory, number>;
+  total: number;
+}
+
 /** How a given column is encrypted at rest — drives decrypt/re-encrypt dispatch. */
 export type SecretScheme = "scalar" | "enc1" | "map" | "notification-config" | "plaintext";
 
@@ -49,6 +67,9 @@ export interface DataTransferFile {
   envelopeVersion: 1;
   createdAt: string;
   sourceDriver: "pg" | "pglite";
+  /** Absent on legacy files, which always contained all history groups. */
+  selection?: ExportSelection;
+  summary?: { rows: number; tables: number };
   dump: DatabaseDump;
   /** null = the export carried no secrets (no passphrase given). */
   secrets: SealedSecrets | null;
@@ -69,4 +90,34 @@ export interface ImportResult {
    * — we never guess a rewrite. Empty when nothing needs attention.
    */
   localPathProjects: Array<{ slug: string; localPath: string }>;
+}
+
+/** One-time capability copied from the destination to the source instance. */
+export interface DirectTransferConnection {
+  version: 1;
+  apiBase: string;
+  recipientRuntimeId: string;
+  sessionId: string;
+  token: string;
+  recipientPublicKey: string;
+  mode: ImportMode;
+  expiresAt: string;
+}
+
+export interface DirectTransferEnvelope {
+  version: 1;
+  sessionId: string;
+  senderPublicKey: string;
+  blob: string;
+}
+
+export interface DirectTransferPayload {
+  version: 1;
+  authorizationToken: string;
+  file: DataTransferFile;
+  secrets: SecretBundle | null;
+}
+
+export interface DirectTransferResult extends ImportResult {
+  destination: string;
 }

@@ -3,7 +3,7 @@ import type { DockerMigrationRun } from "@repo/db";
 /**
  * The live migration a project payload is allowed to carry.
  *
- * Three fields, and the choice of THREE is the point of this module. The run row also holds
+ * Four fields, and the explicit allowlist is the point of this module. The run row also holds
  * `confirmationToken` — the secret that authorises the destructive cutover — and
  * `inputSnapshot`, a verbatim copy of the start request (env overrides included). A project
  * payload is read with `project:read`, while every migration route is `server:write`; spreading
@@ -12,7 +12,9 @@ import type { DockerMigrationRun } from "@repo/db";
  * added to the run row later cannot leak through here by default.
  *
  * `id` is what lets a client re-open the run's own (`server:read`-gated) endpoints — a
- * pointer, not an authorisation. `status` and `mode` are what a status pill renders.
+ * pointer, not an authorisation. `status` and `mode` are what a status pill renders, while
+ * `needsAction` is a server-derived boolean that lets project-only readers see a failed
+ * cutover without exposing its error details.
  */
 export type ActiveMigrationSummary = {
   id: string;
@@ -20,6 +22,7 @@ export type ActiveMigrationSummary = {
   /** `project_move` | `project_copy` — a move is relocating THIS project, a copy is
    *  building a second one. Different sentences for the operator, same pill. */
   mode: string;
+  needsAction: boolean;
 };
 
 /**
@@ -30,5 +33,13 @@ export function readActiveMigration(
   run: DockerMigrationRun | null | undefined,
 ): ActiveMigrationSummary | null {
   if (!run) return null;
-  return { id: run.id, status: run.status, mode: run.mode };
+  return {
+    id: run.id,
+    status: run.status,
+    mode: run.mode,
+    needsAction:
+      run.status === "awaiting_cutover" ||
+      run.status === "partial" ||
+      (run.status === "cutover" && Boolean(run.errorMessage)),
+  };
 }

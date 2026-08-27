@@ -1,14 +1,28 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { StackId, ComposeAdvanced, RoutingConfig, OpenshipResourceTier, OpenshipReadiness, WorkloadType } from "@repo/core";
-import type { CloudResourceTier, CloudResourceCustom, PublicEndpoint, PortCheckUI, OutputCheckUI } from "@/context/deployment/types";
+import type {
+  StackId,
+  ComposeAdvanced,
+  RoutingConfig,
+  OpenshipResourceTier,
+  OpenshipReadiness,
+  WorkloadType,
+} from "@repo/core";
+import type {
+  CloudResourceTier,
+  CloudResourceCustom,
+  PublicEndpoint,
+  PortCheckUI,
+  OutputCheckUI,
+} from "@/context/deployment/types";
 
 /** How a rollback to a given deployment would run — see the API's restore plan. */
 export interface RestorePlanUI {
   /** `redeploy-pinned` = instant (reuses the retained image), `unit-swap` =
-   *  instant (restarts the retained unit), `rebuild` = builds the commit again,
+   *  instant (restarts the retained unit), `reacquire-image` = pulls the frozen
+   *  registry reference again, `rebuild` = builds the commit again,
    *  `ineligible` = can't be restored (already active, not successful). */
-  mode: "redeploy-pinned" | "unit-swap" | "rebuild" | "ineligible";
+  mode: "redeploy-pinned" | "unit-swap" | "reacquire-image" | "rebuild" | "ineligible";
   /** True when the restore clones the repo (so it needs GitHub access). */
   needsRepository: boolean;
   /** Services that must rebuild because their image aged out. */
@@ -70,6 +84,7 @@ export interface PrepareComposeService {
   image?: string;
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   ports: string[];
   dependsOn: string[];
   environment: Record<string, string>;
@@ -81,9 +96,11 @@ export interface PrepareComposeService {
       defaultValue?: string;
       resolvedValue: string;
       expression?: string;
-      /** The compose file marks this one mandatory (`${VAR:?…}`) and it has no
-       *  value yet — always alongside `source: "missing"`. */
+      /** The compose file marks this row mandatory (`${VAR:?…}`) and at least
+       *  one referenced variable is unresolved. */
       required?: boolean;
+      /** Names referenced by an embedded expression that still need a value. */
+      unresolvedVariables?: string[];
     }
   >;
   volumes: string[];
@@ -190,7 +207,12 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
   }>;
   /** Declared cloud sizing (tier OR explicit cpu/mem/disk). Seeds resource tier. */
   /** Tier ids come from @repo/core (OpenshipResourceTier) — not re-spelled here. */
-  resources?: { tier?: OpenshipResourceTier; cpuCores?: number; memoryMb?: number; diskMb?: number };
+  resources?: {
+    tier?: OpenshipResourceTier;
+    cpuCores?: number;
+    memoryMb?: number;
+    diskMb?: number;
+  };
   /**
    * Declared readiness gate. Seeds the wizard's Health section; absent (the
    * common case) leaves it off, which is also what the pipeline does.
@@ -217,21 +239,17 @@ export const deployApi = {
     api.get<any>(endpoints.deploy.list, { params: opts }),
 
   /** Cancel a deployment */
-  cancel: (id: string) =>
-    api.post<any>(endpoints.deploy.cancel(id)),
+  cancel: (id: string) => api.post<any>(endpoints.deploy.cancel(id)),
 
   /** Delete a deployment */
-  deleteDeployment: (id: string) =>
-    api.delete<any>(endpoints.deploy.delete(id)),
+  deleteDeployment: (id: string) => api.delete<any>(endpoints.deploy.delete(id)),
 
   /** Reject a partial deployment and restore previous active deployment if available */
-  reject: (id: string) =>
-    api.post<any>(endpoints.deploy.reject(id)),
+  reject: (id: string) => api.post<any>(endpoints.deploy.reject(id)),
 
   /** Keep (confirm) a partial deployment that is awaiting a decision — clears
    *  the pending marker so it stops reading as "Action Required". */
-  keep: (id: string) =>
-    api.post<any>(endpoints.deploy.keep(id)),
+  keep: (id: string) => api.post<any>(endpoints.deploy.keep(id)),
 
   /** Dismiss an advisory port-check for `target` (the exposed port for a
    *  single-app, or the service id for a compose service) so it won't re-nag
@@ -252,19 +270,16 @@ export const deployApi = {
   /** Roll back to a previous successful deployment. The orchestrator resolves
    *  HOW at call time — instant from the retained image, or a rebuild from the
    *  target's commit — so this never fails just because an artifact aged out. */
-  rollback: (id: string) =>
-    api.post<any>(endpoints.deploy.rollback(id)),
+  rollback: (id: string) => api.post<any>(endpoints.deploy.rollback(id)),
 
   /** How a rollback to this deployment WOULD run, for the confirm dialog's copy.
    *  Read-only; safe to call when the menu opens. */
-  restorePlan: (id: string) =>
-    api.get<{ data: RestorePlanUI }>(endpoints.deploy.restorePlan(id)),
+  restorePlan: (id: string) => api.get<{ data: RestorePlanUI }>(endpoints.deploy.restorePlan(id)),
 
   /** Pin / unpin a deployment. Pinned deployments are exempt from the
    *  retention prune — their artifact stays rollback-restorable
    *  indefinitely. Hard-capped at 10 per project. */
-  pin: (id: string, pinned: boolean) =>
-    api.post<any>(`deployments/${id}/pin`, { pinned }),
+  pin: (id: string, pinned: boolean) => api.post<any>(`deployments/${id}/pin`, { pinned }),
 
   /** Trigger a redeploy. Pass `useExistingCommit: true` to rebuild from
    *  the SAME commit SHA the old deployment used (fallback path when the
@@ -330,6 +345,8 @@ export const deployApi = {
       image?: string;
       build?: string;
       dockerfile?: string;
+      buildArgs?: Record<string, string | null>;
+      advanced?: ComposeAdvanced;
       ports?: string[];
       dependsOn?: string[];
       environment?: Record<string, string>;
@@ -348,24 +365,21 @@ export const deployApi = {
      *  build host (relay on desktop, token otherwise); default clones on the
      *  API host and transfers. The API gates + falls back as needed. */
     cloneStrategy?: "api-host" | "server";
-  }) =>
-    api.post<any>(endpoints.deploy.buildAccess, payload),
+  }) => api.post<any>(endpoints.deploy.buildAccess, payload),
 
   /** Poll build status */
   getBuildStatus: (deploymentId: string) =>
     api.get<any>(endpoints.deploy.buildStatus(deploymentId)),
 
   /** Start a build by deployment ID */
-  buildStart: (deployment_id: string) =>
-    api.post<any>(endpoints.deploy.buildStart(deployment_id)),
+  buildStart: (deployment_id: string) => api.post<any>(endpoints.deploy.buildStart(deployment_id)),
 
   /** Re-deploy an existing deployment */
   buildRedeploy: (deployment_id: string) =>
     api.post<any>(endpoints.deploy.buildRedeploy(deployment_id)),
 
   /** Check SSL certificate status for a domain */
-  sslStatus: (domain: string) =>
-    api.post<any>(endpoints.deploy.sslStatus, { domain }),
+  sslStatus: (domain: string) => api.post<any>(endpoints.deploy.sslStatus, { domain }),
 
   /** Renew SSL certificate */
   sslRenew: (domain: string, includeWww = false) =>

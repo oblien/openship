@@ -4,6 +4,70 @@
     "save": "Kaydet",
     "cancel": "İptal"
   },
+  "releaseImageSource": {
+    "validationInvalid": "Sürüm imajı kaynağı geçersiz.",
+    "toast": {
+      "saved": "Konteyner sürüm kaynağı kaydedildi.",
+      "saveFailed": "Konteyner sürüm kaynağı kaydedilemedi."
+    },
+    "status": {
+      "notDeployed": "Henüz dağıtılmadı",
+      "checking": "Kontrol ediliyor…",
+      "unavailable": "Kullanılamıyor"
+    },
+    "switchToImage": {
+      "title": "Hazır imaj kaynağına geç",
+      "description": "Kaydetmek, tüm ortamlardaki mevcut Git veya yerel kaynağı değiştirir. Mevcut dağıtımlar ve geri alma geçmişi kullanılabilir kalır.",
+      "keep": "Mevcut kaynağı koru"
+    },
+    "switchToGit": {
+      "title": "Git kaynağına geç",
+      "description": "Bir depo bağlayana kadar hiçbir şey değişmez. Depoyu bağlamak, tüm ortamlardaki takip edilen imaj kaynağını değiştirir.",
+      "back": "İmaj kaynağına dön"
+    },
+    "entry": {
+      "shortButton": "Hazır imaj kullan",
+      "button": "Hazır konteyner imajını takip et",
+      "description": "Bir depoyu klonlamadan veya derlemeden sürümlü bir kayıt imajını doğrudan dağıtın."
+    },
+    "summary": {
+      "title": "Takip edilen konteyner imajı",
+      "badge": "Hazır",
+      "description": "Yayımlanmış bir imajı doğrudan dağıtır. Depo klonlanmaz ve derleme komutu çalıştırılmaz.",
+      "linkGit": "Git deposunu bağla",
+      "image": "İmaj",
+      "versionSource": "Sürüm kaynağı",
+      "githubReleases": "GitHub sürümleri",
+      "pinnedVersion": "Sabitlenmiş sürüm",
+      "currentVersion": "Geçerli sürüm",
+      "targetVersion": "Hedef sürüm",
+      "latestVersion": "En son sürüm",
+      "updateAvailable": "Güncelleme mevcut"
+    },
+    "editor": {
+      "trackingTitle": "Sürüm takibi",
+      "configureTitle": "Hazır imajı yapılandır",
+      "templateHint": "Yayıncının tam etiketini korumak için {tag}, normalleştirilmiş sürüm için {version} kullanın.",
+      "provider": "Sürüm sağlayıcısı",
+      "githubTitle": "GitHub sürümleri",
+      "githubDescription": "En son yayımlanmış sürüm etiketini takip edin.",
+      "urlTitle": "Sürüm URL'si veya sabitleme",
+      "urlDescription": "Bir sürüm uç noktasını okuyun veya sabit bir sürüm dağıtın.",
+      "imageTemplate": "İmaj şablonu",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub deposu",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "Sürüm URL'si",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "version/tag_name içeren metin veya JSON döndüren HTTPS uç noktası.",
+      "pinnedVersion": "Sabitlenmiş sürüm",
+      "pinnedPlaceholder": "İsteğe bağlı, ör. v2.4.1",
+      "pinnedHint": "Bulunan en son sürümü geçersiz kılar; güncellemeleri izlemek için boş bırakın.",
+      "appliesAll": "Değişiklikler bu projenin tüm ortamlarına uygulanır.",
+      "saving": "Kaydediliyor…",
+      "save": "Kaynağı kaydet"
+    }
+  },
   "appSource": {
     "title": "Kaynak",
     "description": "Bu uygulama bir sürümden (release) dağıtılır — push yapılacak bir repo yoktur; güncellemeler yeni sürümler olarak gelir.",
@@ -810,6 +874,9 @@
       "includeWwwFallback": "alanadiniz.com",
       "externalIngress": "Harici trafik girişi ve TLS",
       "externalIngressDesc": "TLS upstream katmanında sonlandırılır (Cloudflare Tunnel veya yük dengeleyici). Yalnızca TXT kaydıyla doğrulayın — alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "dnsChallenge": "DNS-01 doğrulamasını kullan",
+      "dnsChallengeDesc": "Sertifikayı bağlı DNS sağlayıcınız üzerinden düzenleyin ve yenileyin. Port 80'e erişilemiyorsa bunu kullanın.",
+      "dnsChallengeWildcardDesc": "Wildcard sertifikalar DNS-01 ve bağlı bir DNS sağlayıcısı gerektirir.",
       "noWww": "Alan adını \"www.\" olmadan girin — eklemek için aşağıdan \"www dahil et\" seçeneğini açın.",
       "adding": "Ekleniyor...",
       "submit": "Alan adı ekle"

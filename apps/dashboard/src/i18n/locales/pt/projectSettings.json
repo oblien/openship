@@ -4,6 +4,70 @@
     "save": "Guardar",
     "cancel": "Cancelar"
   },
+  "releaseImageSource": {
+    "validationInvalid": "A origem da imagem de lançamento é inválida.",
+    "toast": {
+      "saved": "A origem do lançamento do contentor foi guardada.",
+      "saveFailed": "Não foi possível guardar a origem do lançamento do contentor."
+    },
+    "status": {
+      "notDeployed": "Ainda não implementada",
+      "checking": "A verificar…",
+      "unavailable": "Indisponível"
+    },
+    "switchToImage": {
+      "title": "Mudar para uma origem de imagem pré-criada",
+      "description": "Guardar substitui a origem Git ou local atual em todos os ambientes. As implementações existentes e o histórico de reversão continuam disponíveis.",
+      "keep": "Manter a origem atual"
+    },
+    "switchToGit": {
+      "title": "Mudar para uma origem Git",
+      "description": "Nada muda até ligar um repositório. Ligá-lo substitui a origem de imagem acompanhada em todos os ambientes.",
+      "back": "Voltar à origem de imagem"
+    },
+    "entry": {
+      "shortButton": "Usar imagem pré-criada",
+      "button": "Acompanhar uma imagem de contentor pré-criada",
+      "description": "Implemente diretamente uma imagem de registo versionada, sem clonar nem criar um repositório."
+    },
+    "summary": {
+      "title": "Imagem de contentor acompanhada",
+      "badge": "Pré-criada",
+      "description": "Implementa diretamente uma imagem publicada. Nenhum repositório é clonado e não é executado nenhum comando de criação.",
+      "linkGit": "Ligar repositório Git",
+      "image": "Imagem",
+      "versionSource": "Origem da versão",
+      "githubReleases": "Lançamentos do GitHub",
+      "pinnedVersion": "Versão fixada",
+      "currentVersion": "Versão atual",
+      "targetVersion": "Versão de destino",
+      "latestVersion": "Versão mais recente",
+      "updateAvailable": "Atualização disponível"
+    },
+    "editor": {
+      "trackingTitle": "Acompanhamento de lançamentos",
+      "configureTitle": "Configurar imagem pré-criada",
+      "templateHint": "Use {tag} para preservar a tag exata do publicador ou {version} para a versão normalizada.",
+      "provider": "Fornecedor da versão",
+      "githubTitle": "Lançamentos do GitHub",
+      "githubDescription": "Acompanhar a tag do lançamento publicado mais recente.",
+      "urlTitle": "URL da versão ou versão fixada",
+      "urlDescription": "Leia um ponto de extremidade de versão ou implemente uma versão fixa.",
+      "imageTemplate": "Modelo da imagem",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "Repositório GitHub",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "URL da versão",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "Ponto de extremidade HTTPS que devolve texto ou JSON com version/tag_name.",
+      "pinnedVersion": "Versão fixada",
+      "pinnedPlaceholder": "Opcional, por exemplo v2.4.1",
+      "pinnedHint": "Substitui a versão mais recente detectada; deixe em branco para acompanhar atualizações.",
+      "appliesAll": "As alterações aplicam-se a todos os ambientes deste projeto.",
+      "saving": "A guardar…",
+      "save": "Guardar origem"
+    }
+  },
   "appSettings": {
     "modeApp": "Definições da aplicação",
     "modeDeployment": "Implementação",
@@ -660,6 +724,9 @@
       "defaultAppName": "minha-app",
       "mapsToPort": "Mapeia para a porta",
       "includeWww": "Incluir www",
+      "dnsChallenge": "Usar desafio DNS-01",
+      "dnsChallengeDesc": "Emita e renove o certificado pelo provedor DNS conectado. Use quando a porta 80 não estiver acessível.",
+      "dnsChallengeWildcardDesc": "Certificados curinga exigem DNS-01 e um provedor DNS conectado.",
       "includeWwwDesc": "Gerar também registos para www.{domain}",
       "includeWwwFallback": "seudominio.com",
       "adding": "A adicionar...",

@@ -25,6 +25,70 @@
     "toastTitle": "Source",
     "cliManaged": "This is the Openship control plane — it updates itself. Run \"openship update\" on the host to upgrade it; there's nothing to change here."
   },
+  "releaseImageSource": {
+    "validationInvalid": "Invalid release image source.",
+    "toast": {
+      "saved": "Container release source saved.",
+      "saveFailed": "Could not save the container release source."
+    },
+    "status": {
+      "notDeployed": "Not deployed",
+      "checking": "Checking…",
+      "unavailable": "Unavailable"
+    },
+    "switchToImage": {
+      "title": "Switch to a prebuilt image source",
+      "description": "Saving replaces the current Git or local source for every environment. Existing deployments and rollback history remain available.",
+      "keep": "Keep current source"
+    },
+    "switchToGit": {
+      "title": "Switch to a Git source",
+      "description": "Nothing changes until you link a repository. Linking one replaces the tracked image source for every environment.",
+      "back": "Back to image source"
+    },
+    "entry": {
+      "shortButton": "Use prebuilt image",
+      "button": "Track a prebuilt container image",
+      "description": "Deploy a versioned registry image directly, without cloning or building a repository."
+    },
+    "summary": {
+      "title": "Tracked container image",
+      "badge": "Prebuilt",
+      "description": "Deploys a published image directly. No repository is cloned and no build command runs.",
+      "linkGit": "Link Git repository",
+      "image": "Image",
+      "versionSource": "Version source",
+      "githubReleases": "GitHub Releases",
+      "pinnedVersion": "Pinned version",
+      "currentVersion": "Current version",
+      "targetVersion": "Target version",
+      "latestVersion": "Latest version",
+      "updateAvailable": "Update available"
+    },
+    "editor": {
+      "trackingTitle": "Release tracking",
+      "configureTitle": "Configure prebuilt image",
+      "templateHint": "Use {tag} to preserve the publisher's exact tag, or {version} for the normalized version.",
+      "provider": "Version provider",
+      "githubTitle": "GitHub Releases",
+      "githubDescription": "Follow the latest published release tag.",
+      "urlTitle": "Version URL or pin",
+      "urlDescription": "Read a version endpoint or deploy a fixed version.",
+      "imageTemplate": "Image template",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub repository",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "Version URL",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "HTTPS endpoint returning text or JSON with version/tag_name.",
+      "pinnedVersion": "Pinned version",
+      "pinnedPlaceholder": "Optional, e.g. v2.4.1",
+      "pinnedHint": "Overrides the discovered latest version; leave blank to track updates.",
+      "appliesAll": "Changes apply to every environment in this project.",
+      "saving": "Saving…",
+      "save": "Save source"
+    }
+  },
   "appSettings": {
     "modeApp": "App settings",
     "modeDeployment": "Deployment",
@@ -846,6 +910,9 @@
       "includeWwwFallback": "yourdomain.com",
       "externalIngress": "External ingress & TLS",
       "externalIngressDesc": "TLS terminates upstream (Cloudflare Tunnel, load balancer). Verify by TXT only — the domain need not point at this server, and we won't issue a certificate.",
+      "dnsChallenge": "Use DNS-01 challenge",
+      "dnsChallengeDesc": "Issue and renew the certificate through your connected DNS provider. Use this when port 80 cannot be reached.",
+      "dnsChallengeWildcardDesc": "Wildcard certificates require DNS-01 and a connected DNS provider.",
       "noWww": "That domain is already on this project.",
       "adding": "Adding...",
       "submit": "Add domain"

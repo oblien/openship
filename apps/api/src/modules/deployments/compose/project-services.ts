@@ -16,7 +16,14 @@ import { getProjectType, type ComposeAdvanced, type StackId } from "@repo/core";
 import { serviceKind, type DeployableService } from "../../../lib/deployable-service";
 export { serviceKind } from "../../../lib/deployable-service";
 
-export function isMultiServiceProject(project: Pick<Project, "framework">): boolean {
+export function isMultiServiceProject(
+  project: Pick<Project, "framework"> & { composePath?: string | null },
+): boolean {
+  // A declared compose file is authoritative project shape, even for a legacy
+  // row whose framework still says plain "docker" and has no service rows yet.
+  // This is also the bootstrap signal reconcileComposeDrift uses to create the
+  // first rows; without it composePath only affected scanning, not deployment.
+  if (project.composePath?.trim()) return true;
   const framework = project.framework as StackId | undefined;
   if (!framework) return false;
 
@@ -55,41 +62,44 @@ export function projectServicesToDeployableServices(
   services: Service[],
   everDeployedByServiceId?: Map<string, boolean>,
 ): DeployableService[] {
-  return services.map((s): DeployableService => ({
-    kind: serviceKind(s),
-    everDeployed: everDeployedByServiceId?.get(s.id),
-    enabled: s.enabled,
-    name: s.name,
-    image: s.image ?? undefined,
-    build: s.build ?? undefined,
-    dockerfile: s.dockerfile ?? undefined,
-    ports: (s.ports as string[] | null) ?? [],
-    dependsOn: (s.dependsOn as string[] | null) ?? [],
-    environment: (s.environment as Record<string, string> | null) ?? {},
-    volumes: (s.volumes as string[] | null) ?? [],
-    command: s.command ?? undefined,
-    commandArgv: (s.commandArgv as string[] | null) ?? null, // #332
-    restart: s.restart ?? undefined,
-    // Carried so the frozen `meta.composeServices` snapshot can replay a
-    // release's healthcheck / readiness / generated files / resource caps /
-    // east-west alias. Dropping it meant a rollback re-ran the release with
-    // those stripped.
-    advanced: (s.advanced as ComposeAdvanced | null) ?? undefined,
-    exposed: s.exposed,
-    exposedPort: s.exposedPort ?? undefined,
-    domain: s.domain ?? undefined,
-    customDomain: s.customDomain ?? undefined,
-    domainType: s.domainType === "custom" ? "custom" : "free",
-    publicEndpoints: (s.publicEndpoints as DeployableService["publicEndpoints"]) ?? undefined,
-    rootDirectory: s.rootDirectory ?? undefined,
-    installCommand: s.installCommand ?? undefined,
-    buildCommand: s.buildCommand ?? undefined,
-    startCommand: s.startCommand ?? undefined,
-    outputDirectory: s.outputDirectory ?? undefined,
-    framework: s.framework ?? undefined,
-    packageManager: s.packageManager ?? undefined,
-    buildImage: s.buildImage ?? undefined,
-  }));
+  return services.map(
+    (s): DeployableService => ({
+      kind: serviceKind(s),
+      everDeployed: everDeployedByServiceId?.get(s.id),
+      enabled: s.enabled,
+      name: s.name,
+      image: s.image ?? undefined,
+      build: s.build ?? undefined,
+      dockerfile: s.dockerfile ?? undefined,
+      buildArgs: (s.buildArgs as Record<string, string | null> | null) ?? undefined,
+      ports: (s.ports as string[] | null) ?? [],
+      dependsOn: (s.dependsOn as string[] | null) ?? [],
+      environment: (s.environment as Record<string, string> | null) ?? {},
+      volumes: (s.volumes as string[] | null) ?? [],
+      command: s.command ?? undefined,
+      commandArgv: (s.commandArgv as string[] | null) ?? null, // #332
+      restart: s.restart ?? undefined,
+      // Carried so the frozen `meta.composeServices` snapshot can replay a
+      // release's healthcheck / readiness / generated files / resource caps /
+      // east-west alias. Dropping it meant a rollback re-ran the release with
+      // those stripped.
+      advanced: (s.advanced as ComposeAdvanced | null) ?? undefined,
+      exposed: s.exposed,
+      exposedPort: s.exposedPort ?? undefined,
+      domain: s.domain ?? undefined,
+      customDomain: s.customDomain ?? undefined,
+      domainType: s.domainType === "custom" ? "custom" : "free",
+      publicEndpoints: (s.publicEndpoints as DeployableService["publicEndpoints"]) ?? undefined,
+      rootDirectory: s.rootDirectory ?? undefined,
+      installCommand: s.installCommand ?? undefined,
+      buildCommand: s.buildCommand ?? undefined,
+      startCommand: s.startCommand ?? undefined,
+      outputDirectory: s.outputDirectory ?? undefined,
+      framework: s.framework ?? undefined,
+      packageManager: s.packageManager ?? undefined,
+      buildImage: s.buildImage ?? undefined,
+    }),
+  );
 }
 
 /**
@@ -130,9 +140,7 @@ export async function resolveProjectServicePreflightServices(
   // the dead-row preflight carve-out) from a fresh row about to be deployed
   // for the first time (still an unknown until it either succeeds or fails).
   const latestByService = await repos.serviceDeployment.latestByProject(projectId);
-  const everDeployedByServiceId = new Map(
-    services.map((s) => [s.id, latestByService.has(s.id)]),
-  );
+  const everDeployedByServiceId = new Map(services.map((s) => [s.id, latestByService.has(s.id)]));
   return projectServicesToDeployableServices(
     services.filter((service) => service.enabled),
     everDeployedByServiceId,
@@ -144,10 +152,14 @@ export async function shouldUseProjectServicePipeline(
   requestServices?: DeployableService[] | null,
 ): Promise<boolean> {
   if (requestServices?.length) return true;
-  // Both compose AND monorepo rows trigger the unified pipeline.
-  if ((await listProjectComposeServices(project.id)).length > 0) return true;
+  // Both compose AND monorepo rows trigger the unified pipeline, but disabled
+  // rows are retained configuration rather than deployable topology. Counting
+  // them here routes a single-app project with only disabled sidecars into an
+  // empty service deploy (notably after switching it to a release image).
+  if ((await listProjectComposeServices(project.id)).some((service) => service.enabled !== false)) {
+    return true;
+  }
 
   // Fallback for compose projects that don't have synced service rows.
   return isMultiServiceProject(project);
 }
-

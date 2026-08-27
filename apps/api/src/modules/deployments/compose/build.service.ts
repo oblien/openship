@@ -17,7 +17,7 @@ import type {
   BuildResult,
 } from "@repo/adapters";
 import { BuildLogger, STATIC_RELEASE_BASE } from "@repo/adapters";
-import type { ComposeAdvanced } from "@repo/core";
+import { composeBuildIssues, type ComposeAdvanced } from "@repo/core";
 import { repos, type Deployment, type Project, type Service } from "@repo/db";
 
 import {
@@ -35,6 +35,7 @@ import {
   resolveSubAppRecipe,
 } from "../../../lib/deployable-service";
 import { normalizeProjectRootDirectory } from "../../../lib/project-root-detector";
+import { resolveComposeEnvironmentTemplates } from "../../../lib/compose-parser";
 import { resolveServicePort } from "./domain-helpers";
 
 function sanitizeComposeImageName(value: string): string {
@@ -44,6 +45,41 @@ function sanitizeComposeImageName(value: string): string {
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "service"
   );
+}
+
+/** Resolve Compose build args against this deployment's final build environment.
+ * Bare/null keys are omitted when unavailable (preserving Dockerfile defaults),
+ * while persisted `${...}` expressions are evaluated here rather than leaking or
+ * freezing a scan-time `.env` value. */
+export function resolveComposeBuildArgs(
+  raw: Record<string, string | null> | null | undefined,
+  buildEnv: Record<string, string>,
+  templateKeys: readonly string[] = [],
+): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  const resolved: Record<string, string> = {};
+  const missing = new Set<string>();
+  const templates = new Set(templateKeys);
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === null) {
+      if (Object.hasOwn(buildEnv, key)) resolved[key] = buildEnv[key]!;
+    } else if (templates.has(key)) {
+      // Compose interpolates every args value against the invocation environment
+      // independently. Sibling args are not variables (`A=one`, `B=${A:-two}`
+      // yields B=two unless the invocation env itself defines A).
+      const dynamic = resolveComposeEnvironmentTemplates(buildEnv, { [key]: value });
+      for (const item of dynamic.missingRequired) missing.add(item.variable);
+      resolved[key] = dynamic.env[key] ?? "";
+    } else {
+      resolved[key] = value;
+    }
+  }
+  if (missing.size > 0) {
+    throw new Error(
+      `Compose build arguments require missing variable(s): ${[...missing].join(", ")}`,
+    );
+  }
+  return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
 
 /** A catalog template ships this service's Docker build context INLINE
@@ -174,8 +210,8 @@ async function materializeInlineBuildContexts(buildable: Service[]): Promise<Inl
  *
  * `..` is resolved rather than rejected: pointing back at the repo root is normal
  * for a compose file kept in a `deploy/` subfolder. Escaping ABOVE the clone root
- * is not resolvable and falls back to the compose directory, since there is no
- * such path in the checkout to build from.
+ * is refused. Falling back to another directory would silently build a different
+ * artifact than the compose file requested.
  *
  * The directory half is normalized by the shared `normalizeProjectRootDirectory`
  * rather than a local regex pair, so a repo-relative directory means the same
@@ -184,9 +220,14 @@ async function materializeInlineBuildContexts(buildable: Service[]): Promise<Inl
  * backslash or stray whitespace in the directory produced a literally broken path.
  */
 export function resolveComposeBuildContext(composeDirectory: string, context: string): string {
+  const invalid = composeBuildIssues(context)[0];
+  if (invalid) {
+    throw new Error(`Invalid Compose build context: ${invalid.reason}`);
+  }
+
   // Already maps "." / "./" / "" → "", so no special-casing is needed below.
   const normalizedDirectory = normalizeProjectRootDirectory(composeDirectory);
-  const segments = [...normalizedDirectory.split("/"), ...context.split(/[\\/]/)].filter(
+  const segments = [...normalizedDirectory.split("/"), ...context.trim().split(/[\\/]/)].filter(
     (segment) => segment.length > 0 && segment !== ".",
   );
 
@@ -196,9 +237,9 @@ export function resolveComposeBuildContext(composeDirectory: string, context: st
       resolved.push(segment);
       continue;
     }
-    // `..` above the clone root has nothing to resolve against — keep the compose
-    // directory rather than emitting a path outside the checkout.
-    if (resolved.length === 0) return normalizedDirectory;
+    if (resolved.length === 0) {
+      throw new Error("Invalid Compose build context: path escapes the linked repository.");
+    }
     resolved.pop();
   }
 
@@ -510,13 +551,10 @@ export async function buildComposeImages(opts: {
       // the root too: its context is the materialized root and the per-service subdir
       // rides in the Dockerfile path, which is what makes a template author's
       // `COPY <service-name>/<file>` resolve.
-      const buildContextDirectory =
-        !inlineBuild && service.build != null ? context : undefined;
+      const buildContextDirectory = !inlineBuild && service.build != null ? context : undefined;
       const dockerfile = inlineBuild?.dockerfile ?? service.dockerfile;
       const from =
-        buildContextDirectory !== undefined
-          ? `build context ${context || "."}`
-          : (context || ".");
+        buildContextDirectory !== undefined ? `build context ${context || "."}` : context || ".";
       opts.logger.log(
         `Building ${isMonorepo ? "monorepo app" : "compose service"} "${service.name}" from ${from}${dockerfile ? ` using ${dockerfile}` : ""}...\n`,
         "info",
@@ -614,6 +652,11 @@ export async function buildComposeImages(opts: {
               rootDirectory: context,
               buildContextDirectory,
               dockerfilePath: dockerfile ?? undefined,
+              buildArgs: resolveComposeBuildArgs(
+                service.buildArgs,
+                opts.buildEnvVars,
+                service.advanced?.buildArgTemplateKeys,
+              ),
               // Inline catalog build: the source IS the materialized root, so
               // prepareSourceTree copies it instead of cloning a repo.
               ...(inlineBuild ? { localPath: inlineBuild.root } : {}),

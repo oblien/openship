@@ -54,7 +54,13 @@ export function resolveBuildRuntimeModes(input: {
   baseTarget: "desktop" | "selfhosted" | "cloud";
   effectiveTarget: "local" | "server" | "cloud";
   willRunServices: boolean;
+  /** A single-app OCI image is already built, but still needs a container
+   * runtime to pull and run it. Bare mode cannot consume that artifact. */
+  hasPrebuiltImage?: boolean;
 }): BuildRuntimeModes {
+  if (input.hasPrebuiltImage && input.effectiveTarget !== "cloud") {
+    return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
+  }
   if (input.willRunServices || input.workload === "worker") {
     return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
   }

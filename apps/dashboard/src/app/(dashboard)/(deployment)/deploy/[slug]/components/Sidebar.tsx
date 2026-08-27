@@ -27,6 +27,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { projectsApi, githubApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { deploymentDnsTargets } from "@/lib/deployment-dns";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
 
@@ -242,20 +243,14 @@ const Sidebar: React.FC = () => {
     // BEFORE the deploy so DNS is pointed when the first-deploy SSL attempt runs.
     // A failed attempt just marks the domain Action Required — never blocks the
     // deploy. Informational-blocking: Deploy proceeds, Cancel aborts.
-    const custom = selfHosted
-      ? config.publicEndpoints.find((e) => e.domainType === "custom" && e.customDomain?.trim())
-      : undefined;
-    if (custom?.customDomain) {
-      const apex = custom.customDomain.trim().toLowerCase().replace(/^www\./, "");
-      const includeWww = config.publicEndpoints.some(
-        (e) => e.domainType === "custom" && e.customDomain?.trim().toLowerCase() === `www.${apex}`,
-      );
+    const dnsTargets = selfHosted ? deploymentDnsTargets(config) : [];
+    if (dnsTargets.length > 0) {
       let modalId = "";
       modalId = showModal({
         customContent: (
           <DnsRecordsModal
-            hostname={apex}
-            includeWww={includeWww}
+            targets={dnsTargets}
+            serverId={config.deployTarget === "server" ? config.serverId : undefined}
             onConfirm={() => {
               hideModal(modalId);
               void doDeploy(overrides);
@@ -268,7 +263,7 @@ const Sidebar: React.FC = () => {
       return;
     }
     await doDeploy(overrides);
-  }, [doDeploy, selfHosted, config.publicEndpoints, showModal, hideModal]);
+  }, [doDeploy, selfHosted, config, showModal, hideModal]);
 
   const handleDeploy = useCallback(async () => {
     // TODO: removed — temporary SaaS gate. The managed cloud isn't open yet, so

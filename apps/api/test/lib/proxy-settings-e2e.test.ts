@@ -19,8 +19,8 @@ import { reconcileProjectRoutes } from "../../src/lib/route-apply.service";
 
 const SITES = EDGE_HOST_PATHS.sitesDir;
 
-/** In-memory executor: file ops hit a Map, `-V` detection throws so the provider
- *  keeps its configured paths, and the reload script is a no-op success. */
+/** In-memory container-edge executor: file ops hit a Map and the reload script
+ * is a no-op success. */
 function fakeExecutor(files: Map<string, string>): RootChecked {
   return {
     exec: async (command: string) => {
@@ -61,11 +61,13 @@ async function applyAndRead(proxy?: unknown) {
   const routing = new NginxProvider({
     paths: EDGE_HOST_PATHS,
     executor: fakeExecutor(files),
+    pinPaths: true,
+    containerEdge: true,
   });
   await reconcileProjectRoutes(project(proxy), {
     routing: routing as never,
     registers: [
-      { hostname: "app.example.com", targetUrl: "http://127.0.0.1:3000", isCustomDomain: false },
+      { hostname: "app.example.com", targetUrl: "http://172.18.0.2:3000", isCustomDomain: false },
     ],
   });
   return files.get(`${SITES}/app-example-com.conf`) ?? "";

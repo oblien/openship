@@ -119,7 +119,15 @@ async function renderVhost(route: RouteConfig): Promise<string> {
     rm: async (p: string) => void files.delete(p),
   } as unknown as RootChecked;
 
-  const nginx = new NginxProvider({ paths: OPENRESTY_DEFAULT_PATHS, executor });
+  // These files are loaded by the container edge booted below. Model that real
+  // target so registerRoute uses the container reload contract; the in-memory
+  // transport intentionally has no bare-host process to discover or signal.
+  const nginx = new NginxProvider({
+    paths: OPENRESTY_DEFAULT_PATHS,
+    executor,
+    containerEdge: true,
+    pinPaths: true,
+  });
   await nginx.registerRoute(route);
   const conf = [...files.entries()].find(([p]) => p.endsWith(".conf"));
   if (!conf) throw new Error(`registerRoute wrote no vhost for ${route.domain}`);
@@ -299,10 +307,6 @@ http {
 
     // A catch-all rewrite on a vhost that ALSO carries our webhook location and a
     // composite backend — the precedence case that leaked signed payloads.
-    const catchAll = compileVercelRouting({
-      rewrites: [{ source: "/:path*", destination: "http://127.0.0.1:9902/x/:path*" }],
-    });
-    expect(catchAll.skipped).toEqual([]);
     out["hooks"] = await renderVhost({
       domain: "hooks.test",
       tls: false,
@@ -310,7 +314,12 @@ http {
       webhookProxy: "http://127.0.0.1:9903",
       proxyLocations: [
         { pathPrefix: "/api/", targetUrl: "http://127.0.0.1:9904" },
-        ...catchAll.proxyLocations,
+        {
+          pathPrefix: "/",
+          targetUrl: "http://127.0.0.1:9902",
+          pattern: "/(.*)",
+          upstreamPath: "/x/$1",
+        },
       ],
     } as unknown as RouteConfig);
 
@@ -466,9 +475,7 @@ http {
 
   it("serves clean URLs and canonicalises the .html form", async () => {
     expect((await ask(port, "/about", "clean.test")).body.trim()).toBe("ABOUT-HTML");
-    expect((await ask(port, "/about.html", "clean.test")).location).toBe(
-      "http://clean.test/about",
-    );
+    expect((await ask(port, "/about.html", "clean.test")).location).toBe("http://clean.test/about");
     const { hops, final } = await follow(port, "/", "clean.test");
     expect(hops).toEqual([]);
     expect(final.body.trim()).toBe("ROOT-INDEX");

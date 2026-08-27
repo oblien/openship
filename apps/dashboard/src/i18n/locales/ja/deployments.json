@@ -169,6 +169,7 @@
     "unpinFailed": "デプロイのピン留め解除に失敗しました",
     "rollbackModeInstant": "即時復元 — このバージョンの保持イメージを再利用し、再ビルドしません。",
     "rollbackModeRebuild": "再ビルド — このバージョンのイメージはホストに残っていないため、コミットを再ビルドします。",
+    "rollbackModeReacquireImage": "レジストリ復元 — このリリースに記録された正確なイメージ参照を再取得し、ソースは再ビルドしません。",
     "rollbackModeMixed": "ほぼ即時 — {count} 個のサービスはイメージが無いため再ビルドされます。"
   },
   "rollbackConfirm": {

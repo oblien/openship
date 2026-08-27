@@ -244,11 +244,12 @@ async function startEdgeContainer(
   container: string,
   image: string,
   onLog: SystemLogCallback,
+  mounts: readonly EdgeContainerMount[],
 ): Promise<boolean> {
   await sanitizeEdgeVhosts(executor, EDGE_HOST_PATHS.sitesDir, onLog).catch(() => {});
   await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
   const run = await executor.streamExec(
-    buildEdgeRunCommand(container, image),
+    buildEdgeRunCommand(container, image, mounts),
     onLog as (l: LogEntry) => void,
   );
   // Identity just changed; nobody may keep answering from a pre-start memo.
@@ -256,9 +257,48 @@ async function startEdgeContainer(
   return run.code === 0;
 }
 
+export type EdgeContainerMount = Readonly<{ host: string; container: string }>;
+
+/**
+ * Resolve bind sources on the machine that owns the Docker daemon.
+ *
+ * This cannot use Node's `realpath`: `executor` may point at an SSH server, in
+ * which case resolving in the API process would canonicalize the wrong machine.
+ * `pwd -P` is POSIX and resolves existing directory symlinks on both macOS and
+ * Linux. In particular, it turns macOS `/var` and `/etc` into `/private/var` and
+ * `/private/etc`, which Docker Desktop/OrbStack must receive as bind sources.
+ */
+export async function resolveEdgeContainerMounts(
+  executor: Pick<CommandExecutor, "exec">,
+): Promise<EdgeContainerMount[]> {
+  return Promise.all(
+    EDGE_CONTAINER_MOUNTS.map(async (mount) => {
+      let host: string;
+      try {
+        host = (await executor.exec(`cd ${sq(mount.host)} && pwd -P`)).trim();
+      } catch (err) {
+        throw new Error(
+          `Could not resolve edge bind-mount source ${mount.host} on the target host: ${safeErrorMessage(err)}`,
+        );
+      }
+      if (!host.startsWith("/") || host.includes("\n")) {
+        throw new Error(
+          `Could not resolve edge bind-mount source ${mount.host} on the target host: ` +
+            `expected one absolute path, received ${JSON.stringify(host)}.`,
+        );
+      }
+      return { host, container: mount.container };
+    }),
+  );
+}
+
 /** `docker run` argv for the edge: host networking (it owns 80/443) + the mounts. */
-export function buildEdgeRunCommand(container: string, image: string): string {
-  const mounts = EDGE_CONTAINER_MOUNTS.map(
+export function buildEdgeRunCommand(
+  container: string,
+  image: string,
+  edgeMounts: readonly EdgeContainerMount[] = EDGE_CONTAINER_MOUNTS,
+): string {
+  const mounts = edgeMounts.map(
     // `:z` relabels for SELinux-enforcing hosts; a no-op elsewhere.
     (m) => `-v ${sq(`${m.host}:${m.container}:z`)}`,
   ).join(" ");
@@ -273,6 +313,38 @@ export function buildEdgeRunCommand(container: string, image: string): string {
 }
 
 /**
+ * Whether a running container uses the bind sources we would choose now.
+ * `null` means Docker could not answer, so a transient inspect failure never
+ * tears down an otherwise-serving edge.
+ */
+async function edgeContainerMountsMatch(
+  executor: CommandExecutor,
+  container: string,
+  expected: readonly EdgeContainerMount[],
+): Promise<boolean | null> {
+  let raw: string;
+  try {
+    raw = await executor.exec(
+      `docker inspect -f '{{range .HostConfig.Binds}}{{println .}}{{end}}' ${sq(container)}`,
+    );
+  } catch {
+    return null;
+  }
+
+  const actual = new Map<string, string>();
+  for (const line of raw.split("\n")) {
+    // These four sources and destinations are fixed Unix absolute paths, so `:`
+    // is unambiguous here. Read HostConfig.Binds rather than `.Mounts.Source`:
+    // Docker Desktop may report the latter as its VM-internal `/host_mnt/...`
+    // path, while HostConfig preserves the host argument we need to audit.
+    const [source, destination] = line.trim().split(":");
+    if (!source || !destination) continue;
+    actual.set(destination, source);
+  }
+  return expected.every((mount) => actual.get(mount.container) === mount.host);
+}
+
+/**
  * The edge's "start this image AND prove it's actually serving" callback — the unit
  * `swapManagedImage` drives. It is the SAME verdict the create path uses: an image swap that leaves a
  * crash-looping container behind must read as a failed swap, not a successful one —
@@ -283,10 +355,11 @@ function makeEdgeStart(
   executor: CommandExecutor,
   container: string,
   opts: ContainerEdgeOptions,
+  mounts: readonly EdgeContainerMount[],
 ): (image: string) => Promise<boolean> {
   const { onLog } = opts;
   return async (image: string) => {
-    if (!(await startEdgeContainer(executor, container, image, onLog))) return false;
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) return false;
     const verdict = await verifyEdgeServing(executor, container, {
       timeoutMs: opts.verifyTimeoutMs ?? 30_000,
     });
@@ -370,6 +443,20 @@ export async function ensureContainerEdge(
   const { onLog } = opts;
   const container = opts.container?.trim() || EDGE_CONTAINER_NAME;
   const image = resolveEdgeImage(opts.image);
+  let resolvedMounts: EdgeContainerMount[] | null = null;
+
+  const targetMounts = async (checked?: RootChecked): Promise<EdgeContainerMount[]> => {
+    if (resolvedMounts) return resolvedMounts;
+    const host =
+      checked ??
+      (await rootOrDegrade(executor, {
+        purpose: "Resolving the edge's bind-mount sources",
+        consequence: "Docker may mount a different host directory than Openship writes.",
+        report: (message) => onLog(log(message, "warn")),
+      }));
+    resolvedMounts = await resolveEdgeContainerMounts(host);
+    return resolvedMounts;
+  };
 
   // `fresh`: this call decides whether to CREATE an edge. A memo saying "yes" when
   // the container is gone skips the install and leaves the box with no proxy.
@@ -391,36 +478,49 @@ export async function ensureContainerEdge(
       // loop permanent: the one code path that could have fixed it was skipped
       // because the flapper counted as "already installed".
     } else {
-      // Already ours and serving. The only thing left to reconcile is the IMAGE: the
-      // edge's Lua and nginx.conf are baked in, so an edge left on an old tag keeps
-      // serving rules a newer API assumes it rewrote. Upgrading the API upgrades the
-      // edge. Staleness is a plain tag-compare: the dev tag is content-derived
-      // (`…-dev.<hash>`), so a source edit moves it exactly like a prod version bump —
-      // no image-ID probe needed. `swapManagedImage` pulls only if the target tag
-      // isn't already on the box (deliver placed the dev image there first).
-      const current = await containerImageRef(executor, existing);
-      // A null ref (the image reads back empty in a TOCTOU) is left alone, not judged
-      // stale — recreating a serving container onto the same image buys nothing.
-      const stale = current != null && current !== image;
-      if (stale) {
-        const start = makeEdgeStart(executor, existing, opts);
-        const swap = await swapManagedImage(executor, {
-          kind: "edge",
-          from: current ?? image,
-          to: image,
-          label: "edge",
-          onLog,
-          start,
-        });
-        return {
-          container: existing,
-          image,
-          converted: false,
-          updated: swap.swapped,
-          edgeDown: swap.down,
-        };
+      // A listener is not proof that the container sees the host's vhosts. On
+      // macOS an old command may have mounted `/var/...` from Docker's VM while
+      // Openship wrote through the host symlink at `/private/var/...`: nginx is
+      // healthy and every domain still returns the unrouted 404. Compare Docker's
+      // actual sources with the target host's physical paths and recreate on drift.
+      const mounts = await targetMounts();
+      const mountsMatch = await edgeContainerMountsMatch(executor, existing, mounts);
+      if (mountsMatch === false) {
+        onLog(
+          log("The edge container uses stale or non-canonical bind mounts; recreating it...", "warn"),
+        );
+      } else {
+        // Already ours and serving. The only thing left to reconcile is the IMAGE: the
+        // edge's Lua and nginx.conf are baked in, so an edge left on an old tag keeps
+        // serving rules a newer API assumes it rewrote. Upgrading the API upgrades the
+        // edge. Staleness is a plain tag-compare: the dev tag is content-derived
+        // (`…-dev.<hash>`), so a source edit moves it exactly like a prod version bump —
+        // no image-ID probe needed. `swapManagedImage` pulls only if the target tag
+        // isn't already on the box (deliver placed the dev image there first).
+        const current = await containerImageRef(executor, existing);
+        // A null ref (the image reads back empty in a TOCTOU) is left alone, not judged
+        // stale — recreating a serving container onto the same image buys nothing.
+        const stale = current != null && current !== image;
+        if (stale) {
+          const start = makeEdgeStart(executor, existing, opts, mounts);
+          const swap = await swapManagedImage(executor, {
+            kind: "edge",
+            from: current ?? image,
+            to: image,
+            label: "edge",
+            onLog,
+            start,
+          });
+          return {
+            container: existing,
+            image,
+            converted: false,
+            updated: swap.swapped,
+            edgeDown: swap.down,
+          };
+        }
+        return { container: existing, image, converted: false };
       }
-      return { container: existing, image, converted: false };
     }
   }
 
@@ -484,6 +584,7 @@ export async function ensureContainerEdge(
       );
     });
   }
+  const mounts = await targetMounts(hostState);
 
   // 2. Whatever holds 80/443 → the ONE consent/takeover gate, which prompts, imports
   //    the occupant's sites, journals how to restore it, stops it, and waits for the
@@ -502,7 +603,7 @@ export async function ensureContainerEdge(
     // 3. Start. The ports are PROVABLY free by now, so failing to bind here is a real
     //    failure and not a race we should have waited out.
     onLog(log("Starting the edge container..."));
-    if (!(await startEdgeContainer(executor, container, image, onLog))) {
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) {
       throw new Error("the edge container failed to start");
     }
 

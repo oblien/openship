@@ -49,19 +49,19 @@ describe("mergeServiceDeployEnv", () => {
     expect(merged.API_KEY).toBe("release");
   });
 
-  it("keeps service env winning on a normal deploy", () => {
-    // Unchanged behaviour for every non-rollback deploy: the compose UI can still
-    // override a global per service.
+  it("keeps a manual service env_var over compose on a normal project redeploy", () => {
     const merged = mergeServiceDeployEnv(
       layers({
-        project: { API_KEY: "project-live" },
-        frozen: { API_KEY: "this-deploys-snapshot" },
-        inline: { API_KEY: "compose-inline" },
-        service: { API_KEY: "service-live" },
+        project: { PROJECT_ONLY: "project-live" },
+        frozen: { PROJECT_ONLY: "captured" },
+        inline: { COMPOSE_ONLY: "compose", MANUAL_KEY: "compose-old" },
+        service: { MANUAL_KEY: "manually-added" },
       }),
       false,
     );
-    expect(merged.API_KEY).toBe("service-live");
+    expect(merged).toEqual({
+      PROJECT_ONLY: "captured", COMPOSE_ONLY: "compose", MANUAL_KEY: "manually-added",
+    });
   });
 
   it("does not delete keys the snapshot never captured", () => {
@@ -123,6 +123,43 @@ describe("frozen env and {{publicUrl}} tokens", () => {
     const { env, unresolved } = resolveEnvPublicUrls(merged, () => undefined);
     expect("API_ORIGIN" in env).toBe(false);
     expect(unresolved).toEqual([{ key: "API_ORIGIN", tokens: ["{{publicUrl:removed}}"] }]);
+  });
+});
+
+describe("frozen env and Compose templates", () => {
+  it("resolves an old release's expression against that release's frozen env", () => {
+    const merged = mergeLayers(
+      layers({
+        project: { POSTGRES_PASSWORD: "today" },
+        frozen: { POSTGRES_PASSWORD: "release-secret" },
+        inline: {
+          DATABASE_URL: "postgresql://user:${POSTGRES_PASSWORD:?set it}@db/app",
+        },
+        templateKeys: ["DATABASE_URL"],
+      }),
+      true,
+    );
+
+    expect(merged.env.DATABASE_URL).toBe(
+      "postgresql://user:release-secret@db/app",
+    );
+    expect(merged.missingRequired).toEqual([]);
+  });
+
+  it("does not re-evaluate a target value frozen directly in the release", () => {
+    const merged = mergeLayers(
+      layers({
+        frozen: { DATABASE_URL: "postgresql://frozen-value" },
+        inline: {
+          DATABASE_URL: "postgresql://user:${POSTGRES_PASSWORD:?set it}@db/app",
+        },
+        templateKeys: ["DATABASE_URL"],
+      }),
+      true,
+    );
+
+    expect(merged.env.DATABASE_URL).toBe("postgresql://frozen-value");
+    expect(merged.missingRequired).toEqual([]);
   });
 });
 

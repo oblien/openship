@@ -30,7 +30,7 @@ const undoBody = (() => {
 
 /** Boot recovery's per-run block. */
 const recoveryBody = (() => {
-  const from = src.indexOf("if (run.status !== \"queued\" && run.sourceServerId) {");
+  const from = src.indexOf('if (run.status !== "queued" && run.sourceServerId) {');
   return src.slice(from, from + 1400);
 })();
 
@@ -88,7 +88,8 @@ describe("boot recovery undoes the same things a live rollback does", () => {
   it("leaves a PARKED run alone — the target is up and waiting on a human", () => {
     // awaiting_cutover / partial must survive a restart untouched; undoing them would tear down
     // a verified target the operator was about to confirm.
-    expect(src).toContain('if (run.status === "awaiting_cutover" || run.status === "partial") continue;');
+    expect(src).toContain('if (run.status === "awaiting_cutover" || run.status === "partial") {');
+    expect(src).toContain("acknowledgeExecutionFinished(run.id)");
   });
 
   it("does not undo a crashed CUTOVER, which is a succeeded migration", () => {

@@ -23,6 +23,7 @@ export type ComposeServiceSpec = {
   image?: string | null;
   build?: string | null;
   dockerfile?: string | null;
+  buildArgs?: Record<string, string | null>;
   ports?: string[];
   dependsOn?: string[];
   environment?: Record<string, string>;
@@ -75,137 +76,144 @@ export type ServicePublicEndpoint = {
  * kinds, so the existing infrastructure (buildServiceRouteDomain, envVar.serviceId,
  * MultiServiceRuntimeAdapter) works for monorepo apps without forking.
  */
-export const service = pgTable("service", {
-  id: text("id").primaryKey(), // "svc_..."
-  projectId: text("project_id")
-    .notNull()
-    .references(() => project.id, { onDelete: "cascade" }),
+export const service = pgTable(
+  "service",
+  {
+    id: text("id").primaryKey(), // "svc_..."
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
 
-  /** Discriminator: "compose" (docker-compose service) | "monorepo" (sub-app in a workspace) */
-  kind: text("kind").notNull().default("compose"),
+    /** Discriminator: "compose" (docker-compose service) | "monorepo" (sub-app in a workspace) */
+    kind: text("kind").notNull().default("compose"),
 
-  /** Service name (from compose, e.g. "web", "db", "redis") - also used as hostname on the network */
-  name: text("name").notNull(),
-  /** Docker image (e.g. "postgres:16", "redis:7-alpine") - null if service is built from source */
-  image: text("image"),
-  /**
-   * Docker build CONTEXT for this service (e.g. ".", "./services/api") - null if using
-   * a pre-built image. Stored exactly as the compose file authored it, so it is
-   * relative to the COMPOSE FILE's directory, not to the repo root: a file in
-   * `deploy/docker-compose/` may say `../../api`. The deploy resolves it against the
-   * project's compose directory (see resolveComposeBuildContext).
-   */
-  build: text("build"),
-  /** Dockerfile path relative to build context - null to use default "Dockerfile" */
-  dockerfile: text("dockerfile"),
+    /** Service name (from compose, e.g. "web", "db", "redis") - also used as hostname on the network */
+    name: text("name").notNull(),
+    /** Docker image (e.g. "postgres:16", "redis:7-alpine") - null if service is built from source */
+    image: text("image"),
+    /**
+     * Docker build CONTEXT for this service (e.g. ".", "./services/api") - null if using
+     * a pre-built image. Stored exactly as the compose file authored it, so it is
+     * relative to the COMPOSE FILE's directory, not to the repo root: a file in
+     * `deploy/docker-compose/` may say `../../api`. The deploy resolves it against the
+     * project's compose directory (see resolveComposeBuildContext).
+     */
+    build: text("build"),
+    /** Dockerfile path relative to build context - null to use default "Dockerfile" */
+    dockerfile: text("dockerfile"),
+    /** Per-service compose `build.args`. A dedicated column keeps build-time
+     * configuration distinct from the container's runtime environment. */
+    buildArgs: jsonb("build_args").$type<Record<string, string | null>>().notNull().default({}),
 
-  /* ── Networking ─────────────────────────────────────────────────────── */
-  /** JSON array of port mappings (e.g. ["8080:3000", "5432"]) */
-  ports: jsonb("ports").$type<string[]>().default([]),
-  /** JSON array of service names this service depends on */
-  dependsOn: jsonb("depends_on").$type<string[]>().default([]),
+    /* ── Networking ─────────────────────────────────────────────────────── */
+    /** JSON array of port mappings (e.g. ["8080:3000", "5432"]) */
+    ports: jsonb("ports").$type<string[]>().default([]),
+    /** JSON array of service names this service depends on */
+    dependsOn: jsonb("depends_on").$type<string[]>().default([]),
 
-  /* ── Configuration ──────────────────────────────────────────────────── */
-  /** JSON object of environment variables (non-secret defaults from compose) */
-  environment: jsonb("environment").$type<Record<string, string>>().default({}),
-  /** JSON array of volume mounts (e.g. ["pgdata:/var/lib/postgresql/data"]) */
-  volumes: jsonb("volumes").$type<string[]>().default([]),
-  /**
-   * Whether this service's NAMED volumes are project-scoped (openship-<slug>-<name>)
-   * at deploy time. True for services created after the volume-namespacing change;
-   * backfilled to false for pre-existing services so they keep their bare volume
-   * names and lose no data (see volume-namespace.ts). Bind mounts are unaffected.
-   */
-  namespaceVolumes: boolean("namespace_volumes").notNull().default(true),
-  /** Override command (text form — display / legacy `sh -c` fallback, see #332) */
-  command: text("command"),
-  /**
-   * #332: structured argv for the container Cmd (docker-compose semantics —
-   * overrides image CMD, no implicit `sh -c`). Null = legacy row → runtime falls
-   * back to `sh -c command`. `[]` = clear image CMD. Additive/nullable, so no
-   * backfill; new parses/edits populate it.
-   */
-  commandArgv: jsonb("command_argv").$type<string[]>(),
-  /** Restart policy: no | always | on-failure | unless-stopped */
-  restart: text("restart").default("unless-stopped"),
-  /**
-   * Extended compose fields (healthcheck now; labels/entrypoint/caps/… later)
-   * that don't warrant their own columns. See ComposeAdvanced. Honored by the
-   * Docker runtime; runtimes that can't (cloud) warn-and-drop. Widening the
-   * type needs no migration — it's a JSONB blob.
-   */
-  advanced: jsonb("advanced").$type<ComposeAdvanced>().default({}),
+    /* ── Configuration ──────────────────────────────────────────────────── */
+    /** JSON object of environment variables (non-secret defaults from compose) */
+    environment: jsonb("environment").$type<Record<string, string>>().default({}),
+    /** JSON array of volume mounts (e.g. ["pgdata:/var/lib/postgresql/data"]) */
+    volumes: jsonb("volumes").$type<string[]>().default([]),
+    /**
+     * Whether this service's NAMED volumes are project-scoped (openship-<slug>-<name>)
+     * at deploy time. True for services created after the volume-namespacing change;
+     * backfilled to false for pre-existing services so they keep their bare volume
+     * names and lose no data (see volume-namespace.ts). Bind mounts are unaffected.
+     */
+    namespaceVolumes: boolean("namespace_volumes").notNull().default(true),
+    /** Override command (text form — display / legacy `sh -c` fallback, see #332) */
+    command: text("command"),
+    /**
+     * #332: structured argv for the container Cmd (docker-compose semantics —
+     * overrides image CMD, no implicit `sh -c`). Null = legacy row → runtime falls
+     * back to `sh -c command`. `[]` = clear image CMD. Additive/nullable, so no
+     * backfill; new parses/edits populate it.
+     */
+    commandArgv: jsonb("command_argv").$type<string[]>(),
+    /** Restart policy: no | always | on-failure | unless-stopped */
+    restart: text("restart").default("unless-stopped"),
+    /**
+     * Extended compose fields (healthcheck now; labels/entrypoint/caps/… later)
+     * that don't warrant their own columns. See ComposeAdvanced. Honored by the
+     * Docker runtime; runtimes that can't (cloud) warn-and-drop. Widening the
+     * type needs no migration — it's a JSONB blob.
+     */
+    advanced: jsonb("advanced").$type<ComposeAdvanced>().default({}),
 
-  /* ── Public routing ─────────────────────────────────────────────── */
-  /** Whether this service should be exposed publicly through routing */
-  exposed: boolean("exposed").notNull().default(false),
-  /** Container port to expose publicly */
-  exposedPort: text("exposed_port"),
-  /** Free subdomain label for managed routing */
-  domain: text("domain"),
-  /** Custom domain bound directly to this service */
-  customDomain: text("custom_domain"),
-  /** Whether the service uses a free or custom domain */
-  domainType: text("domain_type").default("free"),
-  /**
-   * Additional public routes beyond the primary one held by the scalar columns
-   * above. Each entry publishes one container port under its own domain, so a
-   * service with several public ports gets one route each. Entry[0] mirrors the
-   * primary scalar routing columns. Widening needs no migration — JSONB blob.
-   */
-  publicEndpoints: jsonb("public_endpoints").$type<ServicePublicEndpoint[]>().default([]),
+    /* ── Public routing ─────────────────────────────────────────────── */
+    /** Whether this service should be exposed publicly through routing */
+    exposed: boolean("exposed").notNull().default(false),
+    /** Container port to expose publicly */
+    exposedPort: text("exposed_port"),
+    /** Free subdomain label for managed routing */
+    domain: text("domain"),
+    /** Custom domain bound directly to this service */
+    customDomain: text("custom_domain"),
+    /** Whether the service uses a free or custom domain */
+    domainType: text("domain_type").default("free"),
+    /**
+     * Additional public routes beyond the primary one held by the scalar columns
+     * above. Each entry publishes one container port under its own domain, so a
+     * service with several public ports gets one route each. Entry[0] mirrors the
+     * primary scalar routing columns. Widening needs no migration — JSONB blob.
+     */
+    publicEndpoints: jsonb("public_endpoints").$type<ServicePublicEndpoint[]>().default([]),
 
-  /* ── Monorepo sub-app config (kind === "monorepo" only) ────────────── */
-  /** Sub-app root directory inside the repo (e.g. "apps/web"). Null for compose. */
-  rootDirectory: text("root_directory"),
-  /** Per-app install command (run after the shared workspace install). Null for compose. */
-  installCommand: text("install_command"),
-  /** Per-app build command. Null for compose. */
-  buildCommand: text("build_command"),
-  /** Per-app start command - what the long-running workload runs. Null for compose. */
-  startCommand: text("start_command"),
-  /** Build output directory relative to the sub-app's root. Null for compose. */
-  outputDirectory: text("output_directory"),
-  /** Detected framework (e.g. "nextjs", "vite"). Null for compose. */
-  framework: text("framework"),
-  /** Package manager (npm/pnpm/yarn/bun). Null for compose. */
-  packageManager: text("package_manager"),
-  /** Build image / runtime base (e.g. "node:22"). Null for compose. */
-  buildImage: text("build_image"),
-  /**
-   * Per-service overrides for "files that force this service to
-   * rebuild on any change" — added on top of (not replacing) the
-   * project-level `alwaysRebuildPaths` list. Globs are repo-root-
-   * relative. Honored by the smart per-service deploy change
-   * detector; null = no service-specific overrides.
-   */
-  alwaysRebuildGlobs: jsonb("always_rebuild_globs").$type<string[] | null>(),
+    /* ── Monorepo sub-app config (kind === "monorepo" only) ────────────── */
+    /** Sub-app root directory inside the repo (e.g. "apps/web"). Null for compose. */
+    rootDirectory: text("root_directory"),
+    /** Per-app install command (run after the shared workspace install). Null for compose. */
+    installCommand: text("install_command"),
+    /** Per-app build command. Null for compose. */
+    buildCommand: text("build_command"),
+    /** Per-app start command - what the long-running workload runs. Null for compose. */
+    startCommand: text("start_command"),
+    /** Build output directory relative to the sub-app's root. Null for compose. */
+    outputDirectory: text("output_directory"),
+    /** Detected framework (e.g. "nextjs", "vite"). Null for compose. */
+    framework: text("framework"),
+    /** Package manager (npm/pnpm/yarn/bun). Null for compose. */
+    packageManager: text("package_manager"),
+    /** Build image / runtime base (e.g. "node:22"). Null for compose. */
+    buildImage: text("build_image"),
+    /**
+     * Per-service overrides for "files that force this service to
+     * rebuild on any change" — added on top of (not replacing) the
+     * project-level `alwaysRebuildPaths` list. Globs are repo-root-
+     * relative. Honored by the smart per-service deploy change
+     * detector; null = no service-specific overrides.
+     */
+    alwaysRebuildGlobs: jsonb("always_rebuild_globs").$type<string[] | null>(),
 
-  /* ── Drift reconciliation (compose re-parse) ────────────────────────── */
-  /**
-   * The compose spec as last imported from the repo — the "base" for 3-way
-   * drift merge on redeploy. Null on rows created before this existed →
-   * treated as fully user-owned until the next import establishes a baseline.
-   */
-  importedSpec: jsonb("imported_spec").$type<ComposeServiceSpec>(),
-  /**
-   * Pending upstream compose spec awaiting user approval — set when the repo
-   * compose changed a field the user had edited. Null = no pending drift.
-   */
-  driftSpec: jsonb("drift_spec").$type<ComposeServiceSpec>(),
+    /* ── Drift reconciliation (compose re-parse) ────────────────────────── */
+    /**
+     * The compose spec as last imported from the repo — the "base" for 3-way
+     * drift merge on redeploy. Null on rows created before this existed →
+     * treated as fully user-owned until the next import establishes a baseline.
+     */
+    importedSpec: jsonb("imported_spec").$type<ComposeServiceSpec>(),
+    /**
+     * Pending upstream compose spec awaiting user approval — set when the repo
+     * compose changed a field the user had edited. Null = no pending drift.
+     */
+    driftSpec: jsonb("drift_spec").$type<ComposeServiceSpec>(),
 
-  /* ── State ──────────────────────────────────────────────────────────── */
-  /** Whether this service should be deployed (allows disabling individual services) */
-  enabled: boolean("enabled").notNull().default(true),
-  /** Display / dependency order (lower = deployed first) */
-  sortOrder: integer("sort_order").notNull().default(0),
+    /* ── State ──────────────────────────────────────────────────────────── */
+    /** Whether this service should be deployed (allows disabling individual services) */
+    enabled: boolean("enabled").notNull().default(true),
+    /** Display / dependency order (lower = deployed first) */
+    sortOrder: integer("sort_order").notNull().default(0),
 
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (t) => [
-  // Build pipeline + deployment setup iterate services per project.
-  index("idx_service_project_id").on(t.projectId),
-]);
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Build pipeline + deployment setup iterate services per project.
+    index("idx_service_project_id").on(t.projectId),
+  ],
+);
 
 // ─── Service deployments ─────────────────────────────────────────────────────
 
@@ -276,6 +284,15 @@ export const serviceDeployment = pgTable(
     imageDigest: text("image_digest"),
     /** Mapped host port */
     hostPort: integer("host_port"),
+    /**
+     * Every loopback publish owned by this service deployment, keyed by the
+     * container port it serves. `hostPort` remains the primary-port scalar for
+     * backwards compatibility; this map is the durable routing cache for
+     * multi-port containers. `host_port_claim` is allocation authority.
+     *
+     * Example: `{ "8080": 20000, "9090": 20001 }`.
+     */
+    hostPorts: jsonb("host_ports").$type<Record<string, number> | null>(),
     /** Internal network IP */
     ip: text("ip"),
     /** External URL where this service is reachable (mirrors deployment.url for the multi-service shape) */

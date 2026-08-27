@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { blockingComposeFields, parseComposeEnvFile, parseComposeFile } from "../../src/lib/compose-parser";
+import {
+  blockingComposeFields,
+  parseComposeEnvFile,
+  parseComposeFile,
+  resolveComposeEnvironmentTemplates,
+} from "../../src/lib/compose-parser";
 
 describe("parseComposeFile", () => {
   it("resolves Docker Compose environment interpolation from .env content", () => {
@@ -154,13 +159,15 @@ describe("parseComposeEnvFile - quoting, escapes, comments, edge cases", () => {
   });
 
   it("ignores blank lines and comments", () => {
-    expect(parseComposeEnvFile(`
+    expect(
+      parseComposeEnvFile(`
 # A leading comment
 FOO=bar
 
   # An indented comment
 BAZ=qux
-`)).toEqual({ FOO: "bar", BAZ: "qux" });
+`),
+    ).toEqual({ FOO: "bar", BAZ: "qux" });
   });
 
   it("strips trailing inline comments outside quotes", () => {
@@ -356,6 +363,163 @@ services:
     expect(worker?.build).toBe("./services/worker");
   });
 
+  it("extracts service-specific build args in map and list form (#689)", () => {
+    const parsed = parseComposeFile(
+      `
+services:
+  api:
+    build:
+      context: ../../
+      dockerfile: services/shared/Dockerfile
+      args:
+        APP_PACKAGE: "@myorg/api"
+        FEATURE_FLAG: true
+        FROM_ENV:
+        FROM_TEMPLATE: "\${FROM_ENV}"
+  worker:
+    build:
+      context: ../../
+      dockerfile: services/shared/Dockerfile
+      args:
+        - APP_PACKAGE=@myorg/worker
+        - FROM_ENV
+        - EMPTY=
+`,
+      { env: { FROM_ENV: "resolved" } },
+    );
+
+    expect(parsed.services.find((service) => service.name === "api")?.buildArgs).toEqual({
+      APP_PACKAGE: "@myorg/api",
+      FEATURE_FLAG: "true",
+      FROM_ENV: null,
+      FROM_TEMPLATE: "${FROM_ENV}",
+    });
+    expect(parsed.services.find((service) => service.name === "worker")?.buildArgs).toEqual({
+      APP_PACKAGE: "@myorg/worker",
+      FROM_ENV: null,
+      EMPTY: "",
+    });
+    expect(
+      parsed.services.find((service) => service.name === "api")?.advanced?.buildArgTemplateKeys,
+    ).toEqual(["FROM_TEMPLATE"]);
+    expect(
+      parsed.services.find((service) => service.name === "worker")?.advanced?.buildArgTemplateKeys,
+    ).toEqual([]);
+  });
+
+  it("keeps required build-arg expressions raw and reports their missing variable", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args:
+        TOKEN: \${BUILD_TOKEN:?set BUILD_TOKEN}
+`);
+
+    expect(parsed.services[0]?.buildArgs).toEqual({
+      TOKEN: "${BUILD_TOKEN:?set BUILD_TOKEN}",
+    });
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual(["TOKEN"]);
+    expect(parsed.missingRequired).toEqual([
+      { variable: "BUILD_TOKEN", message: "set BUILD_TOKEN" },
+    ]);
+  });
+
+  it("tracks escaped dollars so they are expanded exactly once", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      args:
+        HOME_REF: "$$HOME"
+`);
+
+    expect(parsed.services[0]?.buildArgs).toEqual({ HOME_REF: "$$HOME" });
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual(["HOME_REF"]);
+  });
+
+  it("marks an explicitly empty build args block so sync can clear stale stored args", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args: {}
+`);
+
+    expect(parsed.services[0]?.buildArgs).toBeUndefined();
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual([]);
+  });
+
+  it("marks a build declaration after its entire args key is removed", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+`);
+
+    expect(parsed.services[0]?.buildArgs).toBeUndefined();
+    expect(parsed.services[0]?.advanced?.buildArgTemplateKeys).toEqual([]);
+  });
+
+  it("preserves unresolved bare build args as unset so deploy can use its invocation env", () => {
+    const [service] = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args:
+        UNSET_MAP:
+        -ignored-object: []
+`).services;
+    expect(service?.buildArgs).toEqual({ UNSET_MAP: null });
+  });
+
+  it("blocks Compose build behavior Openship cannot reproduce", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      target: release
+      ssh:
+        - default=private-material
+      secrets:
+        - npm_token
+`);
+
+    expect(
+      blockingComposeFields(parsed.unsupported)
+        .map((issue) => issue.field)
+        .sort(),
+    ).toEqual(["build.secrets", "build.ssh", "build.target"]);
+    expect(JSON.stringify(parsed.unsupported)).not.toContain("private-material");
+  });
+
+  it("blocks malformed build args and contexts outside the linked repository", () => {
+    const malformed = parseComposeFile(`
+services:
+  api:
+    build:
+      context: .
+      args:
+        - BAD-KEY=never-log-this
+`);
+    expect(blockingComposeFields(malformed.unsupported)).toEqual([
+      expect.objectContaining({ field: "build.args[0]", blocking: true }),
+    ]);
+    expect(JSON.stringify(malformed.unsupported)).not.toContain("never-log-this");
+
+    for (const context of ["https://github.com/acme/app.git", "/srv/app"]) {
+      const parsed = parseComposeFile(`services:\n  api:\n    build: ${context}\n`);
+      expect(blockingComposeFields(parsed.unsupported)).toEqual([
+        expect.objectContaining({ field: "build.context", blocking: true }),
+      ]);
+    }
+  });
+
   it("extracts image-only services (no build, just image)", () => {
     const parsed = parseComposeFile(`
 services:
@@ -509,7 +673,14 @@ services:
       { envFileContent: "API_TOKEN=abc123\n" },
     );
     // interpolation resolves first, THEN shell-split → argv (no sh -c).
-    expect(parsed.services[0]?.commandArgv).toEqual(["node", "app.js", "--token", "abc123", "--port", "3000"]);
+    expect(parsed.services[0]?.commandArgv).toEqual([
+      "node",
+      "app.js",
+      "--token",
+      "abc123",
+      "--port",
+      "3000",
+    ]);
   });
 
   it("empty list command → [] (clears image CMD) (#332)", () => {
@@ -693,8 +864,9 @@ services:
   });
 
   it("keeps the author's message verbatim, punctuation and all", () => {
-    expect(parseComposeFile(compose("DB_URL:?DB_URL must be set (see README)")).missingRequired)
-      .toEqual([{ variable: "DB_URL", message: "DB_URL must be set (see README)" }]);
+    expect(
+      parseComposeFile(compose("DB_URL:?DB_URL must be set (see README)")).missingRequired,
+    ).toEqual([{ variable: "DB_URL", message: "DB_URL must be set (see README)" }]);
   });
 
   it("flags the env row as required + missing so the wizard can prompt for it", () => {
@@ -816,14 +988,18 @@ describe("parseComposeFile — service resource limits", () => {
 
   it("parses the swarm form (deploy.resources.limits)", () => {
     const parsed = parseComposeFile(
-      svc("    deploy:\n      resources:\n        limits:\n          memory: 3072M\n          cpus: '1.5'\n"),
+      svc(
+        "    deploy:\n      resources:\n        limits:\n          memory: 3072M\n          cpus: '1.5'\n",
+      ),
     );
     expect(parsed.services[0]?.advanced?.resources).toEqual({ cpuCores: 1.5, memoryMb: 3072 });
   });
 
   it("lets the more specific deploy block win over the short form", () => {
     const parsed = parseComposeFile(
-      svc("    mem_limit: 512m\n    deploy:\n      resources:\n        limits:\n          memory: 8g\n"),
+      svc(
+        "    mem_limit: 512m\n    deploy:\n      resources:\n        limits:\n          memory: 8g\n",
+      ),
     );
     expect(parsed.services[0]?.advanced?.resources?.memoryMb).toBe(8192);
   });
@@ -932,9 +1108,7 @@ describe("parseComposeFile — shutdown behavior (stop_signal / stop_grace_perio
   const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
 
   it("stores stop_signal and stop_grace_period on advanced without warning", () => {
-    const parsed = parseComposeFile(
-      svc("    stop_signal: SIGINT\n    stop_grace_period: 1m30s\n"),
-    );
+    const parsed = parseComposeFile(svc("    stop_signal: SIGINT\n    stop_grace_period: 1m30s\n"));
     expect(parsed.services[0]?.advanced?.stopSignal).toBe("SIGINT");
     expect(parsed.services[0]?.advanced?.stopGracePeriod).toBe("1m30s");
     // The whole point of the fix: these keys are honored, not reported dropped.
@@ -1032,7 +1206,9 @@ describe("parseComposeFile — dropped-key reporting", () => {
 
   it("names each host-level key it can't honor, as a warning", () => {
     const parsed = parseComposeFile(
-      svc("    privileged: true\n    cap_add:\n      - NET_ADMIN\n    sysctls:\n      net.ipv4.ip_forward: '1'\n"),
+      svc(
+        "    privileged: true\n    cap_add:\n      - NET_ADMIN\n    sysctls:\n      net.ipv4.ip_forward: '1'\n",
+      ),
     );
     expect(parsed.unsupported.map((u) => u.field).sort()).toEqual([
       "cap_add",
@@ -1089,7 +1265,9 @@ describe("parseComposeFile — dropped-key reporting", () => {
     expect(honored.services[0]?.advanced?.resources?.memoryMb).toBe(1024);
 
     const partly = parseComposeFile(
-      svc("    deploy:\n      replicas: 3\n      resources:\n        limits:\n          memory: 1g\n"),
+      svc(
+        "    deploy:\n      replicas: 3\n      resources:\n        limits:\n          memory: 1g\n",
+      ),
     );
     expect(partly.unsupported.map((u) => u.field)).toEqual(["deploy"]);
     expect(partly.services[0]?.advanced?.resources?.memoryMb).toBe(1024);
@@ -1124,5 +1302,94 @@ describe("parseComposeFile — a key set to its own default is not a loss", () =
   it("still reports the same keys when they ask for something", () => {
     const parsed = parseComposeFile(svc("    privileged: true\n    pids_limit: 100\n"));
     expect(parsed.unsupported.map((u) => u.field).sort()).toEqual(["pids_limit", "privileged"]);
+  });
+});
+
+describe("parseComposeFile — deploy-time environment templates (#673)", () => {
+  it("keeps the raw embedded expression beside its scan-time preview", () => {
+    const service = parseComposeFile(`
+services:
+  api:
+    image: example/api
+    environment:
+      DATABASE_URL: postgresql://user:\${POSTGRES_PASSWORD:?set it}@db:5432/app
+      LITERAL: fixed
+`).services[0]!;
+
+    expect(service.environment.DATABASE_URL).toBe("postgresql://user:@db:5432/app");
+    expect(service.environmentTemplates).toEqual({
+      DATABASE_URL: "postgresql://user:${POSTGRES_PASSWORD:?set it}@db:5432/app",
+    });
+    expect(service.advanced?.environmentTemplateKeys).toEqual(["DATABASE_URL"]);
+    expect(service.environmentMeta?.DATABASE_URL).toMatchObject({
+      source: "interpolated",
+      required: true,
+      unresolvedVariables: ["POSTGRES_PASSWORD"],
+    });
+  });
+
+  it("marks list/object passthrough forms and preserves escaped dollars", () => {
+    const parsed = parseComposeFile(`
+services:
+  api:
+    image: example/api
+    environment:
+      - TOKEN
+      - PRICE=$$5
+  worker:
+    image: example/worker
+    environment:
+      TOKEN:
+`);
+
+    expect(parsed.services[0]?.environmentTemplates).toEqual({
+      TOKEN: "$TOKEN",
+      PRICE: "$$5",
+    });
+    expect(parsed.services[1]?.environmentTemplates).toEqual({ TOKEN: "$TOKEN" });
+  });
+
+  it("writes an empty provenance marker when every value is literal", () => {
+    const service = parseComposeFile(`
+services:
+  api:
+    image: example/api
+    environment:
+      EMPTY: ""
+`).services[0]!;
+
+    expect(service.environmentTemplates).toBeUndefined();
+    expect(service.advanced?.environmentTemplateKeys).toEqual([]);
+  });
+
+  it("keeps Compose default, alternate, nested, and escaped-dollar semantics", () => {
+    const resolved = resolveComposeEnvironmentTemplates(
+      { EMPTY: "", SET: "value" },
+      {
+        DEFAULT: "${MISSING:-fallback}",
+        EMPTY_IS_SET: "${EMPTY-default}",
+        ALTERNATE: "${SET:+enabled}",
+        NESTED: "${OUTER:-${INNER:-nested-fallback}}",
+        ESCAPED: "$$TOKEN",
+      },
+    );
+
+    expect(resolved.env).toMatchObject({
+      DEFAULT: "fallback",
+      EMPTY_IS_SET: "",
+      ALTERNATE: "enabled",
+      NESTED: "nested-fallback",
+      ESCAPED: "$TOKEN",
+    });
+    expect(resolved.missingRequired).toEqual([]);
+  });
+
+  it("reads a self-reference from the lower layer without fixed-point growth", () => {
+    const resolved = resolveComposeEnvironmentTemplates(
+      { PATH: "/usr/bin" },
+      { PATH: "${PATH}:/app/bin" },
+    );
+
+    expect(resolved.env.PATH).toBe("/usr/bin:/app/bin");
   });
 });

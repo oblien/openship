@@ -10,15 +10,15 @@
 
 /* --- Low-level client (rarely needed directly) -------------------- */
 export {
-	api,
-	ApiError,
-	getApiErrorCode,
-	getApiErrorMessage,
-	isAbortError,
-	isNetworkError,
-	setNetworkErrorHandler,
-	getApiBaseUrl,
-	REQUEST_TIMEOUT_MESSAGE,
+  api,
+  ApiError,
+  getApiErrorCode,
+  getApiErrorMessage,
+  isAbortError,
+  isNetworkError,
+  setNetworkErrorHandler,
+  getApiBaseUrl,
+  REQUEST_TIMEOUT_MESSAGE,
 } from "./client";
 export type { RequestOptions } from "./client";
 
@@ -35,13 +35,20 @@ export type {
   ObjectStorageProviderSpec,
   ObjectStorageView,
 } from "./projects";
+export type { ReleaseImageSource } from "../release-image-source";
 export { appsApi } from "./apps";
 export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps";
 export { deployApi } from "./deploy";
 export type { RestorePlanUI } from "./deploy";
 export { domainsApi } from "./domains";
 export { credentialsApi, type Credential } from "./credentials";
-export { dnsApi, type DnsProviderDescriptor, type SanitizedDnsCredential, type AddDnsCredentialInput, type VerifyZoneResult } from "./dns";
+export {
+  dnsApi,
+  type DnsProviderDescriptor,
+  type SanitizedDnsCredential,
+  type AddDnsCredentialInput,
+  type VerifyZoneResult,
+} from "./dns";
 export {
   jobsApi,
   type JobView,
@@ -113,8 +120,17 @@ export type {
   StartTunnelResult,
   SwitchBackResult,
 } from "./migration";
-export { dataTransferApi } from "./data-transfer";
-export type { DataTransferFile, ImportMode, ImportResult } from "./data-transfer";
+export { dataTransferApi, inspectDirectTransferCode } from "./data-transfer";
+export type {
+  DataTransferFile,
+  DirectCodeInfo,
+  DirectReceiveSession,
+  DirectTransferResult,
+  ExportHistoryCategory,
+  ExportPreview,
+  ImportMode,
+  ImportResult,
+} from "./data-transfer";
 export { permissionsApi, RESOURCE_TYPE_LABELS, resourceTypeLabel } from "./permissions";
 export type {
   Permission,
@@ -211,10 +227,7 @@ export type {
 } from "./terminal";
 
 /* --- Service terminal --------------------------------------------- */
-export {
-  requestServiceTerminalTicket,
-  buildServiceTerminalWsUrl,
-} from "./service-terminal";
+export { requestServiceTerminalTicket, buildServiceTerminalWsUrl } from "./service-terminal";
 
 /* --- Notifications ------------------------------------------------- */
 export { notificationsApi } from "./notifications";

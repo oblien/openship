@@ -12,7 +12,7 @@
  * dropped upstream in the parser and never reaches here.
  */
 
-import type { RoutingConfig } from "@repo/core";
+import { isLoopbackHost, type RoutingConfig } from "@repo/core";
 import type { RouteProxyLocation, RouteRedirect, RouteHeaderRule } from "../types";
 
 /** Compiled shapes reuse the RouteConfig entry types (single source of truth). */
@@ -332,7 +332,7 @@ function isPrivateOrigin(targetUrl: string): boolean {
   } catch {
     return false;
   }
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (isLoopbackHost(host)) return true;
   const v6 = host.replace(/^\[|\]$/g, "").toLowerCase();
   if (v6 === "::1" || v6.startsWith("fe80:") || v6.startsWith("fc") || v6.startsWith("fd")) {
     return true;
@@ -341,7 +341,11 @@ function isPrivateOrigin(targetUrl: string): boolean {
   if (!m) return false;
   const [a, b] = [Number(m[1]), Number(m[2])];
   return (
-    a === 127 || a === 10 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+    a === 127 ||
+    a === 10 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
   );
 }
 
@@ -404,6 +408,17 @@ export function compileVercelRouting(
     }
     if (isFullUrl(rewrite.destination)) {
       if (!isSafeTargetUrl(rewrite.destination)) {
+        out.skipped.push(`rewrite ${rewrite.source} (unsafe destination)`);
+        continue;
+      }
+      try {
+        if (isLoopbackHost(new URL(rewrite.destination).hostname)) {
+          out.skipped.push(
+            `rewrite ${rewrite.source} (loopback destinations must be mapped to an owned service)`,
+          );
+          continue;
+        }
+      } catch {
         out.skipped.push(`rewrite ${rewrite.source} (unsafe destination)`);
         continue;
       }

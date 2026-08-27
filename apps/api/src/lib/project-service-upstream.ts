@@ -45,12 +45,31 @@ export interface UpstreamCandidateRow {
   serviceId: string;
   containerId?: string | null;
   ip?: string | null;
-  /** The ONE host port the row persists. Arbitrary for a multi-port container — see
-   *  `hostPortByContainerPort`, which a DEPLOY can supply and a stored row cannot. */
+  /** Legacy/primary host-port scalar. Arbitrary for a multi-port container. */
   hostPort?: number | null;
+  /** Durable CONTAINER-port → host-port bindings persisted on a service deployment. */
+  hostPorts?: Record<string, number> | null;
   /** CONTAINER port → host port, when the caller knows the full picture (a deploy
    *  holds the runtime's report unioned with the pins it just published). */
   hostPortByContainerPort?: Record<number, number>;
+}
+
+/** Concrete per-port bindings, preferring the just-observed deploy result over its
+ * persisted cache. Legacy migration markers are intentionally ignored. */
+function rowHostPortEntries(
+  row: UpstreamCandidateRow | undefined,
+): Array<{ container: number; host: number }> {
+  const bindings = row?.hostPortByContainerPort ?? row?.hostPorts;
+  return Object.entries(bindings ?? {}).flatMap(([container, host]) => {
+    const parsed = Number(container);
+    return Number.isInteger(parsed) &&
+      parsed > 0 &&
+      parsed <= 65_535 &&
+      Number.isInteger(host) &&
+      host > 0
+      ? [{ container: parsed, host }]
+      : [];
+  });
 }
 
 /** Domain-row fields `pickPrimaryServiceId` breaks a tie on. */
@@ -100,11 +119,9 @@ function containerPorts(service: UpstreamCandidateService): number[] {
  * 9090 must dial 4000; reading "the service's port" would answer 3000 and route the
  * domain at the wrong app.
  *
- * The live row's publish has no declared mapping to pair with — adoption strips
- * declared publishes (migrate.service.ts `normalizeHostPorts`), so only the row still
- * knows the number — hence a `null` container side there. That still MATCHES the
- * service, which is the valuable half: under the default loopback-port strategy the
- * container port is never dialed at all.
+ * A legacy row's scalar publish has no declared mapping to pair with — adoption
+ * strips declared publishes — so its container side can still be `null`. New rows
+ * persist the complete map and therefore retain the exact pairing.
  */
 function publishedPortPairs(
   service: UpstreamCandidateService,
@@ -118,7 +135,12 @@ function publishedPortPairs(
   for (const entry of service.ports ?? []) {
     add(parseServiceHostPort(entry), parseServicePort(entry));
   }
-  if (row?.hostPort != null) add(row.hostPort, resolveServicePort(service, null));
+  const observed = rowHostPortEntries(row);
+  if (observed.length > 0) {
+    for (const binding of observed) add(binding.host, binding.container);
+  } else if (row?.hostPort != null) {
+    add(row.hostPort, resolveServicePort(service, null));
+  }
   return pairs;
 }
 
@@ -226,11 +248,9 @@ export function buildProjectServiceUpstream(
   /**
    * Which host port belongs to the port we resolved.
    *
-   * A `service_deployment` row carries ONE scalar `hostPort`, and on the deploy path it
-   * is the pin of the service's PRIMARY routed port — the deploy pins only the ports its
-   * own service routes use, so a project-level route's port may have no pin at all.
-   * Applying the scalar to a container port it doesn't belong to is not a near miss: it
-   * dials a DIFFERENT app on the same box.
+   * The legacy scalar `hostPort` is the pin of the service's PRIMARY routed port.
+   * Applying it to another container port is not a near miss: it dials a DIFFERENT app
+   * on the same box.
    *
    * A per-port map answers it exactly, and its ABSENCE of an entry is meaningful — that
    * port simply isn't published, so the upstream is the container IP rather than a
@@ -246,11 +266,13 @@ export function buildProjectServiceUpstream(
       ...(chosen?.ports ?? []).map((entry) => parseServicePort(entry)),
     ].filter((port): port is number => port !== null),
   );
-  const hostPort = row.hostPortByContainerPort
-    ? row.hostPortByContainerPort[owner.containerPort]
-    : declaredContainerPorts.size <= 1
-      ? row.hostPort
-      : undefined;
+  const hostPortEntries = rowHostPortEntries(row);
+  const hostPort =
+    hostPortEntries.length > 0
+      ? hostPortEntries.find((binding) => binding.container === owner.containerPort)?.host
+      : declaredContainerPorts.size <= 1
+        ? row.hostPort
+        : undefined;
 
   const url = buildUpstreamUrl({
     strategy: input.strategy,
@@ -280,6 +302,7 @@ export async function resolveProjectServiceUpstream(
   input: PortMatchInput & {
     strategy: RouteStrategy;
     runtime: Parameters<typeof resolveLiveUpstreamUrl>[0]["runtime"];
+    requireLiveObservation?: boolean;
   },
 ): Promise<{ url: string; owner: ProjectPortOwner } | null> {
   const owner = pickProjectPortOwner(input);
@@ -294,7 +317,8 @@ export async function resolveProjectServiceUpstream(
     containerPort: owner.containerPort,
     // The persisted row is a CACHE of a past live read — `resolveLiveUpstreamUrl`
     // consults it only when it can't ask the daemon itself.
-    stored: { ip: row.ip, hostPort: row.hostPort },
+    stored: { ip: row.ip, hostPort: row.hostPort, hostPorts: row.hostPorts },
+    requireLiveObservation: input.requireLiveObservation,
   });
   return url ? { url, owner } : null;
 }

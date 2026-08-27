@@ -255,10 +255,10 @@ describe("syncProjectPublicRoutes", () => {
     });
   });
 
-  // Fix 2b: a DEPLOY (flag on) that mis-resolved its target must never erase a
-  // user's proven custom domain — the nulling/removal that regressed the Access URL
-  // to localhost. The Domains EDITOR (flag off) keeps full authority to remove/edit.
-  describe("preserveVerifiedCustom", () => {
+  // A DEPLOY (flag on) that omits or mis-resolves a custom domain must never
+  // erase user configuration. Verification is lifecycle, not ownership. The
+  // Domains EDITOR (flag off) keeps full authority to remove/edit.
+  describe("preserveCustomDomains", () => {
     const verifiedCustom = {
       id: "dom_api",
       projectId: "proj_123",
@@ -280,7 +280,7 @@ describe("syncProjectPublicRoutes", () => {
         // Deploy resolved to only the free route; the custom domain is absent.
         endpoints: [{ port: 3000, domain: "myapp", domainType: "free" }],
         currentDomains: [verifiedCustom],
-        preserveVerifiedCustom: true,
+        preserveCustomDomains: true,
       });
 
       expect(domainRepo.remove).not.toHaveBeenCalled();
@@ -291,21 +291,21 @@ describe("syncProjectPublicRoutes", () => {
         projectId: "proj_123",
         endpoints: [{ port: 3000, domain: "myapp", domainType: "free" }],
         currentDomains: [verifiedCustom],
-        // preserveVerifiedCustom omitted → editor authority.
+        // preserveCustomDomains omitted → editor authority.
       });
 
       expect(domainRepo.remove).toHaveBeenCalledWith("dom_api");
     });
 
-    it("does NOT protect an UNVERIFIED custom domain — the guard is verified-only", async () => {
+    it("KEEPS an omitted PENDING custom domain during deployment reconciliation", async () => {
       await syncProjectPublicRoutes({
         projectId: "proj_123",
         endpoints: [{ port: 3000, domain: "myapp", domainType: "free" }],
         currentDomains: [{ ...verifiedCustom, verified: false, status: "pending" }],
-        preserveVerifiedCustom: true,
+        preserveCustomDomains: true,
       });
 
-      expect(domainRepo.remove).toHaveBeenCalledWith("dom_api");
+      expect(domainRepo.remove).not.toHaveBeenCalled();
     });
 
     it("does NOT protect a FREE domain — the guard is custom-only", async () => {
@@ -318,7 +318,7 @@ describe("syncProjectPublicRoutes", () => {
           hostname: "old-slug.opsh.io",
           domainType: "free",
         }],
-        preserveVerifiedCustom: true,
+        preserveCustomDomains: true,
       });
 
       expect(domainRepo.remove).toHaveBeenCalledWith("dom_free");
@@ -333,7 +333,21 @@ describe("syncProjectPublicRoutes", () => {
         // Desired route survives normalization (has a path) but carries no port.
         endpoints: [{ targetPath: "/api", customDomain: "api.openship.io", domainType: "custom" }],
         currentDomains: [verifiedCustom],
-        preserveVerifiedCustom: true,
+        preserveCustomDomains: true,
+      });
+
+      const patch = domainRepo.update.mock.calls.find(([id]: [string]) => id === "dom_api")?.[1] as
+        | Record<string, unknown>
+        | undefined;
+      expect(patch && "targetPort" in patch).toBeFalsy();
+    });
+
+    it("does NOT null a pending custom domain's port during deployment reconciliation", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        endpoints: [{ targetPath: "/api", customDomain: "api.openship.io", domainType: "custom" }],
+        currentDomains: [{ ...verifiedCustom, verified: false, status: "pending" }],
+        preserveCustomDomains: true,
       });
 
       const patch = domainRepo.update.mock.calls.find(([id]: [string]) => id === "dom_api")?.[1] as

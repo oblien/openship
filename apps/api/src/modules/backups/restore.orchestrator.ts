@@ -32,12 +32,7 @@
 import crypto from "node:crypto";
 import { Writable, pipeline as streamPipeline } from "node:stream";
 import { promisify } from "node:util";
-import {
-  repos,
-  type BackupRestore,
-  type BackupRun,
-  type BackupRestoreStatus,
-} from "@repo/db";
+import { repos, type BackupRestore, type BackupRun, type BackupRestoreStatus } from "@repo/db";
 import { liveContainerForService } from "../services/service-container";
 import {
   HashingPassthrough,
@@ -81,18 +76,9 @@ const TRUNCATE_ERROR = 4096;
 const pipelineP = promisify(streamPipeline);
 
 /**
- * How long an unanswered cancel has to sit before a second press force-terminals
- * the row. The operator pressed cancel, watched nothing happen, pressed again —
- * that is the signal, and it needs no second endpoint. Long enough that a normal
- * cooperative cancel (which lands at the next checkpoint) always wins the race.
- */
-const FORCE_CANCEL_AFTER_MS = 2 * 60 * 1000;
-
-/**
- * The one sentence an operator reads after a cancel that landed mid-write, used
- * verbatim on both the cooperative and the forced path. Identical wording is the
- * point: a forced cancel has strictly LESS certainty about the target's state,
- * so it must never read as the reassuring outcome.
+ * The sentence an operator reads after cooperative cancellation landed during
+ * a write. The applying worker records this only after it has unwound, so the
+ * terminal row is also proof the old writer stopped touching the target.
  */
 function partialWriteSentence(source: string): string {
   return (
@@ -179,10 +165,8 @@ const failureLeavesTargetIntact = (kind: PayloadKind): boolean =>
  * layer down anyway, and "we do not recognise this" must never resolve to "empty the
  * target first".
  */
-const clearsTarget = (
-  kind: PayloadKind,
-  config: Record<string, unknown> | null,
-): boolean => isPayloadKind(kind) && restoreClearsTarget(kind, config);
+const clearsTarget = (kind: PayloadKind, config: Record<string, unknown> | null): boolean =>
+  isPayloadKind(kind) && restoreClearsTarget(kind, config);
 
 /**
  * A failure that happened after the restore began writing the target.
@@ -214,7 +198,10 @@ function recordedArtifacts(run: BackupRun): RecordedArtifact[] {
  *  differ between what we record and what a destination reports back. */
 function normalizeDigest(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const bare = value.trim().replace(/^sha256:/i, "").toLowerCase();
+  const bare = value
+    .trim()
+    .replace(/^sha256:/i, "")
+    .toLowerCase();
   return /^[0-9a-f]{64}$/.test(bare) ? bare : null;
 }
 
@@ -303,10 +290,7 @@ export class RestoreOrchestrator {
        */
       const inForce =
         existing.confirmationToken ||
-        (await repos.backupRestore.adoptConfirmationToken(
-          existing.id,
-          opts.confirmationToken,
-        ));
+        (await repos.backupRestore.adoptConfirmationToken(existing.id, opts.confirmationToken));
       if (!inForce) {
         throw new Error("This restore has no confirmation token — cancel it and start again");
       }
@@ -344,11 +328,7 @@ export class RestoreOrchestrator {
    * stops, target volume is wiped + replaced, service restarts.
    * Verifies the confirmation token from beginPrepare.
    */
-  async apply(
-    ctx: RequestContext,
-    restoreId: string,
-    confirmationToken: string,
-  ): Promise<void> {
+  async apply(ctx: RequestContext, restoreId: string, confirmationToken: string): Promise<void> {
     const restore = await repos.backupRestore.findById(restoreId);
     try {
       assertResourceInOrg(restore, "Restore", ctx.organizationId, restoreId);
@@ -373,10 +353,36 @@ export class RestoreOrchestrator {
       throw new Error("Confirmation token mismatch");
     }
     if (restore.status !== "prepared") {
+      throw new Error(`Restore is in status=${restore.status}, must be 'prepared' to apply`);
+    }
+
+    // A prepared row can wait for hours, so its creation-time admission lock no
+    // longer proves the target project is still available. Claim the destructive
+    // phase through the same project-row lock as deletion BEFORE acknowledging
+    // this request or scheduling any work. Whichever side wins establishes a
+    // durable fact the other side observes: `applying`, or deletion-in-progress.
+    const sourceRun = await repos.backupRun.findById(restore.runId);
+    if (!sourceRun) throw new Error("Source backup run disappeared");
+    const projectId = sourceRun.sourceKind === "mail_server" ? null : restore.projectId;
+    if (sourceRun.sourceKind !== "mail_server" && !projectId) {
+      throw new Error("Cannot apply restore: target project no longer exists");
+    }
+    const claim = await repos.backupRestore.claimApply(
+      restoreId,
+      projectId,
+      restore.organizationId,
+    );
+    if (claim === "project_unavailable") {
+      throw new Error("Cannot apply restore: project is being deleted or no longer exists");
+    }
+    if (claim !== "claimed") {
+      const current = await repos.backupRestore.findById(restoreId).catch(() => undefined);
       throw new Error(
-        `Restore is in status=${restore.status}, must be 'prepared' to apply`,
+        `Restore is in status=${current?.status ?? "unknown"} or cancellation was requested; ` +
+          "it can no longer be applied",
       );
     }
+    this.publishTransitionEvent(restoreId, "applying");
 
     setImmediate(() => {
       void this.runApply(restoreId).catch((err) =>
@@ -401,14 +407,13 @@ export class RestoreOrchestrator {
    * Returns what actually happened rather than throwing, so the UI can say
    * "cancelling…" instead of showing an error for a cancel that was accepted.
    *
-   * `force` skips the cooperative window. Project teardown uses it once its own
-   * quiesce poll has expired: the volumes are about to be destroyed either way, so
-   * leaving the row in `applying` would only outlive the target it claims to write.
+   * An applying restore is never force-terminalized here: changing only the row
+   * cannot prove its writer stopped. The worker owns its terminal transition;
+   * after process death, the boot stale-restore sweep owns recovery.
    */
   async cancel(
     ctx: RequestContext,
     restoreId: string,
-    opts: { force?: boolean } = {},
   ): Promise<{
     accepted: boolean;
     status: BackupRestoreStatus;
@@ -441,7 +446,14 @@ export class RestoreOrchestrator {
     this.inFlight.get(restoreId)?.abort();
     this.publishTransitionalCancel(restoreId, this.metaFlag(flagged ?? restore, "destructive"));
 
-    if (restore.status !== "applying") {
+    // `requestCancel` returns the row as it existed under the UPDATE lock. The
+    // earlier read may still say `prepared` even when an apply claim won between
+    // that read and this write; branching on it would terminalize an active
+    // writer before the writer acknowledged its abort. Conversely, if cancel won
+    // first, claimApply's `cancelRequested=false` predicate prevents apply from
+    // crossing this point.
+    const current = flagged ?? restore;
+    if (current.status !== "applying") {
       // Nothing was stopped and nothing written — the free cancel. runPrepare
       // checks the flag before its own `prepared` transition, so this cannot be
       // overwritten the way it used to be.
@@ -451,48 +463,15 @@ export class RestoreOrchestrator {
       return { accepted: true, status: "cancelled", destructive: false, forced: false };
     }
 
-    const requestedAt = flagged?.cancelRequestedAt ?? restore.cancelRequestedAt;
-    const unanswered =
-      requestedAt instanceof Date && Date.now() - requestedAt.getTime() >= FORCE_CANCEL_AFTER_MS;
-    if (opts.force || unanswered) {
-      // The cooperative path had its window and did not answer — or the caller
-      // states there is no window left. Force the row terminal so it stops
-      // blocking project deletion — with the SAME
-      // partial-data wording, because a forced cancel knows LESS about the
-      // target's state than a cooperative one, not more.
-      const destructive = this.metaFlag(flagged ?? restore, "destructive");
-      const source =
-        (this.metaValue(flagged ?? restore, "destructiveSource") as string | undefined) ??
-        "the restore target";
-      console.error(
-        `[restore-orchestrator] force-cancelling apply ${restoreId} (` +
-          (opts.force
-            ? "caller forced it"
-            : `no checkpoint answered in ${Math.round(FORCE_CANCEL_AFTER_MS / 1000)}s`) +
-          `)`,
-      );
-      await this.transition(restoreId, "cancelled", {
-        errorMessage: boundedStorableText(
-          destructive
-            ? `${partialWriteSentence(source)} The apply was still running when it was ` +
-                `force-cancelled, so the write may have continued past this point.`
-            : "Cancelled before any data was written. The apply was force-cancelled after " +
-                "it stopped responding; the service may have been left stopped.",
-          TRUNCATE_ERROR,
-        ),
-        meta: await this.mergedMeta(restoreId, {
-          forced: true,
-          destructive,
-          ...(destructive ? { partialWrite: true, serviceLeftStopped: true } : {}),
-        }),
-      });
-      return { accepted: true, status: "cancelled", destructive, forced: true };
-    }
-
+    // Never terminalize an applying row from the request path. An abort signal
+    // is a request, not proof that the executor stopped; changing only the row
+    // would let project teardown destroy a target while the old writer still
+    // mutates it. runApply owns the terminal transition after it unwinds. If the
+    // process died, the boot stale-restore sweep is the out-of-process proof.
     return {
       accepted: true,
       status: "applying",
-      destructive: this.metaFlag(flagged ?? restore, "destructive"),
+      destructive: this.metaFlag(current, "destructive"),
       forced: false,
     };
   }
@@ -575,9 +554,7 @@ export class RestoreOrchestrator {
       const sourceRun = await repos.backupRun.findById(restore.runId);
       if (!sourceRun) throw new Error("Source backup run disappeared");
 
-      const destinationRow = await repos.backupDestination.findById(
-        restore.destinationId,
-      );
+      const destinationRow = await repos.backupDestination.findById(restore.destinationId);
       if (!destinationRow) throw new Error("Destination disappeared");
       this.assertDestinationOrg(destinationRow, restore.organizationId);
 
@@ -655,81 +632,84 @@ export class RestoreOrchestrator {
     // A prepare-time PROBE only — nothing here outlives the method, so the
     // transport goes back when it returns (including on a throw).
     try {
+      // A probe that FAILED is not the same fact as a target with nothing in it,
+      // and conflating them would report an unreachable host as a misconfigured
+      // service — sending the operator to fix the wrong thing.
+      let sources: Awaited<ReturnType<BackupExecutor["listSources"]>> = [];
+      let probeError: string | null = null;
+      try {
+        sources = await executor.listSources(serviceHandle);
+      } catch (err) {
+        probeError = safeErrorMessage(err);
+      }
+      const restorable = sources.filter((s) => s.type !== "tmpfs");
+      const needsContainer = artifacts.filter((a) => needsLiveContainer(a.payloadKind));
+      const volumeArtifacts = artifacts.filter((a) => a.payloadKind === "volume");
 
-    // A probe that FAILED is not the same fact as a target with nothing in it,
-    // and conflating them would report an unreachable host as a misconfigured
-    // service — sending the operator to fix the wrong thing.
-    let sources: Awaited<ReturnType<BackupExecutor["listSources"]>> = [];
-    let probeError: string | null = null;
-    try {
-      sources = await executor.listSources(serviceHandle);
-    } catch (err) {
-      probeError = safeErrorMessage(err);
-    }
-    const restorable = sources.filter((s) => s.type !== "tmpfs");
-    const needsContainer = artifacts.filter((a) => needsLiveContainer(a.payloadKind));
-    const volumeArtifacts = artifacts.filter((a) => a.payloadKind === "volume");
-
-    if (restorable.length === 0 && volumeArtifacts.length > 0) {
-      if (probeError) {
+      if (restorable.length === 0 && volumeArtifacts.length > 0) {
+        if (probeError) {
+          throw new Error(
+            `Could not enumerate restore targets for service "${serviceHandle.name}" on the ` +
+              `host: ${probeError}. The restore was not started — fix host access and prepare ` +
+              `it again.`,
+          );
+        }
         throw new Error(
-          `Could not enumerate restore targets for service "${serviceHandle.name}" on the ` +
-            `host: ${probeError}. The restore was not started — fix host access and prepare ` +
-            `it again.`,
+          `Nothing to restore into for service "${serviceHandle.name}": it has no running ` +
+            `container on the host AND no volumes recorded on the service row. Redeploy the ` +
+            `project (or re-declare its volumes) and prepare the restore again.`,
         );
       }
-      throw new Error(
-        `Nothing to restore into for service "${serviceHandle.name}": it has no running ` +
-          `container on the host AND no volumes recorded on the service row. Redeploy the ` +
-          `project (or re-declare its volumes) and prepare the restore again.`,
-      );
-    }
 
-    // Two different failures, and the operator's next step differs: an artifact
-    // that never recorded which volume it came from can't be placed by anyone
-    // (the volume producer refuses it too, one layer down), while a recorded id
-    // that no longer matches means the service's volumes changed under it.
-    const unlabelled = volumeArtifacts.filter(
-      (a) => typeof a.metadata.volumeId !== "string" || !a.metadata.volumeId,
-    );
-    if (unlabelled.length > 0) {
-      throw new Error(
-        `Artifact${unlabelled.length > 1 ? "s" : ""} ` +
-          `${unlabelled.map((a) => `"${a.name ?? a.key}"`).join(", ")} ` +
-          `record${unlabelled.length > 1 ? "" : "s"} no volume id, so ` +
-          `there is no way to tell which volume to restore into. This run was captured by an ` +
-          `incompatible producer and cannot be restored in place.`,
+      // Two different failures, and the operator's next step differs: an artifact
+      // that never recorded which volume it came from can't be placed by anyone
+      // (the volume producer refuses it too, one layer down), while a recorded id
+      // that no longer matches means the service's volumes changed under it.
+      const unlabelled = volumeArtifacts.filter(
+        (a) => typeof a.metadata.volumeId !== "string" || !a.metadata.volumeId,
       );
-    }
-    const unresolved = volumeArtifacts.filter(
-      (a) => !matchBackupSource(restorable, a.metadata.volumeId as string),
-    );
-    if (unresolved.length > 0) {
-      throw new Error(
-        `Backed-up volume${unresolved.length > 1 ? "s" : ""} ` +
-          `${unresolved.map((a) => `"${a.metadata.volumeId}"`).join(", ")} ` +
-          `no longer exist${unresolved.length > 1 ? "" : "s"} on service ` +
-          `"${serviceHandle.name}". Visible targets: ` +
-          `${restorable.map((s) => s.id).join(", ") || "none"}. The service's volumes changed ` +
-          `since this backup was taken, so it cannot be restored in place.`,
+      if (unlabelled.length > 0) {
+        throw new Error(
+          `Artifact${unlabelled.length > 1 ? "s" : ""} ` +
+            `${unlabelled.map((a) => `"${a.name ?? a.key}"`).join(", ")} ` +
+            `record${unlabelled.length > 1 ? "" : "s"} no volume id, so ` +
+            `there is no way to tell which volume to restore into. This run was captured by an ` +
+            `incompatible producer and cannot be restored in place.`,
+        );
+      }
+      const unresolved = volumeArtifacts.filter(
+        (a) => !matchBackupSource(restorable, a.metadata.volumeId as string),
       );
-    }
+      if (unresolved.length > 0) {
+        throw new Error(
+          `Backed-up volume${unresolved.length > 1 ? "s" : ""} ` +
+            `${unresolved.map((a) => `"${a.metadata.volumeId}"`).join(", ")} ` +
+            `no longer exist${unresolved.length > 1 ? "" : "s"} on service ` +
+            `"${serviceHandle.name}". Visible targets: ` +
+            `${restorable.map((s) => s.id).join(", ") || "none"}. The service's volumes changed ` +
+            `since this backup was taken, so it cannot be restored in place.`,
+        );
+      }
 
-    if (needsContainer.length > 0 && executor.runtimeName === "docker" && !serviceHandle.containerId) {
-      throw new Error(
-        `Cannot restore ${needsContainer.map((a) => a.payloadKind).join(", ")} into service ` +
-          `"${serviceHandle.name}": this payload is replayed INTO the running database process, ` +
-          `and the service has no live container on the host. Deploy the service first, then ` +
-          `prepare the restore again.`,
-      );
-    }
+      if (
+        needsContainer.length > 0 &&
+        executor.runtimeName === "docker" &&
+        !serviceHandle.containerId
+      ) {
+        throw new Error(
+          `Cannot restore ${needsContainer.map((a) => a.payloadKind).join(", ")} into service ` +
+            `"${serviceHandle.name}": this payload is replayed INTO the running database process, ` +
+            `and the service has no live container on the host. Deploy the service first, then ` +
+            `prepare the restore again.`,
+        );
+      }
 
-    return {
-      meta: {
-        targetContainer: serviceHandle.containerId ? "live" : "none",
-        targetSources: restorable.length,
-      },
-    };
+      return {
+        meta: {
+          targetContainer: serviceHandle.containerId ? "live" : "none",
+          targetSources: restorable.length,
+        },
+      };
     } finally {
       disposeRuntime(runtime);
     }
@@ -956,8 +936,10 @@ export class RestoreOrchestrator {
   }
 
   private async runApply(restoreId: string): Promise<void> {
-    // Registered BEFORE the applying transition, so a cancel racing the very
-    // first millisecond of apply still finds a handle to abort.
+    // The durable applying transition was claimed synchronously by apply(). The
+    // local handle is registered before this worker re-reads the row or touches
+    // the target; a cancel that landed before registration is still carried by
+    // the durable cancelRequested flag checked below.
     const controller = new AbortController();
     this.inFlight.set(restoreId, controller);
     // Released alongside the in-flight handle at the bottom — see resolveTarget.
@@ -986,8 +968,10 @@ export class RestoreOrchestrator {
     let serviceDown = false;
     try {
       const restore = await repos.backupRestore.findById(restoreId);
-      if (!restore) return;
-      await this.transition(restoreId, "applying");
+      // `apply()` owns the atomic prepared→applying claim. Starting from any
+      // other state means this callback is stale (cancelled/finished) and must
+      // not resolve a target, stop a service, or write bytes.
+      if (!restore || restore.status !== "applying") return;
 
       const sourceRun = await repos.backupRun.findById(restore.runId);
       if (!sourceRun) throw new Error("Source backup run disappeared");
@@ -1376,29 +1360,7 @@ export class RestoreOrchestrator {
     patch?: Parameters<typeof repos.backupRestore.transition>[2],
   ): Promise<void> {
     await repos.backupRestore.transition(restoreId, status, patch);
-    try {
-      restoreRunBus.publish(restoreId, {
-        type: "transition",
-        status,
-        bytesRestored:
-          typeof patch?.bytesRestored === "number" ? patch.bytesRestored : undefined,
-      });
-      const TERMINAL: BackupRestoreStatus[] = [
-        "succeeded",
-        "failed",
-        "cancelled",
-        "server_error",
-      ];
-      if (TERMINAL.includes(status)) {
-        restoreRunBus.publish(restoreId, {
-          type: "complete",
-          status: status as "succeeded" | "failed" | "cancelled" | "server_error",
-          errorMessage: typeof patch?.errorMessage === "string" ? patch.errorMessage : undefined,
-        });
-      }
-    } catch {
-      // bus failures never block the FSM
-    }
+    this.publishTransitionEvent(restoreId, status, patch);
 
     // Notify on the terminal restore outcome (best-effort; never blocks the
     // FSM). `cancelled` is user-initiated — no notification. succeeded/failed
@@ -1410,7 +1372,8 @@ export class RestoreOrchestrator {
           const project = await repos.project.findById(row.projectId).catch(() => null);
           notification.emit({
             organizationId: row.organizationId,
-            eventType: status === "succeeded" ? "backup_restore.completed" : "backup_restore.failed",
+            eventType:
+              status === "succeeded" ? "backup_restore.completed" : "backup_restore.failed",
             resourceType: "backup_restore",
             resourceId: restoreId,
             payload: {
@@ -1422,8 +1385,36 @@ export class RestoreOrchestrator {
           });
         }
       } catch (err) {
-        console.error(`[restore-orchestrator] notify failed for ${restoreId}: ${safeErrorMessage(err)}`);
+        console.error(
+          `[restore-orchestrator] notify failed for ${restoreId}: ${safeErrorMessage(err)}`,
+        );
       }
+    }
+  }
+
+  /** Publish a transition whose durable write may be owned by either the
+   * ordinary FSM path or the atomic apply-admission claim. */
+  private publishTransitionEvent(
+    restoreId: string,
+    status: BackupRestoreStatus,
+    patch?: Parameters<typeof repos.backupRestore.transition>[2],
+  ): void {
+    try {
+      restoreRunBus.publish(restoreId, {
+        type: "transition",
+        status,
+        bytesRestored: typeof patch?.bytesRestored === "number" ? patch.bytesRestored : undefined,
+      });
+      const TERMINAL: BackupRestoreStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
+      if (TERMINAL.includes(status)) {
+        restoreRunBus.publish(restoreId, {
+          type: "complete",
+          status: status as "succeeded" | "failed" | "cancelled" | "server_error",
+          errorMessage: typeof patch?.errorMessage === "string" ? patch.errorMessage : undefined,
+        });
+      }
+    } catch {
+      // bus failures never block the FSM
     }
   }
 
@@ -1509,10 +1500,7 @@ export class RestoreOrchestrator {
       mailServerId,
       organizationId,
     );
-    const executor = resolveExecutor(
-      targetPlatform.runtime.name,
-      targetPlatform.runtime,
-    );
+    const executor = resolveExecutor(targetPlatform.runtime.name, targetPlatform.runtime);
 
     const handle: ServiceHandle = {
       id: mailServerId,

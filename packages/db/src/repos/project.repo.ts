@@ -68,7 +68,8 @@ export function createProjectRepo(db: Database) {
      */
     async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
       if (ids.length === 0) return [];
-      return db.select({ id: project.id, name: project.name })
+      return db
+        .select({ id: project.id, name: project.name })
         .from(project)
         .where(inArray(project.id, ids));
     },
@@ -242,9 +243,7 @@ export function createProjectRepo(db: Database) {
      * Project counts for the dashboard home — total and with-an-active-
      * deployment, in one aggregate query instead of listing every row.
      */
-    async countByOrganization(
-      organizationId: string,
-    ): Promise<{ total: number; active: number }> {
+    async countByOrganization(organizationId: string): Promise<{ total: number; active: number }> {
       const [row] = await db
         .select({
           total: sql<number>`count(*)::int`,
@@ -447,6 +446,28 @@ export function createProjectRepo(db: Database) {
         .where(and(eq(project.groupId, groupId), isNull(project.deletedAt)));
     },
 
+    /** Update a source identity shared by every environment and its project_app
+     * row in one transaction. Source transitions span both tables; exposing one
+     * repository operation prevents a failed second write from leaving the
+     * group and its environments classified differently. */
+    async updateSourceByApp(
+      groupId: string,
+      projectData: Partial<NewProject>,
+      groupData: Partial<NewProjectGroup>,
+    ) {
+      const updatedAt = new Date();
+      await db.transaction(async (tx) => {
+        await tx
+          .update(project)
+          .set({ ...projectData, updatedAt })
+          .where(and(eq(project.groupId, groupId), isNull(project.deletedAt)));
+        await tx
+          .update(projectGroup)
+          .set({ ...groupData, updatedAt })
+          .where(and(eq(projectGroup.id, groupId), isNull(projectGroup.deletedAt)));
+      });
+    },
+
     /** Update favicon cache metadata without touching the user-visible updatedAt field. */
     async updateFaviconCache(
       id: string,
@@ -486,47 +507,29 @@ export function createProjectRepo(db: Database) {
     },
 
     /**
-     * Atomically mark the project as "teardown in progress". Returns true
-     * when this caller claimed the flag, false if another teardown is
-     * already running (and the caller should reject with a 409). Uses a
-     * conditional UPDATE so the read+write is a single row-locked op.
+     * Mark a live project as "teardown in progress".
+     *
+     * The caller owns the cross-process project-runtime advisory lock. That
+     * lock—not this crash-prone boolean—is the concurrency owner, so an old
+     * `true` left by a dead process is safely reclaimed here in Cloud and
+     * self-hosted modes alike. Returns false only when the live row is gone.
      */
     async claimDeletion(id: string): Promise<boolean> {
       const rows = await db
         .update(project)
         .set({ deletionInProgress: true, updatedAt: new Date() })
-        .where(
-          and(eq(project.id, id), eq(project.deletionInProgress, false), isNull(project.deletedAt)),
-        )
+        .where(and(eq(project.id, id), isNull(project.deletedAt)))
         .returning();
       return rows.length > 0;
     },
 
     /** Release the deletion-in-progress flag — call on every failure path so
-     *  the row isn't stuck refusing all writes after a partial teardown. */
+     *  ordinary project writes are admitted again after a partial teardown. */
     async clearDeletionInProgress(id: string) {
       await db
         .update(project)
         .set({ deletionInProgress: false, updatedAt: new Date() })
         .where(eq(project.id, id));
-    },
-
-    /**
-     * Boot-time sweep of stuck deletion locks. A `deletionInProgress=true`
-     * flag can only be left behind by a teardown that died mid-flight — no
-     * teardown survives a process restart — so at startup every such flag is
-     * necessarily stale and must be cleared, otherwise the project refuses all
-     * future deletes with "Another delete is already running" forever. Mirrors
-     * backupRun.sweepStaleRuns / backupRestore.sweepStaleRestores. Returns the
-     * number of locks cleared.
-     */
-    async clearStaleDeletions(): Promise<number> {
-      const rows = await db
-        .update(project)
-        .set({ deletionInProgress: false, updatedAt: new Date() })
-        .where(eq(project.deletionInProgress, true))
-        .returning();
-      return rows.length;
     },
 
     /**

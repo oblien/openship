@@ -147,7 +147,14 @@ describe("pickProjectPortOwner", () => {
 
   it("reads exposedPort, which outranks the ports list", () => {
     const withExposedPort = [
-      { id: "svc-api", name: "api", enabled: true, exposed: true, exposedPort: "4000", ports: ["5000"] },
+      {
+        id: "svc-api",
+        name: "api",
+        enabled: true,
+        exposed: true,
+        exposedPort: "4000",
+        ports: ["5000"],
+      },
     ];
     expect(
       pickProjectPortOwner({
@@ -176,7 +183,9 @@ describe("pickProjectPortOwner", () => {
     ]);
     // Without the domain row, list order decides; with it, the canonical row wins —
     // the same answer `deployment.containerId` held (pickPrimaryServiceId).
-    expect(pickProjectPortOwner({ port: 3000, services: clash, rowByService: clashRows })?.serviceId).toBe("svc-a");
+    expect(
+      pickProjectPortOwner({ port: 3000, services: clash, rowByService: clashRows })?.serviceId,
+    ).toBe("svc-a");
     expect(
       pickProjectPortOwner({
         port: 3000,
@@ -294,15 +303,17 @@ describe("pickProjectPortOwner multi-publish pairing", () => {
   });
 
   it("still resolves the first mapping correctly", () => {
-    expect(
-      pickProjectPortOwner({ port: 8080, services: multi, rowByService: row }),
-    ).toMatchObject({ containerPort: 3000, via: "published-port" });
+    expect(pickProjectPortOwner({ port: 8080, services: multi, rowByService: row })).toMatchObject({
+      containerPort: 3000,
+      via: "published-port",
+    });
   });
 
   it("dials a container port directly when the service listens on it", () => {
-    expect(
-      pickProjectPortOwner({ port: 4000, services: multi, rowByService: row }),
-    ).toMatchObject({ containerPort: 4000, via: "container-port" });
+    expect(pickProjectPortOwner({ port: 4000, services: multi, rowByService: row })).toMatchObject({
+      containerPort: 4000,
+      via: "container-port",
+    });
   });
 
   it("reads the container side first WITHIN one service when the number is on both", () => {
@@ -359,13 +370,14 @@ describe("deploy and live upstream resolution agree", () => {
     getContainerInfo: async () => ({ containerId: "c", status: "running", ip, hostPort }) as never,
   });
 
-  const cases: Array<{ label: string; strategy: "loopback-port" | "container-ip"; port: number }> = [
-    { label: "container-port match, loopback", strategy: "loopback-port", port: 3000 },
-    { label: "container-port match, container-ip", strategy: "container-ip", port: 3000 },
-    { label: "published-port match, loopback", strategy: "loopback-port", port: 8080 },
-    { label: "published-port match, container-ip", strategy: "container-ip", port: 8080 },
-    { label: "no match at all", strategy: "loopback-port", port: 9999 },
-  ];
+  const cases: Array<{ label: string; strategy: "loopback-port" | "container-ip"; port: number }> =
+    [
+      { label: "container-port match, loopback", strategy: "loopback-port", port: 3000 },
+      { label: "container-port match, container-ip", strategy: "container-ip", port: 3000 },
+      { label: "published-port match, loopback", strategy: "loopback-port", port: 8080 },
+      { label: "published-port match, container-ip", strategy: "container-ip", port: 8080 },
+      { label: "no match at all", strategy: "loopback-port", port: 9999 },
+    ];
 
   const mapped = [
     { id: "svc-postgres", name: "postgres", enabled: true, exposed: false, ports: ["5432"] },
@@ -453,7 +465,10 @@ describe("buildProjectServiceUpstream host-port attribution", () => {
   ];
   // 32001 is 9000's pin (the primary routed port). 9001 has none.
   const multiRows = new Map([
-    ["svc-minio", { serviceId: "svc-minio", containerId: "c-minio", ip: "10.0.0.7", hostPort: 32001 }],
+    [
+      "svc-minio",
+      { serviceId: "svc-minio", containerId: "c-minio", ip: "10.0.0.7", hostPort: 32001 },
+    ],
   ]);
 
   it("does NOT dial another port's pin for a multi-port service", () => {
@@ -478,7 +493,10 @@ describe("buildProjectServiceUpstream host-port attribution", () => {
         port: 3000,
         services: single,
         rowByService: new Map([
-          ["svc-web", { serviceId: "svc-web", containerId: "c-web", ip: "10.0.0.2", hostPort: 32770 }],
+          [
+            "svc-web",
+            { serviceId: "svc-web", containerId: "c-web", ip: "10.0.0.2", hostPort: 32770 },
+          ],
         ]),
       })?.url,
     ).toBe("http://127.0.0.1:32770");
@@ -499,8 +517,8 @@ describe("buildProjectServiceUpstream host-port attribution", () => {
 describe("buildProjectServiceUpstream with a per-port host-port map", () => {
   /**
    * The exact answer, once the caller has one. A deploy holds the runtime's report of
-   * every binding UNIONED with the pins it just published, so it can say what container
-   * port 9001 is published on rather than guessing from the one scalar the row keeps.
+   * every binding UNIONED with the pins it just published and persists that map, so
+   * deploy-time and later route re-applies make the same per-port decision.
    */
   const multi = [
     { id: "svc-minio", name: "minio", enabled: true, exposed: true, ports: ["9000", "9001"] },
@@ -521,6 +539,28 @@ describe("buildProjectServiceUpstream with a per-port host-port map", () => {
               ip: "10.0.0.7",
               hostPort: 34100, // 9000's pin — the scalar, and the wrong answer for 9001
               hostPortByContainerPort: { 9000: 34100, 9001: 34101 },
+            },
+          ],
+        ]),
+      })?.url,
+    ).toBe("http://127.0.0.1:34101");
+  });
+
+  it("uses the durable service-deployment map after the deploy result is gone", () => {
+    expect(
+      buildProjectServiceUpstream({
+        strategy: "loopback-port",
+        port: 9001,
+        services: multi,
+        rowByService: new Map([
+          [
+            "svc-minio",
+            {
+              serviceId: "svc-minio",
+              containerId: "c-minio",
+              ip: "10.0.0.7",
+              hostPort: 34100,
+              hostPorts: { "9000": 34100, "9001": 34101 },
             },
           ],
         ]),

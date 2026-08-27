@@ -66,3 +66,22 @@ describe("publicEndpoints — empty set", () => {
     expect(ensure(tooMany)).toBe(false);
   });
 });
+
+describe("EnsureProjectBody — compose build args (#689)", () => {
+  it("accepts the prepare response verbatim, including interpolation provenance", () => {
+    expect(
+      Value.Check(EnsureProjectBody, {
+        name: "my-stack",
+        services: [
+          {
+            name: "api",
+            build: ".",
+            dockerfile: "Dockerfile",
+            buildArgs: { APP_PACKAGE: "@myorg/api", CHANNEL: "${CHANNEL:-stable}" },
+            advanced: { buildArgTemplateKeys: ["CHANNEL"] },
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+});

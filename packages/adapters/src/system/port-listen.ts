@@ -31,10 +31,7 @@ export interface PortProbeResult {
   checked: boolean;
 }
 
-// Dump both address families; suppress stderr and force exit 0 so a missing
-// file (rare) or an empty family never rejects the exec. Parsing is per-line and
-// family-agnostic, so no separator is needed between the two files.
-const PROC_NET_TCP_CMD = "cat /proc/net/tcp 2>/dev/null; cat /proc/net/tcp6 2>/dev/null; true";
+const PROC_NET_TCP_FILES = ["/proc/net/tcp", "/proc/net/tcp6"] as const;
 
 // procfs socket state column: 0A = TCP_LISTEN.
 const TCP_LISTEN = "0A";
@@ -76,12 +73,21 @@ export async function probePortListeningOnce(
   executor: PortProbeExecutor,
   port: number,
 ): Promise<boolean | null> {
-  try {
-    const out = await executor.exec(PROC_NET_TCP_CMD, { timeout: 5_000 });
-    return parseListeningPorts(out).has(port);
-  } catch {
-    return null;
+  const readable: string[] = [];
+  // Read the families independently and preserve whether each read succeeded.
+  // Appending `; true` to one combined shell command made two permission/read
+  // failures look exactly like a valid empty socket table—a dangerous false
+  // negative for edge ownership checks. One readable family is still useful;
+  // neither readable means the probe is inconclusive.
+  for (const file of PROC_NET_TCP_FILES) {
+    try {
+      readable.push(await executor.exec(`cat ${file} 2>/dev/null`, { timeout: 5_000 }));
+    } catch {
+      // Try the other address family before declaring the probe inconclusive.
+    }
   }
+  if (readable.length === 0) return null;
+  return parseListeningPorts(readable.join("\n")).has(port);
 }
 
 function delay(ms: number): Promise<void> {
@@ -123,9 +129,7 @@ export async function waitForPortListening(
     return { listening: false, checked: false };
   }
 
-  return anyConclusive
-    ? { listening: false, checked: true }
-    : { listening: false, checked: false };
+  return anyConclusive ? { listening: false, checked: true } : { listening: false, checked: false };
 }
 
 /** Outcome of {@link waitForPortFree}. `checked:false` = inconclusive, same rule. */

@@ -15,8 +15,8 @@
  */
 
 import { repos, restoreSubgraph, PkCollisionError, type Service } from "@repo/db";
-import { slugify, safeErrorMessage, mergeAdvanced, type ComposeAdvanced } from "@repo/core";
-import { buildNetworkAliases, type ContainerStatus } from "@repo/adapters";
+import { slugify, safeErrorMessage, mergeAdvanced } from "@repo/core";
+import { buildNetworkAliases, type ContainerInfo, type ContainerStatus } from "@repo/adapters";
 import { serviceAliasExtras } from "../../lib/deployable-service";
 import { COMPOSE_SENTINEL } from "../../lib/container-ref";
 import { isControlPlaneProject } from "../../lib/controller-helpers";
@@ -27,6 +27,7 @@ import {
   blockingComposeFields,
   describeBlockingComposeFields,
   parseComposeFile,
+  type ComposeService,
 } from "../../lib/compose-parser";
 import { unmaskEnv } from "../../lib/secret-env";
 import { createServerDockerRuntime } from "../../lib/deployment-runtime";
@@ -51,29 +52,19 @@ type ParsedComposeList = Parameters<typeof repos.service.syncFromCompose>[1];
 const DEPLOYMENT_ID_RE = /^dep_[A-Za-z0-9]+$/;
 
 /** Compose file names to probe in a linked repo (mirrors prepare.service COMPOSE_FILES). */
-const REPO_COMPOSE_FILES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
+const REPO_COMPOSE_FILES = [
+  "docker-compose.yml",
+  "docker-compose.yaml",
+  "compose.yml",
+  "compose.yaml",
+];
 
 /** Compose-service shape returned to the migrate wizard's mapping step. Carries
  *  enough to render a full native service card (env + deps), so a repo service
  *  with no running container (e.g. `redis`) is a first-class, editable unit. */
-export interface RepoComposeService {
-  name: string;
-  build?: string;
-  dockerfile?: string;
-  image?: string;
-  ports: string[];
-  environment: Record<string, string>;
-  dependsOn: string[];
-  volumes: string[];
-  command?: string;
-  commandArgv?: string[] | null; // #332
-  restart?: string;
-  /** Extended compose keys (healthcheck, resource caps, shared namespaces). Must be
-   *  declared here AND forwarded into the row below — carrying it only out of the
-   *  parser leaves it stranded on this shape, which is how the blob went missing
-   *  from every migrated stack in the first place. */
-  advanced?: ComposeAdvanced;
-}
+/** Parser service minus scan-only provenance. Deriving this shape prevents a
+ * new compose-owned field from being stranded in another handwritten map. */
+export type RepoComposeService = Omit<ComposeService, "environmentTemplates" | "environmentMeta">;
 
 /**
  * Parse a LINKED repo's docker-compose into its services, so the migrate wizard
@@ -118,34 +109,18 @@ export async function parseRepoCompose(
             describeBlockingComposeFields(blocking),
         );
       }
-      return parsed.services.map((s) => ({
-        name: s.name,
-        build: s.build ?? undefined,
-        dockerfile: s.dockerfile ?? undefined,
-        image: s.image ?? undefined,
-        ports: s.ports ?? [],
-        environment: s.environment ?? {},
-        dependsOn: s.dependsOn ?? [],
-        volumes: s.volumes ?? [],
-        command: s.command ?? undefined,
-        commandArgv: s.commandArgv ?? null, // #332
-        restart: s.restart ?? undefined,
-        // Extended keys (healthcheck, resource caps, shared namespaces). This
-        // hand-written map dropped the whole blob, so a migrated stack lost its
-        // healthchecks and per-service caps along with them — the same
-        // field-by-field omission #533 is about.
-        advanced: s.advanced ?? undefined,
-      }));
+      return parsed.services.map(
+        ({ environmentTemplates: _templates, environmentMeta: _meta, ...service }) => service,
+      );
     } catch (err) {
       // RETHROWN, not swallowed. Returning [] showed the wizard's mapping step an empty
       // repo-service list with no reason why — issue #339's symptom, which the native path
       // fixed the same way. A blocking key (above) surfaces through here too: the file is
       // valid, it just asks for something that cannot be deployed faithfully, and unlike a
       // missing env value there is nothing the wizard could collect to resolve it.
-      throw new Error(
-        `Could not use the repo's Docker Compose file: ${safeErrorMessage(err)}`,
-        { cause: err },
-      );
+      throw new Error(`Could not use the repo's Docker Compose file: ${safeErrorMessage(err)}`, {
+        cause: err,
+      });
     }
   }
   return [];
@@ -181,7 +156,9 @@ export function containerStatusToServiceStatus(status: ContainerStatus): string 
  * reattach-status.test.ts; delegating to the native rollup silently turned a half-down
  * re-attached stack green.
  */
-export function deriveDeploymentStatus(states: ContainerStatus[]): "ready" | "partial_failure" | "failed" {
+export function deriveDeploymentStatus(
+  states: ContainerStatus[],
+): "ready" | "partial_failure" | "failed" {
   const running = states.filter((s) => s === "running").length;
   if (running === states.length && running > 0) return "ready";
   if (running > 0) return "partial_failure";
@@ -376,11 +353,23 @@ export function buildAdoptedServiceRows(
     //  • No mapping (no repo linked / unmapped) → adopt the running image as-is
     //    (legacy: we have no build source, so reuse the image). Cross-server the
     //    image is transferred (docker save|load) so the target has it.
-    const repo = repoServices?.get(uniqueNames[i]) ?? repoServices?.get(perService(serviceRenames, s) ?? s.name);
+    const repo =
+      repoServices?.get(uniqueNames[i]) ??
+      repoServices?.get(perService(serviceRenames, s) ?? s.name);
     const native = repo && (repo.build || repo.image);
     const source = native
-      ? { image: repo.image, build: repo.build, dockerfile: repo.dockerfile }
-      : { image: s.image, build: s.image ? undefined : s.build, dockerfile: s.image ? undefined : s.dockerfile };
+      ? {
+          image: repo.image,
+          build: repo.build,
+          dockerfile: repo.dockerfile,
+          buildArgs: repo.buildArgs,
+        }
+      : {
+          image: s.image,
+          build: s.image ? undefined : s.build,
+          dockerfile: s.image ? undefined : s.dockerfile,
+          buildArgs: s.image ? undefined : s.buildArgs,
+        };
     // Hand the running image to the deploy for the one-time cutover: a native
     // `build:` row would otherwise rebuild on its very first deploy. Only when we
     // actually have a running image to reuse.
@@ -416,6 +405,7 @@ export function buildAdoptedServiceRows(
       image: source.image,
       build: source.build,
       dockerfile: source.dockerfile,
+      buildArgs: source.buildArgs,
       ports,
       ...(exposedPort ? { exposedPort } : {}),
       // Only keep dependencies on services we're also adopting.
@@ -461,7 +451,6 @@ export function buildAdoptedServiceRows(
   return { rows, renames, rowNameByDiscovered: Object.fromEntries(firstUnique), handover };
 }
 
-
 export async function adoptServerStack(opts: {
   serverId: string;
   organizationId: string;
@@ -505,7 +494,20 @@ export async function adoptServerStack(opts: {
    *  and the returned `handover` lets the first deploy reuse the running image. */
   repoServices?: Map<string, RepoComposeService>;
 }): Promise<AdoptResult> {
-  const { serverId, organizationId, projectName, serviceNames, serviceContainerIds, sameServer, volumeStrategies, serviceSubpaths, serviceEnv, serviceRenames, flatDocker, repoServices } = opts;
+  const {
+    serverId,
+    organizationId,
+    projectName,
+    serviceNames,
+    serviceContainerIds,
+    sameServer,
+    volumeStrategies,
+    serviceSubpaths,
+    serviceEnv,
+    serviceRenames,
+    flatDocker,
+    repoServices,
+  } = opts;
 
   const stack = await discoverServerStack(serverId, organizationId, undefined, { flatDocker });
   // Resolve names within ONE group when the caller scoped the adopt — a bare
@@ -569,7 +571,12 @@ export async function adoptServerStack(opts: {
     );
   }
 
-  const { rows: parsed, renames, rowNameByDiscovered, handover } = buildAdoptedServiceRows(
+  const {
+    rows: parsed,
+    renames,
+    rowNameByDiscovered,
+    handover,
+  } = buildAdoptedServiceRows(
     chosen,
     // Derived from `chosen`, which is post-scope and post-control-plane-exclusion.
     undefined,
@@ -601,13 +608,14 @@ export async function adoptServerStack(opts: {
         image: rs.image,
         build: rs.build,
         dockerfile: rs.dockerfile,
+        buildArgs: rs.buildArgs,
         ports,
         // Keep deps only on services this project actually has (adopted or new).
         dependsOn: (rs.dependsOn ?? []).filter((d) => repoServices.has(d) || adoptedNames.has(d)),
         // #336: restore masked sentinels from the repo compose env (real values).
         environment: serviceEnv?.[name]
           ? unmaskEnv(serviceEnv[name], rs.environment ?? {})
-          : rs.environment ?? {},
+          : (rs.environment ?? {}),
         volumes: rs.volumes ?? [],
         command: rs.command,
         commandArgv: rs.commandArgv ?? null, // #332
@@ -627,11 +635,9 @@ export async function adoptServerStack(opts: {
   // on that, see the `created === false` control-plane guard below), so the default
   // deleted every OTHER compose service row of that project, cascading its
   // service_deployment history and orphaning its running containers.
-  const createdServices = await repos.service.syncFromCompose(
-    project_id,
-    [...parsed, ...newRows],
-    { removeMissing: false },
-  );
+  const createdServices = await repos.service.syncFromCompose(project_id, [...parsed, ...newRows], {
+    removeMissing: false,
+  });
 
   // Apply the per-service options keyed by the DISCOVERED name: iterate `chosen`
   // (discovered), resolve the created row by its FINAL (possibly-renamed) name,
@@ -686,6 +692,25 @@ interface AttachPlacement {
   status: ContainerStatus;
   ip?: string;
   hostPort?: number;
+  hostPorts?: Record<string, number> | null;
+}
+
+/** Convert the runtime's numeric-keyed binding map into the JSON shape stored on
+ * `service_deployment`. An inspected container with no publishes is explicit null. */
+function durableHostPorts(
+  bindings: ContainerInfo["hostPortByContainerPort"],
+): Record<string, number> | null {
+  const entries = Object.entries(bindings ?? {}).filter(([container, host]) => {
+    const parsed = Number(container);
+    return (
+      Number.isInteger(parsed) &&
+      parsed > 0 &&
+      parsed <= 65_535 &&
+      Number.isInteger(host) &&
+      host > 0
+    );
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
 }
 
 /**
@@ -697,7 +722,9 @@ interface AttachPlacement {
  */
 async function readAttachPlacements(
   rt: {
-    getContainerInfo: (id: string) => Promise<{ status: ContainerStatus; ip?: string; hostPort?: number }>;
+    getContainerInfo: (
+      id: string,
+    ) => Promise<Pick<ContainerInfo, "status" | "ip" | "hostPort" | "hostPortByContainerPort">>;
     resolveImageDigest?: (ref: string) => Promise<string | undefined>;
   },
   entries: Array<{ service: Service; disc?: DiscoveredService }>,
@@ -707,9 +734,13 @@ async function readAttachPlacements(
       let status: ContainerStatus = disc?.running ? "running" : "stopped";
       let ip: string | undefined;
       let hostPort: number | undefined;
+      let hostPorts: Record<string, number> | null | undefined;
       if (disc?.containerId) {
         const info = await rt.getContainerInfo(disc.containerId).catch(() => null);
-        if (info) ({ status, ip, hostPort } = info);
+        if (info) {
+          ({ status, ip, hostPort } = info);
+          hostPorts = durableHostPorts(info.hostPortByContainerPort);
+        }
       }
       // The digest of the image this container is ACTUALLY running. A deploy records it
       // (deploy.service → `result.imageDigest`); adopt recorded nothing, and since
@@ -727,6 +758,7 @@ async function readAttachPlacements(
         status,
         ip,
         hostPort,
+        hostPorts,
       };
     }),
   );
@@ -798,6 +830,7 @@ async function writeAttachedRuntime(opts: {
       imageRef: p.image ?? null,
       imageDigest: p.imageDigest ?? null,
       hostPort: p.hostPort ?? null,
+      hostPorts: p.hostPorts ?? null,
       ip: p.ip ?? null,
     });
   }
@@ -977,9 +1010,9 @@ export async function joinReusedContainersToGroup(opts: {
 
 /**
  * Refresh a RESTORED deployment's runtime rows against live docker: the snapshot
- * carried each container's ip/hostPort as of the last deploy, but IPs change on
+ * carried each container's ip/host-port bindings as of the last deploy, but IPs change on
  * restart. Re-read `getContainerInfo` per service_deployment container, update
- * ip/hostPort/status, and recompute the deployment badge from the live states.
+ * ip/host-port map/status, and recompute the deployment badge from the live states.
  * Best-effort — the Services tab is a live read anyway, so a failure here only
  * leaves the stored ip/status at their (last-deploy) snapshot values.
  */
@@ -1010,6 +1043,7 @@ async function refreshRestoredRuntime(
         // the row claim a 127.0.0.1 publish the container doesn't have (#506).
         // `info === null` = couldn't ask → keep the last-known values.
         hostPort: info ? (info.hostPort ?? null) : (sd.hostPort ?? null),
+        hostPorts: info ? durableHostPorts(info.hostPortByContainerPort) : (sd.hostPorts ?? null),
         ip: info ? (info.ip ?? null) : (sd.ip ?? null),
       });
     }

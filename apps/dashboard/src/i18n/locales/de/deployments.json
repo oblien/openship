@@ -169,6 +169,7 @@
     "unpinFailed": "Anheftung des Deployments konnte nicht aufgehoben werden",
     "rollbackModeInstant": "Sofortige Wiederherstellung — nutzt das aufbewahrte Image dieser Version, kein Neubau.",
     "rollbackModeRebuild": "Neubau — das Image dieser Version liegt nicht mehr auf dem Host, ihr Commit wird neu gebaut.",
+    "rollbackModeReacquireImage": "Registry-Wiederherstellung — lädt die exakt für diese Version gespeicherte Image-Referenz erneut; kein Quellcode-Neubau.",
     "rollbackModeMixed": "Größtenteils sofort — {count} Service(s) haben ihr Image verloren und werden neu gebaut."
   },
   "rollbackConfirm": {

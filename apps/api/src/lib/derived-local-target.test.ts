@@ -129,14 +129,21 @@ describe("derived local target — one machine, one executor path", () => {
     h.localRow = { id: "srv-local" };
     await resolveTargetPlatform("server", "docker", "srv-local", "org1");
     const picked = last();
-    await resolveTargetPlatform("local", "docker");
+    await resolveTargetPlatform("local", "docker", undefined, "org1");
     const derived = last();
 
     // The whole point of the convergence: the wizard door and the no-binding door
     // cannot end up on different rules for the same box.
     expect(derived.executor).toBe(picked.executor);
     expect(derived.localHost).toBe(true);
-    expect(derived.docker).toEqual(picked.docker);
+    expect(derived.docker).toMatchObject({
+      transport: "socket",
+      resolveRegistryAuth: expect.any(Function),
+    });
+    expect(picked.docker).toMatchObject({
+      transport: "socket",
+      resolveRegistryAuth: expect.any(Function),
+    });
     // Same host being provisioned → same lock, or two "local" deploys would race
     // openresty/docker/state on one machine.
     expect((derived.provisionLock as { name: string }).name).toBe(

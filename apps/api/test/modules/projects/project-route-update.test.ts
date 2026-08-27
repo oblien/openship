@@ -17,6 +17,8 @@ const routeState = vi.hoisted(() => ({
   syncProjectRouteState: vi.fn(),
 }));
 
+const applyProjectRouting = vi.hoisted(() => vi.fn());
+
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
   return {
@@ -40,7 +42,7 @@ vi.mock("../../../src/modules/domains/project-route.service", () => ({
 }));
 
 vi.mock("../../../src/modules/domains/routing-apply.service", () => ({
-  applyProjectRouting: vi.fn(),
+  applyProjectRouting,
 }));
 
 import { updateProject } from "../../../src/modules/projects/project-crud.service";
@@ -68,11 +70,11 @@ describe("updateProject route persistence", () => {
     routeState.reapplyProjectLiveRoutes.mockReset();
     routeState.resolveProjectRouteState.mockReset();
     routeState.syncProjectRouteState.mockReset();
+    applyProjectRouting.mockReset().mockResolvedValue(undefined);
 
     projectRepo.findById.mockResolvedValue(project);
     routeState.listProjectRouteRows.mockResolvedValue([{ hostname: "old.example.com" }]);
-    // The re-apply is fire-and-forget (`.catch(...)` on the returned promise), so a
-    // bare mockReset would make any test that reaches it fail on `undefined.catch`.
+    // The re-apply is awaited under the project runtime/deletion lock.
     routeState.reapplyProjectLiveRoutes.mockResolvedValue(undefined);
     routeState.resolveProjectRouteState.mockResolvedValue({
       projectDomains: [{ hostname: "old.example.com" }],
@@ -80,27 +82,33 @@ describe("updateProject route persistence", () => {
     routeState.syncProjectRouteState.mockResolvedValue(undefined);
   });
 
-  it("does not hold the response open for best-effort live route re-apply", async () => {
-    routeState.reapplyProjectLiveRoutes.mockReturnValue(new Promise(() => {}));
+  it("does not finish the PATCH before its live route writer is quiescent", async () => {
+    let releaseRoute!: () => void;
+    routeState.reapplyProjectLiveRoutes.mockReturnValue(
+      new Promise<void>((resolve) => {
+        releaseRoute = resolve;
+      }),
+    );
 
-    const result = await Promise.race([
-      updateProject(
-        project.id,
-        {
-          publicEndpoints: [
-            {
-              customDomain: "new.example.com",
-              domainType: "custom",
-              port: 4321,
-            },
-          ],
-        },
-        project.organizationId,
-      ),
-      new Promise((resolve) => setTimeout(() => resolve("timed-out"), 100)),
-    ]);
+    let settled = false;
+    const updating = updateProject(
+      project.id,
+      {
+        publicEndpoints: [
+          {
+            customDomain: "new.example.com",
+            domainType: "custom",
+            port: 4321,
+          },
+        ],
+      },
+      project.organizationId,
+    ).then(() => {
+      settled = true;
+    });
 
-    expect(result).not.toBe("timed-out");
+    await vi.waitFor(() => expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalled());
+    expect(settled).toBe(false);
     expect(routeState.syncProjectRouteState).toHaveBeenCalled();
     // `managedEdgeSyncedByCaller` is asserted, not loosened away: updateProject runs
     // its own `syncProjectManagedEdge` afterwards, and letting the re-apply sync the
@@ -109,6 +117,88 @@ describe("updateProject route persistence", () => {
     expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledWith(project, ["old.example.com"], {
       managedEdgeSyncedByCaller: true,
     });
+
+    releaseRoute();
+    await updating;
+    expect(settled).toBe(true);
+  });
+
+  it("does not start a live route writer after deletion has claimed the project", async () => {
+    projectRepo.findById
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ ...project, deletionInProgress: true })
+      .mockResolvedValue(project);
+
+    await updateProject(
+      project.id,
+      {
+        publicEndpoints: [{ customDomain: "new.example.com", domainType: "custom", port: 4321 }],
+      },
+      project.organizationId,
+    );
+
+    expect(routeState.syncProjectRouteState).toHaveBeenCalled();
+    expect(routeState.reapplyProjectLiveRoutes).not.toHaveBeenCalled();
+    expect(applyProjectRouting).not.toHaveBeenCalled();
+  });
+
+  it("also gates a routingConfig-only live writer after deletion claims the project", async () => {
+    projectRepo.findById
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ ...project, deletionInProgress: true })
+      .mockResolvedValue(project);
+
+    await updateProject(
+      project.id,
+      { routingConfig: { rewrites: [] } } as never,
+      project.organizationId,
+    );
+
+    expect(routeState.reapplyProjectLiveRoutes).not.toHaveBeenCalled();
+    expect(applyProjectRouting).not.toHaveBeenCalled();
+  });
+
+  it("re-applies project routes before service and topology routes for a routing edit", async () => {
+    await updateProject(
+      project.id,
+      { routingConfig: { rewrites: [] } } as never,
+      project.organizationId,
+    );
+
+    expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledWith(project, []);
+    expect(applyProjectRouting).toHaveBeenCalledWith(project.id);
+    expect(routeState.reapplyProjectLiveRoutes.mock.invocationCallOrder[0]).toBeLessThan(
+      applyProjectRouting.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("treats a route-strategy change as a complete ordered live route re-apply", async () => {
+    await updateProject(
+      project.id,
+      { routeStrategy: "container-ip" } as never,
+      project.organizationId,
+    );
+    await vi.waitFor(() => expect(applyProjectRouting).toHaveBeenCalledWith(project.id));
+
+    expect(routeState.reapplyProjectLiveRoutes).toHaveBeenCalledWith(project, ["old.example.com"], {
+      managedEdgeSyncedByCaller: true,
+    });
+    expect(routeState.reapplyProjectLiveRoutes.mock.invocationCallOrder[0]).toBeLessThan(
+      applyProjectRouting.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("does not rewrite live routes for a no-op route-strategy save", async () => {
+    projectRepo.findById.mockResolvedValue({ ...project, routeStrategy: "container-ip" });
+
+    await updateProject(
+      project.id,
+      { routeStrategy: "container-ip" } as never,
+      project.organizationId,
+    );
+
+    expect(routeState.reapplyProjectLiveRoutes).not.toHaveBeenCalled();
+    expect(applyProjectRouting).not.toHaveBeenCalled();
   });
 
   /**
@@ -189,7 +279,11 @@ describe("updateProject route persistence", () => {
   it("accepts a pasted https:// hostname", async () => {
     await updateProject(
       project.id,
-      { publicEndpoints: [{ customDomain: "https://app.example.com/", domainType: "custom", port: 4321 }] },
+      {
+        publicEndpoints: [
+          { customDomain: "https://app.example.com/", domainType: "custom", port: 4321 },
+        ],
+      },
       project.organizationId,
     );
 

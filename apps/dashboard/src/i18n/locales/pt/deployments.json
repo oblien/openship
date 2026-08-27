@@ -169,6 +169,7 @@
     "unpinFailed": "Falha ao desafixar a implantação",
     "rollbackModeInstant": "Restauração instantânea — reutiliza a imagem retida desta versão, sem rebuild.",
     "rollbackModeRebuild": "Rebuild — a imagem desta versão não está mais no host, então o commit é construído novamente.",
+    "rollbackModeReacquireImage": "Restauração do registro — baixa novamente a referência exata da imagem salva para esta versão, sem reconstruir o código-fonte.",
     "rollbackModeMixed": "Quase instantâneo — {count} serviço(s) perderam a imagem e serão reconstruídos."
   },
   "rollbackConfirm": {

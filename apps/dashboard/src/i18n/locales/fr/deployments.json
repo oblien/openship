@@ -169,6 +169,7 @@
     "unpinFailed": "Échec du désépinglage du déploiement",
     "rollbackModeInstant": "Restauration instantanée — réutilise l'image conservée de cette version, sans reconstruction.",
     "rollbackModeRebuild": "Reconstruction — l'image de cette version n'est plus sur l'hôte, son commit est reconstruit.",
+    "rollbackModeReacquireImage": "Restauration depuis le registre — récupère la référence d'image exacte enregistrée pour cette version, sans reconstruire les sources.",
     "rollbackModeMixed": "Presque instantané — {count} service(s) ont perdu leur image et seront reconstruits."
   },
   "rollbackConfirm": {

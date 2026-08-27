@@ -51,6 +51,7 @@ vi.mock("node:fs", () => ({
   chmodSync: () => undefined,
   existsSync: (p: string) => h.existing.has(String(p)),
   mkdirSync: () => undefined,
+  realpathSync: (p: string) => String(p),
   readFileSync: (p: string) => {
     const v = h.written.get(String(p));
     if (v === undefined) throw Object.assign(new Error(`ENOENT: ${p}`), { code: "ENOENT" });

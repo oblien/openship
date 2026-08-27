@@ -169,6 +169,7 @@
     "unpinFailed": "取消固定部署失败",
     "rollbackModeInstant": "即时恢复 — 复用该版本保留的镜像，无需重新构建。",
     "rollbackModeRebuild": "重新构建 — 该版本的镜像已不在主机上，将重新构建其提交。",
+    "rollbackModeReacquireImage": "注册表恢复 — 重新拉取为此版本记录的精确镜像引用，无需重新构建源代码。",
     "rollbackModeMixed": "基本即时 — {count} 个服务的镜像已丢失，将重新构建。"
   },
   "rollbackConfirm": {

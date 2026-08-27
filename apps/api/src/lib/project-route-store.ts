@@ -16,14 +16,14 @@ interface SyncProjectPublicRoutesInput {
   endpoints?: StoredPublicEndpoint[] | null;
   currentDomains?: Domain[] | null;
   /**
-   * When true, a VERIFIED custom domain is never destroyed by this sync: a row
-   * the desired set omits is kept (not deleted), and a desired route that carries
-   * no port/path never nulls the row's live target. Only the DEPLOY pipeline sets
-   * this — a deploy that resolved to the wrong target (e.g. "local") must not
-   * erase a user's proven custom domain (the Access-URL-regressed-to-localhost
-   * bug). The Domains editor leaves it false so explicit removals/edits still win.
+   * When true, custom-domain configuration is never destroyed by this sync: an
+   * omitted row is kept, and a desired route with no target never nulls its
+   * stored target. Only deployment reconciliation sets this. Verification is a
+   * lifecycle state, not ownership: pending domains are just as user-owned as
+   * verified ones. The Domains editor leaves this false so explicit removals and
+   * edits remain authoritative.
    */
-  preserveVerifiedCustom?: boolean;
+  preserveCustomDomains?: boolean;
 }
 
 interface DesiredProjectRoute {
@@ -126,10 +126,10 @@ export async function syncProjectPublicRoutes(
 
   for (const domain of existingDomains) {
     if (!desiredByHostname.has(domain.hostname.toLowerCase())) {
-      // Keep a verified custom domain the deploy didn't mention — see
-      // preserveVerifiedCustom. A row absent from the desired set is otherwise an
-      // explicit removal, which the editor path (flag off) still performs.
-      if (input.preserveVerifiedCustom && domain.domainType === "custom" && domain.verified) {
+      // A deploy payload describes this release, not the user's durable domain
+      // configuration. Keep every custom row it omits, including pending rows;
+      // only the editor path (flag off) may make omission mean explicit removal.
+      if (input.preserveCustomDomains && domain.domainType === "custom") {
         continue;
       }
       await repos.domain.remove(domain.id);
@@ -234,7 +234,8 @@ export async function syncProjectPublicRoutes(
     // exactly what regressed the Access URL to localhost. An explicit new value is
     // still applied; only a "no target" desired route is treated as "leave as-is".
     const protectTarget =
-      input.preserveVerifiedCustom && existing.verified && (existing.domainType ?? route.domainType) === "custom";
+      input.preserveCustomDomains &&
+      (existing.domainType ?? route.domainType) === "custom";
     if ((existing.serviceId ?? null) !== null) patch.serviceId = null;
     if (
       (existing.targetPort ?? null) !== (route.targetPort ?? null) &&

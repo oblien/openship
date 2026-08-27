@@ -19,6 +19,7 @@ export interface DiscoveredService {
   image?: string;
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   ports: string[];
   env: Record<string, string>;
   /** Env that provably came from the IMAGE, not the operator (recovered from
@@ -57,6 +58,7 @@ export interface ComposeRepoService {
   name: string;
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   image?: string;
   ports: string[];
   environment: Record<string, string>;

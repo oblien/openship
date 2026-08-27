@@ -3,7 +3,8 @@
  * what credential that clone needs.
  *
  * This was previously derived independently in two places — the build pipeline
- * (`cloneOnServer` + the git-token purpose) and preflight (`dockerClonesOnServer`
+ * (the adapter's `cloneOnServer` flag + git-token purpose) and preflight
+ * (`dockerClonesOnTarget`
  * + the remote-clone credential checks). Because the same decision was computed
  * from slightly different expressions, they drifted: preflight would pass a
  * config the pipeline then rejected (e.g. an api-host clone that preflight knew
@@ -12,7 +13,7 @@
  * pipeline will do.
  *
  * The "credential actually available? → fall back to api-host" adjustment stays
- * in the pipeline (`effectiveCloneOnServer`) because it depends on the resolved
+ * in the pipeline (`effectiveCloneOnTarget`) because it depends on the resolved
  * token, which is runtime state, not config.
  */
 
@@ -49,21 +50,25 @@ export interface ClonePlanInput {
    *  adapter re-validates the URL (github + https) before downloading and falls
    *  back to clone. Local/imported projects → false → unchanged. */
   repoIsGithub?: boolean;
+  /** How Docker reaches its daemon. Source can be prepared on the target only
+   *  when that transport also carries a command executor (SSH). Socket/TCP
+   *  builds receive a context prepared on the API host. Omitted for non-Docker
+   *  runtimes and retained as SSH-compatible for legacy callers. */
+  dockerTransport?: "socket" | "ssh" | "tcp";
 }
 
 export interface ClonePlan {
-  /** The clone runs directly on the deploy server — bare always, docker on the
-   *  explicit "clone on the server" opt-in. (Pipeline's `cloneOnServer`.) */
-  runsOnServer: boolean;
-  /** The DOCKER-only on-server clone (excludes bare, which has its own hard-fail
+  /** Physical auth/filesystem boundary where source acquisition happens. */
+  sourceLocation: "api-host" | "target" | "cloud-workspace";
+  /** The clone runs through the target's command executor. Bare server builds
+   *  always do; Docker only can when its daemon transport is SSH. */
+  cloneRunsOnTarget: boolean;
+  /** The DOCKER-only target clone (excludes bare, which has its own hard-fail
    *  preflight checks). This is preflight's warn-case. */
-  dockerClonesOnServer: boolean;
-  /** The clone runs on the api-host / orchestrator (local to it) — so the local
-   *  gh identity is valid and no shippable token is required. */
-  runsLocally: boolean;
+  dockerClonesOnTarget: boolean;
   /** BuildStrategy to resolve the clone credential with (resolveBuildGitToken):
    *  "local" → local gh / broad resolver chain; "server" → shippable App/PAT. */
-  cloneBuildStrategy: "local" | "server";
+  cloneCredentialPurpose: "local" | "server";
   /** Desktop relay eligible: forward the operator's gh identity to the server for
    *  an on-server clone (nothing persisted). Requires the desktop app + opt-in. */
   relayEligible: boolean;
@@ -89,26 +94,36 @@ export function relayConfigEligible(input: {
 
 export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   const onServer = input.effectiveTarget === "server";
+  // Only an SSH Docker transport has both a remote daemon AND a command channel
+  // that can acquire source beside it. A socket/TCP transport can build there,
+  // but its context must be prepared by the API host. Undefined preserves the
+  // old remote-SSH assumption for callers that do not construct Docker runtimes.
+  const dockerCanCloneOnTarget =
+    input.dockerTransport === undefined || input.dockerTransport === "ssh";
+  const localDockerBuildRequested =
+    input.buildStrategy === "local" && input.cloneStrategy !== "server";
 
-  // Docker acquires source ON THE SERVER when the deploy opted in
+  // Docker acquires source ON THE TARGET when the deploy opted in
   // (cloneStrategy="server") OR the repo is a GitHub HTTPS remote — the server
   // downloads the tarball directly, skipping the orchestrator clone + context
   // transfer. Bare has its own always-on-server path (below), so it's excluded
-  // here. Whether it truly runs on the server still hinges on a shippable
-  // credential; effectiveCloneOnServer degrades to an api-host clone otherwise
-  // (allowApiHostFallback is driven by dockerClonesOnServer).
+  // here. Whether it truly runs on the target still hinges on a shippable
+  // credential; effectiveCloneOnTarget degrades to an api-host clone otherwise
+  // (allowApiHostFallback is driven by dockerClonesOnTarget).
   const dockerServerSide =
     onServer &&
     !input.runtimeIsBare &&
+    dockerCanCloneOnTarget &&
+    !localDockerBuildRequested &&
     (input.cloneStrategy === "server" || input.repoIsGithub === true);
 
-  // Pipeline: the clone runs on the server (bare always; docker per above).
-  const runsOnServer =
+  // Pipeline: the clone runs on the target (bare always; docker per above).
+  const cloneRunsOnTarget =
     onServer && !!input.serverId && (input.runtimeIsBare || dockerServerSide);
 
   // Preflight warn-case + api-host-fallback gate: DOCKER (non-bare) acquiring on
   // the server. Bare is handled by the separate hard-fail remote-build checks.
-  const dockerClonesOnServer = dockerServerSide;
+  const dockerClonesOnTarget = dockerServerSide;
 
   // The clone's credential purpose follows WHERE THE CLONE RUNS, not where the
   // build runs: a local build clones on this machine, and a server deploy that
@@ -133,21 +148,24 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   // because the rule lived inline in preflight and not in the shared plan. Keep the
   // two agreeing: a local target is a host-local clone on BOTH sides.
   //
-  // runsLocally MUST imply !runsOnServer — otherwise a contradictory config
+  // apiHostClone MUST imply !cloneRunsOnTarget — otherwise a contradictory config
   // (buildStrategy="local" + cloneStrategy="server") would tag an on-server clone
   // as local and ship the operator's local gh/OAuth token off-host to the remote.
-  const runsLocally =
-    !runsOnServer && (input.effectiveTarget !== "cloud" || input.buildStrategy === "local");
+  const sourceLocation: ClonePlan["sourceLocation"] = cloneRunsOnTarget
+    ? "target"
+    : input.effectiveTarget === "cloud" && input.buildStrategy !== "local"
+      ? "cloud-workspace"
+      : "api-host";
 
   return {
-    runsOnServer,
-    dockerClonesOnServer,
-    runsLocally,
-    cloneBuildStrategy: runsLocally ? "local" : "server",
+    sourceLocation,
+    cloneRunsOnTarget,
+    dockerClonesOnTarget,
+    cloneCredentialPurpose: sourceLocation === "api-host" ? "local" : "server",
     // Forward is the DEFAULT for a desktop server clone (secure + atomic: clone
     // on the build host with the operator's gh identity, nothing persisted),
     // opt-out via forwardGitCredentials === false. Real capability (SSH tunnel +
     // local gh) is verified at runtime; this is the config-level eligibility.
-    relayEligible: runsOnServer && relayConfigEligible(input),
+    relayEligible: cloneRunsOnTarget && relayConfigEligible(input),
   };
 }

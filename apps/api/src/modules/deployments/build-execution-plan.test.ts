@@ -134,6 +134,39 @@ describe("resolveBuildRuntimeModes (pre-resolve flip, as data)", () => {
       ).toEqual({ buildRuntimeMode: undefined, serveRuntimeMode: undefined });
     }
   });
+
+  it("prebuilt single-app image → Docker locally/remotely, Cloud unchanged", () => {
+    for (const [baseTarget, effectiveTarget] of [
+      ["desktop", "local"],
+      ["desktop", "server"],
+      ["selfhosted", "local"],
+      ["selfhosted", "server"],
+    ] as const) {
+      expect(
+        resolveBuildRuntimeModes({
+          workload: "web",
+          serverId: effectiveTarget === "server" ? "srv_1" : null,
+          baseTarget,
+          effectiveTarget,
+          willRunServices: false,
+          hasPrebuiltImage: true,
+        }),
+      ).toEqual({ buildRuntimeMode: "docker", serveRuntimeMode: "docker" });
+    }
+
+    for (const baseTarget of ["cloud", "selfhosted"] as const) {
+      expect(
+        resolveBuildRuntimeModes({
+          workload: "web",
+          serverId: null,
+          baseTarget,
+          effectiveTarget: "cloud",
+          willRunServices: false,
+          hasPrebuiltImage: true,
+        }),
+      ).toEqual({ buildRuntimeMode: undefined, serveRuntimeMode: undefined });
+    }
+  });
 });
 
 describe("resolveDeployRouting (post-resolve, keyed off runtime.name)", () => {
@@ -163,13 +196,21 @@ describe("resolveDeployRouting (post-resolve, keyed off runtime.name)", () => {
   it("static + docker runtime → sandbox build, file-serve, doc-root already extracted", () => {
     expect(
       resolveDeployRouting({ workload: "static", runtimeName: "docker", outputDirectory: "dist" }),
-    ).toEqual({ buildMode: "static-sandbox", deployMode: "static-file-serve", staticServeOutputDir: "" });
+    ).toEqual({
+      buildMode: "static-sandbox",
+      deployMode: "static-file-serve",
+      staticServeOutputDir: "",
+    });
   });
 
   it("static + bare runtime → bare build, file-serve from the output directory", () => {
     expect(
       resolveDeployRouting({ workload: "static", runtimeName: "bare", outputDirectory: "dist" }),
-    ).toEqual({ buildMode: "static-bare", deployMode: "static-file-serve", staticServeOutputDir: "dist" });
+    ).toEqual({
+      buildMode: "static-bare",
+      deployMode: "static-file-serve",
+      staticServeOutputDir: "dist",
+    });
   });
 });
 

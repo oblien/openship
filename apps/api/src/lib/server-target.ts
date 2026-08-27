@@ -1,4 +1,5 @@
 import { repos, type Project } from "@repo/db";
+import { isLoopbackHost as isCoreLoopbackHost } from "@repo/core";
 import { env } from "../config/env";
 
 interface DeploymentSnapshotLike {
@@ -24,10 +25,7 @@ async function resolveSnapshotServerHost(
   snapshot?: DeploymentSnapshotLike | null,
 ): Promise<string | null> {
   if (snapshot?.serverId) {
-    const server = await repos.server.getInOrganization(
-      snapshot.serverId,
-      organizationId,
-    );
+    const server = await repos.server.getInOrganization(snapshot.serverId, organizationId);
     if (server?.sshHost) return server.sshHost;
     return null;
   }
@@ -39,10 +37,7 @@ export async function resolveServerHost(
   organizationId: string,
   serverId?: string,
 ): Promise<string | null> {
-  return resolveSnapshotServerHost(
-    organizationId,
-    serverId ? { serverId } : null,
-  );
+  return resolveSnapshotServerHost(organizationId, serverId ? { serverId } : null);
 }
 
 export async function resolveProjectServerHost(project?: Project): Promise<string | null> {
@@ -81,9 +76,7 @@ export function isIpLiteral(value: string): boolean {
  * must treat that as "unknown", not a real address.
  */
 export function isLoopbackHost(host: string | null | undefined): boolean {
-  if (!host) return false;
-  const h = host.trim().toLowerCase();
-  return h === "127.0.0.1" || h === "::1" || h === "localhost" || h === "0.0.0.0" || h.startsWith("127.");
+  return isCoreLoopbackHost(host);
 }
 
 /**

@@ -112,11 +112,11 @@ function runtimeFor(
   return runtime;
 }
 
-function spec(config: BuildConfig) {
+function spec(config: BuildConfig, logger = new BuildLogger(() => {})) {
   return {
     config,
     serviceName: "api",
-    logger: new BuildLogger(() => {}),
+    logger,
     requireRepositoryDockerfile: true,
   };
 }
@@ -124,6 +124,7 @@ function spec(config: BuildConfig) {
 describe("remote docker build — declared build context (#634)", () => {
   it("runs docker build INSIDE the service directory with a context-relative -f", async () => {
     const commands: string[] = [];
+    const logs: string[] = [];
     const executor: CommandExecutor = {
       exec: vi.fn(async (command: string) => {
         commands.push(command);
@@ -144,8 +145,13 @@ describe("remote docker build — declared build context (#634)", () => {
     );
 
     const results = await runtime.buildImages(
-      [spec(serviceConfig(await makeRepo()))],
-      new BuildLogger(() => {}),
+      [
+        spec(
+          serviceConfig(await makeRepo(), { buildArgs: { APP_PACKAGE: "@myorg/api" } }),
+          new BuildLogger((entry) => logs.push(entry.message)),
+        ),
+      ],
+      new BuildLogger((entry) => logs.push(entry.message)),
     );
 
     expect(results[0]!.result.status).toBe("deploying");
@@ -158,6 +164,9 @@ describe("remote docker build — declared build context (#634)", () => {
     expect(buildCmd).toContain("-f 'Dockerfile.api'");
     expect(buildCmd).not.toContain("svc/Dockerfile.api");
     expect(buildCmd.trimEnd().endsWith(" .")).toBe(true);
+    expect(buildCmd).toContain("--build-arg 'APP_PACKAGE=@myorg/api'");
+    expect(logs.join("\n")).toContain("values hidden");
+    expect(logs.join("\n")).not.toContain("@myorg/api");
 
     // The whole TREE still ships: one transfer is shared by every service in a batch.
     expect(transferBuildContext).toHaveBeenCalledWith(
@@ -285,12 +294,14 @@ describe("mixed batch — one tree, different contexts (#634)", () => {
   it("gives each service its own context and its own .dockerignore", async () => {
     const packed = new Map<string, string[]>();
     const dockerfiles = new Map<string, string>();
+    const buildArgs = new Map<string, unknown>();
     const order = ["web", "api"];
     let call = 0;
 
     const buildImage = vi.fn(async (body: NodeJS.ReadableStream, opts: Record<string, unknown>) => {
       const name = order[call++]!;
       dockerfiles.set(name, String(opts.dockerfile));
+      buildArgs.set(name, opts.buildargs);
       const chunks: Buffer[] = [];
       for await (const chunk of body.pipe(createGunzip())) chunks.push(Buffer.from(chunk as Buffer));
       packed.set(name, tarEntries(Buffer.concat(chunks)));
@@ -312,6 +323,7 @@ describe("mixed batch — one tree, different contexts (#634)", () => {
               rootDirectory: "",
               buildContextDirectory: "",
               dockerfilePath: undefined,
+              buildArgs: { APP_PACKAGE: "@myorg/web" },
             }),
           ),
           serviceName: "web",
@@ -323,6 +335,7 @@ describe("mixed batch — one tree, different contexts (#634)", () => {
               rootDirectory: "api",
               buildContextDirectory: "api",
               dockerfilePath: "Dockerfile",
+              buildArgs: { APP_PACKAGE: "@myorg/api" },
             }),
           ),
           serviceName: "api",
@@ -343,6 +356,8 @@ describe("mixed batch — one tree, different contexts (#634)", () => {
     // Losing this half is the silent hole: secrets and ignored dirs into the image.
     expect(dockerfiles.get("web")).toBe("Dockerfile");
     expect(packed.get("web")).toEqual([".dockerignore", "Dockerfile", "web", "web/index.html"]);
+    expect(buildArgs.get("web")).toMatchObject({ APP_PACKAGE: "@myorg/web" });
+    expect(buildArgs.get("api")).toMatchObject({ APP_PACKAGE: "@myorg/api" });
   });
 });
 

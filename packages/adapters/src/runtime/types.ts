@@ -12,6 +12,7 @@
 
 import type {
   BuildConfig,
+  ImageArtifactConfig,
   DeployConfig,
   BuildResult,
   DeploymentResult,
@@ -40,6 +41,8 @@ import type { ContainerStabilitySample } from "./stability";
  */
 export type RuntimeCapability =
   | "build"
+  /** Acquire and deploy an already-built application container image verbatim. */
+  | "prebuiltImage"
   | "deploy"
   | "multiServiceDeploy"
   | "stop"
@@ -195,6 +198,15 @@ export interface RuntimeAdapter {
    * Cloud: delegates to cloud build infrastructure.
    */
   build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult>;
+
+  /**
+   * Turn a registry image into this runtime's native deploy artifact.
+   *
+   * Docker pulls it onto the target daemon and returns an immutable digest when
+   * available. Cloud provisions a temporary workspace from it. Runtimes that
+   * cannot run container images (Bare) omit the method and capability.
+   */
+  prepareImage?(config: ImageArtifactConfig, logger?: BuildLogger): Promise<BuildResult>;
 
   /** Cancel an in-progress build */
   cancelBuild(sessionId: string): Promise<void>;
@@ -428,10 +440,7 @@ export interface RuntimeAdapter {
    * Open an interactive shell inside a deployed service. Optional —
    * runtimes without `serviceShell` capability throw if called.
    */
-  openServiceShell?(
-    containerId: string,
-    opts?: ShellOptions,
-  ): Promise<ShellSession>;
+  openServiceShell?(containerId: string, opts?: ShellOptions): Promise<ShellSession>;
 }
 
 // ─── Rollback primitive types ───────────────────────────────────────────────
@@ -630,10 +639,7 @@ export interface MultiServiceRuntimeAdapter extends RuntimeAdapter {
    * reachable by name. Absent on runtimes with live DNS (Docker) — their real
    * network needs no post-pass.
    */
-  finalizeServiceGroup?(
-    group: MultiServiceGroupHandle,
-    onLog?: LogCallback,
-  ): Promise<void>;
+  finalizeServiceGroup?(group: MultiServiceGroupHandle, onLog?: LogCallback): Promise<void>;
 
   /**
    * Optional: seed an ALREADY-RUNNING service into the group's in-memory mesh

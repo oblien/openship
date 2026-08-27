@@ -24,7 +24,7 @@
  * NOT a backup tool. Use the existing backup module for that.
  */
 
-import { sql, eq, inArray, getTableColumns } from "drizzle-orm";
+import { sql, eq, inArray, count, getTableColumns } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { db, getDriver } from "./client";
 import * as schema from "./schema";
@@ -60,6 +60,12 @@ export interface DumpOptions {
    * `assertDumpSelfContained` reject those columns outright.
    */
   stripInstanceRefs?: boolean;
+  /**
+   * Skip selected catalogue tables at query time. Intended for trusted,
+   * dependency-aware callers such as the instance export history filter; an
+   * arbitrary caller must not remove FK parents while retaining their children.
+   */
+  excludeTables?: readonly string[];
 }
 
 /**
@@ -184,26 +190,86 @@ export interface TableSpec {
 
 const TABLES: ReadonlyArray<TableSpec> = [
   // Auth + identity — instance-only (SaaS already has its own user/auth rows).
-  { sqlName: "user", table: schema.user, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "organization", table: schema.organization, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "account", table: schema.account, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "session", table: schema.session, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "member", table: schema.member, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "invitation", table: schema.invitation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "invitation_pending_grant", table: schema.invitationPendingGrant, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "resource_grant", table: schema.resourceGrant, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "personal_access_token", table: schema.personalAccessToken, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  {
+    sqlName: "user",
+    table: schema.user,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "organization",
+    table: schema.organization,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "account",
+    table: schema.account,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "session",
+    table: schema.session,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "member",
+    table: schema.member,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "invitation",
+    table: schema.invitation,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "invitation_pending_grant",
+    table: schema.invitationPendingGrant,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "resource_grant",
+    table: schema.resourceGrant,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "personal_access_token",
+    table: schema.personalAccessToken,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
   // The SCOPE of every scoped PAT. Travels with its token row or the token lands on
   // the receiver as a scoped principal with zero grants — which fails closed (every
   // resource check denies), so each scoped token silently stops working.
-  { sqlName: "personal_access_token_grant", table: schema.personalAccessTokenGrant, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "personal_access_token_grant",
+    table: schema.personalAccessTokenGrant,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
   // OAuth 2.1 authorization-server state for MCP connections (Better Auth
   // oidc-provider). The client REGISTRATION and the user's CONSENT travel so an
   // already-connected MCP client can re-authenticate itself on the receiver;
   // `oauth_access_token` deliberately does not (see EXCLUDED_TABLES) — shipping live
   // bearer tokens in an export file buys nothing a refresh doesn't.
-  { sqlName: "oauth_application", table: schema.oauthApplication, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "oauth_consent", table: schema.oauthConsent, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "oauth_application",
+    table: schema.oauthApplication,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "oauth_consent",
+    table: schema.oauthConsent,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
 
   // User / instance settings — instance-only.
   //
@@ -214,24 +280,69 @@ const TABLES: ReadonlyArray<TableSpec> = [
   // cloneTokenEncrypted from ever leaving the SaaS DB via the dump path.
   // Adding an org/project scope here would route user_settings rows
   // through the cloud export endpoint and around that gate.
-  { sqlName: "user_settings", table: schema.userSettings, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "instance_settings", table: schema.instanceSettings, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "user_settings",
+    table: schema.userSettings,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "instance_settings",
+    table: schema.instanceSettings,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
 
   // Infra — instance-only.
-  { sqlName: "servers", table: schema.servers, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "server_tunnels", table: schema.serverTunnels, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "mail_servers", table: schema.mailServers, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "servers",
+    table: schema.servers,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "server_tunnels",
+    table: schema.serverTunnels,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "mail_servers",
+    table: schema.mailServers,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
 
   // GitHub — instance-only.
-  { sqlName: "git_installation", table: schema.gitInstallation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "cloud_webhook_binding", table: schema.cloudWebhookBinding, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  {
+    sqlName: "git_installation",
+    table: schema.gitInstallation,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "cloud_webhook_binding",
+    table: schema.cloudWebhookBinding,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
   // How each server authenticates to GitHub for clone-on-server, and the per-repo
   // deploy keys that back `ssh-deploy-key` mode. Both hang off `servers`, so both are
   // instance-only — and both carry secrets registered in ENCRYPTED_COLUMNS, so the
   // ciphertext is stripped and re-sealed under the receiver's key rather than
   // travelling undecryptable.
-  { sqlName: "server_github_auth", table: schema.serverGithubAuth, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
-  { sqlName: "github_deploy_key", table: schema.githubDeployKey, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  {
+    sqlName: "server_github_auth",
+    table: schema.serverGithubAuth,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
+  {
+    sqlName: "github_deploy_key",
+    table: schema.githubDeployKey,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
 
   // ── Project subgraph (also part of organization scope) ─────────────────────
   //
@@ -496,8 +607,18 @@ const TABLES: ReadonlyArray<TableSpec> = [
   },
 
   // Analytics + audit — instance-only.
-  { sqlName: "server_analytics", table: schema.serverAnalytics, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "server_analytics_geo", table: schema.serverAnalyticsGeo, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "server_analytics",
+    table: schema.serverAnalytics,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "server_analytics_geo",
+    table: schema.serverAnalyticsGeo,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
   // Project-scoped, unlike the two above (which are keyed by server + domain). So it
   // carries a project scope as well as the instance one, and a project transfer takes
   // its usage history along instead of silently resetting the charts on the receiver.
@@ -510,10 +631,20 @@ const TABLES: ReadonlyArray<TableSpec> = [
     ],
     hasOrganizationId: false,
   },
-  { sqlName: "audit_event", table: schema.auditEvent, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "audit_event",
+    table: schema.auditEvent,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
   // Travels with audit_event: without it, an instance migration silently turns
   // audit recording back on for an org that had switched it off.
-  { sqlName: "audit_settings", table: schema.auditSettings, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "audit_settings",
+    table: schema.auditSettings,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
 
   // ── Operator-owned state, instance-only ────────────────────────────────────
   //
@@ -525,22 +656,52 @@ const TABLES: ReadonlyArray<TableSpec> = [
   // code registry, but the operator's own cron retunes and disables live only here.
   // `key` is UNIQUE and every install seeds the same keys, so a MERGE import must
   // keep the destination's rows — see SINGLETON_AND_AUTH in import.service.
-  { sqlName: "job", table: schema.job, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "job",
+    table: schema.job,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
   // Per-org uploaded app templates — the org's own catalog cards.
-  { sqlName: "custom_app_template", table: schema.customAppTemplate, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  {
+    sqlName: "custom_app_template",
+    table: schema.customAppTemplate,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
   // The durable memory behind container health alerts. Losing it re-fires every
   // still-open incident as brand new on the receiver.
-  { sqlName: "service_incident", table: schema.serviceIncident, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  {
+    sqlName: "service_incident",
+    table: schema.serviceIncident,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
   // Docker-migration run history — deliberately durable (the runs list survives a
   // restart), so a transfer that dropped it would contradict that.
-  { sqlName: "docker_migration_run", table: schema.dockerMigrationRun, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  {
+    sqlName: "docker_migration_run",
+    table: schema.dockerMigrationRun,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
   // Proof that a routing target is ours, persisted precisely BECAUSE the upstream's
   // list endpoint never returns the token again — a token that exists only on the old
   // box is unrecoverable, which is exactly what a migration produces.
-  { sqlName: "edge_target_verification", table: schema.edgeTargetVerification, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  {
+    sqlName: "edge_target_verification",
+    table: schema.edgeTargetVerification,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
   // Operator-pushed status banners; effective immediately, no redeploy, so they are
   // config rather than cache.
-  { sqlName: "system_notice", table: schema.systemNotice, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  {
+    sqlName: "system_notice",
+    table: schema.systemNotice,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
 ];
 
 /**
@@ -566,6 +727,13 @@ export const EXCLUDED_TABLES: Record<string, string> = {
     "live MCP bearer/refresh tokens; the client re-authenticates against the " +
     "oauth_application + oauth_consent rows that DO travel, so shipping them adds " +
     "credentials to the export file for no gain",
+
+  // Physical-instance state. Moving these rows would reserve source-machine
+  // ports on an unrelated destination (or, worse, let a project transfer plant
+  // claims in another tenant's bind namespace). The destination allocator
+  // creates claims from its own resolved target and live edge state.
+  host_port_claim:
+    "physical-target port reservations; never export, clone, or transfer across instances",
 
   // Caches / host-derived — the host, not the DB, is the source of truth.
   update_status: "cached upstream scan result; the next `updates:scan` refills it",
@@ -822,6 +990,7 @@ export async function dumpSubgraph(
   opts: DumpOptions = {},
 ): Promise<DatabaseDump> {
   const tables: DatabaseDump["tables"] = {};
+  const excludedTables = new Set(opts.excludeTables ?? []);
 
   // FK-resolution state — built as we walk parents, consumed by children.
   const idSets: Record<string, Set<string>> = {
@@ -838,6 +1007,7 @@ export async function dumpSubgraph(
   };
 
   for (const spec of TABLES) {
+    if (excludedTables.has(spec.sqlName)) continue;
     const resolver = pickResolver(spec, scope);
     if (!resolver) {
       // Table not in this subgraph.
@@ -865,35 +1035,29 @@ export async function dumpSubgraph(
         rows = [];
       } else {
         const col = (spec.table as unknown as Record<string, never>)[resolver.column];
-        rows = (await db
-          .select()
-          .from(spec.table)
-          .where(inArray(col, parentIds))) as Array<Record<string, unknown>>;
+        rows = (await db.select().from(spec.table).where(inArray(col, parentIds))) as Array<
+          Record<string, unknown>
+        >;
       }
     } else if (resolver.via === "from-root-project" && scope.kind === "project") {
       // Look up the source column on the root project row, then select
       // THIS table by id = that value. Lets us bring along the project's
       // FK-target parents (e.g. project_app) without a separate pass.
       const idCol = (spec.table as unknown as { id: never }).id;
-      const sourceCol = (schema.project as unknown as Record<string, never>)[
-        resolver.sourceColumn
-      ];
+      const sourceCol = (schema.project as unknown as Record<string, never>)[resolver.sourceColumn];
       const sourceVals = (await db
         .select({ v: sourceCol })
         .from(schema.project)
         .where(eq(schema.project.id, scope.projectId as never))) as Array<{
         v: string | null;
       }>;
-      const ids = sourceVals
-        .map((r) => r.v)
-        .filter((v): v is string => typeof v === "string");
+      const ids = sourceVals.map((r) => r.v).filter((v): v is string => typeof v === "string");
       if (ids.length === 0) {
         rows = [];
       } else {
-        rows = (await db
-          .select()
-          .from(spec.table)
-          .where(inArray(idCol, ids))) as Array<Record<string, unknown>>;
+        rows = (await db.select().from(spec.table).where(inArray(idCol, ids))) as Array<
+          Record<string, unknown>
+        >;
       }
     } else {
       rows = [];
@@ -919,6 +1083,22 @@ export async function dumpSubgraph(
     tables,
     ...(strippedEncryptedFields ? { strippedEncryptedFields } : {}),
   };
+}
+
+/**
+ * Lightweight row-count preview for an instance export. Unlike dumpSubgraph,
+ * this never materializes row payloads or decrypts anything.
+ */
+export async function countInstanceSubgraphTables(): Promise<Record<string, number>> {
+  const entries = await Promise.all(
+    TABLES.filter((spec) => spec.scopes.some((scope) => scope.in === "instance")).map(
+      async (spec) => {
+        const [row] = await db.select({ value: count() }).from(spec.table);
+        return [spec.sqlName, Number(row?.value ?? 0)] as const;
+      },
+    ),
+  );
+  return Object.fromEntries(entries);
 }
 
 function pickResolver(spec: TableSpec, scope: SubgraphScope): ScopeResolver | null {
@@ -1117,10 +1297,7 @@ export function assertDumpSelfContained(dump: DatabaseDump): void {
   }
 }
 
-export async function restoreSubgraph(
-  dump: DatabaseDump,
-  opts: RestoreOptions,
-): Promise<void> {
+export async function restoreSubgraph(dump: DatabaseDump, opts: RestoreOptions): Promise<void> {
   if (dump.formatVersion !== DUMP_FORMAT_VERSION) {
     throw new Error(
       `Dump format version ${dump.formatVersion} cannot be restored by this build (expected ${DUMP_FORMAT_VERSION}).`,
@@ -1269,7 +1446,10 @@ export async function restoreSubgraph(
         for (let i = 0; i < prepared.length; i += chunk) {
           const batch = prepared.slice(i, i + chunk);
           if (skipOnConflict) {
-            await tx.insert(spec.table).values(batch as never).onConflictDoNothing();
+            await tx
+              .insert(spec.table)
+              .values(batch as never)
+              .onConflictDoNothing();
           } else {
             await tx.insert(spec.table).values(batch as never);
           }

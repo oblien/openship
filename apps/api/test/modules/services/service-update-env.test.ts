@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_MASK } from "@repo/core";
 
-const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
+const projectRepo = vi.hoisted(() => ({
+  findById: vi.fn(), listEnvVars: vi.fn(), bulkSetEnvVars: vi.fn(),
+}));
 const serviceRepo = vi.hoisted(() => ({
   findById: vi.fn(),
   update: vi.fn(),
@@ -16,7 +18,8 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { updateService } from "../../../src/modules/services/service.service";
+import { decrypt, encrypt } from "../../../src/lib/encryption";
+import { revealServiceEnvVars, setServiceEnvVars, updateService } from "../../../src/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", internalAlias: null };
@@ -47,9 +50,102 @@ const written = () => serviceRepo.update.mock.calls.at(-1)?.[1] as Record<string
 
 beforeEach(() => {
   projectRepo.findById.mockReset().mockResolvedValue(project);
+  projectRepo.listEnvVars.mockReset().mockResolvedValue([]);
+  projectRepo.bulkSetEnvVars.mockReset().mockResolvedValue(undefined);
   serviceRepo.findById.mockReset().mockResolvedValue(row());
   serviceRepo.update.mockReset().mockResolvedValue(undefined);
   serviceRepo.listByProject.mockReset().mockResolvedValue([]);
+});
+
+describe("service-scoped env_var editor", () => {
+  it("round-trips an unchanged masked secret without encrypting the mask", async () => {
+    const ciphertext = encrypt("real-secret");
+    projectRepo.listEnvVars.mockResolvedValue([
+      { id: "env_1", key: "API_TOKEN", value: ciphertext, isSecret: true },
+    ]);
+    await setServiceEnvVars(ctx, project.id, "svc_inventar", {
+      environment: "production",
+      vars: [{ key: "API_TOKEN", value: ENV_MASK, isSecret: true }],
+    });
+    expect(projectRepo.bulkSetEnvVars).toHaveBeenCalledWith(
+      project.id, "production",
+      [{ key: "API_TOKEN", value: ciphertext, isSecret: true }],
+      "svc_inventar",
+    );
+  });
+
+  it("renames an unrevealed secret by stable row identity without losing its value", async () => {
+    const ciphertext = encrypt("real-secret");
+    projectRepo.listEnvVars.mockResolvedValue([
+      { id: "env_1", key: "OLD_API_TOKEN", value: ciphertext, isSecret: true },
+    ]);
+
+    await setServiceEnvVars(ctx, project.id, "svc_inventar", {
+      environment: "production",
+      vars: [{ sourceId: "env_1", key: "NEW_API_TOKEN", value: ENV_MASK, isSecret: true }],
+    });
+
+    expect(projectRepo.bulkSetEnvVars).toHaveBeenCalledWith(
+      project.id, "production",
+      [{ key: "NEW_API_TOKEN", value: ciphertext, isSecret: true }],
+      "svc_inventar",
+    );
+  });
+
+  it("rejects an unknown or reused source identity before replacing the scope", async () => {
+    const ciphertext = encrypt("real-secret");
+    projectRepo.listEnvVars.mockResolvedValue([
+      { id: "env_1", key: "API_TOKEN", value: ciphertext, isSecret: true },
+    ]);
+
+    await expect(setServiceEnvVars(ctx, project.id, "svc_inventar", {
+      environment: "production",
+      vars: [{ sourceId: "missing", key: "RENAMED", value: ENV_MASK, isSecret: true }],
+    })).rejects.toThrow("invalid-env-source:missing");
+    expect(projectRepo.bulkSetEnvVars).not.toHaveBeenCalled();
+
+    await expect(setServiceEnvVars(ctx, project.id, "svc_inventar", {
+      environment: "production",
+      vars: [
+        { sourceId: "env_1", key: "RENAMED_ONE", value: ENV_MASK, isSecret: true },
+        { sourceId: "env_1", key: "RENAMED_TWO", value: ENV_MASK, isSecret: true },
+      ],
+    })).rejects.toThrow("duplicate-env-source:env_1");
+    expect(projectRepo.bulkSetEnvVars).not.toHaveBeenCalled();
+  });
+
+  it("stores a new manual variable in env_var and protects secret-looking keys", async () => {
+    await setServiceEnvVars(ctx, project.id, "svc_inventar", {
+      environment: "production", vars: [{ key: "MANUAL_API_KEY", value: "keep-me" }],
+    });
+    const vars = projectRepo.bulkSetEnvVars.mock.calls.at(-1)?.[2];
+    expect(vars[0]).toMatchObject({ key: "MANUAL_API_KEY", isSecret: true });
+    expect(decrypt(vars[0].value)).toBe("keep-me");
+  });
+
+  it("rejects a mask with no stored source", async () => {
+    await expect(setServiceEnvVars(ctx, project.id, "svc_inventar", {
+      environment: "production", vars: [{ key: "GHOST", value: ENV_MASK, isSecret: true }],
+    })).rejects.toThrow("masked-env-without-source:GHOST");
+    expect(projectRepo.bulkSetEnvVars).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate keys before replacing the scope", async () => {
+    await expect(setServiceEnvVars(ctx, project.id, "svc_inventar", {
+      environment: "production",
+      vars: [{ key: "DUPLICATE", value: "one" }, { key: "DUPLICATE", value: "two" }],
+    })).rejects.toThrow("duplicate-env-key:DUPLICATE");
+    expect(projectRepo.bulkSetEnvVars).not.toHaveBeenCalled();
+  });
+
+  it("reveals service-scoped env_var values", async () => {
+    projectRepo.listEnvVars.mockResolvedValue([
+      { key: "MANUAL_ONLY", value: encrypt("service-value"), isSecret: true },
+    ]);
+    await expect(revealServiceEnvVars(
+      ctx, project.id, "svc_inventar", "production",
+    )).resolves.toEqual({ MANUAL_ONLY: "service-value" });
+  });
 });
 
 describe("updateService — environment partial updates merge rather than replace", () => {
