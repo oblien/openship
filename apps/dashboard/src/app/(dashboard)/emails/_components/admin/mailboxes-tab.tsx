@@ -13,7 +13,6 @@ import {
   Check,
   Copy,
   KeyRound,
-  Loader2,
   Pencil,
   Plus,
   Trash2,
@@ -28,9 +27,10 @@ import {
 import { useModal } from "@/context/ModalContext";
 import {
   DataTable,
-  RowIconButton,
+  RowActionsMenu,
   type DataTableColumn,
 } from "./_shared/data-table";
+import { DomainPicker } from "./_shared/domain-picker";
 import { StatusPill } from "./_shared/status-pill";
 import {
   Field,
@@ -38,6 +38,8 @@ import {
   inputClassName,
 } from "./_shared/form-modal-content";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 
 interface MailboxesTabProps {
   serverId: string;
@@ -54,6 +56,8 @@ export function MailboxesTab({
 }: MailboxesTabProps) {
   const { showModal, hideModal } = useModal();
   const { t } = useI18n();
+  // Heading lives in the page header in mail view — see ../../_lib/mail-section.
+  const hoisted = useMailRailOwnsTabs(serverId);
   const [domains, setDomains] = useState<AdminDomain[]>([]);
   const [mailboxes, setMailboxes] = useState<AdminMailbox[]>([]);
   const [loadingDomains, setLoadingDomains] = useState(true);
@@ -179,7 +183,7 @@ export function MailboxesTab({
       width: "minmax(240px, 2fr)",
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
             <UserRound
               className="size-4 text-muted-foreground"
               strokeWidth={2}
@@ -219,11 +223,11 @@ export function MailboxesTab({
       cell: (r) => (
         <div className="flex items-center gap-1.5 flex-wrap">
           {r.active ? (
-            <StatusPill tone="success" dot>
+            <StatusPill tone="success">
               {t.emailsAdmin.mailboxes.active}
             </StatusPill>
           ) : (
-            <StatusPill tone="neutral" dot>
+            <StatusPill tone="neutral">
               {t.emailsAdmin.mailboxes.disabled}
             </StatusPill>
           )}
@@ -237,13 +241,17 @@ export function MailboxesTab({
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-foreground">{t.emailsAdmin.mailboxes.heading}</h2>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-            {t.emailsAdmin.mailboxes.description}
-          </p>
-        </div>
+      <div
+        className={`flex items-center gap-3 flex-wrap ${hoisted ? "justify-end" : "justify-between"}`}
+      >
+        {!hoisted && (
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-foreground">{t.emailsAdmin.mailboxes.heading}</h2>
+            <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
+              {t.emailsAdmin.mailboxes.description}
+            </p>
+          </div>
+        )}
         <button
           onClick={openCreate}
           disabled={!activeDomain}
@@ -254,26 +262,14 @@ export function MailboxesTab({
         </button>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-muted-foreground">{t.emailsAdmin.mailboxes.domainLabel}</span>
-        {loadingDomains ? (
-          <div className="px-3 py-2 rounded-xl border border-border bg-muted/30 flex items-center gap-2">
-            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">{t.emailsAdmin.mailboxes.loading}</span>
-          </div>
-        ) : (
-          <select
-            value={activeDomain}
-            onChange={(e) => onSelectDomain(e.target.value)}
-            className="px-3 py-2 text-sm rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors min-w-[200px]"
-          >
-            {domains.map((d) => (
-              <option key={d.domain} value={d.domain}>
-                {d.domain}
-              </option>
-            ))}
-          </select>
-        )}
+      <DomainPicker
+        label={t.emailsAdmin.mailboxes.domainLabel}
+        value={activeDomain}
+        domains={domains.map((d) => d.domain)}
+        onChange={onSelectDomain}
+        loading={loadingDomains}
+        loadingLabel={t.emailsAdmin.mailboxes.loading}
+      >
         {!loadingMailboxes && mailboxes.length > 0 && (
           <span className="ms-auto text-xs text-muted-foreground tabular-nums">
             {interpolate(t.emailsAdmin.mailboxes.activeCount, {
@@ -282,7 +278,7 @@ export function MailboxesTab({
             })}
           </span>
         )}
-      </div>
+      </DomainPicker>
 
       {error && (
         <div className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
@@ -296,19 +292,25 @@ export function MailboxesTab({
         rowKey={(r) => r.username}
         loading={loadingMailboxes}
         rowActions={(row) => (
-          <>
-            <RowIconButton
-              icon={Pencil}
-              label={t.emailsAdmin.mailboxes.editAction}
-              onClick={() => openEdit(row)}
-            />
-            <RowIconButton
-              icon={Trash2}
-              label={t.emailsAdmin.mailboxes.deleteAction}
-              variant="danger"
-              onClick={() => openDelete(row)}
-            />
-          </>
+          <RowActionsMenu
+            label={interpolate(t.emailsAdmin.shared.rowActions, { name: row.username })}
+            actions={[
+              {
+                id: "edit",
+                label: t.emailsAdmin.mailboxes.editAction,
+                icon: <Pencil className="size-4" />,
+                onClick: () => openEdit(row),
+              },
+              { id: "sep", divider: true },
+              {
+                id: "delete",
+                label: t.emailsAdmin.mailboxes.deleteAction,
+                icon: <Trash2 className="size-4" />,
+                variant: "danger",
+                onClick: () => openDelete(row),
+              },
+            ]}
+          />
         )}
         empty={{
           icon: UserRound,
@@ -575,13 +577,8 @@ function EditMailboxForm({
           className={inputClassName}
         />
       </Field>
-      <label className="flex items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl hover:bg-muted/30 transition-colors">
-        <input
-          type="checkbox"
-          checked={active}
-          onChange={(e) => setActive(e.target.checked)}
-          className="rounded border-border mt-0.5"
-        />
+      <button type="button" onClick={() => setActive(!active)} aria-pressed={active} className="flex w-full items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl text-start hover:bg-muted/30 transition-colors">
+        <Checkbox checked={active} className="pointer-events-none mt-0.5" />
         <span>
           <span className="block text-sm font-medium text-foreground">
             {t.emailsAdmin.mailboxes.editForm.activeLabel}
@@ -590,7 +587,7 @@ function EditMailboxForm({
             {t.emailsAdmin.mailboxes.editForm.activeDesc}
           </span>
         </span>
-      </label>
+      </button>
     </FormModalContent>
   );
 }
@@ -636,13 +633,13 @@ function DeleteMailboxConfirm({
       onCancel={onCancel}
     >
       {!isPostmaster ? (
-        <label className="flex items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl hover:bg-danger-bg transition-colors">
-          <input
-            type="checkbox"
-            checked={hardDelete}
-            onChange={(e) => setHardDelete(e.target.checked)}
-            className="rounded border-border mt-0.5"
-          />
+        <button
+          type="button"
+          onClick={() => setHardDelete(!hardDelete)}
+          aria-pressed={hardDelete}
+          className="flex w-full items-start gap-3 cursor-pointer p-3 -mx-1 rounded-xl text-start hover:bg-danger-bg transition-colors"
+        >
+          <Checkbox checked={hardDelete} tone="destructive" className="pointer-events-none mt-0.5" />
           <span>
             <span className="block text-sm font-medium text-danger">
               {t.emailsAdmin.mailboxes.deleteForm.hardDeleteLabel}
@@ -651,7 +648,7 @@ function DeleteMailboxConfirm({
               {t.emailsAdmin.mailboxes.deleteForm.hardDeleteDesc}
             </span>
           </span>
-        </label>
+        </button>
       ) : (
         <div className="rounded-xl border border-warning-border bg-warning-bg px-4 py-3 text-sm text-warning">
           {t.emailsAdmin.mailboxes.deleteForm.postmasterNote}

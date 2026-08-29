@@ -4,13 +4,69 @@
       "overview": "Visão geral",
       "domains": "Domínios",
       "mailboxes": "Caixas de correio",
+      "notifications": "Notificações",
+      "sending": "Envio",
       "dns": "DNS",
       "health": "Saúde",
-      "test": "Teste",
       "backup": "Backup",
       "advanced": "Avançado"
     },
     "ariaLabel": "Seções de administração de e-mail"
+  },
+  "notifications": {
+    "heading": "Regras de notificação",
+    "description": "Receba um aviso em um canal de notificação quando um e-mail chegar a um endereço deste servidor.",
+    "newRule": "Nova regra",
+    "newTitle": "Nova regra de notificação",
+    "editTitle": "Editar regra de notificação",
+    "edit": "Editar",
+    "emptyTitle": "Nenhuma regra de notificação ainda",
+    "emptyBody": "Adicione uma regra para ser notificado no Slack, Telegram, Discord ou em um webhook quando um e-mail chegar a uma caixa de correio ou a um domínio deste servidor.",
+    "noChannels": "Você ainda não tem canais de notificação verificados. Adicione e verifique um em Configurações → Notificações e depois volte aqui para criar uma regra.",
+    "addChannel": "Adicionar um canal de notificação",
+    "manageChannels": "Gerenciar canais",
+    "fieldName": "Nome",
+    "namePlaceholder": "Caixa de suporte → #support",
+    "fieldScope": "Monitorar",
+    "scopeMailbox": "Uma caixa de correio",
+    "scopeDomain": "Um domínio inteiro",
+    "scopeAll": "Todos os domínios deste servidor",
+    "scopeAllSummary": "Todos os domínios",
+    "fieldAddress": "Endereço",
+    "fieldDomain": "Domínio",
+    "mailboxCaveat": "A correspondência usa os cabeçalhos To e Cc, então um e-mail que chegou a esta caixa de correio por Bcc ou através de um alias não vai corresponder. Monitore o domínio inteiro se você precisar de todas as mensagens.",
+    "fieldFrom": "Remetente contém",
+    "fieldSubject": "Assunto contém",
+    "patternPlaceholder": "opcional",
+    "patternHint": "Não diferencia maiúsculas de minúsculas. Use * como curinga — todo o resto é comparado literalmente.",
+    "fieldChannels": "Notificar estes canais",
+    "fieldEnabled": "Regra ativa",
+    "channelCount": "{count} canal(is)",
+    "colRule": "Regra",
+    "colWatch": "Monitorando",
+    "colChannels": "Canais",
+    "colStatus": "Status",
+    "active": "Ativa",
+    "disabled": "Desativada",
+    "paused": "Pausada",
+    "deleteTitle": "Excluir regra de notificação",
+    "deleteConfirm": "Excluir regra",
+    "deleting": "Excluindo…",
+    "deleteHint": "As notificações já enviadas não são afetadas. O e-mail que já foi capturado, mas ainda não processado, é descartado.",
+    "save": "Salvar regra",
+    "saving": "Salvando…",
+    "cancel": "Cancelar",
+    "test": "Testar agora",
+    "testing": "Testando…",
+    "testResult": "{read} mensagem(ns) capturada(s) lida(s): {matched} corresponderam a uma regra, {dropped} foram filtradas. Nada foi enviado nem excluído.",
+    "testFailed": "Não foi possível executar o teste.",
+    "loadFailed": "Não foi possível carregar as regras de notificação.",
+    "saveFailed": "Não foi possível salvar a regra.",
+    "deleteFailed": "Não foi possível excluir a regra.",
+    "confirmDelete": "Excluir a regra “{name}”? A captura do endereço dela é interrompida, a menos que outra regra ainda precise dela."
+  },
+  "sending": {
+    "testLiveNote": "Envia pelo caminho ativo agora, não pelas alterações não salvas acima."
   },
   "overview": {
     "mailServer": "Servidor de e-mail",
@@ -43,6 +99,22 @@
     "addMailbox": "Adicionar uma caixa de correio",
     "addDomain": "Adicionar um domínio",
     "reviewDns": "Revisar registros DNS"
+  },
+  "webmail": {
+    "title": "Webmail",
+    "subtitle": "O cliente de e-mail em que seus usuários fazem login.",
+    "opening": "Abrindo o projeto do webmail…",
+    "noServerTitle": "Ainda não há servidor de e-mail",
+    "noServerBody": "O webmail é apenas um cliente - ele precisa de um servidor de e-mail para fazer login. Configure um primeiro e depois volte aqui para instalá-lo.",
+    "installTitle": "O webmail não está instalado",
+    "installBody": "Implante o cliente de webmail para ler as caixas de correio no navegador. Ele é instalado como um projeto comum do openship, então você o gerencia em Projetos como qualquer outra implantação.",
+    "adoptTitle": "O webmail não é gerenciado aqui",
+    "chooseTitle": "Qual servidor de e-mail?",
+    "chooseBody": "Cada servidor de e-mail tem o seu próprio webmail. Escolha o domínio que quer abrir.",
+    "incompleteTitle": "O servidor de e-mail ainda não está pronto",
+    "incompleteBody": "{server} ainda está sendo configurado. O webmail faz login nele, então conclua primeiro o servidor de e-mail e depois instale o webmail aqui.",
+    "incompleteAction": "Concluir a configuração de e-mail",
+    "runningNote": "Já existe um webmail rodando em {hostname}, mas nada aqui o gerencia. Instalar aqui o adota como projeto em vez de subir um segundo."
   },
   "domains": {
     "heading": "Domínios",
@@ -209,9 +281,53 @@
     "dnsScanDesc": "Verificação do DNS público em tempo real de todos os registros que este servidor espera.",
     "rescan": "Reescanear",
     "dnsEmpty": "Nenhum registro DNS em arquivo ainda. Conclua o assistente de instalação para preencher a varredura.",
+    "delivery": {
+      "title": "Envio de saída",
+      "desc": "Para onde este servidor entrega o e-mail e se algo ficou preso na saída.",
+      "sendPath": "Caminho de envio",
+      "direct": "Direto para os destinatários",
+      "directHint": "As mensagens vão deste servidor direto para o servidor de e-mail de cada destinatário.",
+      "relay": "Retransmitindo através de {host}",
+      "relayAll": "Todos os remetentes deste servidor enviam pelo relay.",
+      "relaySelected": "Apenas os remetentes selecionados usam o relay: {domains}",
+      "queue": "Fila",
+      "queueEmpty": "Vazia - nada aguardando para sair.",
+      "queueOne": "{count} mensagem aguardando para sair.",
+      "queueOther": "{count} mensagens aguardando para sair.",
+      "sampled": "A fila é maior do que a janela que lemos, então os motivos abaixo são os mais recentes.",
+      "reasons": "Por que o e-mail está sendo adiado",
+      "affectedOne": "{count} mensagem",
+      "affectedOther": "{count} mensagens",
+      "kind": {
+        "auth": "Autenticação recusada",
+        "tls": "Falha na criptografia",
+        "network": "Não foi possível conectar",
+        "rejected": "Recusado pelo destinatário",
+        "other": "Adiado"
+      },
+      "hint": {
+        "authRelay": "Seu relay recusou estas credenciais. Insira novamente o usuário e a senha SMTP na aba Sending.",
+        "auth": "O próximo salto recusou a autenticação.",
+        "tls": "Não foi possível negociar TLS com o próximo salto.",
+        "network": "Este servidor não conseguiu alcançar o próximo salto. Verifique se as portas de saída 25 e 587 estão abertas.",
+        "rejected": "O destinatário recusou a mensagem por enquanto. O Postfix continuará tentando.",
+        "other": "O Postfix tentará novamente conforme seu próprio agendamento."
+      },
+      "status": {
+        "ok": "Enviando",
+        "warn": "Atrasado",
+        "fail": "Sem envio",
+        "unknown": "Desconhecido"
+      }
+    },
     "logs": "Logs",
     "openLogs": "Abrir logs",
     "up": "Ativo {time}",
+    "optional": "Opcional",
+    "daemonHint": {
+      "fatal": "O supervisord desistiu - ele não vai tentar de novo por conta própria. Reinicie pelo menu.",
+      "backoff": "Está caindo repetidamente; o supervisord continua tentando. Veja os logs para entender o motivo."
+    },
     "menu": {
       "restart": "Reiniciar",
       "restarting": "Reiniciando…",
@@ -229,7 +345,9 @@
       "restartFailed": "falha ao reiniciar",
       "startFailedTitle": "Falha ao iniciar {label}",
       "stopFailedTitle": "Falha ao parar {label}",
-      "restartFailedTitle": "Falha ao reiniciar {label}"
+      "restartFailedTitle": "Falha ao reiniciar {label}",
+      "notConfirmedTitle": "{label} não iniciou",
+      "notConfirmed": "O supervisor aceitou a solicitação, mas {label} está {state}. Abra os logs para ver o motivo."
     },
     "daemonStatus": {
       "running": "Em execução",
@@ -237,6 +355,7 @@
       "stopping": "Parando",
       "stopped": "Parado",
       "failed": "Com falha",
+      "crashed": "Travado",
       "missing": "Ausente",
       "unknown": "Desconhecido"
     },
@@ -262,7 +381,14 @@
       "partDown": "{names} fora do ar",
       "partNotInstalled": "{names} não instalado",
       "partDnsOne": "{count} registro DNS ausente",
-      "partDnsOther": "{count} registros DNS ausentes"
+      "partDnsOther": "{count} registros DNS ausentes",
+      "partDelivery": "o e-mail de saída não está sendo entregue",
+      "degradedLabel": "Funcionando, com proteção reduzida",
+      "partScanning": "{names} não está em execução - as novas mensagens estão sendo entregues SEM verificação de vírus",
+      "partSignatures": "{names} não está em execução - as assinaturas de vírus não são mais atualizadas, então o e-mail é verificado com um conjunto de assinaturas envelhecendo",
+      "partAdvisory": "{names} não está em execução",
+      "almostSubQueueOne": "{count} mensagem aguardando para sair - veja Envio de saída abaixo.",
+      "almostSubQueueOther": "{count} mensagens aguardando para sair - veja Envio de saída abaixo."
     },
     "time": {
       "secondsAgo": "há {n}s",
@@ -277,7 +403,9 @@
     "schedules": {
       "manual": "Apenas manual",
       "daily": "Diário",
-      "weekly": "Semanal"
+      "weekly": "Semanal",
+      "monthly": "Mensal",
+      "custom": "Personalizado (cron)"
     },
     "whatTitle": "O que fazer backup",
     "whatDesc": "Contas e autenticação são sempre incluídas; os dados das mensagens e as chaves são opcionais.",
@@ -293,6 +421,31 @@
     "noDest": "Nenhum destino de backup ainda. Adicione um (ex.: um servidor existente) na página Backups.",
     "destinationLabel": "Destino",
     "autoLabel": "Backups automáticos",
+    "timeLabel": "Hora",
+    "timeHint": "Hora do servidor",
+    "weekdayLabel": "Dia da semana",
+    "dayOfMonthLabel": "Dia do mês",
+    "cronLabel": "Expressão cron",
+    "cronHint": "Cinco campos, avaliados no fuso horário do servidor.",
+    "scheduleJobHint": "Os backups automáticos rodam como uma tarefa agendada.",
+    "manageDest": "Gerenciar",
+    "retentionTitle": "Retenção",
+    "retentionDesc": "Quanto histórico manter no destino. Backups mais antigos são excluídos na limpeza diária, junto com seus arquivos.",
+    "keepCountLabel": "Manter os últimos",
+    "keepCountUnit": "backups",
+    "keepDaysLabel": "Excluir após",
+    "keepDaysUnit": "dias",
+    "retentionNoLimit": "Sem limite",
+    "retentionUnlimitedWarning": "Nada é excluído — este destino vai continuar crescendo.",
+    "weekdays": {
+      "sun": "Domingo",
+      "mon": "Segunda-feira",
+      "tue": "Terça-feira",
+      "wed": "Quarta-feira",
+      "thu": "Quinta-feira",
+      "fri": "Sexta-feira",
+      "sat": "Sábado"
+    },
     "saveSettings": "Salvar configurações",
     "backupNow": "Fazer backup agora",
     "recentTitle": "Backups recentes",
@@ -301,6 +454,7 @@
     "migrate": "Migrar",
     "toastTitle": "Backup",
     "pickDest": "Escolha um destino de backup primeiro.",
+    "scheduleIncomplete": "Escolha uma hora para este agendamento ou volte para manual.",
     "saved": "Configurações de backup salvas.",
     "saveFailed": "Não foi possível salvar as configurações de backup",
     "started": "Backup iniciado. Ele aparecerá abaixo conforme for executado.",
@@ -376,6 +530,16 @@
     "body": "Domínios de envio recém-criados ainda não têm reputação, então os provedores podem classificar as primeiras mensagens como spam nas primeiras 24-48 horas. Isso é normal. Marque as mensagens como \"não é spam\" na sua caixa de entrada de teste e a entregabilidade melhora rapidamente. ",
     "dismissLink": "Eu sei, ocultar isto",
     "dismiss": "Dispensar"
+  },
+  "engine": {
+    "downTitle": "O motor de e-mail deste servidor não está em execução",
+    "downBody": "Enquanto estiver parado, nenhum e-mail é entregue ou recebido, e todas as abas aqui dependem dele. Ligá-lo de novo é seguro: nada é reinstalado e nenhuma configuração é alterada.",
+    "legacyNote": "Este servidor usa o motor antigo instalado diretamente no host (Postfix/Dovecot com systemd), portanto não há contêiner para inspecionar.",
+    "start": "Iniciar o motor",
+    "missingTitle": "Nenhum motor de e-mail neste servidor",
+    "missingBody": "O Openship não encontra nenhum motor de e-mail aqui — nem o contêiner do motor nem as unidades do Postfix/Dovecot. Execute a configuração de e-mail novamente para reinstalá-lo.",
+    "rerunSetup": "Executar a configuração novamente",
+    "cardBlocked": "Indisponível até o motor de e-mail estar em execução."
   },
   "welcome": {
     "invalidEmail": "Digite um endereço de e-mail válido",
@@ -458,6 +622,7 @@
     "close": "Fechar",
     "logsLoadFailed": "Falha ao carregar os logs",
     "loadingLogs": "Carregando logs…",
-    "noJournal": "Nenhuma entrada de journal para esta unidade."
+    "noLogLines": "Ainda não há linhas de log para este componente.",
+    "rowActions": "Ações para {name}"
   }
 }

@@ -35,9 +35,37 @@ export function templateEngineOk(
   return compareSemver(engineVersion, minEngine) >= 0;
 }
 
+/**
+ * An inline Docker build context shipped IN the template — for a service that
+ * must be BUILT, not pulled: e.g. a base image that needs extra packages and a
+ * provisioning ENTRYPOINT baked in (Neon's compute node). At deploy time the
+ * installer materializes this to a temp context on the orchestrator and the
+ * normal compose build pipeline runs `docker build` on the deploy host. Building
+ * subsumes an entrypoint override — the Dockerfile sets its own ENTRYPOINT.
+ * `{{config:KEY}}` is resolved in `dockerfile` and every `files[].content` at
+ * install time. A build ARG the Dockerfile declares is fed from the project's
+ * build env (the runtime passes env as `--build-arg`), so no separate args map.
+ *
+ * COPY-path semantics (boot-verified): every buildable service is materialized
+ * under a subdir named after the service, inside ONE shared context root, and
+ * `docker build` runs with that shared root as its context. So COPY/ADD sources
+ * are relative to the root — a `files[]` entry `compute.sh` on service `compute`
+ * is copied with `COPY compute/compute.sh …`, NOT `COPY compute.sh …`.
+ */
+const serviceBuild = z.object({
+  /** Full Dockerfile contents (inline). COPY sources are `<service-name>/<path>`. */
+  dockerfile: z.string(),
+  /** Extra build-context files (COPY targets, scripts); `path` is relative to
+   *  this service's subdir — COPY it as `<service-name>/<path>`. */
+  files: z.array(z.object({ path: z.string(), content: z.string() })).optional(),
+});
+
 const serviceSpec = z.object({
   name: z.string(),
-  image: z.string(),
+  /** Prebuilt image to pull. Exactly one of `image`/`build` must be set per service. */
+  image: z.string().optional(),
+  /** Inline build context (see `serviceBuild`) — mutually exclusive with `image`. */
+  build: serviceBuild.optional(),
   ports: z.array(z.string()).optional(),
   exposedPort: z.number().optional(),
   routes: z
@@ -51,6 +79,29 @@ const serviceSpec = z.object({
   healthcheck: z.unknown().optional(),
   restart: z.enum(["no", "always", "on-failure", "unless-stopped"]).optional(),
   command: z.string().optional(),
+  /**
+   * Structured argv, passed through as the container Cmd with NO `sh -c` wrap.
+   * Wins over `command` when both are set.
+   *
+   * `command` is convenient but it is a SHELL string, so the container's argv
+   * becomes ["sh","-c",cmd] — and an image whose entrypoint rewrites argv rather
+   * than `exec "$@"` then sees the wrong thing. MinIO is the worked example: its
+   * entrypoint prepends `minio` unless argv[0] already is, so a `command` turned
+   * into `minio sh -c "server /data"` and the container exited with "'sh' is not
+   * a minio sub-command" on every boot. There is no command string that fixes
+   * that; the argv has to arrive unwrapped. Use `command` when you need a shell
+   * (`a && b`), `commandArgv` when the image needs exact argv.
+   */
+  commandArgv: z.array(z.string()).optional(),
+  /**
+   * How long Docker waits after SIGTERM before SIGKILL (compose duration, e.g.
+   * "10m"). The engine has always honored `advanced.stopGracePeriod`; only the
+   * template could not ask for it, which silently capped every app at Docker's
+   * 10s default. That is not a tuning knob for an app whose clean shutdown does
+   * a final checkpoint and whose boot lease is a lockfile — being killed
+   * mid-checkpoint leaves the lock behind and the next boot refuses to start.
+   */
+  stopGracePeriod: z.string().optional(),
 });
 
 const configField = z.object({
@@ -68,6 +119,9 @@ const configField = z.object({
   secret: z.boolean().optional(),
 });
 
+/** A catalog string that may be a plain value OR an inline per-locale map. */
+const localized = z.union([z.string(), z.record(z.string(), z.string())]);
+
 const prepareStep = z.object({
   service: z.string(),
   command: z.string(),
@@ -80,6 +134,11 @@ const prepareStep = z.object({
   readiness: z
     .object({ test: z.string(), interval: z.number().optional(), retries: z.number().optional() })
     .optional(),
+  // Authored display copy for the install stepper's "app-setup" sub-steps. Purely
+  // presentational; absent → the renderer uses a generic label.
+  title: localized.optional(),
+  description: localized.optional(),
+  icon: z.string().optional(),
 });
 
 const outputVariant = z.object({
@@ -107,6 +166,10 @@ const connection = z.object({
       sourceLabel: z.union([z.string(), z.record(z.string(), z.string())]).optional(),
       variants: z.array(outputVariant).optional(),
       width: z.enum(["full", "half"]).optional(),
+      /** "url" marks the resolved value as an openable link — the Connection
+       *  card shows an Open-in-new-tab action beside it. Enforced only for a
+       *  resolved http(s) value (checked at render); default "text". Additive. */
+      kind: z.enum(["text", "url"]).optional(),
     }),
   ),
   guide: z
@@ -115,6 +178,16 @@ const connection = z.object({
       intro: z.union([z.string(), z.record(z.string(), z.string())]).optional(),
       useHint: z.union([z.string(), z.record(z.string(), z.string())]).optional(),
       defaultMode: z.enum(["internal", "public"]).optional(),
+    })
+    .optional(),
+  // Static default credentials the app ships with (e.g. Grafana admin/admin).
+  // These are FIXED values, not derived from a service env, so they can't live in
+  // `outputs` (whose values resolve from running services) — hence their own field.
+  firstLogin: z
+    .object({
+      username: localized.optional(),
+      password: localized.optional(),
+      note: localized.optional(),
     })
     .optional(),
 });
@@ -131,7 +204,6 @@ const endpoint = z.object({
   allowedModes: z.array(endpointMode).optional(),
 });
 
-const localized = z.union([z.string(), z.record(z.string(), z.string())]);
 const provides = z.object({
   id: z.string(),
   outputRefs: z.array(z.string()),
@@ -220,11 +292,45 @@ export const appTemplateSchema = z.object({
   provides: z.array(provides).optional(),
   requires: z.array(requires).optional(),
   available: z.boolean().optional(),
+  // What the app needs from the machine, matched against the host's real capacity
+  // before it installs (see `fitsCapacity`). Only what a host can be PROBED for —
+  // RAM and vCPU — because a requirement we can't verify is a refusal based on a
+  // guess. Absent ⇒ no preflight, which is right for almost every app.
+  minResources: z
+    .object({
+      memoryMb: z.number().positive().optional(),
+      cpuCores: z.number().positive().optional(),
+    })
+    .optional(),
+  /**
+   * Trust mark: official open-source image plus a reviewable pipeline.
+   *
+   * A claim about PROVENANCE, not about whether we got the app running. Booting a
+   * template proves it works; it does not make its publisher vouched for. Set it
+   * only when EVERY image is published by the project the app actually is, or is
+   * a composition upstream itself documents (Ghost + MySQL, Supabase's own
+   * compose, Convex's backend/dashboard pair).
+   *
+   * Leave it off when WE picked a third-party companion the upstream project
+   * neither ships nor endorses — ClickHouse + ch-ui, Kafka + kafbat-ui,
+   * MongoDB + mongo-express, Valkey + RedisInsight — or when the publisher is a
+   * single maintainer whose build pipeline cannot be reviewed (neond).
+   */
   verified: z.boolean().optional(),
+  // Hidden from the browsable catalog while staying fully installable — for an app
+  // reached through another app's wizard rather than the grid. NOT `available:
+  // false`, which is a refusal ("app-not-available"), not a listing choice.
+  unlisted: z.boolean().optional(),
+  // How the app is hosted, for an honest catalog badge + wizard notice. Absent ⇒
+  // "self-hosted" (the default: runs on the user's own server). "experimental" =
+  // self-host that runs but isn't production-grade (heavy/unsupported). Purely
+  // presentational; additive. Every catalog app is something Openship runs.
+  hosting: z.enum(["self-hosted", "experimental"]).optional(),
   // Versioning / compat gate (see parseAppTemplate).
   schemaVersion: z.number().optional(),
   minEngine: z.string().optional(),
   updatedAt: z.string().optional(),
+  repository: z.string().url().optional(),
 }).superRefine((data, ctx) => {
   // Referential integrity — catch dangling references at the gate rather than at
   // deploy time. Only enforced when the template declares services (flow apps
@@ -274,6 +380,21 @@ export const appTemplateSchema = z.object({
   if (data.flowHref !== undefined && !data.flowHref.startsWith("/")) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["flowHref"], message: "flowHref must be an internal route starting with /" });
   }
+
+  // Every service must set EXACTLY ONE of image|build — a prebuilt image to pull,
+  // or an inline build context to build. Neither (nothing to run) nor both
+  // (ambiguous) is a template-authoring error caught at the gate.
+  (data.services ?? []).forEach((s, i) => {
+    const hasImage = typeof s.image === "string" && s.image.length > 0;
+    const hasBuild = !!s.build;
+    if (hasImage === hasBuild) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["services", i],
+        message: `service "${s.name}" must set exactly one of image|build`,
+      });
+    }
+  });
 
   // provides.outputRefs must reference declared connection.outputs ids.
   const outputIds = new Set((data.connection?.outputs ?? []).map((o) => o.id));

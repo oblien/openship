@@ -21,6 +21,7 @@
       "cloud": "Cloud",
       "defaults": "Valeurs par défaut",
       "settings": "Paramètres",
+      "dns": "DNS",
       "notifications": "Notifications",
       "team": "Équipe",
       "members": "Membres",
@@ -47,12 +48,14 @@
     "title": "Paramètres",
     "tabs": {
       "general": "Général",
-      "tokens": "Jetons",
+      "git": "Git",
+      "tokens": "Jetons d'API",
       "mcp": "MCP",
       "team": "Équipe",
       "notifications": "Notifications",
-      "audit": "Journal d'audit",
+      "credentials": "Identifiants",
       "cloud": "Cloud",
+      "infrastructure": "Infrastructure",
       "instance": "Instance"
     }
   },
@@ -112,10 +115,6 @@
     "noServers": "Aucun serveur configuré pour l'instant - ajoutez-en un depuis le sélecteur de déploiement.",
     "clearDefault": "Effacer la valeur par défaut (demander à chaque fois)",
     "targets": {
-      "local": {
-        "label": "Cette machine",
-        "desc": "Docker / runtime local"
-      },
       "server": {
         "label": "Mon serveur",
         "desc": "Un serveur SSH configuré"
@@ -127,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "votre serveur",
-      "cloud": "Openship Cloud",
-      "local": "Cette machine"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Choisissez d'abord un serveur",
@@ -478,6 +476,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "Dans l'application"
     },
     "form": {
@@ -487,6 +486,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Jeton du bot fourni par @BotFather",
+      "telegramChatPlaceholder": "ID du chat (ex. -1001234567890)",
+      "telegramHint": "Créez un bot avec @BotFather, puis envoyez-lui un message (ou ajoutez-le à votre groupe) pour qu'il soit autorisé à répondre.",
       "adding": "Ajout…",
       "addChannel": "Ajouter un canal",
       "labelRequired": "Le libellé est requis"
@@ -495,6 +497,7 @@
       "title": "Ce dont vous voulez être notifié",
       "description": "Choisissez quels événements vont vers quel canal. Chaque cellule est un abonnement.",
       "empty": "Ajoutez d'abord un canal pour vous abonner aux événements.",
+      "allTab": "Tous",
       "eventHeader": "Événement",
       "cellAria": "{category} via {channel}",
       "notifyMe": "Me notifier"
@@ -508,11 +511,11 @@
   },
   "audit": {
     "heading": "Journal d'audit",
-    "subtitle": "Chaque changement dans cette organisation, qui l'a effectué et quand.",
-    "searchPlaceholder": "Rechercher des événements, acteurs, ressources...",
-    "allEvents": "Tous les événements",
-    "noMatch": "Aucun événement ne correspond à votre recherche.",
-    "noEvents": "Aucun événement pour l'instant.",
+    "subtitle": "Tout ce qui s'est passé dans cette organisation, par qui et quand.",
+    "searchPlaceholder": "Rechercher des apps, serveurs, domaines, personnes…",
+    "noMatch": "Rien ne correspond à ces filtres.",
+    "noEvents": "Rien n'a encore été enregistré.",
+    "clearFilters": "Effacer les filtres",
     "showing": "Affichage de {from}-{to} sur {total}",
     "actor": "Acteur",
     "name": "Nom",
@@ -528,7 +531,50 @@
     "after": "Après",
     "removed": "Supprimé",
     "system": "Système",
-    "actorPrefix": "Acteur {id}"
+    "actorPrefix": "Acteur {id}",
+    "recording": {
+      "title": "Enregistrer l'activité",
+      "description": "Conserver une trace de chaque changement effectué dans cette organisation. Activé par défaut.",
+      "paused": "L'enregistrement est désactivé. Rien de nouveau n'est ajouté — les entrées ci-dessous sont celles capturées avant sa désactivation.",
+      "retention": "Conserver les entrées pendant",
+      "retentionOption": "{days} jours",
+      "retentionHint": "Les entrées plus anciennes sont supprimées automatiquement.",
+      "adminOnly": "Seuls les propriétaires et les administrateurs peuvent modifier ceci.",
+      "saveFailed": "Impossible d'enregistrer les paramètres d'activité."
+    },
+    "filters": {
+      "anyone": "N'importe qui",
+      "period": "Période",
+      "allTime": "Tout",
+      "today": "Aujourd'hui",
+      "last7": "7 derniers jours",
+      "last30": "30 derniers jours",
+      "last90": "90 derniers jours"
+    },
+    "tabs": {
+      "all": "Tout"
+    },
+    "sources": {
+      "all": "Tout",
+      "dashboard": "Tableau de bord",
+      "mcp": "Assistant IA",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "Système",
+      "unknown": "Inconnu"
+    },
+    "day": {
+      "today": "Aujourd'hui",
+      "yesterday": "Hier"
+    },
+    "details": {
+      "who": "Qui",
+      "when": "Quand",
+      "cameFrom": "Provenance",
+      "technical": "Détails techniques",
+      "eventType": "Type d'événement"
+    }
   },
   "updates": {
     "title": "Mises à jour",
@@ -554,11 +600,43 @@
     "securityPulls": "récupérer",
     "security4": "ces données — aucun service tiers ni serveur exploité par Openship ne peut pousser de mises à jour ou de signaux vers votre installation. Les avis sont épinglés à chaque version, de sorte que les changements non publiés ne vous parviennent jamais. Les avis de sécurité critiques sont toujours affichés une fois ; tout le reste respecte le paramètre ci-dessus."
   },
+  "infrastructure": {
+    "title": "Composants de la plateforme",
+    "description": "Comment les conteneurs edge et messagerie de vos serveurs sont maintenus à jour",
+    "autoUpdateLabel": "Mettre à jour automatiquement l'infrastructure serveur",
+    "autoUpdateDesc": "Lorsque ce plan de contrôle est mis à jour, met à jour automatiquement les conteneurs edge et mail sur vos serveurs connectés. Désactivé par défaut — sinon, les mises à jour sont signalées pour être appliquées en un clic sur chaque serveur.",
+    "autoScanLabel": "Analyser automatiquement l'infrastructure des serveurs",
+    "autoScanDesc": "Revérifie discrètement vos serveurs lorsque vous ouvrez la page Serveurs ou la page d'accueil, afin qu'un edge arrêté ou manquant soit signalé sans analyse manuelle. Activé par défaut : détection seule, rien n'est modifié.",
+    "attentionOne": "1 composant à surveiller",
+    "attentionMany": "{n} composants à surveiller",
+    "updatesOne": "1 mise à jour disponible",
+    "updatesMany": "{n} mises à jour disponibles",
+    "allHealthy": "Tous les composants de la plateforme sont à jour",
+    "manageLink": "Gérer dans Serveurs",
+    "hostControlLabel": "Déployer sur cette machine",
+    "hostControlDesc": "Autoriser OpenShip à déployer des applications sur le serveur sur lequel il s'exécute, en plus de vos serveurs connectés. Désactivé si installé avec --no-host-control (plan de contrôle uniquement) — activez-le pour ajouter cette machine comme cible de déploiement.",
+    "hostControlEnvNote": "Cette machine a été définie comme plan de contrôle uniquement à l'installation (--no-host-control). L'activer remplace ce réglage pour qu'OpenShip puisse déployer ici.",
+    "hostControlError": "Impossible de modifier le contrôle de l'hôte — seul le propriétaire de l'espace de travail de cette machine le peut."
+  },
   "dataTransfer": {
     "export": {
       "title": "Exporter les données",
       "description": "Téléchargez toute la base de données de l'instance sous forme de fichier.",
       "intro": "Crée un instantané portable de tout — projets, serveurs, déploiements, paramètres. Définissez une phrase secrète pour inclure vos secrets (variables d'environnement, jetons, identifiants SSH) ; ils sont rechiffrés avec elle, ce qui rend le fichier sûr à déplacer. Laissez-la vide pour exporter sans les secrets.",
+      "filterTitle": "Historique facultatif",
+      "filterDescription": "La configuration, les projets, serveurs, utilisateurs et identifiants sont toujours inclus. Décochez les historiques inutiles pour réduire la taille de l’export.",
+      "filterAnalytics": "Analyses et échantillons d’utilisation",
+      "filterActivity": "Historique d’audit et de notifications",
+      "filterBackups": "Historique des sauvegardes et restaurations",
+      "filterIncidents": "Historique des incidents de santé",
+      "filterMigrations": "Historique des migrations Docker",
+      "coreRows": "Lignes toujours incluses",
+      "selectedRows": "Lignes d’export sélectionnées",
+      "countUnavailable": "indisponible",
+      "transferSecretNotice": "Pour transférer correctement les identifiants, notamment les mots de passe et clés SSH, variables d’environnement, jetons et identifiants de sauvegarde, générez ou saisissez un secret de transfert ci-dessous. Conservez-le séparément et saisissez le même lors de l’import. Ne copiez pas le BETTER_AUTH_SECRET de l’instance vers la destination.",
+      "generateTransferSecret": "Générer un secret de transfert",
+      "copyTransferSecret": "Copier le secret de transfert",
+      "copiedTransferSecret": "Secret de transfert copié. Conservez-le en sécurité pour l’import.",
       "passphraseLabel": "Phrase secrète (optionnelle)",
       "passphrasePlaceholder": "Protège vos secrets",
       "confirmLabel": "Confirmer la phrase secrète",
@@ -740,6 +818,36 @@
     "toast": {
       "setTo": "Stratégie de routage définie sur {mode}",
       "failed": "Échec de la mise à jour de la stratégie de routage"
+    }
+  },
+  "credentials": {
+    "title": "Identifiants",
+    "description": "Jetons et connexions qu'Openship utilise pour vous — récupération d'images privées, écriture d'enregistrements DNS. Stockés chiffrés et jamais réaffichés.",
+    "noProviders": "Aucun fournisseur d'identifiants n'est disponible sur cette instance.",
+    "noneForProvider": "Aucun ajouté pour le moment.",
+    "add": "Ajouter",
+    "edit": "Modifier",
+    "save": "Enregistrer",
+    "connect": "Ajouter un identifiant",
+    "delete": "Supprimer",
+    "verify": "Revérifier auprès du fournisseur",
+    "badgeActive": "Fonctionne",
+    "badgeInvalid": "À vérifier",
+    "fieldName": "Libellé",
+    "namePlaceholder": "ex. GHCR lecture seule",
+    "secretKeptPlaceholder": "•••••••• (enregistré — laisser vide pour conserver)",
+    "selectPlaceholder": "Choisir…",
+    "verifyNote": "Openship vérifie l'identifiant auprès du fournisseur avant de l'enregistrer.",
+    "confirmDelete": "Supprimer « {name} » ? Tout ce qui en dépend cessera de fonctionner.",
+    "toast": {
+      "loadFailed": "Impossible de charger les identifiants",
+      "created": "Identifiant ajouté",
+      "updated": "Identifiant mis à jour",
+      "deleted": "Identifiant supprimé",
+      "saveFailed": "Impossible d'enregistrer l'identifiant",
+      "deleteFailed": "Impossible de supprimer l'identifiant",
+      "verifyOk": "Le fournisseur a accepté l'identifiant",
+      "verifyFailed": "Le fournisseur a refusé l'identifiant"
     }
   }
 }

@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "nocodb",
   "name": "NocoDB",
-  "description": "Airtable-style spreadsheet UI over an SQL database. The first sign-up becomes the admin.",
+  "description": "Airtable-style spreadsheet UI over an SQL database. Sign in with the admin account below.",
   "kind": "template",
   "logo": "nocodb",
   "category": "database",
@@ -16,15 +16,65 @@
     {
       "name": "nocodb",
       "image": "nocodb/nocodb:latest",
-      "ports": [
-        "8080:8080"
-      ],
       "exposedPort": 8080,
       "exposed": true,
       "volumes": [
         "nocodb_data:/usr/app/data"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "environment": {
+        "NC_ADMIN_EMAIL": "admin@example.com"
+      },
+      "secretEnv": [
+        "NC_ADMIN_PASSWORD"
+      ],
+      "ports": [
+        "8208:8080"
+      ]
     }
-  ]
+  ],
+  "configFields": [
+    {
+      "key": "NC_ADMIN_PASSWORD",
+      "service": "nocodb",
+      "label": "Admin password",
+      "help": "Auto-generated. Password for the super-admin account created on first boot.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "connection": {
+    "title": "Sign in to NocoDB",
+    "description": "The super-admin account below is created on first boot. Change the password after signing in.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "NocoDB",
+        "source": "publicUrl:nocodb",
+        "kind": "url",
+        "recommended": true,
+        "help": "Sign in with the email and password below."
+      },
+      {
+        "id": "email",
+        "label": "Admin email",
+        "source": "env:nocodb:NC_ADMIN_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:nocodb:NC_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "Anyone who reaches this URL can still create their own account (they land in their own workspace and cannot see your bases). Turn sign-up off in Account Settings → Authentication right after your first sign-in — the NC_INVITE_ONLY_SIGNUP env var no longer works in this version."
+    }
+  },
+  "verified": true
 }

@@ -16,6 +16,8 @@
  *   STACK_IDS                    // ["nextjs", "nuxt", ... ] - auto-generated
  */
 
+import { shellQuote } from "./shell-split";
+
 // ─── Language definitions ────────────────────────────────────────────────────
 
 export interface LanguageDefinition {
@@ -79,8 +81,15 @@ export const LANGUAGES = {
   },
   php: {
     name: "PHP",
-    buildImage: "php:8.3-cli",
-    runtimeImage: "php:8.3-fpm",
+    buildImage: "php:8.4-cli",
+    // FrankenPHP, not php:*-fpm. An fpm image is a FastCGI backend, not a
+    // process host: it ships no web server, and pairing it with an apt nginx
+    // means two processes under a shell that swallows SIGTERM — a container stop
+    // then kills in-flight work instead of draining it. FrankenPHP is ONE
+    // process that owns both the HTTP server and PHP, so signals land where they
+    // should with no supervision tree, it runs fine as a non-root user, and its
+    // docroot convention (`/app/public`) is already the layout our recipes emit.
+    runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm",
     packageManagers: ["composer"],
     requiredTools: ["php", "composer"],
   },
@@ -199,6 +208,17 @@ export interface StackDefinition {
    */
   cacheDirs?: readonly string[];
   /**
+   * Paths (relative to the app root) this framework WRITES at runtime and would
+   * lose on redeploy. Declared here so a stock app keeps its data with no
+   * configuration; the project can override the list. Resolved by
+   * `resolveStackVolumes` in `volumes.ts`, which turns each entry into a real
+   * mount — so keep them to paths that are genuinely stateful. A path that also
+   * holds CODE must not be listed: mounting over it shadows what later releases
+   * ship there (Laravel's `database/` holds migrations as well as the SQLite
+   * file, which is why only `storage` is declared).
+   */
+  persistentPaths?: readonly string[];
+  /**
    * Preferred build location for this stack.
    * "server" = build in the cloud/workspace (default if omitted).
    * "local"  = build on the host machine, then transfer the artifact.
@@ -266,6 +286,34 @@ export const STACKS = {
     defaultStartCommand: "remix-serve build/index.js",    detection: {
       rootMarkers: ["remix.config.js", "remix.config.ts"],
       deps: ["@remix-run/react", "@remix-run/node", "remix"],
+    },
+  },
+  "tanstack-start": {
+    name: "TanStack Start",
+    language: "typescript",
+    category: "fullstack",
+    outputDirectory: ".output",
+    defaultPort: 3000,
+    defaultBuildCommand: "vite build",
+    defaultStartCommand: "node .output/server/index.mjs",
+    // Nitro/Vinxi server bundle is self-contained under .output — same shape as Nuxt.
+    productionPaths: [".output"],
+    detection: {
+      // TanStack Start is Vite/Rsbuild-based; app.config.* is the older
+      // framework-specific marker, while current apps commonly ship vite.config.*
+      // or rsbuild.config.* plus the start package dep.
+      rootMarkers: [
+        "app.config.ts",
+        "app.config.js",
+        "app.config.mjs",
+        "vite.config.ts",
+        "vite.config.js",
+        "vite.config.mjs",
+        "rsbuild.config.ts",
+        "rsbuild.config.js",
+        "rsbuild.config.mjs",
+      ],
+      deps: ["@tanstack/react-start", "@tanstack/start"],
     },
   },
   astro: {
@@ -635,19 +683,29 @@ export const STACKS = {
 
   // ── PHP ────────────────────────────────────────────────────────────────────
 
-  // PHP stacks run php-fpm behind nginx (docroot public/). The generated
-  // Dockerfile (docker-build-plan.ts PHP branch) installs nginx + writes the
-  // config template; this start command renders it for the injected $PORT and
-  // launches both processes. Runtime image inherits php:8.3-fpm from the language.
+  // PHP stacks serve `public/` from FrankenPHP (see LANGUAGES.php). `exec` hands
+  // the container's PID to frankenphp so SIGTERM drains in-flight requests
+  // instead of being swallowed by the shell; SERVER_NAME carries the injected
+  // $PORT (a bare `:port` also keeps Caddy's automatic HTTPS out of the way —
+  // TLS terminates at the edge). No build command: `composer install` is the
+  // INSTALL step, and the build step is where a JS asset pipeline goes (the
+  // detector fills it in when the repo has one).
   laravel: {
     name: "Laravel",
     language: "php",
     category: "fullstack",
     outputDirectory: "public",
     defaultPort: 8000,
-    defaultBuildCommand: "composer install --no-dev --optimize-autoloader",
+    defaultBuildCommand: "",
     defaultStartCommand:
-      "envsubst '$PORT' < /etc/nginx/app.conf.template > /etc/nginx/conf.d/default.conf && php-fpm -D && nginx -g 'daemon off;'",
+      'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // Everything a stock Laravel app writes lives here: uploads
+    // (storage/app), sessions + cache when the drivers are `file`, and the
+    // framework's own scratch space. `database/` is deliberately NOT persisted —
+    // it holds migrations, so mounting over it would hide the ones a later
+    // release adds. A SQLite app should point DB_DATABASE at a persisted path or
+    // (better) use a database service.
+    persistentPaths: ["storage"],
     detection: {
       rootMarkers: ["artisan", "composer.json"],
       deps: ["laravel/framework"],
@@ -659,9 +717,11 @@ export const STACKS = {
     category: "fullstack",
     outputDirectory: "public",
     defaultPort: 8000,
-    defaultBuildCommand: "composer install --no-dev --optimize-autoloader",
+    defaultBuildCommand: "",
     defaultStartCommand:
-      "envsubst '$PORT' < /etc/nginx/app.conf.template > /etc/nginx/conf.d/default.conf && php-fpm -D && nginx -g 'daemon off;'",
+      'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // No persistentPaths: Symfony's `var/` is cache + logs, both regenerated,
+    // and it has no convention for where user uploads land.
     detection: {
       rootMarkers: ["composer.json", "symfony.lock"],
       deps: ["symfony/framework-bundle"],
@@ -1012,12 +1072,66 @@ export function getBuildImage(stackId: StackId, packageManager?: string): string
  * it installs the pnpm/yarn shims and lets each project's
  * `package.json#packageManager` field select the exact version. Falls back to a
  * global npm install when corepack is unavailable (old Node / no perms), and is
- * fully swallowed so it never fails the build. Returns "" for `npm` (already
- * present), `bun` (its own image), and every non-node PM (in-image).
+ * fully swallowed so it never fails the build.
+ *
+ * `bun` gets a presence check instead: corepack doesn't manage it. Inside a
+ * container this is a no-op — getBuildImage already resolves bun-eligible stacks
+ * to oven/bun, so `command -v bun` short-circuits before the npm fallback (which
+ * matters: that image ships no npm). It earns its keep on a BARE target, where we
+ * install onto whatever the box already has (see runtime/bare.ts).
+ *
+ * Returns "" for `npm` (already present) and every non-node PM (in-image).
  */
 export function packageManagerEnsureCommand(packageManager?: string): string {
+  if (packageManager === "bun") {
+    return `(command -v bun >/dev/null 2>&1 || npm i -g bun) >/dev/null 2>&1 || true`;
+  }
   if (packageManager !== "pnpm" && packageManager !== "yarn") return "";
   return `(corepack enable ${packageManager} || corepack enable || npm i -g ${packageManager}) >/dev/null 2>&1 || true`;
+}
+
+/** Package managers that install dependency binaries into `node_modules/.bin`. */
+const NODE_BIN_PACKAGE_MANAGERS: ReadonlySet<string> = new Set(["npm", "yarn", "pnpm", "bun"]);
+
+/**
+ * Directories to search AHEAD of the image/host PATH so a command that names a
+ * dependency binary directly resolves - `next build`, `vite build`, `next start`.
+ *
+ * `npm run` / `bun run` prepend `node_modules/.bin` themselves, which is the only
+ * reason a package.json script can say `next build`. Every command we generate is
+ * handed to a bare `sh -c` instead (a Dockerfile RUN, an SSH exec, a container
+ * Cmd), so nothing does that injection for us and the binary is unresolvable even
+ * though it sits right there on disk - openship#623, exit 127.
+ *
+ * `roots` are searched nearest-first: a monorepo hoists dependencies to the
+ * workspace root, so the sub-app directory alone is not enough. Duplicates are
+ * dropped (a root-level app has the same value twice).
+ *
+ * Returns [] for every non-node package manager. Go/Rust/Python have no such
+ * directory, so the entries would be dead weight on every command lookup.
+ */
+export function nodeBinDirs(packageManager: string | undefined, roots: string[]): string[] {
+  if (!packageManager || !NODE_BIN_PACKAGE_MANAGERS.has(packageManager)) return [];
+  const dirs: string[] = [];
+  for (const root of roots) {
+    const dir = `${root.replace(/\/+$/, "")}/node_modules/.bin`;
+    if (!dirs.includes(dir)) dirs.push(dir);
+  }
+  return dirs;
+}
+
+/**
+ * `export PATH=...` prelude for a shell command, or "" when the package manager has
+ * no `node_modules/.bin`. Composes with `&&` exactly like
+ * {@link packageManagerEnsureCommand}. Safe to emit before the install step: PATH
+ * entries are resolved per command invocation, not validated at assignment, so a
+ * directory `install` is about to create is found by the build that follows it in
+ * the same shell.
+ */
+export function nodeBinPathExport(packageManager: string | undefined, roots: string[]): string {
+  const dirs = nodeBinDirs(packageManager, roots);
+  if (dirs.length === 0) return "";
+  return `export PATH=${dirs.map(shellQuote).join(":")}:"$PATH"`;
 }
 
 /** Get the resolved Docker runtime image for a stack */
@@ -1049,6 +1163,27 @@ export function getProjectType(stackId: StackId): ProjectType {
 }
 
 /**
+ * Normalizes a framework input (stack ID or display name like "Static Site", "Next.js")
+ * to its canonical stack ID ("static", "nextjs", etc.).
+ */
+export function normalizeFramework(framework?: string | null): string {
+  if (!framework) return "unknown";
+  const trimmed = framework.trim();
+  if (!trimmed) return "unknown";
+  const lower = trimmed.toLowerCase();
+  if (lower in STACKS) return lower;
+  for (const [id, def] of Object.entries(STACKS)) {
+    if (def.name.toLowerCase() === lower) return id;
+  }
+  // Common display aliases
+  if (lower === "static site" || lower === "plain html" || lower === "html/js") return "static";
+  if (lower === "nextjs" || lower === "next.js" || lower === "next") return "nextjs";
+  if (lower === "nuxtjs" || lower === "nuxt.js" || lower === "nuxt") return "nuxt";
+  if (lower === "dockerfile" || lower === "docker compose") return "docker";
+  return lower;
+}
+
+/**
  * Is a project SERVICE-FIRST — i.e. the project itself IS a set of services
  * (a docker-compose / "services" stack), NOT a single/static app that merely
  * had sidecar services added to it? Keyed on the project's own framework, so
@@ -1065,15 +1200,67 @@ export function isServicesFramework(framework?: string | null): boolean {
 }
 
 /**
- * Hint whether a stack is typically static (no running server).
- * Used as a default for the hasServer toggle - the user can override.
+ * Does this stack normally HAVE a build step?
+ *
+ * The registry already answers this: a stack with no `defaultBuildCommand` is one
+ * whose dependency install is the whole story (Express, Hono, plain Node), whose
+ * build lives in its own Dockerfile (`docker`), or whose build step is reserved
+ * for something optional (PHP: `composer install` is the install step, and the
+ * build step only exists when the repo ships a JS asset pipeline).
+ *
+ * Use it before telling a user that a missing build command looks wrong — for the
+ * stacks above it's the normal state, and warning there is noise that trains
+ * people to ignore preflight. False for an unknown framework: no declared
+ * expectation, nothing to flag.
  */
-export function isTypicallyStatic(stackId: StackId): boolean {
-  const stack = STACKS[stackId] as StackDefinition;
-  return (
-    (stack.category === "static" || stack.category === "frontend") &&
-    !stack.defaultStartCommand
-  );
+export function stackExpectsBuildCommand(framework?: string | null): boolean {
+  if (!framework || !(framework in STACKS)) return false;
+  return !!(STACKS[framework as StackId] as StackDefinition).defaultBuildCommand;
+}
+
+/**
+ * Does a stack CATEGORY describe something served as FILES rather than by a
+ * running process?
+ *
+ * The one definition of that category test. It was written out inline in three
+ * places — the hasServer default below, the sub-app serve-shape rule
+ * (`isStaticService`), and the detector's "force static output" coercion
+ * (`classifyAsStaticOutput`) — which is three chances to disagree about whether
+ * `frontend` counts.
+ *
+ * Category ALONE is deliberately not the whole answer anywhere it is used: a
+ * frontend stack can still ship a default start command (Astro, Gatsby), and a
+ * specific service row can carry its own. Each caller adds that half; this only
+ * answers the category question.
+ */
+export function categoryServesFiles(category?: string | null): boolean {
+  return category === "static" || category === "frontend";
+}
+
+/**
+ * Hint whether a stack is typically static (no running server): a frontend or
+ * static category whose canonical deploy shape is FILES, i.e. one that ships no
+ * default start command. Astro and Gatsby are frontend but SSR-capable
+ * (`node dist/server/entry.mjs`, `gatsby serve`), so they are NOT typically static.
+ *
+ * Used as the default for the hasServer toggle — the user can always override.
+ *
+ * Takes a loose string and returns false for anything unknown, because callers
+ * feed it a persisted `framework` column. It used to take `StackId` and index
+ * STACKS unguarded, which would throw on a stale or hand-edited value.
+ *
+ * NOT the same question as two neighbours that also say "static", and the three
+ * must not be merged:
+ *   - `deployment-class.ts` (private) asks `category === "static"` ONLY, deriving
+ *     a build KIND — a frontend SPA still builds like a buildpack.
+ *   - `deployable-service.ts` `isStaticService` asks whether a specific ROW is
+ *     served as files, which additionally depends on that row's resolved start
+ *     command — an Astro sub-app with no start command IS static.
+ */
+export function isTypicallyStatic(stackId?: string | null): boolean {
+  if (!stackId || !(stackId in STACKS)) return false;
+  const stack = STACKS[stackId as StackId] as StackDefinition;
+  return categoryServesFiles(stack.category) && !stack.defaultStartCommand;
 }
 
 // ─── Icon URLs - source of truth for logo/icon display ───────────────────────
@@ -1086,6 +1273,7 @@ export const STACK_ICONS: Partial<Record<StackId, string>> = {
   nuxt:        `${DI}/nuxtjs/nuxtjs-original.svg`,
   sveltekit:   `${DI}/svelte/svelte-original.svg`,
   remix:       `${DI}/react/react-original.svg`,
+  "tanstack-start": `${DI}/react/react-original.svg`,
   astro:       `${DI}/astro/astro-original.svg`,
   vite:        `${DI}/vitejs/vitejs-original.svg`,
   angular:     `${DI}/angular/angular-original.svg`,

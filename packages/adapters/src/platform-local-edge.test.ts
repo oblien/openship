@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The bare-OpenResty edge is Linux-only: its paths are Linux FHS (`/var/www/acme`,
- * `/usr/local/openresty/...`), provisioning them needs root, and `installOpenResty`
- * only implements apt. Provisioning it against THIS process's own non-Linux OS
+ * `/usr/local/openresty/...`) and provisioning them needs root. Nor is there
+ * anything to install on a Mac — the edge is a Linux container image, and the
+ * host-package path it used to fall back to is gone. Provisioning it against THIS
+ * process's own non-Linux OS
  * therefore can't work — and it didn't fail softly: `ensureOpenRestyConfig` threw
  * `EACCES: permission denied, mkdir '/var/www'` during platform CONSTRUCTION,
  * upstream of every best-effort routing step, so a macOS deploy died before the
@@ -18,6 +20,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // the test constructs a platform without touching docker, ssh, or the host.
 vi.mock("./system/setup", () => ({ SystemManager: class {} }));
 vi.mock("./runtime/bare", () => ({ BareRuntime: class {} }));
+
+/**
+ * No edge CONTAINER on this box. The two container-edge branches are checked before
+ * the bare gate — by design, so a Mac running the compose stack keeps its edge — and
+ * `resolveOurEdgeContainer` takes a real `LocalExecutor` here, meaning it shells out
+ * to the DEVELOPER'S docker. On any machine that happens to be running
+ * `openship-edge` (i.e. anyone dogfooding Openship) the container branch won.
+ * Stubbing it is what makes this a test of the bare gate rather than of the host.
+ */
+vi.mock("./system/proxy/detect", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./system/proxy/detect")>()),
+  resolveOurEdgeContainer: vi.fn(async () => null),
+}));
 
 import { createPlatform } from "./platform";
 import { NoopInfraProvider } from "./infra/noop";

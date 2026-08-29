@@ -31,6 +31,7 @@ import { getBuildImage, safeErrorMessage, type StackId } from "@repo/core";
 import { provisionCloudWorkspace } from "@repo/adapters";
 import { env } from "../../../config/env";
 import { getNamespaceClient } from "../../../lib/openship-cloud";
+import { resolveApiPublicUrl } from "../../../lib/public-url";
 import {
   newFolderSessionId,
   putFolderSession,
@@ -70,6 +71,9 @@ export interface CreateFolderSessionInput {
   stack?: string;
   packageManager?: string;
   name?: string;
+  /** Public base for this API as the CALLER reached it (controller resolves it
+   *  from the request) — used to build `upload.absoluteUrl`. */
+  apiBaseUrl?: string;
 }
 
 /**
@@ -82,8 +86,24 @@ export interface UploadTarget {
   /** Absolute URL (external), or an API-relative path the client resolves
    *  against its API base. */
   url: string;
+  /**
+   * The same target, fully resolved — so a client that doesn't know this API's
+   * base URL (MCP, curl) doesn't have to guess one. On the self-hosted relay
+   * this is built from the instance's public URL, so it's only as reachable as
+   * that is configured (OPENSHIP_PUBLIC_URL / a verified self-app domain);
+   * `url` stays the authoritative form for a client that has its own base.
+   */
+  absoluteUrl: string;
   method: "POST";
   headers: Record<string, string>;
+  /**
+   * The upload needs the CALLER's API credentials on top of `headers` — the
+   * relay route is permission-checked like any other (send the same
+   * `Authorization: Bearer …` you used to open the session, or the session
+   * cookie). False for an external target, which carries its own token in
+   * `headers` and must never see Openship credentials.
+   */
+  requiresAuth: boolean;
   /** Send the browser's session cookie? true for the same-origin API relay,
    *  false for an external target (so cookies never leak cross-origin). */
   withCredentials: boolean;
@@ -170,16 +190,19 @@ export async function createFolderSession(
       name: input.name,
     });
 
+    const workspaceUploadUrl = `${OBLIEN_RUNTIME_URL}/files/transfer/upload?dest=/app`;
     return {
       sessionId: id,
       expiresAt,
       upload: {
-        url: `${OBLIEN_RUNTIME_URL}/files/transfer/upload?dest=/app`,
+        url: workspaceUploadUrl,
+        absoluteUrl: workspaceUploadUrl,
         method: "POST",
         headers: {
           Authorization: `Bearer ${uploadToken}`,
           "Content-Type": "application/gzip",
         },
+        requiresAuth: false,
         withCredentials: false,
       },
     };
@@ -207,11 +230,16 @@ export async function createFolderSession(
     expiresAt,
     upload: {
       url: `projects/folder/upload/${id}`,
+      // Resolved from the request when possible (so a desktop dynamic port / LAN
+      // address isn't advertised as localhost), else the instance's public base —
+      // which accounts for the dashboard same-origin proxy on a --public-url box.
+      absoluteUrl: `${input.apiBaseUrl ?? resolveApiPublicUrl()}/api/projects/folder/upload/${id}`,
       method: "POST",
       headers: {
         "x-upload-ticket": uploadTicket,
         "Content-Type": "application/gzip",
       },
+      requiresAuth: true,
       withCredentials: true,
     },
   };
@@ -282,8 +310,19 @@ async function streamToFile(body: ReadableStream<Uint8Array>, dest: string): Pro
  * Authoritative framework detection on the uploaded source.
  *   - oblien-direct: read the workspace filesystem via the runtime.
  *   - api-relay: read the staging dir via node:fs (self-hosted only).
+ *
+ * Any compose services found are REMEMBERED on the session: they're returned to
+ * the client too, but the deploy step must not depend on the client handing them
+ * back (the documented session → scan → ensure → deploy flow has no step that
+ * does), and by then the uploaded compose file is no longer parsed again.
  */
 export async function scanFolderSession(session: FolderSession) {
+  const info = await scanSource(session);
+  session.services = info.services;
+  return info;
+}
+
+async function scanSource(session: FolderSession) {
   if (session.mode === "oblien-direct") {
     if (!session.workspaceId) throw new Error("Session has no workspace");
     // Namespace-scoped client (not the master) so the by-id runtime lookup

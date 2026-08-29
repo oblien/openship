@@ -314,28 +314,64 @@ describe(".NET recipe", () => {
   });
 });
 
-describe("PHP fpm+nginx recipe", () => {
-  it("laravel fixture → fpm+nginx serving on the php:8.3-fpm runtime", () => {
+describe("PHP FrankenPHP recipe", () => {
+  it("laravel fixture → frankenphp serving public/, composer as the INSTALL step", () => {
     const { files, fileContents } = loadFixture("laravel");
     const r = detectStack(files, undefined, fileContents);
     expect(r.stack).toBe("laravel");
     expect(r.packageManager).toBe("composer");
-    expect(r.buildCommand).toBe("composer install --no-dev --optimize-autoloader");
-    expect(r.startCommand).toContain("php-fpm -D");
-    expect(r.startCommand).toContain("nginx -g 'daemon off;'");
-    expect(r.startCommand).toContain("envsubst");
-    expect(r.buildImage).toBe("php:8.3-cli");
-    expect(getRuntimeImage("laravel")).toBe("php:8.3-fpm");
+    expect(r.installCommand).toBe("composer install --no-dev --optimize-autoloader");
+    // No JS in the fixture → no asset build. The build step is NOT a second
+    // composer install (which is what it used to be).
+    expect(r.buildCommand).toBe("");
+    expect(r.startCommand).toContain("exec frankenphp run");
+    expect(r.startCommand).toContain('SERVER_NAME=":$PORT"');
+    expect(r.startCommand).not.toContain("php-fpm");
+    expect(r.startCommand).not.toContain("envsubst");
+    expect(r.buildImage).toBe("php:8.4-cli");
+    expect(getRuntimeImage("laravel")).toBe("dunglas/frankenphp:1-php8.4-bookworm");
   });
 
-  it("symfony also serves via fpm+nginx (no dev server)", () => {
+  it("a laravel app with a vite frontend gets a real asset build command", () => {
+    const r = detectStack(
+      [
+        { name: "artisan" },
+        { name: "composer.json" },
+        { name: "package.json" },
+        { name: "package-lock.json" },
+        { name: "vite.config.js" },
+      ],
+      { scripts: { build: "vite build", dev: "vite" } },
+      { "composer.json": JSON.stringify({ require: { "laravel/framework": "^12.0" } }) },
+    );
+    expect(r.stack).toBe("laravel");
+    expect(r.installCommand).toBe("composer install --no-dev --optimize-autoloader");
+    expect(r.buildCommand).toBe("npm i --force && npm run build");
+  });
+
+  it("picks the JS package manager from the lockfile, not the project's composer", () => {
+    const r = detectStack(
+      [
+        { name: "artisan" },
+        { name: "composer.json" },
+        { name: "package.json" },
+        { name: "pnpm-lock.yaml" },
+      ],
+      { scripts: { build: "vite build" } },
+      { "composer.json": JSON.stringify({ require: { "laravel/framework": "^12.0" } }) },
+    );
+    expect(r.packageManager).toBe("composer");
+    expect(r.buildCommand).toBe("pnpm install && pnpm build");
+  });
+
+  it("symfony also serves via frankenphp (no dev server)", () => {
     const r = detectStack([{ name: "composer.json" }, { name: "symfony.lock" }], undefined, {
       "composer.json": JSON.stringify({ require: { "symfony/framework-bundle": "^7.0" } }),
     });
     expect(r.stack).toBe("symfony");
-    expect(r.startCommand).toContain("php-fpm -D");
+    expect(r.startCommand).toContain("exec frankenphp run");
     expect(r.startCommand).not.toContain("php -S");
-    expect(getRuntimeImage("symfony")).toBe("php:8.3-fpm");
+    expect(getRuntimeImage("symfony")).toBe("dunglas/frankenphp:1-php8.4-bookworm");
   });
 });
 

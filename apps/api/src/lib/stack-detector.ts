@@ -7,7 +7,8 @@
  *
  * Supports:
  *   JS/TS:   Next.js, Nuxt, SvelteKit, Astro, Vite, Angular, Gatsby, Remix,
- *            CRA, Vue, Express, Fastify, Hono, NestJS, Koa, AdonisJS, Elysia
+ *            TanStack Start, CRA, Vue, Express, Fastify, Hono, NestJS, Koa,
+ *            AdonisJS, Elysia
  *   Go:      Standard, Gin, Fiber, Echo
  *   Rust:    Standard, Actix, Axum, Rocket
  *   Python:  Standard, Django, Flask, FastAPI
@@ -23,6 +24,7 @@ import {
   STACKS,
   STACK_IDS,
   OUTPUT_DIRECTORIES,
+  categoryServesFiles,
   getProjectType,
   getBuildImage,
   LANGUAGE_MANIFEST_FILES,
@@ -143,6 +145,21 @@ export function detectPackageManager(
   return "unknown";
 }
 
+/**
+ * The JS package manager of a repo whose PRIMARY package manager is something
+ * else. A Laravel app is detected as `composer` — correct for its dependencies,
+ * but useless for its asset build, which still needs to know whether to run
+ * `npm ci` or `pnpm install`. Same lockfile precedence as the JS arm of
+ * `detectPackageManager`; defaults to npm, which the asset stage always has.
+ */
+export function detectJsPackageManager(files?: RepoFile[]): string {
+  const fileSet = new Set((files ?? []).map((f) => f.name.toLowerCase()));
+  if (fileSet.has("pnpm-lock.yaml")) return "pnpm";
+  if (fileSet.has("bun.lockb") || fileSet.has("bun.lock")) return "bun";
+  if (fileSet.has("yarn.lock")) return "yarn";
+  return "npm";
+}
+
 // ─── Framework detection rules ───────────────────────────────────────────────
 
 interface FrameworkRule {
@@ -223,6 +240,10 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   { stack: "sveltekit" },
   { stack: "astro" },
   { stack: "remix" },
+  // TanStack Start is Vite-based and often ships vite.config.* — must win over
+  // the generic vite SPA rule so imports get fullstack defaults (.output server)
+  // instead of static Vite (empty start). #400
+  { stack: "tanstack-start" },
   { stack: "angular" },
   { stack: "gatsby" },
   // Vite matches on its own root markers, but a backend framework (Laravel/
@@ -376,9 +397,40 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
 // from every present manifest and resolve a default port. Adding a language is
 // one new file under packages/core/src/languages/ + a registry entry there.
 
+/**
+ * The parsed package.json, recovered from its raw text when the caller didn't
+ * supply one.
+ *
+ * A snapshot reads the manifest TWICE — `readJson` for the parsed object and
+ * `readText` for the contents map — and every reader swallows a failure of either
+ * into `undefined`. So the parsed object can be missing while the text is right
+ * here in hand, and the two halves of detection then disagree: dependency
+ * matching still finds the framework (it reads the text), but command derivation
+ * silently degrades to the registry's bare `next build` / `next start`. That
+ * combination is openship#623 — a Next app whose `build` script we never saw.
+ *
+ * Returns undefined only when there is genuinely no readable manifest.
+ */
+export function resolvePackageJson(
+  packageJson?: Record<string, unknown>,
+  fileContents?: Record<string, string>,
+): Record<string, unknown> | undefined {
+  if (packageJson) return packageJson;
+  const text = fileContents
+    ? Object.entries(fileContents).find(([k]) => k.toLowerCase() === "package.json")?.[1]
+    : undefined;
+  if (!text) return undefined;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function detectStack(
   files: RepoFile[],
-  packageJson?: Record<string, unknown>,
+  packageJsonInput?: Record<string, unknown>,
   fileContents?: Record<string, string>,
 ): StackResult {
   const fileSet = new Set(files.map((f) => f.name.toLowerCase()));
@@ -388,6 +440,8 @@ export function detectStack(
   if (fileContents) {
     for (const [k, v] of Object.entries(fileContents)) fc[k.toLowerCase()] = v;
   }
+
+  const packageJson = resolvePackageJson(packageJsonInput, fc);
 
   // Merge deps: JS deps come from the parsed package.json, the rest come from
   // language-specific manifest parsers via the registry. The JS detector's
@@ -473,13 +527,22 @@ export function detectStack(
     }
   }
 
+  // A Dockerfile owns its own build — the runtime builds straight from it
+  // (requireRepositoryDockerfile), so nothing is synthesized around it.
+  // buildCommand/startCommand already come out empty via the registry defaults
+  // on the `docker` stack, but installCommand is derived from the package
+  // manager alone, which has no way to know that. A Dockerfile sub-app that
+  // also carries a package.json for workspace membership (the Railway-style
+  // monorepo layout) would otherwise be handed a bogus `npm i --force`.
+  const projectType = getProjectType(matched);
+
   const result: StackResult = {
     stack: matched,
-    projectType: getProjectType(matched),
+    projectType,
     category: stackDef.category,
     dependencies: deps,
     packageManager: pm,
-    installCommand: getInstallCommand(pm),
+    installCommand: projectType === "docker" ? "" : getInstallCommand(pm),
     buildCommand: getBuildCommand(pm, matched, packageJson, files),
     startCommand,
     buildImage: getBuildImage(matched, pm),
@@ -577,7 +640,7 @@ function isTrueServerStack(result: StackResult): boolean {
  * static output rather than a long-running server.
  */
 function classifyAsStaticOutput(result: StackResult): StackResult {
-  if (result.category === "frontend" || result.category === "static") {
+  if (categoryServesFiles(result.category)) {
     return { ...result, startCommand: "" };
   }
   return {
@@ -738,6 +801,18 @@ export function getBuildCommand(
   }
 
   const lang = STACKS[stack].language;
+
+  // PHP: the install step is `composer install`, so the BUILD step is the asset
+  // pipeline — a Laravel/Vite or Symfony/Encore app ships CSS/JS that has to be
+  // compiled or it deploys with no styling at all. Emitted as a real command
+  // (rather than hidden in the Dockerfile) so it shows up in the wizard and can
+  // be edited; the recipe runs it in a Node stage, since php:*-cli has no node.
+  // Empty when the repo has no JS build — most Symfony APIs, plain PHP.
+  if (lang === "php") {
+    if (!scripts.build) return "";
+    const jsPm = detectJsPackageManager(files);
+    return `${getInstallCommand(jsPm)} && ${scriptRunner(jsPm)} build`;
+  }
 
   // Python: install per detected package manager; Django also collects static.
   if (lang === "python") {

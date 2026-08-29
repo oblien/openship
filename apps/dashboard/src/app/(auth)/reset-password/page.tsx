@@ -3,9 +3,9 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { resetPassword } from "@/lib/auth-client";
+import { emailOtp, resetPassword } from "@/lib/auth-client";
 import { useToast } from "@/components/toast";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,15 +27,37 @@ export default function ResetPasswordPage() {
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
+  // `token` is the RETIRED link flow, kept only so a reset email already sitting in
+  // someone's inbox still works. New requests arrive with `email` and no token, and
+  // the user types the 6-digit code — see lib/auth-client emailOtp.resetPassword for
+  // why the link went away.
   const token = searchParams.get("token") ?? "";
   const { toast } = useToast();
   const { t } = useI18n();
 
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
+  const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+
+  // Same mapping verify-email uses, so a wrong/expired/locked code reads the same in
+  // both flows. TOO_MANY_ATTEMPTS means the code was invalidated — they must request
+  // a fresh one rather than keep guessing.
+  function codeErrorMessage(codeErr?: string | null, fallback?: string): string {
+    switch (codeErr) {
+      case "TOO_MANY_ATTEMPTS":
+        return t.auth.verifyEmail.codeLocked;
+      case "OTP_EXPIRED":
+        return t.auth.verifyEmail.codeExpired;
+      case "INVALID_OTP":
+        return t.auth.verifyEmail.codeInvalid;
+      default:
+        return fallback ?? t.auth.errors.resetFailed;
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,16 +70,31 @@ function ResetPasswordForm() {
       toast("error", t.auth.errors.passwordMismatch);
       return;
     }
-    if (!token) {
-      toast("error", t.auth.errors.invalidToken);
+    // Legacy link: a token in the URL is proof on its own, so no code is asked for.
+    if (!token && (!email.trim() || code.trim().length < 6)) {
+      toast("error", t.auth.verifyEmail.codeInvalid);
       return;
     }
 
     setLoading(true);
     try {
-      const result = await resetPassword({ newPassword: password, token });
-      if (result.error) {
-        toast("error", result.error.message ?? t.auth.errors.resetFailed);
+      const result = token
+        ? await resetPassword({ newPassword: password, token })
+        : await emailOtp.resetPassword({
+            email: email.trim(),
+            otp: code.trim(),
+            password,
+          });
+      if (result?.error) {
+        toast(
+          "error",
+          token
+            ? (result.error.message ?? t.auth.errors.resetFailed)
+            : codeErrorMessage(
+                (result.error as { code?: string }).code,
+                result.error.message,
+              ),
+        );
       } else {
         setDone(true);
       }
@@ -98,24 +135,54 @@ function ResetPasswordForm() {
           {t.auth.resetPassword.title}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t.auth.resetPassword.subtitle}
+          {token
+            ? t.auth.resetPassword.subtitle
+            : email
+              ? interpolate(t.auth.resetPassword.codeSentTo, { email })
+              : t.auth.resetPassword.codeSentGeneric}
         </p>
+        {!token && (
+          <p className="mt-2 text-xs text-muted-foreground/70">
+            {t.auth.forgotPassword.spamHint}
+          </p>
+        )}
       </div>
 
-      {!token && (
-        <div className="mb-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {t.auth.resetPassword.noTokenError.replace(
-            "{link}",
-            "",
-          )}
-          <Link href="/forgot-password" className="underline">
-            {t.auth.resetPassword.noTokenLink}
-          </Link>
-          .
-        </div>
-      )}
-
       <form onSubmit={handleSubmit} className="space-y-3">
+        {!token && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-email">{t.auth.forgotPassword.emailLabel}</Label>
+              <Input
+                id="reset-email"
+                type="email"
+                autoComplete="email"
+                placeholder={t.auth.forgotPassword.emailPlaceholder}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-code">{t.auth.verifyEmail.codeLabel}</Label>
+              <Input
+                id="reset-code"
+                // `one-time-code` lets iOS/Android offer the code straight from the
+                // notification, which is most of why a code beats a link on a phone.
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder={t.auth.verifyEmail.codePlaceholder}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                required
+                className="text-center tracking-[0.4em] font-mono"
+              />
+            </div>
+          </>
+        )}
+
         <div className="space-y-1.5">
           <Label htmlFor="reset-password">{t.auth.resetPassword.passwordLabel}</Label>
           <div className="relative">
@@ -156,7 +223,7 @@ function ResetPasswordForm() {
           />
         </div>
 
-        <Button type="submit" disabled={loading || !token} className="mt-1 w-full">
+        <Button type="submit" disabled={loading} className="mt-1 w-full">
           {loading && <Loader2 className="animate-spin" />}
           {loading ? t.auth.resetPassword.submitting : t.auth.resetPassword.submit}
         </Button>

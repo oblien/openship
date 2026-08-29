@@ -6,7 +6,11 @@ import {
   BUILD_ENV_VARS,
   AppError,
   safeErrorMessage,
+  sanitizeProxySettings,
+  normalizeServiceLabel,
 } from "@repo/core";
+import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
+import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import type {
   BuildResult,
   CommandExecutor,
@@ -17,6 +21,7 @@ import type {
   LogEntry,
   PromptUserFn,
   ResourceConfig,
+  RuntimeAdapter,
 } from "@repo/adapters";
 import {
   BareRuntime,
@@ -24,45 +29,57 @@ import {
   CloudRuntime,
   DockerRuntime,
   STATIC_RELEASE_BASE,
+  sharedMountExecutor,
   resolveStaticOutputPath,
-  DEFAULT_BUILD_RESOURCE_CONFIG,
   ensurePortAvailable,
   allocateHostPort,
   runDeployPipeline,
   isMultiServiceRuntime,
-  waitForReady,
   ensureEdge,
+  edgeProxyFor,
 } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
-import { resolveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
+import {
+  resolveUpstreamUrl,
+  resolveRouteStrategy,
+  usesHostLoopbackUpstream,
+} from "../../lib/upstream-url";
+import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import { webhookProxyTarget } from "../../config";
 import {
+  disposeRuntime,
   resolveDeploymentRuntime,
   resolveDeploymentPlatform,
   resolveEffectiveTarget,
+  hostChannelDeployNotice,
 } from "../../lib/deployment-runtime";
+import { isRealContainerRef } from "../../lib/container-ref";
 import { ensureRoutingReady } from "../../lib/edge-reconcile";
-import { sshManager } from "../../lib/ssh-manager";
 import {
   resolveBuildRuntimeModes,
   resolveDeployRouting,
+  reusedReleaseRouting,
   type DeployRouting,
 } from "./build-execution-plan";
 import { attachLinkedNetworks } from "./attach-linked-networks";
+import { probeDeployedReadiness } from "./readiness-probe";
 import { syncProjectToServerManifest } from "../../lib/openship-manifest-sync";
 import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-edge-proxy";
 import { decryptEnvMap } from "../../lib/encryption";
 import {
+  auditRoutedDomainTls,
   buildProjectRouteDomains,
   createTrackedSslProvider,
   ensureRouteDomainRecord,
   toRoutedDomainInputs,
+  withEnsuredDomainRecord,
 } from "../../lib/routing-domains";
 import { normalizeTargetPath } from "../../lib/public-endpoints";
-import { withDefaults } from "../../lib/resources";
-import { resolveBuildGitToken } from "../github/clone-auth";
+import { resolveRuntimeResources, resolveBuildResources } from "../../lib/resources";
+import { cloneOnServerAvailable, resolveBuildGitToken } from "../github/clone-auth";
 import { openDeployRelay } from "../../lib/git-forwarding";
 import { resolveOrgOwner } from "../../lib/org-actor";
+import { resolveAcmeProviderOptions } from "../../lib/acme-config";
 import {
   preCreateServiceDeployments,
   emitServiceCheckRun,
@@ -72,21 +89,60 @@ import {
 import { firePreDeployBackups } from "../backups/triggers/pre-deploy";
 import { buildBackgroundContext } from "../../lib/request-context";
 import * as sessionManager from "./session-manager";
-import { onFailure, onSuccess, onReconciling, onCancelled, setDeploymentStatus, type LifecycleContext } from "./deployment-lifecycle";
+import {
+  onFailure,
+  onSuccess,
+  onReconciling,
+  onCancelled,
+  reportPipelineError,
+  setDeploymentStatus,
+  routeIssuesWarning,
+  type LifecycleContext,
+} from "./deployment-lifecycle";
 import { auditPorts } from "./port-audit.service";
-import { auditStaticOutput, staticOutputTargets } from "./output-audit.service";
+import {
+  allocateAndReservePinnedHostPort,
+  convergeTargetHostPortClaims,
+  convergeTargetHostPortClaimsUnlocked,
+  findOwnedPinnedHostPort,
+  prepareTargetPinnedHostPorts,
+  reserveTargetPinnedHostPort,
+  withHostPortTargetLock,
+  type AllocatedPinnedHostPort,
+} from "./pinned-host-ports";
+import type { HostPortTargetIdentity } from "../../lib/host-port-target";
+import { reserveResolvedLoopbackRoutes } from "./observed-host-port-claims";
+import { verifyDeployedContainers } from "./stability-audit.service";
+import {
+  resolveReadinessGate,
+  runReadinessGate,
+  type ResolvedReadinessGate,
+} from "./readiness-gate";
+import {
+  auditStaticOutput,
+  describeOutputFinding,
+  outputFindingIsBroken,
+  staticOutputTargets,
+} from "./output-audit.service";
 import { createBuildConfig } from "./build-config";
+import {
+  pinnedAppImage,
+  pinnedStaticDir,
+  refreshAppDeploymentId,
+  snapshotNeedsGitSource,
+} from "./pinned-artifacts";
+import { snapshotToClass } from "./deployment-class";
+import { shouldRetainArtifact } from "./rollback/restore-plan";
 import { resolveClonePlan } from "./clone-plan";
 import { collapseTerminalLogs } from "./terminal-logs";
+import { sanitizeLogsForPersistence } from "./build-log-sanitize";
 import {
   executeComposePipeline,
   resolveProjectServicePreflightServices,
   shouldUseProjectServicePipeline,
 } from "./compose";
 import { serviceKind, type DeployableService } from "../../lib/deployable-service";
-import {
-  resolveProjectRouteState,
-} from "../domains/project-route.service";
+import { resolveProjectRouteState } from "../domains/project-route.service";
 import { type DeploymentConfigSnapshot } from "./build.service";
 import { swarmDeploy } from "./swarm/deploy.service";
 import * as settingsService from "../settings/settings.service";
@@ -165,8 +221,14 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
   if (!buildSession) return null;
 
-  // Flip the row to "building" SYNCHRONOUSLY before firing the async
-  // `executeBuildAndDeploy`. Without this, callers that chain
+  // Claim the durable execution lease SYNCHRONOUSLY before firing the async
+  // `executeBuildAndDeploy`. This both prevents duplicate kickoff and closes the
+  // create-session/delete gap: the claim locks the same live project row as
+  // teardown, then atomically changes queued→building and stamps
+  // build_session.startedAt. If deletion or another kickoff won, absolutely no
+  // worker is launched from this stale caller.
+  //
+  // Without the synchronous queued→building transition, callers that chain
   // `redeployBuildSession` → `startBuild` (the dashboard does this on
   // every redeploy, see [build/[id]/page.tsx][1]) hit a race:
   //
@@ -182,25 +244,49 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
   //      stream - which is what users were seeing.
   //
   // [1]: apps/dashboard/src/app/(dashboard)/(deployment)/build/[id]/page.tsx
-  await repos.deployment.updateStatus(dep.id, "building").catch(() => {
-    // Best effort - if this fails, the worst case is the old race
-    // returns. executeBuildAndDeploy will set the status itself when it
-    // starts.
+  const claimed = await repos.deployment.claimBuildExecution({
+    deploymentId: dep.id,
+    buildSessionId: buildSession.id,
+    projectId: project.id,
+    organizationId: dep.organizationId,
   });
+  if (claimed === "state_changed") return buildSession.id;
+  if (claimed === "project_unavailable") {
+    await repos.deployment.cancelUnclaimedBuild({
+      deploymentId: dep.id,
+      buildSessionId: buildSession.id,
+      projectId: project.id,
+    });
+    throw new Error("Deployment could not start because the project is being deleted");
+  }
   dep.status = "building";
 
   sessionManager.createSession(dep.id, project.id);
 
-  void executeBuildAndDeploy(project, dep, buildSession.id).catch(async (err) => {
-    console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
-    // executeBuildAndDeploy's inner try/catch only arms onFailure() after
-    // snapshot + route state resolve. Anything that throws before that
-    // (missing snapshot, route lookup crash, runtime resolution) would
-    // otherwise leave the row queued forever - this guarantees the
-    // deployment is marked failed and the SSE stream gets a closing
-    // message.
-    await markDeploymentFailedFromOutside(dep.id, err);
-  });
+  void (async () => {
+    try {
+      await executeBuildAndDeploy(project, dep, buildSession.id);
+    } catch (err) {
+      console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
+      // executeBuildAndDeploy's inner try/catch only arms onFailure() after
+      // snapshot + route state resolve. Anything that throws before that
+      // (missing snapshot, route lookup crash, runtime resolution) would
+      // otherwise leave the row queued forever - this guarantees the
+      // deployment is marked failed and the SSE stream gets a closing
+      // message.
+      await markDeploymentFailedFromOutside(dep.id, err);
+    } finally {
+      // This is the quiescence acknowledgement used by project teardown. It is
+      // deliberately later than every lifecycle hook, cleanup, transport
+      // disposal, and fallback error write. A `cancelled` status by itself does
+      // not prove the deploy-phase worker stopped touching the host.
+      await repos.deployment
+        .acknowledgeBuildExecutionFinished(buildSession.id)
+        .catch((err) =>
+          console.error(`[DEPLOY] Failed to acknowledge worker completion for ${dep.id}:`, err),
+        );
+    }
+  })();
 
   return buildSession.id;
 }
@@ -215,22 +301,31 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
  * skips. Otherwise marks failed, flushes a final log line through SSE so the
  * dashboard stops spinning, and ends the session.
  */
-async function markDeploymentFailedFromOutside(deploymentId: string, error: unknown): Promise<void> {
+async function markDeploymentFailedFromOutside(
+  deploymentId: string,
+  error: unknown,
+): Promise<void> {
   const message = safeErrorMessage(error);
   try {
     const dep = await repos.deployment.findById(deploymentId).catch(() => null);
     if (!dep) return;
-    if (["failed", "ready", "cancelled"].includes(dep.status)) {
+    if (["failed", "ready", "cancelled", "action_required", "no_changes"].includes(dep.status)) {
       // Inner onFailure already ran (or the deploy somehow succeeded). Nothing to do.
+      // `action_required` counts as "already ran": onFailure wrote it deliberately
+      // along with the blocker's code + details, and this function's blind
+      // `updateStatus(id, "failed")` below would erase that distinction.
       return;
     }
     await repos.deployment.updateStatus(deploymentId, "failed").catch(() => {});
-    const buildSession = await repos.deployment.findBuildSessionByDeploymentId(deploymentId).catch(() => null);
+    const buildSession = await repos.deployment
+      .findBuildSessionByDeploymentId(deploymentId)
+      .catch(() => null);
     if (buildSession) {
-      await repos.deployment.updateBuildSession(buildSession.id, {
-        status: "failed",
-        finishedAt: new Date(),
-      }).catch(() => {});
+      await repos.deployment
+        .updateBuildSession(buildSession.id, {
+          status: "failed",
+        })
+        .catch(() => {});
     }
     // SSE: surface the error to anyone watching the stream and close it.
     sessionManager.appendLog(deploymentId, {
@@ -240,36 +335,33 @@ async function markDeploymentFailedFromOutside(deploymentId: string, error: unkn
     });
     sessionManager.updateStatus(deploymentId, "failed");
   } catch (handlerErr) {
-    console.error(`[DEPLOY] markDeploymentFailedFromOutside crashed for ${deploymentId}:`, handlerErr);
+    console.error(
+      `[DEPLOY] markDeploymentFailedFromOutside crashed for ${deploymentId}:`,
+      handlerErr,
+    );
   }
 }
 
-
 /**
- * Hand the previous-active deployment to the rollback orchestrator: it
- * archives the prior artifact (so snapshot rollback stays possible), sets
- * artifact_retained_at on both rows, and prunes beyond the rollback
- * window. Git-strategy deploys SKIP this — rollback re-clones at
- * commit_sha_before, so there's no artifact to archive. Best-effort: the
- * new deployment is already live, so a failure here only affects rollback
- * eligibility, never the deploy outcome.
+ * Hand the finished deployment to the rollback orchestrator: it retains the
+ * previous release (stopping a durable unit when the project keeps artifacts),
+ * marks both rows retained, prunes past the rollback window, and reclaims
+ * superseded images.
+ *
+ * Runs for EVERY successful deploy — the retention *preference* is read live
+ * from the project inside the orchestrator, not frozen onto the deployment. The
+ * old `rollbackStrategy === "git"` bail-out here is exactly what left
+ * `artifact_retained_at` null for every default project, which in turn made the
+ * dashboard's Rollback action permanently unavailable.
+ *
+ * Best-effort: the new deployment is already live, so a failure here can only
+ * affect restore bookkeeping, never the deploy outcome.
  */
 async function archivePreviousDeployment(
   dep: Deployment,
   project: Project,
   logger: BuildLogger,
 ): Promise<void> {
-  if (dep.rollbackStrategy === "git") {
-    logger.log(
-      "Skipping snapshot/artifact archive — rollback strategy is 'git' (rollback re-clones at commit_sha_before).",
-    );
-    // Archive is skipped, but old BUILT IMAGES must still be reclaimed — this is
-    // the one path that never reached onDeploymentReady's image reap, so
-    // git-strategy projects leaked every prior build. Best-effort; images:gc backstops.
-    const { reapProjectImagesSafe } = await import("./image-gc");
-    await reapProjectImagesSafe(project, (m) => logger.log(`${m}\n`, "warn"));
-    return;
-  }
   try {
     const { onDeploymentReady } = await import("./rollback");
     const finalDep = await repos.deployment.findById(dep.id);
@@ -281,10 +373,103 @@ async function archivePreviousDeployment(
     }
   } catch (err) {
     logger.log(
-      `Warning: failed to archive previous deployment for rollback: ${safeErrorMessage(err)}\n`,
+      `Warning: failed to record retention for rollback: ${safeErrorMessage(err)}\n`,
       "warn",
     );
   }
+}
+
+/**
+ * A build that isn't one: this release's artifact is already on the host, so
+ * hand the deploy step a BuildResult pointing straight at it.
+ *
+ * Two shapes, because "the artifact" differs by deploy kind:
+ *   - an IMAGE tag (server apps) — verified with the daemon.
+ *   - a release DIRECTORY (static sites, which have no image) — verified on the
+ *     host filesystem. The deploy step promotes those files again, exactly as it
+ *     promotes a freshly-extracted build.
+ *
+ * Ordinary rollback pins return null when their artifact has been reclaimed,
+ * which lets the caller rebuild from source. A refresh marker is stricter: Apply
+ * explicitly promises no rebuild, so a missing active artifact throws and tells
+ * the user to Redeploy instead of silently shipping different code.
+ */
+async function reuseRetainedArtifact(opts: {
+  snapshot: DeploymentConfigSnapshot;
+  runtime: { name: string };
+  buildSessionId: string;
+  targetExecutor?: CommandExecutor | null;
+  /** Reaches the static release tree; see `sharedMountExecutor`. */
+  staticExecutor?: CommandExecutor | null;
+  logger: BuildLogger;
+}): Promise<BuildResult | null> {
+  const { snapshot, runtime, buildSessionId, targetExecutor, logger } = opts;
+
+  const reuse = (artifactRef: string) => {
+    logger.step(
+      "build",
+      "completed",
+      `Reusing retained artifact ${artifactRef} — no rebuild needed`,
+    );
+    return {
+      sessionId: buildSessionId,
+      status: "deploying" as const,
+      imageRef: artifactRef,
+      durationMs: 0,
+      startCommand: snapshot.startCommand,
+    };
+  };
+  const gone = (artifactRef: string) => {
+    logger.log(
+      `Retained artifact ${artifactRef} is no longer on the host — rebuilding from source.\n`,
+      "warn",
+    );
+    return null;
+  };
+
+  const staticDir = pinnedStaticDir(snapshot);
+  if (staticDir) {
+    // A pin we cannot VERIFY is a pin we don't trust: rebuild rather than fail the
+    // deploy, which is what an executor that can't reach the tree at all would do.
+    const exists = await (opts.staticExecutor ?? targetExecutor)
+      ?.exists(staticDir)
+      .catch(() => false);
+    return exists ? reuse(staticDir) : gone(staticDir);
+  }
+
+  const refreshFrom = refreshAppDeploymentId(snapshot);
+  if (refreshFrom) {
+    if (runtime instanceof BareRuntime) {
+      const release = await runtime.retainedReleaseArtifact(refreshFrom);
+      if (release) return reuse(release);
+      throw new Error(
+        `Cannot refresh without rebuilding: the active release ${refreshFrom} is no longer retained. Use Redeploy instead.`,
+      );
+    }
+
+    if (!(runtime instanceof DockerRuntime)) {
+      throw new Error(
+        `Apply without rebuilding is not supported by the ${runtime.name} runtime. Use Redeploy instead.`,
+      );
+    }
+
+    const image = pinnedAppImage(snapshot);
+    if (!image || !(await runtime.imageExistsLocally(image).catch(() => false))) {
+      throw new Error(
+        "Cannot refresh without rebuilding because the active container image is unavailable. Use Redeploy instead.",
+      );
+    }
+    return reuse(image);
+  }
+
+  const image = pinnedAppImage(snapshot);
+  if (!image) return null;
+  // Only Docker's artifact is an image; any other runtime takes its normal path.
+  const present =
+    runtime instanceof DockerRuntime
+      ? await runtime.imageExistsLocally(image).catch(() => false)
+      : false;
+  return present ? reuse(image) : gone(image);
 }
 
 /**
@@ -324,11 +509,21 @@ export async function finalizeComposeDeploy(opts: {
         const warningMessage =
           (composeDeployment.warningMessage as string | undefined) ||
           "Some services failed — see service deployments for details.";
+        // Trace it here too: this was SSE-meta-only, so the partial-failure reason
+        // never made it into the persisted log (see the edge-warning note in
+        // executeServerDeploy — same fix, same reason).
+        logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
         await setDeploymentStatus(dep.id, "partial_failure", {
           extra: { meta: { ...meta, composeDeployment } },
           sse: {
             status: "ready",
-            meta: { warningMessage },
+            // `decisionPending` explicitly, because THIS is the only thing that means a
+            // keep/reject decision is being held. The live event used to carry only
+            // `warningMessage`, so the client inferred the decision from "a warning exists on
+            // success" — and every OTHER warning then opened the failed-services modal. A
+            // successful deploy whose domains have no cert yet showed "Deployment finished with
+            // failed services · 0 of 5 services failed · Retry 0 Failed Services".
+            meta: { warningMessage, decisionPending: true },
           },
         });
       } else if (rolled === "failed") {
@@ -352,7 +547,6 @@ export async function finalizeComposeDeploy(opts: {
           dep,
           serviceDeploymentId: sd.id,
           serviceName: sd.serviceName,
-          phase: "complete",
           conclusion,
           output: {
             title: `${sd.serviceName} ${conclusion}`,
@@ -377,6 +571,10 @@ export async function finalizeComposeDeploy(opts: {
 async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSessionId: string) {
   const plat = platform();
   let { runtime, routing, ssl, system } = plat;
+  // Every transport THIS deploy opens, released in the `finally` at the bottom.
+  // `plat`'s own runtime is the process-wide singleton and is deliberately never
+  // added: disposing it would close the control plane's own Docker transport.
+  const transports = new Set<RuntimeAdapter>();
 
   const snapshot = dep.meta as DeploymentConfigSnapshot | null;
   if (!snapshot) {
@@ -395,8 +593,15 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
   // Single logger instance for the entire build→deploy lifecycle
   const logger = new BuildLogger(logCallback);
 
-  /** Collapsed logs for DB persistence - resolves \r overwrites to final state. */
-  const persistLogs = () => collapseTerminalLogs(logs);
+  /**
+   * Collapsed logs for DB persistence - resolves \r overwrites to final state,
+   * then sanitized: the column is jsonb, which Postgres refuses to store when
+   * the payload carries a NUL or an unpaired surrogate. Raw build output does
+   * (a failed docker exec surfaces the multiplexed stream, frame headers and
+   * all), and the rejected UPDATE used to be read as a deploy failure. This is
+   * the ONE place the persisted array is built.
+   */
+  const persistLogs = () => sanitizeLogsForPersistence(collapseTerminalLogs(logs));
 
   const provisioned: { imageRef?: string } = {};
   const ctx: LifecycleContext = {
@@ -415,20 +620,28 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // but keep a BARE serve/lifecycle identity (files served by the edge — a
     // persisted "docker" would make rollback/purge 404-no-op on the release dir and
     // leak it). Cloud static + Docker-less desktop-local static keep their own mode.
-    const willRunServices = (await resolveServicePipelineMode(project, snapshot)).useServicePipeline;
+    const willRunServices = (await resolveServicePipelineMode(project, snapshot))
+      .useServicePipeline;
+    // The runtime/workload axis, resolved from the frozen snapshot triple
+    // (issue #538). `web` | `worker` | `static` replaces the old `hasServer`
+    // boolean, which couldn't tell a portless worker from a static site.
+    const workload = snapshotToClass(snapshot).workload;
     const runtimeModes = resolveBuildRuntimeModes({
-      hasServer: !!snapshot.hasServer,
+      workload,
       serverId: snapshot.serverId,
       baseTarget: plat.target,
       effectiveTarget: resolveEffectiveTarget(plat.target, snapshot),
       willRunServices,
       orchestratorMode: snapshot.orchestratorMode,
+      hasPrebuiltImage: Boolean(snapshot.releaseImageRef),
     });
     if (runtimeModes.buildRuntimeMode === "docker") {
       logger.log(
         willRunServices
           ? "→ Services require the Docker runtime — running this service deploy on Docker.\n"
-          : "→ Static build runs in a Docker sandbox; files are served by the edge.\n",
+          : snapshot.releaseImageRef
+            ? "→ Prebuilt release image requires Docker — pulling and running it without a source build.\n"
+            : "→ Static build runs in a Docker sandbox; files are served by the edge.\n",
       );
     }
 
@@ -447,6 +660,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     ssl = resolved.platform.ssl;
     system = resolved.platform.system;
     ctx.runtime = runtime;
+    if (runtime !== plat.runtime) transports.add(runtime);
     // Persist the serve/lifecycle identity ONCE (no undo): bare for static
     // file-serve, docker for services, unchanged otherwise.
     if (runtimeModes.serveRuntimeMode !== undefined) {
@@ -456,13 +670,16 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // Build + deploy routing, keyed off the RESOLVED runtime (ground truth) — this
     // is the one place the old scattered `instanceof` checks now live.
     const deployRouting = resolveDeployRouting({
-      hasServer: !!snapshot.hasServer,
+      workload,
       runtimeName: runtime.name,
       outputDirectory: snapshot.outputDirectory,
     });
 
     const usesManagedRouting = resolved.usesManagedRouting;
     const targetExecutor: CommandExecutor | null = resolved.platform.executor;
+    // Static releases live on a mount the api container shares 1:1 with its host,
+    // so on the local box they need no host channel — see `sharedMountExecutor`.
+    const staticExecutor = await sharedMountExecutor(resolved.platform);
 
     // Surface the resolved deploy path so the operator can SEE where it lands —
     // in particular the self-hosted sandbox-vs-direct runtime, the choice that
@@ -471,17 +688,25 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       `→ Deploy target: ${resolved.effectiveTarget}` +
         (resolved.serverId ? ` (server ${resolved.serverId.slice(0, 8)})` : "") +
         ` · runtime: ${
-          !snapshot.hasServer
+          workload === "static"
             ? "static (built in a Docker sandbox, served as files by the edge)"
-            : resolved.runtimeMode === "docker"
-              ? "sandboxed (Docker container)"
-              : "direct (host process)"
+            : workload === "worker"
+              ? "worker (supervised container, no port, no route)"
+              : resolved.runtimeMode === "docker"
+                ? "sandboxed (Docker container)"
+                : "direct (host process)"
         }\n`,
     );
 
+    // Say ONCE, next to the target it describes, that this box can't drive its host
+    // (#509). Deliberately outside any `routeStrategy` branch: the port-scan hint it
+    // replaces only appeared under loopback-port, which is half of why a demoted
+    // channel reached the first crashed container unannounced. Never gates the deploy.
+    const hostNotice = hostChannelDeployNotice(targetExecutor);
+    if (hostNotice) logger.log(`${hostNotice}\n`, "warn");
+
     await repos.deployment.updateBuildSession(buildSessionId, {
       status: "building",
-      startedAt: new Date(),
     });
     await setDeploymentStatus(dep.id, "building");
 
@@ -491,13 +716,10 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       // Keep it before those container-specific stages so a failure can never
       // accidentally clean up scheduler-owned tasks.
       const failedEnvKeys: string[] = [];
-      const envMap = decryptEnvMap(
-        (dep.envVars ?? {}) as Record<string, string>,
-        (key, error) => {
-          failedEnvKeys.push(key);
-          console.warn(`[swarm-deploy] failed to decrypt env var ${key}: ${safeErrorMessage(error)}`);
-        },
-      );
+      const envMap = decryptEnvMap((dep.envVars ?? {}) as Record<string, string>, (key, error) => {
+        failedEnvKeys.push(key);
+        console.warn(`[swarm-deploy] failed to decrypt env var ${key}: ${safeErrorMessage(error)}`);
+      });
       if (failedEnvKeys.length > 0) {
         logger.log(
           `⚠ ${failedEnvKeys.length} environment variable(s) could not be decrypted and were skipped: ${failedEnvKeys.join(", ")}.`,
@@ -517,11 +739,8 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           // ordinary stepper still ignores these IDs, while the Swarm detail
           // view can reconstruct source/validate/build/apply/converge/route
           // after an SSE reconnect or API restart.
-          step: (phase, state, message) => logger.step(
-            phase,
-            state === "started" ? "running" : state,
-            message,
-          ),
+          step: (phase, state, message) =>
+            logger.step(phase, state === "started" ? "running" : state, message),
         },
       });
       const durationMs = Date.now() - (dep.createdAt?.getTime?.() ?? Date.now());
@@ -564,13 +783,22 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       // Best-effort: fan-out is a dashboard concern. A crash here must
       // not block the main build.
       console.warn(`[build] preCreateServiceDeployments crashed for ${dep.id}:`, err);
-      return new Map<string, { id: string; serviceId: string; serviceName: string; targeted: boolean }>();
+      return new Map<
+        string,
+        { id: string; serviceId: string; serviceName: string; targeted: boolean }
+      >();
     });
 
     await emitInitialServiceChecks(serviceFanOut, project, dep);
 
-    const prodResources = withDefaults(snapshot.resources);
-    const buildResources = withDefaults(snapshot.buildResources, DEFAULT_BUILD_RESOURCE_CONFIG);
+    // Target-aware: cloud falls back to the metered free tier, self-hosted falls
+    // back to NO limits (the operator's box is the cap). Using the cloud default
+    // on both is what pinned every self-hosted container to 512 MB.
+    const isCloudDeploy = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
+    const prodResources = resolveRuntimeResources(snapshot.resources, { isCloud: isCloudDeploy });
+    const buildResources = resolveBuildResources(snapshot.buildResources, {
+      isCloud: isCloudDeploy,
+    });
 
     // Decrypt env vars from deployment (self-contained). decryptEnvMap
     // drops keys that fail decryption rather than leaking ciphertext into
@@ -580,9 +808,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       (dep.envVars ?? {}) as Record<string, string>,
       (key: string, err: unknown) => {
         failedEnvKeys.push(key);
-        console.warn(
-          `[build] failed to decrypt env var ${key}: ${safeErrorMessage(err)}`,
-        );
+        console.warn(`[build] failed to decrypt env var ${key}: ${safeErrorMessage(err)}`);
       },
     );
     // Surface dropped env in the BUILD LOG (not just the server console) so a
@@ -607,6 +833,12 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       snapshot.buildStrategy,
       { deployTarget: snapshot.deployTarget },
     );
+    // Written BACK, not just held locally. Without this the resolved value reached
+    // only the readers in this function (clone planning), while `createBuildConfig`
+    // further down copies `snapshot.buildStrategy` verbatim into the adapter's
+    // BuildConfig — so the clone plan saw "server" and the runtime saw the frozen
+    // "local". One snapshot, one answer.
+    snapshot.buildStrategy = buildStrategy;
     const buildEnv = buildScopedEnvVars(envMap);
 
     // Resolve a fresh GitHub token for cloning private repos.
@@ -629,7 +861,10 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
 
     // Resolved up front so the relay-fallback gate below can exclude
     // multi-service builds (whose clone path differs).
-    const useServicePipeline = (await resolveServicePipelineMode(project, snapshot)).useServicePipeline;
+    const { useServicePipeline, servicePreflightServices } = await resolveServicePipelineMode(
+      project,
+      snapshot,
+    );
 
     // "Clone on the server" — clone the repo directly on the remote build host
     // instead of cloning on the orchestrator and transferring the context. The
@@ -651,8 +886,9 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       isDesktop: plat.target === "desktop",
       forwardGitCredentials: snapshot.forwardGitCredentials,
       repoIsGithub: !!project.gitOwner,
+      dockerTransport: runtime instanceof DockerRuntime ? runtime.transport.kind : undefined,
     });
-    const cloneOnServer = clonePlan.runsOnServer;
+    const cloneOnTarget = clonePlan.cloneRunsOnTarget;
     // The relay needs a real SSH reverse tunnel — `reverseForward` exists on every
     // SSH executor and is absent only on a LocalExecutor (relay.ts). This is the
     // TRUE capability gate (not the server's SSH auth method); combined with the
@@ -669,11 +905,17 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // so the two can't disagree. One-click app installs (Convex, n8n, …) are
     // exactly this case: image services, hasBuild=false. This is what makes the
     // app-install and advanced-deploy paths converge on one behavior.
-    const enabledSvcs = (snapshot.composeServices ?? []).filter((s) => s.enabled !== false);
-    const needsGitSource =
-      enabledSvcs.length > 0
-        ? enabledSvcs.some((s) => s.kind === "monorepo" || !!s.build || !!s.dockerfile)
-        : snapshot.hasBuild !== false;
+    //
+    // A PINNED artifact (rollback restore / migration cutover) is git-free for
+    // the same reason: its image already exists, so nothing is cloned or built.
+    // snapshotNeedsGitSource owns both answers — see pinned-artifacts.ts.
+    //
+    // The services list is REQUIRED for the image-only exemption: without it the
+    // helper falls back to the project-level hasBuild flag, which a webhook- or
+    // adopted-Docker-created snapshot may leave set even though every service runs
+    // a registry image. Same arguments preflight passes (preflight.ts) — the two
+    // must agree or a rollback resolves a git token it has no use for.
+    const needsGitSource = snapshotNeedsGitSource(snapshot, servicePreflightServices);
 
     const gitCred: Awaited<ReturnType<typeof resolveBuildGitToken>> = needsGitSource
       ? await resolveBuildGitToken({
@@ -685,18 +927,18 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           projectId: project.id,
           owner: project.gitOwner ?? undefined,
           repo: project.gitRepo ?? undefined,
-          buildStrategy: clonePlan.cloneBuildStrategy,
+          buildStrategy: clonePlan.cloneCredentialPurpose,
           // Only meaningful for an on-server clone — lets a per-server GitHub auth
           // config (device token / PAT / SSH key) win for that server.
-          serverId: clonePlan.runsOnServer ? resolved.serverId : null,
+          serverId: clonePlan.cloneRunsOnTarget ? resolved.serverId : null,
           allowRelayFallback,
           // Docker clone-on-server can degrade to an api-host clone, so resolve
           // gracefully (a LOCAL fallback credential, flagged apiHostFallback) instead
           // of hard-failing at token resolution after the server is provisioned.
-          allowApiHostFallback: clonePlan.dockerClonesOnServer,
+          allowApiHostFallback: clonePlan.dockerClonesOnTarget,
           // Lets the chain ask the target server whether it already reaches this
           // repo on its own — only consulted for a clone that runs THERE.
-          serverExecutor: clonePlan.runsOnServer ? targetExecutor : null,
+          serverExecutor: clonePlan.cloneRunsOnTarget ? targetExecutor : null,
           repoUrl: snapshot.repoUrl,
           onLog: (message) => logger.log(message),
         })
@@ -710,15 +952,12 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // nothing qualifies, fall back to cloning on the API host and transferring the
     // context — warn, never hard-fail. (The BARE runtime always clones on the
     // target and is gated by preflight separately, so this only changes DOCKER.)
-    const cloneCredentialAvailable =
-      !!gitCred.ambient ||
-      gitCred.relay === true ||
-      !!gitCred.ssh ||
-      gitCred.anonymous === true ||
-      (!!gitCred.token && !gitCred.apiHostFallback);
-    const effectiveCloneOnServer =
-      cloneOnServer && (runtime.name === "bare" || cloneCredentialAvailable);
-    if (cloneOnServer && runtime.name !== "bare" && !cloneCredentialAvailable) {
+    // The rule itself lives with the credential type (`cloneOnServerAvailable`), so a capability
+    // check shown in the picker and the decision made here can never disagree.
+    const cloneCredentialAvailable = cloneOnServerAvailable(gitCred).available;
+    const effectiveCloneOnTarget =
+      cloneOnTarget && (runtime.name === "bare" || cloneCredentialAvailable);
+    if (cloneOnTarget && runtime.name !== "bare" && !cloneCredentialAvailable) {
       logger.log(
         "Clone-on-server was requested, but nothing can authenticate the clone on the build host — " +
           "the server has no GitHub identity of its own, no App/PAT token is available, and no git " +
@@ -728,7 +967,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           "add a per-project clone token.",
         "warn",
       );
-    } else if (effectiveCloneOnServer && gitCred.relay) {
+    } else if (effectiveCloneOnTarget && gitCred.relay) {
       logger.log(
         "Cloning on the build host via your forwarded git identity — the credential is used for this build only and never persisted on the server.",
       );
@@ -749,8 +988,10 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       gitToken: gitCred.token,
     });
     // A static app builds via the minimal nginx image (generateStaticDockerfile);
-    // only this flag selects it. Bare builds ignore it.
-    buildConfig.isStatic = !snapshot.hasServer;
+    // only this flag selects it. Bare builds ignore it. A worker also has
+    // hasServer=false but must build its OWN image, not the static nginx one —
+    // so key strictly off the static workload, not `!hasServer` (issue #538-B).
+    buildConfig.isStatic = workload === "static";
     // Folder-upload cloud deploy: the browser uploaded the source straight into
     // a pre-provisioned workspace — adopt it and skip clone + transfer. (The
     // self-hosted upload path instead rides snapshot.localPath, handled above.)
@@ -762,14 +1003,14 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // orchestrator transferring the context. The credential arrives either via
     // the relay (gitCredentialHelperPath, set once the relay is open) or the
     // short-lived token already on buildConfig.gitToken.
-    buildConfig.cloneOnServer = effectiveCloneOnServer;
+    buildConfig.cloneOnServer = effectiveCloneOnTarget;
     // Per-server SSH clone credential (ssh-server-key / ssh-deploy-key mode).
     // Consumed by the adapter clone step (git@github.com + GIT_SSH_COMMAND).
     if (gitCred.ssh) buildConfig.gitSsh = gitCred.ssh;
     // The server authenticates with its own credentials. Gated on the clone
     // actually running there: on the api-host path this names an identity that
     // isn't ours to use, and the adapter would find no credential at all.
-    if (gitCred.ambient && effectiveCloneOnServer) buildConfig.gitAmbient = gitCred.ambient;
+    if (gitCred.ambient && effectiveCloneOnTarget) buildConfig.gitAmbient = gitCred.ambient;
 
     // Desktop git-credential relay opener, shared by the single-app and compose
     // paths. Opens the reverse tunnel + remote helper (nothing persisted on the
@@ -803,13 +1044,21 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       return relay;
     };
 
-    // Pre-deploy backups — fire for ALL deploy modes (single-app, static-edge,
-    // AND compose) before any teardown, so a destructive cutover never runs
-    // without a backup. Previously this lived in executeServerDeploy only, so
-    // the compose path (which tears down old containers in deployComposeServices)
-    // ran with NO backup. Best-effort + policy-gated: we await only the enqueue
-    // (durably queued before destruction), never the run — a failing/slow backup
-    // must not block the deploy.
+    // Pre-deploy backups — the project's ONLY call site, deliberately here:
+    // outside the mode branch so single-app, static-edge AND compose deploys are
+    // covered, and outside the entry points so the button, a webhook push, a CLI
+    // deploy, an app update and a rollback rebuild all reach it through
+    // kickoffBuild. Both halves of that were bugs: it once lived in
+    // executeServerDeploy only (the compose path, which tears down old containers
+    // in deployComposeServices, ran with NO backup) and it once had a second call
+    // in redeployBuildSession behind an opt-in only the app-update path passed
+    // (which enqueued a duplicate run per policy for the same cutover). Adding
+    // another call anywhere in this path duplicates runs, it does not add safety.
+    //
+    // Best-effort + policy-gated: we await only the enqueue (durably queued
+    // before anything is destroyed), never the run — a failing or slow backup
+    // must not block the deploy. See triggers/pre-deploy.ts for why "before the
+    // build" is what gives the run time to finish before the cutover.
     try {
       const preBackup = await firePreDeployBackups({
         projectId: project.id,
@@ -830,11 +1079,16 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       // monorepo entry in causes a ghost compose-kind row to be inserted
       // alongside the real monorepo row (no DB unique constraint on
       // (projectId, name)). Filter to compose-kind before handing it off.
-      const composeOnly = snapshot.composeServices?.filter(
-        (s) => serviceKind(s) === "compose",
-      );
+      const composeOnly = snapshot.composeServices?.filter((s) => serviceKind(s) === "compose");
       if (composeOnly?.length) {
-        await repos.service.syncFromCompose(project.id, composeOnly);
+        // removeMissing: false — this list is the release's frozen snapshot, not
+        // an authoritative inventory. On a rollback it predates services added
+        // since; on any deploy the delete cascades `service_deployment` and so
+        // empties the input deployComposeServices reaps de-listed containers
+        // from. Removal belongs to the explicit reconcile path.
+        await repos.service.syncFromCompose(project.id, composeOnly, {
+          removeMissing: false,
+        });
       }
 
       // Clone-on-server for compose: open one repo-pinned relay for the whole
@@ -850,6 +1104,8 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           ssl,
           system,
           executor: targetExecutor,
+          localHost: resolved.platform.localHost,
+          hostPortTarget: resolved.hostPortTarget,
           usesManagedRouting,
           logger,
           ctx,
@@ -861,8 +1117,8 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           gitToken: gitCred.token,
           gitCredentialHelperPath: composeRelay?.scriptPath,
           gitSsh: gitCred.ssh,
-          gitAmbient: effectiveCloneOnServer ? gitCred.ambient : undefined,
-          cloneOnServer: effectiveCloneOnServer,
+          gitAmbient: effectiveCloneOnTarget ? gitCred.ambient : undefined,
+          cloneOnServer: effectiveCloneOnTarget,
         });
       } finally {
         if (composeRelay) await composeRelay.close().catch(() => {});
@@ -889,37 +1145,99 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       );
     }
 
-    // Desktop git credential relay (fallback): the operator opted this server
-    // into forwarding and there's no App/PAT token. Open the relay (reverse
-    // tunnel + remote helper) right before the build so the clone fetches the
-    // gh identity on demand — nothing persisted on the build host — and tear it
-    // down in `finally` the moment the build (and its clone) finishes.
-    const deployRelay = await openRelayIfNeeded();
-    if (deployRelay) {
-      buildConfig.gitCredentialHelperPath = deployRelay.scriptPath;
+    const buildFromSource = async (): Promise<Awaited<ReturnType<typeof runtime.build>>> => {
+      // Desktop git credential relay (fallback): the operator opted this server
+      // into forwarding and there's no App/PAT token. Open the relay (reverse
+      // tunnel + remote helper) right before the build so the clone fetches the
+      // gh identity on demand — nothing persisted on the build host — and tear it
+      // down in `finally` the moment the build (and its clone) finishes.
+      const deployRelay = await openRelayIfNeeded();
+      if (deployRelay) {
+        buildConfig.gitCredentialHelperPath = deployRelay.scriptPath;
+      }
+      try {
+        // static-sandbox: build in a Docker sandbox, then extract the doc-root to a
+        // host dir the edge serves. Everything else (server apps, bare-built static
+        // on a Docker-less local box, cloud) builds normally.
+        if (deployRouting.buildMode === "static-sandbox") {
+          // buildMode is derived from runtime.name === "docker", so the cast is sound.
+          return await (runtime as DockerRuntime).buildStaticToHost(
+            buildConfig,
+            `${STATIC_RELEASE_BASE}/.builds/${buildSessionId}`,
+            logger,
+          );
+        }
+        return await runtime.build(buildConfig, logger);
+      } finally {
+        // Reverse tunnel + remote helper script torn down regardless of outcome —
+        // the credential is reachable only for the build's duration.
+        if (deployRelay) await deployRelay.close().catch(() => {});
+      }
+    };
+
+    // A restore ships the retained artifact PINNED, so there's nothing to build,
+    // clone or relay a credential for (see reuseRetainedArtifact). A pin is a
+    // hint, never a guarantee — if the artifact is gone we build from source.
+    const reusedArtifact = await reuseRetainedArtifact({
+      snapshot,
+      runtime,
+      buildSessionId,
+      targetExecutor,
+      staticExecutor,
+      logger,
+    });
+    let preparedReleaseImage: BuildResult | null = null;
+    const releaseImageRef = snapshot.releaseImageRef?.trim();
+    if (!reusedArtifact && releaseImageRef) {
+      if (!runtime.supports("prebuiltImage") || !runtime.prepareImage) {
+        throw new Error(
+          `The ${runtime.name} runtime cannot deploy a prebuilt container image. Choose Docker or Cloud.`,
+        );
+      }
+      preparedReleaseImage = await runtime.prepareImage(
+        {
+          sessionId: buildSessionId,
+          projectId: project.id,
+          slug: project.slug ?? undefined,
+          imageRef: releaseImageRef,
+          envVars: {
+            ...envMap,
+            ...(workload === "web" ? { PORT: String(snapshot.port) } : {}),
+          },
+          resources: prodResources,
+          // An explicit update is the one operation that promises to refresh a
+          // mutable upstream ref. Versioned release refs are otherwise reused
+          // when already present on the target.
+          forcePull: dep.trigger === "update",
+        },
+        logger,
+      );
+    }
+    const buildResult = reusedArtifact ?? preparedReleaseImage ?? (await buildFromSource());
+
+    // ONLY an artifact this deploy PRODUCED goes on the cleanup list. `provisioned`
+    // exists so onFailure/onCancelled can reclaim a half-built image or build dir,
+    // and a REUSED artifact is not one: it is the target release's own retained
+    // artifact, which this deploy is restoring, not making. Recording it here meant
+    // a rollback that failed for any transient reason — the health gate, a route
+    // apply, a dropped SSH — destroyed the release it was restoring. For a static
+    // release that is an `rm -rf` of `releases/<depId>`, so the retryable rollback
+    // came back as ARTIFACT_GONE and a release with no commit became permanently
+    // un-restorable; for a server app it is `removeImage` on the retained tag. A
+    // PIN is meant to be exempt from reclamation, and reclaiming it on the way to
+    // reporting a FAILED deploy is the one moment nothing else will notice.
+    if (!reusedArtifact && buildResult.artifactOwned !== false) {
+      provisioned.imageRef = buildResult.imageRef;
     }
 
-    let buildResult: Awaited<ReturnType<typeof runtime.build>>;
-    try {
-      // static-sandbox: build in a Docker sandbox, then extract the doc-root to a
-      // host dir the edge serves. Everything else (server apps, bare-built static
-      // on a Docker-less local box, cloud) builds normally.
-      if (deployRouting.buildMode === "static-sandbox") {
-        // buildMode is derived from runtime.name === "docker", so the cast is sound.
-        buildResult = await (runtime as DockerRuntime).buildStaticToHost(
-          buildConfig,
-          `${STATIC_RELEASE_BASE}/.builds/${buildSessionId}`,
-          logger,
-        );
-      } else {
-        buildResult = await runtime.build(buildConfig, logger);
-      }
-    } finally {
-      // Reverse tunnel + remote helper script torn down regardless of outcome —
-      // the credential is reachable only for the build's duration.
-      if (deployRelay) await deployRelay.close().catch(() => {});
-    }
-    provisioned.imageRef = buildResult.imageRef;
+    // A reused STATIC release is a directory whose doc-root offset was decided when
+    // its files were extracted, so it is read back from that release instead of
+    // re-derived from today's runtime resolution — see `reusedReleaseRouting`.
+    // `deployRouting` above stays the BUILD's answer: the pin is a hint, and when
+    // the artifact is gone we build from source and that answer is the correct one.
+    const servedRouting = reusedArtifact
+      ? reusedReleaseRouting(deployRouting, snapshot.staticServeOutputDir)
+      : deployRouting;
 
     if (buildResult.status === "cancelled") {
       await onCancelled(ctx, buildResult.durationMs);
@@ -943,6 +1261,14 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       extra: { imageRef: buildResult.imageRef, buildDurationMs: buildResult.durationMs },
     });
 
+    // Keep the exact lock decision on the phase. Post-route claim convergence
+    // must use the unlocked helper only when this wrapper really acquired the
+    // target lock; inferring that again inside the phase risks a nested lock when
+    // a restored release changes the effective serve mode.
+    const hostPortTargetLockHeld =
+      deployRouting.deployMode === "server" &&
+      resolved.effectiveTarget !== "cloud" &&
+      usesHostLoopbackUpstream(resolveRouteStrategy(project.routeStrategy), runtime);
     const phase: DeployPhaseInputs = {
       ctx,
       project,
@@ -954,28 +1280,46 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       ssl,
       system,
       targetExecutor,
+      staticExecutor,
       baseTarget: plat.target,
       effectiveTarget: resolved.effectiveTarget,
       serverId: resolved.serverId,
+      hostPortTarget: resolved.hostPortTarget,
+      hostPortTargetLockHeld,
       usesManagedRouting,
       routeState,
       buildResult,
       envMap,
       prodResources,
       logger,
-      deployRouting,
+      deployRouting: servedRouting,
+      transports,
     };
 
     // deployMode is derived from runtime.name === "cloud", so the cast is sound.
     if (deployRouting.deployMode === "static-edge") {
       await executeStaticEdgeDeploy(phase, runtime as CloudRuntime);
     } else {
-      await executeServerDeploy(phase);
+      if (hostPortTargetLockHeld && !phase.hostPortTarget) {
+        throw new Error("Cannot allocate a routed host port without a physical target identity");
+      }
+      await (hostPortTargetLockHeld
+        ? withHostPortTargetLock(phase.hostPortTarget!, () => executeServerDeploy(phase))
+        : executeServerDeploy(phase));
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    logger.log(`Error: ${message}`, "error");
-    await onFailure(ctx, message);
+    if (process.env.OPENSHIP_DEBUG_PIPELINE) console.error("[pipeline]", err);
+    // Only an UNSETTLED error is a deploy failure. An error thrown after the
+    // outcome was recorded is bookkeeping: reporting it as a failure would
+    // invert a working deploy and tear its containers down.
+    await reportPipelineError(ctx, message, logger);
+  } finally {
+    // The deploy is over either way — release the loopback bridges it opened.
+    // Safe here and not earlier: the readiness/stabilization gate runs INLINE as
+    // the pipeline's healthCheck hook, so nothing still needs a transport once
+    // this function settles.
+    for (const rt of transports) disposeRuntime(rt);
   }
 }
 
@@ -990,12 +1334,18 @@ interface DeployPhaseInputs {
   ssl: Awaited<ReturnType<typeof platform>>["ssl"];
   system: Awaited<ReturnType<typeof platform>>["system"];
   targetExecutor: CommandExecutor | null;
+  /** Reaches the static release tree; see `sharedMountExecutor`. */
+  staticExecutor: CommandExecutor | null;
   /** Base platform target ("desktop" | "selfhosted" | "cloud") + the resolved
    *  per-deployment target/server — used to gate the `.openship` manifest write
    *  to desktop-mode server deploys only. */
   baseTarget: string;
   effectiveTarget: string;
   serverId: string | null;
+  /** Physical host key used by durable claims and the allocation lock. */
+  hostPortTarget: HostPortTargetIdentity | null;
+  /** Whether executeServerDeploy is already inside the physical-target lock. */
+  hostPortTargetLockHeld: boolean;
   usesManagedRouting: boolean;
   routeState: Awaited<ReturnType<typeof resolveProjectRouteState>>;
   buildResult: BuildResult;
@@ -1005,6 +1355,17 @@ interface DeployPhaseInputs {
   /** Build/deploy routing decided once from the resolved runtime (static-sandbox /
    *  static-file-serve / server / static-edge) — replaces scattered `instanceof`. */
   deployRouting: DeployRouting;
+  /**
+   * Transports this deploy opened, released together when it ends.
+   *
+   * A deploy resolves MORE than one runtime — its own target platform, plus the
+   * PREVIOUS deployment's runtime to deactivate the old containers — and each one
+   * for a remote server binds its own Docker-over-SSH loopback bridge that only
+   * `dispose()` closes. A phase can't release its own (a throw would skip it, and
+   * `executeBuildAndDeploy`'s catch can't see phase locals), so they're collected
+   * here and released in that function's `finally`.
+   */
+  transports: Set<RuntimeAdapter>;
 }
 
 /** Static edge deploy via CloudRuntime (Oblien Pages). */
@@ -1012,7 +1373,18 @@ async function executeStaticEdgeDeploy(
   phase: DeployPhaseInputs,
   runtime: CloudRuntime,
 ): Promise<void> {
-  const { ctx, project, dep, snapshot, buildSessionId, routeState, buildResult, envMap, prodResources, logger } = phase;
+  const {
+    ctx,
+    project,
+    dep,
+    snapshot,
+    buildSessionId,
+    routeState,
+    buildResult,
+    envMap,
+    prodResources,
+    logger,
+  } = phase;
 
   logger.step("deploy", "running", "Deploying to edge (static)...");
 
@@ -1078,9 +1450,27 @@ interface ServeStrategy {
   activate(config: DeployConfig, onLog: LogCallback): Promise<DeploymentResult>;
   /** File-serve → a filesystem `root`; running processes route via resolveTargetUrl. */
   resolveRoute?: (containerId: string, config: DeployConfig) => Promise<{ staticRoot: string }>;
-  /** Post-activate readiness gate; undefined when nothing listens. The caller
-   *  additionally only wires this for LOCAL targets (remote/cloud unreachable). */
-  healthCheck?: (containerId: string, config: DeployConfig) => Promise<void>;
+  /**
+   * Post-activate readiness probe. What "ready" means is the strategy's business:
+   * a running process answers on its port, a static site has servable files.
+   *
+   * REPORTS rather than throws: returns a failure detail, or null when the check
+   * passed. The caller owns the verdict, because whether a failure warns or vetoes
+   * the deploy is the project's `readiness.onFailure` choice, not this strategy's.
+   */
+  readiness?: (containerId: string, config: DeployConfig) => Promise<string | null>;
+  /**
+   * Can `readiness` answer for a REMOTE target?
+   *
+   * false (running process): the probe dials a port from the orchestrator, and a
+   *   remote app's port isn't reachable from here — so it only runs for local.
+   * true (static file-serve): the probe goes through the routing provider, which
+   *   reaches the edge wherever it lives, so a remote server is fine.
+   *
+   * Without this the static check would be skipped on every remote deploy — i.e.
+   * exactly the deploys where a missing doc-root is hardest to notice.
+   */
+  readinessWorksRemotely?: boolean;
 }
 
 /**
@@ -1094,23 +1484,99 @@ function buildDeployEnvironment(
     serve: ServeStrategy;
     previousRuntime: DeployPhaseInputs["runtime"];
     plannedDomains: ReturnType<typeof buildProjectRouteDomains>;
+    /** The project's opted-in readiness gate. `active: false` (the default) ⇒ no
+     *  gate is wired at all and the pipeline skips the step. */
+    readinessGate: ResolvedReadinessGate;
+    /** Sink for a failure the gate decided to WARN about rather than veto. The
+     *  caller folds these into the deploy's action-required warning. */
+    onReadinessWarning: (detail: string) => void;
+    /** Actual target topology after runtime capabilities are accounted for. */
+    usesHostLoopback: boolean;
+    /** The reservation is chosen during preflight, after this environment exists. */
+    reservedHostPort?: () => number | undefined;
+    /**
+     * Reserve any loopback host ports after edge convergence, but before the
+     * ordinary live-port check and activation. This ordering is security
+     * sensitive: a migrated vhost must enter the durable avoid-set before a new
+     * workload can capture the port it still dials.
+     */
+    prepareHostPorts?: (config: DeployConfig) => Promise<void>;
   },
 ): DeployEnvironment {
-  const { runtime, system, targetExecutor, routeState, logger, effectiveTarget } = phase;
-  const { serve, previousRuntime, plannedDomains } = deps;
+  const { runtime, system, targetExecutor, routeState, logger, effectiveTarget, project } = phase;
+  const { serve, previousRuntime, plannedDomains, readinessGate, onReadinessWarning } = deps;
 
   return {
     canOverlap: serve.canOverlap,
-    // Post-activate readiness gate. Only wired for LOCAL targets: the app runs on
-    // this host, so a refused/timed-out probe genuinely means it failed to come up
-    // (throwing here auto-reverts to the previous deployment). Remote (SSH) and
-    // cloud targets aren't reachable from the API process. The strategy supplies
-    // the probe for a running process; a static file-serve has none.
-    healthCheck: effectiveTarget === "local" ? serve.healthCheck : undefined,
-    reactivatePrevious:
-      previousRuntime.name === "bare"
-        ? (id: string) => (id.includes("/") ? Promise.resolve() : previousRuntime.start(id))
-        : undefined,
+    // Post-activate readiness gate — OPT-IN, and omitted entirely when the
+    // project didn't ask for one, so runDeployPipeline skips the step rather than
+    // calling a check that does nothing. That absence IS the default: a deploy
+    // reports ready as soon as the workload is up and routed. Listening state is
+    // still reported, by the advisory in-container `auditPorts` probe that runs
+    // after the deploy is live and cannot fail it.
+    //
+    // When a project does opt in, up to two layers run:
+    //
+    //  1. Stabilization — watch the container we just started and fail if it
+    //     bounces or exits. Asked of the RUNTIME (docker inspect), so unlike the
+    //     TCP probe it works for remote/SSH targets too.
+    //  2. Readiness probe — local targets only; the app runs on this host, so a
+    //     refused/timed-out connection genuinely means it never came up.
+    //
+    // `onFailure` decides what a failure means. "warn" (the default even when
+    // opted in) keeps the deploy ready and records an action-required warning;
+    // only "fail" throws, which vetoes the deploy before traffic is repointed and
+    // reverts to the previous deployment.
+    // Ordering + the warn-vs-fail decision live in runReadinessGate (readiness-gate.ts),
+    // shared with the compose pipeline so the two can't drift. This is just the
+    // adapter that supplies the two effects.
+    //
+    // `healthCheck` is the PIPELINE's name for this hook (DeployEnvironment, in
+    // @repo/adapters) and predates the project-level `readiness` field — the
+    // pipeline gates on any readiness verdict, whatever the caller calls it.
+    healthCheck: !readinessGate.active
+      ? undefined
+      : (containerId, cfg) =>
+          runReadinessGate({
+            gate: readinessGate,
+            // A path-shaped id is a static release DIR — files, not a process, so
+            // there is nothing to watch for a restart loop.
+            stabilize: containerId.includes("/")
+              ? undefined
+              : async (windowMs) => {
+                  const [unstable] = (
+                    await verifyDeployedContainers(
+                      runtime,
+                      [{ serviceName: project.name || project.slug || "app", containerId }],
+                      logger,
+                      { windowMs },
+                    )
+                  ).filter((finding) => !finding.verdict.ok);
+                  return unstable ? unstable.detail : null;
+                },
+            // A port probe dials from the orchestrator, so it only answers for a
+            // LOCAL target. The static file probe goes through the routing provider
+            // and reaches the edge anywhere, so it isn't restricted.
+            probe:
+              serve.readiness && (effectiveTarget === "local" || serve.readinessWorksRemotely)
+                ? () => serve.readiness!(containerId, cfg)
+                : undefined,
+            probeSkippedReason: serve.readiness
+              ? `Readiness: skipped — dialing the app's port only works for a local ` +
+                `target (this deploy targets "${effectiveTarget}"). Turn on the ` +
+                `restart-loop watch to cover remote targets.`
+              : undefined,
+            onWarn: onReadinessWarning,
+            log: (message, level) => logger.log(`${message}\n`, level ?? "info"),
+          }),
+    // Auto-revert for the stop-first (non-overlap) path. Wired for BOTH runtimes:
+    // Docker takes this path too whenever routeStrategy is loopback-port (the
+    // default), and while it was bare-only a failed gate left the old container
+    // force-removed with nothing to restore — the new one was reaped as well, so a
+    // failed readiness check took the app down entirely. `deactivate` now stops
+    // (retains) the previous container on this path, so there is something to start.
+    reactivatePrevious: (id: string) =>
+      id.includes("/") ? Promise.resolve() : previousRuntime.start(id),
     preflight: targetExecutor
       ? async (cfg, promptUser) => {
           if (system) {
@@ -1125,7 +1591,7 @@ function buildDeployEnvironment(
             // deploys and runs on its port; routing is flagged action-required
             // and retried later (route registration below is also best-effort).
             try {
-              if (plannedDomains.length > 0) {
+              if (plannedDomains.length > 0 || deps.prepareHostPorts) {
                 // Routing needs OpenResty on 80/443. If a foreign proxy already
                 // holds them, HOLD the deploy and prompt (migrate / take over /
                 // cancel) — the same session prompt flow used for port conflicts.
@@ -1136,7 +1602,7 @@ function buildDeployEnvironment(
                       onLog: systemLog,
                       promptUser: p,
                     }),
-                  { promptUser, onLog: systemLog },
+                  { promptUser, onLog: systemLog, nginx: resolveAcmeProviderOptions() },
                 );
                 if (edge.migrated && !edge.ok) {
                   // ensureEdge already rolled back to the previous proxy — we
@@ -1153,6 +1619,20 @@ function buildDeployEnvironment(
               if (plannedDomains.some((d) => d.requiresSslTooling)) {
                 await system.ensureFeature("ssl", systemLog);
               }
+              // Same idea for Openship Cloud's target check: make the box able to
+              // answer it now, so a free domain added later doesn't need a redeploy
+              // first. Cheap and idempotent (a couple of stats once written).
+              await ensureEdgeChallengeReady(phase.project.organizationId, phase.routing, {
+                serverId: phase.serverId ?? undefined,
+                onLog: (m) => logger.log(m, "warn"),
+              });
+              // Bring the box's OTHER vhosts up to this build's shape while we're here.
+              // This project's own routes are rewritten by the deploy anyway; the ones
+              // that need it are the projects nobody is redeploying, which is where a
+              // generated-config fix otherwise never lands. No-op once converged.
+              await repairEdgeVhosts(phase.routing, {
+                onLog: (m, level) => logger.log(m, level ?? "info"),
+              });
             } catch (err) {
               logger.log(
                 `Edge/routing setup failed — deploy continues; the app runs on its port and routing is retried later: ${safeErrorMessage(err)}\n`,
@@ -1161,6 +1641,13 @@ function buildDeployEnvironment(
             }
           }
 
+          // This is deliberately outside the best-effort routing catch. A route
+          // may be optional, but reusing a port that an unreadable/stale vhost
+          // still targets is not: it can serve one project's container through
+          // another project's hostname. The strict inventory either imports the
+          // observed ports into durable claims or aborts before the old workload
+          // is stopped and before the new one binds.
+          await deps.prepareHostPorts?.(cfg);
           await serve.ensurePorts(cfg, promptUser);
         }
       : undefined,
@@ -1179,21 +1666,57 @@ function buildDeployEnvironment(
         if (targetExecutor) return targetExecutor.rm(id);
         return previousRuntime.destroy(id);
       }
-      return previousRuntime.name === "bare" ? previousRuntime.stop(id) : previousRuntime.destroy(id);
+      return previousRuntime.name === "bare"
+        ? previousRuntime.stop(id)
+        : previousRuntime.destroy(id);
     },
+    // The non-overlap pre-stop: free the port, but keep the old workload
+    // restorable until the new one proves out. STOP for both runtimes — Docker
+    // used to force-remove here, which is why a failed health gate could take the
+    // app down with nothing to revert to.
+    //
+    // A path-shaped id is a static release DIR: nothing is "running", so there is
+    // no port to free and nothing to stop. Leaving it in place is what makes it
+    // restorable; `deactivate` above still removes it on the overlap/success path.
+    deactivateRetaining: (id) => (id.includes("/") ? Promise.resolve() : previousRuntime.stop(id)),
+    // Discard the retained container after success. Container runtimes only: bare's
+    // stopped release is a DIRECTORY owned by the retention/rollback window, and
+    // destroying it here would delete a release that rollback still expects (bare
+    // already only ever stopped it, so "no retire" is its existing behaviour).
+    retireRetainedPrevious:
+      previousRuntime.name === "bare"
+        ? undefined
+        : (id: string) => (id.includes("/") ? Promise.resolve() : previousRuntime.destroy(id)),
+    // Release the port the failed deployment is holding so the revert can rebind
+    // it. Uses the CURRENT runtime (it started this container), not previousRuntime.
+    stopActivated: (id: string) => (id.includes("/") ? Promise.resolve() : runtime.stop(id)),
     resolveRoute: serve.resolveRoute,
     resolveTargetUrl: async (id, port) => {
       const strategy = resolveRouteStrategy(phase.project.routeStrategy);
-      // loopback-port: dial the container's published LOOPBACK host port (read
-      // live — works with a pinned or random publish). Bare has none → the
-      // helper falls back to 127.0.0.1:<appPort>. A container with no host port
-      // falls back to the bridge IP. The post-activate health check gates all
-      // of this, so a bad target fails the deploy, not the live route.
+      // Host-loopback topologies dial the reserved publish selected in preflight.
+      // Read it back from the runtime only as a fallback for an older/unpinned
+      // activation. Bare has no separate publish: the resolver uses its
+      // 127.0.0.1:<appPort> identity.
       let hostPort: number | undefined;
-      if (strategy === "loopback-port" && runtime.name !== "bare") {
-        hostPort = (await runtime.getContainerInfo(id).catch(() => null))?.hostPort ?? undefined;
+      if (deps.usesHostLoopback && runtime.name !== "bare") {
+        hostPort =
+          deps.reservedHostPort?.() ??
+          (await runtime.getContainerInfo(id).catch(() => null))?.hostPort ??
+          undefined;
       }
-      return resolveUpstreamUrl({ strategy, runtime, containerId: id, containerPort: port, hostPort });
+      const targetUrl = await resolveUpstreamUrl({
+        strategy,
+        runtime,
+        containerId: id,
+        containerPort: port,
+        hostPort,
+      });
+      await reserveResolvedLoopbackRoutes({
+        target: phase.hostPortTarget,
+        projectId: project.id,
+        routes: [{ targetUrl, serviceId: null, containerPort: port }],
+      });
+      return targetUrl;
     },
   };
 }
@@ -1201,31 +1724,47 @@ function buildDeployEnvironment(
 /** Server deploy via runDeployPipeline (VM / Docker / Bare). Handles static-self-hosted too. */
 async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   const {
-    ctx, project, dep, snapshot, buildSessionId,
-    runtime, routing, ssl, usesManagedRouting,
-    routeState, buildResult, envMap, prodResources, logger,
+    ctx,
+    project,
+    dep,
+    snapshot,
+    buildSessionId,
+    runtime,
+    routing,
+    ssl,
+    usesManagedRouting,
+    routeState,
+    buildResult,
+    envMap,
+    prodResources,
+    logger,
   } = phase;
 
   // Static sites are served as files by the edge (OpenResty `root`), regardless
   // of how they were BUILT — a Docker sandbox (server/self-hosted, the common
   // case) or bare (Docker-less desktop "This Machine"). A dedicated bare
   // file-serve runtime rooted at the edge-shared STATIC_RELEASE_BASE promotes
-  // the built dir into a release and hands the edge a `root`. Its executor is
-  // the platform executor, which is exactly the FS the build wrote to (SSH for a
-  // remote server; local for a local / docker-edge host where the extract landed
-  // on the shared /opt/openship/static mount).
+  // the built dir into a release and hands the edge a `root`. Its executor is the
+  // one that reaches that tree — SSH for a remote server, LOCAL for the local box,
+  // where /opt/openship/static is the one bind mount the api container, the edge and
+  // the host all see, so no host channel is in the path (`sharedMountExecutor`).
   const isStaticFileServe = phase.deployRouting.deployMode === "static-file-serve";
+  // A worker is a running container like a server, but portless: no host port to
+  // pin, no readiness dial, no route (issue #538-B). It reuses the server variant's
+  // lifecycle (deploy + attach linked networks + restart:always) with the
+  // port/route/readiness seams stubbed out below.
+  const isWorker = phase.deployRouting.deployMode === "worker";
   const staticServeRuntime = isStaticFileServe
     ? new BareRuntime({
         workDir: STATIC_RELEASE_BASE,
-        executor: phase.targetExecutor ?? undefined,
+        executor: phase.staticExecutor ?? undefined,
       })
     : null;
   // Where the static doc-root lives: "" when a Docker sandbox build already
   // extracted it (release root), else the configured output dir (bare build).
   const staticServeOutputDir = phase.deployRouting.staticServeOutputDir;
 
-  // loopback-port routing pins a stable LOOPBACK host port for docker so the
+  // Any host-loopback topology pins a stable LOOPBACK host port for docker so the
   // edge target is predictable and survives container restarts. Reused across
   // redeploys (persisted on the project); allocated once on first deploy from a
   // live-probed free port. Bare owns 127.0.0.1:<port> and needs none. The
@@ -1233,12 +1772,22 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // allocates a host port on the orchestrator (cloud routes via Oblien, not a
   // loopback port) — defense-in-depth against a cloud→host-exec slip.
   const routeStrategy = resolveRouteStrategy(project.routeStrategy);
+  const usesHostLoopback = usesHostLoopbackUpstream(routeStrategy, runtime);
+
+  // The project's OPT-IN readiness gate. Inactive unless the project configured
+  // one, and inactive is the default — so by default nothing waits on the app
+  // after start and nothing can veto a deploy whose workload came up. Listening
+  // state still gets reported by the advisory `auditPorts` probe further down.
+  const readinessGate = resolveReadinessGate(project.readiness);
+  // Failures the gate chose to WARN about (onFailure: "warn"), folded into the
+  // deploy's action-required warning alongside routing issues.
+  const readinessWarnings: string[] = [];
 
   // How this deploy SERVES — the single object holding the static-file-serve vs
   // running-process divergence (restart/overlap, preflight, activate, route,
   // health). buildDeployEnvironment composes the pipeline env from it; the shared
   // edge/routing orchestration stays there (not duplicated per strategy).
-  const serve: ServeStrategy = isStaticFileServe
+  const baseServe: ServeStrategy = isStaticFileServe
     ? {
         restartPolicy: "no",
         canOverlap: false,
@@ -1249,27 +1798,85 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
         resolveRoute: async (id) => ({
           staticRoot: resolveStaticOutputPath(id, staticServeOutputDir),
         }),
-        healthCheck: undefined,
+        // A static site has no port to dial, so "ready" means the FILES are
+        // servable: the routed path resolves and has an index. Probed from where
+        // the edge actually looks (auditStaticOutput picks the vantage point), so
+        // this catches the one failure mode a static deploy has — a 404 — which a
+        // port probe structurally cannot see.
+        //
+        // Same probe as the always-on advisory `outputCheck` below; the difference
+        // is only consequence. That one records a hint, this one can gate the
+        // deploy when the project opted in with onFailure "fail".
+        readiness: async (containerId) => {
+          const targets = staticOutputTargets(
+            resolveStaticOutputPath(containerId, staticServeOutputDir),
+            routeState.publicEndpoints,
+          );
+          const findings = await auditStaticOutput(
+            { routing, runtime: staticServeRuntime, containerId },
+            targets,
+            logger,
+          );
+          // `checked:false` is "we couldn't look", not "it's broken" — an
+          // inconclusive probe must never veto a deploy. The full precedence
+          // (including "the edge proved it serves, so a missing index.html is not a
+          // failure") lives in outputFindingIsBroken, shared with the advisory fold
+          // below and the dashboard hint so all three agree.
+          const broken = findings.filter(outputFindingIsBroken);
+          if (broken.length === 0) return null;
+          return broken.map(describeOutputFinding).join("\n");
+        },
+        // Probed through the routing provider, so a remote server answers too.
+        readinessWorksRemotely: true,
       }
     : {
         restartPolicy: "always",
         // Overlap (run-new-then-swap, zero-downtime) needs a unique container +
         // its own host port; a pinned loopback port can't be double-bound and bare
         // binds a fixed port → stop-first.
-        canOverlap: runtime.name !== "bare" && routeStrategy !== "loopback-port",
+        canOverlap: !usesHostLoopback,
         ensureRuntimeReady: async () => {
           const system = phase.system;
           if (!system) return;
-          await system.ensureFeature("deploy", (entry) => logger.log(`${entry.message}\n`, entry.level));
+          await system.ensureFeature("deploy", (entry) =>
+            logger.log(`${entry.message}\n`, entry.level),
+          );
         },
         ensurePorts: async (cfg, promptUser) => {
           const executor = phase.targetExecutor;
           if (!executor) return;
+          // A published container binds exactly ONE host port — the loopback pin.
+          // Its own port lives in the container's network namespace and can never
+          // collide on the host, so probing it there compares an unrelated number
+          // against the host's listeners: an app on 80 behind the edge reported a
+          // conflict with the edge itself, and the only "continue" action offered
+          // would have freed the edge — taking every routed site down to publish
+          // one. Probe what the workload actually binds, which is also the
+          // backstop `allocateHostPort` documents.
+          if (cfg.hostPort !== undefined) {
+            // The outgoing deployment still holds the pin at preflight time: the
+            // loopback-port strategy can't overlap, so the pipeline stops it in
+            // the very next step. Prompting the operator about our own container
+            // would stall every redeploy on a conflict that resolves itself.
+            const previousHostPort = prevDep?.containerId
+              ? await previousRuntime
+                  .getContainerInfo(prevDep.containerId)
+                  .then((info) => info?.hostPort)
+                  .catch(() => undefined)
+              : undefined;
+            if (previousHostPort !== cfg.hostPort) {
+              await ensurePortAvailable(executor, cfg.hostPort, logger, promptUser);
+            }
+            return;
+          }
+          // Bare: the app owns 127.0.0.1:<port> on the host, so its declared
+          // ports are the ones to check.
           const ports = Array.from(
             new Set(
               (routeState.publicEndpoints.length > 0
                 ? routeState.publicEndpoints
-                : [{ port: cfg.port }])
+                : [{ port: cfg.port }]
+              )
                 .map((endpoint) => endpoint.port ?? cfg.port)
                 .filter((port): port is number => Number.isFinite(port)),
             ),
@@ -1284,92 +1891,196 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
           // source apps so injected internal hosts (e.g. db:5432) resolve. The
           // compose path does this in compose/deploy.service.ts; this closes the
           // single-container gap. Advisory — never fails the deploy.
-          await attachLinkedNetworks(project.id, runtime, (m, level) => logger.log(`${m}\n`, level));
+          await attachLinkedNetworks(project.id, runtime, (m, level) =>
+            logger.log(`${m}\n`, level),
+          );
           return deployed;
         },
         resolveRoute: undefined,
-        healthCheck: async (containerId, cfg) => {
-          let host = "127.0.0.1";
-          let port = cfg.port;
-          if (runtime.name !== "bare") {
-            // Container runtime: prefer the published host port; fall back to the
-            // container's bridge IP:port (reachable on the local daemon).
-            try {
-              const info = await runtime.getContainerInfo(containerId);
-              if (info?.hostPort) {
-                port = info.hostPort;
-              } else if (runtime.supports("containerIp")) {
-                const ip = await runtime.getContainerIp(containerId);
-                if (ip) host = ip;
-              }
-            } catch {
-              /* fall back to 127.0.0.1:cfg.port */
-            }
-          }
-          logger.log(`Health check: waiting for the app to accept connections on port ${cfg.port}…\n`);
-          const ready = await waitForReady(host, port, { timeoutMs: 45_000, intervalMs: 1_000 });
-          if (!ready) {
-            throw new Error(
-              `Health check failed: the app never accepted a connection on port ${cfg.port} within 45s — it likely crashed on startup (check the runtime logs).`,
+        readiness: async (containerId, cfg) => {
+          // Address, dialing machine, and every message: all in probeDeployedReadiness, so
+          // the compose per-service probe cannot answer this differently.
+          const verdict = await probeDeployedReadiness({
+            runtime,
+            containerId,
+            primaryPort: cfg.port,
+            probe: readinessGate.probe,
+            targetExecutor: phase.targetExecutor,
+            log: (message, level) => logger.log(message, level),
+          });
+          // Could not ASK — so there is no verdict, and a verdict is the only thing
+          // allowed to fail a deploy. Warn and pass: destroying a running deployment
+          // because the probe couldn't reach it is GH-583, where a host channel that
+          // forbade port forwarding read exactly like a dead app.
+          if (verdict.skipped) {
+            logger.log(
+              `Health check SKIPPED: ${verdict.skipped} The deploy is left live and unverified.\n`,
+              "warn",
             );
+            return null;
           }
-          logger.log(`Health check passed: the app is accepting connections.\n`);
+          return verdict.failure;
         },
       };
 
-  let pinnedHostPort: number | undefined = project.hostPort ?? undefined;
-  if (
-    routeStrategy === "loopback-port" &&
-    !isStaticFileServe &&
-    runtime.name !== "bare" &&
-    phase.effectiveTarget !== "cloud"
-  ) {
-    if (!pinnedHostPort) {
-      // Avoid host ports already pinned to OTHER projects in this org — their
-      // containers may not be listening right now, so the live scan alone
-      // wouldn't see them and two projects could collide on the same loopback
-      // port (ensurePortAvailable is only the deploy-time backstop).
-      const avoid = (
-        await repos.project
-          .listByOrganization(project.organizationId, { perPage: 1000 })
-          .then((r) => r.rows)
-          .catch(() => [] as { id: string; hostPort: number | null }[])
-      )
-        .filter((p) => p.id !== project.id && typeof p.hostPort === "number")
-        .map((p) => p.hostPort as number);
-      // The deploy's own executor when it has one; otherwise the POOLED host
-      // channel — never a bare `createHostExecutor()`, which builds a fresh
-      // SSH connection per call and leaked one sshd session each time (#291).
-      pinnedHostPort = phase.targetExecutor
-        ? await allocateHostPort(phase.targetExecutor, { avoid })
-        : await sshManager.withHostExecutor((exec) => allocateHostPort(exec, { avoid }));
-      await repos.project
-        .update(project.id, { hostPort: pinnedHostPort })
-        .catch((err) => logger.log(`Couldn't persist host port ${pinnedHostPort}: ${safeErrorMessage(err)}\n`, "warn"));
-    }
-  } else {
-    pinnedHostPort = undefined; // don't publish a pinned port under container-ip / bare / static
+  // A worker serves through the running-process lifecycle (baseServe, since
+  // `isStaticFileServe` is false for deployMode "worker") but publishes no port
+  // and exposes no route. Stub the port/route/readiness seams: `ensurePorts`
+  // has nothing to check, there's no port to dial for readiness, and overlap is
+  // off so two instances never double-consume a queue during a swap.
+  const serve: ServeStrategy = isWorker
+    ? {
+        ...baseServe,
+        canOverlap: false,
+        ensurePorts: async () => {},
+        resolveRoute: undefined,
+        readiness: undefined,
+      }
+    : baseServe;
+
+  let pinnedHostPort: number | undefined;
+  const attemptedHostPortAllocations: Array<
+    Pick<AllocatedPinnedHostPort, "claim" | "previousClaim">
+  > = [];
+  const needsHostLoopbackClaim =
+    usesHostLoopback && !isStaticFileServe && !isWorker && phase.effectiveTarget !== "cloud";
+  if (needsHostLoopbackClaim && (!phase.hostPortTarget || !phase.targetExecutor)) {
+    throw new Error("Cannot inspect routed host ports without a physical target executor");
   }
+
+  // Allocation is a PRE-FLIGHT effect, not an input-construction effect. In
+  // particular it must run after edge migration: the migration may import a
+  // stopped project's vhost to 127.0.0.1:X, and X has to be quarantined before
+  // this deployment chooses a port. The promise makes the hook idempotent if a
+  // pipeline wrapper probes preflight more than once.
+  let hostPortPreparation: Promise<void> | null = null;
+  const prepareHostPorts = needsHostLoopbackClaim
+    ? async (config: DeployConfig): Promise<void> => {
+        hostPortPreparation ??= (async () => {
+          const target = phase.hostPortTarget!;
+          const executor = phase.targetExecutor!;
+          const claims = await prepareTargetPinnedHostPorts({
+            target,
+            edgeProxy: edgeProxyFor(executor, "openresty", { ours: true }),
+          });
+
+          if (runtime.name !== "bare") {
+            // Durable claims are host-wide, including other organizations and
+            // stopped containers. The target lock surrounding this phase keeps
+            // inventory → reservation → Docker bind atomic against other deploys.
+            const owner = {
+              projectId: project.id,
+              serviceId: null,
+              containerPort: snapshot.port,
+            } as const;
+            const allocation = await allocateAndReservePinnedHostPort({
+              target,
+              claims,
+              owner,
+              // Prefer the target's reservation, not this targetless cache. The
+              // helper consults claims first, so a migration cannot move source
+              // ownership.
+              cachedPreferred: project.hostPort,
+              allowLegacyContainerPort: true,
+              allocate: (allocationOptions) => allocateHostPort(executor, allocationOptions),
+            });
+            attemptedHostPortAllocations.push(allocation);
+            pinnedHostPort = allocation.port;
+            // A scan that couldn't RUN is not "nothing is listening". Say so
+            // here or the bind failure blames Docker for a host we couldn't read.
+            if (!allocation.scanned) {
+              logger.log(
+                `Couldn't read live port occupancy on the target, so ${pinnedHostPort} avoids only ` +
+                  `database-pinned ports. If publishing it fails as "already allocated", ` +
+                  `check that Openship can reach this host (Servers → this box).\n`,
+                "warn",
+              );
+            }
+            return;
+          }
+
+          // Bare apps bind their declared ports directly on the host. They
+          // participate in the same namespace or a stopped bare app's old vhost
+          // can be captured by a later Docker allocation.
+          const barePorts = new Set(
+            (routeState.publicEndpoints.length > 0
+              ? routeState.publicEndpoints
+              : [{ port: snapshot.port }]
+            )
+              .map((endpoint) => endpoint.port ?? snapshot.port)
+              .filter((port): port is number => Number.isSafeInteger(port) && port > 0),
+          );
+          for (const port of barePorts) {
+            const owner = { projectId: project.id, serviceId: null, containerPort: port } as const;
+            const exact = findOwnedPinnedHostPort(claims, owner);
+            const legacy = claims.find(
+              (claim) =>
+                claim.projectId === project.id &&
+                claim.serviceId === null &&
+                claim.containerPort === null &&
+                claim.port === port,
+            );
+            const claim = await reserveTargetPinnedHostPort(target, {
+              ...owner,
+              containerPort: exact ? exact.containerPort : legacy ? legacy.containerPort : port,
+              port,
+            });
+            attemptedHostPortAllocations.push({ claim, previousClaim: exact ?? legacy });
+          }
+        })();
+
+        await hostPortPreparation;
+        // runDeployPipeline passes this same mutable config from preflight into
+        // activate. Assign only after the reservation is durable.
+        config.hostPort = pinnedHostPort;
+      }
+    : undefined;
 
   const deployConfig: DeployConfig = {
     deploymentId: dep.id,
     projectId: project.id,
     buildSessionId,
     imageRef: buildResult.imageRef!,
+    prebuiltImage: Boolean(snapshot.releaseImageRef),
     environment: dep.environment,
     port: snapshot.port,
-    hostPort: pinnedHostPort,
+    // A worker publishes and dials nothing: the runtime skips ExposedPorts /
+    // PortBindings / PORT (issue #538-B). `port` is left set but inert.
+    portless: isWorker,
+    ...(pinnedHostPort !== undefined ? { hostPort: pinnedHostPort } : {}),
     // The build may override the start command once it knows the output shape
     // (e.g. Next.js standalone → `node server.js` instead of `next start`).
     startCommand: buildResult.startCommand ?? snapshot.startCommand,
     stack: snapshot.framework,
+    // Lets the runtime put the project's `node_modules/.bin` on PATH before the
+    // start command runs — `next start` is a dependency binary, not a system one.
+    packageManager: snapshot.packageManager,
     envVars: envMap,
     resources: prodResources,
     restartPolicy: serve.restartPolicy,
     runtimeName: project.slug ?? project.id,
+    slug: project.slug ?? project.id,
+    // Stable per-project DNS alias so a single-app native container is
+    // reachable east-west (another linked project resolves `<alias>:<port>`),
+    // mirroring what compose services already get. Read only by
+    // DockerRuntime.deploy(); other runtimes ignore it. Publishing stays
+    // loopback-only — an alias is not exposure until an explicit link
+    // (attachLinkedNetworks) puts a consumer on this project's network.
+    networkAlias: normalizeServiceLabel(project.slug || project.name),
+    // A user-chosen custom hostname (Stage D) resolves ALONGSIDE the default.
+    extraAliases: project.internalAlias
+      ? [normalizeServiceLabel(project.internalAlias)]
+      : undefined,
     publicEndpoints: routeState.publicEndpoints,
     outputDirectory: snapshot.outputDirectory,
-    productionPaths: snapshot.productionPaths.length ? snapshot.productionPaths : undefined,
+    // Optional chaining for the same reason as `volumes` below: a snapshot
+    // persisted before this field existed (or one that simply never set it) has
+    // none, and a redeploy/restore of that release must not crash on it. It did —
+    // `.length` on undefined — which made every such release un-restorable.
+    productionPaths: snapshot.productionPaths?.length ? snapshot.productionPaths : undefined,
+    // `?? []` because a snapshot persisted before this field existed has none —
+    // redeploying an old deployment must not crash on it.
+    volumes: snapshot.volumes ?? [],
     // Bare uses this to hard-link identical files across releases.
     // Other runtimes ignore it.
     previousDeploymentId: project.activeDeploymentId ?? undefined,
@@ -1379,11 +2090,17 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   const prevDep = project.activeDeploymentId
     ? await repos.deployment.findById(project.activeDeploymentId)
     : null;
+  // A DISTINCT platform from this deploy's, so on a remote server it binds its own
+  // bridge. Registered rather than released here: `deployEnv` closes over it to
+  // deactivate/destroy the old containers, so it has to outlive this line — and the
+  // `=== runtime` fallback must never be disposed, since that IS the live deploy's
+  // transport (the Set dedupes it away).
   const previousRuntime = prevDep?.containerId
     ? await resolveDeploymentRuntime(prevDep)
         .then((r) => r.runtime)
         .catch(() => runtime)
     : runtime;
+  if (previousRuntime !== runtime) phase.transports.add(previousRuntime);
 
   // buildProjectRouteDomains turns the project's public endpoints (and
   // existing domain rows) into concrete routes. We persist a domain
@@ -1400,6 +2117,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     publicEndpoints: routeState.publicEndpoints,
     runtimeName: runtime.name,
     usesManagedRouting,
+    isStatic: isStaticFileServe,
   });
   // Domains to prune after a successful deploy: project-level rows that
   // no longer back a current public endpoint AND aren't among the routes
@@ -1408,27 +2126,26 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // than nuke every route. The plannedHostnames check is belt-and-braces:
   // never prune a hostname this same deploy is registering.
   const activeRouteIds = new Set(
-    routeState.publicEndpoints
-      .map((endpoint) => endpoint.id)
-      .filter((id): id is string => !!id),
+    routeState.publicEndpoints.map((endpoint) => endpoint.id).filter((id): id is string => !!id),
   );
   const plannedHostnames = new Set(plannedDomains.map((domain) => domain.hostname.toLowerCase()));
-  const obsoleteProjectDomains = activeRouteIds.size > 0
-    ? projectDomains.filter(
-        (domain) =>
-          !domain.serviceId &&
-          // Never sweep a user-connected custom domain (may be portless / not a
-          // build endpoint) — only free/generated routes are eligible.
-          domain.domainType !== "custom" &&
-          !activeRouteIds.has(domain.id) &&
-          !plannedHostnames.has(domain.hostname.toLowerCase()),
-      )
-    : [];
+  const obsoleteProjectDomains =
+    activeRouteIds.size > 0
+      ? projectDomains.filter(
+          (domain) =>
+            !domain.serviceId &&
+            // Never sweep a user-connected custom domain (may be portless / not a
+            // build endpoint) — only free/generated routes are eligible.
+            domain.domainType !== "custom" &&
+            !activeRouteIds.has(domain.id) &&
+            !plannedHostnames.has(domain.hostname.toLowerCase()),
+        )
+      : [];
 
-  // Persist a domain record for each planned route. Track the ones we
-  // CREATE here (vs pre-existing rows) so they can be rolled back if the
-  // deploy fails — otherwise a failed deploy leaves orphan domain rows
-  // that resurface as routes on the next deploy.
+  // Persist a domain record for each planned route. Track only generated rows
+  // this call authoritatively created so they can be rolled back if the deploy
+  // fails. Custom domains are durable user configuration, not deployment
+  // artifacts: a failed redeploy must never detach them from the project.
   const createdDomainIds: string[] = [];
   const domainClaimWarnings: string[] = [];
   // Only domains we could CLAIM get routed. A hostname owned by another project
@@ -1438,16 +2155,21 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   const routableDomains: typeof plannedDomains = [];
   for (const route of plannedDomains) {
     try {
-      const created = await ensureRouteDomainRecord({
+      const ensured = await ensureRouteDomainRecord({
         projectId: project.id,
         route,
         domainByHostname,
       });
-      if (created && !projectDomains.some((d) => d.id === created.id)) {
-        createdDomainIds.push(created.id);
+      const domainRecord = ensured.domain;
+      if (ensured.created && domainRecord && domainRecord.domainType !== "custom") {
+        createdDomainIds.push(domainRecord.id);
         logger.log(`Created domain record for "${route.hostname}".\n`);
       }
-      routableDomains.push(route);
+      // Same ordering hole the compose path has: the plan above was built from the
+      // rows read BEFORE this loop, so a hostname minted right here was planned
+      // with no row and came out `provisionSsl: false` — see
+      // withEnsuredDomainRecord. Re-resolve against the row that exists now.
+      routableDomains.push(withEnsuredDomainRecord(route, domainRecord));
     } catch (err) {
       const message = safeErrorMessage(err);
       logger.log(`Skipping domain "${route.hostname}" (not routed — ${message}).\n`, "warn");
@@ -1470,9 +2192,19 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     serve,
     previousRuntime,
     plannedDomains,
+    readinessGate,
+    onReadinessWarning: (detail) => readinessWarnings.push(detail),
+    usesHostLoopback,
+    reservedHostPort: () => pinnedHostPort,
+    ...(prepareHostPorts ? { prepareHostPorts } : {}),
   });
 
-  const deploySsl = plannedDomains.some((domain) => domain.provisionSsl)
+  // Gate on the ROUTABLE set, not the plan: `routableDomains` carries the
+  // post-ensure SSL verdict (and drops hostnames another project owns), and it is
+  // what `toRoutedDomainInputs` hands the pipeline. Reading the pre-ensure plan
+  // here left the tracked provider unwired for a first-deploy domain — so even
+  // once issuance fired, nothing persisted the cert status onto the row.
+  const deploySsl = routableDomains.some((domain) => domain.provisionSsl)
     ? createTrackedSslProvider(ssl, domainByHostname, (m) => logger.log(`${m}\n`))
     : ssl;
 
@@ -1488,11 +2220,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // otherwise orphan. Skip the one runDeployPipeline already handles and the
   // sentinel. Best-effort; never blocks the deploy.
   if (prevDep) {
-    const prevServiceDeps = await repos.service
-      .listByDeployment(prevDep.id)
-      .catch(() => []);
+    const prevServiceDeps = await repos.service.listByDeployment(prevDep.id).catch(() => []);
     for (const sd of prevServiceDeps) {
-      if (!sd.containerId || sd.containerId === "compose" || sd.containerId === prevDep.containerId) {
+      if (!isRealContainerRef(sd.containerId) || sd.containerId === prevDep.containerId) {
         continue;
       }
       try {
@@ -1507,13 +2237,22 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     }
   }
 
-  // R1 gate: in overlap mode with SNAPSHOT strategy, let archivePreviousDeployment
-  // stop+RETAIN the old artifact (for rollback) instead of the pipeline stopping
-  // it — the old one keeps serving until the archive step (still zero-downtime).
-  // git strategy skips archive, so the pipeline stops the old one itself; bare
-  // (non-overlap) always stops first. previousContainerId stays accurate; the
-  // flag only controls whether the pipeline deactivates.
-  const deactivateOldInPipeline = !(canOverlap && dep.rollbackStrategy === "snapshot");
+  // R1 gate: when the runtime can overlap two versions AND this project keeps
+  // artifacts, leave stopping the old one to archivePreviousDeployment — it keeps
+  // serving until then (still zero-downtime) and gets stop-and-RETAIN rather than
+  // a plain stop. Otherwise the pipeline stops it itself; bare (non-overlap)
+  // always stops first. previousContainerId stays accurate either way; the flag
+  // only controls WHO deactivates.
+  //
+  // Reads the project's LIVE retention preference, not the frozen
+  // `deployment.rollback_strategy` — that column is history only, and keying
+  // behaviour off it is what made a retention change apply to nothing that
+  // already existed.
+  const deactivateOldInPipeline = !(canOverlap && shouldRetainArtifact(project));
+
+  // Sanitized rather than passed through: this reaches generated nginx config, and
+  // the row can also carry a value seeded from a repo config, not just the API.
+  const proxySettings = sanitizeProxySettings(project.routingConfig?.proxy);
 
   const deployResult = await runDeployPipeline(
     deployEnv,
@@ -1524,12 +2263,25 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
       domains: toRoutedDomainInputs(routableDomains),
       routing,
       ssl: deploySsl,
-      routeOptions: project.webhookDomain
-        ? {
-            webhookDomain: project.webhookDomain,
-            webhookProxy: webhookProxyTarget,
-          }
-        : undefined,
+      routeOptions: {
+        ...(project.webhookDomain
+          ? { webhookDomain: project.webhookDomain, webhookProxy: webhookProxyTarget }
+          : {}),
+        ...(proxySettings ? { proxy: proxySettings } : {}),
+        // The project's vercel.json rules. Required, not optional: registerRoute REPLACES
+        // the vhost, so without them this deploy DELETES any redirects/headers/cleanUrls a
+        // domain edit or "Retry routing" had installed — a rule that worked would stop
+        // working on the next push, silently.
+        //
+        // Skips are logged here (and nowhere else on this path): this is the single-app /
+        // static shape, so no composite planner runs afterwards to resolve a path rewrite
+        // against a real backend — what the compiler refused is genuinely not live, and the
+        // deploy log is where someone looks after editing vercel.json. Same wording the
+        // compose composite path uses, so there is one phrase to recognise.
+        ...compileProjectRoutingFields(project.routingConfig, (note) =>
+          logger.log(`vercel.json rule not applied — ${note}\n`, "warn"),
+        ),
+      },
       promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
     },
     logger,
@@ -1542,27 +2294,102 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     // prev-deactivation can never reach it — that's exactly how containers
     // piled up (3 for one project). Destroy it via the current runtime now.
     // Static deploys have no container. Best-effort + idempotent.
+    let failedWorkloadCleaned = !deployResult.containerId || isStaticFileServe;
     if (deployResult.containerId && !isStaticFileServe) {
-      await runtime.destroy(deployResult.containerId).catch((err) =>
+      try {
+        await runtime.destroy(deployResult.containerId);
+        failedWorkloadCleaned = true;
+      } catch (err) {
         logger.log(
           `Warning: failed to clean up container after deploy failure: ${safeErrorMessage(err)}\n`,
           "warn",
-        ),
+        );
+      }
+    }
+    if (phase.hostPortTarget && attemptedHostPortAllocations.length > 0) {
+      // Never blindly release a fresh claim after activation. If cleanup failed,
+      // the workload can still own the bind; and even though route failures are
+      // normally best-effort, a future pipeline change must not turn a written
+      // vhost into an unclaimed upstream. Once workload cleanup is confirmed, the
+      // same strict edge-scan convergence used on success can release only ports
+      // proven absent while preserving every prior exact owner.
+      const hasLegacyPreviousClaim = attemptedHostPortAllocations.some(
+        (allocation) => allocation.previousClaim && allocation.previousClaim.containerPort === null,
       );
+      if (!failedWorkloadCleaned) {
+        logger.log(
+          "Host-port reservation cleanup deferred because the failed workload could not be stopped; all reservations were retained.\n",
+          "warn",
+        );
+      } else if (!phase.targetExecutor || hasLegacyPreviousClaim) {
+        logger.log(
+          "Host-port reservation cleanup deferred because prior ownership could not be proven exactly; all reservations were retained.\n",
+          "warn",
+        );
+      } else {
+        const desiredPublishes = attemptedHostPortAllocations.flatMap((allocation) => {
+          const previous = allocation.previousClaim;
+          return previous?.containerPort !== null && previous?.containerPort !== undefined
+            ? [
+                {
+                  serviceId: previous.serviceId,
+                  containerPort: previous.containerPort,
+                  hostPort: previous.port,
+                },
+              ]
+            : [];
+        });
+        const convergence = {
+          target: phase.hostPortTarget,
+          projectId: project.id,
+          desiredPublishes,
+          edgeProxy: edgeProxyFor(phase.targetExecutor, "openresty", { ours: true }),
+        };
+        try {
+          if (phase.hostPortTargetLockHeld) {
+            await convergeTargetHostPortClaimsUnlocked(convergence);
+          } else {
+            await convergeTargetHostPortClaims(convergence);
+          }
+        } catch (err) {
+          logger.log(
+            `Host-port reservation cleanup deferred; uncertain reservations were retained safely. ${safeErrorMessage(err)}\n`,
+            "warn",
+          );
+        }
+      }
     }
     // Roll back the domain rows this deploy created — it didn't take, so
     // its routes must not linger (they'd resurface as planned routes next
     // deploy). Best-effort; pre-existing rows are left untouched.
     for (const id of createdDomainIds) {
-      await repos.domain.remove(id).catch((err) =>
-        logger.log(`Warning: failed to roll back domain record: ${safeErrorMessage(err)}\n`, "warn"),
-      );
+      await repos.domain
+        .remove(id)
+        .catch((err) =>
+          logger.log(
+            `Warning: failed to roll back domain record: ${safeErrorMessage(err)}\n`,
+            "warn",
+          ),
+        );
     }
     await onFailure(ctx, deployResult.error, buildResult.durationMs, {
       errorCode: deployResult.errorCode,
       errorDetails: deployResult.errorDetails,
     });
     return;
+  }
+
+  // Allocation authority is the target-scoped claim written before activation.
+  // Keep the historical scalar only as a routing/UI compatibility cache, and do
+  // not move it to a migration target until that target is genuinely live.
+  if (pinnedHostPort !== undefined && pinnedHostPort !== project.hostPort) {
+    await repos.project.update(project.id, { hostPort: pinnedHostPort }).catch((err) => {
+      logger.log(
+        `Warning: the deployment is live and its host port is reserved, but the project cache ` +
+          `could not be updated: ${safeErrorMessage(err)}\n`,
+        "warn",
+      );
+    });
   }
 
   const postSync = await runPostDeploySync({
@@ -1579,6 +2406,47 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     logger,
   });
 
+  // Route mutation is complete now, including removal of obsolete vhosts in
+  // runPostDeploySync. Converge only at this boundary: releasing earlier could
+  // let another deployment inherit a port which an old edge route still dials.
+  //
+  // This also runs when the NEW topology is container-IP/static. Its desired set
+  // is then empty, which is how a successful loopback -> non-loopback transition
+  // reclaims the old reservation. Such a path did not take the outer allocation
+  // lock, so it acquires the lock here instead of calling the unlocked helper.
+  let hostPortClaimWarning: string | undefined;
+  if (phase.hostPortTarget && phase.targetExecutor) {
+    const desiredPublishes = needsHostLoopbackClaim
+      ? runtime.name === "bare"
+        ? [...new Set(attemptedHostPortAllocations.map((allocation) => allocation.claim.port))].map(
+            (port) => ({ serviceId: null, containerPort: port, hostPort: port }),
+          )
+        : pinnedHostPort !== undefined
+          ? [{ serviceId: null, containerPort: snapshot.port, hostPort: pinnedHostPort }]
+          : []
+      : [];
+    const convergence = {
+      target: phase.hostPortTarget,
+      projectId: project.id,
+      desiredPublishes,
+      edgeProxy: edgeProxyFor(phase.targetExecutor, "openresty", { ours: true }),
+    };
+    try {
+      const result = phase.hostPortTargetLockHeld
+        ? await convergeTargetHostPortClaimsUnlocked(convergence)
+        : await convergeTargetHostPortClaims(convergence);
+      if (result.released > 0) {
+        logger.log(
+          `Released ${result.released} obsolete host-port reservation${result.released === 1 ? "" : "s"}.\n`,
+        );
+      }
+    } catch (error) {
+      hostPortClaimWarning =
+        "Host-port reservation cleanup was deferred; uncertain reservations were retained safely.";
+      logger.log(`${hostPortClaimWarning} ${safeErrorMessage(error)}\n`, "warn");
+    }
+  }
+
   // Advisory port check — confirm the app is actually listening on its exposed
   // port(s) from INSIDE the instance. Runs after the deploy is live and never
   // throws (auditPorts is fully guarded), so it can't fail or delay-revert the
@@ -1589,7 +2457,8 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     new Set(
       (deployConfig.publicEndpoints && deployConfig.publicEndpoints.length > 0
         ? deployConfig.publicEndpoints
-        : [{ port: deployConfig.port }])
+        : [{ port: deployConfig.port }]
+      )
         .map((endpoint) => endpoint.port ?? deployConfig.port)
         .filter((port): port is number => Number.isFinite(port)),
     ),
@@ -1621,6 +2490,12 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // `metaPatch` is spread into deployment.meta (persisted) and read back for the
   // SSE payload in onSuccess, so both live + refresh see the same result.
   const metaPatch: Record<string, unknown> = {};
+  // Docker preparation resolves a registry tag to its immutable repo digest.
+  // Freeze that exact reference into the successful deployment so a rollback
+  // can re-pull the same bytes even after local image retention expires.
+  if (snapshot.releaseImageRef && runtime.name === "docker" && buildResult.imageRef) {
+    metaPatch.releaseImageRef = buildResult.imageRef;
+  }
   if (portCheck.length > 0) metaPatch.portCheck = portCheck;
   if (outputCheck.length > 0) metaPatch.outputCheck = outputCheck;
   // Persist WHERE this deploy serves from. It can't be recomputed later: the read
@@ -1642,19 +2517,80 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // + the Domains-tab dot instead of failing an otherwise-good deploy. Cleared
   // by Retry routing / the next clean deploy.
   const routeIssues = [...domainClaimWarnings, ...(deployResult.routeWarnings ?? [])];
-  if (routeIssues.length) {
-    const msg =
-      `Some domains aren't routed yet — the app is deployed and running; fix DNS/routing and ` +
-      `Retry from the Domains tab: ${routeIssues.join("; ")}`;
+  // Routed, but is it serving HTTPS? `registerRoute` succeeds without a certificate
+  // (the edge keeps a bootstrap self-signed cert on :443) and the issuance failure
+  // inside registerResolvedRoutes is caught and only logged — so a domain could
+  // finish a green deploy routed, serving a self-signed cert, with nothing saying
+  // so. One shared auditor with the compose pipeline; `routeIssues` is passed so a
+  // host already reported as UNROUTED isn't also reported as uncertified.
+  const tlsPending = await auditRoutedDomainTls({
+    projectId: project.id,
+    routes: routableDomains,
+    routeWarnings: routeIssues,
+    log: (message) => logger.log(`${message}\n`, "warn"),
+  });
+  if (routeIssues.length || tlsPending.length) {
+    const msg = routeIssuesWarning(routeIssues, tlsPending);
     metaPatch.deployWarning = metaPatch.deployWarning ? `${metaPatch.deployWarning} · ${msg}` : msg;
     metaPatch.edgeUnsynced = true;
+  }
+
+  // An opted-in readiness check that failed with onFailure "warn": the deploy is
+  // live, and this says what didn't answer. Kept as its OWN key rather than folded
+  // into `deployWarning`, because any deployWarning makes the project read
+  // `routingUnsynced` and offer "Retry routing" — the wrong fix to suggest for an
+  // app that didn't answer on its port.
+  // Make the always-on output verdict VISIBLE. Until this, the one deploy shape
+  // whose only failure mode is a 404 recorded its finding into meta and told
+  // nobody: the opt-in readiness gate is off by default, nothing read
+  // `meta.outputCheck`, and a static site with an empty doc-root — or a doc-root
+  // the edge cannot actually serve — reported fully green.
+  //
+  // Reuses the exact `deployWarning` + `edgeUnsynced` pair the routing/TLS blocks
+  // above set, so the project's "Action Required" state, the Domains-tab dot and
+  // the Retry-routing affordance all light up with no new meta key, no new
+  // pending-action kind and no new dismissal surface — and the next clean deploy
+  // clears it. Deliberately a WARNING, never a failure: the files are one setting
+  // away from correct, so reverting a deploy over it helps nobody.
+  //
+  // Placed after the other writers ON PURPOSE — the postSync branch above ASSIGNS
+  // deployWarning rather than appending, so folding this in earlier would let a
+  // free-domain sync warning silently drop it.
+  const outputBroken = outputCheck.filter(outputFindingIsBroken);
+  if (outputBroken.length > 0) {
+    const outputWarning =
+      `Static output: ${outputBroken.map(describeOutputFinding).join(" ")} ` +
+      `Check the Output Directory and redeploy.`;
+    metaPatch.deployWarning = metaPatch.deployWarning
+      ? `${String(metaPatch.deployWarning)} · ${outputWarning}`
+      : outputWarning;
+    metaPatch.edgeUnsynced = true;
+  }
+
+  if (readinessWarnings.length > 0) {
+    metaPatch.readinessWarning = readinessWarnings.join(" · ");
+  }
+
+  // The warning belongs in the TRACE, not only on the SSE meta. It used to reach
+  // the terminal solely because the dashboard wrote it client-side, so it was
+  // absent from the persisted log — invisible on replay, in history, and to the
+  // CLI. Emitting it here (matching the compose path's wording) makes the server
+  // the single writer for every warning, so the client never has to add one.
+  const deployWarnings = [
+    metaPatch.deployWarning,
+    metaPatch.readinessWarning,
+    hostPortClaimWarning,
+  ].filter((warning): warning is string => typeof warning === "string" && warning.length > 0);
+  const warningMessage = deployWarnings.join(" · ");
+  if (warningMessage) {
+    logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
   }
 
   await onSuccess(ctx, {
     containerId: deployResult.containerId!,
     url: deployResult.url,
     durationMs: buildResult.durationMs ?? 0,
-    ...(typeof metaPatch.deployWarning === "string" ? { warningMessage: metaPatch.deployWarning } : {}),
+    ...(warningMessage ? { warningMessage } : {}),
     ...(Object.keys(metaPatch).length > 0 ? { metaPatch } : {}),
   });
 
@@ -1688,8 +2624,13 @@ async function runPostDeploySync(opts: {
   logger: BuildLogger;
 }): Promise<{ warningMessage?: string }> {
   const {
-    plannedDomains, obsoleteProjectDomains, routing, usesManagedRouting,
-    organizationId, serverId, logger,
+    plannedDomains,
+    obsoleteProjectDomains,
+    routing,
+    usesManagedRouting,
+    organizationId,
+    serverId,
+    logger,
   } = opts;
 
   // Collect free-domain edge-sync failures so a self-hosted + free-.opsh.io
@@ -1718,13 +2659,19 @@ async function runPostDeploySync(opts: {
     if (routing) {
       await routing.removeRoute(domain.hostname).catch((err) => {
         const message = safeErrorMessage(err);
-        logger.log(`Warning: failed to remove stale route ${domain.hostname}: ${message}\n`, "warn");
+        logger.log(
+          `Warning: failed to remove stale route ${domain.hostname}: ${message}\n`,
+          "warn",
+        );
       });
     }
 
     await repos.domain.remove(domain.id).catch((err) => {
       const message = safeErrorMessage(err);
-      logger.log(`Warning: failed to remove stale domain record ${domain.hostname}: ${message}\n`, "warn");
+      logger.log(
+        `Warning: failed to remove stale domain record ${domain.hostname}: ${message}\n`,
+        "warn",
+      );
     });
   }
 

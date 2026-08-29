@@ -54,10 +54,10 @@
  */
 
 import { PLANS, type PlanTierId, safeErrorMessage } from "@repo/core";
-import { and, db, eq, lt, notInArray, repos, schema } from "@repo/db";
+import { and, db, eq, isNotNull, lt, notInArray, repos, schema } from "@repo/db";
 import { env } from "../../config/env";
 import { getJobRunner } from "../../lib/job-runner";
-import { resetAndRegrant } from "./billing-oblien-quota";
+import { resetAndRegrant, reconcileOblienEntitlement } from "./billing-oblien-quota";
 
 const BILLING_ANNIVERSARY_JOB_ID = "billing:anniversary-reset";
 // Hourly at minute 7 — keeps the legacy schedule so booted instances
@@ -234,6 +234,7 @@ export async function runAnniversaryReset(): Promise<ResetStats> {
           eventType: "billing.anniversary_reset",
           resourceType: "organization",
           resourceId: org.id,
+          source: "system",
           ipAddress: null,
           userAgent: null,
           before: {
@@ -304,8 +305,69 @@ export async function scheduleBillingAnniversary(): Promise<void> {
       } catch (err) {
         console.error("[billing-anniversary] sweep failed", err);
       }
+
+      // Second, independent pass on the same tick: reconcile every namespaced org
+      // against Oblien. Separate try/catch because the two are unrelated failures
+      // — a rollover problem must not cancel the drift sweep, and vice versa.
+      try {
+        const drift = await runEntitlementReconcile();
+        if (drift.corrected > 0 || drift.uncapped > 0) {
+          console.warn(
+            `[billing-reconcile] scanned=${drift.scanned} corrected=${drift.corrected} ` +
+              `uncapped-found=${drift.uncapped} status-fixed=${drift.statusFixed}`,
+          );
+        }
+      } catch (err) {
+        console.error("[billing-reconcile] sweep failed", err);
+      }
     },
   });
+}
+
+/** How many orgs one reconcile pass will examine. */
+const RECONCILE_BATCH = 200;
+
+export interface ReconcileStats {
+  scanned: number;
+  corrected: number;
+  /** Orgs found with a namespace but NO quota row — i.e. uncapped tenants. */
+  uncapped: number;
+  statusFixed: number;
+}
+
+/**
+ * Walk namespaced orgs and repair entitlement drift against Oblien.
+ *
+ * Bounded per tick (`RECONCILE_BATCH`) and ordered oldest-touched-first, so a large
+ * fleet converges over several ticks instead of firing hundreds of concurrent
+ * Oblien reads at once — the same discipline the namespace backfill sweep uses.
+ *
+ * `uncapped` is the number worth alerting on: it counts orgs that were metered with
+ * no ceiling. Steady state is zero, and anything else means a spend path found a
+ * way around `ensureNamespaceWithQuota`.
+ */
+export async function runEntitlementReconcile(): Promise<ReconcileStats> {
+  const stats: ReconcileStats = { scanned: 0, corrected: 0, uncapped: 0, statusFixed: 0 };
+  if (!env.CLOUD_MODE) return stats;
+
+  const orgs = await db
+    .select({ id: schema.organization.id })
+    .from(schema.organization)
+    .where(isNotNull(schema.organization.oblienNamespace))
+    .limit(RECONCILE_BATCH);
+
+  for (const org of orgs) {
+    stats.scanned += 1;
+    // `reconcileOblienEntitlement` swallows its own per-org failures and returns
+    // null, so a dead namespace costs one skipped row, not the sweep.
+    const drift = await reconcileOblienEntitlement(org.id);
+    if (!drift) continue;
+    if (drift.quotaMissing) stats.uncapped += 1;
+    if (drift.statusNow !== drift.statusWas) stats.statusFixed += 1;
+    if (drift.changed) stats.corrected += 1;
+  }
+
+  return stats;
 }
 
 /**

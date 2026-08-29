@@ -13,6 +13,15 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import {
+  commandToArgv,
+  composeBuildIssues,
+  composeMountIssues,
+  composeMountToSpec,
+  composePortToSpec,
+  parseComposeNamespace,
+  type ComposeAdvanced,
+} from "@repo/core";
 import { apiRequest, ApiError, paginate } from "../lib/api-client";
 import { sseRequest } from "../lib/sse";
 import { getToken } from "../lib/config";
@@ -191,10 +200,7 @@ const createCmd = stackCommand("create")
   .option("--depends-on <service>", "Service this depends on (repeatable)", collect, [])
   .option("--env <KEY=VALUE>", "Compose environment default (repeatable)", collect, [])
   .option("--command <command>", "Override the container command")
-  .option(
-    "--restart <policy>",
-    "Restart policy: no | always | on-failure | unless-stopped",
-  )
+  .option("--restart <policy>", "Restart policy: no | always | on-failure | unless-stopped")
   .option("--expose", "Expose the service publicly through managed routing")
   .option("--exposed-port <port>", "Container port to expose publicly")
   .option("--domain <label>", "Free subdomain label (with --expose)")
@@ -262,37 +268,39 @@ function relativizeContext(ctx: string | undefined, baseDir: string): string | u
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+// `docker compose config` ALWAYS normalizes to long form, so these two are the
+// only path a synced port or mount takes — which is why they spelling their own
+// fold was so costly: this mapper dropped `read_only`, and every `:ro` in every
+// synced compose file became a WRITABLE bind mount of a host directory the author
+// had marked read-only. It dropped `host_ip` the same way. Both now go through the
+// one shared fold in @repo/core, the same one the API's YAML parser uses (#533).
 function mapPorts(ports: unknown): string[] {
   if (!Array.isArray(ports)) return [];
   return ports.map((p) => {
     if (typeof p === "string") return p;
     if (typeof p === "number") return String(p);
     if (p && typeof p === "object") {
-      const o = p as Record<string, unknown>;
-      const target = o.target ?? o.container_port;
-      const published = o.published ?? o.host_port;
-      const proto = typeof o.protocol === "string" ? o.protocol.toLowerCase() : undefined;
-      const suffix = proto && proto !== "tcp" ? `/${proto}` : "";
-      if (target != null) {
-        return published != null && published !== ""
-          ? `${published}:${target}${suffix}`
-          : `${target}${suffix}`;
-      }
+      const spec = composePortToSpec(p as Record<string, unknown>);
+      if (spec !== undefined) return spec;
     }
     return String(p);
   });
 }
 
-function mapVolumes(vols: unknown): string[] {
+function mapVolumes(vols: unknown, name: string, errors: string[]): string[] {
   if (!Array.isArray(vols)) return [];
   return vols.map((v) => {
     if (typeof v === "string") return v;
     if (v && typeof v === "object") {
-      const o = v as Record<string, unknown>;
-      const src = o.source ?? o.name;
-      const tgt = o.target;
-      if (src && tgt) return `${src}:${tgt}`;
-      if (tgt) return String(tgt);
+      // The same mount rules the API import enforces. Without this, a file the
+      // wizard refuses (a tmpfs that would become persistent disk, a subpath that
+      // would mount the whole volume) synced cleanly through the CLI instead —
+      // one policy accepted by one door and rejected by the other.
+      for (const issue of composeMountIssues(v as Record<string, unknown>)) {
+        if (issue.blocking) errors.push(`  ${name}: ${issue.reason}`);
+      }
+      const spec = composeMountToSpec(v as Record<string, unknown>);
+      if (spec !== undefined) return spec;
     }
     return String(v);
   });
@@ -325,19 +333,71 @@ function mapDependsOn(deps: unknown): string[] {
   return [];
 }
 
-function mapComposeService(name: string, def: unknown, baseDir: string): Record<string, unknown> {
+function mapBuildArgs(raw: unknown): Record<string, string | null> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const args: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value === null || value === undefined) args[key] = null;
+    else if (["string", "number", "boolean"].includes(typeof value)) {
+      args[key] = String(value);
+    }
+  }
+  return Object.keys(args).length > 0 ? args : undefined;
+}
+
+/**
+ * Shared namespaces for the sync payload, refusing what can't be honored.
+ *
+ * Returns the rejection reasons alongside the value so `sync` can print them and
+ * exit non-zero rather than uploading a service list that quietly omits them —
+ * the CLI's half of "error out instead of silently dropping" (#533).
+ */
+function mapNamespaces(
+  name: string,
+  d: Record<string, unknown>,
+): { advanced: ComposeAdvanced; errors: string[] } {
+  const advanced: ComposeAdvanced = {};
+  const errors: string[] = [];
+  for (const [key, raw, field] of [
+    ["networkMode", d.network_mode, "network_mode"],
+    ["pidMode", d.pid, "pid"],
+  ] as const) {
+    const parsed = parseComposeNamespace(raw, field);
+    if (!parsed) continue;
+    if (parsed.ok) advanced[key] = parsed.value;
+    else errors.push(`  ${name}: ${parsed.reason}`);
+  }
+  return { advanced, errors };
+}
+
+export function mapComposeService(
+  name: string,
+  def: unknown,
+  baseDir: string,
+  errors: string[],
+): Record<string, unknown> {
   const d = (def ?? {}) as Record<string, unknown>;
   const svc: Record<string, unknown> = { name };
 
   if (typeof d.image === "string") svc.image = d.image;
 
   const build = d.build;
+  // `docker compose config` has already normalized local contexts to absolute
+  // paths, so those are safe here (and are relativized back below). Everything
+  // else follows the same fail-closed build policy as the API YAML importer:
+  // syncing must not silently discard a target, secret/SSH contract, malformed
+  // arg, or another build option that can change the produced image.
+  for (const issue of composeBuildIssues(build, { allowAbsoluteContext: true })) {
+    if (issue.blocking) errors.push(`  ${name}: ${issue.reason}`);
+  }
   if (typeof build === "string") {
     svc.build = relativizeContext(build, baseDir);
   } else if (build && typeof build === "object") {
     const b = build as Record<string, unknown>;
     svc.build = relativizeContext(typeof b.context === "string" ? b.context : ".", baseDir);
     if (typeof b.dockerfile === "string") svc.dockerfile = b.dockerfile;
+    const buildArgs = mapBuildArgs(b.args);
+    if (buildArgs) svc.buildArgs = buildArgs;
   }
 
   const ports = mapPorts(d.ports);
@@ -346,20 +406,44 @@ function mapComposeService(name: string, def: unknown, baseDir: string): Record<
   if (dependsOn.length) svc.dependsOn = dependsOn;
   const environment = mapEnv(d.environment);
   if (Object.keys(environment).length) svc.environment = environment;
-  const volumes = mapVolumes(d.volumes);
+  const volumes = mapVolumes(d.volumes, name, errors);
   if (volumes.length) svc.volumes = volumes;
 
-  const command = d.command;
-  if (typeof command === "string") svc.command = command;
-  else if (Array.isArray(command)) svc.command = command.map(String).join(" ");
+  // #332: carry structured argv (list verbatim / string shell-split) so the
+  // deploy runs the real Cmd, not a `sh -c`-wrapped string that breaks
+  // entrypoint+CMD images. `command` string kept for display / legacy.
+  const command = d.command as string | string[] | undefined;
+  if (command != null) {
+    svc.commandArgv = commandToArgv(command);
+    svc.command = typeof command === "string" ? command : command.map(String).join(" ");
+  }
 
   if (typeof d.restart === "string") svc.restart = d.restart;
+
+  // Extended keys. The sync endpoint has always accepted `advanced` as an open
+  // object; this mapper simply never filled it, so a synced stack lost its shared
+  // namespaces the same way it lost read-only mounts.
+  const { advanced, errors: namespaceErrors } = mapNamespaces(name, d);
+  errors.push(...namespaceErrors);
+  // `docker compose config` has already expanded args, including turning `$$`
+  // into a literal `$`. An explicit empty marker prevents the API from ever
+  // treating that normalized literal as a raw template on a later deploy.
+  if (
+    build &&
+    typeof build === "object" &&
+    Object.hasOwn(build as Record<string, unknown>, "args")
+  ) {
+    advanced.buildArgTemplateKeys = [];
+  }
+  if (Object.keys(advanced).length > 0) svc.advanced = advanced;
 
   return svc;
 }
 
 const syncCmd = stackCommand("sync")
-  .description("Sync a stack's services from a docker-compose file (services not in the file are removed)")
+  .description(
+    "Sync a stack's services from a docker-compose file (services not in the file are removed)",
+  )
   .argument("<compose-file>", "Path to docker-compose.yml / compose.yaml")
   .option("-y, --yes", "Skip the confirmation prompt")
   .action(async (composeFile: string, opts) => {
@@ -367,11 +451,10 @@ const syncCmd = stackCommand("sync")
     // No YAML dependency in the CLI: let Docker Compose parse + interpolate,
     // then map its normalized JSON to the sync payload.
     const abs = path.resolve(composeFile);
-    const proc = spawnSync(
-      "docker",
-      ["compose", "-f", abs, "config", "--format", "json"],
-      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-    );
+    const proc = spawnSync("docker", ["compose", "-f", abs, "config", "--format", "json"], {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
     if (proc.error) {
       if ((proc.error as NodeJS.ErrnoException).code === "ENOENT") {
         err("  `docker` not found. `service sync` uses Docker Compose to parse the file.");
@@ -393,11 +476,20 @@ const syncCmd = stackCommand("sync")
     }
 
     const baseDir = path.dirname(abs);
+    const mapErrors: string[] = [];
     const services = Object.entries(doc.services ?? {}).map(([name, def]) =>
-      mapComposeService(name, def, baseDir),
+      mapComposeService(name, def, baseDir, mapErrors),
     );
     if (services.length === 0) {
       err("  No services found in the compose file.");
+      process.exit(1);
+    }
+    // Refuse rather than upload a list that omits what the file asked for. Syncing
+    // anyway is how a compose file's namespace intent used to disappear silently.
+    if (mapErrors.length > 0) {
+      err(
+        `  This compose file declares options Openship can't deploy faithfully:\n${mapErrors.join("\n")}`,
+      );
       process.exit(1);
     }
 
@@ -425,22 +517,48 @@ const syncCmd = stackCommand("sync")
 // ─── start / stop / restart ──────────────────────────────────────────────────
 
 function containerActionCommand(action: "start" | "stop" | "restart"): Command {
-  return stackCommand(action)
-    .description(`${action[0].toUpperCase()}${action.slice(1)} a service's container`)
-    .argument("<service>", "Service name or id")
-    .action(async (service: string, opts) => {
-      requireAuth();
-      try {
-        const projectId = await resolveProject(opts.project);
-        const svc = await resolveService(projectId, service);
-        await apiRequest(`/projects/${projectId}/services/${svc.id}/${action}`, {
-          method: "POST",
-        });
-        ok(`  ${action}ed "${svc.name}".`);
-      } catch (e) {
-        fail(e);
+  const cmd = stackCommand(action)
+    .description(
+      action === "restart"
+        ? "Bounce a service's container (does NOT apply changed env — use `deploy --refresh` for that)"
+        : `${action[0].toUpperCase()}${action.slice(1)} a service's container`,
+    )
+    .argument("<service>", "Service name or id");
+  if (action === "restart") {
+    cmd.option("--force", "Bounce even with pending env changes (they will NOT be applied)");
+  }
+  return cmd.action(async (service: string, opts) => {
+    requireAuth();
+    // Hoisted so the catch below can name the resolved ids in its guidance —
+    // the whole point of the refusal is that it tells you the command to run.
+    let serviceId = "";
+    try {
+      const projectId = await resolveProject(opts.project);
+      const svc = await resolveService(projectId, service);
+      serviceId = svc.id;
+      const query = action === "restart" && opts.force ? "?force=true" : "";
+      await apiRequest(`/projects/${projectId}/services/${svc.id}/${action}${query}`, {
+        method: "POST",
+      });
+      ok(`  ${action}ed "${svc.name}".`);
+    } catch (e) {
+      // The API refuses a restart that would silently drop pending env changes.
+      // Print the drifted keys and the command that DOES apply them, rather than
+      // leaving the operator to re-read a one-line error (GH-615).
+      const body = e instanceof ApiError ? (e.body as Record<string, unknown> | null) : null;
+      if (body?.code === "SERVICE_CONFIG_STALE") {
+        const keys = Array.isArray(body.staleEnvKeys) ? (body.staleEnvKeys as string[]) : [];
+        err(`  Restart refused: "${body.serviceName ?? service}" has pending environment changes.`);
+        if (keys.length > 0) info(`  Pending: ${keys.join(", ")}`);
+        info(
+          `  Apply them:  openship deploy --refresh --service-ids ${serviceId} -p ${opts.project}`,
+        );
+        info(`  Bounce anyway (changes NOT applied):  add --force`);
+        process.exit(1);
       }
-    });
+      fail(e);
+    }
+  });
 }
 
 // ─── containers ──────────────────────────────────────────────────────────────
@@ -555,12 +673,13 @@ const envSetCmd = stackCommand("set")
   .description("Set a service's environment variables for one environment")
   .argument("<service>", "Service name or id")
   .argument("<pairs...>", "KEY=VALUE pairs")
-  .option("-e, --env <environment>", "Environment: production | preview | development", "production")
-  .option("--secret", "Mark the provided variables as secret")
   .option(
-    "--replace",
-    "Replace ALL variables for this environment with only the given pairs",
+    "-e, --env <environment>",
+    "Environment: production | preview | development",
+    "production",
   )
+  .option("--secret", "Mark the provided variables as secret")
+  .option("--replace", "Replace ALL variables for this environment with only the given pairs")
   .action(async (service: string, pairs: string[], opts) => {
     requireAuth();
     try {
@@ -577,7 +696,9 @@ const envSetCmd = stackCommand("set")
       if (opts.replace) {
         vars = Object.entries(desired).map(([key, value]) => ({ key, value, isSecret }));
       } else {
-        const cur = await apiRequest<{ vars: { key: string; value: string; isSecret?: boolean }[] }>(
+        const cur = await apiRequest<{
+          vars: { key: string; value: string; isSecret?: boolean }[];
+        }>(
           `/projects/${projectId}/services/${svc.id}/env?environment=${encodeURIComponent(environment)}`,
         );
         const existing = cur.vars ?? [];
@@ -627,7 +748,8 @@ function printLogEntry(entry: { timestamp?: string; message?: string; level?: st
     return;
   }
   const ts = entry.timestamp ? chalk.dim(entry.timestamp) : "";
-  const line = entry.level === "error" ? chalk.red(msg) : entry.level === "warn" ? chalk.yellow(msg) : msg;
+  const line =
+    entry.level === "error" ? chalk.red(msg) : entry.level === "warn" ? chalk.yellow(msg) : msg;
   process.stdout.write(`${ts ? ts + " " : ""}${line}\n`);
 }
 
@@ -644,9 +766,9 @@ const logsCmd = stackCommand("logs")
       const tail = opts.tail ? `?tail=${encodeURIComponent(opts.tail)}` : "";
 
       if (!opts.follow) {
-        const res = await apiRequest<{ data: { timestamp?: string; message?: string; level?: string }[] }>(
-          `/projects/${projectId}/services/${svc.id}/logs${tail}`,
-        );
+        const res = await apiRequest<{
+          data: { timestamp?: string; message?: string; level?: string }[];
+        }>(`/projects/${projectId}/services/${svc.id}/logs${tail}`);
         const entries = res.data ?? [];
         if (isJsonMode()) {
           printJson(entries);
@@ -656,14 +778,17 @@ const logsCmd = stackCommand("logs")
         return;
       }
 
-      for await (const ev of sseRequest(`/projects/${projectId}/services/${svc.id}/logs/stream${tail}`)) {
+      for await (const ev of sseRequest(
+        `/projects/${projectId}/services/${svc.id}/logs/stream${tail}`,
+      )) {
         if (ev.event === "error") {
           const parsed = safeParse(ev.data);
           throw new ApiError((parsed?.error as string) || "Log stream error", 0, parsed);
         }
         if (ev.event === "log") {
           const parsed = safeParse(ev.data);
-          if (parsed) printLogEntry(parsed as { timestamp?: string; message?: string; level?: string });
+          if (parsed)
+            printLogEntry(parsed as { timestamp?: string; message?: string; level?: string });
         }
       }
     } catch (e) {

@@ -31,21 +31,21 @@
  * domain, backup_policy) does the dependent-row sweep in one statement.
  */
 
-import { repos, type Project, type BackupRun, type BackupRestore } from "@repo/db";
+import { repos, type Project } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import {
   collectProjectManifest,
+  disposeManifestRuntimes,
   executeCleanup,
 } from "./project-cleanup.service";
 import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sync";
 import { cancelBuildSession } from "../deployments/build.service";
+import { restoreOrchestrator } from "../backups/restore.orchestrator";
 import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
 import { env } from "../../config";
-import {
-  cleanupWebmailInstall,
-  mailServerIdFromWebmailSlug,
-} from "../mail/webmail/webmail-project.service";
+import { cleanupWebmailInstall } from "../mail/webmail/webmail-install.service";
+import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -73,6 +73,7 @@ export type TeardownRejectionKind =
   | "claim_lock_held"
   | "already_deleted"
   | "org_mismatch"
+  | "active_work"
   | "control_plane";
 
 /** A remote resource we couldn't destroy now (server unreachable, or a
@@ -112,6 +113,13 @@ export interface TeardownResult {
   /** Projects unlinked from this app as part of the delete. Empty for a project
    *  nothing was wired into. */
   unlinked: UnlinkedConsumerSummary[];
+  /** True only when the row was kept solely because destruction of reachable
+   * runtime resources failed. Retrying with `forceOrphan` can safely replace
+   * that destroy attempt with durable deferred-cleanup records. */
+  canForceOrphan: boolean;
+  /** Present with `rejection: "active_work"`; captured while the deletion
+   * lock was held, so it is the authoritative gate rather than a UI precheck. */
+  active?: PreflightActiveState;
   /** Set when teardown short-circuited before the step sequence; absent
    *  on the normal "ran to completion" path. */
   rejection?: TeardownRejectionKind;
@@ -123,10 +131,12 @@ export interface PreflightActiveState {
   hasActiveDeployment: boolean;
   hasActiveBackup: boolean;
   hasActiveBackupRestore: boolean;
+  hasActiveMigration: boolean;
   /** IDs the caller needs to either cancel (force=true) or wait on. */
   activeDeploymentIds: string[];
   activeBackupRunIds: string[];
   activeBackupRestoreIds: string[];
+  activeMigrationIds: string[];
   /** Human-readable one-liner for the 409 body. */
   summary: string;
   /** True when any of the above is true. */
@@ -162,26 +172,20 @@ export interface TeardownOptions {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ACTIVE_DEPLOYMENT_STATUSES = ["queued", "building", "deploying"] as const;
-
-/** Max wait for cancellations to land before we give up and barrel on. */
+/** Max wait for cancellations to land before teardown refuses to touch resources. */
 const QUIESCE_TIMEOUT_MS = 5000;
 const QUIESCE_POLL_MS = 250;
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
 export async function getActiveProjectState(projectId: string): Promise<PreflightActiveState> {
-  const { rows: deps } = await repos.deployment.listByProject(projectId, {
-    page: 1,
-    perPage: 50,
-  });
-  const activeDeployments = deps.filter((d) =>
-    (ACTIVE_DEPLOYMENT_STATUSES as readonly string[]).includes(d.status),
-  );
-
-  const [runs, restores] = await Promise.all([
-    repos.backupRun.listInFlightByProject(projectId).catch((): BackupRun[] => []),
-    repos.backupRestore.listInFlightByProject(projectId).catch((): BackupRestore[] => []),
+  // Every query is exact and fail-closed. An unreadable work table is NOT proof
+  // of quiescence; letting an error propagate retains the row via `finally`.
+  const [activeDeployments, runs, restores, migration] = await Promise.all([
+    repos.deployment.listInFlightByProject(projectId),
+    repos.backupRun.listInFlightByProject(projectId),
+    repos.backupRestore.listInFlightByProject(projectId),
+    repos.dockerMigrationRun.findActiveForProject(projectId),
   ]);
 
   const parts: string[] = [];
@@ -190,25 +194,26 @@ export async function getActiveProjectState(projectId: string): Promise<Prefligh
   }
   if (runs.length > 0) parts.push(`${runs.length} backup run(s)`);
   if (restores.length > 0) parts.push(`${restores.length} backup restore(s)`);
+  if (migration) parts.push("1 Docker migration");
 
   return {
     hasActiveDeployment: activeDeployments.length > 0,
     hasActiveBackup: runs.length > 0,
     hasActiveBackupRestore: restores.length > 0,
+    hasActiveMigration: Boolean(migration),
     activeDeploymentIds: activeDeployments.map((d) => d.id),
     activeBackupRunIds: runs.map((r) => r.id),
     activeBackupRestoreIds: restores.map((r) => r.id),
+    activeMigrationIds: migration ? [migration.id] : [],
     blocking: parts.length > 0,
     summary:
-      parts.length === 0
-        ? "No active work"
-        : `Cannot delete while in-flight: ${parts.join(", ")}`,
+      parts.length === 0 ? "No active work" : `Cannot delete while in-flight: ${parts.join(", ")}`,
   };
 }
 
 // ─── Teardown ─────────────────────────────────────────────────────────────────
 
-export async function teardownProject(
+async function teardownProjectLocked(
   ctx: RequestContext,
   projectId: string,
   opts: TeardownOptions,
@@ -232,13 +237,10 @@ export async function teardownProject(
     return finalize(steps, false, "control_plane");
   }
 
-  // Claim the deletion lock. Two concurrent DELETEs lose the same row
-  // race otherwise — a failed claim has three distinct causes:
-  //   (a) Another teardown is in flight  → "claim_lock_held"  (409)
-  //   (b) The row is already gone        → "already_deleted"  (200, idempotent)
-  //   (c) Real DB error
-  // We re-read the row to tell them apart so the controller emits the
-  // right code + audit event.
+  // Publish the deletion fence after acquiring the cross-process runtime lock.
+  // The advisory lock is the real owner; this boolean is an admission signal for
+  // DB/runtime writers. Re-setting an old `true` is intentional crash recovery:
+  // no live teardown can own it while this caller holds the advisory lock.
   const claimed = await repos.project.claimDeletion(projectId);
   if (!claimed) {
     let existing: Project | undefined;
@@ -258,16 +260,7 @@ export async function teardownProject(
       return finalize(steps, false, "already_deleted");
     }
 
-    if (existing.deletionInProgress) {
-      push({
-        step: "claim_lock",
-        status: "failed",
-        error: "Another teardown is already in progress for this project",
-      });
-      return finalize(steps, false, "claim_lock_held");
-    }
-
-    // Lost the race for some other reason — surface as a generic failure.
+    // The live-row update failed for some other reason — surface it loudly.
     push({
       step: "claim_lock",
       status: "failed",
@@ -280,8 +273,9 @@ export async function teardownProject(
   // on ANY exit — throw, early return, or normal completion — UNLESS the row
   // was deleted (then there's no row to unlock). This is what stops a thrown
   // step from leaving the project permanently stuck at "Another delete is
-  // already running". (A true infinite hang is bounded by the step timeouts;
-  // a process death mid-teardown is recovered by clearStaleDeletions at boot.)
+  // already running". Runtime adapters own their command deadlines; if this
+  // process dies, Postgres releases the advisory lock and the next caller safely
+  // reclaims the stale boolean while holding that lock.
   let rowDeleted = false;
   try {
     let project: Project | undefined;
@@ -337,16 +331,44 @@ export async function teardownProject(
     // the UI toggle. (CLOUD_MODE = the SaaS itself, where nothing is "kept".)
     const recordOnly = !!opts.recordOnly && !project.cloudWorkspaceId && !env.CLOUD_MODE;
 
-    // ── Step 1: Cancel in-flight work (force=true only). ────────────────
-    // `keepProvisioned` for record-only: the cancel aborts the build and marks
-    // the row cancelled but must NOT destroy what the deploy already
-    // provisioned — otherwise the dashboard's automatic force-escalation on
-    // "active work" would tear down containers/images the user was promised
-    // stay on the server.
-    if (opts.force) {
-      await stepCancelInFlight(projectId, push, recordOnly);
+    // ── Step 1: Cancel in-flight work (force=true or forceOrphan). ───────
+    // Cancellation only requests/records the stop here. Runtime cleanup happens
+    // after confirmed worker quiescence below; record-only then skips that later
+    // cleanup entirely.
+    if (opts.force || opts.forceOrphan) {
+      const quiesced = await stepCancelInFlight(ctx, projectId, push);
+      if (!quiesced) {
+        // A build/backup that is still running can provision or mutate resources
+        // after the manifest snapshot. Neither force nor force-orphan is allowed
+        // to turn that race into an untracked leak: keep the row and retry after
+        // cancellation has actually reached a terminal state.
+        push({
+          step: "delete_db_row",
+          status: "skipped",
+          details: "kept: in-flight work did not quiesce",
+        });
+        return finalize(steps, false);
+      }
     } else {
-      push({ step: "cancel_in_flight", status: "skipped", details: "force=false" });
+      // Authoritative graceful gate, deliberately INSIDE the deletion lock.
+      // The controller used to precheck before claim, leaving a window where a
+      // queued deployment could appear between the read and manifest snapshot.
+      const active = await getActiveProjectState(projectId);
+      if (active.blocking) {
+        push({
+          step: "cancel_in_flight",
+          status: "failed",
+          details: active.summary,
+          error: "Active work must finish or be cancelled before deletion",
+        });
+        push({
+          step: "delete_db_row",
+          status: "skipped",
+          details: "kept: project still has active work",
+        });
+        return finalize(steps, false, "active_work", { active });
+      }
+      push({ step: "cancel_in_flight", status: "skipped", details: "nothing in flight" });
     }
 
     // ── Step 2: Unregister GitHub webhook (unless preserving it). ────────
@@ -371,12 +393,13 @@ export async function teardownProject(
     } else {
       // Resources on an unreachable server are orphaned (not destroyed inline)
       // and returned here so we can record them for GC before the row drops.
-      const orphanCandidates = await stepRuntimeCleanup(
+      const runtimeCleanup = await stepRuntimeCleanup(
         project,
         opts.wipeVolumes ?? false,
         opts.forceOrphan ?? false,
         push,
       );
+      const orphanCandidates = runtimeCleanup.orphans;
 
       await stepWebmailTeardown(project, push);
 
@@ -406,14 +429,44 @@ export async function teardownProject(
           status: "skipped",
           details: "kept: source cleanup incomplete — retry once the runtime is reachable",
         });
-        return finalize(steps, false);
+        const webmailFailed = steps.some(
+          (step) => step.step === "webmail" && step.status === "failed",
+        );
+        return finalize(steps, false, undefined, {
+          canForceOrphan: runtimeCleanup.forceOrphanEligible && !webmailFailed,
+        });
       }
 
       // About to drop the row — persist any orphaned resources FIRST so the GC
       // sweep can still find + reclaim them after the project row (their only
       // record) is gone. Only happens on the row-dropping path: a kept row keeps
       // the resources tracked via the project itself, so no orphan record needed.
-      orphaned = await persistOrphans(ctx.organizationId, projectId, orphanCandidates);
+      try {
+        orphaned = await persistOrphans(ctx.organizationId, projectId, orphanCandidates);
+        if (orphanCandidates.length > 0) {
+          push({
+            step: "persist_orphans",
+            status: "ok",
+            details: `${orphaned.length} resource(s) queued for deferred cleanup`,
+          });
+        }
+      } catch (err) {
+        // Dropping the project without a durable retry record would turn a
+        // reachable-later vhost/workload into an untracked permanent orphan.
+        // Keep the row and deletion lock semantics intact so the whole operation
+        // can be retried safely.
+        push({
+          step: "persist_orphans",
+          status: "failed",
+          error: safeErrorMessage(err),
+        });
+        push({
+          step: "delete_db_row",
+          status: "skipped",
+          details: "kept: deferred cleanup resources could not be recorded",
+        });
+        return finalize(steps, false);
+      }
     }
 
     // ── Step 4b: unlink this app from every project it was wired into. ───
@@ -440,6 +493,19 @@ export async function teardownProject(
   }
 }
 
+/**
+ * Serialize the full destructive lifecycle with every post-commit route writer.
+ * Keeping the advisory lock until the row is either deleted or unlocked means a
+ * late PATCH can never recreate a vhost after teardown's manifest/cleanup pass.
+ */
+export function teardownProject(
+  ctx: RequestContext,
+  projectId: string,
+  opts: TeardownOptions,
+): Promise<TeardownResult> {
+  return withProjectRuntimeLock(projectId, () => teardownProjectLocked(ctx, projectId, opts));
+}
+
 function finalize(
   steps: TeardownStep[],
   rowDeleted: boolean,
@@ -447,6 +513,8 @@ function finalize(
   extra: {
     orphaned?: OrphanedResourceSummary[];
     unlinked?: UnlinkedConsumerSummary[];
+    canForceOrphan?: boolean;
+    active?: PreflightActiveState;
   } = {},
 ): TeardownResult {
   const unrecoverable = steps.filter((s) => s.status === "failed");
@@ -457,6 +525,8 @@ function finalize(
     unrecoverable,
     orphaned: extra.orphaned ?? [],
     unlinked: extra.unlinked ?? [],
+    canForceOrphan: extra.canForceOrphan ?? false,
+    ...(extra.active !== undefined ? { active: extra.active } : {}),
     ...(rejection !== undefined ? { rejection } : {}),
   };
 }
@@ -513,59 +583,111 @@ async function stepUnlinkConsumers(
 }
 
 async function stepCancelInFlight(
+  ctx: RequestContext,
   projectId: string,
   push: (s: TeardownStep) => void,
-  keepProvisioned: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const before = await getActiveProjectState(projectId);
   if (!before.blocking) {
     push({ step: "cancel_in_flight", status: "skipped", details: "nothing in flight" });
-    return;
+    return true;
   }
 
-  const cancelErrors: string[] = [];
+  // Diagnostic notes are surfaced only if work remains after the grace window.
+  // A capture may finish naturally (or a restore may acknowledge cooperatively),
+  // in which case confirmed quiescence is success even if a request raced.
+  const cancellationNotes: string[] = [];
 
   // Cancel each active deployment — cancelBuildSession aborts the build,
   // tears down half-provisioned containers/images, and marks the row
-  // cancelled. `keepProvisioned` (record-only delete) skips that teardown so
-  // the cancel stays non-destructive on the server. Best-effort: a deployment
+  // cancelled. Cleanup is deferred until the worker lease is gone so teardown
+  // never races an executing deploy. Best-effort: a deployment
   // that has already finished between listing and cancelling will throw
   // ForbiddenError, which we ignore — the next quiesce poll will pick that up.
   for (const depId of before.activeDeploymentIds) {
     try {
-      await cancelBuildSession(depId, { keepProvisioned });
+      // Never tear provisioned resources down from the cancellation call while
+      // its worker lease is still active. The canonical project manifest does
+      // that only after the poll below observes the worker's outer-finally
+      // acknowledgement. Record-only deletion needs the same flag for its own
+      // stronger promise that server resources are kept.
+      await cancelBuildSession(depId, { keepProvisioned: true });
     } catch (err) {
-      cancelErrors.push(`deployment ${depId}: ${safeErrorMessage(err)}`);
+      cancellationNotes.push(`deployment ${depId}: ${safeErrorMessage(err)}`);
     }
   }
 
-  // Mark in-flight backup runs cancelled via the FSM. We do not have a
-  // worker-side abort signal yet, so the runner will notice the state
-  // change on its next FSM transition and bail out of writes.
+  // A queued backup has no worker to abort, so cancel it with the same CAS the
+  // worker claims. Once deletion owns the project admission barrier no later
+  // worker can cross it. A capture that already holds an execution lease is left
+  // alone: relabelling it would not stop snapshot/upload I/O, and the poll below
+  // must keep the project until that worker genuinely acknowledges completion.
   for (const runId of before.activeBackupRunIds) {
     try {
-      await repos.backupRun.transition(runId, "cancelled", {
-        errorMessage: "Cancelled by project deletion (force=true)",
-      });
+      const cancelled = await repos.backupRun.cancelQueuedBeforeExecution(
+        runId,
+        projectId,
+        ctx.organizationId,
+      );
+      if (!cancelled) {
+        cancellationNotes.push(
+          `backup_run ${runId}: active backup capture cannot be cancelled safely`,
+        );
+      }
     } catch (err) {
-      cancelErrors.push(`backup_run ${runId}: ${safeErrorMessage(err)}`);
+      cancellationNotes.push(`backup_run ${runId}: ${safeErrorMessage(err)}`);
     }
   }
 
+  // Restores go through the orchestrator, not a bare status flip. `cancel` fires the
+  // in-process AbortController, so the extract STOPS WRITING before the runtime cleanup
+  // below starts destroying the volumes underneath it; a flip alone left the two racing,
+  // and the FSM row said `cancelled` while tar kept unpacking. It also sets the durable
+  // flag, which is what covers an apply running on another node, and it never throws for
+  // a row that finished between the listing and here.
+  //
+  // An `applying` restore comes back still `applying` on purpose — the orchestrator
+  // gives it a cooperative window. The quiesce poll below IS that window. We never
+  // force-terminalize an unanswered apply: that changes only the row while extraction
+  // may still be writing, so resource teardown must remain blocked.
   for (const restoreId of before.activeBackupRestoreIds) {
     try {
-      await repos.backupRestore.transition(restoreId, "cancelled", {
-        errorMessage: "Cancelled by project deletion (force=true)",
-      });
+      const outcome = await restoreOrchestrator.cancel(ctx, restoreId);
+      if (outcome.status !== "cancelled") {
+        cancellationNotes.push(
+          `backup_restore ${restoreId}: cancellation pending (${outcome.status})`,
+        );
+      }
     } catch (err) {
-      cancelErrors.push(`backup_restore ${restoreId}: ${safeErrorMessage(err)}`);
+      cancellationNotes.push(`backup_restore ${restoreId}: ${safeErrorMessage(err)}`);
+    }
+  }
+
+  // Docker migration can stop source containers, stream volumes, and deploy on
+  // another host. Its orchestrator cancellation performs the real rollback and
+  // writes a terminal row only after source restoration/target cleanup. Request
+  // that cooperative rollback, then let the shared poll below require the
+  // durable terminal acknowledgement. Parked partial/cutover states may refuse
+  // cancellation; in that case deletion safely times out and tells the operator
+  // to resolve the migration first.
+  if (before.activeMigrationIds.length > 0) {
+    const { migrationOrchestrator } = await import("../migration/migration.orchestrator");
+    for (const migrationId of before.activeMigrationIds) {
+      try {
+        const outcome = await migrationOrchestrator.cancel(migrationId, ctx.organizationId);
+        if (!outcome.ok) {
+          cancellationNotes.push(`migration ${migrationId}: ${outcome.error}`);
+        }
+      } catch (err) {
+        cancellationNotes.push(`migration ${migrationId}: ${safeErrorMessage(err)}`);
+      }
     }
   }
 
   // Brief poll for quiescence — gives the runner a window to notice the
   // status flip before runtime cleanup tries to destroy a container the
-  // runner is still touching. We give up at QUIESCE_TIMEOUT_MS and let
-  // the manifest executor's per-resource retry deal with stragglers.
+  // runner is still touching. If the window expires, teardown stops before
+  // manifest collection or any resource mutation.
   const deadline = Date.now() + QUIESCE_TIMEOUT_MS;
   let last = before;
   while (Date.now() < deadline) {
@@ -579,17 +701,26 @@ async function stepCancelInFlight(
       step: "cancel_in_flight",
       status: "failed",
       details: last.summary,
-      error: `Timed out waiting for quiescence after ${QUIESCE_TIMEOUT_MS}ms`,
+      error:
+        `Timed out waiting for quiescence after ${QUIESCE_TIMEOUT_MS}ms` +
+        (cancellationNotes.length > 0 ? `; ${cancellationNotes.join("; ")}` : ""),
     });
-    return;
+    return false;
   }
 
   push({
     step: "cancel_in_flight",
-    status: cancelErrors.length === 0 ? "ok" : "failed",
-    details: `cancelled ${before.activeDeploymentIds.length} deployment(s), ${before.activeBackupRunIds.length} backup run(s), ${before.activeBackupRestoreIds.length} restore(s)`,
-    error: cancelErrors.length === 0 ? undefined : cancelErrors.join("; "),
+    status: "ok",
+    details:
+      `confirmed quiescent after requesting cancellation of ` +
+      `${before.activeDeploymentIds.length} deployment(s) and ` +
+      `${before.activeBackupRestoreIds.length} restore(s), ` +
+      `${before.activeMigrationIds.length} migration(s)` +
+      (before.activeBackupRunIds.length > 0
+        ? `; cancelled or waited for ${before.activeBackupRunIds.length} backup capture(s)`
+        : ""),
   });
+  return true;
 }
 
 async function stepDeleteWebhook(
@@ -602,12 +733,7 @@ async function stepDeleteWebhook(
     return;
   }
   try {
-    await deleteGitHubWebhook(
-      ctx,
-      project.gitOwner,
-      project.gitRepo,
-      project.webhookId,
-    );
+    await deleteGitHubWebhook(ctx, project.gitOwner, project.gitRepo, project.webhookId);
     push({ step: "github_webhook", status: "ok", details: `hook ${project.webhookId}` });
   } catch (err) {
     // GitHub returns 404 when the hook is already gone — treat as a
@@ -617,6 +743,19 @@ async function stepDeleteWebhook(
       push({ step: "github_webhook", status: "skipped", details: "already gone" });
       return;
     }
+    // The actor may delete the PROJECT (project:admin) without holding write on the
+    // REPO — deleting a repo webhook needs the latter, and borrowing a wider
+    // credential to do it anyway is the escalation GHSA-hp2g-hw7g-f3vm reported.
+    // Not touching their repo is the correct outcome, so report it as a skip with
+    // the reason rather than failing the teardown into a 207.
+    if ((err as { code?: unknown } | null)?.code === "GITHUB_ACCESS_DENIED") {
+      push({
+        step: "github_webhook",
+        status: "skipped",
+        details: "no write access to the repo — hook left in place",
+      });
+      return;
+    }
     push({ step: "github_webhook", status: "failed", error: msg });
   }
 }
@@ -624,10 +763,33 @@ async function stepDeleteWebhook(
 /** A remote resource to record for GC (server unreachable, or force-orphaned). */
 interface OrphanCandidate {
   serverId: string | null;
+  targetKey: string | null;
   resourceType: string;
   ref: string;
   label: string;
   runtimeMode: string | null;
+  payload?: Record<string, unknown> | null;
+}
+
+function orphanCandidateKey(
+  candidate: Pick<
+    OrphanCandidate,
+    "serverId" | "targetKey" | "runtimeMode" | "resourceType" | "ref"
+  >,
+): string {
+  return [
+    candidate.serverId ?? "",
+    candidate.targetKey ?? "",
+    candidate.runtimeMode ?? "",
+    candidate.resourceType,
+    candidate.ref,
+  ].join("\0");
+}
+
+interface RuntimeCleanupOutcome {
+  orphans: OrphanCandidate[];
+  /** The manifest was collected and destruction of reachable resources failed. */
+  forceOrphanEligible: boolean;
 }
 
 async function stepRuntimeCleanup(
@@ -635,8 +797,15 @@ async function stepRuntimeCleanup(
   wipeVolumes: boolean,
   forceOrphan: boolean,
   push: (s: TeardownStep) => void,
-): Promise<OrphanCandidate[]> {
+): Promise<RuntimeCleanupOutcome> {
   const orphans: OrphanCandidate[] = [];
+  const orphanKeys = new Set<string>();
+  const addOrphan = (candidate: OrphanCandidate) => {
+    const key = orphanCandidateKey(candidate);
+    if (orphanKeys.has(key)) return;
+    orphanKeys.add(key);
+    orphans.push(candidate);
+  };
   let manifest;
   try {
     manifest = await collectProjectManifest(project, { wipeVolumes });
@@ -646,12 +815,16 @@ async function stepRuntimeCleanup(
       status: "failed",
       error: `Manifest collection failed: ${safeErrorMessage(err)}`,
     });
-    return orphans;
+    return { orphans, forceOrphanEligible: false };
   }
 
-  if (manifest.resources.length === 0) {
+  if (
+    manifest.resources.length === 0 &&
+    (manifest.routeContexts?.length ?? 0) === 0 &&
+    (manifest.unreachableRouteTargets?.length ?? 0) === 0
+  ) {
     push({ step: "runtime_cleanup", status: "skipped", details: "no resources" });
-    return orphans;
+    return { orphans, forceOrphanEligible: false };
   }
 
   // ENFORCED DELETE: resources on an UNREACHABLE server are never destroyed
@@ -662,63 +835,189 @@ async function stepRuntimeCleanup(
   const destroyable = manifest.resources.filter((r) => r.type !== "unreachable");
 
   for (const r of unreachable) {
-    orphans.push({
+    addOrphan({
       serverId: r.serverId ?? null,
-      resourceType: "container",
+      targetKey: r.targetKey ?? null,
+      resourceType:
+        r.deferredResourceType ?? (r.runtimeMode === "cloud" ? "cloud_workspace" : "container"),
       ref: r.ref,
       label: r.label,
       runtimeMode: r.runtimeMode ?? null,
+      payload: r.payload ?? null,
     });
+  }
+
+  // An unreachable historical target has no live routing/edge adapter to put in
+  // `routeContexts`, but its vhost and detached claims still exist. Record the
+  // exact server now; GC will resolve that target, remove every known hostname,
+  // and only then run a fresh claim convergence when the host returns.
+  const routeResources = destroyable.filter((resource) => resource.type === "route");
+  for (const target of manifest.unreachableRouteTargets ?? []) {
+    for (const route of routeResources) {
+      addOrphan({
+        serverId: target.serverId,
+        targetKey: target.targetKey,
+        resourceType: "route",
+        ref: route.ref,
+        label: `${route.label} (server:${target.serverId})`,
+        runtimeMode: target.runtimeMode,
+      });
+    }
+    if (routeResources.length === 0) {
+      // A project can own published host ports without owning a hostname. There
+      // is then no route row to carry claim convergence into GC, so model the
+      // detached claims themselves instead of leaking their reservations.
+      addOrphan({
+        serverId: target.serverId,
+        targetKey: target.targetKey,
+        resourceType: "host_port_claims",
+        ref: `server:${target.serverId}`,
+        label: `host-port claims on server:${target.serverId}`,
+        runtimeMode: target.runtimeMode,
+      });
+    }
   }
 
   const orphanNote = unreachable.length
     ? `; ${unreachable.length} orphaned (server unreachable)`
     : "";
 
-  if (destroyable.length === 0) {
+  if (destroyable.length === 0 && (manifest.routeContexts?.length ?? 0) === 0) {
     // Nothing reachable to destroy — only unreachable orphans. The delete
     // proceeds (row drops); GC reclaims the orphans later.
+    const hasDeferredCleanup = orphans.length > 0;
     push({
       step: "runtime_cleanup",
-      status: unreachable.length ? "ok" : "skipped",
-      details: unreachable.length ? orphanNote.slice(2) : "no resources",
+      status: hasDeferredCleanup ? "ok" : "skipped",
+      details: hasDeferredCleanup
+        ? `${orphans.length} resource(s) queued for deferred cleanup`
+        : "no resources",
     });
-    return orphans;
+    return { orphans, forceOrphanEligible: false };
   }
 
   // Force-orphan short-circuit: the operator chose "delete from storage anyway",
   // so DON'T attempt the inline SSH destroy at all (that's the call that can hang
   // ~80s on a slow/failing runtime and is why the escape felt stuck). Record
-  // every reachable resource as an orphan for the GC sweep and let the row drop
-  // now. Reachable manifest items don't carry their own serverId/runtimeMode, so
-  // stamp them with the project's primary target (same as the post-failure path).
+  // every reachable resource on its collected historical target for the GC sweep
+  // and let the row drop now. The latest-deployment fallback exists only for an
+  // older/test manifest that predates per-resource target identity.
   if (forceOrphan) {
-    const target = await resolvePrimaryTarget(project.id);
+    const preexistingOrphans = orphans.length;
+    const hasRouteTargets =
+      (manifest.routeContexts?.length ?? 0) > 0 ||
+      (manifest.unreachableRouteTargets?.length ?? 0) > 0;
+    const needsLegacyTarget = destroyable.some(
+      (resource) => !resource.runtimeMode && (resource.type !== "route" || !hasRouteTargets),
+    );
+    const legacyTarget = needsLegacyTarget ? await resolvePrimaryTarget(project.id) : null;
+    if (routeResources.length === 0) {
+      for (const routeTarget of manifest.routeContexts ?? []) {
+        addOrphan({
+          serverId: routeTarget.serverId,
+          targetKey: routeTarget.key,
+          resourceType: "host_port_claims",
+          ref: routeTarget.key,
+          label: `host-port claims on ${routeTarget.key}`,
+          runtimeMode: routeTarget.runtimeMode,
+        });
+      }
+    }
     for (const r of destroyable) {
-      orphans.push({
-        serverId: r.serverId ?? target.serverId,
-        resourceType: r.type === "unreachable" ? "container" : r.type,
+      if (r.type === "route") {
+        // A migrated project can have the same vhost on several physical
+        // targets. Record one retry per target; collapsing them onto the latest
+        // server would let GC declare the other copies reclaimed without ever
+        // touching them.
+        for (const routeTarget of manifest.routeContexts ?? []) {
+          addOrphan({
+            serverId: routeTarget.serverId,
+            targetKey: routeTarget.key,
+            resourceType: "route",
+            ref: r.ref,
+            label: `${r.label} (${routeTarget.key})`,
+            runtimeMode: routeTarget.runtimeMode,
+          });
+        }
+        // Unreachable targets were fanned out above. Only a legacy manifest with
+        // neither target list needs the old latest-target fallback.
+        if (
+          (manifest.routeContexts?.length ?? 0) > 0 ||
+          (manifest.unreachableRouteTargets?.length ?? 0) > 0
+        ) {
+          continue;
+        }
+      }
+      addOrphan({
+        serverId: r.serverId ?? legacyTarget?.serverId ?? null,
+        targetKey: r.targetKey ?? null,
+        resourceType: r.type === "unreachable" ? (r.deferredResourceType ?? "container") : r.type,
         ref: r.ref,
         label: r.label,
-        runtimeMode: r.runtimeMode ?? target.runtimeMode,
+        runtimeMode:
+          r.runtimeMode ??
+          (r.runtime?.name === "cloud"
+            ? "cloud"
+            : r.runtime?.name === "bare"
+              ? "bare"
+              : r.runtime?.name === "docker"
+                ? "docker"
+                : (legacyTarget?.runtimeMode ?? null)),
+        payload: r.payload ?? null,
       });
     }
     push({
       step: "runtime_cleanup",
       status: "ok",
-      details: `${destroyable.length} force-orphaned (storage-only delete)${orphanNote}`,
+      details:
+        `${orphans.length - preexistingOrphans} resource(s) force-orphaned ` +
+        `(storage-only delete)${orphanNote}`,
     });
-    return orphans;
+    // This path deliberately never calls executeCleanup, so the transports the
+    // manifest is holding have to be released here instead.
+    disposeManifestRuntimes(manifest);
+    return { orphans, forceOrphanEligible: false };
   }
 
-  const result = await executeCleanup({ projectId: manifest.projectId, resources: destroyable });
+  // A named volume's identity lives only in its container mount metadata. Once
+  // the container phase succeeds, a later volume failure cannot rediscover it
+  // on retry. Checkpoint each volume before the first destructive operation;
+  // GC defers these rows while the project exists and replays them after a later
+  // successful/force delete. A clean inline run removes the checkpoints again.
+  let volumeCheckpointIds: string[] = [];
+  try {
+    volumeCheckpointIds = await checkpointVolumeCleanup(project, destroyable);
+  } catch (err) {
+    disposeManifestRuntimes(manifest);
+    push({
+      step: "runtime_cleanup",
+      status: "failed",
+      error: `Could not checkpoint volume cleanup: ${safeErrorMessage(err)}`,
+    });
+    return { orphans, forceOrphanEligible: false };
+  }
+
+  // `organizationId` must be carried through: this call REBUILDS the manifest
+  // object from a filtered resource list, and dropping the field silently skipped
+  // the Cloud edge-route release for every torn-down project — leaving the free
+  // `*.opsh.io` URL resolving and its globally-unique slug reserved against an org
+  // that no longer has the project.
+  const result = await executeCleanup({
+    projectId: manifest.projectId,
+    organizationId: manifest.organizationId,
+    resources: destroyable,
+    runtimes: manifest.runtimes,
+    routeContexts: manifest.routeContexts,
+    unreachableRouteTargets: manifest.unreachableRouteTargets,
+  });
   const realFailures = result.failed;
   const details =
     `${result.succeeded}/${result.total} ok` + (wipeVolumes ? " (volumes wiped)" : "") + orphanNote;
 
   if (realFailures.length === 0) {
+    await Promise.allSettled(volumeCheckpointIds.map((id) => repos.orphanedResource.delete(id)));
     push({ step: "runtime_cleanup", status: "ok", details });
-    return orphans;
+    return { orphans, forceOrphanEligible: false };
   }
 
   // Reachable server, but destroy kept failing WITHOUT forceOrphan (the
@@ -731,7 +1030,55 @@ async function stepRuntimeCleanup(
     details,
     error: realFailures.map((f) => `${f.label}: ${f.error}`).join("; "),
   });
-  return orphans;
+  return { orphans, forceOrphanEligible: true };
+}
+
+async function checkpointVolumeCleanup(
+  project: Project,
+  resources: Awaited<ReturnType<typeof collectProjectManifest>>["resources"],
+): Promise<string[]> {
+  const volumes = resources.filter((resource) => resource.type === "volume");
+  if (volumes.length === 0) return [];
+
+  const existing = await repos.orphanedResource.listByProject(project.id);
+  const existingByKey = new Map(
+    existing
+      .filter((row) => row.resourceType === "volume")
+      .map((row) => [orphanCandidateKey(row), row] as const),
+  );
+  const checkpointIds: string[] = [];
+  const createdIds: string[] = [];
+  try {
+    for (const resource of volumes) {
+      const candidate: OrphanCandidate = {
+        serverId: resource.serverId ?? null,
+        targetKey: resource.targetKey ?? null,
+        resourceType: "volume",
+        ref: resource.ref,
+        label: resource.label,
+        runtimeMode: resource.runtimeMode ?? "docker",
+      };
+      const prior = existingByKey.get(orphanCandidateKey(candidate));
+      if (prior) {
+        checkpointIds.push(prior.id);
+        continue;
+      }
+      const created = await repos.orphanedResource.create({
+        organizationId: project.organizationId,
+        projectId: project.id,
+        ...candidate,
+        payload: null,
+      });
+      if (!created?.id) throw new Error(`No checkpoint id returned for ${resource.label}`);
+      createdIds.push(created.id);
+      checkpointIds.push(created.id);
+      existingByKey.set(orphanCandidateKey(candidate), created);
+    }
+    return checkpointIds;
+  } catch (err) {
+    await Promise.allSettled(createdIds.map((id) => repos.orphanedResource.delete(id)));
+    throw err;
+  }
 }
 
 /** Best-effort project target (serverId/runtimeMode) from its latest deployment
@@ -746,49 +1093,69 @@ async function resolvePrimaryTarget(
   return { serverId: meta.serverId ?? null, runtimeMode: meta.runtimeMode ?? null };
 }
 
-/** Persist orphan candidates so the GC sweep can reclaim them after the project
- *  row is gone. Best-effort per row — a failed insert is logged, not fatal. */
+/** Persist every orphan candidate before the project row may disappear.
+ *
+ * This is logically all-or-nothing: if one insert fails, best-effort roll back
+ * the rows created by this attempt and reject the teardown. The GC also refuses
+ * to touch any orphan whose project row still exists, so even an unsuccessful
+ * rollback cannot reclaim a live project's resources. */
 async function persistOrphans(
   organizationId: string,
   projectId: string,
   candidates: OrphanCandidate[],
 ): Promise<OrphanedResourceSummary[]> {
   const out: OrphanedResourceSummary[] = [];
+  const createdIds: string[] = [];
+  const existing = await repos.orphanedResource.listByProject(projectId);
+  const existingKeys = new Set(existing.map(orphanCandidateKey));
   for (const c of candidates) {
     try {
-      await repos.orphanedResource.create({
+      if (existingKeys.has(orphanCandidateKey(c))) {
+        out.push({ ref: c.ref, label: c.label, serverId: c.serverId });
+        continue;
+      }
+      const created = await repos.orphanedResource.create({
         organizationId,
         serverId: c.serverId,
+        targetKey: c.targetKey,
         resourceType: c.resourceType,
         ref: c.ref,
         projectId,
         label: c.label,
         runtimeMode: c.runtimeMode,
+        payload: c.payload ?? null,
       });
+      if (created?.id) createdIds.push(created.id);
+      existingKeys.add(orphanCandidateKey(c));
       out.push({ ref: c.ref, label: c.label, serverId: c.serverId });
     } catch (err) {
-      console.error(`[teardown] failed to record orphan ${c.ref}:`, safeErrorMessage(err));
+      await Promise.allSettled(createdIds.map((id) => repos.orphanedResource.delete(id)));
+      throw new Error(`Failed to record deferred cleanup for ${c.label}: ${safeErrorMessage(err)}`);
     }
   }
   return out;
 }
 
+/**
+ * The webmail's off-project leftovers: a proxy vhost on the MAIL server (not the
+ * one this project ran on), and — for a pre-catalog webmail — a host state dir
+ * and the mail-state block that held its session key. Everything else about the
+ * app is an ordinary container + volume the runtime step already removed.
+ *
+ * Runs before `stepDeleteRow`, so the project's domain rows are still readable
+ * here — which is how the proxy variant is told apart from a routed one.
+ */
 async function stepWebmailTeardown(
   project: Project,
   push: (s: TeardownStep) => void,
 ): Promise<void> {
-  if (project.framework !== "webmail") {
-    push({ step: "webmail", status: "skipped", details: "not a webmail project" });
-    return;
-  }
-  const mailServerId = mailServerIdFromWebmailSlug(project.slug);
-  if (!mailServerId) {
-    push({ step: "webmail", status: "skipped", details: "no mail server id" });
-    return;
-  }
   try {
-    await cleanupWebmailInstall({ mailServerId });
-    push({ step: "webmail", status: "ok", details: mailServerId });
+    const details = await cleanupWebmailInstall(project);
+    push(
+      details
+        ? { step: "webmail", status: "ok", details }
+        : { step: "webmail", status: "skipped", details: "nothing webmail-specific" },
+    );
   } catch (err) {
     push({ step: "webmail", status: "failed", error: safeErrorMessage(err) });
   }

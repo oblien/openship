@@ -6,7 +6,6 @@
  * Tabs are URL-driven via the `tab` query param so deep-linking works:
  *   /settings              → general (default)
  *   /settings?tab=team     → team / workspace management
- *   /settings?tab=audit    → audit log
  *   /settings?tab=cloud    → cloud connection (self-hosted only)
  *   /settings?tab=instance → instance info
  *
@@ -15,13 +14,41 @@
  * the dashboard feels consistent.
  */
 
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Settings as SettingsIcon, Users, ClipboardList, Cloud, Server, Bell, KeyRound, Boxes, Mail } from "lucide-react";
+import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useSession, authClient } from "@/lib/auth-client";
 import { useI18n } from "@/components/i18n-provider";
+import { systemApi } from "@/lib/api/system";
 
-export type SettingsTabId = "general" | "tokens" | "mcp" | "team" | "notifications" | "email" | "audit" | "cloud" | "instance";
+/**
+ * Count of actionable infrastructure issues (edge down / absent-with-projects) —
+ * drives the attention dot on the Infrastructure tab, mirroring the project
+ * sidebar's routing dot. Only fetched where the tab exists (self-hosted/desktop);
+ * cheap (reads the drift cache), best-effort (a failed read shows no dot).
+ */
+function useInfraIssuesCount(): number {
+  const { selfHosted, deployMode } = usePlatform();
+  const enabled = selfHosted || deployMode === "desktop";
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    systemApi
+      .containerIssues()
+      .then((r) => {
+        if (!cancelled) setCount(r.total);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return enabled ? count : 0;
+}
+
+export type SettingsTabId = "general" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -34,25 +61,49 @@ export interface SettingsTab {
 }
 
 export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTabId } {
-  const { selfHosted } = usePlatform();
+  const { selfHosted, deployMode, productView } = usePlatform();
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
-  const allowedTabs: SettingsTabId[] = ["general", "tokens", "mcp", "team", "notifications", "email", "audit", "cloud", "instance"];
-  const activeTab: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
+  // `dns` is still accepted, though the DNS tab is gone: AutoDnsPanel deep-links to
+  // `/settings?tab=dns` in two places (and a render test pins that string), and a value
+  // missing from this list silently falls back to "general".
+  const allowedTabs: SettingsTabId[] = ["general", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
+  const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
+  // DNS credentials moved into Credentials — one screen for every third-party secret
+  // instead of three. The old link lands on the screen that now owns them.
+  const activeTab: SettingsTabId = requested === "dns" ? "credentials" : requested;
 
   const tabs: SettingsTab[] = [
     { id: "general", label: t.settings.sidebar.tabs.general, icon: SettingsIcon, visible: true },
-    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: KeyRound, visible: true },
+    // Git sources, as their own domain rather than a card on General: the App install, the
+    // clone PAT and per-server auth are one subject with several shapes, and more providers
+    // (GitLab, Bitbucket) land here rather than widening anything else. Hidden in the
+    // mail-only shell, which deploys nothing from source.
+    { id: "git", label: t.settings.sidebar.tabs.git, icon: GitBranch, visible: productView !== "mail" },
+    { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: KeyRound, visible: true, requiresRole: "admin" },
+    { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: Terminal, visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },
     { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: true },
     { id: "notifications", label: t.settings.sidebar.tabs.notifications, icon: Bell, visible: true },
     // Instance SMTP transport — self-hosted only (the SaaS uses its own mailer).
-    { id: "email", label: t.settings.sidebar.tabs.email, icon: Mail, visible: selfHosted, requiresRole: "admin" },
-    { id: "audit", label: t.settings.sidebar.tabs.audit, icon: ClipboardList, visible: true, requiresRole: "admin" },
+    // In Openship Mail it sits next to a whole rail of mail-server surfaces, where
+    // "Email" would read as the mail server's own config; "System sender" says
+    // what it actually is (where invites and alerts are sent FROM).
+    {
+      id: "email",
+      label: productView === "mail"
+        ? t.settings.sidebar.tabs.systemSender
+        : t.settings.sidebar.tabs.email,
+      icon: Mail,
+      visible: selfHosted,
+      requiresRole: "admin",
+    },
     { id: "cloud", label: t.settings.sidebar.tabs.cloud, icon: Cloud, visible: selfHosted },
-    // Updates live INSIDE the Instance tab (the "this install" home), not as
-    // their own tab — see settings/page.tsx.
+    // The servers this install runs — edge/mail container versions + global scan
+    // + untracked edge routes. Self-hosted/desktop only (the SaaS has no
+    // operator-managed infra). See settings/page.tsx.
+    { id: "infrastructure", label: t.settings.sidebar.tabs.infrastructure, icon: Boxes, visible: selfHosted || deployMode === "desktop", requiresRole: "admin" },
     { id: "instance", label: t.settings.sidebar.tabs.instance, icon: Server, visible: true },
   ];
 
@@ -64,6 +115,7 @@ export function SettingsSidebar() {
   const { data: session } = useSession();
   const { t } = useI18n();
   const { tabs, activeTab } = useSettingsTabs();
+  const infraIssues = useInfraIssuesCount();
 
   const handleTabChange = (tabId: SettingsTabId) => {
     const url = tabId === "general" ? "/settings" : `/settings?tab=${tabId}`;
@@ -113,6 +165,12 @@ export function SettingsSidebar() {
               >
                 <Icon className="size-[17px] shrink-0" strokeWidth={1.7} />
                 {tab.label}
+                {tab.id === "infrastructure" && infraIssues > 0 && (
+                  <span
+                    className="ms-auto size-1.5 rounded-full bg-warning-solid"
+                    aria-label="Infrastructure needs attention"
+                  />
+                )}
               </button>
             );
           })}
@@ -126,6 +184,7 @@ export function SettingsSidebar() {
 export function SettingsMobileTabs() {
   const router = useRouter();
   const { tabs, activeTab } = useSettingsTabs();
+  const infraIssues = useInfraIssuesCount();
 
   const handleTabChange = (tabId: SettingsTabId) => {
     const url = tabId === "general" ? "/settings" : `/settings?tab=${tabId}`;
@@ -151,6 +210,12 @@ export function SettingsMobileTabs() {
             >
               <Icon className="size-[15px]" strokeWidth={1.7} />
               {tab.label}
+              {tab.id === "infrastructure" && infraIssues > 0 && (
+                <span
+                  className="size-1.5 rounded-full bg-warning-solid"
+                  aria-label="Infrastructure needs attention"
+                />
+              )}
             </button>
           );
         })}

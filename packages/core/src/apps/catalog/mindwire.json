@@ -1,0 +1,145 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "mindwire",
+  "name": "MindWire",
+  "description": "Run coding-agent runtimes behind a self-hosted control plane. MindWire keeps the runtime private and gives you one console to manage agents, credentials, and sessions.",
+  "repository": "https://github.com/oblien/mindwire",
+  "kind": "template",
+  "logo": "mindwire",
+  "category": "automation",
+  "tags": ["ai", "agents", "coding", "control-plane"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "runtime",
+      "image": "ghcr.io/oblien/mindwire-runtime:0.1.3",
+      "environment": {
+        "ADDR": "0.0.0.0:8790",
+        "AGENT_TYPE": "claude-code",
+        "DAEMON_TOKEN": "{{config:MINDWIRE_RUNTIME_TOKEN}}"
+      },
+      "secretEnv": ["DAEMON_TOKEN"],
+      "volumes": ["mindwire_runtime:/home/node"],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "console",
+      "image": "ghcr.io/oblien/mindwire-console:0.1.3",
+      "exposedPort": 8787,
+      "exposed": true,
+      "routes": [{ "port": 8787 }],
+      "dependsOn": ["runtime"],
+      "environment": {
+        "NODE_ENV": "production",
+        "PORT": "8787",
+        "BASE_URL": "{{publicUrl:console}}",
+        "AUTH_DB_PATH": "/data/auth.db",
+        "CONSOLE_MODE": "self-hosted",
+        "CONSOLE_USERNAME": "{{config:CONSOLE_USERNAME}}",
+        "CONSOLE_PASSWORD": "{{config:CONSOLE_PASSWORD}}",
+        "AUTH_SECRET": "{{config:AUTH_SECRET}}",
+        "SECRETS_ENCRYPTION_KEY": "{{config:SECRETS_ENCRYPTION_KEY}}",
+        "ALLOW_LOCAL_RUNTIME": "true",
+        "ALLOW_SSH_RUNTIME": "true",
+        "ALLOW_DOCKER_RUNTIME": "true",
+        "ALLOW_REMOTE_RUNTIME": "true",
+        "DAEMON_URL": "http://runtime:8790",
+        "MINDWIRE_RUNTIME_TOKEN": "{{config:MINDWIRE_RUNTIME_TOKEN}}",
+        "SEED_DEFAULT_DAEMON": "true"
+      },
+      "secretEnv": ["CONSOLE_PASSWORD", "AUTH_SECRET", "SECRETS_ENCRYPTION_KEY", "MINDWIRE_RUNTIME_TOKEN"],
+      "volumes": ["mindwire_console:/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8787/api/ping').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "CONSOLE_USERNAME",
+      "service": "console",
+      "label": "Console username",
+      "help": "The single owner account for this self-hosted console.",
+      "default": "admin",
+      "required": true
+    },
+    {
+      "key": "CONSOLE_PASSWORD",
+      "service": "console",
+      "label": "Console password",
+      "help": "Auto-generated. Use this with the owner username to sign in.",
+      "type": "password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "AUTH_SECRET",
+      "service": "console",
+      "label": "Session signing secret",
+      "help": "Auto-generated. Keep it stable so existing sign-in sessions remain valid after upgrades.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "SECRETS_ENCRYPTION_KEY",
+      "service": "console",
+      "label": "Credential vault key",
+      "help": "Auto-generated 32-byte key used to encrypt provider and runtime credentials at rest.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "MINDWIRE_RUNTIME_TOKEN",
+      "service": "runtime",
+      "label": "Runtime bearer token",
+      "help": "Auto-generated. Authenticates the Console to the private MindWire runtime.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": { "kind": "schema" },
+  "connection": {
+    "title": "Sign in to MindWire",
+    "description": "Open the Console and sign in with the generated owner credentials. The runtime stays private to this deployment.",
+    "guide": {
+      "intro": "MindWire gives you a production control plane for coding-agent runtimes without exposing the runtime API to the public internet.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "console",
+        "label": "MindWire Console",
+        "source": "publicUrl:console",
+        "kind": "url",
+        "recommended": true,
+        "help": "Open the control plane in your browser."
+      },
+      {
+        "id": "username",
+        "label": "Owner username",
+        "source": "env:console:CONSOLE_USERNAME"
+      },
+      {
+        "id": "password",
+        "label": "Owner password",
+        "source": "env:console:CONSOLE_PASSWORD",
+        "secret": true
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "console",
+      "port": 8787,
+      "label": "MindWire Console",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ]
+}

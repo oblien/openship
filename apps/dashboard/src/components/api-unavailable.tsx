@@ -2,7 +2,7 @@
 
 import { RefreshCw } from "lucide-react";
 import { ErrorView } from "@/components/error-view";
-import { useI18n } from "@/components/i18n-provider";
+import { useBrandName, useI18n } from "@/components/i18n-provider";
 
 /**
  * Full-page fallback shown when the API can't be reached during SSR bootstrap
@@ -19,13 +19,14 @@ import { useI18n } from "@/components/i18n-provider";
  */
 export function ApiUnavailable() {
   const { t } = useI18n();
+  const brand = useBrandName();
   const c = t.chrome;
 
   return (
     <div className="flex min-h-dvh items-center justify-center px-6 py-12">
       <ErrorView
         variant="offline"
-        brand={t.brand}
+        brand={brand}
         title={c.apiDown.title}
         description={c.apiDown.description}
         hints={[
@@ -40,7 +41,7 @@ export function ApiUnavailable() {
             icon: <RefreshCw className="size-4" />,
           },
         ]}
-        docsHref="https://openship.io/docs/self-hosting"
+        docsHref="https://openship.io/docs/getting-started/installation"
         docsLabel={c.apiDown.docs}
         githubLabel={c.errorLinks.github}
       />

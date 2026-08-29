@@ -1,13 +1,13 @@
 {
   "name": "@repo/web",
-  "version": "0.4.8",
+  "version": "0.6.8",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3009",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
@@ -33,6 +33,7 @@
     "@tailwindcss/postcss": "^4.2.1",
     "@types/mdx": "^2.0.14",
     "@types/node": "^22.13.0",
+    "@types/nodemailer": "^6.4",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "postcss": "^8.5.8",

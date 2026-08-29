@@ -124,6 +124,12 @@ export function createMonorepoSourceBuildConfig(
       // Dockerfile path would silently disappear and we'd fall to "no
       // Dockerfile found" errors. Pinning it last guarantees the contract.
       dockerfilePath: undefined,
+      // Same reason, same shape: a generated recipe COPYs from the SOURCE ROOT, so a
+      // narrowed docker build context can never satisfy it — the runtime refuses that
+      // combination outright. A `build` value can legally sit on a monorepo row (the
+      // services API writes it for either kind), so pin it here rather than trusting
+      // every caller to omit it.
+      buildContextDirectory: undefined,
     },
   });
 }

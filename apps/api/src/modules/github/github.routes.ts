@@ -46,12 +46,63 @@ r.delete("/repos/:owner/:repo", { tag: "github:admin" }, ctrl.deleteRepo);
 /* ─── Branches ─────────────────────────────────────────────────────────── */
 r.get("/repos/:owner/:repo/branches", { tag: "github:list", mcp: { description: "List a repository's branches." } }, ctrl.listBranches);
 
+/* ─── Stack detection ──────────────────────────────────────────────────── */
+// The deploy-tier alternative to crawling the repo: returns DERIVED config only
+// (framework, package manager, commands, output dir, port, compose services) and
+// never file bytes. Without this, "deploy-only" would be unusable — configuring a
+// git deploy would still require content access.
+r.get(
+  "/repos/:owner/:repo/detect",
+  {
+    tag: "github:read",
+    mcp: {
+      description:
+        "Detect a repo's build config without reading its files — framework, package manager, install/build/start commands, output directory, port, and compose services. Use this to configure a deploy; it needs no content access.",
+    },
+  },
+  ctrl.detectStack,
+);
+
 /* ─── Clone token (short-lived GitHub App installation token) ──────────── */
-r.get("/repos/:owner/:repo/clone-token", { tag: "github:read" }, ctrl.getCloneToken);
+// `content-whole`: a clone hands over every byte and cannot be path-filtered, so a
+// caller scoped to a subtree must NOT be able to mint one.
+r.get(
+  "/repos/:owner/:repo/clone-token",
+  { tag: "github:read", source: "content-whole" },
+  ctrl.getCloneToken,
+);
 
 /* ─── Files ────────────────────────────────────────────────────────────── */
-r.get("/repos/:owner/:repo/files", { tag: "github:list", mcp: { description: "List files/dirs at a path in a repo (query: path, ref)." } }, ctrl.listFiles);
-r.get("/repos/:owner/:repo/file", { tag: "github:read", mcp: { description: "Read a single file's contents from a repo (to detect stack / read config)." } }, ctrl.getFile);
+// Both serve repository CONTENT, so both are gated above metadata. `content-tree`
+// allows listing a directory that merely LEADS to a granted path (and the handler
+// filters the entries); `content` requires the exact file to be granted.
+r.get(
+  "/repos/:owner/:repo/files",
+  {
+    tag: "github:list",
+    source: "content-tree",
+    mcp: { description: "List files/dirs at a path in a repo (query: path, ref). Requires repo content access." },
+  },
+  ctrl.listFiles,
+);
+// Recursive tree for the source-access path picker. `content-tree` like /files —
+// it lists paths, never bytes — and the handler filters to the caller's own reach.
+// No `mcp` block: agents already have /files for browsing, and a recursive dump is
+// a dashboard authoring aid, not something to widen the agent surface for.
+r.get(
+  "/repos/:owner/:repo/tree",
+  { tag: "github:list", source: "content-tree" },
+  ctrl.listTree,
+);
+r.get(
+  "/repos/:owner/:repo/file",
+  {
+    tag: "github:read",
+    source: "content",
+    mcp: { description: "Read a single file's contents from a repo. Requires repo content access; prefer /detect for build config." },
+  },
+  ctrl.getFile,
+);
 
 /* ─── Repo Webhooks ────────────────────────────────────────────────────── */
 r.get("/repos/:owner/:repo/webhooks", { tag: "github:list", mcp: { description: "List a repo's webhooks (to check push auto-deploy wiring)." } }, ctrl.listWebhooks);

@@ -15,15 +15,19 @@ export {
 // ─── Schema (table definitions) ──────────────────────────────────────────────
 export * as schema from "./schema";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
+export type { ServerContainerDetail } from "./schema/server-container-status";
 export type {
   IncomingWebhookActionType,
   IncomingWebhookActionConfig,
   IncomingWebhookAuthMode,
 } from "./schema/incoming-webhook";
+export { INCIDENT_KINDS, type IncidentKind } from "./schema/service-incident";
+export { RESOURCE_BUCKET_MINUTES, SINGLE_APP_SERVICE_KEY } from "./schema/resource-usage";
 
 // ─── Dump / restore (team-mode migration + project transfer) ─────────────────
 export {
   dumpSubgraph,
+  countInstanceSubgraphTables,
   restoreSubgraph,
   deleteProjectSubgraph,
   dumpDatabase,
@@ -31,11 +35,14 @@ export {
   DUMP_FORMAT_VERSION,
   PkCollisionError,
   ENCRYPTED_COLUMNS,
+  EXCLUDED_TABLES,
+  topoOrderedTables,
   stripEncryptedInPlace,
   type DatabaseDump,
   type DumpOptions,
   type RestoreOptions,
   type SubgraphScope,
+  type TableSpec,
 } from "./dump";
 
 // ─── Repositories (all DB access goes through here) ──────────────────────────
@@ -90,6 +97,13 @@ export {
   type NewBuildSession,
   type Domain,
   type NewDomain,
+  type DnsCredential,
+  type NewDnsCredential,
+  type Credential,
+  type NewCredential,
+  type MailInboundRule,
+  type NewMailInboundRule,
+  type MailInboundScope,
   type Service,
   type NewService,
   type ServiceDeployment,
@@ -144,6 +158,15 @@ export {
   type NewJob,
   type OrphanedResource,
   type NewOrphanedResource,
+  createHostPortClaimRepo,
+  HostPortClaimConflictError,
+  HOST_PORT_QUARANTINE_OWNER,
+  type HostPortClaim,
+  type NewHostPortClaim,
+  type HostPortTargetKey,
+  type HostPortClaimIdentity,
+  type HostPortClaimOwner,
+  type PruneHostPortClaimsInput,
   type ResourceGrant,
   type Permission,
   type ResourceType,
@@ -160,9 +183,20 @@ export {
   createUpdateStatusRepo,
   type UpdateStatus,
   type NewUpdateStatus,
+  createServerContainerStatusRepo,
+  type ServerContainerStatus,
+  type NewServerContainerStatus,
+  type ServerContainerComponent,
   type IncomingWebhook,
   type NewIncomingWebhook,
   type WebhookDelivery,
+  type EdgeTargetVerification,
+  createServiceIncidentRepo,
+  incidentSeverity,
+  type ServiceIncident,
+  type NewServiceIncident,
+  type ResourceUsageRow,
+  type NewResourceUsage,
 } from "./repos";
 
 // ─── Drizzle operators (re-exported for convenience) ─────────────────────────

@@ -19,6 +19,13 @@ interface TopupPack {
   price_cents: number;
   stripePriceId: string;
   sortOrder: number;
+  /**
+   * What the pack buys in recognisable units — hours of a running app, or build
+   * minutes. Derived server-side from the catalog's own rates. Nullable because
+   * the synced `credit_pack` table has no such column; a pack whose id has left
+   * the catalog simply renders without the line.
+   */
+  explains?: string | null;
 }
 
 interface TopupPacksResponse {
@@ -156,15 +163,24 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
                     topupsAvailable ? "hover:border-border" : "opacity-70"
                   }`}
                 >
-                  <p className="text-sm font-medium text-muted-foreground">{pack.name}</p>
-
-                  <div className="mt-3 flex items-baseline gap-1">
+                  {/* `pack.name` is deliberately NOT rendered: it resolves to
+                      "5,000 compute minutes", which is the same figure as the big
+                      number directly below it — the card was saying the amount
+                      twice and explaining it zero times. */}
+                  <div className="flex items-baseline gap-1">
                     <Plus className="size-5 text-primary" />
                     <span className="text-3xl font-semibold tabular-nums text-foreground">
                       {formatCredits(pack.credits_milli)}
                     </span>
                     <span className="text-sm text-muted-foreground">{t.billing.topups.credits}</span>
                   </div>
+
+                  {/* The line that makes the number mean something. */}
+                  {pack.explains ? (
+                    <p className="mt-2 text-[13px] leading-snug text-muted-foreground">
+                      {pack.explains}
+                    </p>
+                  ) : null}
 
                   <p className="mt-3 text-2xl font-medium tabular-nums text-foreground">
                     {formatPrice(pack.price_cents)}

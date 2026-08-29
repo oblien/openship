@@ -67,11 +67,11 @@ and optional; the `kind` decides which subset is the source of truth. Unknown ke
 <TypeTable
   type={{
     image: { type: 'string', description: 'Container image to run, e.g. postgres:16 (max 500).' },
-    build: { type: 'string', description: 'Build context path, relative to the repo root (max 500).' },
+    build: { type: 'string', description: 'Docker build context — the directory docker builds from. Relative to the compose file\u2019s folder, exactly as compose resolves it (max 500).' },
     dockerfile: { type: 'string', description: 'Dockerfile path relative to the build context (max 500).' },
     ports: { type: 'string[]', description: 'Port mappings like "8080:80" (max 50 entries, each ≤100 chars).' },
     dependsOn: { type: 'string[]', description: 'Names of services this one depends on (max 50).' },
-    environment: { type: 'Record<string, string>', description: 'Compose environment defaults baked into the service.' },
+    environment: { type: 'Record<string, string>', description: 'Compose environment defaults baked into the service. On update this map is merged, not replaced, and accepts nulls — see Update a service.' },
     volumes: { type: 'string[]', description: 'Volume mappings (max 50 entries, each ≤500 chars).' },
     command: { type: 'string', description: 'Override the container command (max 1000).' },
     advanced: { type: 'object', description: 'Extended compose settings. Currently a healthcheck block: { test, interval, timeout, retries, startPeriod, disable }. Unknown keys are rejected.' },
@@ -122,6 +122,24 @@ PATCH /api/projects/:id/services/:serviceId
 Every field is optional — send only what changes. Accepts the same compose and monorepo fields as create,
 **except `kind`**: switching a row's kind is a destructive operation, so delete the service and re-create it
 under the new kind instead.
+
+Two fields are **merged** onto their stored value instead of replacing it — `environment` and `advanced`,
+the endpoint's keyed maps:
+
+| You send | Result |
+| --- | --- |
+| the key is absent | the stored value is kept |
+| `{"KEY": "value"}` | that one key is set; every other key is untouched |
+| `{"KEY": null}` | that one key is removed |
+| `{"environment": null}` | every variable is removed |
+| `{"environment": {}}` | nothing changes |
+
+Env values read back masked as `••••••••` (`GET /:serviceId` never returns plaintext). Echo the sentinel to
+keep a value unchanged, or send a real string to replace it. Because a masked value can't be read back
+outside the dashboard, **omitting a key never deletes it** — a delete has to be spelled `null`.
+
+Every other field replaces its stored value wholesale, `ports`, `volumes`, `dependsOn` and
+`publicEndpoints` included, so send the complete list for those.
 
 ```bash
 curl -X PATCH https://your-host/api/projects/proj_123/services/svc_456 \

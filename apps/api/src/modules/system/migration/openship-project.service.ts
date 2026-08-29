@@ -2,8 +2,7 @@
  * Reconciler for the Project row that represents "Openship itself,
  * being deployed to the operator's server."
  *
- * Modeled on apps/api/src/modules/mail/webmail/webmail-project.service.ts:
- * fixed config (operator can't edit), deterministic slug, reconcile on
+ * Fixed config (operator can't edit), deterministic slug, reconciled on
  * every deploy so a code change ships clean.
  *
  * The deploy pipeline reads `localPath` to stream the dist to the

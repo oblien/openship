@@ -113,7 +113,20 @@ export type DeploymentInfo = {
   isServerHost?: boolean;
   /** Experimental Docker Swarm capability, resolved by the API. */
   swarmSupportEnabled?: boolean;
+  /** Whether the box is currently a deploy target for itself (host control on).
+   *  Tracks the operator's runtime Settings toggle, so it can differ from
+   *  isServerHost (which is fixed by DEPLOY_MODE). Optional: an older API omits
+   *  it, and consumers treat a missing value as "unknown / fall back to server". */
+  hostControlEnabled?: boolean;
   authMode: "cloud" | "local" | "none";
+  /**
+   * Which product this instance presents itself as — "platform" (the full deploy
+   * platform) or "mail" (Openship Mail). Resolved by the API's single
+   * product-mode resolver, so it already accounts for CLOUD_MODE and the
+   * operator's instance_settings toggle. Optional because an older API won't
+   * send it; `resolveProductView` treats a missing value as "platform".
+   */
+  productMode?: "platform" | "mail";
   cloudAuthUrl: string;
   cloudApiUrl: string;
   machineName?: string;

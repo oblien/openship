@@ -27,8 +27,10 @@ function isLoopbackAddress(host: string): boolean {
  * socket (DooD), exactly like the isLocal row — never SSH.
  *
  * Scope: server-host only (DEPLOY_MODE docker|bare, not CLOUD_MODE). The SaaS
- * never treats a tenant's server row as the control plane, and the desktop app
- * targets its own machine through an explicit isLocal "This Machine" row.
+ * never treats a tenant's server row as the control plane, and the desktop app has
+ * no server row for this rule to apply to — `ensureLocalServer` returns null off
+ * server-host, so the ONE isLocal row exists only there; desktop reaches its own
+ * machine through the `local` deploy target instead (resolveTargetPlatform).
  *
  * A row that is a deliberate SSH TUNNEL — a jump/bastion host set, or a loopback
  * host on a non-default port (the classic `ssh -L` local-forward-to-elsewhere

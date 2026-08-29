@@ -1,0 +1,180 @@
+{
+  "available": true,
+  "verified": false,
+  "minEngine": "0.6.6",
+  "minResources": {
+    "memoryMb": 4096,
+    "cpuCores": 2
+  },
+  "id": "neon",
+  "name": "Neon",
+  "description": "Self-hosted Neon — serverless Postgres with database branching, a web console and per-branch connection strings, in a single container. Built on the community `neond` control plane (Apache-2.0), which bundles Neon's pageserver, safekeeper, storage broker and storage controller behind a management API and dashboard. Neon's own cloud console is proprietary and the upstream neon repo ships no web UI, so a community control plane is the only way to run self-hosted Neon with a dashboard. One container with no HA, a ~1.2 GB image, and it publishes fixed host ports for branch endpoints — sized for development and preview databases rather than critical data.",
+  "repository": "https://github.com/matisiekpl/neond",
+  "kind": "template",
+  "logo": "neon",
+  "category": "database",
+  "tags": [
+    "database",
+    "postgres",
+    "postgresql",
+    "serverless",
+    "sql",
+    "branching"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "neond",
+      "image": "neond/neond:f04d396c133d81e28cf52560ea11ef7e9b814d71",
+      "exposed": true,
+      "exposedPort": 3000,
+      "routes": [
+        {
+          "port": 3000
+        }
+      ],
+      "environment": {
+        "PORT": "3000",
+        "PORT_RANGE": "55432-55437",
+        "DO_NOT_TRACK": "1",
+        "TELEMETRY_DISABLED": "1",
+        "RUST_LOG": "info"
+      },
+      "ports": [
+        "8220:3000",
+        "0.0.0.0:55432:55432",
+        "0.0.0.0:55433:55433",
+        "0.0.0.0:55434:55434",
+        "0.0.0.0:55435:55435",
+        "0.0.0.0:55436:55436",
+        "0.0.0.0:55437:55437"
+      ],
+      "volumes": [
+        "neond_data:/neond"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:3000/api/auth/setup"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "startPeriod": "5m"
+      },
+      "stopGracePeriod": "10m",
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "SERVER_SECRET",
+      "service": "neond",
+      "label": "Server secret",
+      "help": "Auto-generated, and PERMANENT — it is also the password of the internal management Postgres role, so changing it after the first launch makes the control plane unable to open its own database.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "ADMIN_EMAIL",
+      "service": "neond",
+      "label": "Console admin email",
+      "help": "The first account is created for you and is the instance admin. Sign-up closes as soon as it exists.",
+      "type": "text",
+      "default": "admin@openship.local",
+      "required": true
+    },
+    {
+      "key": "ADMIN_PASSWORD",
+      "service": "neond",
+      "label": "Console admin password",
+      "help": "Auto-generated. Use it with the admin email to sign in to the console.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "PG_PASSWORD",
+      "service": "neond",
+      "label": "Database password",
+      "help": "Auto-generated. Set as the password of the `postgres` role on the first branch so the connection string below is usable immediately.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "prepare": [
+    {
+      "service": "neond",
+      "title": "Create the console account and first branch",
+      "description": "Signs in (registering the admin on a first install), then ensures an organization, project and branch exist and an endpoint is running, and reports its port. Every run reports a REAL port, so a first attempt that raced the endpoint cannot leave the connection string permanently blank.",
+      "command": "set -e; API=http://127.0.0.1:3000/api; J='Content-Type: application/json'; id1() { sed -n 's/.*\"id\":\"\\([^\"]*\\)\".*/\\1/p' | head -1; }; port1() { sed -n -e 's|.*\"connection_string\":\"[^\"]*@[^:\"]*:\\([0-9][0-9]*\\)/.*|\\1|p' -e 's/.*\"port\":\\([0-9][0-9]*\\).*/\\1/p' | head -1; }; get() { curl -fsS -H \"$A\" \"$1\" 2>/dev/null || printf ''; }; post() { n=0; while [ $n -lt 20 ]; do r=$(curl -fsS -X POST \"$1\" -H \"$J\" -H \"$A\" -d \"$2\" 2>/dev/null || printf ''); [ -n \"$r\" ] && { printf %s \"$r\"; return 0; }; n=$((n+1)); sleep 2; done; printf ''; }; SETUP=$(curl -fsS \"$API/auth/setup\" || printf ''); case \"$SETUP\" in *'\"registration_open\":true'*) TOKEN=$(curl -fsS -X POST \"$API/auth/register\" -H \"$J\" -d \"{\\\"name\\\":\\\"Admin\\\",\\\"email\\\":\\\"$ADMIN_EMAIL\\\",\\\"password\\\":\\\"$ADMIN_PASSWORD\\\"}\" 2>/dev/null | sed -n 's/.*\"token\":\"\\([^\"]*\\)\".*/\\1/p') ;; *) TOKEN=$(curl -fsS -X POST \"$API/auth/login\" -H \"$J\" -d \"{\\\"email\\\":\\\"$ADMIN_EMAIL\\\",\\\"password\\\":\\\"$ADMIN_PASSWORD\\\"}\" 2>/dev/null | sed -n 's/.*\"token\":\"\\([^\"]*\\)\".*/\\1/p') ;; esac; [ -n \"$TOKEN\" ] || { echo \"pg_port=no-token\"; exit 0; }; A=\"Authorization: Bearer $TOKEN\"; ORG=$(get \"$API/organizations\" | id1); [ -n \"$ORG\" ] || ORG=$(post \"$API/organizations\" '{\"name\":\"Default\"}' | id1); [ -n \"$ORG\" ] || { echo \"pg_port=no-org\"; exit 0; }; P=\"$API/organizations/$ORG/projects\"; PROJ=$(get \"$P\" | id1); [ -n \"$PROJ\" ] || PROJ=$(post \"$P\" '{\"name\":\"main\"}' | id1); [ -n \"$PROJ\" ] || { echo \"pg_port=no-project\"; exit 0; }; B=\"$P/$PROJ/branches\"; BRJSON=$(get \"$B\"); BR=$(printf %s \"$BRJSON\" | id1); if [ -z \"$BR\" ]; then BR=$(post \"$B\" '{\"name\":\"production\"}' | id1); [ -n \"$BR\" ] || { echo \"pg_port=branch-failed\"; exit 0; }; curl -fsS -X PUT \"$B/$BR/password\" -H \"$J\" -H \"$A\" -d \"{\\\"password\\\":\\\"$PG_PASSWORD\\\"}\" >/dev/null 2>&1 || true; fi; PORT=$(printf %s \"$BRJSON\" | port1); [ -n \"$PORT\" ] || PORT=$(post \"$B/$BR/endpoint\" '' | port1); echo \"pg_port=${PORT:-unstarted}\"",
+      "capture": "pgPort",
+      "capturePattern": "pg_port=([0-9]+)",
+      "persistAs": {
+        "key": "NEOND_PG_PORT"
+      },
+      "once": true,
+      "phase": "post-ready",
+      "readiness": {
+        "test": "curl -fsS http://127.0.0.1:3000/api/auth/setup",
+        "interval": 5000,
+        "retries": 60
+      }
+    }
+  ],
+  "connection": {
+    "title": "Open the Neon console",
+    "description": "Sign in to the console to manage projects and branches. The install pre-creates the admin account plus a `production` branch with a running endpoint, so the Postgres URL below works immediately.",
+    "guide": {
+      "intro": "You get a Neon console for branching plus a normal Postgres connection string for the first branch.",
+      "useHint": "Each branch gets its own endpoint on its own port. Create a branch in the console, press Start endpoint, and copy that branch's connection string — six host ports (55432-55437) are published for endpoints, which is three concurrent branches.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "console",
+        "label": "Neon console",
+        "source": "publicUrl:neond",
+        "kind": "url",
+        "recommended": true,
+        "help": "Sign in with the admin email and password below."
+      },
+      {
+        "id": "adminEmail",
+        "label": "Admin email",
+        "source": "env:neond:ADMIN_EMAIL",
+        "help": "The instance admin. Sign-up is closed once this account exists."
+      },
+      {
+        "id": "adminPassword",
+        "label": "Admin password",
+        "source": "env:neond:ADMIN_PASSWORD",
+        "secret": true
+      },
+      {
+        "id": "dbUrl",
+        "label": "Database URL",
+        "source": "template:postgresql://postgres:{{env:neond:PG_PASSWORD}}@{{host}}:{{env:neond:NEOND_PG_PORT}}/postgres?sslmode=require",
+        "secret": true,
+        "envKey": "DATABASE_URL",
+        "help": "The `production` branch endpoint. Neon assigns each endpoint its own port, so if this shows no port the endpoint has not started yet — open the console and press Start endpoint, then read the connection string there."
+      }
+    ],
+    "firstLogin": {
+      "note": "The admin account is created during install — use the email and password above. First boot initialises two embedded Postgres instances and can take a couple of minutes after a ~1.2 GB image pull.\n\nTwo things worth knowing, both upstream behaviour: if the console shows a branch as running but connections fail, stop and start that endpoint from the console — restarting the container can leave a stale compute lock behind while the API still reports it healthy. And if the container is killed hard (out of memory, power loss) it can refuse to boot with \"lease already held\"; delete neon_daemon_data/.lock inside the app's volume while nothing is running. An ordinary redeploy is safe — it shuts down gracefully and releases the lock."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "neond",
+      "port": 3000,
+      "label": "Console",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ]
+}

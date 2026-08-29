@@ -2,7 +2,7 @@
  * Infrastructure layer barrel exports.
  */
 
-export type { RoutingProvider, SslProvider } from "./types";
+export type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./types";
 
 export { NginxProvider, type NginxProviderOptions } from "./nginx";
 export { CloudInfraProvider } from "./cloud";

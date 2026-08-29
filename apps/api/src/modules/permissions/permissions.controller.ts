@@ -24,20 +24,26 @@ import { createGitHubSource } from "../github/sources";
 import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
 import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
 import { env } from "../../config";
+import { GRANTABLE_RESOURCE_TYPES } from "../../lib/grantable-types";
+import {
+  isCloudOnlyGrantType,
+  isOrgSingletonResourceType,
+  isSelfHostedOnlyGrantType,
+  isSensitiveGrantType,
+  parseSourceAccessScope,
+  serializeSourceAccessScope,
+  PLATFORM_GRANT_DESCRIPTIONS,
+  RESOURCE_TYPE_LABELS,
+  type GrantableResourceType,
+  type SourceAccessScope,
+} from "@repo/core";
 
 // ─── Constants + helpers ────────────────────────────────────────────────────
 
-const ALLOWED_RESOURCE_TYPES: ResourceType[] = [
-  "project",
-  "server",
-  "mail_server",
-  "backup_destination",
-  "billing",
-  "audit",
-  // GitHub access-control grant targets: org/account (login) + single repo.
-  "github_installation",
-  "github_repository",
-];
+// The grantable surface lives in lib/grantable-types.ts so the satisfiability
+// ratchet test can bind to the same list this endpoint validates against — a copy
+// would let the two drift, which is how an unsatisfiable type gets offered.
+const ALLOWED_RESOURCE_TYPES: readonly ResourceType[] = GRANTABLE_RESOURCE_TYPES;
 
 const ALLOWED_PERMISSIONS: Permission[] = ["read", "write", "admin"];
 
@@ -134,10 +140,29 @@ export async function listResources(c: Context) {
     return c.json({ error: "Invalid or missing type query param" }, 400);
   }
 
-  if (type === "billing" || type === "audit") {
+  // A platform feature has no catalog: its only id is "*", so the "row" IS the
+  // feature. Generalized off the shared singleton set rather than naming types, so
+  // making a new feature grantable needs no edit here.
+  if (isOrgSingletonResourceType(type)) {
+    // A type whose routes don't exist in this mode would be a tab whose catalog can
+    // only ever be empty. Say so honestly instead of offering a dead grant.
+    const absentHere = env.CLOUD_MODE
+      ? isSelfHostedOnlyGrantType(type)
+      : isCloudOnlyGrantType(type);
+    if (absentHere) return c.json({ data: [] });
     return c.json({
       data: [
-        { id: "*", label: type === "billing" ? "Billing settings" : "Audit log" },
+        {
+          id: "*",
+          label: RESOURCE_TYPE_LABELS[type as GrantableResourceType] ?? type,
+          meta: {
+            feature: true,
+            ...(PLATFORM_GRANT_DESCRIPTIONS[type as GrantableResourceType]
+              ? { description: PLATFORM_GRANT_DESCRIPTIONS[type as GrantableResourceType] }
+              : {}),
+            ...(isSensitiveGrantType(type) ? { sensitive: true } : {}),
+          },
+        },
       ],
     });
   }
@@ -471,6 +496,9 @@ export async function upsertGrant(c: Context) {
     resourceType?: string;
     resourceId?: string;
     permissions?: unknown;
+    /** Source-access scope for a repo grant — see @repo/core source-access.
+     *  Omitted/null ⇒ metadata only, which is the default for a repo grant. */
+    scope?: unknown;
   }>();
 
   if (!body.userId || !body.resourceType || !body.resourceId) {
@@ -483,6 +511,17 @@ export async function upsertGrant(c: Context) {
   if (!ALLOWED_RESOURCE_TYPES.includes(body.resourceType as ResourceType)) {
     return c.json(
       { error: `Invalid resourceType: ${body.resourceType}`, code: "INVALID_RESOURCE_TYPE" },
+      400,
+    );
+  }
+
+  // Same rule as replaceGrants: a feature grant is only reachable at "*".
+  if (isOrgSingletonResourceType(body.resourceType) && body.resourceId !== "*") {
+    return c.json(
+      {
+        error: `${body.resourceType} is granted for the whole organization — use "*" as the resource id`,
+        code: "SINGLETON_REQUIRES_WILDCARD",
+      },
       400,
     );
   }
@@ -523,12 +562,21 @@ export async function upsertGrant(c: Context) {
     return c.json({ data: null, revoked: true });
   }
 
+  // Round-tripped through the parser so only normalised, matchable rules are
+  // stored — a pattern the picker allowed but the matcher would reject must never
+  // be persisted as though it were enforceable. An absent/malformed scope becomes
+  // undefined, i.e. metadata-only.
+  const scope = parseSourceAccessScope(
+    typeof body.scope === "string" ? body.scope : body.scope ? JSON.stringify(body.scope) : null,
+  );
+
   const grant = await repos.resourceGrant.upsert({
     organizationId,
     userId: body.userId,
     resourceType: body.resourceType as ResourceType,
     resourceId: body.resourceId,
     permissions,
+    scope,
     grantedByUserId: actorUserId,
   });
 
@@ -573,7 +621,12 @@ export async function replaceGrants(c: Context) {
   // Validate + normalize desired grants (key by type:id; drop zero-perm rows).
   const desired = new Map<
     string,
-    { resourceType: ResourceType; resourceId: string; permissions: Permission[] }
+    {
+      resourceType: ResourceType;
+      resourceId: string;
+      permissions: Permission[];
+      scope?: SourceAccessScope;
+    }
   >();
   for (const raw of body.grants as Array<Record<string, unknown>>) {
     const resourceType = raw.resourceType as ResourceType;
@@ -591,7 +644,21 @@ export async function replaceGrants(c: Context) {
     // and the "*" wildcard are org-scoped by definition.
     const isWildcard = resourceId === "*";
     const isGithub = resourceType === "github_installation" || resourceType === "github_repository";
-    const isSingleton = resourceType === "billing" || resourceType === "audit";
+    const isSingleton = isOrgSingletonResourceType(resourceType);
+    // A feature grant's only meaningful id is "*". At any other id the row is
+    // unreachable by `checkPermission` (its wildcard arm looks up "*" and nothing
+    // else) while still making the type look granted — an advertise-then-404. The
+    // old check skipped the org test for singletons WITHOUT checking the id, so such
+    // a row could be written. Fail closed instead.
+    if (isSingleton && !isWildcard) {
+      return c.json(
+        {
+          error: `${resourceType} is granted for the whole organization — use "*" as the resource id`,
+          code: "SINGLETON_REQUIRES_WILDCARD",
+        },
+        400,
+      );
+    }
     if (!isWildcard && !isGithub && !isSingleton) {
       const ok = await resourceBelongsToOrg(resourceType, resourceId, organizationId);
       if (!ok) {
@@ -601,7 +668,12 @@ export async function replaceGrants(c: Context) {
         );
       }
     }
-    desired.set(`${resourceType}:${resourceId}`, { resourceType, resourceId, permissions });
+    // Source scope, normalised on the way in so an unmatchable pattern is dropped
+    // rather than stored as though it were enforceable. Absent ⇒ metadata only.
+    const scope = parseSourceAccessScope(
+      typeof raw.scope === "string" ? raw.scope : raw.scope ? JSON.stringify(raw.scope) : null,
+    );
+    desired.set(`${resourceType}:${resourceId}`, { resourceType, resourceId, permissions, scope });
   }
 
   const existing = await repos.resourceGrant.listByMember(organizationId, body.userId);
@@ -613,15 +685,26 @@ export async function replaceGrants(c: Context) {
       await repos.resourceGrant.delete(g.id, organizationId);
     }
   }
+  // Scope has to take part in change detection. Comparing permissions alone would
+  // silently skip the upsert when ONLY the source scope changed — so narrowing a
+  // repo from the whole tree to `src/**`, or revoking content access entirely,
+  // would appear to save and change nothing.
+  const scopeKey = (s?: SourceAccessScope) => JSON.stringify(serializeSourceAccessScope(s) ?? null);
+
   for (const [key, d] of desired) {
     const prev = existingByKey.get(key);
-    if (!prev || permsKey(prev.permissions) !== permsKey(d.permissions)) {
+    const changed =
+      !prev ||
+      permsKey(prev.permissions) !== permsKey(d.permissions) ||
+      scopeKey(prev.scope) !== scopeKey(d.scope);
+    if (changed) {
       await repos.resourceGrant.upsert({
         organizationId,
         userId: body.userId,
         resourceType: d.resourceType,
         resourceId: d.resourceId,
         permissions: d.permissions,
+        scope: d.scope,
         grantedByUserId: actorUserId,
       });
     }

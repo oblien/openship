@@ -54,9 +54,25 @@ function invalidateStatus(): void {
 /*  GitHub Integration API                                            */
 /* ------------------------------------------------------------------ */
 
+/** One entry in a repo's recursive path list. */
+export interface RepoTreeEntry {
+  path: string;
+  type: "file" | "dir";
+}
+
 export const githubApi = {
   /** Dashboard home - user info, orgs, recent repos */
   getUserHome: () => api.get<any>(endpoints.github.userHome),
+
+  /**
+   * A repo's whole tree, flat and recursive — one call, so the path picker can
+   * render a collapsible tree AND search it without a request per directory.
+   * Server-side it's filtered to paths the caller may themselves read.
+   */
+  getRepoTree: (owner: string, repo: string, branch?: string) =>
+    api.get<{ data: RepoTreeEntry[] }>(
+      endpoints.github.repoTree(owner, repo) + (branch ? `?branch=${encodeURIComponent(branch)}` : ""),
+    ),
 
   /** Repos for a specific GitHub org */
   getOrgRepos: (owner: string) =>

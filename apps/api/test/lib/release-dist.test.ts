@@ -3,24 +3,34 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// The download + SSRF guard live in release-download; mock them so these tests
+// The download lives in release-download; mock it so these tests
 // exercise ONLY the 3-slot resolution + latest-version logic (no network, no fs
-// extraction). assertPublicHttps → no-op; fetchAndExtractRelease → controllable.
+// extraction). fetchAndExtractRelease → controllable.
 vi.mock("../../src/lib/release-download", () => ({
   fetchAndExtractRelease: vi.fn(),
-  assertPublicHttps: vi.fn(),
 }));
+
+// URL-mode version discovery is user-controlled and must go through the DNS-
+// pinned safe client. Mock the transport, then assert the security policy the
+// resolver hands it rather than touching the network.
+vi.mock("../../src/lib/safe-fetch", () => ({ safeFetch: vi.fn() }));
 
 import {
   resolveReleaseDist,
   resolveReleaseDistOrNull,
+  resolveLatestReleaseVersion,
   resolveLatestVersion,
+  resolveReleaseVersion,
   ReleaseDistMissingError,
+  ReleaseVersionUnavailableError,
 } from "../../src/lib/release-dist";
 import { fetchAndExtractRelease } from "../../src/lib/release-download";
+import { safeFetch } from "../../src/lib/safe-fetch";
+import { env } from "../../src/config/env";
 import type { ReleaseSource } from "@repo/core";
 
 const fetchMock = fetchAndExtractRelease as unknown as ReturnType<typeof vi.fn>;
+const safeFetchMock = safeFetch as unknown as ReturnType<typeof vi.fn>;
 
 let root: string;
 const ENV_KEY = "TEST_RELEASE_DIST_OVERRIDE";
@@ -28,6 +38,7 @@ const ENV_KEY = "TEST_RELEASE_DIST_OVERRIDE";
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "release-dist-"));
   fetchMock.mockReset();
+  safeFetchMock.mockReset();
   delete process.env[ENV_KEY];
 });
 
@@ -190,7 +201,19 @@ describe("resolveLatestVersion", () => {
     globalThis.fetch = realFetch;
   });
 
-  it("github: strips the leading v from the latest release tag", async () => {
+  it("github: keeps the publisher's raw tag alongside the normalized version", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tag_name: "v3.4.5" }),
+    }) as unknown as typeof fetch;
+
+    expect(await resolveLatestReleaseVersion(github)).toEqual({
+      version: "3.4.5",
+      tag: "v3.4.5",
+    });
+  });
+
+  it("keeps resolveLatestVersion as a normalized-string compatibility API", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ tag_name: "v3.4.5" }),
@@ -198,33 +221,109 @@ describe("resolveLatestVersion", () => {
     expect(await resolveLatestVersion(github)).toBe("3.4.5");
   });
 
-  it("url: reads a bare version body from versionUrl", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+  it("url: reads a bare version through the DNS-pinned, redirect-safe client", async () => {
+    const nativeFetch = vi.fn();
+    globalThis.fetch = nativeFetch as unknown as typeof fetch;
+    safeFetchMock.mockResolvedValue({
       ok: true,
+      status: 200,
       text: async () => "v7.8.9\n",
-    }) as unknown as typeof fetch;
+    });
     const source: ReleaseSource = {
       mode: "url",
       distUrl: "https://cdn/x-{version}.tgz",
       versionUrl: "https://cdn/latest.txt",
     };
+
+    expect(await resolveLatestReleaseVersion(source)).toEqual({
+      version: "7.8.9",
+      tag: "v7.8.9",
+    });
     expect(await resolveLatestVersion(source)).toBe("7.8.9");
+    expect(safeFetchMock).toHaveBeenCalledWith("https://cdn/latest.txt", {
+      headers: { "User-Agent": "openship" },
+      timeoutMs: 10_000,
+      maxRedirects: 5,
+      maxBodyBytes: 8192,
+      allowPrivate: !env.CLOUD_MODE,
+    });
+    expect(nativeFetch).not.toHaveBeenCalled();
   });
 
-  it("url: parses a JSON {version} body", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+  it("url: parses JSON version and tag_name bodies without losing the raw tag", async () => {
+    safeFetchMock.mockResolvedValueOnce({
       ok: true,
+      status: 200,
       text: async () => JSON.stringify({ version: "10.0.1" }),
-    }) as unknown as typeof fetch;
+    });
     const source: ReleaseSource = {
       mode: "url",
       distUrl: "https://cdn/x.tgz",
       versionUrl: "https://cdn/latest.json",
     };
-    expect(await resolveLatestVersion(source)).toBe("10.0.1");
+    expect(await resolveLatestReleaseVersion(source)).toEqual({
+      version: "10.0.1",
+      tag: "10.0.1",
+    });
+
+    safeFetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ tag_name: "v10.0.2" }),
+    });
+    expect(await resolveLatestReleaseVersion(source)).toEqual({
+      version: "10.0.2",
+      tag: "v10.0.2",
+    });
+  });
+
+  it("url: fails soft when the SSRF-safe client rejects the target", async () => {
+    safeFetchMock.mockRejectedValue(new Error("SSRF_BLOCKED"));
+    const source: ReleaseSource = {
+      mode: "url",
+      versionUrl: "https://metadata.internal/latest",
+    };
+
+    await expect(resolveLatestReleaseVersion(source)).resolves.toBeNull();
   });
 
   it("url with no versionUrl → null (no drift source)", async () => {
     expect(await resolveLatestVersion({ mode: "url", distUrl: "https://cdn/x.tgz" })).toBeNull();
+    expect(safeFetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveReleaseVersion", () => {
+  it("uses explicit input, then pinnedVersion, without consulting upstream", async () => {
+    const source: ReleaseSource = {
+      mode: "url",
+      versionUrl: "https://cdn/latest.txt",
+      pinnedVersion: "v2.0.0",
+    };
+
+    await expect(resolveReleaseVersion(source, { version: "v1.4.0" })).resolves.toEqual({
+      version: "1.4.0",
+      tag: "v1.4.0",
+    });
+    await expect(resolveReleaseVersion(source)).resolves.toEqual({
+      version: "2.0.0",
+      tag: "v2.0.0",
+    });
+    expect(safeFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws a typed error instead of borrowing Openship's API version", async () => {
+    safeFetchMock.mockRejectedValue(new Error("upstream unavailable"));
+    const source: ReleaseSource = {
+      mode: "url",
+      versionUrl: "https://cdn.example.com/latest.txt",
+    };
+
+    const failure = resolveReleaseVersion(source);
+    await expect(failure).rejects.toBeInstanceOf(ReleaseVersionUnavailableError);
+    await expect(resolveReleaseVersion(source)).rejects.toMatchObject({
+      code: "RELEASE_VERSION_UNAVAILABLE",
+      message: expect.stringContaining("Set pinnedVersion"),
+    });
   });
 });

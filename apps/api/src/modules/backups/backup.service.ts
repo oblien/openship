@@ -9,6 +9,7 @@
  */
 
 import { repos } from "@repo/db";
+import { DEFAULT_RETAIN_COUNT, validatePolicyPayload } from "@repo/core";
 import crypto from "node:crypto";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
@@ -37,6 +38,27 @@ export async function policyOrganizationId(policy: {
 
 // ─── Policy CRUD ─────────────────────────────────────────────────────────────
 
+/**
+ * Refuse a policy whose payload cannot produce a restorable artifact.
+ *
+ * The rules themselves live in the catalog (`@repo/core`, backup-catalog.ts) rather
+ * than here, for two reasons. They are per-KIND facts, and this file used to hold one
+ * of them keyed on the literal string `"custom_command"` — so a second kind needing a
+ * restore command would have been a silent omission. And the same answer is needed by
+ * the dashboard, which cannot import the API.
+ *
+ * Enforced on the server rather than only in the dashboard because the API, the MCP
+ * tools and the CLI all reach this function, and a backup that cannot be restored is
+ * not a client-side concern.
+ */
+function assertPayloadSaveable(
+  payloadKind: string | null | undefined,
+  payloadConfig: Record<string, unknown> | null | undefined,
+) {
+  const problem = validatePolicyPayload(payloadKind, payloadConfig);
+  if (problem) throw new Error(problem);
+}
+
 export async function listPoliciesByProject(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
@@ -49,15 +71,16 @@ export async function createPolicy(
     projectId: string;
     serviceId: string | null;
     destinationId: string;
-    cronExpression?: string;
+    cronExpression?: string | null;
     triggerOnPreDeploy?: boolean;
     enableWebhook?: boolean;
-    retainCount?: number;
-    retainDays?: number;
+    /** Omitted = `DEFAULT_RETAIN_COUNT`. Explicit null = unlimited. */
+    retainCount?: number | null;
+    retainDays?: number | null;
     payloadKind?: string;
     payloadConfig?: Record<string, unknown>;
-    preHook?: string;
-    postHook?: string;
+    preHook?: string | null;
+    postHook?: string | null;
     enabled?: boolean;
   },
 ) {
@@ -75,6 +98,17 @@ export async function createPolicy(
     }
   }
 
+  assertPayloadSaveable(data.payloadKind, data.payloadConfig);
+
+  // Retention defaults ON. Storing two NULLs made `prunePolicy` short-circuit on
+  // "no retention configured", so a policy created over the API accumulated runs
+  // forever while the same policy created in the dashboard (whose form defaults
+  // to 7) pruned. Unlimited is still expressible — it just has to be asked for
+  // with an explicit null. Only defaulted when NEITHER field was given: a caller
+  // who set `retainDays` alone chose their retention deliberately, and adding a
+  // count would silently tighten it.
+  const retentionUnspecified = data.retainCount === undefined && data.retainDays === undefined;
+
   const id = `bkp_${crypto.randomUUID()}`;
   const row = await repos.backupPolicy.create({
     id,
@@ -85,7 +119,7 @@ export async function createPolicy(
     cronExpression: data.cronExpression ?? null,
     triggerOnPreDeploy: data.triggerOnPreDeploy ?? false,
     webhookToken: data.enableWebhook ? generateWebhookToken() : null,
-    retainCount: data.retainCount ?? null,
+    retainCount: data.retainCount ?? (retentionUnspecified ? DEFAULT_RETAIN_COUNT : null),
     retainDays: data.retainDays ?? null,
     payloadKind: data.payloadKind ?? "auto",
     payloadConfig: data.payloadConfig ?? {},
@@ -151,6 +185,16 @@ export async function updatePolicy(
     if (!check.valid) {
       throw new Error(`Invalid cron expression: ${check.reason ?? "unknown"}`);
     }
+  }
+
+  // Only when the caller (re)defines the payload. A patch that merely flips
+  // `enabled` on a policy predating this guard has to keep working — refusing to let
+  // an operator disable an unrestorable policy would be the opposite of the fix.
+  if (patch.payloadKind !== undefined || patch.payloadConfig !== undefined) {
+    assertPayloadSaveable(
+      patch.payloadKind ?? policy.payloadKind,
+      patch.payloadConfig ?? policy.payloadConfig,
+    );
   }
 
   // Build an EXPLICIT allow-listed dbPatch. Never copy the raw input

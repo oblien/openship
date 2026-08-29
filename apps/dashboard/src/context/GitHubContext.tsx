@@ -90,8 +90,16 @@ export interface GitHubConnectionState {
       avatarUrl?: string;
       /** How it was connected — "host-cli" (probed off the host's gh login),
        *  "device" (browser sign-in) or "token" (pasted PAT). Drives the label and
-       *  the first-run consent prompt; absent on older API responses. */
+       *  the first-run consent prompt; absent on older API responses. Also set
+       *  when `available` is false but a credential exists (see `problem`). */
       method?: "host-cli" | "device" | "token";
+      /** A credential IS stored but can't be used: "rejected" (GitHub returned
+       *  401/403 — revoked, expired, scope removed) or "unreachable" (no answer
+       *  from GitHub, so the credential may be fine). Absent when nothing is
+       *  connected at all — that's the plain connect case, not a fault. */
+      problem?: "rejected" | "unreachable";
+      /** ISO timestamp of the last verify against GitHub. */
+      checkedAt?: string;
     };
   };
   primary: "openship-app" | "gh-cli" | null;

@@ -3,6 +3,8 @@
     "title": "Kapasite ve Kullanım",
     "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler Openship Cloud'dan senkronize edilir.",
     "routes": "Ücretsiz rotalar",
+    "runningServices": "Çalışan hizmetler",
+    "projects": "Projeler",
     "workspaces": "Çalışma alanları",
     "unlimited": "Sınırsız",
     "used": "kullanıldı",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "Tek seferlik kredi yüklemeleri yakında geliyor — burada aylık kotanıza ek olarak kredi ekleyebileceksiniz.",
   "header": {
-    "credits": "Krediler",
+    "credits": "Hesaplama",
     "creditsSuffix": "toplam {limit}",
     "overQuota": "Kullanım kotası aşıldı",
     "bandwidth": "Bant Genişliği",
@@ -81,7 +83,7 @@
     "title": "Kredi yükle",
     "description": "Stripe üzerinden ücretlendirilen tek seferlik kredi paketleri. Kredilerin süresi dolmaz ve aylık kotanıza eklenir.",
     "tryAgain": "Tekrar dene",
-    "credits": "kredi",
+    "credits": "hesaplama dakikası",
     "redirecting": "Yönlendiriliyor…",
     "buy": "Satın Al",
     "empty": "Şu anda kullanılabilir kredi paketi yok.",
@@ -93,25 +95,24 @@
     "portalError": "Faturalandırma portalı açılamadı"
   },
   "overview": {
-    "creditsLeft": "kalan kredi",
+    "creditsLeft": "kalan hesaplama dakikası",
     "planLabel": "{name} planı",
     "usedThisPeriod": "Bu dönemde kullanılan",
     "resets": "Yenilenme",
     "resetsInDay": "{n} gün içinde",
     "resetsInDays": "{n} gün içinde",
     "none": "—",
-    "upgradeToPro": "Pro Plana Yükselt",
     "recentActivity": "Son etkinlikler",
     "last7Days": "Son 7 gün",
     "viewFullUsage": "Tüm kullanımı görüntüle",
     "noUsageYet": "Henüz kullanım yok",
     "usageError": "Kullanım bilgileri yüklenemedi",
-    "needMoreCredits": "Daha fazla krediye mi ihtiyacınız var?",
+    "needMoreCredits": "Daha fazla hesaplama dakikasına mı ihtiyacınız var?",
     "oneTimeTopups": "Abonelik değişikliği gerektirmeyen tek seferlik kredi yüklemeleri",
     "seeAllPacks": "Tüm paketleri gör",
     "packsError": "Paketler yüklenemedi",
     "noPacks": "Kredi paketi bulunamadı.",
-    "creditsAmount": "{n} kredi",
+    "creditsAmount": "{n} hesaplama dakikası",
     "oneTime": "{price} tek seferlik",
     "buy": "Satın Al",
     "checkoutError": "Ödeme adımı başlatılamadı"
@@ -122,7 +123,7 @@
       "balance": "Bakiye",
       "balanceSuffix": "toplam {limit} kredi",
       "consumed": "Bu dönemde tüketilen",
-      "credits": "kredi",
+      "credits": "hesaplama dakikası",
       "burnRate": "Tüketim hızı",
       "burnRateSuffix": "kredi/gün (son 7 gün)",
       "projected": "Dönem sonu kullanım tahmini",
@@ -141,16 +142,28 @@
       "subtitle": "Krediler, seçilen aralıktaki ölçülmüş kaynak kullanımına orantılı olarak dağıtılır.",
       "resource": "Kaynak",
       "units": "Birimler",
-      "credits": "Krediler",
+      "credits": "Hesaplama dakikaları",
       "percentOfTotal": "Toplam içindeki pay (%)",
       "loading": "Yükleniyor…",
       "empty": "Seçilen aralıkta kullanım bulunamadı."
     },
     "resources": {
-      "cpu": { "label": "CPU süresi", "units": "vCPU-saat" },
-      "memory": { "label": "Bellek", "units": "GB-saat" },
-      "disk": { "label": "Disk G/Ç", "units": "GB" },
-      "network": { "label": "Ağ", "units": "GB" }
+      "cpu": {
+        "label": "CPU süresi",
+        "units": "vCPU-saat"
+      },
+      "memory": {
+        "label": "Bellek",
+        "units": "GB-saat"
+      },
+      "disk": {
+        "label": "Disk G/Ç",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Ağ",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Çalışma Alanı",
@@ -188,7 +201,8 @@
       "incomplete_expired": "Süresi Doldu",
       "unpaid": "Ödenmemiş",
       "paused": "Duraklatıldı"
-    }
+    },
+    "includedTitle": "Neler dahil"
   },
   "paymentPanel": {
     "title": "Ödeme yöntemi",

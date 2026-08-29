@@ -37,9 +37,23 @@ app that can't tolerate the brief wake-up on the very first request after a quie
 ## Set resources
 
 Resource sizing lives in the **deploy screen**, under a section called **Power**, when you deploy to
-**Openship Cloud**. You can also set it from the API on any existing project.
+**Openship Cloud** — and on any existing project under **Machine Power** (Configuration tab, or the
+Services tab for a multi-service project). You can also set it from the API.
 
-<Tabs items={['Deploy wizard (Cloud)', 'API']}>
+<Callout title="Self-hosted: no limits by default" type="info">
+A self-hosted container is **uncapped** unless you say otherwise — the machine is the ceiling, because
+it's your hardware. Pick a tier (or **No limits**, the default) only when you deliberately want to cap
+a container. A non-zero value is checked against the **target machine's real capacity**, so a 64 GB box
+can hand a container 64 GB.
+
+Builds are uncapped too. Capping a build is opt-in via the `build` field below, and is really only
+useful on a small box where an unbounded production build would otherwise take the whole host down.
+
+Openship Cloud is the opposite: a workspace is metered and must be sized, so there's no "no limits"
+option there and an unset project falls back to the **Low** tier.
+</Callout>
+
+<Tabs items={['Deploy wizard (Cloud)', 'Project settings', 'API']}>
 
 <Tab value="Deploy wizard (Cloud)">
 
@@ -90,6 +104,29 @@ Finish the deploy. Your app runs at the size you picked.
 
 </Tab>
 
+<Tab value="Project settings">
+
+Any existing project has a **Machine Power** card. On a single app it's under
+**Configuration**; on a multi-service (compose) project it's on the **Services** tab, since that
+project shape has no single-app Configuration.
+
+The card shows the target machine's detected capacity in its header, and offers:
+
+- **No limits** — the self-hosted default. The container gets the whole machine.
+- **Micro / Low / Medium / High** — the same presets Openship Cloud offers. A preset larger than the
+  machine is greyed out rather than silently unhonored.
+- **Custom** — type your own vCPU and MB. `0` in either field means no limit for that dimension, so
+  you can cap memory while leaving CPU free.
+
+Limits apply when the container is **recreated**, so redeploy for a change to take effect. The card
+says so inline. Every deploy also logs the limits it applied (`Resource limits: 2 vCPU · 4 GB`, or
+`no limits (machine capacity)`), so a cap is never invisible.
+
+A service in a compose project can override the project value for itself — see
+[per-service limits](#per-service-limits-compose).
+
+</Tab>
+
 <Tab value="API">
 
 Update an existing project's resources with a `PATCH` to its resources endpoint. All paths are under `/api`
@@ -110,13 +147,52 @@ curl -X PATCH https://your-host/api/projects/PROJECT_ID/resources \
   }'
 ```
 
-Allowed ranges: `cpuCores` 0.25–4, `memoryMb` 128–8192, `diskMb` 64–204800 (all disk/memory values are in MB).
-Every field is optional — send only what you want to change. To read the current values, use
-`GET /api/projects/PROJECT_ID/resources`.
+You can also send `{"tier": "medium"}` instead of explicit numbers, or `{"tier": "unlimited"}`
+(self-hosted) to remove the caps.
+
+`0` means **no limit**. A non-zero `cpuCores` must be at least 0.25 and `memoryMb` at least 128; the
+UPPER bound is the target machine's own capacity, not a fixed number — so a large self-hosted box is
+usable in full. `diskMb` is 64–204800 and only enforced by cloud workspaces. Every field is optional —
+send only what you want to change.
+
+`GET /api/projects/PROJECT_ID/resources` reads the current values, and also reports the detected
+machine `capacity` (the ceiling) plus `requiresLimit` (true on cloud, where unsized isn't allowed).
 
 </Tab>
 
 </Tabs>
+
+## Per-service limits (compose)
+
+In a multi-service project the project-wide value applies to **each** service container — it's a
+per-container cap, not a budget split across them.
+
+A single service can override it. Openship reads a compose file's own limits, in either spelling, and
+applies them over the project value **field by field** — so a service that declares only memory keeps
+the project's CPU setting:
+
+```yaml
+services:
+  api:
+    image: my/api
+    mem_limit: 4g          # short form
+    cpus: 2
+  worker:
+    image: my/worker
+    deploy:                # swarm form — also honored
+      resources:
+        limits:
+          memory: 8G
+          cpus: "1.5"
+```
+
+The same override is available declaratively in `openship.json` under
+[`services[].resources`](/docs/reference/openship-json#services-compose).
+
+<Callout title="Adopted containers keep their limits" type="info">
+Importing an existing Docker container reads the caps it's actually running with — including one you
+applied by hand with `docker update --memory` — so adoption doesn't quietly reset them.
+</Callout>
 
 ## Set sleep mode
 
@@ -162,9 +238,11 @@ to sleep — it's just files being served — so the setting has no visible effe
 ## If something goes wrong
 
 <Callout title="A resource value is rejected" type="error">
-The API only accepts sizes inside the allowed ranges — go out of bounds and it answers with a message like
-`CPU cores must be between 0.25 and 4.00`. The limits are `cpuCores` 0.25–4, `memoryMb` 128–8192, `diskMb`
-64–204800 (memory and disk in MB). Bring the value back into range and try again.
+A cap larger than the target machine is refused with the real numbers, e.g.
+`Memory limit 8192 MB exceeds the machine's 2048 MB`. Lower the value, or use `0` / the `unlimited`
+tier to remove the cap. A non-zero value below the workable floor is refused too (`at least 0.25
+cores`, `at least 128 MB`). If Openship couldn't reach the machine to read its capacity, no ceiling is
+enforced at all — the value you send is accepted as-is.
 </Callout>
 
 <Callout title="Sleep mode command is rejected" type="warn">

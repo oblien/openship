@@ -1,6 +1,7 @@
 import {
   NginxProvider,
   detectOpenRestyPaths,
+  rootOrDegrade,
   type OpenRestyPaths,
 } from "@repo/adapters";
 import type { CommandExecutor } from "@repo/adapters";
@@ -51,9 +52,21 @@ export async function withOpenRestyRouting<T>(
   }
 
   return sshManager.withExecutor(serverId, async (executor) => {
+    // `applyRateLimit` — the one write behind this helper — edits the root-owned
+    // nginx.conf, and this path never asked for privilege, so a non-root login got an
+    // EACCES rendered as "Failed to update OpenResty rate limit config". Elevated when
+    // the box allows it; degraded (not refused) when it doesn't, because the READS here
+    // work unelevated today on a world-readable nginx.conf and refusing would take the
+    // Security tab away from boxes where it currently works.
+    const edgeExecutor = await rootOrDegrade(executor, {
+      purpose: "Editing OpenResty configuration",
+      consequence: "Reads still work; a write will fail with the permission error it earns.",
+      report: (message) => console.error(`[openresty] ${message}`),
+    });
+
     const run = async (forceRefresh = false) => {
       const paths = await getOpenRestyPaths(serverId, executor, forceRefresh);
-      const routing = new NginxProvider({ paths, executor });
+      const routing = new NginxProvider({ paths, executor: edgeExecutor });
       return fn(routing);
     };
 

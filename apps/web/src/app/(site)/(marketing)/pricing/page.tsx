@@ -1,95 +1,62 @@
 import { Navbar, Footer } from "@/components/landing";
+import {
+  CUSTOM_TIERS,
+  SELF_HOSTED,
+  STANDARD,
+  TIERS,
+  UI,
+  chooseLabel,
+  cloudFrom,
+  liveCampaigns,
+  priceParts,
+  renderNow,
+} from "@/lib/pricing";
+import { CLOUD_CTA_HREF, SELF_HOST_CTA_HREF, faq } from "./_data";
 
-/* ─── Plans ──────────────────────────────────────────────────── */
+/**
+ * Rendered per request, NOT prerendered.
+ *
+ * The page can carry a time-bounded campaign price, and a campaign has to start
+ * and expire on its own. Two things are required for that and neither is
+ * sufficient alone:
+ *
+ *   1. Prices are computed inside this component, from `renderNow()` — never in
+ *      a module const. A module body runs once per process, which on a
+ *      prerendered route is BUILD time.
+ *   2. This declaration. `new Date()` is not one of Next's dynamic APIs, so
+ *      without it the route would still be prerendered and every "per render"
+ *      computation would happen exactly once, at build.
+ *
+ * `revalidate` over `force-dynamic`: a render is cheap in CPU, but
+ * `force-dynamic` sends `private, no-cache, no-store`, which makes this the one
+ * marketing route no CDN can ever serve — measured at ~9.5x lower throughput than
+ * its prerendered siblings, on the page most likely to be linked and crawled.
+ * A 60-second window costs only that a campaign can begin or end up to a minute
+ * late, which is not a claim anyone can act on.
+ *
+ * The JSON-LD stays consistent under ISR: the layout and the page render in ONE
+ * pass sharing `renderNow()`, so a revalidation bakes the structured data and the
+ * visible price from the same instant. They can drift only if the two files are
+ * given different windows — keep them equal.
+ */
+export const revalidate = 60;
 
-type Plan = {
-  n: string;
-  name: string;
-  tag: string;
-  price: string;
-  priceNote: string;
-  lead: string;
-  cta: string;
-  ctaHref: string;
-  external?: boolean;
-  features: string[];
-  highlight?: boolean;
-  ribbon?: string;
-  ribbonMuted?: boolean;
-  muted?: boolean;
-};
-
-const PLANS: Plan[] = [
-  {
-    n: "01",
-    name: "Self-hosted",
-    tag: "Unavailable",
-    price: "Unavailable",
-    priceNote: "Paused while we finish setting up payments",
-    lead: "The self-hosted plan is temporarily unavailable while we sort out billing. It'll be back shortly — leave your email and we'll tell you the moment it opens.",
-    cta: "Notify me",
-    ctaHref: "/contact",
-    ribbon: "Unavailable",
-    ribbonMuted: true,
-    muted: true,
-    features: [
-      "Full platform, open source (Apache 2.0)",
-      "Unlimited deploys, domains, projects",
-      "All managed services — Postgres, Redis, mail",
-      "CLI, web, desktop — same backend",
-      "Community support",
-    ],
-  },
-  {
-    n: "02",
-    name: "Openship Cloud",
-    tag: "Managed",
-    price: "Coming soon",
-    priceNote: "Plans announced once billing is live",
-    lead: "Fully managed Openship — multi-region, auto-scaling, backups included. Plans open as soon as payments are ready.",
-    cta: "Get notified",
-    ctaHref: "/contact",
-    ribbon: "Coming soon",
-    features: [
-      "Everything in self-hosted",
-      "Managed multi-region edge",
-      "Auto-scaling and zero-downtime deploys",
-      "Daily backups, point-in-time recovery",
-      "Built-in mail server, unlimited domains",
-      "Live monitoring and alerts",
-    ],
-    highlight: true,
-  },
-];
-
-/* ─── FAQ ────────────────────────────────────────────────────── */
-
-const FAQ = [
-  {
-    q: "Why are the plans unavailable right now?",
-    a: "We're finishing setting up payments and billing. Rather than show plans we can't complete sign-up for yet, we've paused them for the moment. It's temporary — leave your email on the contact page and we'll tell you the instant they open.",
-  },
-  {
-    q: "How much does Openship Cloud cost?",
-    a: "Cloud pricing hasn't been announced yet, and sign-ups are paused while we finish billing setup. Leave your email on the contact page and we'll let you know before it launches.",
-  },
-  {
-    q: "Can I move between self-hosted and cloud later?",
-    a: "That's the goal — your containers travel as-is, no rebuild, no rewrites. Once Cloud launches, moving between it and self-hosting will be a one-click change.",
-  },
-  {
-    q: "What's the license?",
-    a: "Apache 2.0 — a permissive license. Use it, modify it, fork it, and ship it in commercial or closed-source products, no strings attached. Run it in your cloud, on a Raspberry Pi, or in production for a SaaS.",
-  },
-  {
-    q: "Do you store my source code?",
-    a: "Only what's needed to build. We never store unencrypted secrets, and source is fetched fresh from your repo for each build. Self-hosted keeps everything on your infrastructure by definition.",
-  },
-];
+function Check() {
+  return (
+    <svg className="pp-plan-check" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4 10.5l4 4 8-10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 /* ─── Page ───────────────────────────────────────────────────── */
 
 export default function PricingPage() {
+  const now = renderNow();
+  const from = cloudFrom(now);
+  const campaigns = liveCampaigns(now);
+  const questions = faq(now);
+
   return (
     <>
       <Navbar />
@@ -101,73 +68,184 @@ export default function PricingPage() {
           <div className="pp-container pp-hero-inner">
             <p className="pp-eyebrow">Pricing</p>
             <h1 className="pp-headline">
-              Plans are on pause.<br />
-              <span className="pp-headline-soft">Back as soon as billing is live.</span>
+              Free to self-host.<br />
+              <span className="pp-headline-soft">
+                {from ? `Cloud from ${from} a month.` : "Forever, on your own servers."}
+              </span>
             </h1>
             <p className="pp-sub">
-              We're finishing setting up payments. Self-hosted is temporarily
-              unavailable and Openship Cloud is coming soon — leave your email
-              and we'll let you know the moment plans open up.
+              Openship is open source under Apache 2.0 — run the whole platform on
+              any Linux box for nothing, with no metering, no seat caps, and no
+              credit card. Or let us run it: Openship Cloud is fully managed
+              {from ? `, from ${from} a month` : ""}.
             </p>
 
             <ul className="pp-hero-trust">
               <li>Open source · Apache 2.0</li>
+              <li>Free forever, self-hosted</li>
               <li>No lock-in</li>
-              <li>Cloud or self-hosted</li>
-              <li>Get notified at launch</li>
+              {from && <li>Cloud from {from}{UI.perMonth}</li>}
             </ul>
           </div>
         </section>
 
-        {/* ── Plan cards ─────────────────────────────────────── */}
+        {/* ── Self-hosted band ───────────────────────────────── */}
+        <section className="pp-selfhost-section">
+          <div className="pp-container">
+            <div className="pp-selfhost">
+              <div>
+                <span className="pp-selfhost-tag">Open source</span>
+                <h2 className="pp-selfhost-name">{SELF_HOSTED.name}</h2>
+                <p className="pp-selfhost-lead">{SELF_HOSTED.tagline}</p>
+
+                <div className="pp-selfhost-price">
+                  <span className="pp-selfhost-amt">{SELF_HOSTED.priceLabel}</span>
+                  <span className="pp-selfhost-note">{SELF_HOSTED.priceNote}</span>
+                </div>
+
+                <a href={SELF_HOST_CTA_HREF} className="pp-solid-cta">
+                  {SELF_HOSTED.cta}
+                </a>
+              </div>
+
+              <ul className="pp-selfhost-features">
+                {SELF_HOSTED.features.map((f) => (
+                  <li key={f}>
+                    <Check />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Cloud plans ────────────────────────────────────── */}
         <section className="pp-plans-section">
           <div className="pp-container">
+            <header className="pp-plans-head">
+              <h2 className="pp-plans-title">Openship Cloud</h2>
+              <p className="pp-plans-note">
+                We run the servers, the edge, the backups. Same platform, same
+                containers — start at no cost and move up when you outgrow it.
+              </p>
+
+              {/* Only rendered while the catalog has a live campaign. */}
+              {campaigns.map((c) => (
+                <p key={c.id} className="pp-campaign">
+                  <span className="pp-campaign-badge">{c.badge}</span>
+                  <span className="pp-campaign-ends">{c.ends}</span>
+                </p>
+              ))}
+            </header>
+
             <div className="pp-plans">
-              {PLANS.map((p) => (
-                <article
-                  key={p.name}
-                  className={`pp-plan ${p.highlight ? "pp-plan--highlight" : ""} ${p.muted ? "pp-plan--muted" : ""}`}
-                >
-                  {p.ribbon && (
-                    <span className={`pp-plan-ribbon ${p.ribbonMuted ? "pp-plan-ribbon--muted" : ""}`}>
-                      {p.ribbon}
-                    </span>
-                  )}
-
-                  <div className="pp-plan-top">
-                    <span className="pp-plan-n">{p.n}</span>
-                    <span className="pp-plan-tag">{p.tag}</span>
-                  </div>
-
-                  <h2 className="pp-plan-name">{p.name}</h2>
-                  <p className="pp-plan-lead">{p.lead}</p>
-
-                  <div className="pp-plan-price">
-                    <span className="pp-plan-amt">{p.price}</span>
-                    <span className="pp-plan-pricenote">{p.priceNote}</span>
-                  </div>
-
-                  <a
-                    href={p.ctaHref}
-                    {...(p.external ? { target: "_blank", rel: "noreferrer" } : {})}
-                    className={`pp-plan-cta ${p.highlight ? "pp-plan-cta--filled" : ""} ${p.muted ? "pp-plan-cta--muted" : ""}`}
+              {TIERS.map((plan) => {
+                const price = priceParts(plan, now);
+                const free = plan.price.monthly === 0;
+                return (
+                  <article
+                    key={plan.id}
+                    className={`pp-plan ${plan.popular ? "pp-plan--highlight" : ""}`}
                   >
-                    {p.cta}
-                  </a>
+                    {plan.popular && <span className="pp-plan-ribbon">{UI.mostPopular}</span>}
 
-                  <ul className="pp-plan-features">
-                    {p.features.map((f) => (
+                    <h3 className="pp-plan-name">{plan.name}</h3>
+                    <p className="pp-plan-lead">{plan.description}</p>
+
+                    <div className="pp-plan-price">
+                      {price.badge && <span className="pp-plan-save">{price.badge}</span>}
+
+                      <span className="pp-plan-amt">
+                        {price.amount}
+                        {price.per && <span className="pp-plan-per">{price.per}</span>}
+                      </span>
+
+                      {price.was && (
+                        <span className="pp-plan-was">
+                          {price.was.before}
+                          <s>{price.was.value}</s>
+                          {price.was.after}
+                          {price.ends && <span className="pp-plan-ends">{price.ends}</span>}
+                        </span>
+                      )}
+
+                      <span className="pp-plan-pricenote">
+                        {free ? "no credit card" : UI.billedMonthly}
+                      </span>
+                    </div>
+
+                    <a
+                      href={CLOUD_CTA_HREF}
+                      className={`pp-plan-cta ${plan.popular ? "pp-plan-cta--filled" : ""}`}
+                    >
+                      {free ? UI.ctaStart : chooseLabel(plan.name)}
+                    </a>
+
+                    {/* A lead-in, not a bullet — it used to carry a checkmark, which
+                        made a sentence ending in a colon read as a feature. */}
+                    {plan.inheritedFrom && (
+                      <p className="pp-plan-inherits">{plan.inheritedFrom}</p>
+                    )}
+
+                    <ul className="pp-plan-features">
+                      {plan.features.map((f) => (
+                        <li key={f}>
+                          <Check />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                );
+              })}
+            </div>
+
+            {/* What every tier includes, stated ONCE.
+                A tier's own bullets are its numbers; anything true on all of them
+                belongs here instead of repeated down each column — repeating it was
+                what made the audit log read as a Scale-only feature. */}
+            <div className="pp-standard">
+              <h3 className="pp-standard-title">{STANDARD.title}</h3>
+              <ul className="pp-standard-features">
+                {STANDARD.features.map((f) => (
+                  <li key={f}>
+                    <Check />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {CUSTOM_TIERS.map((plan) => (
+              <div key={plan.id} className="pp-ent">
+                <div>
+                  <h3 className="pp-ent-name">{plan.name}</h3>
+                  <p className="pp-ent-lead">{plan.description}</p>
+                  {/* Name → lead → price, the same order as the four tier cards, so
+                      the eye finds "how much" in the same place it just left. */}
+                  <p className="pp-ent-price">{UI.custom}</p>
+                </div>
+
+                <div>
+                  {plan.inheritedFrom && (
+                    <p className="pp-ent-inherits">{plan.inheritedFrom}</p>
+                  )}
+                  <ul className="pp-ent-features">
+                    {plan.features.map((f) => (
                       <li key={f}>
-                        <svg className="pp-plan-check" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                          <path d="M4 10.5l4 4 8-10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
+                        <Check />
                         <span>{f}</span>
                       </li>
                     ))}
                   </ul>
-                </article>
-              ))}
-            </div>
+                </div>
+
+                <a href={plan.contactSales ?? CLOUD_CTA_HREF} className="pp-solid-cta">
+                  {UI.ctaContact}
+                </a>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -180,7 +258,7 @@ export default function PricingPage() {
             </header>
 
             <div className="pp-faq-list">
-              {FAQ.map((f) => (
+              {questions.map((f) => (
                 <details key={f.q} className="pp-faq-item">
                   <summary className="pp-faq-q">
                     <span>{f.q}</span>
@@ -201,18 +279,18 @@ export default function PricingPage() {
         <section className="pp-end">
           <div className="pp-container">
             <div className="pp-end-card">
-              <h2 className="pp-end-title">Want in when plans open?</h2>
+              <h2 className="pp-end-title">Your servers, or ours.</h2>
               <p className="pp-end-sub">
-                We're finishing billing setup — self-hosted is paused and Cloud
-                is coming soon. Leave your email and you'll be first to know the
-                moment plans go live.
+                Self-hosting is free and one command away on any Linux box. If
+                you'd rather we ran it, Openship Cloud is live — start at no cost
+                and pay only when you outgrow it.
               </p>
               <div className="pp-end-cta-row">
-                <a href="/contact" className="pp-btn pp-btn--primary">
-                  Get notified
+                <a href={SELF_HOST_CTA_HREF} className="pp-btn pp-btn--primary">
+                  {SELF_HOSTED.cta}
                 </a>
-                <a href="/docs" className="pp-btn pp-btn--ghost">
-                  Explore the platform
+                <a href={CLOUD_CTA_HREF} className="pp-btn pp-btn--ghost">
+                  {UI.ctaStart}
                 </a>
               </div>
             </div>

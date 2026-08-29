@@ -13,7 +13,9 @@ import chalk from "chalk";
 import ora from "ora";
 import { EDGE_CONTAINER_NAME, edgeCrashReason, type ImportedSite } from "@repo/adapters/proxy";
 import { LocalExecutor } from "@repo/adapters";
-import { composeInternalToken } from "./compose";
+import { internalTokenProblem, resolveInternalToken } from "./internal-token";
+import { internalFetch } from "./loopback-api";
+import { startUnitHint } from "./this-host";
 
 /** Wait for the compose api container to answer its health stub. */
 export async function waitForApiHealth(port: string, tries: number): Promise<boolean> {
@@ -60,18 +62,25 @@ export interface EdgeImportOutcome {
 
 /**
  * POST the parsed sites + host-read cert PEMs to the api's internal edge-import
- * endpoint. Uses the compose stack's INTERNAL_TOKEN (from compose/.env — NOT the
- * bare-mode token file). Never throws; the outcome tells the caller whether the
- * migrated hostnames are actually being served.
+ * endpoint. Never throws; the outcome tells the caller whether the migrated hostnames
+ * are actually being served.
+ *
+ * The token is RESOLVED, not read from compose/.env: the edge is a container on every
+ * install now (see edge-container-everywhere), so a BARE box reaches this too — through
+ * the control panel's "Take over :80/:443 & migrate its sites" → repairEdgeConflict.
+ * Naming the compose store meant that box found no token and skipped the import with
+ * the operator's nginx already stopped, i.e. every migrated hostname dark.
  */
 export async function importMigratedSites(
   apiPort: string,
   sites: ImportedSite[],
   certPems?: Record<string, { certPem: string; keyPem: string }>,
+  staticRootOverrides?: Record<string, string>,
 ): Promise<EdgeImportOutcome> {
-  const token = composeInternalToken();
-  if (!token) {
-    const error = "couldn't read the stack's internal token";
+  // Checked up front, before the health/edge waits below: there is no point stopping
+  // anything (or making the operator watch 60s of polling) for a call we can't authenticate.
+  if (!resolveInternalToken()) {
+    const error = internalTokenProblem();
     console.log(chalk.yellow(`  Skipping site import — ${error}. Re-run to retry.\n`));
     return { ok: false, registered: [], error };
   }
@@ -92,12 +101,20 @@ export async function importMigratedSites(
     return { ok: false, registered: [], error };
   }
   try {
-    const r = await fetch(`http://127.0.0.1:${apiPort}/api/system/edge/import-sites`, {
+    // internalFetch, not a bare fetch with the token above: on a box that has BOTH
+    // stores (bare install, then compose) the first candidate can be the stale one, and
+    // these hostnames are dark until the import lands — worth the 401 retry.
+    const call = await internalFetch(apiPort, "/api/system/edge/import-sites", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Internal-Token": token },
-      body: JSON.stringify({ sites, certPems }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sites, certPems, staticRootOverrides }),
       signal: AbortSignal.timeout(120000),
     });
+    if (call.kind !== "response") {
+      spinner.warn(`Site import failed: ${call.detail}. Re-run to retry.`);
+      return { ok: false, registered: [], error: call.detail };
+    }
+    const r = call.res;
     const data = (await r.json().catch(() => ({}))) as {
       registered?: string[];
       warnings?: string[];
@@ -131,10 +148,17 @@ export async function importMigratedSites(
         console.log(chalk.red(`\n  The edge container is not running. Its log says:`));
         console.log(chalk.red(`    ${edgeLog}`));
       }
+      // This box's own service manager, not systemd's: an Alpine host reading
+      // `systemctl enable --now nginx` is being handed a command it has no binary for,
+      // in the message that tells it how to get serving again.
+      const back = startUnitHint("nginx");
       console.log(
         chalk.yellow(
           `\n  Retry the import with \`openship up\` once the cause above is fixed, or put your\n` +
-            `  previous proxy back:  docker stop ${EDGE_CONTAINER_NAME} && sudo systemctl enable --now nginx\n`,
+            (back
+              ? `  previous proxy back:  docker stop ${EDGE_CONTAINER_NAME} && ${back}\n`
+              : `  previous proxy back by stopping ${EDGE_CONTAINER_NAME} and starting it the way\n` +
+                `  this host starts services.\n`),
         ),
       );
       return { ok: false, registered, error: warnings[0] ?? "no sites were registered" };

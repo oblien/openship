@@ -5,6 +5,7 @@ import Image from "next/image";
 import {
   CheckCircle2,
   XCircle,
+  ExternalLink,
   Loader2,
   Clock,
   Server,
@@ -18,17 +19,19 @@ import type { Terminal } from "@xterm/xterm";
 import BuildTerminal from "./BuildTerminal";
 import { PortAdvisoryModal } from "./PortAdvisoryModal";
 import { PromptDetails } from "./PromptDetails";
+import { describeBuildStrategy } from "./deploy-target-label";
+import { DeployTargetValue } from "./DeployTargetValue";
 import { generateIcon } from "@/utils/icons";
 import { useRouter } from "next/navigation";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
-import { getPublicEndpointHosts } from "@/context/deployment/types";
+import { getPublicEndpointHosts, workloadOf } from "@/context/deployment/types";
 import { resolveBuildElapsedMs } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
+import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useTheme } from "@/components/theme-provider";
 import { useModal } from "@/context/ModalContext";
-import { useI18n, interpolate } from "@/components/i18n-provider";
-import type { Dictionary } from "@/i18n";
+import { useI18n } from "@/components/i18n-provider";
 
 interface DeploymentProcessingProps {
   // Resolves to the new deployment id (navigates on success) or null on failure.
@@ -42,33 +45,6 @@ function formatDurationMs(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}m ${s.toString().padStart(2, "0")}s`;
-}
-
-/** Human label for the build/deploy target shown in Deployment Details. */
-function describeBuildTarget(config: {
-  deployTarget: string;
-  serverName?: string;
-}, t: Dictionary): string {
-  const dp = t.importProject.deploymentProcessing;
-  if (config.deployTarget === "cloud") return dp.targetOpenshipCloud;
-  if (config.deployTarget === "server") {
-    return config.serverName ? interpolate(dp.targetServerNamed, { name: config.serverName }) : dp.targetServer;
-  }
-  if (config.deployTarget === "local") return dp.targetLocal;
-  return "—";
-}
-
-/** Where the build runs (vs where it deploys, shown by Instance). Concise so it
- *  fits the narrow info column without truncating. */
-function describeBuildStrategy(config: {
-  deployTarget: string;
-  buildStrategy: string;
-}, t: Dictionary): string {
-  const dp = t.importProject.deploymentProcessing;
-  if (config.buildStrategy === "local") return dp.strategyLocal;
-  if (config.deployTarget === "cloud") return dp.strategyCloud;
-  if (config.deployTarget === "server") return dp.strategyServer;
-  return dp.strategyHost;
 }
 
 /** One themed row in the Deployment Details list: colored icon chip + label + value. */
@@ -161,10 +137,9 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
     });
   }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
 
-  // Build domain for display
-  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName);
-  const domain = endpointHosts[0] ?? "";
-  const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
+  // The host to OPEN, or none. Never composed from the project name — that host
+  // doesn't exist, and this one is behind the primary "Visit Site" button.
+  const domain = getPublicEndpointHosts(config.publicEndpoints, baseDomain)[0] ?? "";
 
   const handleTerminalReady = useCallback((terminal: Terminal) => {
     if (terminalRef) {
@@ -174,9 +149,13 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
   }, [terminalRef, onTerminalReady]);
 
   const handleViewDashboard = () => {
-    if (state.projectId) {
-      router.push(`/projects/${state.projectId}`);
-    }
+    if (!state.projectId) return;
+    // Backstop: drop the cached project info at the point of NAVIGATION, whichever
+    // path observed the deploy finishing. Without it, opening the project while a
+    // deploy was still running cached the pre-deploy DRAFT, and this button then
+    // landed on "Ready to deploy" beside an already-Deployed release.
+    invalidateProjectCaches(state.projectId);
+    router.push(`/projects/${state.projectId}`);
   };
 
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
@@ -208,22 +187,19 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
               </div>
             </div>
 
-            {deploymentStatus === "ready" && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleViewDashboard}
-                  className="flex items-center gap-2 text-foreground font-medium transition-all duration-300 bg-card rounded-xl px-4 py-2 text-sm border border-border hover:shadow-md"
-                >
-                  {dp.viewDashboard}
-                </button>
-                <button
-                  onClick={() => window.open(`https://${domain}`, "_blank")}
-                  className="flex items-center gap-2 text-primary-foreground font-medium transition-all duration-300 bg-primary rounded-xl px-4 py-2 text-sm hover:bg-primary/90 shadow-md hover:shadow-lg"
-                >
-                  {dp.visitSite}
-                  {generateIcon('External_link_HtLszLDBXqHilHK674zh2aKoSL7xUhyboAzP.png', 16, '#fff')}
-                </button>
-              </div>
+            {/* Visit Site only. "View dashboard" used to sit here too, duplicating
+                the primary "Open Dashboard" button in the details column below —
+                same handler, same destination, two buttons one screen apart. */}
+            {deploymentStatus === "ready" && !!domain && (
+              <button
+                onClick={() => window.open(`https://${domain}`, "_blank", "noopener,noreferrer")}
+                className="flex items-center gap-2 text-primary-foreground font-medium transition-all duration-300 bg-primary rounded-xl px-4 py-2 text-sm hover:bg-primary/90 shadow-md hover:shadow-lg"
+              >
+                {dp.visitSite}
+                {/* lucide, not a hashed PNG — the previous asset silently resolved
+                    to nothing, so the button rendered with no icon at all. */}
+                <ExternalLink className="size-4" />
+              </button>
             )}
 
           </div>
@@ -330,7 +306,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                 <div className="flex items-center gap-2">
                   {generateIcon('terminal-58-1658431404.png', 24, 'currentColor')}
                   <h2 className="text-base font-normal text-foreground">
-                    {state.deploymentSuccess && config.options.hasServer ? dp.productionLogs : dp.buildTerminal}
+                    {state.deploymentSuccess && workloadOf(config.options) !== "static" ? dp.productionLogs : dp.buildTerminal}
                   </h2>
                 </div>
                 {deploymentStatus === "failed" && (
@@ -450,7 +426,7 @@ const DeploymentDetails = memo(() => {
   const dp = t.importProject.deploymentProcessing;
   const router = useRouter();
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
-  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName);
+  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain);
   const domain = endpointHosts[0] ?? "";
   const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
 
@@ -530,7 +506,7 @@ const DeploymentDetails = memo(() => {
             <p className={`text-sm font-medium truncate ${statusColor}`}>{statusLabel}</p>
           </div>
         </div>
-        <DetailRow icon={InstanceIcon} label={dp.detailInstance} value={describeBuildTarget(config, t)} />
+        <DetailRow icon={InstanceIcon} label={dp.detailInstance} value={<DeployTargetValue config={config} />} />
         <DetailRow icon={Hammer} label={dp.detailBuild} value={describeBuildStrategy(config, t)} />
         <DetailRow icon={Clock} label={dp.detailBuildTime} value={<BuildTimeLabel />} />
         <DetailRow icon={Layers} label={dp.detailFramework} value={config.framework} />

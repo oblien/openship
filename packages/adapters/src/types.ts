@@ -6,6 +6,7 @@
  * routing configs, and SSL results.
  */
 
+import { PRICING } from "@repo/core";
 import type { BuildStrategy, ProxySettings } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
@@ -27,32 +28,48 @@ export type AmbientGitVia = "gh" | "helper" | "ssh";
 // ─── Resource configuration ──────────────────────────────────────────────────
 
 export interface ResourceConfig {
-  /** CPU cores (fractional, e.g. 0.5, 1.0, 2.0) - the universal unit all runtimes use */
+  /** CPU cores (fractional, e.g. 0.5, 1.0, 2.0) - the universal unit all
+   *  runtimes use. `0` = NO LIMIT (see UNLIMITED_RESOURCES in @repo/core). */
   cpuCores: number;
-  /** Memory limit in megabytes */
+  /** Memory limit in megabytes. `0` = NO LIMIT. */
   memoryMb: number;
   /** Writable disk in megabytes */
   diskMb: number;
 }
 
-/** Single source of truth - production/runtime resources (the free-tier limit).
- *  Deliberately small: a runtime doesn't need build-sized resources, and cloud
- *  runtimes are shrunk to this after the build so they don't hog the pool.
- *  Matches the cloud "low" tier (cloud-resources.ts) so a tier-less / fallback
- *  deploy lands at the same 0.5 vCPU · 512 MB as an explicit free-tier pick. */
+/** CLOUD-ONLY production default (the metered free tier). Deliberately small: a
+ *  runtime doesn't need build-sized resources, and cloud runtimes are shrunk to
+ *  this after the build so they don't hog the pool. Matches the cloud "low" tier
+ *  (cloud-resources.ts) so a tier-less cloud deploy lands at the same
+ *  0.5 vCPU · 512 MB as an explicit free-tier pick.
+ *
+ *  Do NOT use this as a self-hosted fallback. A self-hosted box is the
+ *  operator's own hardware with no pool to protect, so its default is
+ *  UNLIMITED_RESOURCES — applying this tier there silently OOM-killed
+ *  memory-hungry images (ML models, headless browsers) at 512 MB. Resolve the
+ *  right default per target with `resolveRuntimeResources` (apps/api). */
 export const DEFAULT_RESOURCE_CONFIG: ResourceConfig = {
   cpuCores: 0.5,
   memoryMb: 512,
   diskMb: 5120,
 };
 
-/** Single source of truth - build resources. Sized for memory-hungry
- *  production builds (Next.js / webpack routinely need several GB); 4 cores +
- *  8GB is the resource-schema ceiling (project.schema.ts UpdateResourcesBody). */
+/**
+ * Build resources. Sized for memory-hungry production builds (Next.js / webpack
+ * routinely need several GB); 4 cores + 8 GB is the resource-schema ceiling
+ * (project.schema.ts UpdateResourcesBody).
+ *
+ * DERIVED from the pricing catalog rather than typed here, because every plan's
+ * Oblien ceiling is computed to fit this machine: `max_vcpus`/`max_ram_mb`/
+ * `max_disk_gb` are per-WORKSPACE caps and a build gets its own workspace, so a
+ * tier sized below this number cannot build at all — Oblien 409s the create. Two
+ * independent copies of it meant a bump here could silently un-buildable the
+ * cheapest tier; now raising it raises every ceiling with it.
+ */
 export const DEFAULT_BUILD_RESOURCE_CONFIG: ResourceConfig = {
-  cpuCores: 4,
-  memoryMb: 8192,
-  diskMb: 10240,
+  cpuCores: PRICING.oblien.buildResources.cpuCores,
+  memoryMb: PRICING.oblien.buildResources.memoryMb,
+  diskMb: PRICING.oblien.buildResources.diskGb * 1024,
 };
 
 /** Normalize a tier's vCPU value for the Oblien workspace payload. Oblien
@@ -144,6 +161,23 @@ export interface BuildConfig {
   productionPaths?: string[];
   /** Root directory within the repo for monorepo builds. */
   rootDirectory?: string;
+  /**
+   * The docker build CONTEXT, relative to the source root — compose `build:`
+   * semantics. When set, the builder runs with THIS directory as the context, and
+   * `dockerfilePath` plus `.dockerignore` resolve INSIDE it: a service Dockerfile's
+   * `COPY requirements.txt` means the file next to it (#634).
+   *
+   * Deliberately NOT the same field as `rootDirectory`, which means "the subdir the
+   * app lives in" WITHIN a whole-repo context — a monorepo Dockerfile that COPYs the
+   * workspace-root lockfile depends on that root context, so widening `rootDirectory`
+   * into a context would break it. Set only where the user actually declared a
+   * context: a compose service's `build`.
+   *
+   * Only honoured for builds that use a REPOSITORY Dockerfile. A generated recipe
+   * (see docker-build-plan) COPYs from the source root, so a narrowed context can
+   * never satisfy it — that combination is refused rather than silently built.
+   */
+  buildContextDirectory?: string;
   /** Explicit Dockerfile path relative to the build root/context. */
   dockerfilePath?: string;
   /** Preloaded Dockerfile contents, used when the caller already read the file from the source provider. */
@@ -182,6 +216,9 @@ export interface BuildConfig {
   staticOutDir?: string;
   /** Environment variables injected at build time */
   envVars: Record<string, string>;
+  /** Explicit image-build arguments. Kept separate from runtime/container env;
+   * compose services sharing one Dockerfile may carry different values. */
+  buildArgs?: Record<string, string>;
   /** Resources allocated for the build container */
   resources: ResourceConfig;
   /** Ephemeral token for cloning private repos - never persisted */
@@ -228,6 +265,32 @@ export interface BuildConfig {
   cloneOnServer?: boolean;
 }
 
+/**
+ * Acquire an already-built container image as this runtime's deployable artifact.
+ *
+ * This is deliberately separate from {@link BuildConfig}: `buildImage` is the
+ * builder container (for example `node:22`), while `imageRef` here is the
+ * application artifact the runtime must run verbatim. Keeping the two types
+ * separate makes it impossible for a prebuilt release to become a Dockerfile
+ * `FROM` image by accident.
+ */
+export interface ImageArtifactConfig {
+  /** Build/deploy session that owns any runtime resource created while acquiring the image. */
+  sessionId: string;
+  /** Project identifier, used for runtime naming and ownership metadata. */
+  projectId: string;
+  /** Human-readable/runtime-safe project slug when available. */
+  slug?: string;
+  /** Registry image reference to pull/use verbatim. */
+  imageRef: string;
+  /** Runtime environment available when a cloud workspace starts the image default process. */
+  envVars: Record<string, string>;
+  /** Production resources; there is no build tier for a prebuilt image. */
+  resources: ResourceConfig;
+  /** Refresh a mutable tag even when it is already present on the target. */
+  forcePull?: boolean;
+}
+
 export interface DeployPublicEndpoint {
   port?: number;
   targetPath?: string;
@@ -245,10 +308,26 @@ export interface DeployConfig {
   buildSessionId: string;
   /** Opaque reference to the built artifact (workspace ID, docker image tag, etc.) */
   imageRef?: string;
+  /**
+   * The artifact came from an already-built container image rather than a
+   * source build. Docker naturally preserves the image's CMD/WORKDIR when no
+   * start command is supplied; Cloud needs this explicit signal so it does not
+   * manufacture the buildpack-only `npm start` fallback and replace the image's
+   * own process contract.
+   */
+  prebuiltImage?: boolean;
   /** "production" | "preview" */
   environment: string;
   /** Port the application listens on */
   port: number;
+  /**
+   * A WORKER: a long-running container that listens on no port and is reached by
+   * nothing (issue #538-B). When true the runtime publishes no host port, exposes
+   * no container port, and injects no `PORT` env — `port`/`hostPort` are ignored.
+   * A background consumer (queue/cron) with no HTTP surface; the value it produces
+   * is a side effect, so there is nothing to route or health-check on a port.
+   */
+  portless?: boolean;
   /**
    * Pinned LOOPBACK host port to publish (docker: `127.0.0.1:<hostPort>:<port>`)
    * under the loopback-port route strategy. When unset, docker falls back to a
@@ -259,6 +338,20 @@ export interface DeployConfig {
   startCommand?: string;
   /** Detected framework / stack (e.g. "nextjs", "express") */
   stack?: string;
+  /**
+   * Package manager the build used (npm | yarn | pnpm | bun). Carried onto the
+   * DEPLOY config, not just the build config, because a start command names a
+   * dependency binary as often as a build command does (`next start`,
+   * `gatsby serve`) and the runtime has to put `node_modules/.bin` on PATH for
+   * it — see nodeBinPathExport.
+   *
+   * Optional because not every DeployConfig producer sets it (adopt and the
+   * static edge path have no start command to resolve). Do NOT read it as "node
+   * or not": the project column defaults to "npm", so a Go or PHP project
+   * usually carries "npm" here too. nodeBinPathExport is what decides, off the
+   * package manager's own semantics.
+   */
+  packageManager?: string;
   /** Environment variables injected at runtime */
   envVars: Record<string, string>;
   /** Resources allocated for the production container */
@@ -267,6 +360,31 @@ export interface DeployConfig {
   restartPolicy?: "always" | "on-failure" | "no";
   /** Runtime-safe identifier used for workload/container/page naming. */
   runtimeName?: string;
+  /** Project slug — scopes named volumes to `openship-<slug>-<name>` so two
+   *  projects that pick the same volume name never share one. */
+  slug?: string;
+  /**
+   * Internal DNS alias for this single-app container. When set, the container
+   * joins its `openship-<slug>` bridge network with this name as a network
+   * alias + `Hostname`, so another project linked to it (via
+   * `attachLinkedNetworks`) resolves it by name — the same east-west
+   * reachability compose services already have. This does NOT publish a public
+   * port: loopback-only publishing is unchanged and the network is the project's
+   * own boundary (a consumer only lands on it through an explicit link).
+   */
+  networkAlias?: string;
+  /** Extra network aliases (e.g. a user-chosen custom hostname) added alongside
+   *  `networkAlias`. All resolve to this container on the project network. */
+  extraAliases?: string[];
+  /**
+   * Persistent mounts for this workload, in compose syntax
+   * (`name:/container/path`, or a host bind mount). Already resolved from the
+   * project's declaration or the stack's defaults by `resolveProjectVolumes`.
+   *
+   * Docker mounts them; bare symlinks the in-app paths into a shared directory
+   * that outlives releases; cloud has no volume primitive and warns.
+   */
+  volumes?: string[];
   /** Authoritative public route mappings for this workload. */
   publicEndpoints?: DeployPublicEndpoint[];
   /** Files/directories to copy into /app/production/ before starting the workload.
@@ -300,6 +418,15 @@ export interface BuildResult {
   status: ContainerStatus;
   /** Opaque reference to the built image / snapshot */
   imageRef?: string;
+  /**
+   * Does this deploy exclusively own the returned artifact and therefore may
+   * delete it if deployment fails or is cancelled?
+   *
+   * Undefined preserves the historical answer (`true`) for source builds.
+   * A Docker registry image is shared/foreign and returns `false`; a temporary
+   * Cloud workspace created from that image returns `true`.
+   */
+  artifactOwned?: boolean;
   durationMs?: number;
   /** Human-readable error description when status is "failed" */
   errorMessage?: string;
@@ -347,7 +474,13 @@ export type SwarmBuildStep =
 
 export type BuildStep = StandardBuildStep | SwarmBuildStep;
 
-export const BUILD_STEPS: readonly StandardBuildStep[] = ["prepare", "clone", "install", "build", "deploy"] as const;
+export const BUILD_STEPS: readonly StandardBuildStep[] = [
+  "prepare",
+  "clone",
+  "install",
+  "build",
+  "deploy",
+] as const;
 
 export interface LogEntry {
   timestamp: string;
@@ -387,8 +520,21 @@ export interface ContainerInfo {
   status: ContainerStatus;
   /** Container IP on the internal network */
   ip?: string;
-  /** Mapped port on host (if applicable) */
+  /** Mapped port on host (if applicable). The FIRST binding the daemon reports —
+   *  arbitrary for a container publishing several ports, which is why anything
+   *  choosing a proxy target for a SPECIFIC container port must read
+   *  `hostPortByContainerPort` instead. */
   hostPort?: number;
+  /**
+   * Every published binding, keyed by CONTAINER port → host port.
+   *
+   * `hostPort` alone cannot answer "what is container port N published on": it is
+   * whichever binding the daemon happened to list first, so a route for the second
+   * port of a multi-port container was dialed at the first port's publish — a vhost
+   * that reaches a different app on the same box. Undefined when the runtime has no
+   * port mapping to report (bare, cloud) or could not be asked.
+   */
+  hostPortByContainerPort?: Record<number, number>;
   /** Uptime in seconds */
   uptimeSeconds?: number;
   /** Current resource consumption */
@@ -407,8 +553,29 @@ export interface ResourceUsage {
 export interface RouteProxyLocation {
   /** nginx location prefix, e.g. "/api/". */
   pathPrefix: string;
-  /** Proxy target, e.g. "http://10.0.0.5:3000". */
+  /** Proxy target, e.g. "http://10.0.0.5:3000". When `upstreamPath` is set this is
+   *  the ORIGIN only (no path) — the path comes from the template instead. */
   targetUrl: string;
+  /**
+   * Emitter-agnostic capture pattern (`/proxy/(.*)`) compiled from a wildcard
+   * rewrite source, set only when `upstreamPath` references a capture. Same
+   * contract as {@link RouteRedirect.pattern}: match on this, not `pathPrefix`.
+   */
+  pattern?: string;
+  /**
+   * Upstream path template referencing `pattern`'s captures as `$1..$9`
+   * (`/v2/$1`). Emitted as a `rewrite … break` ahead of `proxy_pass` rather than
+   * interpolated INTO `proxy_pass` — a variable there forces nginx into runtime DNS
+   * resolution, which needs a `resolver` the edge does not define.
+   */
+  upstreamPath?: string;
+  /**
+   * The target is a third-party origin from a `vercel.json` rewrite, not a service
+   * we run. Such a request needs the origin's own `Host` and TLS SNI; sending ours
+   * (the default for internal upstreams) makes a vhost-based or HTTPS origin reject
+   * it. Left unset for the composite/migration upstreams, which ARE ours.
+   */
+  external?: boolean;
 }
 
 /** A redirect rule compiled from vercel.json `redirects`. */
@@ -418,13 +585,40 @@ export interface RouteRedirect {
   /** true → `location = <path>`; false → prefix location. */
   exact: boolean;
   statusCode: number;
+  /** Where to send the visitor. References `pattern`'s captures as `$1..$9`. */
   destination: string;
+  /**
+   * Emitter-agnostic capture pattern (`/blog/(.*)`, `/u/([^/]+)`) compiled from a
+   * WILDCARD source, set only when `destination` refers back to a capture.
+   *
+   * An emitter that sees this MUST match on it instead of `path`: a prefix match
+   * captures nothing, so `$1` would expand to empty and the visitor would land on
+   * `/news/` instead of `/news/hello` (#510). Absent for every other redirect —
+   * including sidecars written before this field existed — which keeps the
+   * prefix/exact location and its longest-prefix ordering.
+   */
+  pattern?: string;
 }
 
 /** A response-header rule compiled from vercel.json `headers`. */
 export interface RouteHeaderRule {
   path: string;
   headers: { key: string; value: string }[];
+}
+
+/**
+ * Canonical host redirect: this vhost answers `statusCode` → `https://<target>`
+ * plus the original path and query, instead of serving anything.
+ *
+ * Distinct from {@link RouteRedirect}, which is a per-PATH rule inside a serving
+ * vhost. This replaces the whole route: the classic `www.example.com` →
+ * `example.com` (or the reverse), and old-domain → new-domain moves.
+ */
+export interface RouteHostRedirect {
+  /** Hostname to redirect to. Validated as a domain before it's emitted. */
+  target: string;
+  /** 301 | 302 | 307 | 308. */
+  statusCode: number;
 }
 
 interface BaseRouteConfig {
@@ -438,10 +632,11 @@ interface BaseRouteConfig {
    *
    * When set, the routing provider guarantees a :443 listener for the host from
    * the moment the route exists — serving a temporary self-signed cert until the
-   * real one is issued. Without a listener, an unmatched SNI hits the edge's
-   * `ssl_reject_handshake` default, so the origin REFUSES the handshake for a
-   * domain we route (Cloudflare reports that as error 525, and it deadlocks
-   * issuance — see #308).
+   * real one is issued. Without a listener, an unmatched SNI falls through to the
+   * edge's :443 catch-all, which answers a domain we route with the "service not
+   * found" page under a certificate valid for no hostname — and deadlocks issuance,
+   * because the catch-all carries no ACME location on :443 (see #308, and #431 for
+   * why the symptom is now a wrong page rather than error 525).
    *
    * Left unset for `externalIngress` hosts and managed `*.opsh.io` hosts, whose
    * TLS is someone else's: presenting a placeholder cert for those would be wrong,
@@ -463,8 +658,40 @@ interface BaseRouteConfig {
   proxyLocations?: RouteProxyLocation[];
   /** Redirect rules (vercel.json `redirects`) → `return <code> <dest>` locations. */
   redirects?: RouteRedirect[];
+  /**
+   * Serve a canonical redirect to another host INSTEAD of this route's content.
+   *
+   * Overrides the primary target and every path-scoped location: a host that
+   * redirects has no content of its own, so honouring `proxyLocations` /
+   * `redirects` / `headerRules` / `webhookProxy` alongside it would mean some
+   * paths redirect and others don't. It still needs its own certificate — a 301
+   * from `https://` only works if the TLS handshake succeeds first.
+   */
+  redirectHost?: RouteHostRedirect;
   /** Response-header rules (vercel.json `headers`) → `add_header`. */
   headerRules?: RouteHeaderRule[];
+  /**
+   * vercel.json `cleanUrls`: serve `/about` from `about.html`, and redirect the
+   * `.html` form to the clean one.
+   *
+   * Honoured only for a route that serves from a `staticRoot`. For a proxied app the
+   * FRAMEWORK owns this (Next.js has its own setting), and a redirect emitted here
+   * would fight the upstream's own.
+   */
+  cleanUrls?: boolean;
+  /**
+   * vercel.json `trailingSlash`: true → enforce a trailing slash; false → redirect `/a/`
+   * to `/a`. Unset leaves both forms served.
+   *
+   * Static-root only, for the same reason as {@link cleanUrls}.
+   *
+   * Enforcement is a `try_files` FALLBACK, not a redirect rule, so it never fires for a
+   * path that resolves — which is what keeps it compatible with `cleanUrls` and with
+   * extension-less real files (`/LICENSE`). An emitter that implements it as an
+   * unconditional redirect must special-case both, or it will serve the SPA index with a
+   * 200 for either.
+   */
+  trailingSlash?: boolean;
   /** Curated reverse-proxy tunables (client_max_body_size, proxy/body timeouts,
    *  buffering, gzip) rendered at server scope. Effective merge of the
    *  server default < project < service settings; persists in the route sidecar
@@ -580,9 +807,35 @@ export interface SshConfig {
   sshJumpHost?: string;
   /** Extra raw `ssh` CLI arguments. Honored by the system-ssh path. */
   sshArgs?: string;
+  /**
+   * How long to wait for the SSH handshake. Left unset, ssh2's 20s default applies —
+   * right for a remote box over the internet, far too long for the container→host
+   * bridge, which is one hop and either answers immediately or is being filtered.
+   * 20s there reads as a hang in the deploy log rather than as an error.
+   */
+  readyTimeoutMs?: number;
+  /**
+   * This is the container→host channel (`createHostExecutor`), not a user's server.
+   * Only affects diagnostics: it selects the failure message that names the host
+   * firewall as the likely cause — see `describeSshConnectFailure`.
+   */
+  hostChannel?: boolean;
 }
 
 // ─── Command execution abstraction ──────────────────────────────────────────
+
+/**
+ * Just the "run one command" half of `CommandExecutor`.
+ *
+ * Probes that only read (port scans, static-output checks, config dumps) declare this
+ * instead, so a test fake for them is one method rather than a whole executor. It exists
+ * as a named supertype because the shape had been re-declared verbatim per probe module,
+ * and identical structural interfaces give no signal when one of them drifts.
+ */
+export interface ExecOnly {
+  /** Run a command, resolve to stdout. Rejects on non-zero exit. */
+  exec(command: string, opts?: { timeout?: number }): Promise<string>;
+}
 
 /**
  * Abstraction for running commands and file operations on a target machine.
@@ -594,13 +847,16 @@ export interface SshConfig {
  * Used by the system layer (checks, installers) and infra layer (Nginx
  * config writes) to support both local and remote server management.
  */
-export interface CommandExecutor {
-  /** Run a command, resolve to stdout. Rejects on non-zero exit. */
-  exec(command: string, opts?: { timeout?: number }): Promise<string>;
-
+export interface CommandExecutor extends ExecOnly {
   /**
    * Run a command with real-time log streaming.
    * Resolves when the command exits - the log callback fires for each line.
+   *
+   * `opts.signal` aborts a still-running command (kills the child). Needed by the
+   * live-log exec transport, which holds a `curl -sN` open against the edge and must be
+   * able to tear it down when the browser disconnects — otherwise the orphaned curl keeps
+   * draining the edge's shared log queue. Optional; executors that don't stream a killable
+   * child may ignore it.
    */
   streamExec(
     command: string,

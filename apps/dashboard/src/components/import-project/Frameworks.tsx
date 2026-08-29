@@ -1,5 +1,11 @@
 import React, { useState } from "react";
-import { STACKS, STACK_ICONS, type StackId, type StackCategory as CoreStackCategory } from "@repo/core";
+import {
+  STACKS,
+  STACK_ICONS,
+  isTypicallyStatic,
+  type StackId,
+  type StackCategory as CoreStackCategory,
+} from "@repo/core";
 
 export type StackCategory = CoreStackCategory;
 
@@ -81,7 +87,7 @@ export const frameworks: FrameworkConfig[] = (Object.entries(STACKS) as [StackId
       buildCommand: def.defaultBuildCommand,
       installCommand: "",
       outputDirectory: def.outputDirectory,
-      isStatic: def.category === "static" || (def.category === "frontend" && !def.defaultStartCommand),
+      isStatic: isTypicallyStatic(id),
     },
     icon: makeIcon(id),
   }));
@@ -103,7 +109,7 @@ export const getFrameworkConfig = (frameworkId: string): FrameworkConfig => {
         buildCommand: stack.defaultBuildCommand,
         installCommand: "",
         outputDirectory: stack.outputDirectory,
-        isStatic: stack.category === "static" || (stack.category === "frontend" && !stack.defaultStartCommand),
+        isStatic: isTypicallyStatic(frameworkId),
       },
       icon: makeIcon(frameworkId as StackId),
     };

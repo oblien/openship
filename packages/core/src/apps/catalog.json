@@ -6,9 +6,9 @@
       "verified": true,
       "id": "mail",
       "name": "Openship Mail",
-      "description": "A complete self-hosted mail server — SMTP/IMAP + webmail on your own domain.",
+      "description": "Your own mail on your own domain — SMTP/IMAP, mailboxes and webmail on one server. Or keep the mailboxes you already have and just run the webmail.",
       "kind": "flow",
-      "logo": "mail-webmail",
+      "logo": "mail",
       "category": "mail",
       "tags": [
         "mail",
@@ -44,9 +44,6 @@
         {
           "name": "db",
           "image": "supabase/postgres:17.6.1.136",
-          "ports": [
-            "5432:5432"
-          ],
           "environment": {
             "POSTGRES_HOST": "/var/run/postgresql",
             "PGPORT": "5432",
@@ -57,7 +54,8 @@
             "JWT_EXP": "3600"
           },
           "volumes": [
-            "supabase_db_data:/var/lib/postgresql/data"
+            "supabase_db_data:/var/lib/postgresql/data",
+            "supabase_db_config:/etc/postgresql-custom"
           ],
           "healthcheck": {
             "test": [
@@ -77,9 +75,6 @@
         {
           "name": "kong",
           "image": "kong:3.9.1",
-          "ports": [
-            "8000:8000"
-          ],
           "exposedPort": 8000,
           "exposed": true,
           "routes": [
@@ -233,7 +228,7 @@
               "--no-verbose",
               "--tries=1",
               "--spider",
-              "http://localhost:5000/status"
+              "http://127.0.0.1:5000/status"
             ],
             "interval": "5s",
             "timeout": "5s",
@@ -386,8 +381,23 @@
         },
         {
           "service": "db",
-          "path": "/docker-entrypoint-initdb.d/99-roles.sql",
-          "content": "ALTER USER authenticator WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER pgbouncer WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_auth_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_functions_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_storage_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\n"
+          "path": "/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql",
+          "content": "BEGIN;\n  -- Create pg_net extension\n  CREATE EXTENSION IF NOT EXISTS pg_net SCHEMA extensions;\n  -- Create supabase_functions schema\n  CREATE SCHEMA supabase_functions AUTHORIZATION supabase_admin;\n  GRANT USAGE ON SCHEMA supabase_functions TO postgres, anon, authenticated, service_role;\n  ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;\n  ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;\n  ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;\n  -- supabase_functions.migrations definition\n  CREATE TABLE supabase_functions.migrations (\n    version text PRIMARY KEY,\n    inserted_at timestamptz NOT NULL DEFAULT NOW()\n  );\n  -- Initial supabase_functions migration\n  INSERT INTO supabase_functions.migrations (version) VALUES ('initial');\n  -- supabase_functions.hooks definition\n  CREATE TABLE supabase_functions.hooks (\n    id bigserial PRIMARY KEY,\n    hook_table_id integer NOT NULL,\n    hook_name text NOT NULL,\n    created_at timestamptz NOT NULL DEFAULT NOW(),\n    request_id bigint\n  );\n  CREATE INDEX supabase_functions_hooks_request_id_idx ON supabase_functions.hooks USING btree (request_id);\n  CREATE INDEX supabase_functions_hooks_h_table_id_h_name_idx ON supabase_functions.hooks USING btree (hook_table_id, hook_name);\n  COMMENT ON TABLE supabase_functions.hooks IS 'Supabase Functions Hooks: Audit trail for triggered hooks.';\n  CREATE FUNCTION supabase_functions.http_request()\n    RETURNS trigger\n    LANGUAGE plpgsql\n    AS $function$\n    DECLARE\n      request_id bigint;\n      payload jsonb;\n      url text := TG_ARGV[0]::text;\n      method text := TG_ARGV[1]::text;\n      headers jsonb DEFAULT '{}'::jsonb;\n      params jsonb DEFAULT '{}'::jsonb;\n      timeout_ms integer DEFAULT 1000;\n    BEGIN\n      IF url IS NULL OR url = 'null' THEN\n        RAISE EXCEPTION 'url argument is missing';\n      END IF;\n\n      IF method IS NULL OR method = 'null' THEN\n        RAISE EXCEPTION 'method argument is missing';\n      END IF;\n\n      IF TG_ARGV[2] IS NULL OR TG_ARGV[2] = 'null' THEN\n        headers = '{\"Content-Type\": \"application/json\"}'::jsonb;\n      ELSE\n        headers = TG_ARGV[2]::jsonb;\n      END IF;\n\n      IF TG_ARGV[3] IS NULL OR TG_ARGV[3] = 'null' THEN\n        params = '{}'::jsonb;\n      ELSE\n        params = TG_ARGV[3]::jsonb;\n      END IF;\n\n      IF TG_ARGV[4] IS NULL OR TG_ARGV[4] = 'null' THEN\n        timeout_ms = 1000;\n      ELSE\n        timeout_ms = TG_ARGV[4]::integer;\n      END IF;\n\n      CASE\n        WHEN method = 'GET' THEN\n          SELECT http_get INTO request_id FROM net.http_get(\n            url,\n            params,\n            headers,\n            timeout_ms\n          );\n        WHEN method = 'POST' THEN\n          payload = jsonb_build_object(\n            'old_record', OLD,\n            'record', NEW,\n            'type', TG_OP,\n            'table', TG_TABLE_NAME,\n            'schema', TG_TABLE_SCHEMA\n          );\n\n          SELECT http_post INTO request_id FROM net.http_post(\n            url,\n            payload,\n            params,\n            headers,\n            timeout_ms\n          );\n        ELSE\n          RAISE EXCEPTION 'method argument % is invalid', method;\n      END CASE;\n\n      INSERT INTO supabase_functions.hooks\n        (hook_table_id, hook_name, request_id)\n      VALUES\n        (TG_RELID, TG_NAME, request_id);\n\n      RETURN NEW;\n    END\n  $function$;\n  -- Supabase super admin\n  DO\n  $$\n  BEGIN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM pg_roles\n      WHERE rolname = 'supabase_functions_admin'\n    )\n    THEN\n      CREATE USER supabase_functions_admin NOINHERIT CREATEROLE LOGIN NOREPLICATION;\n    END IF;\n  END\n  $$;\n  GRANT ALL PRIVILEGES ON SCHEMA supabase_functions TO supabase_functions_admin;\n  GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA supabase_functions TO supabase_functions_admin;\n  GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA supabase_functions TO supabase_functions_admin;\n  ALTER USER supabase_functions_admin SET search_path = \"supabase_functions\";\n  ALTER table \"supabase_functions\".migrations OWNER TO supabase_functions_admin;\n  ALTER table \"supabase_functions\".hooks OWNER TO supabase_functions_admin;\n  ALTER function \"supabase_functions\".http_request() OWNER TO supabase_functions_admin;\n  GRANT supabase_functions_admin TO postgres;\n  -- Remove unused supabase_pg_net_admin role\n  DO\n  $$\n  BEGIN\n    IF EXISTS (\n      SELECT 1\n      FROM pg_roles\n      WHERE rolname = 'supabase_pg_net_admin'\n    )\n    THEN\n      REASSIGN OWNED BY supabase_pg_net_admin TO supabase_admin;\n      DROP OWNED BY supabase_pg_net_admin;\n      DROP ROLE supabase_pg_net_admin;\n    END IF;\n  END\n  $$;\n  -- pg_net grants when extension is already enabled\n  DO\n  $$\n  BEGIN\n    IF EXISTS (\n      SELECT 1\n      FROM pg_extension\n      WHERE extname = 'pg_net'\n    )\n    THEN\n      GRANT USAGE ON SCHEMA net TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      REVOKE ALL ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      REVOKE ALL ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      GRANT EXECUTE ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      GRANT EXECUTE ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n    END IF;\n  END\n  $$;\n  -- Event trigger for pg_net\n  CREATE OR REPLACE FUNCTION extensions.grant_pg_net_access()\n  RETURNS event_trigger\n  LANGUAGE plpgsql\n  AS $$\n  BEGIN\n    IF EXISTS (\n      SELECT 1\n      FROM pg_event_trigger_ddl_commands() AS ev\n      JOIN pg_extension AS ext\n      ON ev.objid = ext.oid\n      WHERE ext.extname = 'pg_net'\n    )\n    THEN\n      GRANT USAGE ON SCHEMA net TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      REVOKE ALL ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      REVOKE ALL ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      GRANT EXECUTE ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      GRANT EXECUTE ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n    END IF;\n  END;\n  $$;\n  COMMENT ON FUNCTION extensions.grant_pg_net_access IS 'Grants access to pg_net';\n  DO\n  $$\n  BEGIN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM pg_event_trigger\n      WHERE evtname = 'issue_pg_net_access'\n    ) THEN\n      CREATE EVENT TRIGGER issue_pg_net_access ON ddl_command_end WHEN TAG IN ('CREATE EXTENSION')\n      EXECUTE PROCEDURE extensions.grant_pg_net_access();\n    END IF;\n  END\n  $$;\n  INSERT INTO supabase_functions.migrations (version) VALUES ('20210809183423_update_grants');\n  ALTER function supabase_functions.http_request() SECURITY DEFINER;\n  ALTER function supabase_functions.http_request() SET search_path = supabase_functions;\n  REVOKE ALL ON FUNCTION supabase_functions.http_request() FROM PUBLIC;\n  GRANT EXECUTE ON FUNCTION supabase_functions.http_request() TO postgres, anon, authenticated, service_role;\nCOMMIT;\n"
+        },
+        {
+          "service": "db",
+          "path": "/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql",
+          "content": "\\set jwt_secret `echo \"$JWT_SECRET\"`\n\\set jwt_exp `echo \"$JWT_EXP\"`\n\nALTER DATABASE postgres SET \"app.settings.jwt_secret\" TO :'jwt_secret';\nALTER DATABASE postgres SET \"app.settings.jwt_exp\" TO :'jwt_exp';\n"
+        },
+        {
+          "service": "db",
+          "path": "/docker-entrypoint-initdb.d/init-scripts/99-roles.sql",
+          "content": "\\set pgpass `echo \"$POSTGRES_PASSWORD\"`\n\nALTER USER authenticator WITH PASSWORD :'pgpass';\nALTER USER pgbouncer WITH PASSWORD :'pgpass';\nALTER USER supabase_auth_admin WITH PASSWORD :'pgpass';\nALTER USER supabase_functions_admin WITH PASSWORD :'pgpass';\nALTER USER supabase_storage_admin WITH PASSWORD :'pgpass';\n"
+        },
+        {
+          "service": "db",
+          "path": "/docker-entrypoint-initdb.d/migrations/99-realtime.sql",
+          "content": "\\set pguser `echo \"$POSTGRES_USER\"`\n\ncreate schema if not exists _realtime;\nalter schema _realtime owner to :pguser;\n"
         }
       ],
       "management": {
@@ -412,6 +422,7 @@
             "id": "studio",
             "label": "Studio",
             "source": "publicUrl:kong",
+            "kind": "url",
             "help": "Open in a browser and sign in with the Studio username + password below."
           },
           {
@@ -442,12 +453,12 @@
           {
             "id": "dbUrl",
             "label": "Database URL",
-            "source": "template:postgresql://postgres:{{env:db:POSTGRES_PASSWORD}}@{{host}}:5432/postgres",
+            "source": "template:postgresql://postgres:{{env:db:POSTGRES_PASSWORD}}@db:5432/postgres",
             "service": "db",
             "secret": true,
             "envKey": "DATABASE_URL",
             "recommended": true,
-            "help": "Direct Postgres connection (superuser) for psql / ORMs. Published on port 5432."
+            "help": "Direct Postgres connection (superuser) reachable over this project's shared network. Connect another project to Supabase to inject it automatically."
           },
           {
             "id": "dbPassword",
@@ -469,7 +480,8 @@
           "service": "db",
           "port": 5432,
           "label": "Database",
-          "kind": "tcp"
+          "kind": "tcp",
+          "scope": "internal"
         }
       ],
       "settings": [
@@ -497,7 +509,7 @@
     },
     {
       "available": true,
-      "verified": true,
+      "verified": false,
       "id": "mongodb",
       "name": "MongoDB",
       "description": "MongoDB document database with the Mongo Express web admin UI.",
@@ -544,9 +556,6 @@
           "image": "mongo-express:1.0.2",
           "exposedPort": 8081,
           "exposed": true,
-          "ports": [
-            "8081:8081"
-          ],
           "routes": [
             {
               "port": 8081
@@ -562,19 +571,18 @@
           },
           "healthcheck": {
             "test": [
-              "CMD",
-              "wget",
-              "--no-verbose",
-              "--tries=1",
-              "--spider",
-              "http://localhost:8081/"
+              "CMD-SHELL",
+              "wget -q -S --spider http://127.0.0.1:8081/ 2>&1 | grep -q \"HTTP/\""
             ],
             "interval": "10s",
             "timeout": "5s",
             "retries": 5,
             "startPeriod": "20s"
           },
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "8216:8081"
+          ]
         }
       ],
       "configFields": [
@@ -611,6 +619,7 @@
             "id": "admin",
             "label": "Mongo Express",
             "source": "publicUrl:mongo-express",
+            "kind": "url",
             "envKey": "MONGO_EXPRESS_URL",
             "help": "Sign in with the username + password below."
           },
@@ -632,19 +641,19 @@
           {
             "id": "dbUrl",
             "label": "Database URL",
-            "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@{{host}}:27017/",
-            "sourceLabel": "Public",
+            "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/",
+            "sourceLabel": "Internal",
             "variants": [
               {
-                "id": "internal",
-                "label": "Internal",
-                "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/"
+                "id": "host",
+                "label": "From this server",
+                "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@{{host}}:27017/"
               }
             ],
             "secret": true,
             "envKey": "MONGODB_URI",
             "recommended": true,
-            "help": "Direct MongoDB connection (root user). Published on port 27017. Switch to Internal for apps on the same project network."
+            "help": "Direct MongoDB connection (root user) on the project’s private network — use it from another service, or bind this app into a project. Port 27017 publishes on 127.0.0.1 only, so the \"From this server\" form works from the box itself or through an SSH tunnel, not from the internet."
           }
         ]
       },
@@ -669,6 +678,7 @@
       "id": "convex",
       "name": "Convex",
       "description": "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
+      "repository": "https://github.com/get-convex/convex-backend",
       "kind": "template",
       "logo": "convex",
       "category": "backend",
@@ -681,7 +691,7 @@
       "services": [
         {
           "name": "backend",
-          "image": "ghcr.io/get-convex/convex-backend:latest",
+          "image": "ghcr.io/get-convex/convex-backend:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
           "ports": [
             "3210:3210",
             "3211:3211"
@@ -723,7 +733,7 @@
         },
         {
           "name": "dashboard",
-          "image": "ghcr.io/get-convex/convex-dashboard:latest",
+          "image": "ghcr.io/get-convex/convex-dashboard:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
           "ports": [
             "6791:6791"
           ],
@@ -756,11 +766,14 @@
           "service": "backend",
           "command": "./generate_admin_key.sh",
           "capture": "adminKey",
-          "capturePattern": "Admin key:\\s*(\\S+)",
+          "capturePattern": "([^\\r\\n]+)\\s*$",
           "persistAs": {
             "key": "CONVEX_ADMIN_KEY"
           },
-          "once": true
+          "once": true,
+          "title": "Generate admin key",
+          "description": "Mint the dashboard and CLI admin key from the instance secret.",
+          "icon": "key"
         }
       ],
       "connection": {
@@ -768,9 +781,17 @@
         "description": "Sign in to the Convex dashboard, or point the Convex CLI here, with these values.",
         "outputs": [
           {
+            "id": "dashboard",
+            "label": "Dashboard URL",
+            "source": "publicUrl:dashboard",
+            "kind": "url",
+            "help": "Open the Convex dashboard UI, then sign in with the deployment URL and admin key below."
+          },
+          {
             "id": "url",
             "label": "Deployment URL",
-            "source": "env:backend:CONVEX_CLOUD_ORIGIN"
+            "source": "env:backend:CONVEX_CLOUD_ORIGIN",
+            "kind": "url"
           },
           {
             "id": "adminKey",
@@ -844,9 +865,6 @@
         {
           "name": "n8n",
           "image": "n8nio/n8n:latest",
-          "ports": [
-            "5678:5678"
-          ],
           "exposedPort": 5678,
           "exposed": true,
           "environment": {
@@ -861,7 +879,10 @@
           "volumes": [
             "n8n_data:/home/node/.n8n"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "8213:5678"
+          ]
         }
       ],
       "configFields": [
@@ -927,13 +948,43 @@
             }
           ]
         }
-      ]
+      ],
+      "connection": {
+        "title": "Set up n8n",
+        "description": "n8n has no preset login. Open the editor and the first screen creates your owner account.",
+        "guide": {
+          "defaultMode": "public",
+          "intro": "Your project gets a private n8n instance for building workflows.",
+          "useHint": "Webhook nodes are published under the webhook base URL below — use that origin when registering callbacks with third parties."
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Editor",
+            "source": "publicUrl:n8n",
+            "kind": "url",
+            "recommended": true,
+            "help": "First visit asks you to create the owner account."
+          },
+          {
+            "id": "webhookUrl",
+            "label": "Webhook base URL",
+            "source": "env:n8n:WEBHOOK_URL",
+            "kind": "url",
+            "envKey": "N8N_WEBHOOK_URL",
+            "help": "Base origin n8n advertises for Webhook nodes."
+          }
+        ],
+        "firstLogin": {
+          "note": "Create the owner account as soon as it deploys — the setup screen is unauthenticated until you do. Never change the generated encryption key afterwards or every stored credential becomes unreadable. n8n issues https-only session cookies, so sign in over the domain rather than a plain-http address."
+        }
+      }
     },
     {
-      "available": false,
+      "available": true,
       "id": "ghost",
       "name": "Ghost",
-      "description": "Modern publishing platform for blogs, newsletters, and membership sites.",
+      "description": "Modern publishing platform for blogs, newsletters, and membership sites. Claim the owner account on your first visit.",
       "kind": "template",
       "logo": "ghost",
       "category": "cms",
@@ -961,9 +1012,6 @@
         {
           "name": "ghost",
           "image": "ghost:5-alpine",
-          "ports": [
-            "2368:2368"
-          ],
           "exposedPort": 2368,
           "exposed": true,
           "dependsOn": [
@@ -983,7 +1031,10 @@
           "volumes": [
             "ghost_content:/var/lib/ghost/content"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "8212:2368"
+          ]
         }
       ],
       "configFields": [
@@ -1003,13 +1054,43 @@
           "generateGroup": "ghostdb",
           "secret": true
         }
-      ]
+      ],
+      "connection": {
+        "title": "Set up Ghost",
+        "description": "Ghost has no preset login. Open Ghost Admin and the first screen creates the owner account.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Ghost Admin",
+            "source": "template:{{env:ghost:url}}/ghost/",
+            "kind": "url",
+            "recommended": true,
+            "help": "Create the owner account here on first visit."
+          },
+          {
+            "id": "url",
+            "label": "Site",
+            "source": "publicUrl:ghost",
+            "kind": "url",
+            "help": "The public blog."
+          }
+        ],
+        "firstLogin": {
+          "note": "Claim the owner account at /ghost/ immediately — it is unauthenticated until you do, so the first visitor owns the blog. Ghost may restart a few times on first boot while MySQL initialises; that is expected."
+        }
+      },
+      "verified": true
     },
     {
-      "available": false,
+      "available": true,
+      "verified": true,
       "id": "directus",
       "name": "Directus",
-      "description": "Headless CMS with an instant REST + GraphQL API over your data. Create the admin on first visit.",
+      "description": "Headless CMS with an instant REST + GraphQL API over your data. Sign in with the admin email and generated password below.",
+      "repository": "https://github.com/directus/directus",
       "kind": "template",
       "logo": "directus",
       "category": "cms",
@@ -1023,24 +1104,41 @@
         {
           "name": "directus",
           "image": "directus/directus:latest",
-          "ports": [
-            "8055:8055"
-          ],
           "exposedPort": 8055,
           "exposed": true,
+          "routes": [
+            {
+              "port": 8055
+            }
+          ],
           "environment": {
             "DB_CLIENT": "sqlite3",
             "DB_FILENAME": "/directus/database/data.db",
-            "PUBLIC_URL": "{{publicUrl:directus}}"
+            "PUBLIC_URL": "{{publicUrl:directus}}",
+            "ADMIN_EMAIL": "admin@example.com"
           },
           "secretEnv": [
-            "SECRET"
+            "SECRET",
+            "ADMIN_PASSWORD"
           ],
           "volumes": [
             "directus_database:/directus/database",
             "directus_uploads:/directus/uploads"
           ],
-          "restart": "unless-stopped"
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8055/server/health || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 8,
+            "startPeriod": "30s"
+          },
+          "restart": "unless-stopped",
+          "ports": [
+            "8211:8055"
+          ]
         }
       ],
       "configFields": [
@@ -1051,14 +1149,76 @@
           "help": "Auto-generated. Signs access tokens.",
           "generate": "secret",
           "secret": true
+        },
+        {
+          "key": "ADMIN_PASSWORD",
+          "service": "directus",
+          "label": "Admin password",
+          "help": "Auto-generated. The password for the admin account created on first boot. Directus has no sign-up screen, so without this no account would exist at all.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Sign in to Directus",
+        "description": "The admin account below is created automatically on the first boot. Change the password after your first sign-in.",
+        "guide": {
+          "intro": "A headless CMS plus a REST and GraphQL API over whatever collections you create.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Admin app",
+            "source": "template:{{env:directus:PUBLIC_URL}}/admin",
+            "kind": "url",
+            "recommended": true,
+            "help": "The Directus admin app. Sign in with the email and password below."
+          },
+          {
+            "id": "url",
+            "label": "API URL",
+            "source": "publicUrl:directus",
+            "kind": "url",
+            "envKey": "DIRECTUS_URL",
+            "help": "Base URL for the REST + GraphQL API."
+          },
+          {
+            "id": "email",
+            "label": "Admin email",
+            "source": "env:directus:ADMIN_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:directus:ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "The admin is created only on the FIRST boot against an empty database. If you reinstall over an existing directus_database volume no new admin is made — reset one with `npx directus users passwd` inside the container."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "directus",
+          "port": 8055,
+          "label": "Directus",
+          "kind": "http",
+          "defaultMode": "domain"
         }
       ]
     },
     {
-      "available": false,
+      "available": true,
       "id": "nocodb",
       "name": "NocoDB",
-      "description": "Airtable-style spreadsheet UI over an SQL database. The first sign-up becomes the admin.",
+      "description": "Airtable-style spreadsheet UI over an SQL database. Sign in with the admin account below.",
       "kind": "template",
       "logo": "nocodb",
       "category": "database",
@@ -1072,23 +1232,73 @@
         {
           "name": "nocodb",
           "image": "nocodb/nocodb:latest",
-          "ports": [
-            "8080:8080"
-          ],
           "exposedPort": 8080,
           "exposed": true,
           "volumes": [
             "nocodb_data:/usr/app/data"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "environment": {
+            "NC_ADMIN_EMAIL": "admin@example.com"
+          },
+          "secretEnv": [
+            "NC_ADMIN_PASSWORD"
+          ],
+          "ports": [
+            "8208:8080"
+          ]
         }
-      ]
+      ],
+      "configFields": [
+        {
+          "key": "NC_ADMIN_PASSWORD",
+          "service": "nocodb",
+          "label": "Admin password",
+          "help": "Auto-generated. Password for the super-admin account created on first boot.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "connection": {
+        "title": "Sign in to NocoDB",
+        "description": "The super-admin account below is created on first boot. Change the password after signing in.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "NocoDB",
+            "source": "publicUrl:nocodb",
+            "kind": "url",
+            "recommended": true,
+            "help": "Sign in with the email and password below."
+          },
+          {
+            "id": "email",
+            "label": "Admin email",
+            "source": "env:nocodb:NC_ADMIN_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:nocodb:NC_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Anyone who reaches this URL can still create their own account (they land in their own workspace and cannot see your bases). Turn sign-up off in Account Settings → Authentication right after your first sign-in — the NC_INVITE_ONLY_SIGNUP env var no longer works in this version."
+        }
+      },
+      "verified": true
     },
     {
-      "available": false,
+      "available": true,
       "id": "metabase",
       "name": "Metabase",
-      "description": "Open-source business intelligence — dashboards and questions over your data.",
+      "description": "Open-source business intelligence — dashboards and questions over your data. Create your admin account in the browser on first visit.",
       "kind": "template",
       "logo": "metabase",
       "category": "analytics",
@@ -1102,20 +1312,55 @@
         {
           "name": "metabase",
           "image": "metabase/metabase:latest",
-          "ports": [
-            "3000:3000"
-          ],
           "exposedPort": 3000,
           "exposed": true,
           "environment": {
-            "MB_DB_FILE": "/metabase-data/metabase.db"
+            "MB_DB_FILE": "/metabase-data/metabase.db",
+            "MB_SITE_URL": "{{publicUrl:metabase}}"
           },
           "volumes": [
             "metabase_data:/metabase-data"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "secretEnv": [
+            "MB_ENCRYPTION_SECRET_KEY"
+          ],
+          "ports": [
+            "3010:3000"
+          ]
         }
-      ]
+      ],
+      "configFields": [
+        {
+          "key": "MB_ENCRYPTION_SECRET_KEY",
+          "service": "metabase",
+          "label": "Encryption key",
+          "help": "Auto-generated. Encrypts saved database credentials at rest. Never change it after setup.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "connection": {
+        "title": "Set up Metabase",
+        "description": "Metabase has no preset login. Open the link and the setup wizard will walk you through creating the admin account.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Metabase",
+            "source": "publicUrl:metabase",
+            "kind": "url",
+            "recommended": true,
+            "help": "First visit runs the setup wizard — the account you create there is the admin."
+          }
+        ],
+        "firstLogin": {
+          "note": "Complete the setup wizard immediately: it is unauthenticated, so whoever opens this URL first becomes the admin. Metabase can take a minute to finish migrations on first boot."
+        }
+      },
+      "verified": true
     },
     {
       "available": true,
@@ -1149,13 +1394,29 @@
           ],
           "restart": "unless-stopped"
         }
-      ]
+      ],
+      "connection": {
+        "title": "Sign in to Grafana",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "URL",
+            "source": "publicUrl:grafana",
+            "kind": "url"
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "password": "admin",
+          "note": "Change the admin password right after your first login."
+        }
+      }
     },
     {
-      "available": false,
+      "available": true,
       "id": "gitea",
       "name": "Gitea",
-      "description": "Self-hosted Git with issues, pull requests, and a first-run setup wizard.",
+      "description": "Self-hosted Git with issues and pull requests. The admin account below is created for you.",
       "kind": "template",
       "logo": "gitea",
       "category": "other",
@@ -1169,26 +1430,104 @@
         {
           "name": "gitea",
           "image": "gitea/gitea:1",
-          "ports": [
-            "3000:3000"
-          ],
           "exposedPort": 3000,
           "exposed": true,
           "environment": {
-            "GITEA__server__ROOT_URL": "{{publicUrl:gitea}}"
+            "GITEA__server__ROOT_URL": "{{publicUrl:gitea}}",
+            "GITEA__security__INSTALL_LOCK": "true",
+            "GITEA__security__SECRET_KEY": "{{config:GITEA_SECRET_KEY}}",
+            "GITEA__database__DB_TYPE": "sqlite3",
+            "GITEA__service__DISABLE_REGISTRATION": "true",
+            "GITEA_ADMIN_USERNAME": "admin",
+            "GITEA_ADMIN_EMAIL": "admin@example.com"
           },
           "volumes": [
             "gitea_data:/data"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "secretEnv": [
+            "GITEA_ADMIN_PASSWORD"
+          ],
+          "ports": [
+            "3009:3000"
+          ]
         }
-      ]
+      ],
+      "configFields": [
+        {
+          "key": "GITEA_SECRET_KEY",
+          "service": "gitea",
+          "label": "Secret key",
+          "help": "Auto-generated. Signs Gitea's tokens and locks the installer.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "GITEA_ADMIN_PASSWORD",
+          "service": "gitea",
+          "label": "Admin password",
+          "help": "Auto-generated. Password for the seeded admin account.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "prepare": [
+        {
+          "service": "gitea",
+          "title": "Create the Gitea admin",
+          "description": "Seeds the administrator account so you can sign in immediately.",
+          "command": "su-exec git gitea admin user create --admin --username \"$GITEA_ADMIN_USERNAME\" --password \"$GITEA_ADMIN_PASSWORD\" --email \"$GITEA_ADMIN_EMAIL\" --must-change-password=false 2>&1 || true; echo done",
+          "capture": "gitea_admin",
+          "phase": "post-ready",
+          "readiness": {
+            "test": "su-exec git gitea admin user list >/dev/null 2>&1",
+            "interval": 3000,
+            "retries": 40
+          }
+        }
+      ],
+      "connection": {
+        "title": "Sign in to Gitea",
+        "description": "Your admin account is created during install. New self-registration is disabled — invite users from Site Administration.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Gitea",
+            "source": "publicUrl:gitea",
+            "kind": "url",
+            "recommended": true,
+            "help": "Sign in with the username and password below."
+          },
+          {
+            "id": "username",
+            "label": "Admin username",
+            "source": "env:gitea:GITEA_ADMIN_USERNAME",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:gitea:GITEA_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "INSTALL_LOCK is on, so the public setup wizard is disabled and cannot be used to hijack the instance. The password above works as-is."
+        }
+      },
+      "verified": true
     },
     {
-      "available": false,
+      "available": true,
+      "verified": true,
       "id": "code-server",
       "name": "code-server",
-      "description": "Run VS Code in your browser, on your server. Login uses an auto-generated password.",
+      "description": "Run VS Code in your browser, on your server. Sign in with the auto-generated password below.",
+      "repository": "https://github.com/coder/code-server",
       "kind": "template",
       "logo": "code-server",
       "category": "other",
@@ -1201,21 +1540,34 @@
       "services": [
         {
           "name": "code-server",
-          "image": "codercom/code-server:latest",
-          "ports": [
-            "8080:8080"
-          ],
+          "image": "codercom/code-server:4.132.0",
           "exposedPort": 8080,
           "exposed": true,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
           "secretEnv": [
             "PASSWORD"
           ],
           "volumes": [
-            "code_server_config:/home/coder/.config",
-            "code_server_local:/home/coder/.local",
-            "code_server_project:/home/coder/project"
+            "code_server_home:/home/coder"
           ],
-          "restart": "unless-stopped"
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS -o /dev/null http://127.0.0.1:8080/healthz || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 6,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped",
+          "ports": [
+            "8207:8080"
+          ]
         }
       ],
       "configFields": [
@@ -1223,17 +1575,56 @@
           "key": "PASSWORD",
           "service": "code-server",
           "label": "Login password",
-          "help": "Auto-generated. Required to sign in.",
+          "help": "Auto-generated. Required to sign in. Uses PASSWORD (plaintext) rather than HASHED_PASSWORD, which expects an argon2 digest.",
           "generate": "secret",
           "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Sign in to code-server",
+        "description": "VS Code in the browser. Sign in with the generated password below.",
+        "guide": {
+          "intro": "A full VS Code editor running on your server, reachable from any browser.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Editor",
+            "source": "publicUrl:code-server",
+            "kind": "url",
+            "recommended": true,
+            "help": "Opens the browser IDE. Sign in with the password below."
+          },
+          {
+            "id": "password",
+            "label": "Login password",
+            "source": "env:code-server:PASSWORD",
+            "secret": true
+          }
+        ],
+        "firstLogin": {
+          "note": "Your whole home directory is the persisted volume, so files, extensions and settings all survive a redeploy. The editor opens /home/coder by default."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "code-server",
+          "port": 8080,
+          "label": "Editor",
+          "kind": "http",
+          "defaultMode": "domain"
         }
       ]
     },
     {
-      "available": false,
+      "available": true,
       "id": "uptime-kuma",
       "name": "Uptime Kuma",
-      "description": "Self-hosted uptime monitoring with status pages and alerts.",
+      "description": "Self-hosted uptime monitoring with status pages and alerts. Create your admin account on the first visit.",
       "kind": "template",
       "logo": "uptime-kuma",
       "category": "other",
@@ -1247,23 +1638,44 @@
         {
           "name": "uptime-kuma",
           "image": "louislam/uptime-kuma:1",
-          "ports": [
-            "3001:3001"
-          ],
           "exposedPort": 3001,
           "exposed": true,
           "volumes": [
             "uptime_kuma_data:/app/data"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "3008:3001"
+          ]
         }
-      ]
+      ],
+      "connection": {
+        "title": "Set up Uptime Kuma",
+        "description": "Uptime Kuma ships with no default login — the first page you see creates the admin account.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Uptime Kuma",
+            "source": "publicUrl:uptime-kuma",
+            "kind": "url",
+            "recommended": true,
+            "help": "First visit prompts you to create the administrator account."
+          }
+        ],
+        "firstLogin": {
+          "note": "Do this immediately after deploy: until you create the admin, anyone who opens this URL can claim the instance. Monitors and history live in the uptime_kuma_data volume."
+        }
+      },
+      "verified": true
     },
     {
-      "available": false,
+      "available": true,
       "id": "vaultwarden",
       "name": "Vaultwarden",
-      "description": "Lightweight self-hosted password manager (Bitwarden-compatible).",
+      "description": "Lightweight self-hosted password manager (Bitwarden-compatible). Open the admin panel with the token below to invite your first account.",
       "kind": "template",
       "logo": "vaultwarden",
       "category": "other",
@@ -1277,26 +1689,75 @@
         {
           "name": "vaultwarden",
           "image": "vaultwarden/server:latest",
-          "ports": [
-            "80:80"
-          ],
           "exposedPort": 80,
           "exposed": true,
           "environment": {
-            "DOMAIN": "{{publicUrl:vaultwarden}}"
+            "DOMAIN": "{{publicUrl:vaultwarden}}",
+            "SIGNUPS_ALLOWED": "false"
           },
           "volumes": [
             "vaultwarden_data:/data"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "secretEnv": [
+            "ADMIN_TOKEN"
+          ],
+          "ports": [
+            "8206:80"
+          ]
         }
-      ]
+      ],
+      "configFields": [
+        {
+          "key": "ADMIN_TOKEN",
+          "service": "vaultwarden",
+          "label": "Admin panel token",
+          "help": "Auto-generated. Unlocks /admin, where you invite your own account.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "connection": {
+        "title": "Set up Vaultwarden",
+        "description": "Public sign-up is disabled. Open the admin panel with the token below, invite your own email address, then register that address in any Bitwarden client.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Admin panel",
+            "source": "template:{{env:vaultwarden:DOMAIN}}/admin",
+            "kind": "url",
+            "recommended": true,
+            "help": "Paste the admin token below to sign in, then use Invite User."
+          },
+          {
+            "id": "url",
+            "label": "Vault URL",
+            "source": "publicUrl:vaultwarden",
+            "kind": "url",
+            "help": "Point the Bitwarden app/extension at this as its self-hosted server URL."
+          },
+          {
+            "id": "adminToken",
+            "label": "Admin token",
+            "source": "env:vaultwarden:ADMIN_TOKEN",
+            "secret": true,
+            "help": "Full control of the server. Treat it like a root password."
+          }
+        ],
+        "firstLogin": {
+          "note": "Invitations work without SMTP: after inviting your address in /admin, register that same address from the vault URL to set your master password."
+        }
+      },
+      "verified": true
     },
     {
-      "available": false,
+      "available": true,
       "id": "freshrss",
       "name": "FreshRSS",
-      "description": "Self-hosted RSS and Atom feed reader with a first-run setup wizard.",
+      "description": "Self-hosted RSS and Atom feed reader. Your account is created during install.",
       "kind": "template",
       "logo": "freshrss",
       "category": "other",
@@ -1310,23 +1771,88 @@
         {
           "name": "freshrss",
           "image": "freshrss/freshrss:latest",
-          "ports": [
-            "80:80"
-          ],
           "exposedPort": 80,
           "exposed": true,
           "volumes": [
             "freshrss_data:/var/www/FreshRSS/data"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "environment": {
+            "FRESHRSS_ADMIN_USERNAME": "admin"
+          },
+          "secretEnv": [
+            "FRESHRSS_ADMIN_PASSWORD"
+          ],
+          "ports": [
+            "8204:80"
+          ]
         }
-      ]
+      ],
+      "configFields": [
+        {
+          "key": "FRESHRSS_ADMIN_PASSWORD",
+          "service": "freshrss",
+          "label": "Admin password",
+          "help": "Auto-generated. Password for the account created during install.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "prepare": [
+        {
+          "service": "freshrss",
+          "title": "Install FreshRSS",
+          "description": "Runs the headless installer and creates your account.",
+          "command": "cd /var/www/FreshRSS && { [ -f ./data/config.php ] || php ./cli/do-install.php --default-user=\"$FRESHRSS_ADMIN_USERNAME\" --auth-type=form --db-type=sqlite --api-enabled; } && { php ./cli/list-users.php 2>/dev/null | grep -qx \"$FRESHRSS_ADMIN_USERNAME\" || php ./cli/create-user.php --user \"$FRESHRSS_ADMIN_USERNAME\" --password \"$FRESHRSS_ADMIN_PASSWORD\" --language en; } && ./cli/access-permissions.sh >/dev/null 2>&1; echo done",
+          "capture": "freshrss_install",
+          "phase": "post-ready",
+          "readiness": {
+            "test": "test -d /var/www/FreshRSS/cli",
+            "interval": 3000,
+            "retries": 30
+          }
+        }
+      ],
+      "connection": {
+        "title": "Sign in to FreshRSS",
+        "description": "FreshRSS is installed headlessly during setup — sign in with the credentials below.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Reader",
+            "source": "publicUrl:freshrss",
+            "kind": "url",
+            "recommended": true,
+            "help": "Sign in with the username and password below."
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:freshrss:FRESHRSS_ADMIN_USERNAME",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:freshrss:FRESHRSS_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Deliberately NOT deployed with the public web installer, so nobody can claim your instance first. Feeds refresh on a schedule only if you set CRON_MIN (e.g. \"*/20\")."
+        }
+      },
+      "verified": true
     },
     {
-      "available": false,
+      "available": true,
       "id": "stirling-pdf",
       "name": "Stirling PDF",
-      "description": "Split, merge, convert, OCR and edit PDFs locally. Default login is admin / stirling — change it.",
+      "description": "Split, merge, convert, OCR and edit PDFs locally. Sign in with the admin account below.",
       "kind": "template",
       "logo": "stirling-pdf",
       "category": "other",
@@ -1340,21 +1866,72 @@
         {
           "name": "stirling-pdf",
           "image": "stirlingtools/stirling-pdf:latest",
-          "ports": [
-            "8080:8080"
-          ],
           "exposedPort": 8080,
           "exposed": true,
           "volumes": [
             "stirling_config:/configs",
             "stirling_tessdata:/usr/share/tessdata"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "environment": {
+            "SECURITY_ENABLELOGIN": "true",
+            "SECURITY_INITIALLOGIN_USERNAME": "admin"
+          },
+          "secretEnv": [
+            "SECURITY_INITIALLOGIN_PASSWORD"
+          ],
+          "ports": [
+            "8209:8080"
+          ]
         }
-      ]
+      ],
+      "configFields": [
+        {
+          "key": "SECURITY_INITIALLOGIN_PASSWORD",
+          "service": "stirling-pdf",
+          "label": "Admin password",
+          "help": "Auto-generated. Replaces Stirling's public default password.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "connection": {
+        "title": "Sign in to Stirling PDF",
+        "description": "Login is enabled and the admin account below is seeded on first boot, so the well-known default password is never used.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Stirling PDF",
+            "source": "publicUrl:stirling-pdf",
+            "kind": "url",
+            "recommended": true,
+            "help": "Sign in with the username and password below."
+          },
+          {
+            "id": "username",
+            "label": "Admin username",
+            "source": "env:stirling-pdf:SECURITY_INITIALLOGIN_USERNAME",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:stirling-pdf:SECURITY_INITIALLOGIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Seeding these two values is what prevents Stirling from creating its documented admin/stirling account. The password above works as-is."
+        }
+      },
+      "verified": true
     },
     {
-      "available": false,
+      "available": true,
       "id": "it-tools",
       "name": "IT-Tools",
       "description": "A handy collection of developer and sysadmin utilities. No login, no setup.",
@@ -1371,14 +1948,35 @@
         {
           "name": "it-tools",
           "image": "corentinth/it-tools:latest",
-          "ports": [
-            "80:80"
-          ],
           "exposedPort": 80,
           "exposed": true,
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "8205:80"
+          ]
         }
-      ]
+      ],
+      "connection": {
+        "title": "Open IT-Tools",
+        "description": "A collection of developer and sysadmin utilities. No login, no setup, nothing stored.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "IT-Tools",
+            "source": "publicUrl:it-tools",
+            "kind": "url",
+            "recommended": true,
+            "help": "Opens the tool collection. No sign-in required."
+          }
+        ],
+        "firstLogin": {
+          "note": "Nothing to log into and nothing persisted — every tool runs in your browser. Anyone who can reach this URL can use it, so keep it internal if that matters."
+        }
+      },
+      "verified": true
     },
     {
       "available": true,
@@ -1399,14 +1997,34 @@
         {
           "name": "excalidraw",
           "image": "excalidraw/excalidraw:latest",
-          "ports": [
-            "8203:80"
-          ],
           "exposedPort": 80,
           "exposed": true,
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "8203:80"
+          ]
         }
-      ]
+      ],
+      "connection": {
+        "title": "Open Excalidraw",
+        "description": "No login and no server-side storage — open the link and start drawing.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Whiteboard",
+            "source": "publicUrl:excalidraw",
+            "kind": "url",
+            "recommended": true,
+            "help": "Opens the whiteboard. No sign-in required."
+          }
+        ],
+        "firstLogin": {
+          "note": "There is nothing to log into and nothing stored on the server: drawings live in your browser, so use Export to save anything you want to keep. Anyone who can reach this URL can use it — put it behind your own access control if that matters."
+        }
+      }
     },
     {
       "available": false,
@@ -1428,9 +2046,10 @@
     {
       "available": true,
       "verified": true,
+      "minEngine": "0.6.6",
       "id": "minio",
       "name": "MinIO",
-      "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it.",
+      "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it, or bind a bucket straight into another project's uploads.",
       "kind": "template",
       "logo": "minio",
       "category": "database",
@@ -1444,10 +2063,11 @@
         {
           "name": "minio",
           "image": "minio/minio:latest",
-          "command": "server /data --console-address :9001",
-          "ports": [
-            "9000:9000",
-            "9001:9001"
+          "commandArgv": [
+            "server",
+            "/data",
+            "--console-address",
+            ":9001"
           ],
           "exposedPort": 9001,
           "routes": [
@@ -1469,7 +2089,11 @@
           "volumes": [
             "minio_data:/data"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "9001:9001",
+            "9000:9000"
+          ]
         }
       ],
       "configFields": [
@@ -1489,6 +2113,28 @@
           "help": "Auto-generated. The S3 admin secret — shown once after install.",
           "generate": "secret",
           "secret": true
+        },
+        {
+          "key": "OPENSHIP_BUCKET",
+          "service": "minio",
+          "label": "First bucket",
+          "help": "Created on the first deploy so an app can use this storage immediately. More can be added from the console.",
+          "type": "text",
+          "default": "uploads",
+          "required": true
+        }
+      ],
+      "prepare": [
+        {
+          "service": "minio",
+          "command": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" > /dev/null && mc mb --ignore-existing \"local/$OPENSHIP_BUCKET\" > /dev/null && printf '%s' \"$OPENSHIP_BUCKET\"",
+          "capture": "bucket",
+          "phase": "post-ready",
+          "readiness": {
+            "test": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\"",
+            "interval": 1000,
+            "retries": 30
+          }
         }
       ],
       "endpoints": [
@@ -1512,30 +2158,64 @@
           {
             "id": "console",
             "label": "Console",
-            "source": "publicUrl:minio:9001"
+            "source": "publicUrl:minio:9001",
+            "kind": "url"
           },
           {
             "id": "endpoint",
             "label": "S3 endpoint",
-            "source": "publicUrl:minio:9000"
+            "source": "publicUrl:minio:9000",
+            "service": "minio",
+            "envKey": "S3_ENDPOINT",
+            "recommended": true
           },
           {
             "id": "accessKey",
             "label": "Access key",
-            "source": "env:minio:MINIO_ROOT_USER"
+            "source": "env:minio:MINIO_ROOT_USER",
+            "service": "minio",
+            "envKey": "S3_ACCESS_KEY_ID",
+            "recommended": true
           },
           {
             "id": "secretKey",
             "label": "Secret key",
             "source": "env:minio:MINIO_ROOT_PASSWORD",
-            "secret": true
+            "service": "minio",
+            "envKey": "S3_SECRET_ACCESS_KEY",
+            "secret": true,
+            "recommended": true
+          },
+          {
+            "id": "bucket",
+            "label": "Bucket",
+            "source": "env:minio:OPENSHIP_BUCKET",
+            "service": "minio",
+            "envKey": "S3_BUCKET"
           }
-        ]
-      }
+        ],
+        "guide": {
+          "intro": "Your app gets an S3-compatible bucket it can write uploads to.",
+          "useHint": "Bind it from the consuming project's Configuration → Object storage to get the framework's own env names (Laravel gets FILESYSTEM_DISK + AWS_*), or wire these values by hand.",
+          "defaultMode": "internal"
+        }
+      },
+      "provides": [
+        {
+          "id": "s3",
+          "outputRefs": [
+            "endpoint",
+            "accessKey",
+            "secretKey",
+            "bucket"
+          ],
+          "category": "database"
+        }
+      ]
     },
     {
       "available": true,
-      "verified": true,
+      "verified": false,
       "id": "kafka",
       "name": "Apache Kafka",
       "description": "Apache Kafka event-streaming broker (KRaft mode — no ZooKeeper) with the Kafbat Kafka UI web console for topics, messages, and consumer groups.",
@@ -1580,9 +2260,6 @@
           "image": "ghcr.io/kafbat/kafka-ui:latest",
           "exposedPort": 8080,
           "exposed": true,
-          "ports": [
-            "8080:8080"
-          ],
           "routes": [
             {
               "port": 8080
@@ -1601,7 +2278,10 @@
           "secretEnv": [
             "SPRING_SECURITY_USER_PASSWORD"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "8210:8080"
+          ]
         }
       ],
       "configFields": [
@@ -1625,6 +2305,7 @@
             "id": "ui",
             "label": "Kafka UI",
             "source": "publicUrl:kafka-ui",
+            "kind": "url",
             "help": "Sign in with the username + password below."
           },
           {
@@ -1677,9 +2358,6 @@
         {
           "name": "qdrant",
           "image": "qdrant/qdrant:v1.18.3",
-          "ports": [
-            "6333:6333"
-          ],
           "exposedPort": 6333,
           "exposed": true,
           "routes": [
@@ -1693,7 +2371,10 @@
           "volumes": [
             "qdrant_storage:/qdrant/storage"
           ],
-          "restart": "unless-stopped"
+          "restart": "unless-stopped",
+          "ports": [
+            "8215:6333"
+          ]
         }
       ],
       "configFields": [
@@ -1717,6 +2398,7 @@
             "id": "ui",
             "label": "Qdrant Web UI",
             "source": "publicUrl:qdrant",
+            "kind": "url",
             "help": "The dashboard is at this URL under /dashboard. Paste the API key when it asks."
           },
           {
@@ -1733,6 +2415,2009 @@
           }
         ]
       }
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "meilisearch",
+      "name": "Meilisearch",
+      "description": "Lightning-fast, typo-tolerant search engine. Point any Meilisearch client at the URL below with the master key — index your documents and search in milliseconds.",
+      "kind": "template",
+      "logo": "meilisearch",
+      "category": "backend",
+      "tags": [
+        "search",
+        "full-text",
+        "index",
+        "typo-tolerant"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "meilisearch",
+          "image": "getmeili/meilisearch:v1.12",
+          "exposedPort": 7700,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 7700
+            }
+          ],
+          "environment": {
+            "MEILI_ENV": "production",
+            "MEILI_NO_ANALYTICS": "true"
+          },
+          "secretEnv": [
+            "MEILI_MASTER_KEY"
+          ],
+          "volumes": [
+            "meili_data:/meili_data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O - http://127.0.0.1:7700/health 2>&1 | grep -q available"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped",
+          "ports": [
+            "8214:7700"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MEILI_MASTER_KEY",
+          "service": "meilisearch",
+          "label": "Master key",
+          "help": "Auto-generated. Send it as the `Authorization: Bearer` header on every request. Use it to mint scoped API keys.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Meilisearch",
+        "description": "Point a Meilisearch client at the URL with the master key. Every request needs the key as a Bearer token. There is no web dashboard in production mode — drive it from a Meilisearch client or curl.",
+        "guide": {
+          "intro": "Your project gets a Meilisearch endpoint plus its master key.",
+          "useHint": "Read `process.env.MEILISEARCH_URL` and `process.env.MEILISEARCH_KEY` in your code — set on your next deploy.",
+          "defaultMode": "internal"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "API URL",
+            "source": "publicUrl:meilisearch",
+            "sourceLabel": "Public",
+            "variants": [
+              {
+                "id": "internal",
+                "label": "Internal",
+                "source": "template:http://meilisearch:7700"
+              }
+            ],
+            "envKey": "MEILISEARCH_URL",
+            "recommended": true,
+            "help": "HTTP API endpoint — opening it in a browser returns a JSON status, not a UI (the bundled dashboard is off in production mode). Switch to Internal for apps on the same project network.",
+            "kind": "url"
+          },
+          {
+            "id": "masterKey",
+            "label": "Master key",
+            "source": "env:meilisearch:MEILI_MASTER_KEY",
+            "secret": true,
+            "envKey": "MEILISEARCH_KEY",
+            "recommended": true,
+            "help": "Send as the `Authorization: Bearer <key>` header. Full-access — mint scoped keys for clients."
+          }
+        ]
+      },
+      "provides": [
+        {
+          "id": "meilisearch",
+          "outputRefs": [
+            "url",
+            "masterKey"
+          ],
+          "category": "search"
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "meilisearch",
+          "port": 7700,
+          "label": "Meilisearch",
+          "kind": "http"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": false,
+      "minEngine": "0.6.6",
+      "minResources": {
+        "memoryMb": 4096,
+        "cpuCores": 2
+      },
+      "id": "neon",
+      "name": "Neon",
+      "description": "Self-hosted Neon — serverless Postgres with database branching, a web console and per-branch connection strings, in a single container. Built on the community `neond` control plane (Apache-2.0), which bundles Neon's pageserver, safekeeper, storage broker and storage controller behind a management API and dashboard. Neon's own cloud console is proprietary and the upstream neon repo ships no web UI, so a community control plane is the only way to run self-hosted Neon with a dashboard. One container with no HA, a ~1.2 GB image, and it publishes fixed host ports for branch endpoints — sized for development and preview databases rather than critical data.",
+      "repository": "https://github.com/matisiekpl/neond",
+      "kind": "template",
+      "logo": "neon",
+      "category": "database",
+      "tags": [
+        "database",
+        "postgres",
+        "postgresql",
+        "serverless",
+        "sql",
+        "branching"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "neond",
+          "image": "neond/neond:f04d396c133d81e28cf52560ea11ef7e9b814d71",
+          "exposed": true,
+          "exposedPort": 3000,
+          "routes": [
+            {
+              "port": 3000
+            }
+          ],
+          "environment": {
+            "PORT": "3000",
+            "PORT_RANGE": "55432-55437",
+            "DO_NOT_TRACK": "1",
+            "TELEMETRY_DISABLED": "1",
+            "RUST_LOG": "info"
+          },
+          "ports": [
+            "8220:3000",
+            "0.0.0.0:55432:55432",
+            "0.0.0.0:55433:55433",
+            "0.0.0.0:55434:55434",
+            "0.0.0.0:55435:55435",
+            "0.0.0.0:55436:55436",
+            "0.0.0.0:55437:55437"
+          ],
+          "volumes": [
+            "neond_data:/neond"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "curl",
+              "-fsS",
+              "http://127.0.0.1:3000/api/auth/setup"
+            ],
+            "interval": "30s",
+            "timeout": "5s",
+            "retries": 3,
+            "startPeriod": "5m"
+          },
+          "stopGracePeriod": "10m",
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "SERVER_SECRET",
+          "service": "neond",
+          "label": "Server secret",
+          "help": "Auto-generated, and PERMANENT — it is also the password of the internal management Postgres role, so changing it after the first launch makes the control plane unable to open its own database.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "ADMIN_EMAIL",
+          "service": "neond",
+          "label": "Console admin email",
+          "help": "The first account is created for you and is the instance admin. Sign-up closes as soon as it exists.",
+          "type": "text",
+          "default": "admin@openship.local",
+          "required": true
+        },
+        {
+          "key": "ADMIN_PASSWORD",
+          "service": "neond",
+          "label": "Console admin password",
+          "help": "Auto-generated. Use it with the admin email to sign in to the console.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "PG_PASSWORD",
+          "service": "neond",
+          "label": "Database password",
+          "help": "Auto-generated. Set as the password of the `postgres` role on the first branch so the connection string below is usable immediately.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "prepare": [
+        {
+          "service": "neond",
+          "title": "Create the console account and first branch",
+          "description": "Signs in (registering the admin on a first install), then ensures an organization, project and branch exist and an endpoint is running, and reports its port. Every run reports a REAL port, so a first attempt that raced the endpoint cannot leave the connection string permanently blank.",
+          "command": "set -e; API=http://127.0.0.1:3000/api; J='Content-Type: application/json'; id1() { sed -n 's/.*\"id\":\"\\([^\"]*\\)\".*/\\1/p' | head -1; }; port1() { sed -n -e 's|.*\"connection_string\":\"[^\"]*@[^:\"]*:\\([0-9][0-9]*\\)/.*|\\1|p' -e 's/.*\"port\":\\([0-9][0-9]*\\).*/\\1/p' | head -1; }; get() { curl -fsS -H \"$A\" \"$1\" 2>/dev/null || printf ''; }; post() { n=0; while [ $n -lt 20 ]; do r=$(curl -fsS -X POST \"$1\" -H \"$J\" -H \"$A\" -d \"$2\" 2>/dev/null || printf ''); [ -n \"$r\" ] && { printf %s \"$r\"; return 0; }; n=$((n+1)); sleep 2; done; printf ''; }; SETUP=$(curl -fsS \"$API/auth/setup\" || printf ''); case \"$SETUP\" in *'\"registration_open\":true'*) TOKEN=$(curl -fsS -X POST \"$API/auth/register\" -H \"$J\" -d \"{\\\"name\\\":\\\"Admin\\\",\\\"email\\\":\\\"$ADMIN_EMAIL\\\",\\\"password\\\":\\\"$ADMIN_PASSWORD\\\"}\" 2>/dev/null | sed -n 's/.*\"token\":\"\\([^\"]*\\)\".*/\\1/p') ;; *) TOKEN=$(curl -fsS -X POST \"$API/auth/login\" -H \"$J\" -d \"{\\\"email\\\":\\\"$ADMIN_EMAIL\\\",\\\"password\\\":\\\"$ADMIN_PASSWORD\\\"}\" 2>/dev/null | sed -n 's/.*\"token\":\"\\([^\"]*\\)\".*/\\1/p') ;; esac; [ -n \"$TOKEN\" ] || { echo \"pg_port=no-token\"; exit 0; }; A=\"Authorization: Bearer $TOKEN\"; ORG=$(get \"$API/organizations\" | id1); [ -n \"$ORG\" ] || ORG=$(post \"$API/organizations\" '{\"name\":\"Default\"}' | id1); [ -n \"$ORG\" ] || { echo \"pg_port=no-org\"; exit 0; }; P=\"$API/organizations/$ORG/projects\"; PROJ=$(get \"$P\" | id1); [ -n \"$PROJ\" ] || PROJ=$(post \"$P\" '{\"name\":\"main\"}' | id1); [ -n \"$PROJ\" ] || { echo \"pg_port=no-project\"; exit 0; }; B=\"$P/$PROJ/branches\"; BRJSON=$(get \"$B\"); BR=$(printf %s \"$BRJSON\" | id1); if [ -z \"$BR\" ]; then BR=$(post \"$B\" '{\"name\":\"production\"}' | id1); [ -n \"$BR\" ] || { echo \"pg_port=branch-failed\"; exit 0; }; curl -fsS -X PUT \"$B/$BR/password\" -H \"$J\" -H \"$A\" -d \"{\\\"password\\\":\\\"$PG_PASSWORD\\\"}\" >/dev/null 2>&1 || true; fi; PORT=$(printf %s \"$BRJSON\" | port1); [ -n \"$PORT\" ] || PORT=$(post \"$B/$BR/endpoint\" '' | port1); echo \"pg_port=${PORT:-unstarted}\"",
+          "capture": "pgPort",
+          "capturePattern": "pg_port=([0-9]+)",
+          "persistAs": {
+            "key": "NEOND_PG_PORT"
+          },
+          "once": true,
+          "phase": "post-ready",
+          "readiness": {
+            "test": "curl -fsS http://127.0.0.1:3000/api/auth/setup",
+            "interval": 5000,
+            "retries": 60
+          }
+        }
+      ],
+      "connection": {
+        "title": "Open the Neon console",
+        "description": "Sign in to the console to manage projects and branches. The install pre-creates the admin account plus a `production` branch with a running endpoint, so the Postgres URL below works immediately.",
+        "guide": {
+          "intro": "You get a Neon console for branching plus a normal Postgres connection string for the first branch.",
+          "useHint": "Each branch gets its own endpoint on its own port. Create a branch in the console, press Start endpoint, and copy that branch's connection string — six host ports (55432-55437) are published for endpoints, which is three concurrent branches.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "console",
+            "label": "Neon console",
+            "source": "publicUrl:neond",
+            "kind": "url",
+            "recommended": true,
+            "help": "Sign in with the admin email and password below."
+          },
+          {
+            "id": "adminEmail",
+            "label": "Admin email",
+            "source": "env:neond:ADMIN_EMAIL",
+            "help": "The instance admin. Sign-up is closed once this account exists."
+          },
+          {
+            "id": "adminPassword",
+            "label": "Admin password",
+            "source": "env:neond:ADMIN_PASSWORD",
+            "secret": true
+          },
+          {
+            "id": "dbUrl",
+            "label": "Database URL",
+            "source": "template:postgresql://postgres:{{env:neond:PG_PASSWORD}}@{{host}}:{{env:neond:NEOND_PG_PORT}}/postgres?sslmode=require",
+            "secret": true,
+            "envKey": "DATABASE_URL",
+            "help": "The `production` branch endpoint. Neon assigns each endpoint its own port, so if this shows no port the endpoint has not started yet — open the console and press Start endpoint, then read the connection string there."
+          }
+        ],
+        "firstLogin": {
+          "note": "The admin account is created during install — use the email and password above. First boot initialises two embedded Postgres instances and can take a couple of minutes after a ~1.2 GB image pull.\n\nTwo things worth knowing, both upstream behaviour: if the console shows a branch as running but connections fail, stop and start that endpoint from the console — restarting the container can leave a stale compute lock behind while the API still reports it healthy. And if the container is killed hard (out of memory, power loss) it can refuse to boot with \"lease already held\"; delete neon_daemon_data/.lock inside the app's volume while nothing is running. An ordinary redeploy is safe — it shuts down gracefully and releases the lock."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "neond",
+          "port": 3000,
+          "label": "Console",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": false,
+      "minEngine": "0.6.6",
+      "minResources": {
+        "memoryMb": 16384,
+        "cpuCores": 4
+      },
+      "id": "posthog",
+      "name": "PostHog",
+      "description": "Self-hosted PostHog — product analytics, session replay, and feature flags, with real event ingestion. This mirrors PostHog's own hobby topology: a Caddy path router in front of the Django app, the Rust capture/flags/hypercache/persons services, the Node ingestion consumers, ClickHouse + Kafka + Postgres + Redis + Valkey + S3. Heavy: 21 containers, roughly 4 vCPU / 16 GB RAM and 30+ GB disk. PostHog ships no tagged releases for self-hosting and rebuilds `latest` hourly, so this tracks a moving upstream.",
+      "repository": "https://github.com/PostHog/posthog",
+      "kind": "template",
+      "logo": "posthog",
+      "category": "analytics",
+      "tags": [
+        "analytics",
+        "product-analytics",
+        "events",
+        "session-replay",
+        "feature-flags"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "proxy",
+          "image": "caddy:2.10-alpine",
+          "exposed": true,
+          "exposedPort": 80,
+          "routes": [
+            {
+              "port": 80
+            }
+          ],
+          "dependsOn": [
+            "web",
+            "capture",
+            "replay-capture",
+            "feature-flags",
+            "hypercache-server",
+            "plugins",
+            "objectstorage"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget --no-verbose --tries=1 --spider http://127.0.0.1:80/openship-health || exit 1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "60s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "db",
+          "image": "postgres:15.12-alpine",
+          "environment": {
+            "POSTGRES_USER": "posthog",
+            "POSTGRES_DB": "posthog"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "posthog_pgdata:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U posthog"
+            ],
+            "interval": "5s",
+            "timeout": "30s",
+            "retries": 30,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "redis7",
+          "image": "redis:7.2-alpine",
+          "commandArgv": [
+            "redis-server",
+            "--maxmemory-policy",
+            "allkeys-lru",
+            "--maxmemory",
+            "200mb"
+          ],
+          "volumes": [
+            "posthog_redis:/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "redis-cli",
+              "ping"
+            ],
+            "interval": "3s",
+            "timeout": "10s",
+            "retries": 10
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "valkey",
+          "image": "valkey/valkey:8.1-alpine",
+          "commandArgv": [
+            "valkey-server",
+            "--maxmemory-policy",
+            "allkeys-lru",
+            "--maxmemory",
+            "200mb"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "valkey-cli",
+              "ping"
+            ],
+            "interval": "3s",
+            "timeout": "10s",
+            "retries": 10
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "zookeeper",
+          "image": "zookeeper:3.7.0",
+          "environment": {
+            "ZOO_AUTOPURGE_PURGEINTERVAL": "1",
+            "ZOO_AUTOPURGE_SNAPRETAINCOUNT": "3"
+          },
+          "volumes": [
+            "posthog_zk_data:/data",
+            "posthog_zk_datalog:/datalog",
+            "posthog_zk_logs:/logs"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "echo ruok | nc -w 2 localhost 2181 | grep -q imok"
+            ],
+            "interval": "5s",
+            "timeout": "10s",
+            "retries": 20,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "kafka",
+          "image": "apache/kafka:4.1.0",
+          "environment": {
+            "KAFKA_NODE_ID": "1",
+            "KAFKA_PROCESS_ROLES": "broker,controller",
+            "KAFKA_LISTENERS": "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+            "KAFKA_ADVERTISED_LISTENERS": "PLAINTEXT://kafka:9092",
+            "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT",
+            "KAFKA_CONTROLLER_LISTENER_NAMES": "CONTROLLER",
+            "KAFKA_INTER_BROKER_LISTENER_NAME": "PLAINTEXT",
+            "KAFKA_CONTROLLER_QUORUM_VOTERS": "1@kafka:9093",
+            "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
+            "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+            "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR": "1",
+            "KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS": "0",
+            "KAFKA_AUTO_CREATE_TOPICS_ENABLE": "true",
+            "KAFKA_NUM_PARTITIONS": "1",
+            "KAFKA_DEFAULT_REPLICATION_FACTOR": "1",
+            "KAFKA_LOG_RETENTION_HOURS": "1",
+            "KAFKA_LOG_DIRS": "/var/lib/kafka/data"
+          },
+          "volumes": [
+            "posthog_kafka:/var/lib/kafka/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"
+            ],
+            "interval": "5s",
+            "timeout": "10s",
+            "retries": 30,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "clickhouse",
+          "image": "clickhouse/clickhouse-server:26.6.2.158",
+          "dependsOn": [
+            "zookeeper",
+            "kafka"
+          ],
+          "environment": {
+            "CLICKHOUSE_SKIP_USER_SETUP": "1",
+            "KAFKA_HOSTS": "kafka:9092"
+          },
+          "volumes": [
+            "posthog_clickhouse:/var/lib/clickhouse"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"
+            ],
+            "interval": "3s",
+            "timeout": "10s",
+            "retries": 30,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "objectstorage",
+          "image": "chrislusf/seaweedfs:4.29",
+          "environment": {
+            "S3_BUCKET": "posthog,ducklake-dev,ai-blobs"
+          },
+          "volumes": [
+            "posthog_objectstorage:/data"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "web",
+          "image": "posthog/posthog:latest",
+          "commandArgv": [
+            "sh",
+            "-c",
+            "./bin/migrate && exec ./bin/docker-server"
+          ],
+          "dependsOn": [
+            "db",
+            "redis7",
+            "clickhouse",
+            "kafka",
+            "objectstorage",
+            "personhog-router"
+          ],
+          "environment": {
+            "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_DB_WRITER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_DB_READER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PGHOST": "db",
+            "PGUSER": "posthog",
+            "PGPASSWORD": "{{config:POSTGRES_PASSWORD}}",
+            "CLICKHOUSE_HOST": "clickhouse",
+            "CLICKHOUSE_DATABASE": "posthog",
+            "CLICKHOUSE_SECURE": "false",
+            "CLICKHOUSE_VERIFY": "false",
+            "CLICKHOUSE_API_USER": "api",
+            "CLICKHOUSE_API_PASSWORD": "apipass",
+            "CLICKHOUSE_APP_USER": "app",
+            "CLICKHOUSE_APP_PASSWORD": "apppass",
+            "CLICKHOUSE_BILLING_USER": "billing",
+            "CLICKHOUSE_BILLING_PASSWORD": "billingpass",
+            "CLICKHOUSE_DICT_READER_USER": "dict_reader",
+            "CLICKHOUSE_DICT_READER_PASSWORD": "dictreaderpass",
+            "CLICKHOUSE_LOGS_CLUSTER_HOST": "clickhouse",
+            "CLICKHOUSE_LOGS_CLUSTER_SECURE": "false",
+            "REDIS_URL": "redis://redis7:6379/",
+            "KAFKA_HOSTS": "kafka",
+            "DEPLOYMENT": "hobby",
+            "SECRET_KEY": "{{config:POSTHOG_SECRET}}",
+            "SITE_URL": "{{publicUrl:proxy}}",
+            "IS_BEHIND_PROXY": "true",
+            "DISABLE_SECURE_SSL_REDIRECT": "true",
+            "OTEL_SDK_DISABLED": "true",
+            "OPT_OUT_CAPTURE": "false",
+            "FLAGS_REDIS_ENABLED": "false",
+            "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags:3001",
+            "CDP_API_URL": "http://plugins:6738",
+            "RECORDING_API_URL": "http://recording-api:6738",
+            "PERSONHOG_ADDR": "personhog-router:50052",
+            "PERSONHOG_ENABLED": "true",
+            "OBJECT_STORAGE_ENABLED": "true",
+            "OBJECT_STORAGE_ENDPOINT": "http://objectstorage:8333",
+            "OBJECT_STORAGE_PUBLIC_ENDPOINT": "{{publicUrl:proxy}}",
+            "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+            "OBJECT_STORAGE_BUCKET": "posthog",
+            "OBJECT_STORAGE_ACCESS_KEY_ID": "posthog",
+            "OBJECT_STORAGE_SECRET_ACCESS_KEY": "posthog",
+            "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+            "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+            "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "PERSONS_DB_WRITER_URL",
+            "PERSONS_DB_READER_URL",
+            "PGPASSWORD",
+            "SECRET_KEY"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "worker",
+          "image": "posthog/posthog:latest",
+          "commandArgv": [
+            "./bin/docker-worker-celery",
+            "--with-scheduler"
+          ],
+          "dependsOn": [
+            "db",
+            "redis7",
+            "clickhouse",
+            "kafka",
+            "objectstorage",
+            "web",
+            "personhog-router"
+          ],
+          "environment": {
+            "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_DB_WRITER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_DB_READER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PGHOST": "db",
+            "PGUSER": "posthog",
+            "PGPASSWORD": "{{config:POSTGRES_PASSWORD}}",
+            "CLICKHOUSE_HOST": "clickhouse",
+            "CLICKHOUSE_DATABASE": "posthog",
+            "CLICKHOUSE_SECURE": "false",
+            "CLICKHOUSE_VERIFY": "false",
+            "CLICKHOUSE_API_USER": "api",
+            "CLICKHOUSE_API_PASSWORD": "apipass",
+            "CLICKHOUSE_APP_USER": "app",
+            "CLICKHOUSE_APP_PASSWORD": "apppass",
+            "CLICKHOUSE_BILLING_USER": "billing",
+            "CLICKHOUSE_BILLING_PASSWORD": "billingpass",
+            "CLICKHOUSE_DICT_READER_USER": "dict_reader",
+            "CLICKHOUSE_DICT_READER_PASSWORD": "dictreaderpass",
+            "CLICKHOUSE_LOGS_CLUSTER_HOST": "clickhouse",
+            "CLICKHOUSE_LOGS_CLUSTER_SECURE": "false",
+            "REDIS_URL": "redis://redis7:6379/",
+            "KAFKA_HOSTS": "kafka",
+            "DEPLOYMENT": "hobby",
+            "POSTHOG_SKIP_MIGRATION_CHECKS": "1",
+            "SECRET_KEY": "{{config:POSTHOG_SECRET}}",
+            "SITE_URL": "{{publicUrl:proxy}}",
+            "IS_BEHIND_PROXY": "true",
+            "DISABLE_SECURE_SSL_REDIRECT": "true",
+            "OTEL_SDK_DISABLED": "true",
+            "FLAGS_REDIS_ENABLED": "false",
+            "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags:3001",
+            "CDP_API_URL": "http://plugins:6738",
+            "RECORDING_API_URL": "http://recording-api:6738",
+            "PERSONHOG_ADDR": "personhog-router:50052",
+            "PERSONHOG_ENABLED": "true",
+            "OBJECT_STORAGE_ENABLED": "true",
+            "OBJECT_STORAGE_ENDPOINT": "http://objectstorage:8333",
+            "OBJECT_STORAGE_PUBLIC_ENDPOINT": "{{publicUrl:proxy}}",
+            "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+            "OBJECT_STORAGE_BUCKET": "posthog",
+            "OBJECT_STORAGE_ACCESS_KEY_ID": "posthog",
+            "OBJECT_STORAGE_SECRET_ACCESS_KEY": "posthog",
+            "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+            "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+            "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "PERSONS_DB_WRITER_URL",
+            "PERSONS_DB_READER_URL",
+            "PGPASSWORD",
+            "SECRET_KEY"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "capture",
+          "image": "ghcr.io/posthog/posthog/capture:master",
+          "dependsOn": [
+            "kafka",
+            "redis7"
+          ],
+          "environment": {
+            "ADDRESS": "0.0.0.0:3000",
+            "CAPTURE_MODE": "events",
+            "KAFKA_TOPIC": "events_plugin_ingestion",
+            "KAFKA_HOSTS": "kafka:9092",
+            "REDIS_URL": "redis://redis7:6379/",
+            "RUST_LOG": "info,rdkafka=warn",
+            "CAPTURE_V1_SINKS": "msk",
+            "CAPTURE_V1_SINK_MSK_KAFKA_HOSTS": "kafka:9092",
+            "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_MAIN": "events_plugin_ingestion",
+            "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_HISTORICAL": "events_plugin_ingestion_historical",
+            "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_OVERFLOW": "events_plugin_ingestion_overflow",
+            "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_DLQ": "events_plugin_ingestion_dlq",
+            "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_EXCEPTION": "ingestion-errortracking-main",
+            "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_HEATMAP": "heatmaps_ingestion",
+            "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_CLIENT_INGESTION_WARNING": "ingestion-clientwarnings-main-1"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "replay-capture",
+          "image": "ghcr.io/posthog/posthog/capture:master",
+          "dependsOn": [
+            "kafka",
+            "redis7"
+          ],
+          "environment": {
+            "ADDRESS": "0.0.0.0:3000",
+            "CAPTURE_MODE": "recordings",
+            "KAFKA_TOPIC": "session_recording_snapshot_item_events",
+            "KAFKA_HOSTS": "kafka:9092",
+            "REDIS_URL": "redis://redis7:6379/",
+            "RUST_LOG": "info,rdkafka=warn"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "ingestion-general",
+          "image": "posthog/posthog-node:latest",
+          "commandArgv": [
+            "node",
+            "nodejs/dist/index.js"
+          ],
+          "dependsOn": [
+            "db",
+            "redis7",
+            "clickhouse",
+            "kafka",
+            "objectstorage",
+            "personhog-router"
+          ],
+          "environment": {
+            "PLUGIN_SERVER_MODE": "ingestion-v2-combined",
+            "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "BEHAVIORAL_COHORTS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "KAFKA_HOSTS": "kafka:9092",
+            "REDIS_URL": "redis://redis7:6379/",
+            "CLICKHOUSE_HOST": "clickhouse",
+            "CLICKHOUSE_DATABASE": "posthog",
+            "CLICKHOUSE_SECURE": "false",
+            "CLICKHOUSE_VERIFY": "false",
+            "COOKIELESS_REDIS_HOST": "redis7",
+            "COOKIELESS_REDIS_PORT": "6379",
+            "CDP_REDIS_HOST": "redis7",
+            "CDP_REDIS_PORT": "6379",
+            "CDP_VALKEY_HOST": "valkey",
+            "CDP_VALKEY_PORT": "6379",
+            "PERSONHOG_ADDR": "personhog-router:50052",
+            "PERSONHOG_ENABLED": "true",
+            "AI_BLOB_S3_BUCKET": "ai-blobs",
+            "AI_BLOB_S3_PREFIX": "aio/",
+            "AI_BLOB_S3_ENDPOINT": "http://objectstorage:8333",
+            "AI_BLOB_S3_REGION": "us-east-1",
+            "AI_BLOB_S3_ACCESS_KEY_ID": "any",
+            "AI_BLOB_S3_SECRET_ACCESS_KEY": "any",
+            "AI_BLOB_OFFLOAD_TEAMS": "*"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "PERSONS_DATABASE_URL",
+            "BEHAVIORAL_COHORTS_DATABASE_URL"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "ingestion-sessionreplay",
+          "image": "posthog/posthog-node:latest",
+          "commandArgv": [
+            "node",
+            "nodejs/dist/index.js"
+          ],
+          "dependsOn": [
+            "db",
+            "redis7",
+            "kafka",
+            "objectstorage"
+          ],
+          "environment": {
+            "PLUGIN_SERVER_MODE": "recordings-blob-ingestion-v2",
+            "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "KAFKA_HOSTS": "kafka:9092",
+            "REDIS_URL": "redis://redis7:6379/",
+            "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+            "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+            "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any",
+            "SESSION_RECORDING_V2_S3_TIMEOUT_MS": "120000",
+            "CDP_REDIS_HOST": "redis7",
+            "CDP_REDIS_PORT": "6379",
+            "CDP_VALKEY_HOST": "valkey",
+            "CDP_VALKEY_PORT": "6379"
+          },
+          "secretEnv": [
+            "DATABASE_URL"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "recording-api",
+          "image": "posthog/posthog-node:latest",
+          "commandArgv": [
+            "node",
+            "nodejs/dist/index.js"
+          ],
+          "dependsOn": [
+            "db",
+            "redis7",
+            "clickhouse"
+          ],
+          "environment": {
+            "PLUGIN_SERVER_MODE": "recording-api",
+            "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "REDIS_URL": "redis://redis7:6379/",
+            "CLICKHOUSE_HOST": "clickhouse",
+            "CLICKHOUSE_DATABASE": "posthog",
+            "CLICKHOUSE_SECURE": "false",
+            "CLICKHOUSE_VERIFY": "false",
+            "SESSION_RECORDING_API_REDIS_HOST": "redis7",
+            "SESSION_RECORDING_API_REDIS_PORT": "6379",
+            "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+            "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+            "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any",
+            "CDP_REDIS_HOST": "redis7",
+            "CDP_REDIS_PORT": "6379",
+            "CDP_VALKEY_HOST": "valkey",
+            "CDP_VALKEY_PORT": "6379"
+          },
+          "secretEnv": [
+            "DATABASE_URL"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "feature-flags",
+          "image": "ghcr.io/posthog/posthog/feature-flags:master",
+          "dependsOn": [
+            "db",
+            "redis7"
+          ],
+          "environment": {
+            "ADDRESS": "0.0.0.0:3001",
+            "WRITE_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "READ_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_WRITE_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_READ_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "REDIS_URL": "redis://redis7:6379/",
+            "COOKIELESS_REDIS_HOST": "redis7",
+            "COOKIELESS_REDIS_PORT": "6379",
+            "MAXMIND_DB_PATH": "/app/share/GeoLite2-City.mmdb",
+            "RUST_LOG": "info"
+          },
+          "secretEnv": [
+            "WRITE_DATABASE_URL",
+            "READ_DATABASE_URL",
+            "PERSONS_WRITE_DATABASE_URL",
+            "PERSONS_READ_DATABASE_URL"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "curl",
+              "-f",
+              "http://localhost:3001/_readiness"
+            ],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "hypercache-server",
+          "image": "ghcr.io/posthog/posthog/hypercache-server:master",
+          "dependsOn": [
+            "redis7"
+          ],
+          "environment": {
+            "ADDRESS": "0.0.0.0:3002",
+            "REDIS_URL": "redis://redis7:6379/",
+            "RUST_LOG": "info"
+          },
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "curl",
+              "-f",
+              "http://localhost:3002/_readiness"
+            ],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "personhog-replica",
+          "image": "ghcr.io/posthog/posthog/personhog-replica:master",
+          "dependsOn": [
+            "db"
+          ],
+          "environment": {
+            "GRPC_ADDRESS": "0.0.0.0:50051",
+            "PRIMARY_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "METRICS_PORT": "9100",
+            "RUST_LOG": "info"
+          },
+          "secretEnv": [
+            "PRIMARY_DATABASE_URL"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "personhog-router",
+          "image": "ghcr.io/posthog/posthog/personhog-router:master",
+          "dependsOn": [
+            "personhog-replica"
+          ],
+          "environment": {
+            "GRPC_ADDRESS": "0.0.0.0:50052",
+            "REPLICA_URL": "http://personhog-replica:50051",
+            "BACKEND_TIMEOUT_MS": "5000",
+            "METRICS_PORT": "9101",
+            "RUST_LOG": "info"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "property-defs-rs",
+          "image": "ghcr.io/posthog/posthog/property-defs-rs:master",
+          "dependsOn": [
+            "db",
+            "kafka"
+          ],
+          "environment": {
+            "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "KAFKA_HOSTS": "kafka:9092",
+            "SKIP_WRITES": "false",
+            "SKIP_READS": "false",
+            "FILTER_MODE": "opt-out",
+            "RUST_LOG": "info"
+          },
+          "secretEnv": [
+            "DATABASE_URL"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "plugins",
+          "image": "posthog/posthog-node:latest",
+          "commandArgv": [
+            "node",
+            "nodejs/dist/index.js"
+          ],
+          "dependsOn": [
+            "db",
+            "redis7",
+            "valkey",
+            "clickhouse",
+            "kafka",
+            "objectstorage"
+          ],
+          "environment": {
+            "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "PERSONS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "BEHAVIORAL_COHORTS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "CYCLOTRON_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+            "KAFKA_HOSTS": "kafka:9092",
+            "REDIS_URL": "redis://redis7:6379/",
+            "CLICKHOUSE_HOST": "clickhouse",
+            "CLICKHOUSE_DATABASE": "posthog",
+            "CLICKHOUSE_SECURE": "false",
+            "CLICKHOUSE_VERIFY": "false",
+            "SITE_URL": "{{publicUrl:proxy}}",
+            "SECRET_KEY": "{{config:POSTHOG_SECRET}}",
+            "CDP_REDIS_HOST": "redis7",
+            "CDP_REDIS_PORT": "6379",
+            "CDP_VALKEY_HOST": "valkey",
+            "CDP_VALKEY_PORT": "6379",
+            "OBJECT_STORAGE_ENABLED": "true",
+            "OBJECT_STORAGE_ENDPOINT": "http://objectstorage:8333",
+            "OBJECT_STORAGE_PUBLIC_ENDPOINT": "{{publicUrl:proxy}}",
+            "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+            "OBJECT_STORAGE_BUCKET": "posthog",
+            "OBJECT_STORAGE_ACCESS_KEY_ID": "any",
+            "OBJECT_STORAGE_SECRET_ACCESS_KEY": "any"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "PERSONS_DATABASE_URL",
+            "BEHAVIORAL_COHORTS_DATABASE_URL",
+            "CYCLOTRON_DATABASE_URL",
+            "SECRET_KEY"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "db",
+          "label": "Database password",
+          "help": "Auto-generated. The Postgres password every PostHog service uses.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "POSTHOG_SECRET",
+          "service": "web",
+          "label": "Django secret key",
+          "help": "Auto-generated. Signs sessions and cookies (SECRET_KEY).",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "files": [
+        {
+          "service": "proxy",
+          "path": "/etc/caddy/Caddyfile",
+          "content": "{\n\tservers {\n\t\ttrusted_proxies static 127.0.0.1/32 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16\n\t}\n}\n\n# Host-less site address on purpose. PostHog's own default is\n# `http://localhost:8000`, which compiles to a Host matcher — behind Openship's\n# edge a foreign Host then returns an empty HTTP 200 instead of a 404, so every\n# ingestion POST would look successful while the events were silently dropped.\n# `:80` also emits no automatic_https and no tls app, so Caddy never tries ACME.\n:80 {\n\t# Health target for the container healthcheck. Deliberately answered by\n\t# Caddy itself: proxying /_health through to Django would report unhealthy\n\t# for the whole first-boot migration window and raise a false incident.\n\t@openship-health {\n\t\tpath /openship-health\n\t}\n\n\thandle @openship-health {\n\t\trespond \"ok\" 200\n\t}\n\n\t@replay-capture {\n\t\tpath /s\n\t\tpath /s/\n\t\tpath /s/*\n\t}\n\n\t@capture {\n\t\tpath /e\n\t\tpath /e/\n\t\tpath /e/*\n\t\tpath /i/v0\n\t\tpath /i/v0/\n\t\tpath /i/v0/*\n\t\tpath /i/v1/analytics/events\n\t\tpath /i/v1/analytics/events/\n\t\tpath /batch\n\t\tpath /batch/\n\t\tpath /batch/*\n\t\tpath /capture\n\t\tpath /capture/\n\t\tpath /capture/*\n\t}\n\n\t@flags {\n\t\tpath /flags\n\t\tpath /flags/\n\t\tpath /flags/*\n\t\tpath /api/feature_flag/local_evaluation\n\t\tpath /api/feature_flag/local_evaluation/\n\t\tpath /api/feature_flag/local_evaluation/*\n\t}\n\n\t@surveys {\n\t\tpath /surveys\n\t\tpath /surveys/\n\t\tpath /api/surveys\n\t\tpath /api/surveys/\n\t}\n\n\t@remote-config {\n\t\tpath /array/*\n\t}\n\n\t@webhooks {\n\t\tpath /public/webhooks\n\t\tpath /public/webhooks/\n\t\tpath /public/webhooks/*\n\t\tpath /public/m/\n\t\tpath /public/m/*\n\t}\n\n\t@objectstorage {\n\t\tpath /posthog\n\t\tpath /posthog/\n\t\tpath /posthog/*\n\t}\n\n\thandle @capture {\n\t\treverse_proxy capture:3000\n\t}\n\n\thandle @replay-capture {\n\t\treverse_proxy replay-capture:3000\n\t}\n\n\thandle @flags {\n\t\treverse_proxy feature-flags:3001\n\t}\n\n\thandle @surveys {\n\t\treverse_proxy hypercache-server:3002\n\t}\n\n\thandle @remote-config {\n\t\treverse_proxy hypercache-server:3002\n\t}\n\n\thandle @webhooks {\n\t\treverse_proxy plugins:6738\n\t}\n\n\thandle @objectstorage {\n\t\treverse_proxy objectstorage:8333\n\t}\n\n\thandle {\n\t\treverse_proxy web:8000\n\t}\n}\n"
+        },
+        {
+          "service": "clickhouse",
+          "path": "/etc/clickhouse-server/config.d/openship-posthog.xml",
+          "content": "<clickhouse>\n  <!-- PostHog creates every table as ReplicatedMergeTree ON CLUSTER, so the\n       macros, the clusters and ZooKeeper must all resolve or migrate_clickhouse\n       cannot create a single table. Shipped as a config.d overlay rather than a\n       replacement config.xml so the image's own defaults still apply. -->\n  <zookeeper>\n    <node>\n      <host>zookeeper</host>\n      <port>2181</port>\n    </node>\n  </zookeeper>\n  <macros>\n    <shard>01</shard>\n    <replica>ch1</replica>\n  </macros>\n  <distributed_ddl>\n    <path>/clickhouse/task_queue/ddl</path>\n  </distributed_ddl>\n  <!-- ~95 Kafka-engine tables each hold a background schedule slot. -->\n  <background_schedule_pool_size>256</background_schedule_pool_size>\n  <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>\n  <remote_servers>\n    <posthog><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog>\n    <posthog_single_shard><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_single_shard>\n    <posthog_migrations><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_migrations>\n    <posthog_writable><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_writable>\n    <posthog_primary_replica><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_primary_replica>\n    <ai_events><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></ai_events>\n    <aux><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></aux>\n    <ops><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></ops>\n    <sessions><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></sessions>\n  </remote_servers>\n  <!-- PostHog's Kafka tables reference a named collection, not a broker list. -->\n  <named_collections>\n    <msk_cluster><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></msk_cluster>\n    <warpstream_ingestion><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_ingestion>\n    <warpstream_calculated_events><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_calculated_events>\n    <warpstream_replay><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_replay>\n    <warpstream_shared><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_shared>\n    <warpstream_cyclotron><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_cyclotron>\n    <warpstream_logs><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_logs>\n    <warpstream_traces><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_traces>\n  </named_collections>\n</clickhouse>\n"
+        },
+        {
+          "service": "clickhouse",
+          "path": "/etc/clickhouse-server/users.d/openship-posthog.xml",
+          "content": "<clickhouse>\n  <!-- CLICKHOUSE_SKIP_USER_SETUP=1 means the image creates no users, but the\n       Django app connects as api/app/billing/dict_reader on different query\n       paths. Passwords match the values the app is configured with; ClickHouse\n       is never published outside the project network. -->\n  <profiles>\n    <default>\n      <max_memory_usage>10000000000</max_memory_usage>\n      <use_uncompressed_cache>0</use_uncompressed_cache>\n      <load_balancing>random</load_balancing>\n    </default>\n  </profiles>\n  <users>\n    <default>\n      <password></password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n      <access_management>1</access_management>\n    </default>\n    <api>\n      <password>apipass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </api>\n    <app>\n      <password>apppass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </app>\n    <billing>\n      <password>billingpass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </billing>\n    <dict_reader>\n      <password>dictreaderpass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </dict_reader>\n  </users>\n  <quotas>\n    <default><interval><duration>3600</duration></interval></default>\n  </quotas>\n</clickhouse>\n"
+        }
+      ],
+      "prepare": [
+        {
+          "service": "kafka",
+          "title": "Create Kafka topics",
+          "description": "Pre-creates the ingestion topics the Node consumers verify at startup.",
+          "command": "for t in events_plugin_ingestion events_plugin_ingestion_historical events_plugin_ingestion_overflow events_plugin_ingestion_dlq events_plugin_ingestion_ai events_plugin_ingestion_async session_recording_snapshot_item_events clickhouse_events_json clickhouse_ai_events_json clickhouse_heatmap_events clickhouse_flag_evaluations clickhouse_ingestion_warnings clickhouse_groups clickhouse_person clickhouse_person_distinct_id clickhouse_person_distinct_id2 clickhouse_person_overrides clickhouse_app_metrics2 clickhouse_session_replay_events clickhouse_session_recording_events clickhouse_tophog heatmaps_ingestion ingestion-clientwarnings-main-1 ingestion-errortracking-main log_entries plugin_log_entries events_dead_letter_queue; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic \"$t\" --partitions 1 --replication-factor 1 >/dev/null 2>&1 || true; done; echo done",
+          "capture": "topics",
+          "phase": "post-ready",
+          "readiness": {
+            "test": "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092",
+            "interval": 3000,
+            "retries": 30
+          }
+        }
+      ],
+      "connection": {
+        "title": "Open PostHog",
+        "description": "Open the PostHog UI and create your admin account on first load. The same hostname serves the UI and the event-ingestion endpoints, so an SDK pointed at this URL works with no extra configuration.",
+        "guide": {
+          "intro": "PostHog runs its own analytics UI — create the admin account when you first open it, then use the project API key it gives you in your SDK.",
+          "useHint": "Point your SDK's host at this URL. Caddy routes /e, /capture, /batch and /i/* to the capture service, /s/* to session replay, /flags to feature flags, and everything else to the app.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "ui",
+            "label": "PostHog",
+            "source": "publicUrl:proxy",
+            "kind": "url",
+            "recommended": true,
+            "help": "PostHog has no default login — the first visitor creates the admin account. This host also receives your events."
+          }
+        ],
+        "firstLogin": {
+          "note": "PostHog ships no default credentials — open the URL above and sign up to create the first (admin) account. First boot runs database migrations and can take several minutes before the UI answers."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "proxy",
+          "port": 80,
+          "label": "PostHog",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": false,
+      "minEngine": "0.6.6",
+      "id": "redis",
+      "name": "Valkey (Redis)",
+      "description": "In-memory data store for caching, sessions, rate limits, and queues — Valkey, the open-source Redis fork. Drop-in Redis-compatible: point any redis client at it. Ships with RedisInsight, a browser UI that arrives already connected to this instance.",
+      "repository": "https://github.com/valkey-io/valkey",
+      "kind": "template",
+      "logo": "valkey",
+      "category": "database",
+      "tags": [
+        "cache",
+        "redis",
+        "valkey",
+        "key-value",
+        "queue",
+        "gui"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "valkey",
+          "image": "valkey/valkey:8.1-alpine",
+          "commandArgv": [
+            "valkey-server"
+          ],
+          "environment": {
+            "VALKEY_EXTRA_FLAGS": "--requirepass {{config:VALKEY_PASSWORD}} --appendonly yes --appendfsync everysec --save 300 100"
+          },
+          "secretEnv": [
+            "VALKEY_EXTRA_FLAGS"
+          ],
+          "volumes": [
+            "valkey_data:/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "valkey-cli ping 2>&1 | grep -q NOAUTH && valkey-cli --no-auth-warning -a \"$VALKEY_PASSWORD\" ping | grep -q PONG"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "redisinsight",
+          "image": "redis/redisinsight:3.8.0",
+          "exposedPort": 5540,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 5540
+            }
+          ],
+          "dependsOn": [
+            "valkey"
+          ],
+          "environment": {
+            "RI_ACCEPT_TERMS_AND_CONDITIONS": "true",
+            "RI_REDIS_HOST": "valkey",
+            "RI_REDIS_PORT": "6379",
+            "RI_REDIS_DB": "0",
+            "RI_REDIS_ALIAS": "Valkey (this app)",
+            "RI_REDIS_PASSWORD": "{{config:VALKEY_PASSWORD}}"
+          },
+          "secretEnv": [
+            "RI_REDIS_PASSWORD"
+          ],
+          "volumes": [
+            "redisinsight_data:/data"
+          ],
+          "restart": "unless-stopped",
+          "ports": [
+            "8219:5540"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "key": "VALKEY_PASSWORD",
+          "service": "valkey",
+          "label": "Password",
+          "help": "Auto-generated. Required by every client (Valkey's `requirepass` auth). The bundled browser UI is pre-loaded with it.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Valkey",
+        "description": "A Redis-compatible endpoint on your project's private network. Point any redis client at the URL below — it already carries the password.",
+        "guide": {
+          "intro": "Your project gets a Redis-compatible cache plus a browser UI that is already connected to it.",
+          "useHint": "Read `process.env.REDIS_URL` in your code — it's set the next time your project deploys.",
+          "defaultMode": "internal"
+        },
+        "outputs": [
+          {
+            "id": "ui",
+            "label": "Browser UI",
+            "source": "publicUrl:redisinsight",
+            "kind": "url",
+            "recommended": true,
+            "help": "RedisInsight, already pointed at this instance — no connection details to enter. It has NO login of its own, so anyone who can reach this address can read and write your data: keep it on the published port (reachable through an SSH tunnel) unless you deliberately put it on a domain you protect.",
+            "width": "full"
+          },
+          {
+            "id": "url",
+            "label": "Connection URL",
+            "source": "template:redis://:{{env:valkey:VALKEY_PASSWORD}}@valkey:6379",
+            "sourceLabel": "Internal",
+            "service": "valkey",
+            "secret": true,
+            "envKey": "REDIS_URL",
+            "recommended": true,
+            "help": "Redis-protocol URL with the password embedded, on the project's private network. Port 6379 is not published to the internet — bind this app into another project to use it, or reach it from the server with `docker exec`."
+          },
+          {
+            "id": "host",
+            "label": "Host",
+            "source": "template:valkey",
+            "service": "valkey",
+            "envKey": "REDIS_HOST",
+            "width": "half"
+          },
+          {
+            "id": "port",
+            "label": "Port",
+            "source": "template:6379",
+            "service": "valkey",
+            "envKey": "REDIS_PORT",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:valkey:VALKEY_PASSWORD",
+            "secret": true,
+            "envKey": "REDIS_PASSWORD",
+            "width": "half"
+          }
+        ]
+      },
+      "provides": [
+        {
+          "id": "redis",
+          "outputRefs": [
+            "url"
+          ],
+          "category": "database"
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "redisinsight",
+          "port": 5540,
+          "label": "Browser UI",
+          "kind": "http",
+          "scope": "public"
+        },
+        {
+          "service": "valkey",
+          "port": 6379,
+          "label": "Redis / Valkey (private)",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "umami",
+      "name": "Umami",
+      "description": "Privacy-friendly, cookie-free web analytics — a self-hosted alternative to Google Analytics. Add one script tag to your site and see traffic in a clean dashboard you own.",
+      "kind": "template",
+      "logo": "umami",
+      "category": "analytics",
+      "tags": [
+        "analytics",
+        "web-analytics",
+        "privacy",
+        "statistics"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "umami",
+          "image": "ghcr.io/umami-software/umami:postgresql-v2.19.0",
+          "exposedPort": 3000,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 3000
+            }
+          ],
+          "dependsOn": [
+            "umami-db"
+          ],
+          "environment": {
+            "DATABASE_TYPE": "postgresql",
+            "DATABASE_URL": "postgresql://umami:{{config:POSTGRES_PASSWORD}}@umami-db:5432/umami"
+          },
+          "secretEnv": [
+            "DATABASE_URL"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O - http://127.0.0.1:3000/api/heartbeat 2>&1 | grep -q ok"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 10,
+            "startPeriod": "30s"
+          },
+          "restart": "unless-stopped",
+          "ports": [
+            "3011:3000"
+          ]
+        },
+        {
+          "name": "umami-db",
+          "image": "postgres:16-alpine",
+          "environment": {
+            "POSTGRES_DB": "umami",
+            "POSTGRES_USER": "umami"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "umami_db:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U umami -d umami"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "umami-db",
+          "label": "Database password",
+          "help": "Auto-generated. The password for Umami's Postgres database.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "APP_SECRET",
+          "service": "umami",
+          "label": "App secret",
+          "help": "Auto-generated. Signs Umami's session tokens — keep it stable.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Umami",
+        "description": "Open the Umami dashboard and sign in, then add your website to get its tracking script.",
+        "guide": {
+          "intro": "Your project gets a self-hosted Umami analytics dashboard.",
+          "useHint": "Sign in, add your website under Settings → Websites, and paste the tracking snippet into your site's <head>."
+        },
+        "firstLogin": {
+          "username": "admin",
+          "password": "umami",
+          "note": "Change this password immediately from Settings → Profile after your first sign-in."
+        },
+        "outputs": [
+          {
+            "id": "dashboard",
+            "label": "Dashboard",
+            "source": "publicUrl:umami",
+            "kind": "url",
+            "envKey": "UMAMI_URL",
+            "recommended": true,
+            "help": "Sign in with the username + password below."
+          }
+        ]
+      },
+      "endpoints": [
+        {
+          "service": "umami",
+          "port": 3000,
+          "label": "Dashboard",
+          "kind": "http"
+        },
+        {
+          "service": "umami-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "unlisted": true,
+      "id": "webmail",
+      "name": "Openship Webmail",
+      "description": "A fast, self-hosted webmail client. Point it at any IMAP/SMTP mailbox — an Openship Mail server, Gmail, Fastmail, or your company's — and read, search and send from a clean UI on your own domain. Nothing is stored outside your server.",
+      "kind": "template",
+      "logo": "webmail",
+      "category": "mail",
+      "tags": [
+        "mail",
+        "webmail",
+        "email",
+        "imap",
+        "smtp"
+      ],
+      "framework": "docker-compose",
+      "repository": "https://github.com/Mail-0/Zero",
+      "services": [
+        {
+          "name": "webmail",
+          "image": "ghcr.io/oblien/openship-webmail:latest",
+          "exposedPort": 4080,
+          "exposed": true,
+          "volumes": [
+            "webmail_data:/data"
+          ],
+          "environment": {
+            "TRUSTED_ORIGINS": "{{publicUrl:webmail}}"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "SESSION_ENCRYPTION_KEY",
+          "service": "webmail",
+          "label": "Session encryption key",
+          "help": "Auto-generated (32 random bytes, hex). Encrypts each signed-in user's IMAP password at rest. Changing it signs everyone out; they just sign in again.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "BRANDING_ADMIN_TOKEN",
+          "service": "webmail",
+          "label": "Branding admin token",
+          "help": "Auto-generated. Lets Openship write this webmail's white-label login page (logo, name, colors) over its admin API. Nothing else accepts it.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "backend",
+          "label": "Mail backend",
+          "description": "Which IMAP/SMTP server this webmail talks to. Leave the hosts blank and each address resolves to mail.<its own domain> at sign-in — the convention Openship Mail and iRedMail install. Set them to pin every mailbox to one server. Users can still override host and port on the sign-in screen.",
+          "fields": [
+            {
+              "key": "DEFAULT_IMAP_HOST",
+              "service": "webmail",
+              "label": "IMAP host",
+              "help": "Where mail is read from. Blank → mail.<domain of the address signing in>.",
+              "type": "text",
+              "placeholder": "mail.example.com",
+              "installStep": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "DEFAULT_SMTP_HOST",
+              "service": "webmail",
+              "label": "SMTP host",
+              "help": "Where mail is sent through. Blank → mail.<domain of the address signing in>.",
+              "type": "text",
+              "placeholder": "mail.example.com",
+              "installStep": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "DEFAULT_IMAP_PORT",
+              "service": "webmail",
+              "label": "IMAP port",
+              "help": "Blank → 993 (IMAPS). TLS is always required.",
+              "type": "number",
+              "integer": true,
+              "min": 1,
+              "max": 65535,
+              "placeholder": "993",
+              "advanced": true,
+              "installStep": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "DEFAULT_SMTP_PORT",
+              "service": "webmail",
+              "label": "SMTP port",
+              "help": "Blank → 587 (submission, STARTTLS). Use 465 for implicit TLS — the port alone selects the mode, and TLS is required either way.",
+              "type": "number",
+              "integer": true,
+              "min": 1,
+              "max": 65535,
+              "placeholder": "587",
+              "advanced": true,
+              "installStep": true,
+              "requiresRedeploy": true
+            }
+          ]
+        },
+        {
+          "id": "access",
+          "label": "Access",
+          "description": "Where this webmail is reached from. Filled in from the hostname you route it on — override it only when something in front of it changes the origin the browser sees.",
+          "fields": [
+            {
+              "key": "TRUSTED_ORIGINS",
+              "service": "webmail",
+              "label": "Trusted origins",
+              "help": "Comma-separated origins allowed to sign in — scheme + host, no path. Defaults to this app's own public URL. Set it when the app is served through a proxy Openship doesn't route, e.g. an Openship Mail server fronting mail.<domain> for a cloud deploy.",
+              "type": "text",
+              "placeholder": "https://mail.example.com",
+              "advanced": true,
+              "requiresRedeploy": true
+            }
+          ]
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Sign in to Webmail",
+        "description": "Open the webmail URL and sign in with a full email address and its mailbox password. There is no separate account to create — the mailbox on your IMAP server is the account.",
+        "guide": {
+          "intro": "Your project runs its own webmail client. It holds no mail: every message is read live from IMAP, and only encrypted session credentials and per-user settings live on disk.",
+          "useHint": "Webmail is domain-only by design: sessions use Secure cookies, so sign-in never completes over plain http, and the container publishes nothing to the host — the edge reaches it on loopback. Point a hostname at it and TLS is issued automatically.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "webmail",
+            "label": "Webmail",
+            "source": "publicUrl:webmail",
+            "kind": "url",
+            "envKey": "WEBMAIL_URL",
+            "recommended": true,
+            "help": "Sign in with an email address on your mail server and its mailbox password."
+          }
+        ]
+      },
+      "endpoints": [
+        {
+          "service": "webmail",
+          "port": 4080,
+          "label": "Webmail",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain"
+          ]
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": false,
+      "minEngine": "0.6.6",
+      "id": "clickhouse",
+      "name": "ClickHouse",
+      "description": "The columnar SQL database for analytics — billions of rows scanned per second. Ships with the CH-UI console, so you get a SQL editor, schema browser and dashboards the moment it installs: sign in with the ClickHouse user and password below, no extra setup.",
+      "repository": "https://github.com/ClickHouse/ClickHouse",
+      "kind": "template",
+      "logo": "clickhouse",
+      "category": "database",
+      "tags": [
+        "analytics",
+        "olap",
+        "sql",
+        "columnar",
+        "warehouse",
+        "timeseries"
+      ],
+      "framework": "docker-compose",
+      "minResources": {
+        "memoryMb": 2048
+      },
+      "services": [
+        {
+          "name": "clickhouse",
+          "image": "clickhouse/clickhouse-server:26.3.17.110",
+          "exposedPort": 8123,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 8123
+            }
+          ],
+          "environment": {
+            "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT": "1"
+          },
+          "secretEnv": [
+            "CLICKHOUSE_PASSWORD"
+          ],
+          "volumes": [
+            "clickhouse_data:/var/lib/clickhouse"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8123/ping || exit 1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "30s"
+          },
+          "restart": "unless-stopped",
+          "stopGracePeriod": "60s",
+          "ports": [
+            "8218:8123"
+          ]
+        },
+        {
+          "name": "ch-ui",
+          "image": "ghcr.io/caioricciuti/ch-ui:v2.6.1",
+          "exposedPort": 3488,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 3488
+            }
+          ],
+          "dependsOn": [
+            "clickhouse"
+          ],
+          "environment": {
+            "CLICKHOUSE_URL": "http://clickhouse:8123",
+            "CONNECTION_NAME": "ClickHouse",
+            "APP_URL": "{{publicUrl:ch-ui}}",
+            "DATABASE_PATH": "/app/data/ch-ui.db"
+          },
+          "secretEnv": [
+            "APP_SECRET_KEY"
+          ],
+          "volumes": [
+            "ch_ui_data:/app/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:3488/health || exit 1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 6,
+            "startPeriod": "15s"
+          },
+          "restart": "unless-stopped",
+          "ports": [
+            "8217:3488"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "key": "CLICKHOUSE_USER",
+          "service": "clickhouse",
+          "label": "Database user",
+          "help": "The account the server creates on its first boot. It owns the data and is the sign-in for the console.",
+          "type": "text",
+          "default": "default",
+          "required": true
+        },
+        {
+          "key": "CLICKHOUSE_PASSWORD",
+          "service": "clickhouse",
+          "label": "Password",
+          "help": "Auto-generated. Set on the account at first boot — it is the console sign-in and the credential every SQL client needs. Without it the server would refuse all non-localhost connections.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "CLICKHOUSE_DB",
+          "service": "clickhouse",
+          "label": "First database",
+          "help": "Created on the first boot so you can write a table immediately. More can be added from the console.",
+          "type": "text",
+          "default": "analytics",
+          "required": true
+        },
+        {
+          "key": "APP_SECRET_KEY",
+          "service": "ch-ui",
+          "label": "Console session key",
+          "help": "Auto-generated. Encrypts the ClickHouse credentials the console holds for a signed-in session. Rotating it signs everyone out.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to ClickHouse",
+        "description": "Open the console and sign in with the user and password below — the console talks to ClickHouse over the private project network, so the database itself never has to be public. For your own code, use the DSN.",
+        "guide": {
+          "intro": "Your project gets a ClickHouse server plus a web console for querying it.",
+          "useHint": "Read `process.env.CLICKHOUSE_URL` with `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` (or the single `CLICKHOUSE_DSN`) — set on your next deploy.",
+          "defaultMode": "internal"
+        },
+        "firstLogin": {
+          "username": "default",
+          "note": "The console has no account of its own: sign in with the ClickHouse user above and the generated password from this page. Three wrong tries locks that user out for 15 minutes, so paste the password rather than typing it."
+        },
+        "outputs": [
+          {
+            "id": "console",
+            "label": "Console",
+            "source": "publicUrl:ch-ui",
+            "kind": "url",
+            "recommended": true,
+            "help": "The CH-UI web console — SQL editor, schema browser, saved queries and dashboards. Sign in with the user and password below."
+          },
+          {
+            "id": "httpUrl",
+            "label": "HTTP endpoint",
+            "source": "publicUrl:clickhouse",
+            "sourceLabel": "Public",
+            "variants": [
+              {
+                "id": "internal",
+                "label": "Internal",
+                "source": "template:http://clickhouse:8123"
+              }
+            ],
+            "service": "clickhouse",
+            "envKey": "CLICKHOUSE_URL",
+            "recommended": true,
+            "help": "ClickHouse's HTTP interface (port 8123) — what clickhouse-connect, clickhouse-js, the JDBC/ODBC drivers and plain curl talk to. Send the user and password as basic auth. Switch to Internal for apps on the same project network; Public only resolves if you gave this port a domain."
+          },
+          {
+            "id": "httpDsn",
+            "label": "HTTP DSN",
+            "source": "template:http://{{env:clickhouse:CLICKHOUSE_USER}}:{{env:clickhouse:CLICKHOUSE_PASSWORD}}@clickhouse:8123/{{env:clickhouse:CLICKHOUSE_DB}}",
+            "sourceLabel": "Internal",
+            "service": "clickhouse",
+            "secret": true,
+            "envKey": "CLICKHOUSE_HTTP_DSN",
+            "recommended": true,
+            "help": "One string with the credentials baked in, over the private project network. For a client outside this server, use the public HTTP endpoint above plus the user and password."
+          },
+          {
+            "id": "nativeDsn",
+            "label": "Native TCP DSN",
+            "source": "template:clickhouse://{{env:clickhouse:CLICKHOUSE_USER}}:{{env:clickhouse:CLICKHOUSE_PASSWORD}}@clickhouse:9000/{{env:clickhouse:CLICKHOUSE_DB}}",
+            "sourceLabel": "Internal",
+            "service": "clickhouse",
+            "secret": true,
+            "envKey": "CLICKHOUSE_DSN",
+            "help": "ClickHouse's native protocol (port 9000) — faster and what clickhouse-client, clickhouse-go and clickhouse-driver prefer. Reachable from inside the project only; the port is never published to the host."
+          },
+          {
+            "id": "user",
+            "label": "User",
+            "source": "env:clickhouse:CLICKHOUSE_USER",
+            "service": "clickhouse",
+            "envKey": "CLICKHOUSE_USER",
+            "recommended": true,
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:clickhouse:CLICKHOUSE_PASSWORD",
+            "service": "clickhouse",
+            "envKey": "CLICKHOUSE_PASSWORD",
+            "secret": true,
+            "recommended": true,
+            "width": "half"
+          },
+          {
+            "id": "database",
+            "label": "Database",
+            "source": "env:clickhouse:CLICKHOUSE_DB",
+            "service": "clickhouse",
+            "envKey": "CLICKHOUSE_DATABASE",
+            "width": "half"
+          }
+        ]
+      },
+      "provides": [
+        {
+          "id": "clickhouse",
+          "outputRefs": [
+            "httpUrl",
+            "httpDsn",
+            "user",
+            "password",
+            "database"
+          ],
+          "category": "database"
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "ch-ui",
+          "port": 3488,
+          "label": "Console",
+          "kind": "http",
+          "required": true,
+          "scope": "public",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "clickhouse",
+          "port": 8123,
+          "label": "HTTP API",
+          "kind": "http",
+          "scope": "public",
+          "defaultMode": "port"
+        },
+        {
+          "service": "clickhouse",
+          "port": 9000,
+          "label": "Native protocol",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "mindwire",
+      "name": "MindWire",
+      "description": "Run coding-agent runtimes behind a self-hosted control plane. MindWire keeps the runtime private and gives you one console to manage agents, credentials, and sessions.",
+      "repository": "https://github.com/oblien/mindwire",
+      "kind": "template",
+      "logo": "mindwire",
+      "category": "automation",
+      "tags": [
+        "ai",
+        "agents",
+        "coding",
+        "control-plane"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "runtime",
+          "image": "ghcr.io/oblien/mindwire-runtime:0.1.3",
+          "environment": {
+            "ADDR": "0.0.0.0:8790",
+            "AGENT_TYPE": "claude-code",
+            "DAEMON_TOKEN": "{{config:MINDWIRE_RUNTIME_TOKEN}}"
+          },
+          "secretEnv": [
+            "DAEMON_TOKEN"
+          ],
+          "volumes": [
+            "mindwire_runtime:/home/node"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "console",
+          "image": "ghcr.io/oblien/mindwire-console:0.1.3",
+          "exposedPort": 8787,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 8787
+            }
+          ],
+          "dependsOn": [
+            "runtime"
+          ],
+          "environment": {
+            "NODE_ENV": "production",
+            "PORT": "8787",
+            "BASE_URL": "{{publicUrl:console}}",
+            "AUTH_DB_PATH": "/data/auth.db",
+            "CONSOLE_MODE": "self-hosted",
+            "CONSOLE_USERNAME": "{{config:CONSOLE_USERNAME}}",
+            "CONSOLE_PASSWORD": "{{config:CONSOLE_PASSWORD}}",
+            "AUTH_SECRET": "{{config:AUTH_SECRET}}",
+            "SECRETS_ENCRYPTION_KEY": "{{config:SECRETS_ENCRYPTION_KEY}}",
+            "ALLOW_LOCAL_RUNTIME": "true",
+            "ALLOW_SSH_RUNTIME": "true",
+            "ALLOW_DOCKER_RUNTIME": "true",
+            "ALLOW_REMOTE_RUNTIME": "true",
+            "DAEMON_URL": "http://runtime:8790",
+            "MINDWIRE_RUNTIME_TOKEN": "{{config:MINDWIRE_RUNTIME_TOKEN}}",
+            "SEED_DEFAULT_DAEMON": "true"
+          },
+          "secretEnv": [
+            "CONSOLE_PASSWORD",
+            "AUTH_SECRET",
+            "SECRETS_ENCRYPTION_KEY",
+            "MINDWIRE_RUNTIME_TOKEN"
+          ],
+          "volumes": [
+            "mindwire_console:/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "node -e \"fetch('http://127.0.0.1:8787/api/ping').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "CONSOLE_USERNAME",
+          "service": "console",
+          "label": "Console username",
+          "help": "The single owner account for this self-hosted console.",
+          "default": "admin",
+          "required": true
+        },
+        {
+          "key": "CONSOLE_PASSWORD",
+          "service": "console",
+          "label": "Console password",
+          "help": "Auto-generated. Use this with the owner username to sign in.",
+          "type": "password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "AUTH_SECRET",
+          "service": "console",
+          "label": "Session signing secret",
+          "help": "Auto-generated. Keep it stable so existing sign-in sessions remain valid after upgrades.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "SECRETS_ENCRYPTION_KEY",
+          "service": "console",
+          "label": "Credential vault key",
+          "help": "Auto-generated 32-byte key used to encrypt provider and runtime credentials at rest.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "MINDWIRE_RUNTIME_TOKEN",
+          "service": "runtime",
+          "label": "Runtime bearer token",
+          "help": "Auto-generated. Authenticates the Console to the private MindWire runtime.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Sign in to MindWire",
+        "description": "Open the Console and sign in with the generated owner credentials. The runtime stays private to this deployment.",
+        "guide": {
+          "intro": "MindWire gives you a production control plane for coding-agent runtimes without exposing the runtime API to the public internet.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "console",
+            "label": "MindWire Console",
+            "source": "publicUrl:console",
+            "kind": "url",
+            "recommended": true,
+            "help": "Open the control plane in your browser."
+          },
+          {
+            "id": "username",
+            "label": "Owner username",
+            "source": "env:console:CONSOLE_USERNAME"
+          },
+          {
+            "id": "password",
+            "label": "Owner password",
+            "source": "env:console:CONSOLE_PASSWORD",
+            "secret": true
+          }
+        ]
+      },
+      "endpoints": [
+        {
+          "service": "console",
+          "port": 8787,
+          "label": "MindWire Console",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ]
     }
   ]
 }

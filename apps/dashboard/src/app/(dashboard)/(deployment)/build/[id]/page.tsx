@@ -11,8 +11,9 @@ import SwarmDeploymentProcessing from "@/components/import-project/SwarmDeployme
 import BuildSkeleton from "@/components/import-project/BuildSkeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/components/i18n-provider";
+import { BUILD_SESSION_ERROR_FALLBACK } from "@/context/deployment/load-session";
 import { ResourceNotFound } from "@/components/resource-not-found";
-import { Rocket, Home, PackageX } from "lucide-react";
+import { Rocket, Home, PackageX, RotateCcw, TriangleAlert } from "lucide-react";
 
 const BuildPage: React.FC = () => {
   const params = useParams();
@@ -24,6 +25,13 @@ const BuildPage: React.FC = () => {
   const { t } = useI18n();
   const initializedDeploymentRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  /** Load failure that is NOT a missing deployment — a hydration exception,
+   *  5xx, or network error while the deployment usually exists (#604). Rendered
+   *  as an error state with a retry, never as "not found". */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /** Bumped by the error state's retry so the init effect re-runs for the same
+   *  deployment id (the `initializedDeploymentRef` guard alone would ignore it). */
+  const [loadRetryNonce, setLoadRetryNonce] = useState(0);
   /** Ref tracking which (deploymentId × errorCode) tuple already opened
    *  the modal — prevents reopening on every re-render. */
   const shownModalRef = useRef<string | null>(null);
@@ -61,7 +69,15 @@ const BuildPage: React.FC = () => {
       }
       const result = await loadBuildSession(deploymentId);
       if (!result.success) {
-        setNotFound(true);
+        // Only the server saying "this doesn't exist" (soft-failed status or
+        // HTTP 404) renders the not-found screen. Anything else — a throw while
+        // hydrating a successful response, a 5xx, a network blip — keeps the
+        // deployment one retry away instead of presenting it as deleted (#604).
+        if (result.notFound) {
+          setNotFound(true);
+        } else {
+          setLoadError(result.error || BUILD_SESSION_ERROR_FALLBACK);
+        }
       }
     };
 
@@ -76,7 +92,16 @@ const BuildPage: React.FC = () => {
     loadBuildSession,
     router,
     searchParams,
+    loadRetryNonce,
   ]);
+
+  // Retry a failed (non-not-found) load: clear the error, release the init
+  // guard, and re-run the effect via the nonce.
+  const retryLoadSession = useCallback(() => {
+    setLoadError(null);
+    initializedDeploymentRef.current = null;
+    setLoadRetryNonce((n) => n + 1);
+  }, []);
 
   // Handle redeploy with URL update.
   //
@@ -132,6 +157,42 @@ const BuildPage: React.FC = () => {
     });
     if (opened) shownModalRef.current = key;
   }, [state.deploymentFailed, state.errorCode, deploymentId, maybeOpenCredentialModal, handleRedeploy]);
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <ResourceNotFound
+          icon={<TriangleAlert className="size-7" />}
+          title={t.chrome.error.title}
+          description={
+            <>
+              {t.chrome.error.description}
+              <span className="mt-1 block break-all font-mono text-xs opacity-80">{loadError}</span>
+            </>
+          }
+          detail={deploymentId}
+          detailCopyLabel={t.chrome.notFound.copyId}
+          actions={[
+            {
+              label: t.chrome.error.tryAgain,
+              icon: <RotateCcw className="size-4" />,
+              onClick: retryLoadSession,
+            },
+            {
+              href: "/deployments",
+              label: t.misc.buildPage.viewDeployments,
+              icon: <Rocket className="size-4" />,
+            },
+            {
+              href: "/",
+              label: t.misc.buildPage.goHome,
+              variant: "secondary",
+            },
+          ]}
+        />
+      </div>
+    );
+  }
 
   if (notFound) {
     return (

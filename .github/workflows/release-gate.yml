@@ -1,0 +1,125 @@
+name: Release gate
+
+# The tests that must pass before anything ships: the unit/integration suite, and the
+# real-daemon E2E matrix. If either goes red, the release does not publish.
+#
+# Why this exists: `Release` and `Docker images` both trigger on the same `v*.*.*` tag
+# push as `CI`, and GitHub does not order workflows against one another. So up to and
+# including v0.6.5, the GitHub release, the npm CLI and the GHCR images all published
+# *in parallel with* the test run and completed regardless of its result — `publish`
+# needed only the build jobs, and `merge-images` only `build-images`. The e2e suite
+# described itself as "the release-restorability gate" while being nothing of the kind.
+# Nothing in the repo could fail an upload.
+#
+# `workflow_call` rather than a trigger: listing a job in `needs:` is the only way one
+# workflow can block on another's result. `workflow_dispatch` is kept so the E2E matrix
+# can still be run on demand, which is what CI's copy of it was for.
+#
+# `apps/api` IS typechecked here, because nothing else in a release does it. The build
+# jobs only look like they would: `build` is `tsup --format esm` with no `--dts` and
+# `build-release` is a bun compile, and both strip types without checking them. A live
+# example while this was being written — `packages/db/src/dump.ts` referencing a schema
+# export that no longer existed — compiled clean and would have shipped.
+#
+# The dashboard's typecheck deliberately stays in CI and out of this gate: it is a
+# grep-filtered scan that tolerates pre-existing fumadocs errors, which is not something
+# a release should hang on.
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    name: Typecheck + tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # `latest`, matching what CI has always run these suites on. Deliberately NOT
+      # switched to the pinned .bun-version here: these two jobs now block releases,
+      # and changing their runtime in the same move that made them blocking is how you
+      # get a gate whose first red run nobody can attribute. Worth revisiting as its
+      # own change — a gate arguably should be reproducible.
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache bun install
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Covers packages/* too: they resolve to source, so an error in @repo/db surfaces
+      # here. This is the only typecheck between a tag and a published image.
+      - name: Typecheck apps/api
+        run: bun run --cwd apps/api lint
+
+      # `turbo run test` across every package with a test script. Includes the two
+      # migration suites in packages/db: migrate-chain (the chain applied to a
+      # POPULATED database, plus a self-check proving it can fail) and
+      # migrations-additive (the static ADD COLUMN ... NOT NULL scan). Those are the
+      # coverage for "the update crash-looped on migrations".
+      - name: Run tests
+        run: bun run test
+
+  # Rollback and restore against a REAL Docker daemon. This is the only job that proves
+  # those paths work at all; every other test in the repo mocks the runtime. It lived in
+  # CI, where it ran alongside the release it claimed to gate — it is here now so a
+  # failure actually stops the publish.
+  #
+  # `RUN_DOCKER_E2E=1` is what makes it honest: without it the suite skips when no
+  # daemon answers, which is exactly how these cases sat green-and-unrun for months.
+  # With it, an unreachable daemon fails in `beforeAll` instead of reporting skipped.
+  #
+  # `fast` is every daemon-level and full-cycle case (~5 min); `heavy` is
+  # rollback-build-restore alone (~225s cold, and fileParallelism is off, so it holds
+  # the whole suite up). Both run here — see E2E_SCOPE in apps/api/vitest.e2e.config.ts.
+  e2e-docker:
+    name: E2E (real Docker, ${{ matrix.scope }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [fast, heavy]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache bun install
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Fail here rather than inside vitest, so "the runner lost Docker" is
+      # distinguishable at a glance from "a rollback assertion broke".
+      - name: Check the Docker daemon
+        run: |
+          docker info
+          docker version
+
+      - name: Run real-daemon E2E
+        env:
+          RUN_DOCKER_E2E: "1"
+          E2E_SCOPE: ${{ matrix.scope }}
+        run: bun run --cwd apps/api test:e2e

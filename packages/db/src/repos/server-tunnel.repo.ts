@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Database } from "../client";
 import { serverTunnels } from "../schema";
 
@@ -40,6 +40,25 @@ export function createServerTunnelRepo(db: Database) {
     async get(id: string): Promise<ServerTunnel | undefined> {
       return db.query.serverTunnels.findFirst({
         where: eq(serverTunnels.id, id),
+      });
+    },
+
+    /**
+     * Single config by its unique (server, remote target) key — the same tuple
+     * `upsert` conflicts on. Lets a partial save preserve fields the caller
+     * didn't send (e.g. "Open on localhost" passes only remotePort).
+     */
+    async getByTarget(
+      serverId: string,
+      remotePort: number,
+      remoteHost: string,
+    ): Promise<ServerTunnel | undefined> {
+      return db.query.serverTunnels.findFirst({
+        where: and(
+          eq(serverTunnels.serverId, serverId),
+          eq(serverTunnels.remotePort, remotePort),
+          eq(serverTunnels.remoteHost, remoteHost),
+        ),
       });
     },
 

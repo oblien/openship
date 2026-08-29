@@ -12,9 +12,7 @@ function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   const b64 =
-    typeof btoa === "function"
-      ? btoa(binary)
-      : Buffer.from(binary, "binary").toString("base64");
+    typeof btoa === "function" ? btoa(binary) : Buffer.from(binary, "binary").toString("base64");
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
@@ -26,6 +24,27 @@ export function slugify(text: string): string {
     .replace(/[\s_]+/g, "-")
     .slice(0, 100)
     .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Redirect codes a canonical host redirect may use, and the one it defaults to.
+ *
+ * Lives here because BOTH sides of the package boundary need the same list: the
+ * API validates an operator's choice against it (lib/domain-redirect.ts) and the
+ * edge renderer re-checks before interpolating it into a vhost
+ * (adapters/infra/nginx.ts — an out-of-range value there would emit `return 0`
+ * and make `openresty -t` reject the whole file). Two copies could drift into a
+ * status the API accepts and the edge refuses.
+ */
+export const REDIRECT_STATUSES = [301, 302, 307, 308] as const;
+export type RedirectStatus = (typeof REDIRECT_STATUSES)[number];
+export const DEFAULT_REDIRECT_STATUS: RedirectStatus = 301;
+
+/** Coerce to a usable redirect code, falling back to 301. */
+export function resolveRedirectStatus(status?: number | null): RedirectStatus {
+  return REDIRECT_STATUSES.includes(status as RedirectStatus)
+    ? (status as RedirectStatus)
+    : DEFAULT_REDIRECT_STATUS;
 }
 
 /**
@@ -41,6 +60,46 @@ export function normalizeCustomHostname(raw: string): string {
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/\/+$/, "");
+}
+
+/**
+ * Comparison form of a hostname READ BACK from serving config — an nginx
+ * `server_name`, a DNS answer, a cert SAN.
+ *
+ * Trim + lowercase + drop the FQDN root dot, and nothing else. `example.com.` is
+ * legal in `server_name` and in DNS, so anything comparing live config against
+ * stored rows must fold that away or it silently fails to match its own domain.
+ *
+ * Deliberately NOT built on {@link normalizeCustomHostname}, even though it looks
+ * like a superset: that one also strips `https://` and trailing slashes, which
+ * would make `isApexDomain` (below) start accepting scheme-prefixed input it
+ * previously rejected. This is byte-for-byte the expression `isApexDomain` already
+ * open-coded, so extracting it changes no behavior anywhere — it just stops the
+ * edge-orphan sweep from being a third copy.
+ *
+ * The split from `normalizeCustomHostname` is real, not incidental: that one
+ * normalizes USER INPUT (where a trailing dot is rejected by
+ * {@link isValidCustomHostname}); this one normalizes MACHINE OUTPUT.
+ */
+export function normalizeServedHostname(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\.$/, "");
+}
+
+/**
+ * The `www.` sibling of a hostname, or null when there isn't one to claim
+ * because the hostname already IS a www host.
+ *
+ * ONE rule, because "Include www" fans out to three places that each need the
+ * same answer — the row the add path creates, the SAN the cert covers, and the
+ * DNS record the setup panel shows. Three inline `www.${host}` prefixes meant a
+ * "no stacking www on www" guard could exist in one and be missing in another,
+ * producing a `www.www.example.com` row or a record for a hostname that never
+ * gets a row.
+ */
+export function wwwSiblingHostname(hostname: string): string | null {
+  const host = normalizeCustomHostname(hostname);
+  if (!host || host.startsWith("www.") || host.startsWith("*.")) return null;
+  return `www.${host}`;
 }
 
 /**
@@ -78,11 +137,19 @@ export function isValidCustomHostname(host: string): boolean {
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false; // IPv4 literal
   if (/[\s/:@\\?#]/.test(host)) return false; // path / port / scheme / userinfo
   if (host.startsWith(".") || host.endsWith(".") || host.includes("..")) return false;
-  const labels = host.split(".");
+  const isWildcard = host.startsWith("*.");
+  const checkHost = isWildcard ? host.slice(2) : host;
+  if (checkHost.includes("*")) return false;
+  const labels = checkHost.split(".");
   if (labels.length < 2) return false; // must be multi-label (has a dot)
   return labels.every(
     (label) => label.length <= 63 && /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(label),
   );
+}
+
+/** True when `host` is a wildcard hostname (e.g. `*.example.com`). */
+export function isWildcardHostname(host: string): boolean {
+  return typeof host === "string" && host.trim().toLowerCase().startsWith("*.");
 }
 
 /**
@@ -92,13 +159,39 @@ export function isValidCustomHostname(host: string): boolean {
  * `example.co.uk` as a subdomain would be visibly wrong. Extend as usage demands.
  */
 const MULTI_PART_TLDS = new Set([
-  "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "net.uk", "ltd.uk", "plc.uk", "sch.uk",
-  "com.au", "net.au", "org.au", "edu.au", "gov.au", "id.au",
-  "co.nz", "net.nz", "org.nz",
-  "co.jp", "or.jp", "ne.jp",
-  "co.in", "net.in", "org.in", "firm.in",
-  "com.br", "net.br", "org.br",
-  "com.mx", "com.sg", "com.tr", "co.za", "com.cn",
+  "co.uk",
+  "org.uk",
+  "gov.uk",
+  "ac.uk",
+  "me.uk",
+  "net.uk",
+  "ltd.uk",
+  "plc.uk",
+  "sch.uk",
+  "com.au",
+  "net.au",
+  "org.au",
+  "edu.au",
+  "gov.au",
+  "id.au",
+  "co.nz",
+  "net.nz",
+  "org.nz",
+  "co.jp",
+  "or.jp",
+  "ne.jp",
+  "co.in",
+  "net.in",
+  "org.in",
+  "firm.in",
+  "com.br",
+  "net.br",
+  "org.br",
+  "com.mx",
+  "com.sg",
+  "com.tr",
+  "co.za",
+  "com.cn",
 ]);
 
 /**
@@ -112,7 +205,8 @@ const MULTI_PART_TLDS = new Set([
  * one label otherwise. Input should already be normalized (see normalizeCustomHostname).
  */
 export function isApexDomain(host: string): boolean {
-  const h = host.trim().toLowerCase().replace(/\.$/, "");
+  const h = normalizeServedHostname(host);
+  if (isWildcardHostname(h)) return false;
   if (!isValidCustomHostname(h)) return false;
   const labels = h.split(".");
   const lastTwo = labels.slice(-2).join(".");
@@ -156,7 +250,11 @@ export function sleep(ms: number): Promise<void> {
  * the timer on settle so it never leaks. One shared impl — callers pass their
  * own message so prior error contracts are preserved.
  */
-export function withTimeout<T>(promise: Promise<T>, ms: number | undefined, message: string): Promise<T> {
+export function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number | undefined,
+  message: string,
+): Promise<T> {
   if (!ms) return promise;
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms);
@@ -180,4 +278,33 @@ export function withTimeout<T>(promise: Promise<T>, ms: number | undefined, mess
  */
 export function isValidEnvKey(key: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
+}
+
+/**
+ * Greedy word wrap for prose bound for a terminal (boot banners, CLI output).
+ *
+ * Existing newlines are honoured as hard breaks, so a block that already has
+ * deliberate line structure — a copy-paste command on its own line, say — keeps it
+ * instead of being reflowed into the paragraph above.
+ */
+export function wrapText(text: string, width = 88): string[] {
+  const out: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      out.push("");
+      continue;
+    }
+    let line = "";
+    for (const word of words) {
+      if (line && line.length + 1 + word.length > width) {
+        out.push(line);
+        line = word;
+      } else {
+        line = line ? `${line} ${word}` : word;
+      }
+    }
+    if (line) out.push(line);
+  }
+  return out;
 }

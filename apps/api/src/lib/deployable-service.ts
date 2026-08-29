@@ -20,7 +20,13 @@
  * the source-built fields.
  */
 
-import { STACKS, type StackDefinition, type StackId } from "@repo/core";
+import {
+  categoryServesFiles,
+  normalizeServiceLabel,
+  STACKS,
+  type StackDefinition,
+  type StackId,
+} from "@repo/core";
 import type { ComposeService } from "./compose-parser";
 
 /** Source-built sub-app fields. Only meaningful when `kind === "monorepo"`. */
@@ -71,6 +77,16 @@ export type DeployableService = ComposeService & MonorepoSubAppFields & {
     customDomain?: string | null;
     domainType?: string | null;
   }>;
+  /**
+   * Whether ANY service_deployment row has ever been recorded for this
+   * service. `undefined` means unknown (the caller supplied services
+   * directly, e.g. an in-flight wizard session, rather than projecting them
+   * from the project's saved `service` rows) — preflight treats that as "not
+   * provably dead" and keeps failing loudly. Only an explicit `false` — a
+   * saved row this project has never once deployed — is eligible for the
+   * dead-row carve-out.
+   */
+  everDeployed?: boolean;
 };
 
 /**
@@ -111,8 +127,97 @@ export function isStaticService(service: {
   if (service.startCommand?.trim()) return false;
   const framework = service.framework;
   if (!framework || !(framework in STACKS)) return false;
-  const category = (STACKS[framework as StackId] as StackDefinition).category;
-  return category === "frontend" || category === "static";
+  return categoryServesFiles((STACKS[framework as StackId] as StackDefinition).category);
+}
+
+/**
+ * Resolve a sub-app's build recipe against its project snapshot — the ONE place
+ * the row-vs-snapshot fallback lives.
+ *
+ * A monorepo row legitimately leaves its command columns null and INHERITS them
+ * from the project (an inheriting sub-app, or the materialized single-app row), so
+ * every question about "what will this row actually build/run" has to be asked of
+ * the resolved values, never the raw row. Three call sites open-coded this same
+ * `row ?? snapshot` triple — preflight, the buildable selector, and the
+ * static-vs-server build decision — and they had already drifted: the selector
+ * resolved the fallback while the static decision read the RAW row, so a sub-app
+ * whose start command lived on the snapshot was selected as a server and then
+ * built as static files.
+ */
+export function resolveSubAppRecipe(
+  // `kind` is loosely typed for the same reason `serviceKind` is: callers pass a
+  // persisted `service` row whose column is a plain string.
+  service: {
+    kind?: string | null;
+    framework?: string | null;
+    installCommand?: string | null;
+    buildCommand?: string | null;
+    startCommand?: string | null;
+  },
+  snapshot: {
+    framework?: string | null;
+    installCommand?: string | null;
+    buildCommand?: string | null;
+    startCommand?: string | null;
+  },
+): {
+  kind: "compose" | "monorepo";
+  framework: string | null;
+  installCommand: string | null;
+  buildCommand: string | null;
+  startCommand: string | null;
+} {
+  return {
+    kind: serviceKind(service),
+    framework: service.framework ?? snapshot.framework ?? null,
+    installCommand: service.installCommand ?? snapshot.installCommand ?? null,
+    buildCommand: service.buildCommand ?? snapshot.buildCommand ?? null,
+    startCommand: service.startCommand ?? snapshot.startCommand ?? null,
+  };
+}
+
+/**
+ * Does a source-built unit carry enough of a recipe to PRODUCE an artifact?
+ *
+ * Three ways to satisfy it, and they are the only three the build side knows:
+ *   - `framework === "docker"` — a Dockerfile owns install/build/start, so having
+ *     no commands is correct there, not empty.
+ *   - a build command — there is a build step to run.
+ *   - a start command — run-only (prebuilt artifact in the repo, static serve);
+ *     still needs containerizing, and the generated Dockerfile is happy with an
+ *     empty build step as long as it has something to CMD.
+ *
+ * Pass the ALREADY-RESOLVED values (see {@link resolveSubAppRecipe}) — the verdict
+ * lives here, the fallback there. `getProjectType` is NOT a substitute: it answers
+ * "what shape is this stack" and returns "app" for the `generic` category, so a
+ * project with no recipe at all (framework "unknown") reads as a deployable app
+ * (issue #589).
+ *
+ * One helper because two sides must agree: compose/build.service.ts uses it to
+ * decide a monorepo row is buildable, and services/service.service.ts uses it to
+ * decide whether materializing an app row could ever succeed. When they
+ * disagreed, materialization produced a row the builder refused to build and the
+ * deploy died on "No image available".
+ *
+ * DELIBERATELY NOT an arm here: "it's a static framework, so the extract-only
+ * recipe needs no commands". That is true, but it is a ROW-level fact
+ * ({@link isStaticService} — it needs the row's `kind` and its resolved start
+ * command), and this helper is shared with #589's phantom-app-row gate, which
+ * asks about a PROJECT. Adding it here made a command-less `vite`/`react` project
+ * whose `hasServer` is not `false` materialize a phantom app service row again —
+ * the exact regression that gate exists to prevent. The static case belongs at the
+ * build selector, next to `isStaticService`.
+ */
+export function hasSourceBuildRecipe(resolved: {
+  framework?: string | null;
+  buildCommand?: string | null;
+  startCommand?: string | null;
+}): boolean {
+  return (
+    resolved.framework === "docker" ||
+    !!resolved.buildCommand ||
+    !!resolved.startCommand
+  );
 }
 
 /**
@@ -128,6 +233,36 @@ export function parseServicePort(value?: string | null): number | null {
   if (!trimmed) return null;
   const last = trimmed.split(":").pop()?.split("/")[0]?.trim();
   const port = Number(last);
+  return Number.isFinite(port) && port > 0 ? port : null;
+}
+
+/**
+ * Parse the PUBLISHED (host-side) port from a compose-style port string, or null
+ * when the mapping declares no host side.
+ *   "8080:3000"           → 8080
+ *   "127.0.0.1:8080:3000" → 8080 (an interface-scoped publish)
+ *   "3000"                → null (container-only, docker picks the host port)
+ *   "3000-3005:3000"      → null (a RANGE names no single port)
+ *
+ * The sibling of {@link parseServicePort}, which reads the container side. Both
+ * live here so the two halves of one compose port string are parsed by one rule —
+ * a route the operator points at the PUBLISHED port has to resolve to the same
+ * service as one pointed at the container port.
+ *
+ * The `host` field of `parseComposePort` (migration/docker-reconcile.ts) answers the
+ * same question for edge detection and publish stripping. This is deliberately the
+ * routing layer's own accessor — the same split `parseServicePort` already lives on,
+ * and `lib/` must not import from `modules/` — so the two are held to the same
+ * answer by a drift guard in project-service-upstream.test.ts rather than by a shared
+ * call.
+ */
+export function parseServiceHostPort(value?: string | null): number | null {
+  if (!value) return null;
+  const parts = value.trim().split("/")[0]?.split(":") ?? [];
+  // Container-only ("3000") has a single segment and therefore no host side.
+  if (parts.length < 2) return null;
+  const host = parts[parts.length - 2]?.trim();
+  const port = Number(host);
   return Number.isFinite(port) && port > 0 ? port : null;
 }
 
@@ -151,4 +286,26 @@ export function resolveServicePort(
     parseServicePort(service.ports?.[0]) ??
     (typeof fallback === "number" && fallback > 0 ? fallback : null)
   );
+}
+
+/**
+ * The operator's custom east-west DNS alias for a service, if any — the ONE rule
+ * for it.
+ *
+ * `advanced.alias` resolves ALONGSIDE the default (the row name), so this returns
+ * only the EXTRA names; the primary is added by `buildNetworkAliases`. Shared by
+ * the compose deploy (which passes it as `extraAliases` on the runtime config) and
+ * by the migration attach-live network join — a reused container has to answer to
+ * exactly the same names a natively-deployed one does, or east-west resolves for
+ * deployed services and silently fails for migrated ones.
+ */
+export function serviceAliasExtras(service: {
+  name: string;
+  advanced?: unknown;
+}): string[] | undefined {
+  const raw = (service.advanced as { alias?: string } | null | undefined)?.alias;
+  if (!raw) return undefined;
+  const alias = normalizeServiceLabel(raw);
+  if (!alias || alias === normalizeServiceLabel(service.name)) return undefined;
+  return [alias];
 }

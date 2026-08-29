@@ -4,13 +4,69 @@
       "overview": "Aperçu",
       "domains": "Domaines",
       "mailboxes": "Boîtes aux lettres",
+      "notifications": "Notifications",
+      "sending": "Envoi",
       "dns": "DNS",
       "health": "État",
-      "test": "Test",
       "backup": "Sauvegarde",
       "advanced": "Avancé"
     },
     "ariaLabel": "Sections d'administration de la messagerie"
+  },
+  "notifications": {
+    "heading": "Règles de notification",
+    "description": "Soyez averti dans un canal de notification lorsqu'un courrier arrive à une adresse de ce serveur.",
+    "newRule": "Nouvelle règle",
+    "newTitle": "Nouvelle règle de notification",
+    "editTitle": "Modifier la règle de notification",
+    "edit": "Modifier",
+    "emptyTitle": "Aucune règle de notification pour l'instant",
+    "emptyBody": "Ajoutez une règle pour être averti dans Slack, Telegram, Discord ou par un webhook lorsqu'un courrier arrive dans une boîte aux lettres ou sur un domaine de ce serveur.",
+    "noChannels": "Vous n'avez encore aucun canal de notification vérifié. Ajoutez-en un et vérifiez-le dans Paramètres → Notifications, puis revenez ici pour créer une règle.",
+    "addChannel": "Ajouter un canal de notification",
+    "manageChannels": "Gérer les canaux",
+    "fieldName": "Nom",
+    "namePlaceholder": "Boîte du support → #support",
+    "fieldScope": "Surveiller",
+    "scopeMailbox": "Une boîte aux lettres",
+    "scopeDomain": "Un domaine entier",
+    "scopeAll": "Tous les domaines de ce serveur",
+    "scopeAllSummary": "Tous les domaines",
+    "fieldAddress": "Adresse",
+    "fieldDomain": "Domaine",
+    "mailboxCaveat": "La correspondance se fait sur les en-têtes To et Cc : un courrier arrivé dans cette boîte aux lettres par Bcc ou via un alias ne correspondra donc pas. Surveillez le domaine entier s'il vous faut tous les messages.",
+    "fieldFrom": "L'expéditeur contient",
+    "fieldSubject": "L'objet contient",
+    "patternPlaceholder": "facultatif",
+    "patternHint": "Insensible à la casse. Utilisez * comme joker — tout le reste est comparé littéralement.",
+    "fieldChannels": "Notifier ces canaux",
+    "fieldEnabled": "Règle active",
+    "channelCount": "{count} canal(aux)",
+    "colRule": "Règle",
+    "colWatch": "Surveillance",
+    "colChannels": "Canaux",
+    "colStatus": "Statut",
+    "active": "Active",
+    "disabled": "Désactivée",
+    "paused": "En pause",
+    "deleteTitle": "Supprimer la règle de notification",
+    "deleteConfirm": "Supprimer la règle",
+    "deleting": "Suppression…",
+    "deleteHint": "Les notifications déjà envoyées ne sont pas affectées. Le courrier déjà capturé mais pas encore traité est supprimé.",
+    "save": "Enregistrer la règle",
+    "saving": "Enregistrement…",
+    "cancel": "Annuler",
+    "test": "Tester maintenant",
+    "testing": "Test en cours…",
+    "testResult": "{read} message(s) capturé(s) lu(s) : {matched} ont correspondu à une règle, {dropped} ont été filtrés. Rien n'a été envoyé ni supprimé.",
+    "testFailed": "Impossible d'exécuter le test.",
+    "loadFailed": "Impossible de charger les règles de notification.",
+    "saveFailed": "Impossible d'enregistrer la règle.",
+    "deleteFailed": "Impossible de supprimer la règle.",
+    "confirmDelete": "Supprimer la règle « {name} » ? La capture s'arrête pour son adresse, sauf si une autre règle en a encore besoin."
+  },
+  "sending": {
+    "testLiveNote": "Envoie par le chemin actuellement actif, pas par les modifications non enregistrées ci-dessus."
   },
   "overview": {
     "mailServer": "Serveur de messagerie",
@@ -43,6 +99,22 @@
     "addMailbox": "Ajouter une boîte aux lettres",
     "addDomain": "Ajouter un domaine",
     "reviewDns": "Examiner les enregistrements DNS"
+  },
+  "webmail": {
+    "title": "Webmail",
+    "subtitle": "Le client de messagerie où vos utilisateurs se connectent.",
+    "opening": "Ouverture du projet webmail…",
+    "noServerTitle": "Aucun serveur de messagerie",
+    "noServerBody": "Le webmail n'est qu'un client : il lui faut un serveur de messagerie pour s'y connecter. Configurez-en un d'abord, puis revenez ici pour l'installer.",
+    "installTitle": "Le webmail n'est pas installé",
+    "installBody": "Déployez le client webmail pour consulter les boîtes aux lettres dans un navigateur. Il s'installe comme un projet openship ordinaire : vous le gérez dans Projets comme n'importe quel autre déploiement.",
+    "adoptTitle": "Le webmail n'est pas géré ici",
+    "chooseTitle": "Quel serveur de messagerie ?",
+    "chooseBody": "Chaque serveur de messagerie a son propre webmail. Choisissez le domaine à ouvrir.",
+    "incompleteTitle": "Le serveur de messagerie n'est pas encore prêt",
+    "incompleteBody": "{server} est encore en cours de configuration. Le webmail s'y connecte : terminez d'abord le serveur de messagerie, puis installez le webmail ici.",
+    "incompleteAction": "Terminer la configuration",
+    "runningNote": "Un webmail tourne déjà sur {hostname} mais rien ne le gère ici. L'installation l'adopte dans un projet au lieu d'en déployer un second."
   },
   "domains": {
     "heading": "Domaines",
@@ -209,9 +281,53 @@
     "dnsScanDesc": "Contrôle DNS public en direct de chaque enregistrement attendu par ce serveur.",
     "rescan": "Réanalyser",
     "dnsEmpty": "Aucun enregistrement DNS enregistré pour l'instant. Terminez l'assistant d'installation pour alimenter l'analyse.",
+    "delivery": {
+      "title": "Envoi sortant",
+      "desc": "Où ce serveur remet le courrier, et si quelque chose est bloqué en sortie.",
+      "sendPath": "Chemin d'envoi",
+      "direct": "Directement aux destinataires",
+      "directHint": "Les messages partent de ce serveur vers le serveur de messagerie de chaque destinataire.",
+      "relay": "Relais via {host}",
+      "relayAll": "Tous les expéditeurs de ce serveur passent par le relais.",
+      "relaySelected": "Seuls les expéditeurs sélectionnés passent par le relais : {domains}",
+      "queue": "File d'attente",
+      "queueEmpty": "Vide - rien n'attend d'être envoyé.",
+      "queueOne": "{count} message attend d'être envoyé.",
+      "queueOther": "{count} messages attendent d'être envoyés.",
+      "sampled": "La file est plus grande que la fenêtre lue ; les raisons ci-dessous sont donc les plus récentes.",
+      "reasons": "Pourquoi le courrier est différé",
+      "affectedOne": "{count} message",
+      "affectedOther": "{count} messages",
+      "kind": {
+        "auth": "Authentification refusée",
+        "tls": "Échec du chiffrement",
+        "network": "Connexion impossible",
+        "rejected": "Refusé par le destinataire",
+        "other": "Différé"
+      },
+      "hint": {
+        "authRelay": "Votre relais a refusé ces identifiants. Saisissez à nouveau le nom d'utilisateur et le mot de passe SMTP dans l'onglet Sending.",
+        "auth": "Le serveur suivant a refusé l'authentification.",
+        "tls": "La négociation TLS avec le serveur suivant a échoué.",
+        "network": "Ce serveur n'a pas pu joindre le serveur suivant. Vérifiez que les ports sortants 25 et 587 sont ouverts.",
+        "rejected": "Le destinataire a refusé le message pour le moment. Postfix continuera d'essayer.",
+        "other": "Postfix réessaiera selon son propre calendrier."
+      },
+      "status": {
+        "ok": "Envoi",
+        "warn": "Retardé",
+        "fail": "Aucun envoi",
+        "unknown": "Inconnu"
+      }
+    },
     "logs": "Journaux",
     "openLogs": "Ouvrir les journaux",
     "up": "Actif {time}",
+    "optional": "Facultatif",
+    "daemonHint": {
+      "fatal": "supervisord a abandonné - il ne réessaiera pas de lui-même. Redémarrez-le depuis le menu.",
+      "backoff": "Plante à répétition ; supervisord réessaie encore. Consultez les journaux pour savoir pourquoi."
+    },
     "menu": {
       "restart": "Redémarrer",
       "restarting": "Redémarrage…",
@@ -229,7 +345,9 @@
       "restartFailed": "échec du redémarrage",
       "startFailedTitle": "échec du démarrage de {label}",
       "stopFailedTitle": "échec de l'arrêt de {label}",
-      "restartFailedTitle": "échec du redémarrage de {label}"
+      "restartFailedTitle": "échec du redémarrage de {label}",
+      "notConfirmedTitle": "{label} n'a pas démarré",
+      "notConfirmed": "Le superviseur a accepté la demande, mais {label} est {state}. Ouvrez les journaux pour savoir pourquoi."
     },
     "daemonStatus": {
       "running": "En cours d'exécution",
@@ -237,6 +355,7 @@
       "stopping": "Arrêt",
       "stopped": "Arrêté",
       "failed": "En échec",
+      "crashed": "Planté",
       "missing": "Absent",
       "unknown": "Inconnu"
     },
@@ -262,7 +381,14 @@
       "partDown": "{names} hors service",
       "partNotInstalled": "{names} non installé",
       "partDnsOne": "{count} enregistrement DNS manquant",
-      "partDnsOther": "{count} enregistrements DNS manquants"
+      "partDnsOther": "{count} enregistrements DNS manquants",
+      "partDelivery": "le courrier sortant n'est pas distribué",
+      "degradedLabel": "Fonctionne, avec une protection réduite",
+      "partScanning": "{names} n'est pas en cours d'exécution - les nouveaux messages sont livrés SANS analyse antivirus",
+      "partSignatures": "{names} n'est pas en cours d'exécution - les signatures antivirus ne sont plus mises à jour, le courrier est donc analysé avec un jeu de signatures qui vieillit",
+      "partAdvisory": "{names} n'est pas en cours d'exécution",
+      "almostSubQueueOne": "{count} message attend d'être envoyé - voir Envoi sortant ci-dessous.",
+      "almostSubQueueOther": "{count} messages attendent d'être envoyés - voir Envoi sortant ci-dessous."
     },
     "time": {
       "secondsAgo": "il y a {n} s",
@@ -277,7 +403,9 @@
     "schedules": {
       "manual": "Manuel uniquement",
       "daily": "Quotidien",
-      "weekly": "Hebdomadaire"
+      "weekly": "Hebdomadaire",
+      "monthly": "Mensuel",
+      "custom": "Personnalisé (cron)"
     },
     "whatTitle": "Quoi sauvegarder",
     "whatDesc": "Les comptes et l'authentification sont toujours inclus ; les données des messages et les clés sont facultatives.",
@@ -293,6 +421,31 @@
     "noDest": "Aucune destination de sauvegarde pour l'instant. Ajoutez-en une (ex. un serveur existant) sur la page Sauvegardes.",
     "destinationLabel": "Destination",
     "autoLabel": "Sauvegardes automatiques",
+    "timeLabel": "Heure",
+    "timeHint": "Heure du serveur",
+    "weekdayLabel": "Jour de la semaine",
+    "dayOfMonthLabel": "Jour du mois",
+    "cronLabel": "Expression cron",
+    "cronHint": "Cinq champs, évalués dans le fuseau horaire du serveur.",
+    "scheduleJobHint": "Les sauvegardes automatiques s’exécutent comme une tâche planifiée.",
+    "manageDest": "Gérer",
+    "retentionTitle": "Rétention",
+    "retentionDesc": "Quelle quantité d’historique conserver à la destination. Les sauvegardes plus anciennes sont supprimées, fichiers compris, lors du nettoyage quotidien.",
+    "keepCountLabel": "Conserver les dernières",
+    "keepCountUnit": "sauvegardes",
+    "keepDaysLabel": "Supprimer après",
+    "keepDaysUnit": "jours",
+    "retentionNoLimit": "Aucune limite",
+    "retentionUnlimitedWarning": "Rien n’est jamais supprimé — cette destination continuera de grossir.",
+    "weekdays": {
+      "sun": "Dimanche",
+      "mon": "Lundi",
+      "tue": "Mardi",
+      "wed": "Mercredi",
+      "thu": "Jeudi",
+      "fri": "Vendredi",
+      "sat": "Samedi"
+    },
     "saveSettings": "Enregistrer les paramètres",
     "backupNow": "Sauvegarder maintenant",
     "recentTitle": "Sauvegardes récentes",
@@ -301,6 +454,7 @@
     "migrate": "Migrer",
     "toastTitle": "Sauvegarde",
     "pickDest": "Choisissez d'abord une destination de sauvegarde.",
+    "scheduleIncomplete": "Choisissez une heure pour cette planification, ou repassez-la en manuel.",
     "saved": "Paramètres de sauvegarde enregistrés.",
     "saveFailed": "Impossible d'enregistrer les paramètres de sauvegarde",
     "started": "Sauvegarde démarrée. Elle apparaîtra ci-dessous au fur et à mesure.",
@@ -376,6 +530,16 @@
     "body": "Les domaines d'envoi tout neufs n'ont pas encore de réputation, les fournisseurs peuvent donc classer les premiers courriers en spam pendant les 24 à 48 premières heures. C'est normal. Marquez les messages comme « non spam » depuis votre boîte de réception de test et la délivrabilité s'améliore rapidement. ",
     "dismissLink": "Je sais, masquer ceci",
     "dismiss": "Ignorer"
+  },
+  "engine": {
+    "downTitle": "Le moteur de messagerie de ce serveur n'est pas actif",
+    "downBody": "Tant qu'il est arrêté, aucun courrier n'est distribué ni accepté, et tous les onglets ici en dépendent. Le redémarrer est sans risque : rien n'est réinstallé et aucune configuration n'est modifiée.",
+    "legacyNote": "Ce serveur utilise l'ancien moteur installé directement sur l'hôte (Postfix/Dovecot via systemd) : il n'y a donc aucun conteneur à inspecter.",
+    "start": "Démarrer le moteur",
+    "missingTitle": "Aucun moteur de messagerie sur ce serveur",
+    "missingBody": "Openship ne trouve aucun moteur de messagerie ici — ni le conteneur du moteur, ni les unités Postfix/Dovecot. Relancez la configuration de la messagerie pour le réinstaller.",
+    "rerunSetup": "Relancer la configuration",
+    "cardBlocked": "Indisponible tant que le moteur de messagerie n'est pas actif."
   },
   "welcome": {
     "invalidEmail": "Saisissez une adresse e-mail valide",
@@ -458,6 +622,7 @@
     "close": "Fermer",
     "logsLoadFailed": "Échec du chargement des journaux",
     "loadingLogs": "Chargement des journaux…",
-    "noJournal": "Aucune entrée de journal pour cette unité."
+    "noLogLines": "Aucune ligne de journal pour ce composant pour le moment.",
+    "rowActions": "Actions pour {name}"
   }
 }

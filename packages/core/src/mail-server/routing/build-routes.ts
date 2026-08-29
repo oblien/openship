@@ -37,26 +37,99 @@ export function buildMailServerRoutes(input: MailServerRouteInput): MailServerRo
 
 // ─── Internal: route construction ──────────────────────────────────────────
 
+/**
+ * The hostnames a mail-server install fronts, for one user domain.
+ *
+ * Exported so anything that needs to know "is this hostname a mail route?" reads
+ * it from HERE rather than re-deriving the prefixes. The edge-orphan sweep is the
+ * caller that matters: mail vhosts have no `domain` row, so without this they'd
+ * be reported as untracked on every scan. Re-deriving `mail.`/`api.mail.`/
+ * `autodiscover.` there would mean a prefix change silently starts flagging live
+ * mail routes as orphans.
+ */
+export function mailServerRouteHostnames(userDomain: string): string[] {
+  return [
+    mailHostname(userDomain),
+    apiMailHostname(userDomain),
+    autodiscoverHostname(userDomain),
+  ];
+}
+
+/**
+ * The one definition of the mail host's label.
+ *
+ * It exists as a constant because the convention is needed in BOTH directions —
+ * building `mail.<domain>` and recognising it — and a second literal is how those
+ * two silently disagree. Everything below derives from this.
+ */
+export const MAIL_HOST_LABEL = "mail";
+
+/**
+ * The mail server's own hostname: IMAP, SMTP, the webmail UI, and the certificate
+ * all live here.
+ *
+ * Use this instead of writing the template inline. That is not style: the label was
+ * hand-written in ~40 places across the api, the dashboard, the adapters and the Zero
+ * server, so "change the mail hostname" was a find-and-replace across four packages
+ * with no way to know you had them all — and one of those sites PARSED it back off a
+ * hostname, which fails silently the moment the prefix moves.
+ */
+export function mailHostname(userDomain: string): string {
+  return `${MAIL_HOST_LABEL}.${userDomain}`;
+}
+
+/** The Zero server's tRPC API host, fronted alongside the webmail UI. */
+export function apiMailHostname(userDomain: string): string {
+  return `api.${mailHostname(userDomain)}`;
+}
+
+/** Autodiscover, for clients that look for it by convention. */
+export function autodiscoverHostname(userDomain: string): string {
+  return `autodiscover.${userDomain}`;
+}
+
+/**
+ * The inverse of {@link mailHostname}: `mail.example.com` → `example.com`, and null
+ * for anything that is not a mail host.
+ *
+ * Deriving it from the SAME constant is the whole point — a caller that needs to ask
+ * "which install does this hostname belong to?" must not carry its own `/^mail\./`
+ * regex, because then the build and the parse are two facts that can drift apart.
+ *
+ * Exact-label match, not a substring: `mailbox.example.com` is not a mail host, and
+ * neither is a bare `mail.com` reading as base `com`.
+ */
+export function mailHostBaseDomain(hostname: string): string | null {
+  const host = hostname.trim().toLowerCase();
+  const prefix = `${MAIL_HOST_LABEL}.`;
+  if (!host.startsWith(prefix)) return null;
+  const base = host.slice(prefix.length);
+  // A base still needs to be a domain — `mail.com` strips to `com`, which is a TLD and
+  // never an install's user domain.
+  return base.includes(".") ? base : null;
+}
+
 function buildRoutes(input: MailServerRouteInput): MailRoute[] {
   const d = input.userDomain;
+  const [clientHost, apiHost, autodiscoverHost] = mailServerRouteHostnames(d);
   return [
     {
       id: "mail-client",
-      hostname: `mail.${d}`,
+      hostname: clientHost!,
       targetUrl: input.zeroClientOrigin,
       tls: true,
       description: "Zero web client - the user-facing webmail UI.",
     },
     {
       id: "mail-api",
-      hostname: `api.mail.${d}`,
+      hostname: apiHost!,
       targetUrl: input.zeroServerOrigin,
       tls: true,
       description: "Zero server - tRPC API consumed by the Zero client (auth via Dovecot IMAP).",
     },
     {
       id: "autodiscover",
-      hostname: `autodiscover.${d}`,
+      hostname: autodiscoverHost!,
       targetUrl: input.openshipApiOrigin,
       tls: true,
       description: "Outlook / Thunderbird autodiscover XML - served by openship's API controller.",
@@ -141,17 +214,17 @@ function buildDnsRecords(input: MailServerRouteInput): MailDnsRecord[] {
     {
       id: "mail-client-cname",
       type: "CNAME",
-      name: `mail.${d}`,
+      name: mailHostname(d),
       value: hostnameFromUrl(input.zeroClientOrigin),
-      description: `Routes mail.${d} (the webmail UI) to openship's app-deploy ingress where the Zero client is hosted.`,
+      description: `Routes ${mailHostname(d)} (the webmail UI) to openship's app-deploy ingress where the Zero client is hosted.`,
       required: true,
     },
     {
       id: "mail-api-cname",
       type: "CNAME",
-      name: `api.mail.${d}`,
+      name: apiMailHostname(d),
       value: hostnameFromUrl(input.zeroServerOrigin),
-      description: `Routes api.mail.${d} (the Zero server's tRPC API) to the mail VPS via openship's routing layer.`,
+      description: `Routes ${apiMailHostname(d)} (the Zero server's tRPC API) to the mail VPS via openship's routing layer.`,
       required: true,
     },
     // No email-admin CNAME - admin operations run inside openship's own API

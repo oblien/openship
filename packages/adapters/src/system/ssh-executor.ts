@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm as fsRm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join, posix } from "node:path";
 
 import { prepareSourceTarArgs } from "../archive";
 import type {
@@ -15,9 +15,26 @@ import { logEntry, sq } from "./local-shell";
 import { canUseRemoteRsync, extractRemoteArchive, packLocalArchive, uploadFileWithRsync } from "./remote-transfer";
 import type { Client as SshClient, SFTPWrapper } from "ssh2";
 import type { Readable, Duplex } from "node:stream";
-import { connectSshClient, openSftp, openSshUnixSocket, type StreamLocalCapableClient } from "./ssh-client";
-import { SshDisconnectedError } from "./errors";
+import {
+  connectSshClient,
+  openSftp,
+  openSshUnixSocket,
+  openDockerDialStdioChannel,
+  type StreamLocalCapableClient,
+} from "./ssh-client";
+import { commandForError, SshDisconnectedError } from "./errors";
 import { TRANSFER_EXCLUDES, formatBytes } from "@repo/core";
+
+/**
+ * `dirname` for a path on the TARGET box, which is Linux — so always POSIX,
+ * never the control plane's native separators. A backslash reaching SSH is an
+ * ordinary filename character there: the file lands in the login shell's cwd
+ * under that literal name instead of the directory it was meant to name.
+ *
+ * The plain `join` above is the other namespace — LOCAL staging paths under
+ * tmpdir, where native separators are correct.
+ */
+const remoteDirname = posix.dirname;
 
 /** Clamp a window dimension to a sane range to avoid garbage values
  *  reaching ssh2.Client.shell() / channel.setWindow(). */
@@ -57,7 +74,7 @@ export class SshExecutor implements CommandExecutor {
     if (this.client) return this.client;
     if (this.connecting) return this.connecting;
 
-    this.connecting = (async () => {
+    const attempt = (async () => {
       const client = await connectSshClient(this.config);
 
       const onTransportDown = (cause?: Error) => {
@@ -72,11 +89,22 @@ export class SshExecutor implements CommandExecutor {
       client.on("error", (err: Error) => onTransportDown(err));
 
       this.client = client;
-      this.connecting = null;
       return client;
     })();
 
-    return this.connecting;
+    this.connecting = attempt;
+
+    // Drop the memo however it settles, not just on success. A rejected promise
+    // left cached here is permanent: once one connect failed, every later host
+    // operation replayed that same rejection without redialing, so opening the
+    // firewall that caused it (#490) appeared to change nothing until the API
+    // process restarted.
+    const clearMemo = () => {
+      if (this.connecting === attempt) this.connecting = null;
+    };
+    attempt.then(clearMemo, clearMemo);
+
+    return attempt;
   }
 
   /**
@@ -226,7 +254,10 @@ export class SshExecutor implements CommandExecutor {
       this.inflight.add(abort);
 
       timer = setTimeout(
-        () => finish(() => reject(new Error(`Command timed out after ${timeout}ms: ${command}`))),
+        () =>
+          finish(() =>
+            reject(new Error(`Command timed out after ${timeout}ms: ${commandForError(command)}`)),
+          ),
         timeout,
       );
 
@@ -263,9 +294,7 @@ export class SshExecutor implements CommandExecutor {
     onLog: (log: LogEntry) => void,
     opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
-    if (opts?.signal?.aborted) return Promise.resolve({ code: 0, output: "" });
     return this._streamExec(command, onLog, opts).catch((err) => {
-      if (opts?.signal?.aborted) return { code: 0, output: "" };
       if (SshExecutor.isChannelError(err)) {
         this.recoverFromChannelError();
         return this._streamExec(command, onLog, opts);
@@ -280,13 +309,12 @@ export class SshExecutor implements CommandExecutor {
     opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
     const client = await this.connect();
-    if (opts?.signal?.aborted) return { code: 0, output: "" };
+    const signal = opts?.signal;
 
     return new Promise<{ code: number; output: string }>((resolve, reject) => {
       let settled = false;
-      let stream: import("ssh2").ClientChannel | null = null;
-      const abortSignal = () => stream?.close();
-      opts?.signal?.addEventListener("abort", abortSignal, { once: true });
+      // Hoisted so an abort mid-stream can still hand back what did arrive.
+      const chunks: string[] = [];
 
       // A transport drop mid-stream rejects with SshDisconnectedError instead
       // of silently resolving `code ?? 1` (truncated output). Callers treat the
@@ -295,25 +323,45 @@ export class SshExecutor implements CommandExecutor {
       const finish = (act: () => void) => {
         if (settled) return;
         settled = true;
-        opts?.signal?.removeEventListener("abort", abortSignal);
         this.inflight.delete(abort);
+        signal?.removeEventListener("abort", onSignalAbort);
         act();
       };
       this.inflight.add(abort);
 
-      client.exec(SshExecutor.ENV_PREFIX + command, (err, channel) => {
-        if (err) return finish(() => reject(err));
-        stream = channel;
-        if (opts?.signal?.aborted) {
-          channel.close();
-          return finish(() => resolve({ code: 0, output: "" }));
+      // Caller-driven teardown (a disconnected browser tearing down the log stream).
+      // Closing the ssh2 channel closes the sshd side too, which breaks the remote
+      // `docker exec curl`'s stdout pipe (the daemon buffers it, so nothing else ever
+      // gives it an EPIPE) and lets it exit — instead of lingering until pipe_stream's
+      // 1h cap and holding an SSH channel that would eventually starve MaxSessions. An
+      // intentional abort is not a failure, so resolve with whatever bytes arrived.
+      let channel: import("ssh2").ClientChannel | null = null;
+      const onSignalAbort = () => {
+        // Settle FIRST so the channel's own 'close' event (which close() triggers) is a
+        // no-op rather than racing us to reject with "closed without an exit status".
+        finish(() => resolve({ code: 0, output: chunks.join("") }));
+        try {
+          channel?.close();
+        } catch {
+          /* channel already gone */
         }
+      };
+      if (signal?.aborted) {
+        // Told to stop before we even opened the channel.
+        finish(() => resolve({ code: 0, output: "" }));
+        return;
+      }
+
+      client.exec(SshExecutor.ENV_PREFIX + command, (err, stream) => {
+        if (err) return finish(() => reject(err));
+        channel = stream;
+        // The abort may have fired between the check above and the channel opening.
+        if (signal?.aborted) return onSignalAbort();
+        signal?.addEventListener("abort", onSignalAbort, { once: true });
 
         // Raw passthrough (see LocalExecutor.streamExec): forward the untouched
         // byte stream as rawData so the client's xterm renders "\r"/ANSI
         // natively — progress lines repaint in place instead of new lines.
-        const chunks: string[] = [];
-
         const onChunk = (data: Buffer, level: LogEntry["level"]) => {
           const text = data.toString();
           if (!text) return;
@@ -321,21 +369,17 @@ export class SshExecutor implements CommandExecutor {
           onLog(logEntry(text, level, data.toString("base64")));
         };
 
-        channel.on("data", (data: Buffer) => onChunk(data, "info"));
-        channel.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
+        stream.on("data", (data: Buffer) => onChunk(data, "info"));
+        stream.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
 
         // ssh2's 'close' often carries no code; the real exit status arrives on
         // 'exit'. A close with NO exit status means the channel was torn down
         // under the command (connection reset / session exhaustion), not a real
         // exit — surface that instead of masking it as a generic exit code 1 (#34).
         let exitCode: number | null = null;
-        channel.on("exit", (code: number | null) => { exitCode = code; });
-        channel.on("close", (code: number | null) => {
+        stream.on("exit", (code: number | null) => { exitCode = code; });
+        stream.on("close", (code: number | null) => {
           finish(() => {
-            if (opts?.signal?.aborted) {
-              resolve({ code: 0, output: chunks.join("") });
-              return;
-            }
             const final = typeof code === "number" ? code : exitCode;
             if (final == null) {
               reject(
@@ -353,7 +397,7 @@ export class SshExecutor implements CommandExecutor {
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    const dir = dirname(path);
+    const dir = remoteDirname(path);
     try {
       await this.exec(`mkdir -p ${sq(dir)}`);
     } catch {
@@ -570,28 +614,23 @@ export class SshExecutor implements CommandExecutor {
    * Carry the Docker Engine API over a `docker system dial-stdio` exec channel
    * on the pooled connection — the streamlocal-free transport used when the
    * SSH server (or the Bun-compiled desktop runtime) can't do socket
-   * forwarding. Uses the SAME ENV_PREFIX as streamExec so `docker` resolves on
-   * PATH exactly as it does for the remote build (which is proven to work).
+   * forwarding.
+   *
+   * Deliberately WITHOUT `ENV_PREFIX`: that prefix only exports apt's
+   * non-interactive variables (it sets no PATH, despite what the comment here
+   * used to claim), and the bridge's own ephemeral dial-stdio client opens the
+   * bare command. Two dial-stdio channels that differ by a shell prefix are two
+   * transports, and the bridge picks one by probing the other.
+   *
+   * Failure diagnostics (daemon down, socket permission, `docker: command not
+   * found`, an sshd ForceCommand banner) ride ON the returned channel — see
+   * `attachDialStdioDiagnostics`. They used to go to `console.warn` while the
+   * caller got a bare socket reset, which is how a host with no running dockerd
+   * reported itself as `socket hang up`.
    */
   async openDockerDialStdio(): Promise<Duplex> {
     const client = await this.connect();
-    return new Promise<Duplex>((resolve, reject) => {
-      client.exec(SshExecutor.ENV_PREFIX + "docker system dial-stdio", (err, stream) => {
-        if (err) return reject(err);
-        // Diagnostics: `docker system dial-stdio` writes any failure (daemon
-        // down, permission, "unknown command" on ancient docker) to stderr and
-        // exits non-zero. Surface it — otherwise dockerode just sees the stream
-        // close and reports an opaque timeout.
-        stream.stderr?.on("data", (d: Buffer) => {
-          const text = d.toString().trim();
-          if (text) console.warn(`[docker-ssh] dial-stdio stderr: ${text}`);
-        });
-        stream.on("exit", (code: number | null) => {
-          if (code) console.warn(`[docker-ssh] dial-stdio exited early (code=${code})`);
-        });
-        resolve(stream as unknown as Duplex);
-      });
-    });
+    return openDockerDialStdioChannel(client);
   }
 
   async forwardPort(remoteHost: string, remotePort: number): Promise<Duplex> {
@@ -695,7 +734,7 @@ export class SshExecutor implements CommandExecutor {
       onLog?.(logEntry("Packing source into a single archive..."));
       await packLocalArchive(tarArgs, localArchive);
       const totalBytes = (await stat(localArchive)).size;
-      await this.exec(`mkdir -p ${sq(dirname(remoteArchive))}`);
+      await this.exec(`mkdir -p ${sq(remoteDirname(remoteArchive))}`);
 
       const rsync = await canUseRemoteRsync(deps);
       if (rsync.ok) {

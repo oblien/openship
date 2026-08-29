@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Directory with build output",
     "sourceFolderLabel": "Source Folder",
     "sourceFolderDesc": "Build from a subdirectory inside the repository or local project.",
+    "composePath": {
+      "title": "Compose file",
+      "subtitle": "Detected automatically at the project root",
+      "label": "Path to your compose file",
+      "description": "For repos that keep compose outside the root — give the file (deploy/stack.yml) or the folder holding it (deploy/docker-compose). Re-scans the repo and deploys the services it declares.",
+      "apply": "Scan",
+      "scanning": "Scanning…",
+      "scanFailed": "Could not scan that compose path.",
+      "subtitleOptIn": "Deploying with Docker Compose? Point to the file."
+    },
+    "healthCheck": {
+      "title": "Health checks",
+      "subtitle": "Off — the deploy finishes as soon as your app is running",
+      "subtitleOn": "On — the deploy waits for your app before going live",
+      "description": "Openship doesn't wait for your app after it starts, so a slow boot never delays or fails a deploy. Once it's live, the port is checked anyway and reported without blocking anything. Turn these on only if you want the deploy itself to refuse to go green.",
+      "probeLabel": "Wait for the app to answer",
+      "probeDesc": "After the container starts, dial the app's port and wait for it to accept a connection.",
+      "pathLabel": "HTTP path",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Require a GET here to answer below 500. Leave empty to accept any TCP connection, which also works for non-HTTP services.",
+      "timeoutLabel": "Give up after (seconds)",
+      "stabilizationLabel": "Watch for restart loops",
+      "stabilizationDesc": "Watch the container after it starts and report a crash loop. Reads the runtime, so this works on remote servers too.",
+      "stabilizationWindowLabel": "Watch for (seconds)",
+      "onFailureLabel": "If a check fails",
+      "onFailureWarn": "Keep the deploy live and flag it for review",
+      "onFailureFail": "Fail the deploy and keep the previous version serving"
+    },
     "buildImageLabel": "Build Image",
     "buildImageDesc": "Builder container image for cloud or server builds. Override it when the detected base image is wrong.",
     "productionPathsLabel": "Production Paths",
@@ -74,6 +102,10 @@
     "serverPortNotSet": "Server port not set",
     "staticFromEdge": "Static from edge",
     "staticPathHint": "Served as static files from the edge — nothing runs as a process.",
+    "modeServer": "Server",
+    "modeWorker": "Worker",
+    "modeStatic": "Static",
+    "workerModeDesc": "Runs continuously with no port or public URL — a queue consumer, cron, or bot.",
     "buildSettingsTitle": "Build Settings"
   },
   "projectSettings": {
@@ -101,7 +133,7 @@
     "valuePlaceholder": "value",
     "dropHere": "Drop .env file here",
     "noneTitle": "No environment variables",
-    "emptyHintEditing": "Click \"Add Variable\", use \"Paste .env\", upload a file, or paste anywhere inside this box",
+    "emptyHintEditing": "Paste a .env block anywhere in this box, or drop a .env file here.",
     "emptyHintReadonly": "Click \"Edit\" to manage environment variables",
     "pasteHint": "Paste a full .env block anywhere inside this box.",
     "addVariable": "Add Variable",
@@ -123,6 +155,11 @@
       "clipboardEmpty": "Clipboard is empty",
       "clipboardInvalid": "Clipboard does not contain valid KEY=VALUE environment variables",
       "clipboardBlocked": "Clipboard access was blocked. Click inside the environment box and paste with Cmd/Ctrl+V."
+    },
+    "reveal": {
+      "show": "Show values",
+      "hide": "Hide values",
+      "error": "Couldn’t reveal values"
     }
   },
   "composeServices": {
@@ -294,7 +331,6 @@
       "successful": "Deployment Successful",
       "deploying": "Deploying..."
     },
-    "viewDashboard": "View dashboard",
     "visitSite": "Visit Site",
     "warningTitle": "Deployment finished, but some services still need attention.",
     "productionLogs": "Production Logs",
@@ -333,10 +369,6 @@
       "successful": "Deployment Successful",
       "deploying": "Deploying Services…"
     },
-    "running": "running",
-    "buildingSuffix": "· {count} building",
-    "failedSuffix": "· {count} failed",
-    "viewDashboard": "View Dashboard",
     "decisionBannerTitle": "Action required — some services failed",
     "decisionBannerDefaultMsg": "This deployment finished with failed services. Keep it and fix them later, or reject it to restore the previous version.",
     "review": "Review",
@@ -376,6 +408,12 @@
       "retryOther": "Retry {count} Failed Services"
     }
   },
+  "composeServiceTally": {
+    "running": "running",
+    "builtSuffix": "· {count} built",
+    "buildingSuffix": "· {count} building",
+    "failedSuffix": "· {count} failed"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Cancelled",
@@ -386,12 +424,20 @@
     },
     "detailsTitle": "Deployment Details",
     "rowStatus": "Status",
+    "rowTarget": "Target",
+    "rowBuild": "Build",
     "rowBuildTime": "Build Time",
     "rowServices": "Services",
     "rowProject": "Project",
-    "rowType": "Type",
-    "running": "running",
-    "buildingSuffix": "· {count} building",
-    "failedSuffix": "· {count} failed"
+    "rowType": "Type"
+  },
+  "configDiagnostics": {
+    "title": "Some of this repo's openship.json was not applied",
+    "description": "The fields listed below were skipped; the rest of the file was applied. The deploy will still run.",
+    "titleWholeFile": "This repo's openship.json was ignored",
+    "descriptionWholeFile": "None of it was applied. The deploy will still run, using the settings Openship detected.",
+    "refused": "Refused",
+    "unrecognized": "Not recognized",
+    "hint": "Run `openship config validate` in the repo to check the file before your next deploy."
   }
 }

@@ -34,9 +34,9 @@
  */
 
 import { spawn } from 'node:child_process';
-import { cp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,9 +55,14 @@ function log(msg: string) {
   console.log(`[release] ${msg}`);
 }
 
-function run(cmd: string, cwd: string): Promise<void> {
+function run(cmd: string, cwd: string, env?: Record<string, string>): Promise<void> {
   return new Promise((res, rej) => {
-    const child = spawn(cmd, { cwd, shell: true, stdio: 'inherit' });
+    const child = spawn(cmd, {
+      cwd,
+      shell: true,
+      stdio: 'inherit',
+      env: env ? { ...process.env, ...env } : process.env,
+    });
     child.on('exit', (code) =>
       code === 0 ? res() : rej(new Error(`${cmd} (cwd=${cwd}) exited ${code}`)),
     );
@@ -74,6 +79,83 @@ async function step<T>(label: string, fn: () => Promise<T>): Promise<T> {
 
 async function readJson(path: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(path, 'utf-8'));
+}
+
+/**
+ * Cloudflare's own build artifact. `wrangler.json` is the fully-resolved
+ * form of client/wrangler.jsonc that the Vite plugin emits for
+ * `wrangler deploy` - the Hono server never reads it, and the two things
+ * it does carry are actively unwanted in a published image: the dev
+ * `VITE_PUBLIC_*` origins, and the absolute path of whoever ran the build
+ * (`"configPath": "/Users/<name>/..."`).
+ */
+const CLIENT_BUILD_EXCLUDE = new Set(['wrangler.json']);
+
+/**
+ * A dev origin must never reach the shipped client.
+ *
+ * GH-567: the route guards built their redirects by interpolating
+ * `import.meta.env.VITE_PUBLIC_APP_URL`, so whatever the BUILD host defined
+ * got frozen into the bundle - `http://localhost:3000` in the published
+ * image, the literal string `undefined` in a local build. Either way, a
+ * session-expiry redirect threw the user off their own domain. The fix was
+ * relative redirects (react-router resolves those against the live origin,
+ * basename included); this scan is what keeps it fixed. A bundle that can
+ * only be correct on ONE hostname must not be publishable.
+ *
+ * Two patterns, because the bug has two faces:
+ *
+ *   localhost:<port> / 127.0.0.1:<port> / 0.0.0.0:<port>
+ *     An origin baked in from a dev env. Port-qualified DELIBERATELY:
+ *     react-router (URL parse base), posthog, linkify and punycode each
+ *     ship a bare portless "localhost" of their own and none is a bug, so
+ *     matching plain `localhost` would only teach us to ignore this check.
+ *
+ *   "undefined/<path>
+ *     The same interpolation with the env absent. Anchored to the start of
+ *     a string literal so vendor code like `.replace(/undefined/g, '')`
+ *     can't trip it.
+ */
+const DEV_ORIGIN_PATTERNS: { name: string; re: RegExp }[] = [
+  { name: 'dev origin', re: /(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+/g },
+  { name: 'unset-env interpolation', re: /["'`]undefined\/[A-Za-z0-9/_-]*/g },
+];
+
+/**
+ * Every text file is scanned - decided by a NUL sniff, not by an extension
+ * allowlist. Vite emits two EXTENSIONLESS artifacts here (`_headers` and
+ * `.assetsignore`, both `extname() === ''`), so an allowlist silently skips
+ * them, and `.svg` with it. Sourcemaps are equally in scope: vite.config.ts
+ * sets `build.sourcemap: false` today, but a map embeds the ORIGINAL source
+ * text, so enabling it would ship the pre-minified literals.
+ */
+function isProbablyText(buf: Buffer): boolean {
+  return !buf.subarray(0, 8192).includes(0);
+}
+
+async function scanForDevOrigins(dir: string): Promise<string[]> {
+  const violations: string[] = [];
+
+  async function walk(current: string): Promise<void> {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(path);
+        continue;
+      }
+      const buf = await readFile(path);
+      if (!isProbablyText(buf)) continue;
+      const source = buf.toString('utf-8');
+      for (const { name, re } of DEV_ORIGIN_PATTERNS) {
+        for (const hit of source.match(re) ?? []) {
+          violations.push(`${relative(dir, path)}: ${name} ${JSON.stringify(hit)}`);
+        }
+      }
+    }
+  }
+
+  await walk(dir);
+  return violations;
 }
 
 async function writeJson(path: string, data: unknown): Promise<void> {
@@ -220,8 +302,27 @@ async function main() {
   });
 
   // 2. Build the client SPA. Vite output goes to client/build/client/.
+  //
+  // NODE_ENV=production is scoped to THIS command, and it is load-bearing.
+  // `react-router build` runs under `#!/usr/bin/env node`, and in the
+  // oven/bun base image `node` IS bun (/usr/local/bun-node-fallback-bin/node
+  // -> /usr/local/bin/bun, on PATH). Bun auto-loads `.env.development` into
+  // process.env whenever NODE_ENV is unset - which Dockerfile.webmail's
+  // builder stage does deliberately, to keep the client's devDependencies -
+  // and Vite then hoists every VITE_-prefixed process.env key into
+  // import.meta.env and freezes it into the bundle. That is how GH-567 put
+  // `http://localhost:3000` in the published image while a laptop build (real
+  // node, no dotenv autoload) produced the string `undefined` from the same
+  // commit: the shared script was never the divergence, the JS runtime
+  // executing the shebang was.
+  //
+  // Pinning it here makes the image and the release tarball genuinely the
+  // same bits - the claim Dockerfile.webmail already makes - and keeps the
+  // scan below free of any vendor allowlist. It is NOT set process-wide: bun
+  // reads NODE_ENV=production as an implicit `--production`, which would
+  // strip devDependencies from the installs in the later steps.
   await step('building client SPA', async () => {
-    await run('bun run build', CLIENT_DIR);
+    await run('bun run build', CLIENT_DIR, { NODE_ENV: 'production' });
   });
 
   if (!existsSync(CLIENT_BUILD)) {
@@ -233,7 +334,27 @@ async function main() {
   // 3. Copy the built client into dist/client/. fs.cp recursive is
   //    portable; no shell-out cross-platform concerns.
   await step('copying client/ to dist/client/', async () => {
-    await cp(CLIENT_BUILD, join(DIST, 'client'), { recursive: true });
+    await cp(CLIENT_BUILD, join(DIST, 'client'), {
+      recursive: true,
+      filter: (src) => !CLIENT_BUILD_EXCLUDE.has(relative(CLIENT_BUILD, src)),
+    });
+  });
+
+  // 3b. Refuse to publish a client that only works on one hostname. Scans
+  //     what actually ships (post-copy), so it covers the image and the
+  //     release tarball alike - both come through this script. See
+  //     DEV_ORIGIN_PATTERNS above for why this is worth a hard failure.
+  await step('scanning client/ for baked dev origins', async () => {
+    const violations = await scanForDevOrigins(join(DIST, 'client'));
+    if (violations.length > 0) {
+      throw new Error(
+        `Client bundle has ${violations.length} baked dev-origin literal(s) - it would ` +
+          `redirect users off their own hostname (GH-567). Build same-origin: use a ` +
+          `relative \`replace('/path')\` / \`redirect('/path')\` from react-router, or ` +
+          `client/lib/backend-url.ts.\n` +
+          violations.map((v) => `  - ${v}`).join('\n'),
+      );
+    }
   });
 
   // 4. Copy the server source into dist/server/. Bun runs TS directly,

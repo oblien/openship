@@ -66,8 +66,10 @@
     "building": "A construir",
     "deploying": "A implantar",
     "partial": "Parcial",
+    "actionRequired": "Ação necessária",
     "rejected": "Rejeitada",
     "verifying": "A verificar",
+    "noChanges": "Sem alterações",
     "pending": "Pendente"
   },
   "serviceStatus": {
@@ -150,11 +152,10 @@
     "rollbackTitle": {
       "enabled": "Restaurar o projeto para esta versão (apenas o código — os dados não são alterados)",
       "active": "Esta já é a versão ativa",
-      "pruned": "O artefacto de reversão foi removido. Use 'Reimplantar este commit' para reconstruir a partir da fonte.",
-      "notReady": "Só é possível reverter para implantações prontas"
+      "pruned": "Este deploy não tem imagem retida nem commit para reconstruir",
+      "notReady": "Só é possível reverter para implantações prontas",
+      "rebuildOnly": "Restaurar esta versão reconstruindo o commit (a imagem foi removida)"
     },
-    "redeploy": "Reimplantar este commit",
-    "redeployTitle": "Reconstruir este commit exato a partir da fonte. Mais lento do que a reversão, mas funciona após o artefacto ter sido removido.",
     "pin": "Fixar",
     "unpin": "Desafixar",
     "pinTitle": {
@@ -163,11 +164,32 @@
       "pruned": "Não é possível fixar — o artefacto já foi removido"
     },
     "deleteDeployment": "Eliminar implantação",
-    "confirmRollback": "Reverter para esta versão?\n\nIsto restaura apenas o código da aplicação. Os dados da base de dados e dos volumes não são alterados.",
     "rollbackFailed": "A reversão falhou",
-    "confirmRedeploy": "Reimplantar o commit {hash}?\n\nReconstrói este commit exato a partir da fonte. Mais lento do que a reversão (a construção completa é executada novamente), mas funciona mesmo após o artefacto de reversão ter sido removido. Uma nova implantação aparecerá na lista.",
-    "redeployFailed": "A reimplantação falhou",
     "pinFailed": "Falha ao fixar a implantação",
-    "unpinFailed": "Falha ao desafixar a implantação"
+    "unpinFailed": "Falha ao desafixar a implantação",
+    "rollbackModeInstant": "Restauração instantânea — reutiliza a imagem retida desta versão, sem rebuild.",
+    "rollbackModeRebuild": "Rebuild — a imagem desta versão não está mais no host, então o commit é construído novamente.",
+    "rollbackModeReacquireImage": "Restauração do registro — baixa novamente a referência exata da imagem salva para esta versão, sem reconstruir o código-fonte.",
+    "rollbackModeMixed": "Quase instantâneo — {count} serviço(s) perderam a imagem e serão reconstruídos."
+  },
+  "rollbackConfirm": {
+    "title": "Voltar para esta versão?",
+    "dataUnchanged": "Restaura apenas o código da aplicação. Os dados de banco e de volumes não mudam.",
+    "envHeading": "Variáveis de ambiente",
+    "envSummaryOverlay": "{count} variável(is) mudam — os valores desta versão são aplicados sobre os atuais.",
+    "envSummaryReplace": "{count} variável(is) mudam — o ambiente desta versão é usado exatamente como foi capturado.",
+    "envNoChanges": "Nenhuma variável de ambiente muda.",
+    "envUnchanged": "O contêiner existente é reiniciado em vez de recriado, então o ambiente dele não muda.",
+    "envNoValues": "Os valores nunca são exibidos aqui.",
+    "envTruncated": "Mostrando {shown} de {total}.",
+    "dirFrozenWins": "volta ao valor desta versão",
+    "dirRemovedSince": "retorna — removida depois desta versão",
+    "dirAddedSinceKept": "mantida como está — adicionada depois desta versão",
+    "dirAddedSinceDropped": "removida — adicionada depois desta versão",
+    "scopeAmbiguous": "capturada sem escopo de serviço, então um único valor vale para todos os serviços",
+    "untouchedHeading": "Serviços adicionados depois desta versão",
+    "untouchedNote": "Eles continuam rodando e não são alterados: {names}",
+    "confirm": "Voltar",
+    "cancel": "Cancelar"
   }
 }

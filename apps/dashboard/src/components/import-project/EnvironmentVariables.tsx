@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -15,12 +15,18 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { ENV_MASK, isMaskedValue } from "@repo/core";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 
-type EnvironmentVariableRow = { key: string; value: string; visible: boolean };
+// #336: env values arrive masked as ENV_MASK (shared with the API via @repo/core
+// so the exact sentinel can't drift). A masked row keeps the sentinel in state —
+// a save round-trips it and the backend restores the stored secret; "show
+// values" reveals real values into a display-only overlay; editing a revealed
+// row replaces the sentinel with the typed value.
+type EnvironmentVariableRow = { sourceId?: string; key: string; value: string; visible: boolean };
 
 type EnvironmentVariableMeta = {
   source: "env-file" | "default" | "missing" | "interpolated";
@@ -28,6 +34,8 @@ type EnvironmentVariableMeta = {
   defaultValue?: string;
   resolvedValue: string;
   expression?: string;
+  required?: boolean;
+  unresolvedVariables?: string[];
 };
 
 interface EnvironmentVariablesPropsOptional {
@@ -48,10 +56,35 @@ interface EnvironmentVariablesPropsOptional {
    *  itself - including Paste .env and Upload .env - stays visible at all
    *  times so the primary affordances aren't hidden behind the chevron. */
   collapsible?: boolean;
+  /** Hosts that already title the section — the compose / migration env modals,
+   *  whose own header carries the service name, "Environment variables" and the
+   *  count — hide the panel's icon + title so it isn't stated twice. */
+  hideTitle?: boolean;
   // For settings mode - external env vars
   envVars?: EnvironmentVariableRow[];
   envMeta?: Record<string, EnvironmentVariableMeta>;
   onEnvVarsChange?: (envVars: EnvironmentVariableRow[]) => void;
+  /**
+   * #336: fetch the REAL (unmasked) values for EXACTLY `keys` — one row's eye
+   * asks for that one key, the header's "Show values" asks for every masked key.
+   * Never a "give me everything" call: the API requires the key names, so a
+   * single reveal discloses a single secret. When provided and any row is masked
+   * (`••••••••`), the reveal affordances appear. Omit when there's no reveal
+   * source (a new, unsaved service) — they simply won't show.
+   */
+  onReveal?: (keys: string[]) => Promise<Record<string, string>>;
+  /**
+   * Reveal every masked row once, on mount, instead of waiting for the operator to
+   * click. For the surfaces you reach by pressing "Edit" on env that ALREADY exists:
+   * you opened it to read and change values, and a column of dots is nothing to edit —
+   * the first action would always have been "show values" anyway.
+   *
+   * Opt-in per host, not the default. On a surface that merely LISTS env next to other
+   * settings, disclosing every secret to anyone who scrolls past is a different
+   * bargain than disclosing them to someone who opened the editor. Needs {@link
+   * onReveal}; without a source there is nothing to fetch.
+   */
+  revealOnOpen?: boolean;
 }
 
 const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
@@ -66,9 +99,12 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   showSettingsActions = true,
   borderless = false,
   collapsible = false,
+  hideTitle = false,
   envVars: externalEnvVars,
   envMeta,
   onEnvVarsChange,
+  onReveal,
+  revealOnOpen = false,
 }) => {
   const deployment = useOptionalDeployment();
   const { showToast } = useToast();
@@ -130,21 +166,169 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     [currentEnvVars, updateEnvVars]
   );
 
-  const toggleEnvVisibility = useCallback(
-    (index: number) => {
-      const newEnvVars = currentEnvVars.map((env, i) =>
-        i === index ? { ...env, visible: !env.visible } : env
-      );
-      updateEnvVars(newEnvVars);
+  // #336: display-only overlay of revealed real values (keyed by env key). Kept
+  // out of `currentEnvVars` on purpose: the row value stays the mask sentinel
+  // until the user actually edits it, so revealing never marks the form dirty
+  // and a save still round-trips the sentinel (backend keeps the stored secret).
+  // Fills in per key — a row's eye only ever puts THAT row's secret in here.
+  const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
+  // Which masked rows are currently SHOWN as text, keyed by env key — a local
+  // overlay, NOT the row's `visible` field. A masked row's value is a sentinel, so
+  // its visibility is a pure display concern; routing it through `updateEnvVars`
+  // would (a) mark the form dirty and (b) silently drop in the migration editor,
+  // whose Record<string,string> bridge (envToRows/rowsToEnv) can't carry `visible`.
+  // Keeping it here makes the eye work identically in every host.
+  const [shownKeys, setShownKeys] = useState<Set<string>>(() => new Set());
+  const [revealingKeys, setRevealingKeys] = useState<Set<string>>(() => new Set());
+  const maskedKeys = currentEnvVars.filter((env) => isMaskedValue(env.value)).map((env) => env.key);
+  const hasMaskedRow = maskedKeys.length > 0;
+  // Every masked row shown → the header flips to "Hide values". Until then it
+  // reads "Show values" and fetches whatever is still hidden, so the pair is
+  // monotone: show-all → hide-all, with no dead end after a single row's eye.
+  const allShown = hasMaskedRow && maskedKeys.every((key) => shownKeys.has(key));
+
+  // Fetch plaintext for EXACTLY `keys`, minus what's already in the overlay. The
+  // ref holds one in-flight promise per key, so a rapid double-click — or the
+  // header racing a row's eye — shares a request instead of re-asking the server
+  // for the same secret. Rejects (after toasting) so callers bail without
+  // surfacing a second error; resolves null when no reveal source is wired.
+  const inFlightRef = useRef<Map<string, Promise<Record<string, string>>>>(new Map());
+  const ensureRevealed = useCallback(
+    async (keys: string[]): Promise<Record<string, string> | null> => {
+      if (!onReveal) return null;
+      const known: Record<string, string> = {};
+      const pending: Promise<Record<string, string>>[] = [];
+      const toFetch: string[] = [];
+      for (const key of keys) {
+        // hasOwn, not `in`: an env var named `constructor` would otherwise "hit"
+        // the overlay and hand back a function off Object.prototype.
+        if (Object.hasOwn(revealedValues, key)) known[key] = revealedValues[key];
+        else {
+          const inFlight = inFlightRef.current.get(key);
+          if (inFlight) pending.push(inFlight);
+          else toFetch.push(key);
+        }
+      }
+      if (toFetch.length > 0) {
+        const request = onReveal(toFetch)
+          .then((vals) => {
+            setRevealedValues((prev) => ({ ...prev, ...vals }));
+            return vals;
+          })
+          .catch((err) => {
+            showToast(ev.reveal?.error ?? "Failed to reveal values", "error", ev.toast.title);
+            throw err;
+          })
+          .finally(() => {
+            for (const key of toFetch) inFlightRef.current.delete(key);
+            setRevealingKeys((prev) => {
+              const next = new Set(prev);
+              for (const key of toFetch) next.delete(key);
+              return next;
+            });
+          });
+        for (const key of toFetch) inFlightRef.current.set(key, request);
+        setRevealingKeys((prev) => new Set([...prev, ...toFetch]));
+        pending.push(request);
+      }
+      if (pending.length === 0) return known;
+      return Object.assign(known, ...(await Promise.all(pending)));
     },
-    [currentEnvVars, updateEnvVars]
+    [revealedValues, onReveal, showToast, ev]
   );
+
+  // Reveal `keys` and show exactly the ones that came back. A key the source no
+  // longer has stays masked — displaying the sentinel as "plaintext" would be a
+  // lie — and the operator gets the error toast.
+  const revealAndShow = useCallback(
+    async (keys: string[]) => {
+      const vals = await ensureRevealed(keys).catch(() => null);
+      if (!vals) return;
+      const got = keys.filter((key) => Object.hasOwn(vals, key));
+      if (got.length < keys.length) {
+        showToast(ev.reveal?.error ?? "Failed to reveal values", "error", ev.toast.title);
+      }
+      if (got.length > 0) setShownKeys((prev) => new Set([...prev, ...got]));
+    },
+    [ensureRevealed, showToast, ev]
+  );
+
+  // `revealOnOpen`: fetch every masked row once, so an editor opened on existing env
+  // shows values instead of a column of dots.
+  //
+  // Guarded by a ref, not by the masked-key list: `revealAndShow` writes state, which
+  // re-renders, and the rows stay masked the whole time (the row keeps the sentinel by
+  // design — see `revealedValues`). Keyed off the list, this would re-fire on every
+  // render and hammer the endpoint. It fires for the FIRST non-empty set of masked keys
+  // and never again — a later paste or a new row is the operator's own doing, and they
+  // can use the eye. A failure isn't retried either: `revealAndShow` has already
+  // toasted, and a silent retry loop against a failing endpoint is worse than a row
+  // the operator can click.
+  const autoRevealed = useRef(false);
+  useEffect(() => {
+    if (!revealOnOpen || !onReveal || autoRevealed.current) return;
+    if (maskedKeys.length === 0) return;
+    autoRevealed.current = true;
+    void revealAndShow(maskedKeys);
+  }, [revealOnOpen, onReveal, maskedKeys, revealAndShow]);
+
+  // Drop plaintext for `keys` from the overlay as they're hidden, so a revealed
+  // secret doesn't linger in component state after the operator hides it. Showing
+  // it again re-fetches (per key) — one round trip is worth not holding it.
+  const hideKeys = useCallback((keys: string[]) => {
+    const dropped = new Set(keys);
+    setShownKeys((prev) => new Set([...prev].filter((key) => !dropped.has(key))));
+    setRevealedValues((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([key]) => !dropped.has(key)))
+    );
+  }, []);
+
+  // The per-row eye. A masked row holds only the sentinel, so showing it fetches
+  // THAT key's real value (nothing else) into the overlay. A plaintext row (new /
+  // already-typed) is the plain local password/text flip on its own `visible` field.
+  const toggleEnvVisibility = useCallback(
+    async (index: number) => {
+      const target = currentEnvVars[index];
+      if (!target) return;
+      if (isMaskedValue(target.value)) {
+        if (shownKeys.has(target.key)) hideKeys([target.key]);
+        else await revealAndShow([target.key]);
+        return;
+      }
+      updateEnvVars(
+        currentEnvVars.map((env, i) => (i === index ? { ...env, visible: !env.visible } : env))
+      );
+    },
+    [currentEnvVars, updateEnvVars, shownKeys, hideKeys, revealAndShow]
+  );
+
+  // Header "Show values" / "Hide values": the explicit bulk action — the only
+  // request that names every masked key at once. Hiding clears the overlay so
+  // nothing is left exposed.
+  const toggleRevealAll = useCallback(async () => {
+    if (allShown) {
+      hideKeys(maskedKeys);
+      return;
+    }
+    await revealAndShow(maskedKeys);
+  }, [allShown, maskedKeys, hideKeys, revealAndShow]);
 
   const handleKeyChange = (index: number, value: string) => {
     updateEnvVar(index, "key", value);
   };
 
   const handleValueChange = (index: number, value: string) => {
+    const row = currentEnvVars[index];
+    // Editing a REVEALED row turns it into a plaintext row, which reads visibility
+    // from its own `visible` flag instead of `shownKeys` — so carry the shown state
+    // over, or the value the operator is typing flips back to dots mid-keystroke in
+    // any host whose rows start `visible: false` (the migration wizard's do).
+    if (row && isMaskedValue(row.value) && shownKeys.has(row.key)) {
+      updateEnvVars(
+        currentEnvVars.map((env, i) => (i === index ? { ...env, value, visible: true } : env))
+      );
+      return;
+    }
     updateEnvVar(index, "value", value);
   };
 
@@ -448,21 +632,34 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     });
   }, [processFile]);
 
+  // One class for every secondary toolbar action (paste / upload / edit / reveal).
+  const actionBtn =
+    "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-muted/60 px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50";
+  // With `hideTitle` the row can end up empty — don't render a bare 56px gap.
+  const hasHeaderActions =
+    mode === "settings" ||
+    (mode === "deploy" && isEditingMode) ||
+    (Boolean(onReveal) && hasMaskedRow) ||
+    collapsible;
+
   return (
     <div className={borderless ? '' : 'bg-card rounded-2xl border border-border/50'}>
-      <div className="flex items-center justify-between px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
+      {(!hideTitle || hasHeaderActions) && (
+      <div className="flex items-center justify-between gap-3 px-5 py-4">
+        {!hideTitle && (
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="size-9 shrink-0 rounded-xl bg-violet-500/10 flex items-center justify-center">
             <Key className="size-[18px] text-violet-500" />
           </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">{ev.title}</p>
-            <p className="text-xs text-muted-foreground">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{ev.title}</p>
+            <p className="truncate text-xs text-muted-foreground">
               {currentEnvVars.length === 0 ? ev.noneSet : interpolate(currentEnvVars.length === 1 ? t.importProject.counts.variableOne : t.importProject.counts.variableOther, { count: String(currentEnvVars.length) })}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        )}
+        <div className="ms-auto flex shrink-0 items-center gap-2">
           {mode === "settings" && !isEditingMode && (
             <>
               {/* Paste / Upload always available — clicking either
@@ -474,7 +671,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   setIsEditingMode(true);
                   void handlePasteFromClipboard();
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <FileText className="size-3.5" />
                 {ev.pasteEnv}
@@ -484,14 +681,14 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   setIsEditingMode(true);
                   handleUploadClick();
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Upload className="size-3.5" />
                 {ev.uploadEnv}
               </button>
               <button
                 onClick={() => setIsEditingMode(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Pencil className="size-3.5" />
                 {ev.edit}
@@ -511,14 +708,14 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
               )}
               <button
                 onClick={() => void handlePasteFromClipboard()}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <FileText className="size-3.5" />
                 {ev.pasteEnv}
               </button>
               <button
                 onClick={handleUploadClick}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Upload className="size-3.5" />
                 {ev.uploadEnv}
@@ -527,7 +724,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                 <button
                   onClick={onSave}
                   disabled={isSaving}
-                  className="px-4 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex h-8 shrink-0 items-center rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? ev.saving : ev.saveChanges}
                 </button>
@@ -538,19 +735,33 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
             <>
               <button
                 onClick={() => void handlePasteFromClipboard()}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <FileText className="size-3.5" />
                 {ev.pasteEnv}
               </button>
               <button
                 onClick={handleUploadClick}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                className={actionBtn}
               >
                 <Upload className="size-3.5" />
                 {ev.uploadEnv}
               </button>
             </>
+          )}
+          {/* #336: bulk reveal — the one action that asks for every masked key at
+              once. Only when a reveal source is wired and something is masked. */}
+          {onReveal && hasMaskedRow && (
+            <button
+              type="button"
+              onClick={() => void toggleRevealAll()}
+              disabled={revealingKeys.size > 0}
+              className={actionBtn}
+              title={allShown ? ev.reveal?.hide : ev.reveal?.show}
+            >
+              {allShown ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              {allShown ? ev.reveal?.hide : ev.reveal?.show}
+            </button>
           )}
           {collapsible && (
             <button
@@ -568,7 +779,8 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
           )}
         </div>
       </div>
-      
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -596,6 +808,18 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
         {currentEnvVars.map((env, index) => {
           const resolution = getEnvResolutionState(envMeta?.[env.key], env.value, t);
           const inputStateClass = resolution?.inputClass ?? "";
+          // #336: a masked row holds only the sentinel — the real value arrives in
+          // the overlay when THAT key is revealed, and its visibility lives in
+          // `shownKeys`. A plaintext row (new / typed) shows its own value and keeps
+          // its own `visible` flag. Masked with no reveal source wired: no eye at
+          // all, since the toggle could only ever display the sentinel as text.
+          const masked = isMaskedValue(env.value);
+          const showAsText = masked ? shownKeys.has(env.key) : env.visible;
+          const displayValue =
+            masked && Object.hasOwn(revealedValues, env.key)
+              ? revealedValues[env.key]
+              : env.value;
+          const canToggleValue = !masked || Boolean(onReveal);
           return (
             <div key={index} data-env-index={index} className="space-y-1.5">
               {resolution && (
@@ -617,8 +841,8 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                 />
                 <div className="relative flex-1">
                   <input
-                    type={env.visible ? "text" : "password"}
-                    value={env.value}
+                    type={showAsText ? "text" : "password"}
+                    value={displayValue}
                     onChange={(e) => handleValueChange(index, e.target.value)}
                     placeholder={ev.valuePlaceholder}
                     readOnly={!isEditingMode}
@@ -626,13 +850,16 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                       !isEditingMode ? 'cursor-default bg-muted/20' : 'bg-muted/30'
                     } ${inputStateClass}`}
                   />
-                  <button
-                    onClick={() => toggleEnvVisibility(index)}
-                    className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                    type="button"
-                  >
-                    {env.visible ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                  </button>
+                  {canToggleValue && (
+                    <button
+                      onClick={() => void toggleEnvVisibility(index)}
+                      disabled={revealingKeys.has(env.key)}
+                      className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors disabled:opacity-40"
+                      type="button"
+                    >
+                      {showAsText ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </button>
+                  )}
                 </div>
 
                 {showEditControls && isEditingMode && (
@@ -650,40 +877,54 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
           );
         })}
 
+        {/* The box holds the add CTA but is NOT itself a button: clicking its empty
+            space focuses the paste zone, the documented fallback for when the
+            clipboard API is blocked (see the clipboardBlocked toast). */}
         {currentEnvVars.length === 0 && (
           <div
-            className={`text-center flex flex-col items-center justify-center py-10 px-6 border-2 border-dashed rounded-xl transition-all ${
+            className={`flex flex-col items-center justify-center rounded-xl border border-dashed px-6 py-8 text-center transition-colors ${
               isDragging
                 ? 'border-primary bg-primary/5'
-                : 'border-border/50 bg-muted/20'
+                : 'border-border/60 bg-muted/15'
             }`}
           >
-            <Key className={`size-10 mb-3 ${isDragging ? 'text-primary' : 'text-muted-foreground/30'}`} />
-            <p className={`text-sm font-medium mb-1 ${isDragging ? 'text-primary' : 'text-foreground'}`}>
+            <div
+              className={`mb-3 flex size-10 items-center justify-center rounded-xl transition-colors ${
+                isDragging ? 'bg-primary/10 text-primary' : 'bg-muted/60 text-muted-foreground'
+              }`}
+            >
+              <Key className="size-[18px]" />
+            </div>
+            <p className={`text-sm font-medium ${isDragging ? 'text-primary' : 'text-foreground'}`}>
               {isDragging ? ev.dropHere : ev.noneTitle}
             </p>
-            <p className="text-xs text-muted-foreground max-w-xs">
-              {isEditingMode
-                ? ev.emptyHintEditing
-                : ev.emptyHintReadonly}
+            <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+              {isEditingMode ? ev.emptyHintEditing : ev.emptyHintReadonly}
             </p>
+            {isEditingMode && (
+              <button
+                type="button"
+                onClick={addEnvVar}
+                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Plus className="size-3.5" />
+                {ev.addVariable}
+              </button>
+            )}
           </div>
         )}
 
-        {isEditingMode && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              {ev.pasteHint}
-            </p>
-            <div className="flex items-center gap-2">
+        {isEditingMode && currentEnvVars.length > 0 && (
+          <div className="space-y-2 pt-1">
             <button
+              type="button"
               onClick={addEnvVar}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
             >
               <Plus className="size-3.5" />
               {ev.addVariable}
             </button>
-            </div>
+            <p className="text-[11px] text-muted-foreground">{ev.pasteHint}</p>
           </div>
         )}
       </div>
@@ -769,7 +1010,7 @@ function getEnvResolutionState(meta: EnvironmentVariableMeta | undefined, value:
   if (!meta) return null;
   const res = t.importProject.environmentVariables.resolution;
 
-  if (meta.source === "missing" && !value) {
+  if (meta.required || (meta.source === "missing" && !value)) {
     return {
       icon: AlertTriangle,
       label: res.needsValue,

@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { organizationInviteEmail, resetPasswordEmail } from "../../src/lib/email-templates";
+import { organizationInviteEmail, resetPasswordOtpEmail } from "../../src/lib/email-templates";
 
 describe("email-templates — HTML injection is neutralized", () => {
   it("escapes attacker-controlled org name and inviter name in the invite HTML", () => {
@@ -42,15 +42,23 @@ describe("email-templates — HTML injection is neutralized", () => {
   });
 
   it("escapes a user's display name in the greeting (reset password HTML)", () => {
-    const email = resetPasswordEmail(
-      { name: "<script>alert(1)</script>", email: "user@example.com" },
-      "https://openship.example/reset/xyz",
-    );
+    // The reset mail is a CODE now, not a link, but it shares the same greeting()
+    // helper — so this guard follows the live template rather than retiring with the
+    // link flow.
+    const email = resetPasswordOtpEmail("123456", {
+      name: "<script>alert(1)</script>",
+    });
 
     expect(email.html).not.toContain("<script>alert(1)</script>");
     expect(email.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
 
-    // Plaintext greeting keeps the raw value.
-    expect(email.text).toContain("<script>alert(1)</script>");
+    // No plaintext-greeting assertion here, unlike the invite above: the OTP
+    // templates put the name in the HTML greeting only, and their `text` part is
+    // just the code and its expiry (same shape as verifyOtpEmailTemplate). So
+    // there is no raw value in the plaintext to check.
+    expect(email.text).toContain("123456");
+    // And the whole point of the code flow: nothing clickable.
+    expect(email.html).not.toContain("<a href");
+    expect(email.text).not.toContain("http");
   });
 });

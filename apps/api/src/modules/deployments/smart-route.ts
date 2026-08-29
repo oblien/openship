@@ -1,4 +1,5 @@
 import { repos, type Project } from "@repo/db";
+import { compareCommitSha } from "@repo/core";
 import { type RequestContext } from "../../lib/request-context";
 import { compareCommits } from "../github/github.service";
 import { classifyChangedFiles, routeServicesByChanges } from "../github/webhook-changed-files";
@@ -51,7 +52,9 @@ export async function resolveSmartRoute(
       routable.length === 0 ||
       !opts.commitSha ||
       !opts.commitShaBefore ||
-      opts.commitSha === opts.commitShaBefore ||
+      // Same identity rule the drift banner uses: an abbreviated sha on one side
+      // is not a second commit to diff against.
+      compareCommitSha(opts.commitSha, opts.commitShaBefore) === "same" ||
       !project.gitOwner ||
       !project.gitRepo
     ) {

@@ -63,29 +63,6 @@ function greeting(name?: string | null) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Reset password                                                     */
-/* ------------------------------------------------------------------ */
-
-export function resetPasswordEmail(user: { name?: string | null; email: string }, url: string) {
-  const html = layout(`
-    ${greeting(user.name)}
-    <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 4px">
-      We received a request to reset your password. Click the button below to choose a new one.
-    </p>
-    ${ctaButton(url, "Reset password")}
-    <p style="color:#9ca3af;font-size:13px;margin:0">
-      If you didn't request this, you can safely ignore this email. The link expires in 1 hour.
-    </p>
-  `);
-
-  return {
-    subject: "Reset your Openship password",
-    html,
-    text: `Hi ${user.name || "there"},\n\nReset your password: ${url}\n\nIf you didn't request this, ignore this email. The link expires in 1 hour.`,
-  };
-}
-
-/* ------------------------------------------------------------------ */
 /*  Verify email                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -109,7 +86,7 @@ export function verifyEmailTemplate(user: { name?: string | null; email: string 
 }
 
 /* ------------------------------------------------------------------ */
-/*  Verify email — OTP code (no link, for deliverability)              */
+/*  OTP codes (no links, for deliverability): verification + reset     */
 /* ------------------------------------------------------------------ */
 
 /** Prominent, monospaced code block — the only "content" of an OTP email. */
@@ -149,6 +126,46 @@ export function verifyOtpEmailTemplate(
     subject: `Your ${BRAND} verification code: ${code}`,
     html,
     text: `Your ${BRAND} verification code is: ${code}\n\nEnter it to verify your email. It expires in ${mins} minutes.\n\nIf you didn't create an account, ignore this email.`,
+  };
+}
+
+/**
+ * Password reset by CODE, and the reason it replaced the link version.
+ *
+ * A reset link is the single most phishing-shaped email a product sends: an
+ * unsolicited "click here to change your password" URL. Spam filters score it
+ * accordingly, corporate gateways rewrite or strip it, and a rewritten link that
+ * lands on the wrong host is indistinguishable from an attack to the person
+ * reading it. A six-digit code has no URL to flag, rewrite, or spoof — the user
+ * types it into a page they navigated to themselves.
+ *
+ * It is also the pattern this product already committed to for email
+ * verification (see `emailOTP` in lib/auth.ts, whose comment gives the same
+ * deliverability rationale). Reset was the one flow still sending a link, which
+ * made the product inconsistent about its own decision.
+ */
+export function resetPasswordOtpEmail(
+  code: string,
+  opts?: { name?: string | null; expiresMinutes?: number },
+) {
+  const mins = opts?.expiresMinutes ?? 10;
+  const html = layout(`
+    ${greeting(opts?.name)}
+    <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 4px">
+      Your ${BRAND} password reset code is:
+    </p>
+    ${codeBlock(code)}
+    <p style="color:#9ca3af;font-size:13px;margin:0">
+      Enter this code to choose a new password. It expires in ${mins} minutes.
+      If you didn't request a reset, you can ignore this email — nothing has
+      changed on your account.
+    </p>
+  `);
+
+  return {
+    subject: `Your ${BRAND} password reset code: ${code}`,
+    html,
+    text: `Your ${BRAND} password reset code is: ${code}\n\nEnter it to choose a new password. It expires in ${mins} minutes.\n\nIf you didn't request a reset, ignore this email — nothing has changed on your account.`,
   };
 }
 

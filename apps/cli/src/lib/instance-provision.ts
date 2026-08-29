@@ -4,17 +4,18 @@
  * exact loopback API calls the wizard makes (bootstrap-admin + self-register),
  * so `openship up --non-interactive …` provisions a box end-to-end without a TTY.
  *
- * The loopback API is internal-token-gated; the caller passes the token
- * (from `ensureInternalToken()`) so this module has no dependency on the `up`
- * command (avoids an import cycle). Secrets (admin password) come from flags/env,
- * never logged.
+ * The loopback API is internal-token-gated. A caller that just brought a stack up
+ * passes the token it wrote (so this module has no dependency on the `up` command —
+ * avoids an import cycle); when it's omitted, ./loopback-api resolves whichever token
+ * this box's API is running with. Secrets (admin password) come from flags/env, never
+ * logged.
  *
  * The loopback API calls + internal token live in ./loopback-api — the SAME
  * copy the wizard uses (no duplication).
  */
 
 import { isValidEmail } from "@repo/core";
-import { internalPost, waitHealthy, bootstrapAdmin, ensureInternalToken } from "./loopback-api";
+import { internalFetch, internalPost, waitHealthy, bootstrapAdmin } from "./loopback-api";
 
 export type DomainKind = "byo" | "custom" | "free" | "none";
 
@@ -33,6 +34,10 @@ export interface InstallInputs {
         localEdge?: boolean;
         edgeTakeover?: boolean;
         edgeMigrate?: boolean;
+        /** Corrected static roots (by primary hostname) the wizard copied into the
+         *  edge's static bind mount host-side, for adopted static sites the container
+         *  edge couldn't reach. Forwarded to self-register. See #456. */
+        staticRootOverrides?: Record<string, string>;
       }
     | { kind: "none" };
 }
@@ -177,10 +182,14 @@ async function drainProvisionStream(
 ): Promise<{ completed: boolean; detail?: string }> {
   let detail: string | undefined;
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/system/self-register/stream?id=${sessionId}`, {
-      headers: { "X-Internal-Token": token ?? ensureInternalToken() },
-      signal: AbortSignal.timeout(180000),
-    });
+    const call = await internalFetch(
+      port,
+      `/api/system/self-register/stream?id=${sessionId}`,
+      { signal: AbortSignal.timeout(180000) },
+      token,
+    );
+    if (call.kind !== "response") return { completed: false, detail: call.detail };
+    const res = call.res;
     if (!res.body) return { completed: false };
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -347,6 +356,7 @@ export async function headlessProvision(opts: {
       localEdge: d.localEdge,
       edgeTakeover: d.edgeTakeover,
       edgeMigrate: d.edgeMigrate,
+      ...(d.staticRootOverrides ? { staticRootOverrides: d.staticRootOverrides } : {}),
     });
     let slug = d.slug;
     let res = await internalPost(port, "/api/system/self-register", freeBody(slug), token);

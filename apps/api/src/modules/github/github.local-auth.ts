@@ -7,7 +7,8 @@
  *
  * Resolution order:
  *   1. `gh auth token` subprocess (works on any OS where `gh` is in PATH)
- *   2. Read `~/.config/gh/hosts.yml` directly (fallback when `gh` binary is missing)
+ *   2. Read the single `hosts.yml` selected by GitHub CLI's config precedence
+ *      (fallback when the `gh` binary is missing)
  *
  * This module also exposes `getLocalGhStatus()` - a convenience that validates
  * the resolved token against the GitHub API and returns the user profile.
@@ -29,7 +30,7 @@
 import { execFile } from "child_process";
 import { readFile } from "fs/promises";
 import { homedir } from "os";
-import { join } from "path";
+import { join, win32 } from "path";
 import { createOAuthDeviceAuth } from "@octokit/auth-oauth-device";
 import { repos } from "@repo/db";
 import { env } from "../../config/env";
@@ -91,8 +92,10 @@ export async function getLocalGhToken(): Promise<string | null> {
  * a null column or an undecryptable value all mean "no stored token" and fall
  * through to the `gh` probes rather than failing the caller.
  *
- * A decrypt failure is worth a log — it means the row survived but
- * OPENSHIP_ENCRYPTION_KEY changed, and the operator has to sign in again.
+ * A decrypt failure is worth a log — it means the row survived but the key no
+ * longer opens it, and the operator has to sign in again. The key is derived
+ * from BETTER_AUTH_SECRET (see lib/encryption), so rotating THAT is what
+ * orphans a stored credential.
  */
 async function readStoredDeviceToken(): Promise<string | null> {
   try {
@@ -134,7 +137,21 @@ export async function setStoredDeviceToken(
  * consent decision. "host-cli" = probed off the host's own `gh` login (nothing
  * the operator did inside Openship); "device"/"token" = they connected it here.
  */
-export async function getGitIdentityMethod(): Promise<"host-cli" | "device" | "token" | null> {
+export type GitIdentityMethod = "host-cli" | "device" | "token";
+
+/**
+ * Why a credential that EXISTS can't be used. Absent when there is no
+ * credential at all — "nothing connected" and "what you connected is broken"
+ * are different states and the UI has to be able to tell them apart.
+ *
+ *   "rejected"    → GitHub answered 401/403: revoked, expired, or scope-stripped.
+ *                   Actionable, and the only one worth alarming about.
+ *   "unreachable" → we never got an answer (DNS, offline, proxy). The credential
+ *                   may be perfectly fine, so this must NOT read as "invalid".
+ */
+export type GitIdentityProblem = "rejected" | "unreachable";
+
+export async function getGitIdentityMethod(): Promise<GitIdentityMethod | null> {
   if (env.CLOUD_MODE) return null;
   const stored = await repos.instanceSettings.get().catch(() => null);
   if (stored?.ghDeviceTokenEncrypted) return stored.ghDeviceTokenMethod ?? "device";
@@ -166,22 +183,58 @@ export async function invalidateLocalGhToken(): Promise<void> {
 // ─── Status ──────────────────────────────────────────────────────────────────
 
 /**
- * Check whether the machine has a valid `gh` CLI token and return the
- * associated GitHub user profile.
+ * THE health probe for the instance's git identity: is there a credential, HOW
+ * was it established, and does GitHub still accept it?
+ *
+ * All three answers come from one function on purpose. `method` used to be
+ * resolved by a second call in one caller and not at all in the others, so the
+ * dashboard labelled every identity "gh CLI"; and a failed verify collapsed to
+ * a bare `available: false`, indistinguishable from "never connected" — the UI
+ * silently offered the connect chooser again while a revoked token sat in the
+ * DB and kept being handed to clones.
+ *
  * Returns { available: false } immediately in cloud modes (app / oauth).
+ *
+ * NOTE the deliberate asymmetry with `getLocalGhToken()`: this verifies against
+ * GitHub, the token getter does not. Resolution stays a cheap DB/cache read on
+ * the deploy hot path; the cost of that is a revoked credential surfacing as a
+ * clone failure, which is why `problem` exists here for the UI to warn on.
  */
-export async function getLocalGhStatus(): Promise<
-  | { available: true; login: string; id: number; avatar_url: string }
-  | { available: false }
-> {
+export type LocalGhStatus =
+  | {
+      available: true;
+      login: string;
+      id: number;
+      avatar_url: string;
+      method: GitIdentityMethod;
+      /** ISO timestamp of THIS verify, so the UI can say when it last checked. */
+      checkedAt: string;
+    }
+  | {
+      available: false;
+      /** Non-null only when a credential exists but didn't pass. */
+      method: GitIdentityMethod | null;
+      problem?: GitIdentityProblem;
+      /** Absent when no verify was attempted (there was no credential to verify). */
+      checkedAt?: string;
+    };
+
+export async function getLocalGhStatus(): Promise<LocalGhStatus> {
+  const checkedAt = new Date().toISOString();
+  const none = { available: false, method: null, checkedAt } as const;
+
   // HARD multi-tenant floor (see getLocalGhToken) — never probe gh on the SaaS.
-  if (env.CLOUD_MODE) return { available: false };
+  if (env.CLOUD_MODE) return none;
 
   const mode = getGitHubAuthMode();
-  if (mode === "app" || mode === "oauth") return { available: false };
+  if (mode === "app" || mode === "oauth") return none;
 
   const token = await getLocalGhToken();
-  if (!token) return { available: false };
+  if (!token) return none;
+
+  // The credential exists, so from here on every return carries the method —
+  // a warning the operator can act on has to name what is broken.
+  const method = (await getGitIdentityMethod().catch(() => null)) ?? "host-cli";
 
   try {
     const res = await fetch("https://api.github.com/user", {
@@ -194,18 +247,27 @@ export async function getLocalGhStatus(): Promise<
     if (!res.ok) {
       systemDebug(
         "gh-cli",
-        `/user verify failed: status=${res.status} — token from gh CLI was rejected. Run \`gh auth refresh\` or \`gh auth login\`.`,
+        `/user verify failed: status=${res.status} method=${method} — the stored GitHub ` +
+          `credential was rejected. Reconnect in Settings, or run \`gh auth refresh\`.`,
       );
-      return { available: false };
+      // 401/403 is GitHub telling us the credential is bad. Any other status is
+      // GitHub having a problem (5xx, rate-limit page, captive proxy) — reporting
+      // that as "your token is invalid" would send the operator to revoke a
+      // working token.
+      const rejected = res.status === 401 || res.status === 403;
+      return {
+        available: false,
+        method,
+        problem: rejected ? "rejected" : "unreachable",
+        checkedAt,
+      };
     }
     const user = (await res.json()) as { login: string; id: number; avatar_url: string };
-    return { available: true, ...user };
+    return { available: true, ...user, method, checkedAt };
   } catch (err) {
-    systemDebug(
-      "gh-cli",
-      `/user verify threw: ${safeErrorMessage(err)}`,
-    );
-    return { available: false };
+    systemDebug("gh-cli", `/user verify threw: ${safeErrorMessage(err)}`);
+    // Network-level failure: never blame the credential.
+    return { available: false, method, problem: "unreachable", checkedAt };
   }
 }
 
@@ -275,7 +337,9 @@ const GH_FALLBACK_PATHS = [
 /** One-shot exec attempt — resolves to the trimmed stdout on success,
  *  or an error object the caller can log. Used to walk fallback paths
  *  without burying the actual ENOENT/EPERM under a silent null. */
-function tryGhExec(bin: string): Promise<{ token: string } | { error: NodeJS.ErrnoException; stderr?: string }> {
+function tryGhExec(
+  bin: string,
+): Promise<{ token: string } | { error: NodeJS.ErrnoException; stderr?: string }> {
   return new Promise((resolve) => {
     execFile(bin, ["auth", "token"], { timeout: 10_000 }, (err, stdout, stderr) => {
       if (err) return resolve({ error: err as NodeJS.ErrnoException, stderr: stderr?.toString() });
@@ -338,48 +402,82 @@ async function ghAuthTokenViaCli(): Promise<string | null> {
   return null;
 }
 
-/**
- * Read token from the gh CLI config file. Tries (in order):
- *   - $GH_CONFIG_DIR/hosts.yml (explicit override)
- *   - $XDG_CONFIG_HOME/gh/hosts.yml (XDG spec)
- *   - ~/.config/gh/hosts.yml (default)
- *
- * Logs the path it actually attempted on failure so operators can see
- * the resolved location.
- */
-async function ghAuthTokenViaConfig(): Promise<string | null> {
-  const candidates: string[] = [];
-  if (process.env.GH_CONFIG_DIR) candidates.push(join(process.env.GH_CONFIG_DIR, "hosts.yml"));
-  if (process.env.XDG_CONFIG_HOME)
-    candidates.push(join(process.env.XDG_CONFIG_HOME, "gh", "hosts.yml"));
-  candidates.push(join(homedir(), ".config", "gh", "hosts.yml"));
+export interface GhConfigEnvironment {
+  GH_CONFIG_DIR?: string;
+  XDG_CONFIG_HOME?: string;
+  AppData?: string;
+  APPDATA?: string;
+}
 
-  for (const path of candidates) {
-    try {
-      const raw = await readFile(path, "utf-8");
-      // Simple line-by-line YAML parse — look for `oauth_token:` under `github.com:`
-      const ghSection = raw.split(/\n/).reduce<{ inGithub: boolean; token: string | null }>(
-        (acc, line) => {
-          if (/^github\.com:/i.test(line.trim())) acc.inGithub = true;
-          else if (/^\S/.test(line)) acc.inGithub = false;
-          if (acc.inGithub) {
-            const m = line.match(/^\s+oauth_token:\s*(.+)/);
-            if (m && !acc.token) acc.token = m[1].trim();
-          }
-          return acc;
-        },
-        { inGithub: false, token: null },
-      );
-      if (ghSection.token) {
-        systemDebug("gh-cli", `resolved token from ${path}`);
-        return ghSection.token;
-      }
-      systemDebug("gh-cli", `${path}: parsed but no oauth_token for github.com`);
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
-        systemDebug("gh-cli", `${path}: ${code ?? "read error"}`);
-      }
+/**
+ * The one `hosts.yml` location GitHub CLI would select.
+ *
+ * Overrides are alternatives, not a fallback chain: once an operator isolates
+ * the process with `GH_CONFIG_DIR` (or XDG), a missing/tokenless file must not
+ * disclose another user's credential from the default home directory (#687).
+ */
+export function resolveGhHostsPath(
+  environment: GhConfigEnvironment = process.env,
+  homeDirectory: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const pathJoin = platform === "win32" ? win32.join : join;
+  if (environment.GH_CONFIG_DIR) {
+    return pathJoin(environment.GH_CONFIG_DIR, "hosts.yml");
+  }
+  if (environment.XDG_CONFIG_HOME) {
+    return pathJoin(environment.XDG_CONFIG_HOME, "gh", "hosts.yml");
+  }
+  const appData = environment.AppData || environment.APPDATA;
+  if (platform === "win32" && appData) {
+    return win32.join(appData, "GitHub CLI", "hosts.yml");
+  }
+  return pathJoin(homeDirectory, ".config", "gh", "hosts.yml");
+}
+
+export interface GhConfigLookupOptions {
+  environment?: GhConfigEnvironment;
+  homeDirectory?: string;
+  platform?: NodeJS.Platform;
+  read?: (path: string, encoding: BufferEncoding) => Promise<string>;
+}
+
+/** Read a token from exactly the authoritative GitHub CLI config location. */
+export async function ghAuthTokenViaConfig(
+  options: GhConfigLookupOptions = {},
+): Promise<string | null> {
+  const path = resolveGhHostsPath(
+    options.environment ?? process.env,
+    options.homeDirectory ?? homedir(),
+    options.platform ?? process.platform,
+  );
+  const reader =
+    options.read ?? ((file: string, encoding: BufferEncoding) => readFile(file, encoding));
+
+  try {
+    const raw = await reader(path, "utf-8");
+    // Simple line-by-line YAML parse — look for `oauth_token:` under `github.com:`
+    const ghSection = raw.split(/\n/).reduce<{ inGithub: boolean; token: string | null }>(
+      (acc, line) => {
+        if (/^github\.com:/i.test(line.trim())) acc.inGithub = true;
+        else if (/^\S/.test(line)) acc.inGithub = false;
+        if (acc.inGithub) {
+          const m = line.match(/^\s+oauth_token:\s*(.+)/);
+          if (m && !acc.token) acc.token = m[1].trim();
+        }
+        return acc;
+      },
+      { inGithub: false, token: null },
+    );
+    if (ghSection.token) {
+      systemDebug("gh-cli", `resolved token from ${path}`);
+      return ghSection.token;
+    }
+    systemDebug("gh-cli", `${path}: parsed but no oauth_token for github.com`);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      systemDebug("gh-cli", `${path}: ${code ?? "read error"}`);
     }
   }
   return null;

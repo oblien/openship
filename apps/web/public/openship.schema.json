@@ -20,6 +20,10 @@
       "description": "Directory the app lives in, relative to the repo root (e.g. \"./\", \"apps/web\").",
       "type": "string"
     },
+    "composePath": {
+      "description": "Compose file kept outside the detected root — either the file itself (\"deploy/stack.yml\", which also covers non-standard filenames) or the directory holding it (\"deploy/docker-compose\"). Makes the project a compose deploy; service \"build\" contexts resolve relative to that directory, as compose does.",
+      "type": "string"
+    },
     "installCommand": { "description": "Command that installs dependencies.", "type": "string" },
     "buildCommand": { "description": "Command that builds the app.", "type": "string" },
     "startCommand": { "description": "Command that starts the server in production.", "type": "string" },
@@ -30,6 +34,11 @@
     "buildImage": { "description": "Docker image used for the build (e.g. \"node:22\").", "type": "string" },
     "productionPaths": {
       "description": "Paths shipped to the runtime as the production artifact.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "volumes": {
+      "description": "Paths kept across deploys. A bare path is relative to the app (\"storage\"); a full mount also works (\"uploads:/app/storage\", \"/srv/data:/app/storage\"). Omit to inherit the framework's defaults; [] turns persistence off.",
       "type": "array",
       "items": { "type": "string" }
     },
@@ -149,14 +158,14 @@
     },
 
     "resources": {
-      "description": "Cloud sizing: a named tier OR explicit cpu/memory/disk (which becomes the custom tier).",
+      "description": "CPU/memory limits for this project's containers: a named tier OR explicit values (which becomes the custom tier). Self-hosted defaults to unlimited (the machine is the ceiling) and validates a non-zero value against the target machine's real capacity; cloud workspaces are metered and must be sized. 0 = no limit.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "tier": { "enum": ["micro", "low", "medium", "high"] },
-        "cpuCores": { "type": "number", "minimum": 0.25, "maximum": 4 },
-        "memoryMb": { "type": "integer", "minimum": 128, "maximum": 8192 },
-        "diskMb": { "type": "integer", "minimum": 64, "maximum": 204800 }
+        "tier": { "enum": ["unlimited", "micro", "low", "medium", "high"] },
+        "cpuCores": { "type": "number", "minimum": 0, "maximum": 1024 },
+        "memoryMb": { "type": "integer", "minimum": 0, "maximum": 4194304 },
+        "diskMb": { "type": "integer", "minimum": 0, "maximum": 204800 }
       }
     },
 
@@ -209,6 +218,17 @@
               "retries": { "type": "integer", "minimum": 0, "maximum": 100 },
               "startPeriod": { "type": "string" },
               "disable": { "type": "boolean" }
+            }
+          },
+          "resources": {
+            "description": "Per-service cpu/memory caps, overriding the top-level resources field by field. Parity with compose mem_limit / deploy.resources.limits, which Openship also reads off the compose file. 0 = no limit.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tier": { "enum": ["unlimited", "micro", "low", "medium", "high"] },
+              "cpuCores": { "type": "number", "minimum": 0, "maximum": 1024 },
+              "memoryMb": { "type": "integer", "minimum": 0, "maximum": 4194304 },
+              "diskMb": { "type": "integer", "minimum": 0, "maximum": 204800 }
             }
           }
         }

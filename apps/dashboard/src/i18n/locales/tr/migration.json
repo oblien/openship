@@ -124,6 +124,9 @@
     "bind": "sunucu yolu",
     "nVolumes": "{n} disk birimi",
     "nEnv": "{n} ortam değişkeni",
+    "envFromImage": "{n} değişken imajdan geliyor",
+    "envFromImageHint": "Yapılandırma olarak içe aktarılmadı — imaj bunları çalışma zamanında sağlıyor. Kaynaktan yeniden derlemeden önce değerleri sabitlemek için içe aktarın.",
+    "envFromImageImport": "Yine de içe aktar",
     "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı."
   },
   "reimport": {
@@ -189,7 +192,9 @@
     "editRetry": "Düzenle ve yeniden dene",
     "safetyTitle": "Yıkıcı değil, geri alınabilir.",
     "safetyBody": "Kaynağınız tüm süreç boyunca çalışmaya devam eder — veriler kopyalanır, taşınmaz. Başarılı bir geçişten sonra bile hiçbir şey silinmez: orijinal kapsayıcılarınız, geçiş anında açıkça kaldırana kadar (güvenlik ağı olarak durdurulmuş halde) kalır.",
-    "cleanupTarget": "Hedefe kopyalanan veriyi kaldır"
+    "cleanupTarget": "Hedefe kopyalanan veriyi kaldır",
+    "retryRun": "Yeniden dene",
+    "changeTarget": "Hedefi değiştir"
   },
   "plan": {
     "missing": "bulunamadı"

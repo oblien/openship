@@ -1,0 +1,85 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "Publique sites estáticos na Openship Cloud sem custo."
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "Para o seu primeiro app de verdade: contêineres, bancos de dados e tudo o mais."
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Para apps em produção que precisam de espaço para crescer."
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "Para equipes com tráfego pesado em infraestrutura compartilhada."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "Limites sob medida, infraestrutura dedicada e um SLA."
+    }
+  },
+  "features": {
+    "everythingIn": "Tudo do {inherited}, e mais:",
+    "staticOnly": "Somente sites estáticos: SSG, SPA e HTML puro",
+    "anyWorkload": "Execute qualquer coisa: contêineres, Compose, workers, Postgres, Redis",
+    "runningServices": "{runningServices} apps, bancos de dados ou workers em execução",
+    "computeMinutes": "{computeMinutes} minutos de computação por mês",
+    "buildMinutes": "{buildMinutes} minutos de build por mês",
+    "power": "Até {powerCpu} vCPU e {powerRamGb} GB de RAM por app",
+    "projects": "{maxProjects} projetos",
+    "projectsUnlimited": "Projetos ilimitados",
+    "freeSubdomains": "{freeSubdomains} subdomínios {freeDomainSuffix} gratuitos",
+    "freeSubdomainsUnlimited": "Subdomínios {freeDomainSuffix} gratuitos e ilimitados",
+    "gitDeploys": "Faça deploy do GitHub, GitLab ou qualquer remoto Git",
+    "customDomains": "Domínios próprios ilimitados, com TLS incluído",
+    "deployLogs": "Logs de build e deploy em tempo real",
+    "auditLog": "Log de auditoria de cada alteração",
+    "unlimitedSeats": "Membros de equipe ilimitados: nunca pague por usuário",
+    "sso": "SSO e SAML",
+    "customLimits": "Limites sob medida, negociados por contrato",
+    "dedicatedInfra": "Infraestrutura e regiões dedicadas",
+    "onboarding": "Configuração inicial e migração acompanhadas de ponta a ponta",
+    "communitySupport": "Suporte da comunidade",
+    "emailSupport": "Suporte por e-mail",
+    "prioritySupport": "Suporte prioritário",
+    "dedicatedSupport": "Suporte dedicado com SLA",
+    "selfHostedOpenSource": "A plataforma inteira, de código aberto (Apache 2.0)",
+    "selfHostedUnlimited": "Deploys, projetos, servidores e domínios ilimitados",
+    "selfHostedServices": "Todos os serviços gerenciados: Postgres, Redis, e-mail",
+    "selfHostedClients": "CLI, web e desktop: um único backend",
+    "selfHostedFreeSubdomains": "{freeSubdomains} subdomínios {freeDomainSuffix} gratuitos ao conectar à Cloud"
+  },
+  "selfHosted": {
+    "name": "Auto-hospedado",
+    "tagline": "Rode a plataforma inteira em máquinas suas. Qualquer máquina Linux, qualquer provedor, qualquer região. Sem medição de uso, sem limite de usuários, sem telemetria.",
+    "priceLabel": "Grátis",
+    "priceNote": "Apache 2.0: grátis para sempre, sem cartão de crédito",
+    "cta": "Começar a auto-hospedar"
+  },
+  "creditPacks": {
+    "pack_5k": "{computeMinutes} minutos de computação",
+    "pack_25k": "{computeMinutes} minutos de computação",
+    "pack_100k": "{computeMinutes} minutos de computação"
+  },
+  "ui": {
+    "perMonth": "/mês",
+    "perYear": "/ano",
+    "custom": "Sob medida",
+    "free": "Grátis",
+    "unlimited": "Ilimitado",
+    "mostPopular": "Mais popular",
+    "monthsFree": "{months} meses grátis",
+    "ctaStart": "Começar grátis",
+    "ctaChoose": "Escolher {name}",
+    "ctaContact": "Falar com vendas",
+    "billedMonthly": "cobrança mensal, cancele quando quiser",
+    "campaignBadge": "{percentOff}% de desconto",
+    "campaignEnds": "Oferta termina em {date}",
+    "wasPrice": "antes {price}",
+    "standardTitle": "Em todos os planos",
+    "creditPackNote": "≈ {appHours} horas de um app pequeno, ou {buildMinutes} minutos de build"
+  }
+}

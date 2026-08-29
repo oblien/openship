@@ -50,6 +50,15 @@ export const resourceGrant = pgTable(
      *  than postgres `text[]` so the column types match across PGlite +
      *  Postgres without driver-specific casting. The repo (de)serializes. */
     permissionsJson: text("permissions_json").notNull().default("[]"),
+    /**
+     * Source-access scope — the SURFACE this grant reaches, where
+     * `permissionsJson` is the VERB. JSON text, same encoding rationale as above.
+     *
+     * NULL means metadata only: for a github repo grant, "read" alone does NOT
+     * authorise reading file content. See packages/core/src/source-access.ts for
+     * the shape and matching rules. Malformed content resolves to NO access.
+     */
+    scopeJson: text("scope_json"),
     /** Who created this grant (forensic). Set null on actor deletion so
      *  the grant survives — revoking a grant is a separate action. */
     grantedByUserId: text("granted_by_user_id").references(() => user.id, {

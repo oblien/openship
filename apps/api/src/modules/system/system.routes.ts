@@ -12,7 +12,8 @@
 
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { internalAuth, localOnly, requireRole } from "../../middleware";
+import { internalAuth, requireInstanceAdmin } from "../../middleware";
+import { AgentExecBody } from "../../lib/agent-exec.schema";
 import { rateLimiterFor } from "../../middleware/rate-limiter";
 import { secureRouter } from "../../lib/secure-router";
 import * as fs from "./filesystem.controller";
@@ -24,16 +25,18 @@ import * as rateLimit from "./rate-limit.controller";
 import * as tunnels from "./tunnels.controller";
 import * as serverGithub from "../github/server-github.controller";
 import * as serverModules from "./server-modules.controller";
+import * as serverContainers from "./server-containers.controller";
 import * as migration from "./migration/migration.controller";
 import * as dataTransfer from "./data-transfer/data-transfer.controller";
 import * as systemHealth from "./system-health.controller";
+import * as edgeOrphans from "./edge-orphans.controller";
 
 const r = secureRouter(new Hono(), {
   module: "system",
   basePath: "/api/system",
+  localOnly: true,
 });
 
-r.use("*", localOnly);
 
 /* ── Onboarding (first-run only, no auth) ───────────────────────── */
 r.public("get", "/onboarding", { reason: "First-run onboarding status check - no user exists yet" }, setup.onboardingStatus);
@@ -59,27 +62,63 @@ r.public("get", "/self-register/stream", { reason: "CLI setup — SSE progress f
 r.public("post", "/self-edge/preflight", { reason: "CLI setup — detect what owns ports 80/443 before installing OpenResty; internal-token gated" }, internalAuth, selfApp.selfEdgePreflight);
 r.public("post", "/edge/import-sites", { reason: "CLI `openship up` (compose) — register sites migrated from a foreign proxy into the container edge (host stops the proxy pre-up; api re-serves via DockerEdgeExecutor); internal-token gated" }, internalAuth, selfApp.edgeImportSites);
 
+/* ── Untracked edge vhosts ──────────────────────────────────────────
+ * Edge config lives on the host and outlives its DB rows by design (record-only
+ * delete keeps the workload AND its route running). A leftover PROXY vhost 502s
+ * and announces itself; a leftover STATIC one keeps serving the removed project's
+ * files with a 200. This finds them, and removes them one named hostname at a
+ * time — never as a sweep, which would break record-only's guarantee. */
+// The scan diffs the host's live vhosts against EVERY org's domains
+// (repos.domain.listAllHostnames + every mail server + OPENSHIP_PUBLIC_URL), so
+// the READ is instance-wide too. `settings:read` alone admits a plain member
+// (lib/permission.ts discards the action half of the tag), which made this a
+// cross-tenant enumeration of every hostname the box serves. Gating the write
+// half while leaving the read open is not a boundary.
+r.get("/edge/untracked", { tag: "settings:read" }, requireInstanceAdmin(), edgeOrphans.listUntrackedEdgeSites);
+// Stops serving a hostname → instance-admin only, same reason as the read
+// (requireRole("owner") does not gate this; see middleware/instance-admin.ts).
+r.post(
+  "/edge/untracked/remove",
+  { tag: "settings:admin" },
+  requireInstanceAdmin(),
+  edgeOrphans.removeUntrackedEdgeSite,
+);
+
 /* ── Authenticated routes (dashboard settings page) ─────────────── */
 r.get("/settings", { tag: "settings:read" }, setup.getSetup);
-r.patch("/settings", { tag: "settings:write" }, setup.updateSettings);
-// Destructive reset — owner-only (like the other destructive settings routes),
-// and the handler is org-scoped (it only clears the CALLER's-org servers, never
-// every org's — see deleteSettings).
-r.delete("/settings", { tag: "settings:admin" }, requireRole("owner"), setup.deleteSettings);
+// Instance-admin only (GHSA-43hf-p5j8-8vhx): this writes the single global
+// instance_settings row — authMode, tunnelProvider/tunnelToken,
+// defaultBuildMode, defaultRollbackWindow, invitationMailSource,
+// autoUpdate/autoScanInfra — none of which is org-scoped. `settings:write`
+// alone admits a plain member (lib/permission.ts allows every resource type
+// but billing/audit to `member`), so a member could repoint the tunnel, shrink
+// every org's rollback window, or flip auth mode on a zero-auth-enabled box.
+// An org-scoped role check does NOT gate this; see middleware/instance-admin.ts.
+r.patch("/settings", { tag: "settings:write" }, requireInstanceAdmin(), setup.updateSettings);
+// Destructive reset — instance-admin only. The server cleanup IS org-scoped
+// (see deleteSettings), but the handler also drops the global instance_settings
+// row, so this is a whole-instance operation and an org-scoped role check would
+// not gate it (see middleware/instance-admin.ts).
+r.delete("/settings", { tag: "settings:admin" }, requireInstanceAdmin(), setup.deleteSettings);
 
 // Instance SMTP (Settings → Email) — self-hosted operator transport for all
 // system mail (password reset, verification, invites, notifications).
 //
-// WRITE + TEST are owner-only via requireRole("owner"): the `settings:*` tag
-// alone also admits admins/members (see lib/permission.ts), and this row is
-// the transport for every password-reset/verification email — a member who
-// could repoint it to their own SMTP relay could harvest reset tokens and take
-// over the owner's account (same reasoning as the data-transfer routes below).
+// WRITE + TEST are instance-admin only: the `settings:*` tag alone also admits
+// plain members (lib/permission.ts discards the action half of the tag), and
+// this row is the transport for every password-reset/verification email — a
+// member who could repoint it to their own SMTP relay could harvest reset
+// tokens and take over the owner's account.
+//
+// This is the threat the previous requireRole("owner") was meant to stop and
+// did not: that check resolves a caller-selected org and every user owns their
+// personal org (GHSA-rwq6-r63g-3c8h). Instance SMTP is instance-wide state, so
+// it needs an instance-level gate.
 // GET returns only a MASKED config (no password) so it stays settings:read —
 // that keeps the "no email transport → set up SMTP" hint readable everywhere.
 r.get("/settings/email", { tag: "settings:read" }, setup.getEmailSettings);
-r.put("/settings/email", { tag: "settings:write" }, requireRole("owner"), setup.updateEmailSettings);
-r.post("/settings/email/test", { tag: "settings:write" }, requireRole("owner"), setup.sendTestEmail);
+r.put("/settings/email", { tag: "settings:write" }, requireInstanceAdmin(), setup.updateEmailSettings);
+r.post("/settings/email/test", { tag: "settings:write" }, requireInstanceAdmin(), setup.sendTestEmail);
 
 /* ── Zero-auth → local-auth upgrade (no session yet) ────────────── */
 r.public(
@@ -96,12 +135,34 @@ r.public(
 r.get("/servers", { tag: "server:list" }, serversCtrl.listServers);
 r.get("/servers/:id", { tag: "server:read" }, serversCtrl.getServer);
 r.get("/servers/:id/reachability", { tag: "server:read" }, serversCtrl.probeReachability);
+// Read-only blast-radius snapshot for the removal confirm: which projects and apps
+// this box currently runs, and which server-scoped records go with it.
+r.get("/servers/:id/deletion-preview", { tag: "server:read" }, serversCtrl.serverDeletionPreview);
 // Create has no :id in the URL — org scope comes from the request and the
 // row is created in the active org. collection:true keeps the permission
 // middleware from demanding a (nonexistent) :id param.
 r.post("/servers", { tag: "server:write", collection: true }, serversCtrl.createServer);
 r.patch("/servers/:id", { tag: "server:write" }, serversCtrl.updateServer);
 r.delete("/servers/:id", { tag: "server:admin" }, serversCtrl.deleteServer);
+// Host exec. `server:admin` on the id, so a {server,<id>,[admin]} grant confines an
+// agent to this one box — the per-resource scope the jobs-based workaround could not
+// express. MCP-exposed deliberately: this is the sanctioned agent execution point.
+r.post(
+  "/servers/:id/exec",
+  {
+    tag: "server:admin",
+    // Tighter than the default-authed 3000/min: each call opens a pooled SSH
+    // connection and runs an arbitrary command, so the generic read budget is the
+    // wrong shape for it.
+    rateLimit: "write-authed",
+    body: AgentExecBody,
+    mcp: {
+      description:
+        "Run a shell command on this server's host and return its exit code and combined output. Interpreted by `sh -c`, so pipes and redirects work; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Use this to inspect or repair a server; prefer the read-only endpoints when they answer the question.",
+    },
+  },
+  serversCtrl.execOnServer,
+);
 
 /* ── Per-server rate limiting (OpenResty level) ─────────────────── */
 r.get("/servers/:id/rate-limit", { tag: "server:read" }, rateLimit.getRateLimit);
@@ -113,6 +174,34 @@ r.post("/servers/:id/ports/scan", { tag: "server:read", readOnly: true }, server
 r.get("/servers/:id/modules", { tag: "server:read" }, serverModules.listServerModules);
 r.post("/servers/:id/modules/scan", { tag: "server:write" }, serverModules.scanServerModules);
 r.post("/servers/:id/modules/:module/apply", { tag: "server:write" }, serverModules.applyServerModuleUpdate);
+
+// ── Managed CONTAINER versioning (edge / mail images pinned to APP_VERSION).
+//    Same `:id`-server permission resource + cloud/org guards as modules; apply
+//    STREAMS the rollback-guarded image swap. ──
+// Org-wide drift count for the home nudge — no :id, so collection:true scopes
+// the permission check to the active org (like /install/stream, /monitor/stream)
+// instead of demanding a server param.
+r.get("/containers/behind", { tag: "server:read", collection: true }, serverContainers.containersBehind);
+r.get("/containers/issues", { tag: "server:read", collection: true }, serverContainers.containerIssues);
+// Global infra view — every server × component. No :id, so collection:true scopes
+// the check to the active org (same as /containers/behind). Scan is detect-only.
+r.get("/containers", { tag: "server:read", collection: true }, serverContainers.listAllContainers);
+// Live progress for the fleet view: what's queued/running right now (cached rows ×
+// in-memory sessions) plus what just settled, which is the only place an outcome
+// lives — a finished row clears its drift and its in-progress flag together.
+r.get("/containers/applying", { tag: "server:read", collection: true }, serverContainers.listApplyingContainers);
+r.post("/containers/scan", { tag: "server:write", collection: true }, serverContainers.scanAllContainers);
+// Fleet bulk apply — targets are derived from the cache server-side, so the body
+// only carries which intents to run ("update" swaps, "repair" restarts).
+r.post("/containers/apply-all", { tag: "server:write", collection: true }, serverContainers.applyAllContainers);
+r.get("/servers/:id/containers", { tag: "server:read" }, serverContainers.listServerContainers);
+r.post("/servers/:id/containers/scan", { tag: "server:write" }, serverContainers.scanServerContainers);
+r.post("/servers/:id/containers/:component/apply/stream", { tag: "server:write" }, serverContainers.applyServerContainerStream);
+// Read-only siblings of the POST apply stream, for page reloads: /session hands
+// back a running swap's id, /stream (GET) re-attaches to it. Neither can start a
+// run, so they stay on server:read while the POST keeps server:write.
+r.get("/servers/:id/containers/:component/apply/session", { tag: "server:read" }, serverContainers.getServerContainerApplySession);
+r.get("/servers/:id/containers/:component/apply/stream", { tag: "server:read" }, serverContainers.attachServerContainerStream);
 
 // ── Per-server GitHub auth (self-hosted): device-login token / PAT / SSH
 //    server-key / per-repo deploy-key. The `:id` server is the permission
@@ -166,18 +255,43 @@ r.get("/browse", { tag: "settings:read" }, fs.browse);
  * Path B (single_user → cloud_hosted):       start-cloud
  * Path C (single_user → tunneled):           start-tunnel
  */
-r.post("/migration/preflight", { tag: "settings:admin" }, migration.preflight);
-r.post("/migration/start", { tag: "settings:admin" }, migration.start);
-r.post("/migration/start-cloud", { tag: "settings:admin" }, migration.startCloud);
-r.post("/migration/start-tunnel", { tag: "settings:admin" }, migration.startTunnel);
-r.post("/migration/switch-back", { tag: "settings:admin" }, migration.switchBack);
+// requireInstanceAdmin() is mandatory: migrating the instance exports every
+// org's data with all secrets DECRYPTED and ships it to a caller-named server.
+// The `settings:*` tag admits plain members (lib/permission.ts discards the
+// action half), and requireRole("owner") would NOT help — see the middleware's
+// header for why an org-scoped role can't gate a whole-instance operation.
+r.post("/migration/preflight", { tag: "settings:admin" }, requireInstanceAdmin(), migration.preflight);
+r.post("/migration/start", { tag: "settings:admin" }, requireInstanceAdmin(), migration.start);
+r.post("/migration/start-cloud", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startCloud);
+r.post("/migration/start-tunnel", { tag: "settings:admin" }, requireInstanceAdmin(), migration.startTunnel);
+r.post("/migration/switch-back", { tag: "settings:admin" }, requireInstanceAdmin(), migration.switchBack);
 
-/* ── Whole-instance data export / import (owner-only) ─────────────
- * requireRole("owner") is mandatory — the `settings:*` tag alone also
- * admits admins/members (see lib/permission.ts), and this moves the
- * entire database including every org's data.
+/* ── Whole-instance data export / import (instance-admin only) ─────
+ * This moves the entire database including every org's data, and export
+ * returns every secret DECRYPTED in the response body under a passphrase the
+ * CALLER chooses. requireInstanceAdmin() is mandatory.
+ *
+ * This previously used requireRole("owner"), which did not gate it at all:
+ * that check resolves a caller-selected org and every user is owner of their
+ * own personal org (GHSA-rwq6-r63g-3c8h). Do not "restore" it here.
  */
-r.post("/data-transfer/export", { tag: "settings:admin" }, requireRole("owner"), dataTransfer.exportInstanceHandler);
+r.get("/data-transfer/preview", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.previewInstanceExportHandler);
+r.post("/data-transfer/direct/session", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.createDirectReceiveSessionHandler);
+r.post("/data-transfer/direct/send", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.sendDirectTransferHandler);
+r.public(
+  "post",
+  "/data-transfer/direct/receive",
+  {
+    reason: "One-time instance receive capability — payload is ECDH-encrypted and authorized by the expiring token inside it.",
+    rateLimit: "auth-tight",
+  },
+  bodyLimit({
+    maxSize: 700_000_000,
+    onError: (c) => c.json({ error: "Direct transfer exceeds the 700MB limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  dataTransfer.receiveDirectTransferHandler,
+);
+r.post("/data-transfer/export", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.exportInstanceHandler);
 r.use(
   "/data-transfer/import",
   bodyLimit({
@@ -185,7 +299,6 @@ r.use(
     onError: (c) => c.json({ error: "Import file exceeds the 500MB limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
   }),
 );
-r.post("/data-transfer/import", { tag: "settings:admin" }, requireRole("owner"), dataTransfer.importInstanceHandler);
+r.post("/data-transfer/import", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.importInstanceHandler);
 
 export const systemRoutes = r.hono;
-

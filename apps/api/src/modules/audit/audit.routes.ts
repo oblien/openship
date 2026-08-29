@@ -1,67 +1,200 @@
 /**
  * Audit log API — mounted at /api/audit.
  *
- * GET /api/audit              list events for the active organization
- * GET /api/audit?eventType=X  filter by event taxonomy
- * GET /api/audit?actorUserId  filter by actor
- * GET /api/audit?resourceType=&resourceId=  filter by specific resource
+ * GET    /api/audit           list events for the active organization
+ * GET    /api/audit/facets    filter options + per-tab counts for the UI
+ * GET    /api/audit/settings  recording switch + retention
+ * PATCH  /api/audit/settings  change them
  *
- * All requests are scoped by the caller's active organization. Role gating
- * is applied via permission.assert (resourceType: "audit") in each handler.
+ * Filters on the list: `category` (expanded to its event types through the
+ * shared taxonomy — a category is not a column), `eventType`, `actorUserId`,
+ * `source`, `sourceClientId` (one MCP client, not just "an assistant"),
+ * `resourceType`, `resourceId`, `from`/`to`, and `q`.
+ *
+ * `q` is deliberately more than an `event_type LIKE`: rows store ids, so
+ * searching "api-gateway" resolves the term against project/server/domain names
+ * FIRST and passes the matching ids down as extra id predicates. Without that,
+ * the only searchable text in an audit row is the event type itself.
+ *
+ * All requests are scoped by the caller's active organization. `audit` is an
+ * org-singleton resource, so the route tags below resolve to exactly the
+ * `{audit, "*", read|write}` assertion the handlers used to make by hand:
+ * owners/admins allowed, members denied outright, restricted principals gated
+ * through an explicit grant.
  */
 
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { repos } from "@repo/db";
-import { authMiddleware } from "../../middleware";
-import { rateLimiterFor } from "../../middleware/rate-limiter";
+import {
+  AUDIT_CATEGORIES,
+  categoryForAuditEvent,
+  eventTypesForCategory,
+  isAuditCategoryId,
+} from "@repo/core";
+import { secureRouter } from "../../lib/secure-router";
 import { getRequestContext } from "../../lib/request-context";
-import { permission } from "../../lib/permission";
+import { checkPermissionOnResource } from "../../lib/permission";
+import { audit, auditContextFrom } from "../../lib/audit";
+import { isAuditClientId, isAuditSource } from "../../lib/call-source";
 
-export const auditRoutes = new Hono();
+const r = secureRouter(new Hono(), { module: "audit", basePath: "/api/audit" });
 
-// All audit routes require auth. The permission resolver enforces the
-// access policy: owners/admins always allowed, members denied, and
-// restricted users gated through explicit `audit:read` grants on the
-// org-level `audit` resource (resourceId "*").
-auditRoutes.use("*", authMiddleware);
-// RAW module (not secureRouter): rate-limit here, AFTER authMiddleware so the
-// per-user `default-authed` subject key is available (fixes #123 — there is no
-// global /api/* limiter anymore).
-auditRoutes.use("*", rateLimiterFor("default-authed"));
+/** Retention windows the UI offers. Anything else is rejected. */
+const RETENTION_CHOICES = [7, 30, 90, 180, 365] as const;
 
-auditRoutes.get("/", async (c: Context) => {
-  await permission.assert(getRequestContext(c), { resourceType: "audit", resourceId: "*", action: "read" });
+function parseDate(raw: string | undefined): Date | undefined {
+  if (!raw) return undefined;
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? undefined : new Date(ms);
+}
+
+/**
+ * Ids of named resources matching a free-text term, so `q` can find rows that
+ * only ever stored an opaque id. Capped per type; a term matching thousands of
+ * projects degrades to "matches the first 200", which is preferable to a
+ * predicate list long enough to slow the query down.
+ */
+async function resolveSearchResourceIds(organizationId: string, term: string): Promise<string[]> {
+  const [projects, servers, domains] = await Promise.all([
+    repos.project.searchIdsByName(organizationId, term).catch(() => []),
+    repos.server.searchIdsByName(organizationId, term).catch(() => []),
+    repos.domain.searchIdsByHostname(organizationId, term).catch(() => []),
+  ]);
+  return Array.from(new Set([...projects, ...servers, ...domains]));
+}
+
+/** The filter set shared by the list and the facet counts. */
+async function filtersFromQuery(c: Context, organizationId: string) {
+  const category = c.req.query("category");
+  const eventType = c.req.query("eventType");
+  const source = c.req.query("source");
+  const sourceClientId = c.req.query("sourceClientId");
+  const q = c.req.query("q")?.trim();
+
+  return {
+    eventType: eventType || undefined,
+    // An unknown category yields an empty list, which the repo ignores — the
+    // request degrades to unfiltered rather than 400-ing on a stale bookmark.
+    eventTypes:
+      category && category !== "all" && isAuditCategoryId(category)
+        ? eventTypesForCategory(category)
+        : undefined,
+    actorUserId: c.req.query("actorUserId") || undefined,
+    resourceType: c.req.query("resourceType") || undefined,
+    resourceId: c.req.query("resourceId") || undefined,
+    source: source && isAuditSource(source) ? source : undefined,
+    // Shape-checked with the same predicate the writer uses, so a filter can only
+    // name something the column could hold. A malformed value degrades to
+    // unfiltered, matching how an unknown category behaves above.
+    sourceClientId: isAuditClientId(sourceClientId) ? sourceClientId : undefined,
+    from: parseDate(c.req.query("from")),
+    to: parseDate(c.req.query("to")),
+    q: q || undefined,
+    qResourceIds: q ? await resolveSearchResourceIds(organizationId, q) : undefined,
+  };
+}
+
+type AuditRow = Awaited<ReturnType<typeof repos.auditEvent.listByOrganization>>["rows"][number];
+
+/**
+ * Attach `resourceName` to a page of rows: one batched lookup per resource type
+ * present, never one per row. Failures leave the name null — the UI falls back
+ * to a generic noun, which is worse than a name and much better than a 500.
+ */
+async function attachResourceNames(rows: AuditRow[]): Promise<Map<string, string>> {
+  const byType = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row.resourceType || !row.resourceId || row.resourceId === "*") continue;
+    const bucket = byType.get(row.resourceType) ?? new Set<string>();
+    bucket.add(row.resourceId);
+    byType.set(row.resourceType, bucket);
+  }
+
+  const names = new Map<string, string>();
+  const key = (type: string, id: string) => `${type}:${id}`;
+
+  await Promise.all(
+    Array.from(byType.entries()).map(async ([type, idSet]) => {
+      const ids = Array.from(idSet);
+      try {
+        switch (type) {
+          case "project": {
+            for (const r of await repos.project.listNamesByIds(ids)) names.set(key(type, r.id), r.name);
+            break;
+          }
+          case "server": {
+            for (const r of await repos.server.listNamesByIds(ids)) names.set(key(type, r.id), r.name);
+            break;
+          }
+          case "service": {
+            for (const r of await repos.service.listNamesByIds(ids)) names.set(key(type, r.id), r.name);
+            break;
+          }
+          case "domain": {
+            for (const r of await repos.domain.listByIds(ids)) names.set(key(type, r.id), r.hostname);
+            break;
+          }
+          case "job": {
+            for (const r of await repos.job.listNamesByIds(ids)) names.set(key(type, r.id), r.name);
+            break;
+          }
+          default:
+            break;
+        }
+      } catch (err) {
+        console.warn(`[audit] could not resolve ${type} names`, err);
+      }
+    }),
+  );
+
+  return names;
+}
+
+/**
+ * Names for `source_client_id` values — `oauth:<clientId>` → the registered MCP
+ * app's name, `pat:<tokenId>` → the token's name.
+ *
+ * Two batched lookups at most, in parallel, same as the resource resolver above.
+ * An unresolvable id (client deleted, token revoked and pruned) stays nameless
+ * and the UI falls back to the raw id: a row attributed to something that no
+ * longer exists is still evidence, and dropping it would be worse.
+ */
+async function resolveClientNames(ids: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (ids.length === 0) return names;
+
+  const oauthIds: string[] = [];
+  const patIds: string[] = [];
+  for (const id of ids) {
+    if (id.startsWith("oauth:")) oauthIds.push(id.slice("oauth:".length));
+    else if (id.startsWith("pat:")) patIds.push(id.slice("pat:".length));
+  }
+
+  const [apps, tokens] = await Promise.all([
+    oauthIds.length ? repos.oauth.listApplicationsByClientIds(oauthIds).catch(() => []) : [],
+    patIds.length ? repos.personalAccessToken.listNamesByIds(patIds).catch(() => []) : [],
+  ]);
+  for (const a of apps) names.set(`oauth:${a.clientId}`, a.name);
+  for (const t of tokens) names.set(`pat:${t.id}`, t.name);
+  return names;
+}
+
+r.get("/", { tag: "audit:read" }, async (c: Context) => {
   const ctx = getRequestContext(c);
   const cursor = c.req.query("cursor");
   const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
   const page = Number(c.req.query("page") ?? 1);
   const perPage = Math.min(Number(c.req.query("perPage") ?? 50), 200);
-  const eventType = c.req.query("eventType");
-  const actorUserId = c.req.query("actorUserId");
-  const resourceType = c.req.query("resourceType");
-  const resourceId = c.req.query("resourceId");
+  const filters = await filtersFromQuery(c, ctx.organizationId);
 
   // Cursor mode is recommended for any consumer that streams pages —
   // it survives concurrent writes (no shifted rows). Page/perPage is
   // the dashboard's "Showing N of M" fallback.
-  const result = cursor !== undefined
-    ? await repos.auditEvent.listByOrganization(ctx.organizationId, {
-        cursor,
-        limit,
-        eventType: eventType || undefined,
-        actorUserId: actorUserId || undefined,
-        resourceType: resourceType || undefined,
-        resourceId: resourceId || undefined,
-      })
-    : await repos.auditEvent.listByOrganization(ctx.organizationId, {
-        page,
-        perPage,
-        eventType: eventType || undefined,
-        actorUserId: actorUserId || undefined,
-        resourceType: resourceType || undefined,
-        resourceId: resourceId || undefined,
-      });
+  const result =
+    cursor !== undefined
+      ? await repos.auditEvent.listByOrganization(ctx.organizationId, { ...filters, cursor, limit })
+      : await repos.auditEvent.listByOrganization(ctx.organizationId, { ...filters, page, perPage });
 
   // Enrich rows with actor (name/email) via a SINGLE batched user lookup.
   // Without this, the dashboard would either show raw actorUserId strings
@@ -70,14 +203,26 @@ auditRoutes.get("/", async (c: Context) => {
   const actorIds = Array.from(
     new Set(result.rows.map((r) => r.actorUserId).filter((id): id is string => !!id)),
   );
-  const actors = await repos.user.findManyByIds(actorIds);
-  const actorById = new Map(
-    actors.map((u) => [u.id, { id: u.id, email: u.email, name: u.name }]),
+  const clientIds = Array.from(
+    new Set(result.rows.map((r) => r.sourceClientId).filter((id): id is string => !!id)),
   );
+  const [actors, resourceNames, clientNames] = await Promise.all([
+    repos.user.findManyByIds(actorIds),
+    attachResourceNames(result.rows),
+    resolveClientNames(clientIds),
+  ]);
+  const actorById = new Map(actors.map((u) => [u.id, { id: u.id, email: u.email, name: u.name }]));
 
   const enrichedRows = result.rows.map((row) => ({
     ...row,
     actor: row.actorUserId ? actorById.get(row.actorUserId) ?? null : null,
+    resourceName:
+      row.resourceType && row.resourceId
+        ? resourceNames.get(`${row.resourceType}:${row.resourceId}`) ?? null
+        : null,
+    // "Claude Desktop", not "oauth:4f2a…" — the actor a reader cares about when
+    // the human in the row only authorized the agent months ago.
+    sourceClientName: row.sourceClientId ? clientNames.get(row.sourceClientId) ?? null : null,
   }));
 
   if ("pageInfo" in result) {
@@ -90,3 +235,141 @@ auditRoutes.get("/", async (c: Context) => {
     perPage: result.perPage,
   });
 });
+
+/**
+ * Everything the filter bar needs, in one request.
+ *
+ * Each facet is counted with the OTHER filters applied but not its own —
+ * otherwise selecting "MCP" would show every other source as 0 and the user
+ * could never leave the choice they just made.
+ */
+r.get("/facets", { tag: "audit:read" }, async (c: Context) => {
+  const ctx = getRequestContext(c);
+  const orgId = ctx.organizationId;
+  const filters = await filtersFromQuery(c, orgId);
+  const { eventTypes, source, sourceClientId, ...shared } = filters;
+
+  const [byEventType, bySource, byClient, actorIds, settings, canManage] = await Promise.all([
+    repos.auditEvent.countByEventType(orgId, { ...shared, source, sourceClientId }),
+    repos.auditEvent.countBySource(orgId, { ...shared, eventTypes, sourceClientId }),
+    // Counted without its own filter, like every other facet — picking one agent
+    // must not zero out the others and trap the filter on that choice.
+    repos.auditEvent.countBySourceClient(orgId, { ...shared, eventTypes, source }),
+    repos.auditEvent.distinctActors(orgId, { from: filters.from, to: filters.to }),
+    repos.auditSettings.get(orgId),
+    checkPermissionOnResource(ctx, { resourceType: "audit", resourceId: "*", action: "write" }),
+  ]);
+
+  const categoryCounts = new Map<string, number>(AUDIT_CATEGORIES.map((cat) => [cat.id, 0]));
+  let total = 0;
+  // Event types with no catalog entry (a new emitter, an old row) are counted in
+  // the total but in no tab, so "All" always adds up to at least the tabs.
+  for (const { eventType, count } of byEventType) {
+    total += count;
+    const category = categoryForAuditEvent(eventType);
+    if (category) categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + count);
+  }
+
+  const [actors, clientNames] = await Promise.all([
+    repos.user.findManyByIds(actorIds),
+    resolveClientNames(byClient.map((row) => row.sourceClientId)),
+  ]);
+
+  return c.json({
+    total,
+    categories: AUDIT_CATEGORIES.map((cat) => ({
+      id: cat.id,
+      label: cat.label,
+      description: cat.description,
+      count: categoryCounts.get(cat.id) ?? 0,
+    })),
+    sources: bySource.map((row) => ({ source: row.source, count: row.count })),
+    clients: byClient.map((row) => ({
+      id: row.sourceClientId,
+      name: clientNames.get(row.sourceClientId) ?? null,
+      count: row.count,
+    })),
+    actors: actors.map((u) => ({ id: u.id, name: u.name, email: u.email, image: u.image })),
+    settings,
+    canManage,
+  });
+});
+
+r.get("/settings", { tag: "audit:read" }, async (c: Context) => {
+  const ctx = getRequestContext(c);
+  const settings = await repos.auditSettings.get(ctx.organizationId);
+  const canManage = await checkPermissionOnResource(ctx, {
+    resourceType: "audit",
+    resourceId: "*",
+    action: "write",
+  });
+  return c.json({ ...settings, canManage });
+});
+
+r.patch("/settings", { tag: "audit:write" }, async (c: Context) => {
+  const ctx = getRequestContext(c);
+  const orgId = ctx.organizationId;
+  const body = await c.req.json().catch(() => ({}));
+
+  const patch: { enabled?: boolean; retentionDays?: number } = {};
+  if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+  if (body.retentionDays !== undefined) {
+    const days = Number(body.retentionDays);
+    if (!RETENTION_CHOICES.includes(days as (typeof RETENTION_CHOICES)[number])) {
+      return c.json({ error: `retentionDays must be one of ${RETENTION_CHOICES.join(", ")}` }, 400);
+    }
+    patch.retentionDays = days;
+  }
+  if (Object.keys(patch).length === 0) return c.json({ error: "Nothing to update" }, 400);
+
+  const current = await repos.auditSettings.get(orgId);
+  const auditCtx = auditContextFrom(c, orgId, ctx.userId);
+  const turningOff = patch.enabled === false && current.enabled;
+  const turningOn = patch.enabled === true && !current.enabled;
+  const retentionChanged =
+    patch.retentionDays !== undefined && patch.retentionDays !== current.retentionDays;
+
+  const recordRetention = () =>
+    audit.record(auditCtx, {
+      eventType: "audit.retention_changed",
+      resourceType: "audit",
+      resourceId: "*",
+      before: { retentionDays: current.retentionDays },
+      after: { retentionDays: patch.retentionDays },
+    });
+
+  // Order matters. Recording is what we are switching off, so the rows describing
+  // this change have to be written while it is still on — after the flip the
+  // repo-level gate would drop them and the log would end with no explanation.
+  // (This is also why the tag's auto-emitted `audit:write` row can't stand in for
+  // these: requirePermission emits it after the handler, i.e. after the flip.)
+  if (turningOff) {
+    await audit.record(auditCtx, {
+      eventType: "audit.disabled",
+      resourceType: "audit",
+      resourceId: "*",
+      before: { enabled: true },
+      after: { enabled: false },
+    });
+  }
+  if (retentionChanged && current.enabled) await recordRetention();
+
+  const settings = await repos.auditSettings.upsert(orgId, patch);
+
+  if (turningOn) {
+    await audit.record(auditCtx, {
+      eventType: "audit.enabled",
+      resourceType: "audit",
+      resourceId: "*",
+      before: { enabled: false },
+      after: { enabled: true },
+    });
+  }
+  // Recording was off before this request: the row is only writable now, and only
+  // if this same patch turned it back on.
+  if (retentionChanged && !current.enabled) await recordRetention();
+
+  return c.json({ ...settings, canManage: true });
+});
+
+export const auditRoutes = r.hono;

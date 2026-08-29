@@ -18,7 +18,7 @@
  */
 
 import { env, runtimeTarget, localDashboardUrl } from "../config/env";
-import { repos, db, schema, eq } from "@repo/db";
+import { repos } from "@repo/db";
 
 /**
  * Dashboard same-origin proxy mount. Fixed contract with the dashboard route at
@@ -65,12 +65,7 @@ async function locateSelfAppProjectId(): Promise<string | null> {
     const p = await repos.project.findBySlugInOrg(org, SELF_APP_SLUG);
     if (p && p.appTemplateId === SELF_APP_SLUG) return p.id;
   }
-  const [admin] = await db
-    .select({ id: schema.user.id })
-    .from(schema.user)
-    .where(eq(schema.user.autoProvisioned, false))
-    .orderBy(schema.user.createdAt)
-    .limit(1);
+  const admin = await repos.user.findFoundingAdmin();
   if (admin) {
     const p = await repos.project.findBySlugInOrg(`org_${admin.id}`, SELF_APP_SLUG);
     if (p && p.appTemplateId === SELF_APP_SLUG) return p.id;
@@ -195,6 +190,18 @@ export function resolveDashboardPublicUrl(): string {
 export function resolveApiPublicUrl(): string {
   const pub = publicUrl();
   return pub ? `${pub}${SAME_ORIGIN_PROXY_PREFIX}` : runtimeTarget.api;
+}
+
+/**
+ * `resolveApiPublicUrl` for a URL we hand back to the CALLER of this request
+ * (rather than to a third party): the configured public base when there is one,
+ * else the origin the caller actually reached us on. That fallback is what keeps
+ * a desktop dynamic port or a LAN address from being advertised as
+ * `localhost:4000`. Callers append `/api/...` paths.
+ */
+export function requestApiPublicUrl(req: Request): string {
+  const pub = publicUrl();
+  return pub ? `${pub}${SAME_ORIGIN_PROXY_PREFIX}` : requestPublicOrigin(req);
 }
 
 /**

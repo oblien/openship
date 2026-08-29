@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "metabase",
   "name": "Metabase",
-  "description": "Open-source business intelligence — dashboards and questions over your data.",
+  "description": "Open-source business intelligence — dashboards and questions over your data. Create your admin account in the browser on first visit.",
   "kind": "template",
   "logo": "metabase",
   "category": "analytics",
@@ -16,18 +16,53 @@
     {
       "name": "metabase",
       "image": "metabase/metabase:latest",
-      "ports": [
-        "3000:3000"
-      ],
       "exposedPort": 3000,
       "exposed": true,
       "environment": {
-        "MB_DB_FILE": "/metabase-data/metabase.db"
+        "MB_DB_FILE": "/metabase-data/metabase.db",
+        "MB_SITE_URL": "{{publicUrl:metabase}}"
       },
       "volumes": [
         "metabase_data:/metabase-data"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "secretEnv": [
+        "MB_ENCRYPTION_SECRET_KEY"
+      ],
+      "ports": [
+        "3010:3000"
+      ]
     }
-  ]
+  ],
+  "configFields": [
+    {
+      "key": "MB_ENCRYPTION_SECRET_KEY",
+      "service": "metabase",
+      "label": "Encryption key",
+      "help": "Auto-generated. Encrypts saved database credentials at rest. Never change it after setup.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "connection": {
+    "title": "Set up Metabase",
+    "description": "Metabase has no preset login. Open the link and the setup wizard will walk you through creating the admin account.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Metabase",
+        "source": "publicUrl:metabase",
+        "kind": "url",
+        "recommended": true,
+        "help": "First visit runs the setup wizard — the account you create there is the admin."
+      }
+    ],
+    "firstLogin": {
+      "note": "Complete the setup wizard immediately: it is unauthenticated, so whoever opens this URL first becomes the admin. Metabase can take a minute to finish migrations on first boot."
+    }
+  },
+  "verified": true
 }

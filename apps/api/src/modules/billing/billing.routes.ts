@@ -59,6 +59,12 @@ r.get("/state", { tag: "billing:read" }, billingController.getState);
 // mutation, just a passthrough to namespaces.usageUnits.
 r.get("/usage", { tag: "billing:read" }, billingController.getUsage);
 
+/* ---------- Allowance detail ---------- */
+// WHICH resources are consuming a quota, not just how many. The capacity meters
+// give a number; this gives the list a user can act on (each free subdomain with
+// the project holding it), which nothing else in the product exposes org-wide.
+r.get("/allowances", { tag: "billing:read" }, billingController.listAllowanceDetail);
+
 /* ---------- Subscription ---------- */
 // GET returns the per-org subscription slice (tier + status + period).
 // POST starts a Stripe Checkout session for an upgrade — the

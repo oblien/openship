@@ -3,6 +3,8 @@
     "title": "Capacity & usage",
     "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from Openship Cloud.",
     "routes": "Free routes",
+    "runningServices": "Running services",
+    "projects": "Projects",
     "workspaces": "Workspaces",
     "unlimited": "Unlimited",
     "used": "used",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "One-time credit top-ups are coming soon — you'll be able to add credits on top of your monthly allowance here.",
   "header": {
-    "credits": "Credits",
+    "credits": "Compute",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -81,7 +83,7 @@
     "title": "Top up credits",
     "description": "One-time credit packs charged via Stripe. Credits never expire and stack on top of your monthly allowance.",
     "tryAgain": "Try again",
-    "credits": "credits",
+    "credits": "compute minutes",
     "redirecting": "Redirecting…",
     "buy": "Buy",
     "empty": "No top-up packs available right now.",
@@ -93,25 +95,24 @@
     "portalError": "Failed to open billing portal"
   },
   "overview": {
-    "creditsLeft": "credits left",
+    "creditsLeft": "compute minutes left",
     "planLabel": "{name} plan",
     "usedThisPeriod": "Used this period",
     "resets": "Resets",
     "resetsInDay": "In {n} day",
     "resetsInDays": "In {n} days",
     "none": "—",
-    "upgradeToPro": "Upgrade to Pro",
     "recentActivity": "Recent activity",
     "last7Days": "Last 7 days",
     "viewFullUsage": "View full usage",
     "noUsageYet": "No usage yet",
     "usageError": "Failed to load usage",
-    "needMoreCredits": "Need more credits?",
+    "needMoreCredits": "Need more compute minutes?",
     "oneTimeTopups": "One-time top-ups, no subscription change",
     "seeAllPacks": "See all packs",
     "packsError": "Failed to load packs",
     "noPacks": "No top-up packs available.",
-    "creditsAmount": "{n} credits",
+    "creditsAmount": "{n} compute minutes",
     "oneTime": "{price} one-time",
     "buy": "Buy",
     "checkoutError": "Failed to start checkout"
@@ -122,7 +123,7 @@
       "balance": "Balance",
       "balanceSuffix": "of {limit} credits",
       "consumed": "Consumed this period",
-      "credits": "credits",
+      "credits": "compute minutes",
       "burnRate": "Burn rate",
       "burnRateSuffix": "credits/day (last 7d)",
       "projected": "Projected end-of-period",
@@ -141,16 +142,28 @@
       "subtitle": "Credits attributed proportionally to metered resource usage in the selected range.",
       "resource": "Resource",
       "units": "Units",
-      "credits": "Credits",
+      "credits": "Compute minutes",
       "percentOfTotal": "% of total",
       "loading": "Loading…",
       "empty": "No usage in the selected range."
     },
     "resources": {
-      "cpu": { "label": "CPU time", "units": "vCPU-hours" },
-      "memory": { "label": "Memory", "units": "GB-hours" },
-      "disk": { "label": "Disk IO", "units": "GB" },
-      "network": { "label": "Network", "units": "GB" }
+      "cpu": {
+        "label": "CPU time",
+        "units": "vCPU-hours"
+      },
+      "memory": {
+        "label": "Memory",
+        "units": "GB-hours"
+      },
+      "disk": {
+        "label": "Disk IO",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Network",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Workspace",
@@ -188,7 +201,8 @@
       "incomplete_expired": "Expired",
       "unpaid": "Unpaid",
       "paused": "Paused"
-    }
+    },
+    "includedTitle": "What's included"
   },
   "paymentPanel": {
     "title": "Payment method",

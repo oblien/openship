@@ -3,6 +3,7 @@
     "title": "Servidor de Email",
     "subtitle": "Configure um servidor de email auto-hospedado com alguns cliques",
     "backToServers": "Voltar aos servidores de email",
+    "backToAdmin": "Voltar à administração de email",
     "addServer": "Adicionar servidor de email",
     "removeModal": {
       "title": "Remover este servidor de email?",
@@ -81,7 +82,10 @@
     "willStream": "Os registos serão transmitidos aqui assim que a configuração começar.",
     "jumpToLatest": "Ir para o mais recente",
     "setupFailed": "Falha na configuração",
-    "retryFromStep": "Tentar novamente a partir do passo {resumeStep}"
+    "retryFromStep": "Tentar novamente a partir do passo {resumeStep}",
+    "resumePausedTitle": "Configuração pausada",
+    "stepLabel": "Etapa {step}",
+    "continueFromStep": "Continuar da etapa {step}"
   },
   "serverList": {
     "title": "Servidores de email",
@@ -90,7 +94,13 @@
     "removeAria": "Remover {name} da lista de email",
     "installing": "A instalar",
     "running": "Em execução",
-    "incomplete": "Incompleto"
+    "incomplete": "Incompleto",
+    "stoppedAt": "Parado · etapa {step}",
+    "open": "Abrir",
+    "openAria": "Abrir {name}",
+    "actionsAria": "Ações para {name}",
+    "overviewTitle": "Resumo do email",
+    "hint": "Remover um servidor apenas o desliga desta lista — a instalação continua a correr e pode ser readotada."
   },
   "setup": {
     "title": "Configuração do Servidor de Email",
@@ -100,7 +110,7 @@
     "willBeAtBefore": "O seu servidor de email estará em ",
     "adminPasswordLabel": "Palavra-passe de administrador",
     "passwordPlaceholder": "Palavra-passe forte - ou clique em Gerar",
-    "passwordHint": "Usada para iniciar sessão na caixa de correio após a configuração. Pode alterá-la mais tarde no painel de administração abaixo.",
+    "passwordHint": "Pelo menos 12 caracteres. Usada para iniciar sessão na caixa de correio após a configuração — pode alterá-la mais tarde no painel de administração abaixo.",
     "startSetup": "Iniciar configuração",
     "adoptCta": "Já tem um servidor de email? Adote-o",
     "whatInstalled": "O que é instalado",
@@ -117,6 +127,7 @@
     "prerequisites": "Pré-requisitos",
     "prereq1": "Um domínio com acesso ao DNS",
     "prereq2": "Porta 25 não bloqueada pelo seu fornecedor",
+    "prereq2Relay": "Porta 25 aberta para correio recebido (o envio usa o seu relay)",
     "prereq3": "Servidor Ubuntu/Debian limpo (recomendado)",
     "hide": "Ocultar",
     "reveal": "Mostrar",

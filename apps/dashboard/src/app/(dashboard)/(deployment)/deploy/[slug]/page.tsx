@@ -6,9 +6,12 @@ import ProjectSettings from "@/components/import-project/ProjectSettings";
 import BuildSettings from "@/components/import-project/BuildSettings";
 import DockerSettings from "@/components/import-project/DockerSettings";
 import ComposeServices from "@/components/import-project/ComposeServices";
+import { ComposePathField } from "@/components/import-project/ComposePathField";
+import { ConfigDiagnostics } from "@/components/import-project/ConfigDiagnostics";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import MonorepoApps from "@/components/import-project/MonorepoApps";
 import RoutingSection from "@/components/import-project/RoutingSection";
+import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import Sidebar from "./components/Sidebar";
 import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets, useSeedDeployTarget } from "./components/DeployTargetStep";
 // Clone-strategy gate moved from inline render to a preflight modal
@@ -17,7 +20,7 @@ import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets
 // CloneStrategyNudge.tsx for the hook + modal-content exports.
 import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
-import { usesServiceDeployment } from "@/context/deployment/types";
+import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import { usePlatform, canUseCloudConnection } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
@@ -114,16 +117,31 @@ const DeployRepository: React.FC = () => {
     // Desktop-only: resolve available deploy targets (server / cloud)
     const targets = useDesktopTargets();
 
-    // Existing/saved projects (config-edit, or a repo-less one-click / services
-    // project) already carry a deploy target — it hydrates from
-    // initializeFromProject. The silent seed stays OFF for them so it can never
-    // overwrite that saved target with the user's global default.
+    // A saved project pins the deploy target only if it actually HAS one, so the gate is
+    // the hydration RESULT, not the fact that a project is being loaded:
+    //   "pending" — config-edit or a repo-less project/services deploy, target not read
+    //               back yet. Seeders off, so the summary bar can't flash a default
+    //               before the real target lands.
+    //   "saved"   — initializeFromProject hydrated one. Seeders stay off; nothing may
+    //               overwrite it with the user's global default.
+    //   "none"    — hydration ran and the project is bound to nothing and has never
+    //               deployed (a repo-less catalog app whose first deploy is this one).
+    //               Seeders take over so the destination goes through the same validated
+    //               pick a fresh deploy gets. This branch is the bug: it used to be
+    //               "saved" by assumption, no hydration existed to make it true, and
+    //               DEFAULT_CONFIG's "cloud" rode all the way into the deploy payload.
     const decodedForTarget = React.useMemo(() => (slug ? decodeSlug(slug) : null), [slug]);
-    const isExistingProject = isConfigEdit || decodedForTarget?.kind === "project";
+    const loadsSavedTarget = isConfigEdit || decodedForTarget?.kind === "project";
+    const [savedTargetState, setSavedTargetState] = useState<"pending" | "saved" | "none">(
+        loadsSavedTarget ? "pending" : "none",
+    );
+    // applyLastPick is re-run synchronously the instant hydration resolves — before that
+    // setState has re-rendered — so its gate reads the ref, not the state.
+    const savedTargetRef = useRef<"pending" | "saved" | "none">(loadsSavedTarget ? "pending" : "none");
 
     // Seed the deploy target SILENTLY so the config view's summary bar is correct
-    // without ever mounting the full target step. New deploys only.
-    useSeedDeployTarget(targets, canPickTarget && !isExistingProject);
+    // without ever mounting the full target step.
+    useSeedDeployTarget(targets, canPickTarget && savedTargetState === "none");
 
     // The wizard ALWAYS lands on the config step. The deploy target is seeded
     // silently — applyLastPick (below, useLayoutEffect) for the fast localStorage
@@ -150,18 +168,31 @@ const DeployRepository: React.FC = () => {
     const appliedLastPickRef = useRef(false);
 
     const applyLastPick = useCallback(() => {
-        if (!canPickTarget || appliedLastPickRef.current) return;
+        // Don't override a SAVED project's hydrated target, and don't guess ahead of
+        // hydration either (same gate as useSeedDeployTarget) — the last-pick memory
+        // applies to deploys with no target of their own.
+        if (!canPickTarget || savedTargetRef.current !== "none" || appliedLastPickRef.current) return;
         const last = typeof window !== "undefined" ? lastPickStore.read() : null;
         if (!last) return;
-        appliedLastPickRef.current = true;
-        if (last.target === "server" && last.serverId) {
+        if (last.target === "server") {
+            // lastPickStore is a browser-GLOBAL key, so this serverId may be from
+            // another project/org or a since-removed server. Replay it ONLY when
+            // it's a live target in THIS org's list (mirrors useSeedDeployTarget's
+            // gate) — otherwise leave appliedLastPickRef UNconsumed so pass-2 (after
+            // targets load) can retry, and fall through to the validated seed rather
+            // than submitting a serverId the deploy's org doesn't own.
+            if (!last.serverId || !targets.servers.some((s) => s.id === last.serverId)) return;
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "server", serverId: last.serverId });
         } else if (last.target === "cloud") {
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
-        } else if (last.target === "local") {
-            updateConfig({ deployTarget: "local", serverId: undefined });
         }
-    }, [canPickTarget, updateConfig]);
+        // No "local" branch: the memory only stores a pickable target, and a legacy
+        // stored one fails lastPickStore's validation — so it falls through to the
+        // seeded auto-pick, which lands on this box's own server row rather than on a
+        // target with no card and no address.
+    }, [canPickTarget, targets.servers, updateConfig]);
 
     useLayoutEffect(() => {
         applyLastPick();
@@ -249,6 +280,14 @@ const DeployRepository: React.FC = () => {
             // the guard and re-apply so the summary bar (and the rest of the
             // page) reflects the user's actual saved preference.
             if (result.success) {
+                // Hydration is authoritative for a saved project's target — settle the
+                // gate BEFORE re-applying last-pick, or the browser-global memory
+                // overwrites the destination this project already had.
+                if (loadsSavedTarget) {
+                    const pinned = "savedTarget" in result && result.savedTarget ? "saved" : "none";
+                    savedTargetRef.current = pinned;
+                    setSavedTargetState(pinned);
+                }
                 appliedLastPickRef.current = false;
                 applyLastPick();
             }
@@ -292,7 +331,7 @@ const DeployRepository: React.FC = () => {
         };
 
         initialize();
-    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, force, projectId, branch, uploadStack, uploadName, toast, t]);
+    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, uploadStack, uploadName, toast, t]);
 
     if (loading) {
         return <SkeletonLoader source={decodedSource} />;
@@ -331,10 +370,27 @@ const DeployRepository: React.FC = () => {
             {config.projectType === "docker" && <DockerSettings />}
             {config.projectType === "services" && <ComposeServices />}
             {isMonorepoFlow && <MonorepoApps />}
+            {/* Outside every type-specific section on purpose: a repo whose compose
+                file lives in a subfolder scans as an app/docker project, and applying
+                a path flips this to `services` — so the control has to survive that
+                flip to stay correctable. */}
             {!isServiceDeployment &&
                 !(isMonorepoFlow && config.serviceDeploymentMode !== "single") && (
                 <EnvironmentVariables collapsible />
             )}
+            {/* Both of these sit AFTER env and outside every type-specific section:
+                they're project-level opt-ins that apply to whatever this deploy
+                turns out to be, and a control nested in the app/docker section
+                would vanish the moment applying a compose path flipped the wizard
+                to `services`. Readiness covers a port/path probe for a server, a
+                doc-root+index probe for a static site, and a restart-loop watch for
+                containers; compose services can override it individually in the
+                service's own settings. Both collapsed and off unless opened. */}
+            <ComposePathField />
+            <ReadinessSection
+                value={config.readiness}
+                onChange={(next) => updateConfig({ readiness: next ?? null })}
+            />
             <ProjectName />
             {(config.projectType === "app" || isMonorepoFlow) && <RoutingSection />}
         </>
@@ -352,6 +408,7 @@ const DeployRepository: React.FC = () => {
                             targets={targets}
                             autoSkipAllowed={autoSkipTargetRef.current}
                             onContinue={() => setStep("config")}
+                            projectId={projectId}
                         />
                     </div>
                 )}
@@ -367,9 +424,11 @@ const DeployRepository: React.FC = () => {
                                     buildStrategy={config.buildStrategy}
                                     showBuildStrategy={isSingleAppFlow}
                                     cloudResourceTier={config.cloudResourceTier}
-                                    hasServer={config.options.hasServer}
+                                    hasServer={workloadOf(config.options) !== "static"}
                                     runtimeMode={config.runtimeMode}
                                     isServices={usesServiceDeployment(config)}
+                                    rollbackWindow={config.rollbackWindow}
+                                    rollbackStrategy={config.rollbackStrategy}
                                     serverName={(() => {
                                         // Resolve the selected server by id; if id isn't set yet but
                                         // there's exactly one server, use it (covers the paint before
@@ -390,6 +449,11 @@ const DeployRepository: React.FC = () => {
                                 />
                             )}
 
+                            {/* Above every type-specific section: a refused
+                                openship.json field can belong to any of them, and
+                                the notice must survive the `app → services` flip
+                                that applying a compose path causes (#641). */}
+                            <ConfigDiagnostics />
                             {deploymentSections}
                         </div>
                         <Sidebar />

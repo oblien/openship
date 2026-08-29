@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { usePlatform } from "@/context/PlatformContext";
+import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AppLogo } from "@/components/AppLogo";
 import { DomainSwitcher } from "@/components/routing/DomainSwitcher";
@@ -23,6 +23,8 @@ import {
   DatabaseBackup,
   Webhook,
   Plus,
+  HeartPulse,
+  MonitorSmartphone,
 } from "lucide-react";
 
 const TAB_ICONS: Record<
@@ -34,6 +36,7 @@ const TAB_ICONS: Record<
   services: Layers,
   domains: Globe,
   deployments: Rocket,
+  health: HeartPulse,
   source: GitBranch,
   webhooks: Webhook,
   runtime: Wrench,
@@ -68,19 +71,16 @@ export const ProjectSidebar = () => {
     activeTab,
     tabs,
     setActiveTab,
-    domain,
+    access,
     domainsData,
     selectedDomain,
     setSelectedDomain,
     setPendingDomainAction,
   } = useProjectSettings();
   const { t } = useI18n();
-  const { selfHosted } = usePlatform();
   const status = getProjectStatus(projectData);
   const meta = PROJECT_STATUS_META[status];
   const domainsAttention = domainsNeedAttention(projectData, domainsData);
-  const localPort = projectData.port || 3000;
-  const localUrl = `localhost:${localPort}`;
 
   // Route switch: pick which domain the Production line shows/opens (shared via
   // context so switching here also refetches the overview analytics).
@@ -92,15 +92,35 @@ export const ProjectSidebar = () => {
     [domainsData?.domains],
   );
 
-  const activeDomain = selectedDomain || domain || "";
-  const hasDomain = !!activeDomain;
-  // A dev box with no managed domain is reachable at localhost; a self-hosted
-  // project with no assigned domain has NO public URL — show a "No domain"
-  // placeholder + an Add affordance rather than synthesize a fake slug domain.
-  const isLocalDev = !hasDomain && !selfHosted;
-  const canOpen = hasDomain || isLocalDev;
-  const displayUrl = hasDomain ? activeDomain : localUrl;
-  const siteHref = isLocalDev ? `http://${localUrl}` : `https://${activeDomain}`;
+  // Everything below reads the server-computed access URL (context `access`):
+  // whether there's a public host, whether it's localhost, and the href — so the
+  // sidebar no longer re-derives localhost or keys off an instance-wide flag.
+  const isLocal = access.isLocal;
+  const hasDomain = !isLocal && !!access.host;
+  const activeDomain = hasDomain ? selectedDomain || access.host || "" : "";
+  const canOpen = hasDomain ? !!activeDomain : !!access.url;
+  const displayUrl = hasDomain ? activeDomain : (access.host ?? "");
+  const siteHref = hasDomain ? `https://${activeDomain}` : (access.url ?? "#");
+
+  // No domain, but a desktop dashboard managing a remote server can still reach
+  // the app by forwarding its runtime port over the SSH tunnel (same mechanism
+  // as the connection card). Only offered when there's genuinely no public URL.
+  const { canForward, forward } = useLocalhostForward({
+    serverId: projectData.serverId,
+    deployTarget: projectData.deployTarget,
+  });
+  const [openingLocal, setOpeningLocal] = useState(false);
+  const forwardPort = Number(projectData.port) || 0;
+  const canOpenLocal = !canOpen && canForward && forwardPort > 0;
+  const openOnLocalhost = async () => {
+    if (!forwardPort || openingLocal) return;
+    setOpeningLocal(true);
+    try {
+      await forward(forwardPort, "open");
+    } finally {
+      setOpeningLocal(false);
+    }
+  };
 
   const handleTabChange = (tabId: string) => {
     const scrollY = window.scrollY;
@@ -148,9 +168,8 @@ export const ProjectSidebar = () => {
             </div>
           </div>
           <span
-            className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}
+            className={`shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
             {projectStatusLabel(status, t)}
           </span>
         </div>
@@ -158,7 +177,7 @@ export const ProjectSidebar = () => {
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm text-muted-foreground">
-              {isLocalDev ? t.projects.sidebar.local : t.projects.sidebar.production}
+              {isLocal ? t.projects.sidebar.local : t.projects.sidebar.production}
             </span>
             {canOpen ? (
               <div className="flex min-w-0 items-center gap-1.5">
@@ -183,11 +202,27 @@ export const ProjectSidebar = () => {
               </div>
             ) : (
               // No assigned domain — show a placeholder + jump to the Domains tab
-              // to add one (never synthesize a fake slug domain).
+              // to add one (never synthesize a fake slug domain). On a desktop
+              // dashboard managing a remote server, also offer "Open" to reach
+              // the app now via the SSH tunnel.
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground/50">
-                  {t.projects.sidebar.noDomain}
-                </span>
+                {canOpenLocal ? (
+                  <button
+                    type="button"
+                    onClick={openOnLocalhost}
+                    disabled={openingLocal}
+                    title={t.projects.connections.openLocalhost}
+                    aria-label={t.projects.connections.openLocalhost}
+                    className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-opacity hover:opacity-80 disabled:opacity-50"
+                  >
+                    <MonitorSmartphone className={openingLocal ? "size-3.5 animate-pulse" : "size-3.5"} />
+                    {t.projects.connections.openShort}
+                  </button>
+                ) : (
+                  <span className="text-sm text-muted-foreground/50">
+                    {t.projects.sidebar.noDomain}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => {

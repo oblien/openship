@@ -3,6 +3,8 @@
     "title": "容量と使用状況",
     "subtitle": "プランに含まれる容量と使用量です。ライブの数値は Openship Cloud から同期されます。",
     "routes": "無料ルート",
+    "runningServices": "稼働中のサービス",
+    "projects": "プロジェクト",
     "workspaces": "ワークスペース",
     "unlimited": "無制限",
     "used": "使用済み",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "都度購入のクレジットチャージは近日提供予定です。ここで月間割り当てに加えてクレジットを追加できます。",
   "header": {
-    "credits": "Credits",
+    "credits": "コンピュート",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -80,7 +82,7 @@
     "title": "クレジットを追加購入",
     "description": "Stripe経由で課金される一回限りのクレジットパックです。クレジットに有効期限はなく、毎月の割り当てに上乗せされます。",
     "tryAgain": "もう一度試す",
-    "credits": "クレジット",
+    "credits": "コンピュート分",
     "redirecting": "リダイレクト中…",
     "buy": "購入",
     "empty": "現在利用できる追加購入パックはありません。",
@@ -92,25 +94,24 @@
     "portalError": "請求ポータルを開けませんでした"
   },
   "overview": {
-    "creditsLeft": "残りクレジット",
+    "creditsLeft": "残りコンピュート分",
     "planLabel": "{name}プラン",
     "usedThisPeriod": "今期の使用量",
     "resets": "リセット",
     "resetsInDay": "{n}日後",
     "resetsInDays": "{n}日後",
     "none": "—",
-    "upgradeToPro": "Proにアップグレード",
     "recentActivity": "最近のアクティビティ",
     "last7Days": "過去7日間",
     "viewFullUsage": "使用量の詳細を表示",
     "noUsageYet": "まだ使用量はありません",
     "usageError": "使用量の読み込みに失敗しました",
-    "needMoreCredits": "クレジットがもっと必要ですか？",
+    "needMoreCredits": "コンピュート分がもっと必要ですか？",
     "oneTimeTopups": "一回限りの追加購入、サブスクリプションの変更なし",
     "seeAllPacks": "すべてのパックを見る",
     "packsError": "パックの読み込みに失敗しました",
     "noPacks": "利用できる追加購入パックはありません。",
-    "creditsAmount": "{n}クレジット",
+    "creditsAmount": "{n} コンピュート分",
     "oneTime": "{price} 一回限り",
     "buy": "購入",
     "checkoutError": "チェックアウトの開始に失敗しました"
@@ -121,7 +122,7 @@
       "balance": "残高",
       "balanceSuffix": "／ {limit} クレジット",
       "consumed": "今期の消費量",
-      "credits": "クレジット",
+      "credits": "コンピュート分",
       "burnRate": "消費ペース",
       "burnRateSuffix": "クレジット／日（過去7日間）",
       "projected": "期末の予測値",
@@ -140,16 +141,28 @@
       "subtitle": "選択した範囲における従量制リソースの使用量に比例して割り当てられたクレジット。",
       "resource": "リソース",
       "units": "ユニット",
-      "credits": "クレジット",
+      "credits": "コンピュート分",
       "percentOfTotal": "全体に占める割合",
       "loading": "読み込み中…",
       "empty": "選択した範囲に使用量はありません。"
     },
     "resources": {
-      "cpu": { "label": "CPU時間", "units": "vCPU時間" },
-      "memory": { "label": "メモリ", "units": "GB時間" },
-      "disk": { "label": "ディスクIO", "units": "GB" },
-      "network": { "label": "ネットワーク", "units": "GB" }
+      "cpu": {
+        "label": "CPU時間",
+        "units": "vCPU時間"
+      },
+      "memory": {
+        "label": "メモリ",
+        "units": "GB時間"
+      },
+      "disk": {
+        "label": "ディスクIO",
+        "units": "GB"
+      },
+      "network": {
+        "label": "ネットワーク",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "ワークスペース",
@@ -187,7 +200,8 @@
       "incomplete_expired": "期限切れ",
       "unpaid": "未払い",
       "paused": "一時停止中"
-    }
+    },
+    "includedTitle": "含まれるもの"
   },
   "paymentPanel": {
     "title": "支払い方法",

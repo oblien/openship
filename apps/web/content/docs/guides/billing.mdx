@@ -1,11 +1,11 @@
 ---
 title: Billing (Openship Cloud)
-description: Openship Cloud billing is coming soon. Self-hosted Openship is free.
+description: Openship Cloud plans and prices are published on the pricing page. Self-hosted Openship is free — there is nothing to bill.
 ---
 
-<Callout type="info" title="Coming soon">
-Openship Cloud pricing and billing aren't available yet. We're still finalizing
-them — pricing will be published before Openship Cloud becomes a paid service.
+<Callout title="Self-hosted has no billing">
+Billing exists only on **Openship Cloud**. A self-hosted install has no plan, no
+meter, and no Billing area.
 </Callout>
 
 ## Self-hosted is free
@@ -13,11 +13,38 @@ them — pricing will be published before Openship Cloud becomes a paid service.
 If you run Openship on your own machine or server, there's **nothing to pay** and
 no billing area. You only pay for your own infrastructure (the server, bandwidth,
 and any third-party services you choose to run). Openship itself is open source
-under the Apache 2.0 license.
+under the Apache 2.0 license — free forever, with no seat caps and no metering.
 
 ## Openship Cloud
 
-The managed option — Openship Cloud — is on the way. When it launches, this page
-will cover managing your plan, usage, top-ups, and invoices.
+Openship Cloud is the managed option: we run the servers, the edge, the backups.
+It starts on a free tier and steps up a monthly ladder, with a custom
+Enterprise tier at the top.
 
-Want a heads-up when it's ready? [Get in touch](/contact).
+The plans, their prices, and each plan's limits live in one place — see the
+[pricing page](/pricing). The same catalog is served by
+`GET /api/billing/plans`, so the dashboard, the API, and the marketing site can
+never disagree about what a plan costs.
+
+Every plan includes **unlimited team members**: the price you see covers your
+whole organisation, not a head count.
+
+## Managing your plan
+
+The **Billing** area in the dashboard is organised as tabs:
+
+| Tab | What it does |
+| --- | --- |
+| **Overview** | Current plan, billing period, and credit balance. |
+| **Usage** | Metered usage over the period, charted. |
+| **Plans** | Upgrade or downgrade — starts a Stripe Checkout session. |
+| **Top-ups** | One-shot credit packs (coming to the dashboard). |
+| **Payment Method** | Opens the Stripe portal to manage cards. |
+| **Invoices** | Opens the Stripe portal to download invoices. |
+
+Cancelling keeps the plan active until the end of the period you've already paid
+for, then drops the organisation back to the free tier. Nothing is deleted by
+cancelling.
+
+See the [billing API](/docs/api/billing) for the endpoints behind each of those
+actions.

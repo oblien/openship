@@ -13,91 +13,28 @@
 import { repos, type BackupDestination } from "@repo/db";
 import { type DestinationKind, type BackupDestinationRow } from "@repo/adapters";
 import crypto from "node:crypto";
-import path from "node:path";
-import { realpath } from "node:fs/promises";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { env } from "../../config/env";
 import { assertPublicUrl, assertPublicHost } from "../../lib/ssrf-guard";
 import { toAdapterRow, hydrateServerAdapterRow } from "./hydrate-server";
+import { assertLocalDestinationAllowed } from "./local-gate";
 import { safeErrorMessage, type ConnectivityCode } from "@repo/core";
 import { runConnectivityCheck } from "../../lib/connectivity";
 import "../../lib/connectivity-checks"; // registers the backup-destination check
 
 /**
- * Resolve + sandbox a local destination endpoint. Refuses any path
- * that escapes `BACKUP_LOCAL_ROOT` or sits inside known system
- * directories. Symlinks are resolved before the comparison so an
- * attacker can't slip a symlink-into-/etc past the check.
+ * Gate + sandbox a local destination endpoint at WRITE time, so the operator gets
+ * the refusal while they're still editing rather than at the next backup run.
  *
- * The realpath() will fail if the endpoint doesn't exist yet — we
- * fall back to resolving the parent + appending the leaf, which is
- * sufficient because the destination's writes go through fs.mkdir
- * later and a deceptive non-existent path can't outflank the check.
+ * The policy itself lives in ./local-gate.ts and is enforced again on every path
+ * that USES a destination (`toAdapterRow`) — this call is the early, friendly copy
+ * of that check, not the authority. Keeping one implementation is the point: the
+ * two used to be able to disagree, and only this one existed.
  */
-const LOCAL_DEST_DENY = [
-  "/etc",
-  "/proc",
-  "/sys",
-  "/dev",
-  "/root",
-  "/var/lib/postgresql",
-  "/var/lib/docker",
-  "/var/lib/openship",
-  "/boot",
-];
-
 async function validateLocalEndpoint(endpoint: string): Promise<void> {
-  if (env.CLOUD_MODE) {
-    throw new Error("Local destinations are disabled in cloud mode");
-  }
-  if (!env.BACKUP_ALLOW_LOCAL_DESTINATION) {
-    throw new Error(
-      "Local destinations are disabled. Set BACKUP_ALLOW_LOCAL_DESTINATION=true and BACKUP_LOCAL_ROOT to enable.",
-    );
-  }
-  if (!path.isAbsolute(endpoint)) {
-    throw new Error("Local destination path must be absolute");
-  }
-  const root = path.resolve(env.BACKUP_LOCAL_ROOT);
-  const requested = path.resolve(endpoint);
-
-  // Reject any path that lands inside a denied system directory, even
-  // before we resolve symlinks (catches the obvious case + makes the
-  // error message useful).
-  for (const denied of LOCAL_DEST_DENY) {
-    if (requested === denied || requested.startsWith(denied + path.sep)) {
-      throw new Error(
-        `Local destination path is inside a protected directory (${denied})`,
-      );
-    }
-  }
-
-  // Resolve symlinks where possible. If the leaf doesn't exist yet,
-  // resolve the closest existing ancestor and append the remainder.
-  let resolved = requested;
-  try {
-    resolved = await realpath(requested);
-  } catch {
-    let parent = requested;
-    while (parent !== path.dirname(parent)) {
-      parent = path.dirname(parent);
-      try {
-        const real = await realpath(parent);
-        resolved = path.join(real, requested.slice(parent.length));
-        break;
-      } catch {
-        // keep walking up
-      }
-    }
-  }
-
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error(
-      `Local destination must be inside BACKUP_LOCAL_ROOT (${root})`,
-    );
-  }
+  await assertLocalDestinationAllowed(endpoint);
 }
 
 // ─── Public shapes ───────────────────────────────────────────────────────────
@@ -131,6 +68,8 @@ export interface UpdateDestinationInput {
   sshHost?: string | null;
   sshPort?: number | null;
   sshUser?: string | null;
+  /** Retarget an openship_server destination at a different box. */
+  serverId?: string | null;
   /** Pass undefined to leave unchanged; null to clear; string to replace. */
   accessKeyId?: string | null;
   secretAccessKey?: string | null;
@@ -310,32 +249,43 @@ export async function getDestinationUsage(ctx: RequestContext, id: string): Prom
   return { destination, policies: out };
 }
 
+/**
+ * The serverId on an openship_server destination MUST belong to the calling org.
+ *
+ * It arrives from the request body, and the destination is what a backup SSHes into —
+ * so an unchecked id lets a caller point their own destination at a victim's box and
+ * read or write it with the victim's stored credentials.
+ *
+ * Shared by create and update on purpose: the check used to live inline in create
+ * only, and update simply dropped the field. Carrying it on the patch without this
+ * would have turned a silent no-op into that exact hole.
+ */
+async function assertServerUsable(
+  ctx: RequestContext,
+  serverId: string | null | undefined,
+): Promise<void> {
+  if (!serverId) {
+    throw new Error("openship_server destinations require a serverId");
+  }
+  const server = await repos.server.get(serverId);
+  if (!server) {
+    throw new Error("Server not accessible");
+  }
+  // Cross-org check when the server has an org stamp; rows without one fall through.
+  const stamped = (server as { organizationId?: string | null }).organizationId;
+  if ("organizationId" in server && stamped && stamped !== ctx.organizationId) {
+    throw new Error("Server not accessible");
+  }
+}
+
 export async function createDestination(
   ctx: RequestContext,
   input: CreateDestinationInput,
 ): Promise<SerializedDestination> {
   await validateInput(input);
 
-  // Ownership check for openship_server: the serverId arrives from the
-  // request body and MUST belong to the calling org. Without this
-  // check, an attacker could create a destination using a victim's
-  // server row and SSH-impersonate them.
   if (input.kind === "openship_server") {
-    if (!input.serverId) {
-      throw new Error("openship_server destinations require a serverId");
-    }
-    const server = await repos.server.get(input.serverId);
-    if (!server) {
-      throw new Error("Server not accessible");
-    }
-    // Cross-org check when the server has an org stamp; rows without one fall through.
-    if (
-      "organizationId" in server &&
-      (server as { organizationId?: string | null }).organizationId &&
-      (server as { organizationId?: string | null }).organizationId !== ctx.organizationId
-    ) {
-      throw new Error("Server not accessible");
-    }
+    await assertServerUsable(ctx, input.serverId);
   }
 
   // Uniqueness check (DB has a partial unique index but we want a clean
@@ -412,6 +362,18 @@ export async function updateDestination(
   if (patch.sshPort !== undefined) update.sshPort = patch.sshPort;
   if (patch.sshUser !== undefined) update.sshUser = patch.sshUser;
   if (patch.isDefault !== undefined) update.isDefault = patch.isDefault;
+  if (patch.serverId !== undefined) {
+    // Was dropped entirely: retargeting an openship_server destination at a different
+    // box was a no-op the UI confirmed as saved, and every later run kept going to the
+    // old machine. Clearing it is refused rather than stored — `toAdapterRow` calls a
+    // serverId-less openship_server row corrupted state and every run on it fails.
+    if (existing.kind === "openship_server") {
+      await assertServerUsable(ctx, patch.serverId);
+      update.serverId = patch.serverId;
+    } else if (patch.serverId) {
+      throw new Error(`A ${existing.kind} destination does not have a server`);
+    }
+  }
 
   if (patch.accessKeyId !== undefined) {
     update.accessKeyIdEnc = encryptSecretField(patch.accessKeyId);

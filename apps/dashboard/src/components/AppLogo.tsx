@@ -27,10 +27,16 @@ export const APP_LOGO: Record<
   // are left alone.
   ghost: { slug: "ghost", darkInvert: true },
   "uptime-kuma": { slug: "uptimekuma" },
-  vaultwarden: { slug: "vaultwarden" },
+  // Vaultwarden's shield mark is pure #000000, so it sinks into a dark tile — invert
+  // renders it clean white there (single flat color, nothing to distort).
+  vaultwarden: { slug: "vaultwarden", darkInvert: true },
   metabase: { slug: "metabase" },
-  directus: { slug: "directus" },
-  nocodb: { slug: "nocodb" },
+  // Directus' rabbit is near-black (#263238) → invert it on the dark themes.
+  directus: { slug: "directus", darkInvert: true },
+  // simpleicons DROPPED the NocoDB mark — `cdn.simpleicons.org/nocodb` 404s now, so the
+  // slug it used to resolve left the card on the generic Boxes glyph. Vendored brand SVG
+  // instead (indigo gradient, so it reads on light and dark alike — no invert).
+  nocodb: { src: "/app-logos/nocodb.svg" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
   gitea: { slug: "gitea" },
@@ -38,6 +44,17 @@ export const APP_LOGO: Record<
   freshrss: { slug: "freshrss" },
   excalidraw: { slug: "excalidraw" },
   qdrant: { slug: "qdrant" },
+  // Neon's mark is brand green (#34D59A) — colored, stays visible everywhere.
+  neon: { slug: "neon" },
+  // PostHog + Umami marks are near-black (#000000) → darkInvert flips them to
+  // white on the dark/dim tiles so they don't vanish. Meilisearch is brand pink.
+  posthog: { slug: "posthog", darkInvert: true },
+  meilisearch: { slug: "meilisearch" },
+  umami: { slug: "umami", darkInvert: true },
+  // Valkey (catalog id "redis") has no simpleicons mark → use its official
+  // favicon like convex/slack above. Aliased under "valkey" too for slug callers.
+  redis: { src: "https://www.google.com/s2/favicons?domain=valkey.io&sz=128" },
+  valkey: { src: "https://www.google.com/s2/favicons?domain=valkey.io&sz=128" },
   // Kafka's catalog id is "kafka"; its simpleicons brand slug is "apachekafka".
   // The mark is near-black (brand color #231F20), so it vanishes on the dark/dim
   // tiles — darkInvert flips it to near-white there (dark on light themes as-is).
@@ -45,15 +62,30 @@ export const APP_LOGO: Record<
   // Buzz (block/buzz) — vendored bee mark (its own favicon, OS-recolor stripped).
   // Monochrome near-black, so darkInvert flips it to light on the dark themes.
   buzz: { slug: undefined, src: "/app-logos/buzz.svg", darkInvert: true },
-  // code-server / IT-Tools / Stirling-PDF have no reliable simpleicons mark →
-  // they fall back to the monochrome Boxes glyph.
+  // simpleicons carries a mark for none of these four (Microsoft's VS Code icon is gone
+  // from the CDN too), and ClickHouse's exists only in brand yellow — unreadable on the
+  // light theme, see the note in clickhouse.svg. All four are vendored under
+  // public/app-logos, so they also render air-gapped. Stirling PDF, IT-Tools and
+  // ClickHouse are square marks carrying their own background → `fill`.
+  clickhouse: { src: "/app-logos/clickhouse.svg", fill: true },
+  // code-server = VS Code in the browser, so it wears the VS Code logo. NO darkInvert:
+  // the mark is brand blue, and inverting it would come out orange.
+  "code-server": { src: "/app-logos/code-server.svg" },
+  "it-tools": { src: "/app-logos/it-tools.png", fill: true },
+  "stirling-pdf": { src: "/app-logos/stirling-pdf.svg", fill: true },
   // openship-native mail stack — its own brand mark, a full-bleed square icon.
-  // Both the catalog id ("mail") and the installed-app id ("mail-webmail").
+  // "mail" is the engine flow; "webmail" the catalog app that installs the client.
+  // "mail-webmail" is the retired template id still stored on pre-catalog webmail
+  // project rows — keep it so those rows keep their logo.
   "mail-webmail": { src: "/apple-touch-icon.png", fill: true },
+  webmail: { src: "/apple-touch-icon.png", fill: true },
   mail: { src: "/apple-touch-icon.png", fill: true },
   // The control plane self-registered as an app (CLI self-deploy) — Openship's
   // own brand mark, a full-bleed square icon.
   openship: { src: "/apple-touch-icon.png", fill: true },
+  // MindWire's own monochrome mark is vendored so the catalog works offline and
+  // the brand stays legible on both dashboard themes.
+  mindwire: { src: "/app-logos/mindwire.svg", fill: true },
 };
 
 /**

@@ -1,4 +1,5 @@
-import { api, getApiBaseUrl, getActiveOrganizationId } from "./client";
+import type { RelayProviderId } from "@repo/core";
+import { api, ApiError, getApiBaseUrl, getActiveOrganizationId, getApiErrorCode } from "./client";
 import { endpoints } from "./endpoints";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -35,14 +36,32 @@ export type MailComponentStatus =
   | "missing"
   | "unknown";
 
+/**
+ * Whether a mail server stops being one without this daemon. Server-decided (the
+ * catalog in mail-health.service.ts) — never re-derived here from a key list, which
+ * would be a second definition free to drift from the install gate's.
+ *
+ * `informational` is reported but never graded: nothing on the stack consults it, so
+ * letting its state colour the banner produced an amber that was always wrong (GH-240 —
+ * spamd, while amavis scores spam in-process). Keep this union in step with the server's.
+ */
+export type MailComponentSeverity = "required" | "advisory" | "informational";
+
 export interface MailComponentHealth {
   key: string;
   label: string;
   description: string;
   unit: string;
+  severity: MailComponentSeverity;
   status: MailComponentStatus;
+  /**
+   * The supervisor's state word, lower-cased. `status: "failed"` covers both
+   * supervisord FATAL (given up) and BACKOFF (still retrying); this separates them.
+   */
   subState?: string;
   activeSince?: string;
+  /** Why the status is `unknown` — the probe's own output. */
+  detail?: string;
 }
 
 export interface MailComponentDef {
@@ -50,12 +69,54 @@ export interface MailComponentDef {
   label: string;
   description: string;
   unit: string;
+  severity: MailComponentSeverity;
+}
+
+/** How outbound mail leaves the box. */
+export type MailOutboundMode = "direct" | "relay";
+
+export type MailDeliveryStatus = "ok" | "warn" | "fail" | "unknown";
+
+/** What a deferral reason is diagnostic OF — decides which remedy we name. */
+export type MailDeferralKind = "auth" | "tls" | "network" | "rejected" | "other";
+
+export interface MailDeferral {
+  kind: MailDeferralKind;
+  /** Queued messages carrying this reason, within the window the probe read. */
+  count: number;
+  /** The remote's own refusal text. Server-generated — never a translation key. */
+  reason: string;
+}
+
+/**
+ * Whether mail is actually LEAVING the server — the half the daemon rows can't
+ * see. Nine running daemons say nothing about whether Postfix can hand a message
+ * to the next hop, and with a relay in the path the send hop happens after our own
+ * `250 OK`, so a wrong SASL password looks identical to a healthy box until you
+ * read the queue.
+ */
+export interface MailDeliveryHealth {
+  status: MailDeliveryStatus;
+  mode: MailOutboundMode;
+  /** The smarthost as `host:port`, when relaying. */
+  relayHost?: string;
+  relayScope?: "all" | "selected";
+  /** Domains whose senders relay — only meaningful under `selected` scope. */
+  relayDomains?: string[];
+  /** Messages in the queue, from postqueue's own total (never a sampled count). */
+  queued: number;
+  /** The queue was larger than the window we read, so `deferrals` is a sample. */
+  sampled: boolean;
+  deferrals: MailDeferral[];
+  /** Why the status is `unknown` — the probe's own words. */
+  detail?: string;
 }
 
 export interface MailHealthResponse {
   serverId: string;
   components: MailComponentHealth[];
   definitions: MailComponentDef[];
+  delivery: MailDeliveryHealth;
 }
 
 /**
@@ -72,20 +133,62 @@ export interface MailCredentials {
 }
 
 /**
- * Webmail (Zero) install record. `installed=true` means a successful
- * deploy has happened against this mail server. Absent or `installed=false`
- * means the overview tab should show the Deploy CTA instead of an Open
- * webmail button. The `brandingToken` is NEVER exposed here - that secret
- * lives between the openship API and the Zero server only.
+ * Webmail (Zero) install record, derived entirely from the webmail PROJECT the
+ * mail server is linked to — not from a state file on the box, so it survives an
+ * unreachable server and reads correctly mid-build. `installed=true` means that
+ * project's active deployment is ready; absent or `installed=false` means the
+ * overview tab should show the Deploy CTA instead of an Open webmail button.
+ * Secrets (session key, branding token) live in the project's env and are never
+ * exposed here.
  */
 export interface MailWebmailSummary {
   installed: boolean;
-  targetServerId: string;
   hostname: string;
   url: string;
-  internalPort: number;
-  deployedAt: string;
-  version: string;
+  /**
+   * `hostname` is "" because the API could not read the routing, not because there
+   * is none. Optional for the same reason `projectId` is nullable below: an older
+   * API doesn't send it, and absent must read as "routing is known" — the state
+   * every release before this one was in.
+   */
+  routingUnknown?: boolean;
+  /**
+   * The webmail catalog project that owns this deploy — webmail is an ordinary
+   * openship app, and the projects UI is where it's managed.
+   *
+   * NULL when the webmail was adopted or deployed outside openship: it's running
+   * on the box, but there is no project row to link to. That's an offer to install
+   * — never a dead end, and never a claim that webmail is down: `installed` alone
+   * says that, and an older API that doesn't send this field would otherwise read
+   * as a broken install.
+   */
+  projectId?: string | null;
+  /**
+   * Deployed by a pre-catalog Openship (webmail as a shipped bundle, not an image).
+   * It runs and reports `installed`, but it can only be REPLACED — a redeploy has
+   * no pipeline to run — so the UI offers the upgrade instead of staying silent.
+   */
+  legacy?: boolean;
+}
+
+/** What kind of mail engine the box runs, and whether it's serving. */
+export interface MailEngineState {
+  flavor: "container" | "host" | "none";
+  running: boolean;
+}
+
+/**
+ * The two codes the API's mail-engine gate raises (`MailEngineUnavailableError`),
+ * meaning "this failed because nothing is serving mail on the box" rather than
+ * anything about the request. Every mail-admin request can fail this way, so the
+ * predicate lives here instead of being re-derived per tab — and it matches on the
+ * CODE, never the message.
+ */
+const ENGINE_UNAVAILABLE_CODES = ["MAIL_ENGINE_NOT_INSTALLED", "MAIL_ENGINE_NOT_RUNNING"];
+
+export function isMailEngineUnavailable(err: unknown): boolean {
+  const code = getApiErrorCode(err);
+  return !!code && ENGINE_UNAVAILABLE_CODES.includes(code);
 }
 
 export interface MailSetupStatus {
@@ -111,6 +214,17 @@ export interface MailSetupStatus {
   credentials?: MailCredentials;
   /** Webmail deploy record. Absent when no webmail is deployed yet. */
   webmail?: MailWebmailSummary;
+  /**
+   * Live mail-engine topology, probed on the same connection that read the state
+   * file. `container` = the openship-mail engine; `host` = a LEGACY systemd
+   * Postfix/Dovecot install (every mail box provisioned before the engine image);
+   * `none` = nothing serving mail on the box at all.
+   *
+   * ABSENT means "we couldn't look" (server unreachable, probe failed) — never
+   * treat a missing field as "no engine", or an SSH hiccup renders a serving box
+   * as broken.
+   */
+  engine?: MailEngineState;
   steps: MailStepStatus[];
   /** Server-buffered log lines, rehydrated on page reload. */
   logs?: MailSessionLogLine[];
@@ -229,6 +343,13 @@ export interface MailSSEError {
   event: "error";
   message: string;
   resumeStep?: number;
+  /**
+   * The step the failure is attributed to. Present on every `error` frame — for
+   * a failure that happens AROUND the step loop (state read/write, a dead
+   * executor) it's the step that was about to run, so the step UI can mark it
+   * failed instead of the page falling back to the empty form (#492).
+   */
+  stepId?: number;
 }
 
 export interface MailSSEPortConflict {
@@ -310,6 +431,10 @@ export const mailApi = {
         domain: string | null;
         completed: boolean;
         active: boolean;
+        // The step an incomplete install paused at (null once complete / never
+        // halted) + its human label, so the list can show "Stopped · step N".
+        resumeStep: number | null;
+        resumeStepLabel: string | null;
       }>;
     }>(endpoints.mail.servers),
 
@@ -404,9 +529,19 @@ export const mailApi = {
       signal,
     });
 
+    // A non-2xx here means setup never started — the API decided that before
+    // the stream existed (#492). Raise the same `ApiError` the standard client
+    // raises so callers unwrap it with getApiErrorMessage/getApiErrorCode;
+    // throwing the raw body put a JSON blob in front of the operator.
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || `Setup failed: ${res.status}`);
+      const text = await res.text().catch(() => "");
+      let body: unknown = text;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        /* keep as string */
+      }
+      throw new ApiError(res.status, res.statusText, body);
     }
 
     const reader = res.body?.getReader();
@@ -537,14 +672,19 @@ export const mailApi = {
      * `target` discriminator:
      *   { kind: "self", serverId } - host on an openship-managed server
      *   { kind: "cloud" }          - host on Opshcloud
+     *
+     * A pre-catalog webmail (`MailWebmailSummary.legacy`) can't be redeployed:
+     * without `replaceLegacy` the API answers 409 `LEGACY_WEBMAIL`, and with it the
+     * old install is torn down first. Only ever sent from a screen that told the
+     * operator what goes.
      */
     deployAsProject: (input: {
       mailServerId: string;
       hostname: string;
-      internalPort?: number;
       target:
         | { kind: "self"; serverId: string }
         | { kind: "cloud" };
+      replaceLegacy?: boolean;
     }) =>
       api.post<{ deploymentId: string; projectId: string }>(
         endpoints.mail.webmail.deployProject,
@@ -553,20 +693,22 @@ export const mailApi = {
 
     /**
      * Deploy the Zero webmail UI pointed at an EXTERNAL IMAP/SMTP backend —
-     * the "Connect existing" provider path (Amazon SES for send + a read IMAP
+     * the "Connect existing" provider path (a provider for send + a read IMAP
      * host, or a fully custom backend). No mail server / iRedMail required.
+     *
+     * `provider` is the label the operator picked; the hosts are used verbatim.
      */
     deployExternal: (input: {
       hostname: string;
       backend: {
-        provider: "ses" | "custom";
+        provider: RelayProviderId;
         imapHost: string;
         imapPort: number;
         smtpHost: string;
         smtpPort: number;
       };
-      target: { deployTarget: "server" | "cloud" | "local"; serverId?: string };
-      internalPort?: number;
+      /** A binding only — see AppDestination. "local" is derived server-side. */
+      target: { deployTarget: "server" | "cloud"; serverId?: string };
     }) =>
       api.post<{ deploymentId: string; projectId: string }>(
         endpoints.mail.webmail.deployExternal,

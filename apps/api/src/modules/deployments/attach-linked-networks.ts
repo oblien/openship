@@ -17,7 +17,11 @@
 import { repos } from "@repo/db";
 
 type AttachRuntime = {
-  attachToExternalNetworks?: (projectId: string, networks: string[]) => Promise<void>;
+  attachToExternalNetworks?: (
+    projectId: string,
+    networks: string[],
+    extraContainerIds?: string[],
+  ) => Promise<void>;
 };
 
 /** Docker network name for a project slug — the source app's private network. */
@@ -40,7 +44,24 @@ export async function attachLinkedNetworks(
       if (src?.slug) nets.push(linkedNetworkName(src.slug));
     }
     if (nets.length > 0) {
-      await runtime.attachToExternalNetworks(projectId, nets);
+      /**
+       * Name this project's containers EXPLICITLY as well as by label.
+       *
+       * `attachToExternalNetworks` filters on `openship.project=<id>`, and an ADOPTED
+       * (in-place migrated) container keeps its ORIGINAL labels — labels are immutable, which
+       * is why the migration has its own id-keyed joiner at all. So for a migrated consumer
+       * the label match found nothing: the alias (`db:5432`) went into the env and the
+       * container was never joined to the source app's network, so the connection failed to
+       * resolve while the UI reported success. Stored container ids are the identity the READ
+       * paths already use (services/live-state.ts).
+       */
+      const project = await repos.project.findById(projectId).catch(() => null);
+      const stored = project?.activeDeploymentId
+        ? (await repos.service.listByDeployment(project.activeDeploymentId).catch(() => []))
+            .map((row) => row.containerId)
+            .filter((id): id is string => !!id)
+        : [];
+      await runtime.attachToExternalNetworks(projectId, nets, stored);
       log?.(`Attached to ${nets.length} connected service network(s).`, "info");
     }
   } catch (err) {

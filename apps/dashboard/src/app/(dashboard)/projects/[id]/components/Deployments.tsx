@@ -3,7 +3,8 @@
 import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
-import { deployApi, projectsApi, isAbortError, getApiErrorMessage } from "@/lib/api";
+import { deployApi, projectsApi, isAbortError } from "@/lib/api";
+import type { PendingAction } from "@/lib/api/projects";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { type Service } from "@/lib/api/services";
 import { useModal } from "@/context/ModalContext";
@@ -22,7 +23,6 @@ export const Deployments = () => {
     servicesData,
     refreshServices,
     hasMultipleServices,
-    updateProjectData,
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
@@ -30,39 +30,9 @@ export const Deployments = () => {
   const router = useRouter();
 
   const [isRedeploying, setIsRedeploying] = React.useState(false);
-  const [isRetryingRoute, setIsRetryingRoute] = React.useState(false);
   // The Openship control-plane self-app has no deployable source and updates
   // itself via the CLI — redeploy/self-update controls would only 403, so hide them.
   const isSelfApp = projectData?.appTemplateId === "openship";
-
-  /** Re-run just the free .opsh.io edge-route sync (no rebuild). On success the
-   *  routing warning clears and the project flips back to Live; on failure the
-   *  same guidance is re-surfaced as an error toast. */
-  const handleRetryRouting = async () => {
-    if (!projectData?.id || isRetryingRoute) return;
-    setIsRetryingRoute(true);
-    try {
-      const res = await projectsApi.retryRouting(projectData.id);
-      if (res?.ok) {
-        updateProjectData({ routingUnsynced: false });
-        showToast(t.projects.routingRetry.success, "success", t.projects.routingRetry.title);
-      } else {
-        showToast(
-          res?.warning || res?.error || t.projects.routingRetry.failed,
-          "error",
-          t.projects.routingRetry.title,
-        );
-      }
-    } catch (err) {
-      showToast(
-        getApiErrorMessage(err) || t.projects.routingRetry.failed,
-        "error",
-        t.projects.routingRetry.title,
-      );
-    } finally {
-      setIsRetryingRoute(false);
-    }
-  };
 
   // "Project outdated" banner. Two shapes discriminated by `mode`: a commit
   // project is behind its branch HEAD; a release/dist project has a newer
@@ -116,6 +86,40 @@ export const Deployments = () => {
     };
     // activeDeploymentId dep → refetch after a deploy advances the live release.
   }, [projectData?.id, projectData?.activeDeploymentId, isSelfApp]);
+
+  /**
+   * A deploy blocked on something the operator can clear — today a port already
+   * in use. Fetched only when the project payload says there IS one
+   * (`latestDeploymentBlocked`), so the common case costs no request.
+   *
+   * This is the gap this banner fills: a blocked deploy fails, and a failed
+   * deploy never becomes the active one, so every other flag on this page (all
+   * derived from the ACTIVE deployment) is structurally unable to mention it.
+   */
+  const [blockedAction, setBlockedAction] = React.useState<PendingAction | null>(null);
+  const isBlocked = !!projectData?.latestDeploymentBlocked;
+
+  React.useEffect(() => {
+    if (!projectData?.id || !isBlocked) {
+      setBlockedAction(null);
+      return;
+    }
+    let cancelled = false;
+    projectsApi
+      .getPendingActions(projectData.id)
+      .then((res) => {
+        if (cancelled) return;
+        setBlockedAction(
+          res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null,
+        );
+      })
+      .catch(() => {
+        /* best-effort — the status badge already says Action Required */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectData?.id, isBlocked, projectData?.latestDeploymentId]);
 
   /**
    * Redeploy = take the project's CURRENT saved configuration + env vars, pull
@@ -246,25 +250,31 @@ export const Deployments = () => {
 
   return (
     <div className="space-y-6">
-      {/* Routing-not-synced nudge — the release is live on the server but its
-          free .opsh.io edge route didn't sync. A dedicated Retry re-runs just
-          the edge sync (no rebuild); on success the warning clears. */}
-      {projectData.routingUnsynced && !projectData.awaitingDecision && (
+      {/* Blocked deploy — FIRST, because nothing shipped: the newest release
+          didn't go out, whereas every other callout below is about a release that
+          did. The copy and the button both come from the API item, so the reason
+          (which process, which pid, whether it's a stale Openship deployment we
+          can safely stop) is the server's answer rather than a guess here. */}
+      {blockedAction && (
         <WarningCallout
-          title={t.projects.routingRetry.title}
-          description={t.projects.routingRetry.description}
+          tone="danger"
+          title={blockedAction.title}
+          description={blockedAction.message}
           actions={
             <button
               type="button"
-              onClick={handleRetryRouting}
-              disabled={isRetryingRoute}
-              className="rounded-lg bg-warning-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-warning-solid/90 disabled:opacity-60"
+              onClick={() => void handleRedeploy()}
+              disabled={isRedeploying}
+              className="rounded-lg bg-danger-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-60"
             >
-              {isRetryingRoute ? t.projects.routingRetry.retrying : t.projects.routingRetry.retry}
+              {isRedeploying ? t.projects.redeploy.deploying : t.projects.deployBlocked.redeploy}
             </button>
           }
         />
       )}
+
+      {/* Routing-not-synced lives on Domains & Routes (RoutingUnsyncedCallout):
+          the release itself shipped fine, so the fix belongs beside the routes. */}
 
       {/* Action-required nudge — the live release is a partial-failure deploy
           still awaiting a keep/reject decision. Links to the build screen where

@@ -1,7 +1,7 @@
-import { eq, and, ne, lt, inArray } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import { eq, and, ne, lt, asc, inArray, sql } from "drizzle-orm";
+import { ConflictError, generateId } from "@repo/core";
 import type { Database } from "../client";
-import { domain, project } from "../schema";
+import { domain, orphanedResource, project, service } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,59 @@ export function createDomainRepo(db: Database) {
       .where(eq(domain.id, domainId));
   }
 
-  return {
+  /**
+   * Insert a row and return it as the DB actually stored it.
+   *
+   * `{ ...values } as Domain` was a lie for every column the caller didn't pass:
+   * `sslStatus`, `sslChallenge`, `status`, `verified`, `verifyAttempts`,
+   * `externalIngress`, `manualSsl` and `ownerType` are NOT-NULL columns with DB
+   * DEFAULTS, so the returned object satisfied the type while carrying `undefined`
+   * them. Readers that compare against the default then quietly take the wrong
+   * branch — the deploy's first-issuance gate asks `row.sslStatus === "none"`, got
+   * `undefined === "none"` → false, and skipped the certificate for every
+   * domain minted at deploy time.
+   *
+   * One extra SELECT on a path that runs once per new domain, and it cannot drift
+   * as the schema's defaults change.
+   */
+  async function insertAndRead(row: NewDomain & { id: string }): Promise<Domain> {
+    await db.transaction(async (tx) => {
+      await tx.insert(domain).values(row);
+      // A force-deleted project's route orphan owns the hostname until its
+      // physical vhost and managed registration are actually reclaimed. Check
+      // AFTER the unique domain insert: if this insert waited for the old
+      // project's cascade delete, READ COMMITTED now sees the orphan persisted
+      // immediately before it. Rolling back keeps GC from deleting a reused host.
+      const [pendingCleanup] = await tx
+        .select({ id: orphanedResource.id })
+        .from(orphanedResource)
+        .where(
+          and(
+            eq(orphanedResource.resourceType, "route"),
+            eq(orphanedResource.ref, row.hostname.toLowerCase()),
+          ),
+        )
+        .limit(1);
+      if (pendingCleanup) {
+        throw new ConflictError(
+          `Hostname ${row.hostname} is still being cleaned up from a deleted project`,
+        );
+      }
+    });
+    // NON-THROWING on purpose. The INSERT has already landed, so a rejecting
+    // read-back (connection blip, statement timeout, pool exhaustion) must not
+    // turn a SUCCESSFUL create into a create failure — the caller would then
+    // treat the hostname as unclaimable and skip routing it while the row exists.
+    // `findOrCreate`'s own catch can't save it either: that only re-reads on a
+    // unique violation. Degrade to the insert values (the pre-existing return
+    // shape) instead, which is strictly better than throwing.
+    const created = await db.query.domain
+      .findFirst({ where: eq(domain.id, row.id) })
+      .catch(() => undefined);
+    return created ?? ({ ...row, createdAt: new Date(), updatedAt: new Date() } as Domain);
+  }
+
+  const repository = {
     async findById(id: string) {
       return db.query.domain.findFirst({
         where: eq(domain.id, id),
@@ -46,6 +98,20 @@ export function createDomainRepo(db: Database) {
       return db.query.domain.findFirst({
         where: eq(domain.hostname, hostname.toLowerCase()),
       });
+    },
+
+    /**
+     * Every hostname Openship tracks, instance-wide.
+     *
+     * Deliberately NOT org-scoped: the only caller is the edge-orphan sweep,
+     * which asks "does the box serve a vhost nobody has a record of". One edge
+     * fronts every org on the box, so scoping this to one org would report
+     * another org's live domains as orphans. Hostnames only (no rows), used
+     * purely as a set-membership check.
+     */
+    async listAllHostnames(): Promise<string[]> {
+      const rows = await db.query.domain.findMany({ columns: { hostname: true } });
+      return rows.map((r) => r.hostname);
     },
 
     /**
@@ -60,15 +126,35 @@ export function createDomainRepo(db: Database) {
      * `limit`/`offset` and a deterministic order. The default (no
      * args) keeps the every-row contract for the internal callers.
      */
-    async listByProject(
-      projectId: string,
-      opts?: { limit?: number; offset?: number },
-    ) {
+    async listByProject(projectId: string, opts?: { limit?: number; offset?: number }) {
       return db.query.domain.findMany({
         where: eq(domain.projectId, projectId),
         ...(opts?.limit !== undefined ? { limit: opts.limit } : {}),
         ...(opts?.offset !== undefined ? { offset: opts.offset } : {}),
       });
+    },
+
+    /**
+     * Every domain row for a set of projects, in ONE round trip.
+     *
+     * The batch shape `getPrimariesByProjects` uses, but returning ALL rows grouped
+     * by project instead of one primary each: the Issues feed needs every hostname's
+     * verification and cert state, not the project's address. Projects with no
+     * domains are simply absent from the map, so callers should default to `[]`.
+     */
+    async listByProjects(projectIds: string[]): Promise<Map<string, Domain[]>> {
+      const out = new Map<string, Domain[]>();
+      if (projectIds.length === 0) return out;
+      const rows = await db.query.domain.findMany({
+        where: inArray(domain.projectId, projectIds),
+      });
+      for (const row of rows) {
+        if (!row.projectId) continue; // webhook-owned domains have no project
+        const list = out.get(row.projectId);
+        if (list) list.push(row);
+        else out.set(row.projectId, [row]);
+      }
+      return out;
     },
 
     /**
@@ -78,11 +164,106 @@ export function createDomainRepo(db: Database) {
      */
     async findByHostnameForProject(projectId: string, hostname: string) {
       return db.query.domain.findFirst({
-        where: and(
-          eq(domain.projectId, projectId),
-          eq(domain.hostname, hostname.toLowerCase()),
-        ),
+        where: and(eq(domain.projectId, projectId), eq(domain.hostname, hostname.toLowerCase())),
       });
+    },
+
+    /**
+     * Ids of domains in an org whose hostname matches a search term.
+     *
+     * Joined through project because `domain` has no organizationId of its own.
+     * Feeds the audit feed's search: a domain row stores `dom_…`, so "example.com"
+     * only finds it once the hostname is resolved to ids.
+     */
+    async searchIdsByHostname(
+      organizationId: string,
+      term: string,
+      limit = 200,
+    ): Promise<string[]> {
+      const rows = await db
+        .select({ id: domain.id })
+        .from(domain)
+        .innerJoin(project, eq(domain.projectId, project.id))
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            sql`${domain.hostname} ILIKE ${`%${term}%`}`,
+          ),
+        )
+        .limit(limit);
+      return rows.map((r) => r.id);
+    },
+
+    /**
+     * Hostnames of the org's Cloud-managed (free) subdomains.
+     *
+     * Returns hostnames, not a count, because the CALLER owns the predicate: what
+     * makes a hostname "ours" is `isCloudManagedHostname` (a `.opsh.io` suffix
+     * test) which lives in the API next to the rest of the routing truth. A count
+     * computed here would have to re-implement it in SQL and drift.
+     *
+     * Deliberately NOT filtered on `domain_type = 'free'`: that column is derived
+     * against `HOST_DOMAIN || CLOUD_DOMAIN`, so on a box with
+     * `HOST_DOMAIN=example.com` the operator's own `api.example.com` is stored as
+     * "free" while costing Cloud nothing. Counting it would bill an operator for
+     * their own DNS.
+     *
+     * Joined through `project` (domain has no organizationId) which also excludes
+     * webhook- and mail-owned rows — those carry a NULL projectId and are always
+     * custom hostnames. Soft-deleted projects are excluded: their rows are
+     * unreachable, and a slot that can't be used must not be charged for.
+     */
+    async listHostnamesForOrg(organizationId: string): Promise<string[]> {
+      const rows = await db
+        .select({ hostname: domain.hostname })
+        .from(domain)
+        .innerJoin(project, eq(domain.projectId, project.id))
+        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`));
+      return rows.map((r) => r.hostname);
+    },
+
+    /**
+     * Every domain in the org WITH the project that holds it.
+     *
+     * The counterpart to `listHostnamesForOrg`, which returns bare strings and so
+     * can only ever produce a number. A number is not actionable: a user at their
+     * free-subdomain limit was told "you're using 10" with no way to discover
+     * where — a subdomain created by a CLI deploy months ago, in a project they'd
+     * forgotten, was invisible (there is no org-wide domains page and
+     * `GET /api/domains` requires a projectId).
+     *
+     * Same join and filters as the counting query, so the list and the count can
+     * never disagree about what occupies a slot.
+     */
+    async listForOrgWithProject(organizationId: string): Promise<
+      {
+        id: string;
+        hostname: string;
+        domainType: string | null;
+        isPrimary: boolean;
+        projectId: string | null;
+        projectName: string;
+        projectSlug: string;
+        serviceId: string | null;
+        createdAt: Date;
+      }[]
+    > {
+      return db
+        .select({
+          id: domain.id,
+          hostname: domain.hostname,
+          domainType: domain.domainType,
+          isPrimary: domain.isPrimary,
+          projectId: domain.projectId,
+          projectName: project.name,
+          projectSlug: project.slug,
+          serviceId: domain.serviceId,
+          createdAt: domain.createdAt,
+        })
+        .from(domain)
+        .innerJoin(project, eq(domain.projectId, project.id))
+        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`))
+        .orderBy(asc(project.name), asc(domain.hostname));
     },
 
     async listByIds(ids: string[]) {
@@ -133,21 +314,27 @@ export function createDomainRepo(db: Database) {
 
     async create(data: Omit<NewDomain, "id"> & { verificationToken?: string }) {
       const id = generateId("dom");
-      const row = {
+      return insertAndRead({
         id,
         ...data,
         hostname: data.hostname.toLowerCase(),
         verificationToken: data.verificationToken ?? id,
-      };
-      await db.insert(domain).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Domain;
+      });
     },
 
     /**
-     * Return an existing domain by hostname, or create it if missing.
-     * Safe against unique-constraint races (concurrent deploys).
+     * Return an existing domain by hostname, or create it if missing, together
+     * with authoritative creation provenance.
+     *
+     * Callers that compensate/roll back a create must use this method instead
+     * of comparing against an earlier list query. That comparison has a TOCTOU
+     * window: another request can insert the hostname after the list and before
+     * this insert, causing the loser of the race to delete a row it did not
+     * create.
      */
-    async findOrCreate(data: Omit<NewDomain, "id"> & { verificationToken?: string }) {
+    async findOrCreateWithStatus(
+      data: Omit<NewDomain, "id"> & { verificationToken?: string },
+    ): Promise<{ domain: Domain; created: boolean }> {
       const hostname = data.hostname.toLowerCase();
       const existing = await db.query.domain.findFirst({
         where: eq(domain.hostname, hostname),
@@ -159,13 +346,14 @@ export function createDomainRepo(db: Database) {
           // just get the flag, there are no siblings to demote.
           if (existing.projectId) await promotePrimary(existing.projectId, existing.id);
           else {
-            await db.update(domain)
+            await db
+              .update(domain)
               .set({ isPrimary: true, updatedAt: new Date() })
               .where(eq(domain.id, existing.id));
           }
-          return { ...existing, isPrimary: true };
+          return { domain: { ...existing, isPrimary: true }, created: false };
         }
-        return existing;
+        return { domain: existing, created: false };
       }
 
       const id = generateId("dom");
@@ -176,19 +364,40 @@ export function createDomainRepo(db: Database) {
         verificationToken: data.verificationToken ?? id,
       };
       try {
-        await db.insert(domain).values(row);
-        if (row.isPrimary && row.projectId) await promotePrimary(row.projectId, id);
-        return { ...row, createdAt: new Date(), updatedAt: new Date() } as Domain;
+        const created = await insertAndRead(row);
+        if (row.isPrimary && row.projectId) {
+          await promotePrimary(row.projectId, id);
+          return { domain: { ...created, isPrimary: true }, created: true };
+        }
+        return { domain: created, created: true };
       } catch (err: any) {
         // Handle race: another deploy inserted between our check and insert
         if (err?.message?.includes("unique") || err?.code === "23505") {
           const raced = await db.query.domain.findFirst({
             where: eq(domain.hostname, hostname),
           });
-          if (raced) return raced;
+          if (raced) {
+            if (data.isPrimary && !raced.isPrimary) {
+              if (raced.projectId) await promotePrimary(raced.projectId, raced.id);
+              else {
+                await db
+                  .update(domain)
+                  .set({ isPrimary: true, updatedAt: new Date() })
+                  .where(eq(domain.id, raced.id));
+              }
+              return { domain: { ...raced, isPrimary: true }, created: false };
+            }
+            return { domain: raced, created: false };
+          }
         }
         throw err;
       }
+    },
+
+    /** Return an existing domain by hostname, or create it if missing. */
+    async findOrCreate(data: Omit<NewDomain, "id"> & { verificationToken?: string }) {
+      const result = await repository.findOrCreateWithStatus(data);
+      return result.domain;
     },
 
     async markVerified(id: string) {
@@ -269,11 +478,7 @@ export function createDomainRepo(db: Database) {
      * (so a still-propagating domain stays `pending`, a misconfigured one
      * eventually reads `failed`). Returns the new attempt count.
      */
-    async recordVerifyFailure(
-      id: string,
-      error: string,
-      failAfter = 8,
-    ): Promise<number> {
+    async recordVerifyFailure(id: string, error: string, failAfter = 8): Promise<number> {
       const row = await db.query.domain.findFirst({ where: eq(domain.id, id) });
       const attempts = (row?.verifyAttempts ?? 0) + 1;
       await db
@@ -315,6 +520,29 @@ export function createDomainRepo(db: Database) {
       await db.delete(domain).where(eq(domain.id, id));
     },
 
+    /**
+     * Delete a domain row AND patch the owning service's routing columns in ONE
+     * transaction, because the two writes describe one outcome: "this service no
+     * longer serves this hostname".
+     *
+     * As separate awaits, a failure after the delete left the service still
+     * configured for a hostname whose row is gone — and that stale
+     * `*.opsh.io` slug then made preflight demand an Openship Cloud connection
+     * for every later action on the project, with nothing left to retry against.
+     */
+    async removeWithServiceRouting(
+      id: string,
+      servicePatch: { serviceId: string; routing: Record<string, unknown> },
+    ) {
+      await db.transaction(async (tx) => {
+        await tx.delete(domain).where(eq(domain.id, id));
+        await tx
+          .update(service)
+          .set({ ...servicePatch.routing, updatedAt: new Date() })
+          .where(eq(service.id, servicePatch.serviceId));
+      });
+    },
+
     /** Hard-delete every domain row tied to a project. Frees managed slugs immediately on project teardown. */
     async deleteByProjectId(projectId: string) {
       await db.delete(domain).where(eq(domain.projectId, projectId));
@@ -328,10 +556,7 @@ export function createDomainRepo(db: Database) {
     /** Find all domains needing SSL renewal */
     async findExpiringSsl(beforeDate: Date) {
       return db.query.domain.findMany({
-        where: and(
-          eq(domain.sslStatus, "active"),
-          lt(domain.sslExpiresAt, beforeDate),
-        ),
+        where: and(eq(domain.sslStatus, "active"), lt(domain.sslExpiresAt, beforeDate)),
       });
     },
 
@@ -374,7 +599,11 @@ export function createDomainRepo(db: Database) {
           ),
         );
       }
-      return db.select().from(domain).where(and(...conds)).limit(limit);
+      return db
+        .select()
+        .from(domain)
+        .where(and(...conds))
+        .limit(limit);
     },
 
     async findPendingVerification(
@@ -413,4 +642,6 @@ export function createDomainRepo(db: Database) {
       await promotePrimary(projectId, domainId);
     },
   };
+
+  return repository;
 }

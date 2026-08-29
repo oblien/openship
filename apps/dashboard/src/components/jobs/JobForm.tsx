@@ -16,6 +16,8 @@ import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { Choice } from "@/components/ui/Choice";
+import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { parseDotenv } from "@/lib/dotenv";
 
 type KV = { key: string; value: string };
@@ -79,6 +81,12 @@ export function JobForm({
   const [saving, setSaving] = useState(false);
 
   const [servers, setServers] = useState<ServerInfo[]>([]);
+  const openAddServer = useAddServerModal();
+  const addServer = () =>
+    openAddServer((created) => {
+      setServers((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
+      setServerIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]));
+    });
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [triggerCatalog, setTriggerCatalog] = useState<JobTriggerEvent[]>([]);
   const [otherJobs, setOtherJobs] = useState<JobView[]>([]);
@@ -232,7 +240,14 @@ export function JobForm({
         {/* Servers */}
         <Section title={c.sections.servers} icon={ServerIcon} tone={SECTION_TONES.servers}>
           {servers.length === 0 ? (
-            <p className="text-sm text-muted-foreground/60">{c.noServers}</p>
+            // A job with no server can't be saved, so this used to be a dead end.
+            // Add one right here and it's picked for the job being written.
+            <div className="space-y-2.5">
+              <p className="text-sm text-muted-foreground/60">{c.noServers}</p>
+              <button type="button" onClick={addServer} className={ghostBtn}>
+                <Plus className="size-3.5" /> {t.widgets.shared.serverSelector.addServer}
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {servers.map((s) => (
@@ -321,7 +336,7 @@ export function JobForm({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2">
-          <button onClick={onCancel} className="rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-foreground hover:bg-muted">{c.cancel}</button>
+          <button type="button" onClick={onCancel} className="rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-foreground hover:bg-muted">{c.cancel}</button>
           <button onClick={() => void submit()} disabled={!canSave}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40">
             {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
@@ -416,20 +431,6 @@ function Field({ label, children }: { label?: string; children: React.ReactNode 
       {label && <span className="mb-1.5 block text-sm font-medium text-muted-foreground">{label}</span>}
       {children}
     </label>
-  );
-}
-
-function Choice({ checked, onToggle, label }: { checked: boolean; onToggle: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={checked}
-      className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-start text-sm transition-colors ${checked ? "border-primary/50 bg-primary/5" : "border-border/50 hover:bg-muted/40"}`}
-    >
-      <Checkbox checked={checked} size="sm" className="pointer-events-none" />
-      <span className="truncate text-foreground">{label}</span>
-    </button>
   );
 }
 

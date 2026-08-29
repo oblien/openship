@@ -1,0 +1,12 @@
+-- Openship Mail: which product this instance presents itself as.
+--
+-- Nullable with NO default, deliberately. The instance_settings row exists on
+-- every instance, so a NOT NULL DEFAULT 'platform' would write a concrete value
+-- everywhere and permanently shadow the OPENSHIP_PRODUCT env var — the resolver
+-- reads `settings.product_mode ?? env.OPENSHIP_PRODUCT`, so "unset" has to stay
+-- representable. NULL means "no instance override".
+--
+-- Presentation scope only: this hides nav entries and rebrands the shell. It is
+-- not an authorization boundary and no route reads it — webmail deploys through
+-- the ordinary project pipeline, so the platform endpoints stay live in mail mode.
+ALTER TABLE "instance_settings" ADD COLUMN IF NOT EXISTS "product_mode" text;

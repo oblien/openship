@@ -4,6 +4,70 @@
     "save": "Speichern",
     "cancel": "Abbrechen"
   },
+  "releaseImageSource": {
+    "validationInvalid": "Die Release-Image-Quelle ist ungültig.",
+    "toast": {
+      "saved": "Die Container-Release-Quelle wurde gespeichert.",
+      "saveFailed": "Die Container-Release-Quelle konnte nicht gespeichert werden."
+    },
+    "status": {
+      "notDeployed": "Noch nicht bereitgestellt",
+      "checking": "Wird geprüft…",
+      "unavailable": "Nicht verfügbar"
+    },
+    "switchToImage": {
+      "title": "Zu einer vorgefertigten Image-Quelle wechseln",
+      "description": "Beim Speichern wird die aktuelle Git- oder lokale Quelle in allen Umgebungen ersetzt. Bestehende Bereitstellungen und der Rollback-Verlauf bleiben verfügbar.",
+      "keep": "Aktuelle Quelle behalten"
+    },
+    "switchToGit": {
+      "title": "Zu einer Git-Quelle wechseln",
+      "description": "Bis zum Verknüpfen eines Repositorys ändert sich nichts. Die Verknüpfung ersetzt die verfolgte Image-Quelle in allen Umgebungen.",
+      "back": "Zurück zur Image-Quelle"
+    },
+    "entry": {
+      "shortButton": "Vorgefertigtes Image verwenden",
+      "button": "Vorgefertigtes Container-Image verfolgen",
+      "description": "Ein versioniertes Registry-Image direkt bereitstellen, ohne ein Repository zu klonen oder zu bauen."
+    },
+    "summary": {
+      "title": "Verfolgtes Container-Image",
+      "badge": "Vorgefertigt",
+      "description": "Stellt ein veröffentlichtes Image direkt bereit. Es wird kein Repository geklont und kein Build-Befehl ausgeführt.",
+      "linkGit": "Git-Repository verknüpfen",
+      "image": "Image",
+      "versionSource": "Versionsquelle",
+      "githubReleases": "GitHub-Veröffentlichungen",
+      "pinnedVersion": "Angeheftete Version",
+      "currentVersion": "Aktuelle Version",
+      "targetVersion": "Zielversion",
+      "latestVersion": "Neueste Version",
+      "updateAvailable": "Update verfügbar"
+    },
+    "editor": {
+      "trackingTitle": "Release-Verfolgung",
+      "configureTitle": "Vorgefertigtes Image konfigurieren",
+      "templateHint": "Mit {tag} bleibt das genaue Tag des Herausgebers erhalten; {version} verwendet die normalisierte Version.",
+      "provider": "Versionsanbieter",
+      "githubTitle": "GitHub-Veröffentlichungen",
+      "githubDescription": "Dem neuesten veröffentlichten Release-Tag folgen.",
+      "urlTitle": "Versions-URL oder feste Version",
+      "urlDescription": "Eine Versionsschnittstelle lesen oder eine feste Version bereitstellen.",
+      "imageTemplate": "Image-Vorlage",
+      "imagePlaceholder": "ghcr.io/acme/api:{tag}",
+      "githubRepository": "GitHub-Repository",
+      "repoPlaceholder": "owner/repository",
+      "versionUrl": "Versions-URL",
+      "versionUrlPlaceholder": "https://example.com/latest-version",
+      "versionUrlHint": "HTTPS-Endpunkt, der Text oder JSON mit version/tag_name zurückgibt.",
+      "pinnedVersion": "Angeheftete Version",
+      "pinnedPlaceholder": "Optional, z. B. v2.4.1",
+      "pinnedHint": "Überschreibt die ermittelte neueste Version; leer lassen, um Updates zu verfolgen.",
+      "appliesAll": "Änderungen gelten für alle Umgebungen dieses Projekts.",
+      "saving": "Wird gespeichert…",
+      "save": "Quelle speichern"
+    }
+  },
   "appSettings": {
     "modeApp": "App-Einstellungen",
     "modeDeployment": "Deployment",
@@ -34,6 +98,28 @@
       "project": "Projekt",
       "hostedOn": "Gehostet auf"
     },
+    "projectMenu": {
+      "rename": "Projekt umbenennen",
+      "copyId": "Projekt-ID kopieren",
+      "idCopied": "Projekt-ID kopiert",
+      "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen",
+      "pause": "Projekt pausieren",
+      "resume": "Projekt fortsetzen",
+      "delete": "Projekt löschen"
+    },
+    "rename": {
+      "title": "Projekt umbenennen",
+      "description": "Ändert den Anzeigenamen. Es wird nichts neu bereitgestellt.",
+      "label": "Projektname",
+      "placeholder": "Mein Projekt",
+      "identityNote": "Das Projekt behält die Identität „{slug}“ — URL, Container-Namen und Volumes bleiben unverändert. Um die URL zu ändern, bearbeite die Domain unter „Domains & Routen“.",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "toast": {
+        "renamed": "Umbenannt in {name}",
+        "failed": "Projekt konnte nicht umbenannt werden"
+      }
+    },
     "statusActive": "Aktiv",
     "statusDisabled": "Deaktiviert",
     "hostedCloud": "Openship Cloud",
@@ -47,7 +133,43 @@
       "liveAccessible": "Live und erreichbar",
       "pausedInaccessible": "Pausiert und nicht erreichbar",
       "disable": "Deaktivieren",
-      "enable": "Aktivieren"
+      "enable": "Aktivieren",
+      "migrating": "Zieht um",
+      "migratingHint": "Wird auf einen anderen Server verschoben"
+    },
+    "migration": {
+      "title": "Umzug",
+      "description": "Dieses Projekt auf einen anderen Server verschieben",
+      "currentServer": "Aktueller Server",
+      "migrate": "Migrieren",
+      "noOtherServers": "Füge einen zweiten Server hinzu, um dieses Projekt dorthin zu verschieben.",
+      "cloudLater": "Von Server zu Server. Verschieben zu oder von Openship Cloud ist noch nicht möglich.",
+      "startFailed": "Migration konnte nicht gestartet werden",
+      "confirmTitle": "{project} auf {server} verschieben",
+      "confirmSubtitle": "Es ändert sich nichts, bis du die Migration startest.",
+      "svcVolumes": "{count} Volume(s)",
+      "downtimeNote": "Das Projekt ist offline, während die Daten kopiert werden und der neue Server es startet. Zustandsbehaftete Services sind während der gesamten Übertragung nicht erreichbar.",
+      "dnsNote": "DNS zeigt weiterhin auf den alten Server — ändere die Records, sobald der neue ausliefert.",
+      "cancel": "Abbrechen",
+      "confirmStart": "Verschieben starten",
+      "duplicate": "Duplizieren",
+      "intentMove": "Verschieben",
+      "intentCopy": "Duplizieren",
+      "intentMoveHint": "Das Projekt zieht um. Container und Volumes werden nach deiner Bestätigung vom alten Server entfernt.",
+      "intentCopyHint": "Das Original läuft weiter. Auf dem neuen Server entsteht ein zweites Projekt mit einer Kopie der Daten.",
+      "confirmTitleCopy": "{project} auf {server} duplizieren",
+      "confirmStartCopy": "Duplizieren starten",
+      "downtimeNoteCopy": "Das Projekt ist kurz offline, während die Daten kopiert werden — die Volumes müssen dafür ruhen. Auf dem alten Server startet es direkt nach der Kopie wieder.",
+      "copyNoDomainsNote": "Die Kopie startet ohne Domains — die bestehenden bleiben beim Projekt, das sie ausliefert.",
+      "fromLabel": "Von",
+      "toLabel": "Nach",
+      "modeLabel": "Modus",
+      "scopeLabel": "Was dupliziert wird",
+      "scopeAll": "Alle auswählen",
+      "scopeHintAll": "Alle Dienste samt Daten.",
+      "scopeHintSome": "{count} Dienst(e) — der Rest bleibt nur im Original.",
+      "sourceServices": "{count} Dienst(e)",
+      "runningStatus": "Läuft — {status}"
     },
     "cache": {
       "title": "Cache",
@@ -101,6 +223,19 @@
       "toast": {
         "saved": "Routing auf {mode} gesetzt",
         "failed": "Routing konnte nicht aktualisiert werden"
+      }
+    },
+    "internalAlias": {
+      "title": "Interner Hostname",
+      "description": "Eigener Name, unter dem andere Dienste diese App privat erreichen",
+      "intro": "Lege einen zusätzlichen DNS-Namen für diese App in ihrem privaten Projektnetzwerk fest. Er wird neben dem Standard (dem Projekt-Slug) aufgelöst – andere verknüpfte Dienste können beide verwenden. Der öffentliche Zugriff bleibt unverändert; dies gibt niemals einen Port frei.",
+      "label": "Hostname-Alias",
+      "hint": "Nur Buchstaben, Ziffern und Bindestriche. Leer lassen, um den Projekt-Slug zu verwenden.",
+      "save": "Speichern",
+      "toast": {
+        "saved": "Interner Hostname aktualisiert",
+        "failed": "Interner Hostname konnte nicht aktualisiert werden",
+        "invalid": "Gib mindestens einen Buchstaben oder eine Ziffer ein"
       }
     }
   },
@@ -175,19 +310,56 @@
       "framework": "Framework",
       "packageManager": "Paketmanager",
       "runtimeIsolation": "Laufzeit-Isolation",
-      "resources": "Ressourcen",
-      "resourcesValue": "{cpu} vCPU · {memory} MB",
       "runtimePort": "Laufzeit-Port",
       "installCommand": "Installationsbefehl",
       "buildCommand": "Build-Befehl",
       "noBuildStep": "Kein Build-Schritt",
       "outputDirectory": "Ausgabeverzeichnis",
       "rootDirectory": "Stammverzeichnis",
+      "composePath": "Compose-Datei",
       "startCommand": "Startbefehl",
       "staticNoServer": "Statisch (kein Server)",
       "modeSandboxed": "Sandbox (Container)",
       "modeDirect": "Direkt (Host-Prozess)",
-      "modeDefault": "Standard (beim Deploy aufgelöst)"
+      "modeDefault": "Standard (beim Deploy aufgelöst)",
+      "modeStatic": "Keine – als statische Dateien ausgeliefert"
+    },
+    "storage": {
+      "title": "Dauerhafter Speicher",
+      "description": "Pfade, die erhalten bleiben, wenn eine neue Version die alte ersetzt. Alles andere im Container wird beim Deploy verworfen.",
+      "edit": "Bearbeiten",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "saved": "Speicher aktualisiert. Wird beim nächsten Deploy angewendet.",
+      "reset": "Framework-Standard verwenden",
+      "empty": "Zwischen Deploys wird nichts erhalten.",
+      "inherited": "Framework-Standard für diesen Stack.",
+      "declared": "Für dieses Projekt festgelegt.",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "Einer pro Zeile. Ein einfacher Pfad ist relativ zur App (storage), oder gib einen vollständigen Mount an (name:/app/pfad, /host/pfad:/app/pfad)."
+    },
+    "objectStorage": {
+      "title": "Objektspeicher",
+      "description": "Ein S3-Bucket für Uploads — übersteht Deploys und funktioniert auch mit mehreren Replicas, anders als ein lokaler Pfad.",
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "disconnected": "Objektspeicher getrennt.",
+      "connected": "Bucket geprüft und verbunden. Wird beim nächsten Deploy angewendet.",
+      "loading": "Wird geprüft…",
+      "empty": "Kein Bucket verbunden. Uploads bleiben auf der Festplatte des Containers.",
+      "sourceLabel": "Quelle",
+      "externalOption": "Externer Anbieter",
+      "providerLabel": "Anbieter",
+      "bucketLabel": "Bucket",
+      "endpointLabel": "Endpunkt",
+      "regionLabel": "Region",
+      "accessKeyLabel": "Access-Key-ID",
+      "secretKeyLabel": "Secret Access Key",
+      "testAndConnect": "Testen & verbinden",
+      "cancel": "Abbrechen",
+      "envLabel": "Variablen",
+      "envHint": "Setzt:",
+      "appliesOnDeploy": "Wird beim nächsten Deploy angewendet."
     },
     "env": {
       "title": "Umgebungsvariablen",
@@ -222,6 +394,8 @@
       "savedTitle": "Gespeichert",
       "saveFailed": "Speichern der Umgebungsvariablen fehlgeschlagen",
       "saveFailedTitle": "Speichern fehlgeschlagen",
+      "noChanges": "Keine Änderungen zu speichern — gespeicherte Werte bleiben erhalten.",
+      "noChangesTitle": "Nichts zu speichern",
       "applying": "Der Dienst wird mit der neuen Umgebung neu gestartet — kein Neubau.",
       "applyingTitle": "Wird angewendet",
       "applyFailed": "Umgebung konnte nicht auf den laufenden Dienst angewendet werden",
@@ -234,28 +408,7 @@
     "unlink": "Verbindung entfernen"
   },
   "gitInfo": {
-    "repository": "Repository",
-    "autoDeploy": "Auto-Deploy",
-    "deploysOnPush": "Deployt bei jedem Push",
-    "manualOnly": "Nur manuelle Deployments",
-    "branchToDeploy": "Zu deployender Branch",
-    "chooseBranch": "Wählen Sie, aus welchem Branch Ihres Repositorys deployt werden soll",
-    "save": "Speichern",
-    "cancel": "Abbrechen",
-    "viewOnGithub": "Auf GitHub ansehen",
-    "recentCommits": "Letzte Commits",
-    "totalCommits": "{count} insgesamt",
-    "noCommits": "Noch keine Commits",
-    "toast": {
-      "fetchBranchesFailed": "Abrufen der Branches fehlgeschlagen",
-      "errorTitle": "Fehler",
-      "branchUpdated": "Branch erfolgreich aktualisiert",
-      "updatedTitle": "Aktualisiert",
-      "branchUpdateFailed": "Aktualisieren des Branches fehlgeschlagen",
-      "autoDeployEnabled": "Auto-Deploy aktiviert",
-      "autoDeployDisabled": "Auto-Deploy deaktiviert",
-      "autoDeployFailed": "Aktualisieren von Auto-Deploy fehlgeschlagen"
-    }
+    "autoDeploy": "Auto-Deploy"
   },
   "git": {
     "connectFirst": {
@@ -318,18 +471,29 @@
       "title": "Rollback-Strategie",
       "rebuild": "Neubau (Git)",
       "instant": "Sofort (Snapshot)",
-      "descRebuild": "Rollback klont und baut den alten Commit neu — günstiger, aber langsamer und kann fehlschlagen, wenn dieser Commit nicht mehr baubar ist.",
-      "descInstant": "Behält das Build-Artefakt jeder Version auf der Festplatte für ein Rollback in Sekunden. Verbraucht zusätzlichen Speicherplatz, begrenzt durch das Verlaufslimit.",
-      "toggleAria": "Snapshot-Aufbewahrung umschalten"
+      "descRebuild": "Baut den alten Commit neu, sofern dessen Image nicht noch auf dem Host liegt.",
+      "descInstant": "Behält das Image jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher.",
+      "toggleAria": "Snapshot-Aufbewahrung umschalten",
+      "keepNone": "Keine Extra-Kopien",
+      "keepCopies": "Eine Kopie pro Version",
+      "descRebuildFiles": "Baut den alten Commit neu, sofern dessen Dateien nicht noch auf dem Host liegen.",
+      "descInstantFiles": "Behält die Dateien jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher."
     },
     "rollbackHistory": {
       "title": "Rollback-Verlauf",
       "valueOne": "{count} Version",
       "valueOther": "{count} Versionen",
-      "descSnapshot": "Wie viele der letzten Versionen ihr Build-Artefakt für ein Rollback behalten. Ältere werden aufgeräumt, um Speicherplatz freizugeben.",
-      "descGit": "Gilt nur für den Modus „Sofort“ (Snapshot) — der Git-Modus behält keine Artefakte zur Aufbewahrung.",
+      "descSnapshot": "Ältere Versionen werden entfernt, um Speicher freizugeben.",
+      "descGit": "Aktuelle Images bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann.",
       "decreaseAria": "Rollback-Verlauf verringern",
-      "increaseAria": "Rollback-Verlauf erhöhen"
+      "increaseAria": "Rollback-Verlauf erhöhen",
+      "sizeEach": "~{size} pro Version",
+      "diskFree": "{size} frei",
+      "autoBadge": "automatisch bemessen",
+      "manualBadge": "manuell gesetzt",
+      "kindFiles": "gebaute Dateien auf der Platte",
+      "kindImages": "Images auf dem Host",
+      "descGitFiles": "Die Dateien aktueller Versionen bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann."
     },
     "commits": {
       "title": "Letzte Commits",
@@ -392,53 +556,57 @@
   },
   "resources": {
     "title": "Maschinenleistung",
-    "description": "Konfigurieren Sie die Maschinenleistung für Ihr Projekt.",
+    "description": "CPU- und Speichergrenzen für die Container dieses Projekts.",
+    "loading": "Zielmaschine wird gelesen …",
+    "machineCapacity": "Maschine: {cpu} vCPU · {memory}",
+    "exceedsMachine": "Übersteigt diese Maschine",
+    "appliesOnNextDeploy": "Grenzen werden beim Neuerstellen des Containers angewendet – für eine Änderung neu deployen.",
     "tiers": {
-      "lightweight": {
-        "name": "Leichtgewichtig",
-        "description": "Kleine Apps und statische Websites"
+      "unlimited": {
+        "name": "Keine Grenzen",
+        "description": "Die ganze Maschine nutzen (Standard)",
+        "spec": "Maschinenkapazität"
       },
-      "standard": {
-        "name": "Standard",
+      "micro": {
+        "name": "Micro",
+        "description": "Kleine Sidecars und Worker"
+      },
+      "low": {
+        "name": "Low",
+        "description": "Kleine Apps und statische Seiten"
+      },
+      "medium": {
+        "name": "Medium",
         "description": "Die meisten Webanwendungen"
       },
-      "performance": {
-        "name": "Performance",
+      "high": {
+        "name": "High",
         "description": "Anwendungen mit hohem Traffic"
       },
-      "enterprise": {
-        "name": "Enterprise",
-        "description": "Produktions-Apps in großem Maßstab"
-      },
-      "autoscale": {
-        "name": "Auto Scale",
-        "description": "Skaliert je nach Bedarf"
+      "xlarge": {
+        "name": "Sehr groß",
+        "description": "Datenbanken und schwere Workloads"
       }
     },
-    "dynamic": "Dynamisch",
     "custom": {
       "name": "Benutzerdefiniert",
-      "description": "Definieren Sie Ihre eigenen Ressourcen",
-      "clickToConfigure": "Zum Konfigurieren klicken"
+      "description": "Eigene Grenzen festlegen",
+      "notSet": "Nicht gesetzt"
     },
-    "cpuValue": "{cpu} vCPU",
     "customPanel": {
-      "title": "Benutzerdefinierte Ressourcen konfigurieren",
+      "boundedBy": "Diese Maschine hat {cpu} vCPU und {memory}. 0 bedeutet keine Grenze.",
+      "capacityUnknown": "Die Kapazität dieser Maschine konnte nicht gelesen werden, daher gilt keine Obergrenze. 0 bedeutet keine Grenze.",
       "cpuCores": "CPU-Kerne",
-      "cpuRange": "Bereich: 0.25 - 4.00",
-      "memory": "Arbeitsspeicher (MB)",
-      "memoryRange": "Bereich: 128 - 8192",
+      "memory": "Speicher (MB)",
+      "zeroMeansNoLimit": "0 = keine Grenze",
       "cancel": "Abbrechen",
-      "saving": "Wird gespeichert...",
-      "save": "Konfiguration speichern"
+      "saving": "Wird gespeichert …",
+      "save": "Speichern"
     },
     "toast": {
-      "updated": "Ressourcen erfolgreich aktualisiert",
-      "updateFailed": "Aktualisieren der Ressourcen fehlgeschlagen",
-      "cpuRange": "CPU muss zwischen 0.25 und 4.00 Kernen liegen",
-      "memoryRange": "Arbeitsspeicher muss zwischen 128 MB und 8192 MB liegen",
-      "customSaved": "Benutzerdefinierte Ressourcen erfolgreich gespeichert",
-      "customSaveFailed": "Speichern der benutzerdefinierten Ressourcen fehlgeschlagen"
+      "updated": "Maschinenleistung aktualisiert",
+      "updateFailed": "Maschinenleistung konnte nicht aktualisiert werden",
+      "invalidValues": "CPU und Speicher müssen 0 oder eine positive Zahl sein"
     }
   },
   "sleep": {
@@ -472,10 +640,6 @@
     "cannotUndo": "Diese Aktion kann nicht rückgängig gemacht werden.",
     "aboutToPrefix": "Sie sind dabei, ",
     "aboutToSuffix": " zu löschen.",
-    "deleteAllAria": "Alle Umgebungen löschen",
-    "deleteAll": "Alle Umgebungen löschen",
-    "deleteAllOn": "Entfernt die Projekt-App und jede darunterliegende Branch-Umgebung.",
-    "deleteAllOff": "Entfernt nur diese Umgebung. Andere Branches bleiben erhalten.",
     "scanning": "Angehängte Dienste und Volumes werden gescannt…",
     "wipeAria": "Auch Dienstdaten löschen",
     "wipeLabelOne": "Auch Dienstdaten löschen ({count} Volume)",
@@ -490,9 +654,7 @@
     "typePrefix": "Geben Sie ",
     "typeSuffix": " zur Bestätigung ein.",
     "cancel": "Abbrechen",
-    "confirmDeleteWipe": "Löschen + Daten entfernen",
     "confirmDeleteEnvWipe": "Umgebung löschen + Daten entfernen",
-    "confirmDelete": "Projekt löschen",
     "confirmDeleteEnv": "Umgebung löschen",
     "linkedTitleOne": "{count} Projekt ist mit dieser App verbunden",
     "linkedTitleOther": "{count} Projekte sind mit dieser App verbunden",
@@ -569,6 +731,9 @@
       "defaultAppName": "my-app",
       "mapsToPort": "Verweist auf Port",
       "includeWww": "www einbeziehen",
+      "dnsChallenge": "DNS-01-Challenge verwenden",
+      "dnsChallengeDesc": "Zertifikat über den verbundenen DNS-Anbieter ausstellen und erneuern. Verwenden, wenn Port 80 nicht erreichbar ist.",
+      "dnsChallengeWildcardDesc": "Wildcard-Zertifikate erfordern DNS-01 und einen verbundenen DNS-Anbieter.",
       "includeWwwDesc": "Auch Einträge für www.{domain} erzeugen",
       "includeWwwFallback": "ihredomain.de",
       "adding": "Wird hinzugefügt...",
@@ -581,12 +746,13 @@
       "infoPreview": "Fügen Sie diese Einträge zuerst hinzu — sie ändern sich nach dem Hinzufügen nicht, sodass die Propagierung jetzt beginnt. Drücken Sie dann „Domain hinzufügen“, um sie anzuhängen, und schließlich „Verifizieren“, sobald das DNS auflöst.",
       "infoApply": "DNS-Änderungen können bis zu 48 Stunden dauern, um sich global zu propagieren. Sobald die Einträge auflösen, klicken Sie unten auf „Verifizieren“ — wir prüfen das DNS, markieren die Domain als aktiv und stellen SSL im Hintergrund bereit.",
       "verifying": "Wird verifiziert...",
-      "verify": "{hostname} verifizieren",
-      "copy": "Kopieren"
+      "verify": "{hostname} verifizieren"
     },
     "overview": {
       "primary": "Primär",
       "mappedTo": "Zugeordnet zu",
+      "redirect": "Weiterleitung",
+      "redirectValue": "{status} → {hostname}",
       "status": "Status",
       "ssl": "SSL",
       "visit": "Besuchen"
@@ -673,6 +839,21 @@
       "checking": "Edge wird geprüft…",
       "recheck": "Erneut prüfen",
       "foreignProxyHint": "Ein anderer Proxy belegt 80/443"
+    },
+    "diagnosis": {
+      "title": "Warum das nicht funktioniert",
+      "noneYet": "Es wurde noch keine Prüfung ausgeführt, daher gibt es kein Ergebnis. Fügen Sie die angezeigten DNS-Einträge hinzu und führen Sie dann „Verifizieren“ aus.",
+      "attempts": "Bisher {count} fehlgeschlagene Versuche.",
+      "pillHint": "Grund anzeigen"
+    },
+    "records": {
+      "failed": "Die DNS-Einträge für diese Domain konnten nicht geladen werden.",
+      "retry": "Erneut versuchen"
+    },
+    "outputHint": {
+      "body": "Keine Build-Ausgabe unter {path} gefunden — prüfen Sie Ihr Ausgabeverzeichnis und deployen Sie erneut.",
+      "noIndex": "Unter {path} liegt eine Ausgabe, aber keine Index-Datei — Anfragen liefern 404. Prüfen Sie Ihr Ausgabeverzeichnis.",
+      "notServed": "Der Edge-Proxy antwortete mit HTTP {status} für {path} — dieser Pfad wird nicht ausgeliefert. Prüfen Sie Ihr Ausgabeverzeichnis und die Route."
     }
   }
 }

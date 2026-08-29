@@ -37,6 +37,12 @@ export const invitationPendingGrant = pgTable(
     resourceId: text("resource_id").notNull(),
     /** JSON-encoded array of permission strings, same encoding as resource_grant.permissionsJson. */
     permissionsJson: text("permissions_json").notNull().default("[]"),
+    /**
+     * Source-access scope, carried through acceptance. Without it a restricted
+     * invitee would materialise into a metadata-only grant and silently lose the
+     * content access the inviter picked. See resource-grant.ts.
+     */
+    scopeJson: text("scope_json"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [

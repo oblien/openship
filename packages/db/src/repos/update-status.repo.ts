@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { updateStatus } from "../schema";
@@ -12,7 +12,7 @@ export type NewUpdateStatus = typeof updateStatus.$inferInsert;
 
 export function createUpdateStatusRepo(db: Database) {
   return {
-    /** Upsert the scan result for a project (unique on projectId). */
+    /** Upsert the polled upstream state for a project (unique on projectId). */
     async upsert(data: Omit<NewUpdateStatus, "id">): Promise<void> {
       const id = generateId("ups");
       await db
@@ -23,10 +23,6 @@ export function createUpdateStatusRepo(db: Database) {
           set: {
             organizationId: data.organizationId,
             kind: data.kind,
-            behind: data.behind,
-            latestInProgress: data.latestInProgress,
-            currentLabel: data.currentLabel ?? null,
-            latestLabel: data.latestLabel ?? null,
             detail: data.detail ?? null,
             checkedAt: data.checkedAt ?? new Date(),
             updatedAt: new Date(),
@@ -34,7 +30,7 @@ export function createUpdateStatusRepo(db: Database) {
         });
     },
 
-    /** All cached statuses for an org (newest check first). */
+    /** All cached upstream rows for an org (newest poll first). */
     async listByOrg(organizationId: string): Promise<UpdateStatus[]> {
       const rows = await db.query.updateStatus.findMany({
         where: eq(updateStatus.organizationId, organizationId),
@@ -42,16 +38,8 @@ export function createUpdateStatusRepo(db: Database) {
       return rows.sort((a, b) => b.checkedAt.getTime() - a.checkedAt.getTime());
     },
 
-    /** Only the entities that currently have an update available. */
-    async listBehindByOrg(organizationId: string): Promise<UpdateStatus[]> {
-      const rows = await db.query.updateStatus.findMany({
-        where: and(
-          eq(updateStatus.organizationId, organizationId),
-          eq(updateStatus.behind, true),
-        ),
-      });
-      return rows.sort((a, b) => b.checkedAt.getTime() - a.checkedAt.getTime());
-    },
+    // No listBehindByOrg: "behind" is not stored. It's a comparison against the
+    // project's live deployment, computed in updates.service on read.
 
     async getByProject(projectId: string): Promise<UpdateStatus | undefined> {
       return db.query.updateStatus.findFirst({

@@ -24,12 +24,26 @@ mlmmj   unix  -       n       n       -       -       pipe
     flags=ORhu user=PH_SYS_USER_MLMMJ:PH_SYS_GROUP_MLMMJ argv=PH_CMD_MLMMJ_AMIME_RECEIVE -L PH_MLMMJ_SPOOL_DIR/${nexthop}
 
 # Amavisd integration.
+#
+# smtp_tls_security_level=none is REQUIRED, not an optimisation (GH-392). This
+# is an smtp CLIENT service, so it inherits the global smtp_tls_security_level
+# — and amavisd's :10024 listener does not offer STARTTLS. With the global set
+# to `encrypt` every inbound message defers with "TLS is required, but was not
+# offered": a complete INBOUND outage, from a setting that only looks like it
+# concerns outbound delivery. Saving an outbound relay with scope "all" sets
+# exactly that (apps/api/src/modules/mail/admin/outbound-relay.service.ts), and
+# so does an operator hardening TLS by hand.
+#
+# TLS here would be meaningless anyway: the hop is loopback to a content filter
+# on the same host. Pinning it at the transport keeps the guarantee local to the
+# thing that needs it, instead of depending on every writer of the global.
 smtp-amavis unix -  -   n   -   PH_AMAVISD_MAX_SERVERS  smtp
     -o syslog_name=postfix/amavis
     -o local_header_rewrite_clients=
     -o smtp_data_done_timeout=1200
     -o smtp_send_xforward_command=yes
     -o smtp_dns_support_level=disabled
+    -o smtp_tls_security_level=none
     -o max_use=20
 
 # smtp port used by Amavisd to re-inject scanned email back to Postfix

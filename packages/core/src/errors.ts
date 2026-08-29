@@ -49,6 +49,23 @@ export class ConflictError extends AppError {
 }
 
 /**
+ * The host that runs this resource could not be reached — SSH refused our key,
+ * the box is down, or the host channel isn't there.
+ *
+ * 503, deliberately, and NOT the 400 these paths used to return: the request was
+ * valid and the infrastructure wasn't, so a client error misdirects the operator
+ * to their own input. The message carries the underlying transport reason (which
+ * already names the target and what to check), and the code lets the dashboard
+ * branch on the class of failure rather than on copy.
+ */
+export class HostUnreachableError extends AppError {
+  constructor(message: string) {
+    super(message, 503, "HOST_UNREACHABLE");
+    this.name = "HostUnreachableError";
+  }
+}
+
+/**
  * Deployment-specific error with a machine-readable code.
  *
  * Codes:

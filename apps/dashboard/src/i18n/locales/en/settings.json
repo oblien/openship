@@ -3,6 +3,27 @@
     "title": "Language",
     "description": "Choose the language used across the dashboard."
   },
+  "productView": {
+    "title": "Interface",
+    "description": "Which control plane this dashboard shows you.",
+    "platformLabel": "Full platform",
+    "platformDesc": "Projects, apps, deployments, servers — everything this install can do.",
+    "mailLabel": "Mail only",
+    "mailDesc": "The mail control plane in the sidebar: domains, mailboxes, DNS, queue, logs.",
+    "instanceDefault": "This instance defaults to {mode}.",
+    "useDefault": "Use the instance default"
+  },
+  "mailMode": {
+    "title": "Product mode",
+    "description": "What this instance presents itself as. This is the default for everyone here — each user can still pick their own view under Settings → General.",
+    "platformLabel": "Full platform",
+    "platformDesc": "Projects, apps, deployments, servers — everything this install can do.",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "Brands the instance as Openship Mail and makes the sidebar the mail control plane.",
+    "savedOverridden": "Saved. Your own view is unchanged — you picked it under Settings → General.",
+    "errorToast": "Couldn't change the product mode.",
+    "envNote": "This instance follows OPENSHIP_PRODUCT=mail from the environment. Picking a mode here overrides it."
+  },
   "common": {
     "cancel": "Cancel",
     "save": "Save",
@@ -21,6 +42,7 @@
       "cloud": "Cloud",
       "defaults": "Defaults",
       "settings": "Settings",
+      "dns": "DNS",
       "notifications": "Notifications",
       "team": "Team",
       "members": "Members",
@@ -47,13 +69,16 @@
     "title": "Settings",
     "tabs": {
       "general": "General",
-      "tokens": "Tokens",
+      "git": "Git",
+      "tokens": "API tokens",
       "mcp": "MCP",
       "team": "Team",
       "notifications": "Notifications",
       "email": "Email",
-      "audit": "Audit log",
+      "systemSender": "System sender",
+      "credentials": "Credentials",
       "cloud": "Cloud",
+      "infrastructure": "Infrastructure",
       "instance": "Instance"
     }
   },
@@ -149,7 +174,7 @@
       "forwardOnNote": "Forwarding is on — gh CLI also authenticates remote server clones. Your identity is tunneled over SSH per clone; nothing is stored on the server.",
       "forwardOffHint": "Local builds only for now. Turn on \"Forward my git identity to build servers\" to use gh CLI for remote server deploys too.",
       "manageForward": "Manage forwarding",
-      "disconnectBody": "Openship will stop using this GitHub sign-in for clones. You can sign in again at any time.",
+      "disconnectBody": "Openship will remove this credential from this instance and stop using it for clones. It stays valid at GitHub until you revoke it there. You can reconnect at any time.",
       "recheck": "Check again"
     },
     "activeVia": "Connected via {method}",
@@ -172,7 +197,15 @@
     "forwardOffHint": "Local builds only. Turn on \"Forward my git identity to build servers\" to use it for remote server deploys too.",
     "remoteCredentialHint": "Used for repo browsing and builds that run on this host. Deploys that build on a remote server use that server's own credential — add a deploy key or token per server.",
     "methodToken": "GitHub token",
-    "methodHostCli": "gh CLI on this host"
+    "methodHostCli": "gh CLI on this host",
+    "manageTokensOnGithub": "Manage tokens on GitHub",
+    "manageAccessOnGithub": "Manage access on GitHub",
+    "disconnectScopeNote": "Disconnect removes this credential from Openship and stops using it for clones. It stays valid at GitHub until you revoke it there.",
+    "credentialRejected": "GitHub rejected the stored {method}.",
+    "credentialRejectedImpact": "It was revoked, expired, or lost a required scope. Deploys that clone with it will keep failing until you reconnect below.",
+    "credentialUnreachable": "Couldn't reach GitHub to check the stored {method}.",
+    "credentialUnreachableImpact": "This is usually a network problem rather than a bad credential — Openship keeps using it. Reconnecting won't help if GitHub is unreachable.",
+    "credentialCheckedAt": "Last checked {time}"
   },
   "deployDefaults": {
     "title": "Deploy Defaults",
@@ -183,10 +216,6 @@
     "noServers": "No servers configured yet - add one from the deploy picker.",
     "clearDefault": "Clear default (ask every time)",
     "targets": {
-      "local": {
-        "label": "This Machine",
-        "desc": "Local Docker / runtime"
-      },
       "server": {
         "label": "My Server",
         "desc": "A configured SSH server"
@@ -198,8 +227,7 @@
     },
     "labelFor": {
       "yourServer": "your server",
-      "cloud": "Openship Cloud",
-      "local": "This Machine"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Pick a server first",
@@ -289,6 +317,8 @@
     "badgeReadOnly": "read-only",
     "badgeScoped": "scoped",
     "metaLine": " · last used {lastUsed} · expires {expires}",
+    "callsOne": " · 1 call",
+    "callsMany": " · {count} calls",
     "revoke": "Revoke",
     "expiry": {
       "none": "No expiry",
@@ -340,10 +370,27 @@
     "orgPrefix": "{org} · ",
     "authorized": "Authorized {date}",
     "lastUsedSuffix": " · last used {date}",
+    "callsOne": " · 1 call",
+    "callsMany": " · {count} calls",
     "toast": {
       "disconnected": "MCP client disconnected",
       "disconnectFailed": "Failed to disconnect"
-    }
+    },
+    "editAccess": "Edit access",
+    "viewActivity": "Activity",
+    "editScopeTitle": "{client} access",
+    "editScopeSubtitle": "Changes apply on the agent's next request — it does not need to reconnect.",
+    "editScopeOrg": "In {org}",
+    "wasNResourcesOne": "currently 1 resource",
+    "wasNResourcesMany": "currently {count} resources",
+    "saveScope": "Save access",
+    "scopeSaved": "Access updated",
+    "scopeSaveFailed": "Could not update access",
+    "loadScopeFailed": "Could not load this client's access",
+    "scopeGrantRejected": "You can no longer grant {resource}, so it was removed. Save again to continue.",
+    "confirmWidenTitle": "This removes every restriction",
+    "confirmWidenBody": "The agent will act with your full access, effective immediately. Press again to confirm.",
+    "confirmWidenAction": "Remove all restrictions"
   },
   "team": {
     "heading": "Team",
@@ -581,6 +628,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "In-app"
     },
     "form": {
@@ -590,6 +638,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Bot token from @BotFather",
+      "telegramChatPlaceholder": "Chat ID (e.g. -1001234567890)",
+      "telegramHint": "Create a bot with @BotFather, then message the bot (or add it to your group) so it's allowed to reply.",
       "adding": "Adding…",
       "addChannel": "Add channel",
       "labelRequired": "Label is required",
@@ -601,6 +652,7 @@
       "title": "What to be notified about",
       "description": "Pick which events go to which channel. Each cell is one subscription.",
       "empty": "Add a channel first to subscribe to events.",
+      "allTab": "All",
       "eventHeader": "Event",
       "cellAria": "{category} via {channel}",
       "notifyMe": "Notify me"
@@ -614,11 +666,11 @@
   },
   "audit": {
     "heading": "Audit log",
-    "subtitle": "Every change in this organization, who made it, and when.",
-    "searchPlaceholder": "Search events, actors, resources...",
-    "allEvents": "All events",
-    "noMatch": "No events match your search.",
-    "noEvents": "No events yet.",
+    "subtitle": "Everything that happened in this organization, who did it, and when.",
+    "searchPlaceholder": "Search apps, servers, domains, people…",
+    "noMatch": "Nothing matches these filters.",
+    "noEvents": "Nothing has been recorded yet.",
+    "clearFilters": "Clear filters",
     "showing": "Showing {from}-{to} of {total}",
     "actor": "Actor",
     "name": "Name",
@@ -634,7 +686,53 @@
     "after": "After",
     "removed": "Removed",
     "system": "System",
-    "actorPrefix": "Actor {id}"
+    "actorPrefix": "Actor {id}",
+    "recording": {
+      "title": "Record activity",
+      "description": "Keep a record of every change made in this organization. On by default.",
+      "paused": "Recording is off. Nothing new is being added — the entries below are what was captured before it was switched off.",
+      "retention": "Keep entries for",
+      "retentionOption": "{days} days",
+      "retentionHint": "Older entries are deleted automatically.",
+      "adminOnly": "Only owners and admins can change this.",
+      "saveFailed": "Could not save the activity settings."
+    },
+    "filters": {
+      "anyone": "Anyone",
+      "anyAgent": "Any agent",
+      "agentCalls": "{count} events",
+      "period": "Period",
+      "allTime": "All time",
+      "today": "Today",
+      "last7": "Last 7 days",
+      "last30": "Last 30 days",
+      "last90": "Last 90 days"
+    },
+    "tabs": {
+      "all": "All"
+    },
+    "sources": {
+      "all": "Everything",
+      "dashboard": "Dashboard",
+      "mcp": "AI assistant",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "System",
+      "unknown": "Unknown"
+    },
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "details": {
+      "who": "Who",
+      "when": "When",
+      "cameFrom": "Came from",
+      "viaAgent": "Agent",
+      "technical": "Technical details",
+      "eventType": "Event type"
+    }
   },
   "updates": {
     "title": "Updates",
@@ -660,34 +758,66 @@
     "securityPulls": "pulls",
     "security4": "this data — no third-party service and no Openship-operated server can push updates or signals to your install. Advisories are pinned to each release, so unreleased changes never reach you. Critical security advisories are always shown once; everything else respects the toggle above."
   },
+  "infrastructure": {
+    "title": "Platform components",
+    "description": "How the edge and mail containers on your servers are kept up to date",
+    "autoUpdateLabel": "Auto-update server infrastructure",
+    "autoUpdateDesc": "When this control plane updates, automatically update the edge and mail containers on your connected servers. Off by default — otherwise updates are flagged for a one-click apply on each server.",
+    "autoScanLabel": "Auto-scan server infrastructure",
+    "autoScanDesc": "Quietly re-check your servers when you open the Servers page or the home page, so a down or missing edge is flagged without a manual scan. On by default — detect-only, it never changes anything.",
+    "attentionOne": "1 component needs attention",
+    "attentionMany": "{n} components need attention",
+    "updatesOne": "1 update available",
+    "updatesMany": "{n} updates available",
+    "allHealthy": "All platform components are up to date",
+    "manageLink": "Manage in Servers",
+    "hostControlLabel": "Deploy to this machine",
+    "hostControlDesc": "Let OpenShip deploy apps to the server it runs on, alongside your connected servers. Off when installed with --no-host-control (control plane only) — turn it on to add this machine as a deploy target.",
+    "hostControlEnvNote": "This machine was set to control plane only at install (--no-host-control). Turning this on overrides that so OpenShip can deploy here.",
+    "hostControlError": "Couldn't change host control — only the owner of this machine's workspace can."
+  },
   "dataTransfer": {
     "export": {
       "title": "Export data",
-      "description": "Download the entire instance database as a file.",
-      "intro": "Creates a portable snapshot of everything — projects, servers, deployments, settings. Set a passphrase to include your secrets (env vars, tokens, SSH credentials); they are re-encrypted under it, so the file is safe to move. Leave it blank to export without secrets.",
-      "passphraseLabel": "Passphrase (optional)",
-      "passphrasePlaceholder": "Protects your secrets",
-      "confirmLabel": "Confirm passphrase",
+      "description": "Download a portable instance snapshot with selectable history.",
+      "intro": "Creates a portable snapshot of your configuration, projects, servers, deployments, and selected history. Set a transfer secret to include credentials; they are re-encrypted under it so the file is safe to move. Leave it blank only when you intentionally want an export without credentials.",
+      "filterTitle": "Optional history",
+      "filterDescription": "Configuration, projects, servers, users, and credentials are always included. Uncheck history you do not need to reduce large exports.",
+      "filterAnalytics": "Analytics and usage samples",
+      "filterActivity": "Audit and notification history",
+      "filterBackups": "Backup and restore history",
+      "filterIncidents": "Health incident history",
+      "filterMigrations": "Docker migration history",
+      "coreRows": "Always-included rows",
+      "selectedRows": "Selected export rows",
+      "countUnavailable": "unavailable",
+      "transferSecretNotice": "To move credentials correctly—including server SSH passwords and keys, environment variables, tokens, and backup credentials—generate or enter a transfer secret below. Save it separately and enter the same transfer secret during import. Do not copy your instance BETTER_AUTH_SECRET or install it on the destination.",
+      "generateTransferSecret": "Generate transfer secret",
+      "copyTransferSecret": "Copy transfer secret",
+      "copiedTransferSecret": "Transfer secret copied. Store it safely; you need it during import.",
+      "passphraseLabel": "Transfer secret (optional only if excluding credentials)",
+      "passphrasePlaceholder": "Generate or enter a transfer secret",
+      "confirmLabel": "Confirm transfer secret",
       "confirmPlaceholder": "Repeat it",
-      "mismatch": "Passphrases don't match.",
+      "mismatch": "Transfer secrets don't match.",
       "exporting": "Exporting…",
       "exportDownload": "Export & download",
-      "toastWithSecrets": "Export downloaded. Keep the passphrase safe — you'll need it to import.",
-      "toastNoSecrets": "Export downloaded. Secrets were NOT included (no passphrase set).",
+      "toastWithSecrets": "Export downloaded. Keep the transfer secret safe — you'll need it to import.",
+      "toastNoSecrets": "Export downloaded. Credentials were NOT included (no transfer secret set).",
       "toastFailed": "Export failed."
     },
     "import": {
       "title": "Import data",
       "description": "Restore an exported file onto this instance.",
-      "intro": "Load a file exported from another Openship install. Enter the passphrase used when it was exported to restore secrets too.",
+      "intro": "Load a file exported from another Openship install. If it contains credentials, enter the transfer secret saved during export; the destination re-encrypts them with its own instance key.",
       "importFromFile": "Import from file…",
       "modalTitle": "Import instance data",
       "modalSubtitle": "Restore an exported snapshot.",
       "exportFile": "Export file",
-      "fileContainsSecrets": " · contains secrets (passphrase required)",
+      "fileContainsSecrets": " · contains credentials (transfer secret required)",
       "fileNoSecrets": " · no secrets included",
-      "passphrase": "Passphrase",
-      "passphrasePlaceholder": "The passphrase set when exporting",
+      "passphrase": "Transfer secret",
+      "passphrasePlaceholder": "The transfer secret saved during export",
       "mode": "Mode",
       "modeReplaceTitle": "Replace everything",
       "modeReplaceDesc": "Wipe this instance and restore the snapshot exactly. Recommended for migrating to a new machine.",
@@ -846,6 +976,61 @@
     "toast": {
       "setTo": "Route strategy set to {mode}",
       "failed": "Failed to update route strategy"
+    }
+  },
+  "edgeOrphans": {
+    "title": "Untracked edge routes",
+    "description": "Hostnames this machine still serves that Openship has no record of",
+    "scan": "Scan",
+    "scanning": "Scanning…",
+    "allClear": "Every hostname the edge serves is accounted for.",
+    "comparedTo": "Compared against {count} tracked hostnames.",
+    "unavailable": "Couldn't check the edge",
+    "explain": "Removing a project with \"Remove from Openship only\" deliberately leaves its route running. A leftover app route then returns 502 once its container is gone, but a leftover STATIC route keeps serving the old files with a 200 — even on a hostname since given to another project.",
+    "kindStatic": "Static files",
+    "kindProxy": "App route",
+    "staticWarning": "Still serving files. This answers requests today.",
+    "proxyWarning": "Points at an upstream that is probably gone.",
+    "servingFrom": "Serving from",
+    "proxyingTo": "Proxying to",
+    "alsoAnswers": "Also answers for",
+    "stopServing": "Stop serving",
+    "stopping": "Stopping…",
+    "stopped": "{hostname} is no longer served.",
+    "stopFailed": "Couldn't stop serving {hostname}",
+    "confirmTitle": "Stop serving {hostname}?",
+    "confirmBody": "This removes the edge configuration for this hostname only. Built files stay on disk, and nothing else on the server is touched. If a project is later deployed to this hostname it will create its own route.",
+    "confirmCta": "Stop serving",
+    "cancel": "Cancel"
+  },
+  "credentials": {
+    "title": "Credentials",
+    "description": "Tokens and logins Openship uses on your behalf — private registry pulls, DNS record writes. Stored encrypted; never shown again after saving.",
+    "noProviders": "No credential providers are available on this instance.",
+    "noneForProvider": "None added yet.",
+    "add": "Add",
+    "edit": "Edit",
+    "save": "Save changes",
+    "connect": "Add credential",
+    "delete": "Delete",
+    "verify": "Re-check with the provider",
+    "badgeActive": "Working",
+    "badgeInvalid": "Needs attention",
+    "fieldName": "Label",
+    "namePlaceholder": "e.g. GHCR read-only",
+    "secretKeptPlaceholder": "•••••••• (saved — leave blank to keep)",
+    "selectPlaceholder": "Choose…",
+    "verifyNote": "Openship checks the credential with the provider before saving it.",
+    "confirmDelete": "Delete \"{name}\"? Anything relying on it stops working.",
+    "toast": {
+      "loadFailed": "Could not load credentials",
+      "created": "Credential added",
+      "updated": "Credential updated",
+      "deleted": "Credential deleted",
+      "saveFailed": "Could not save the credential",
+      "deleteFailed": "Could not delete the credential",
+      "verifyOk": "The provider accepted this credential",
+      "verifyFailed": "The provider rejected this credential"
     }
   }
 }

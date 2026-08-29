@@ -15,7 +15,7 @@ import { db, eq, inArray, restoreSubgraph } from "@repo/db";
 import { env } from "../../../config/env";
 import { withMigrationLock } from "../migration/migration-lock";
 import { CloudInstanceNotTransferableError } from "./errors";
-import { openSecretBundle } from "./passphrase-crypto";
+import { openTransferSecrets } from "./passphrase-crypto";
 import { sealForInstance } from "./secret-codec";
 import { SECRET_COLUMNS, type SecretColumn } from "./secret-registry";
 import type { DataTransferFile, ImportMode, ImportResult, SecretBundle, SecretEntry } from "./types";
@@ -44,6 +44,7 @@ const SINGLETON_AND_AUTH = [
   "invitation_pending_grant",
   "resource_grant",
   "user_settings",
+  "job",
 ];
 
 function assertValidEnvelope(file: DataTransferFile): void {
@@ -57,6 +58,37 @@ function assertValidEnvelope(file: DataTransferFile): void {
   }
   if (file.dump?.scope?.kind !== "instance") {
     throw new InvalidTransferFileError("Import requires a whole-instance export.");
+  }
+}
+
+function assertValidSecretBundle(bundle: SecretBundle | null): void {
+  if (!bundle) return;
+  if (bundle.version !== 1 || !Array.isArray(bundle.entries)) {
+    throw new InvalidTransferFileError("The credential bundle is invalid.");
+  }
+  const schemes = new Set(["scalar", "enc1", "map", "notification-config", "plaintext"]);
+  for (const entry of bundle.entries) {
+    if (
+      !entry ||
+      typeof entry.table !== "string" ||
+      typeof entry.id !== "string" ||
+      typeof entry.column !== "string" ||
+      !schemes.has(entry.scheme)
+    ) {
+      throw new InvalidTransferFileError("The credential bundle contains an invalid entry.");
+    }
+    if (entry.value !== undefined && typeof entry.value !== "string") {
+      throw new InvalidTransferFileError("The credential bundle contains an invalid scalar value.");
+    }
+    for (const values of [entry.map, entry.config]) {
+      if (
+        values !== undefined &&
+        (!values || typeof values !== "object" || Array.isArray(values) ||
+          Object.values(values).some((value) => typeof value !== "string"))
+      ) {
+        throw new InvalidTransferFileError("The credential bundle contains an invalid mapped value.");
+      }
+    }
   }
 }
 
@@ -95,17 +127,28 @@ export async function importInstance(opts: {
   passphrase?: string;
   mode: ImportMode;
 }): Promise<ImportResult> {
-  const { file, mode } = opts;
+  if (env.CLOUD_MODE) throw new CloudInstanceNotTransferableError();
+  assertValidEnvelope(opts.file);
+  return importPreparedInstance({
+    file: opts.file,
+    secrets: openTransferSecrets(opts.file.secrets, opts.passphrase),
+    mode: opts.mode,
+  });
+}
+
+/** Restore a snapshot whose credential bundle has already been authenticated. */
+export async function importPreparedInstance(opts: {
+  file: DataTransferFile;
+  secrets: SecretBundle | null;
+  mode: ImportMode;
+}): Promise<ImportResult> {
+  const { file, mode, secrets: bundle } = opts;
   // GATE 1: never import (esp. wipe) onto a multi-tenant SaaS instance — a
   // wipe restore TRUNCATEs every tenant. Refuse before opening the bundle.
   if (env.CLOUD_MODE) throw new CloudInstanceNotTransferableError();
   assertValidEnvelope(file);
+  assertValidSecretBundle(bundle);
 
-  // Open the bundle FIRST — a wrong passphrase throws here, before any write.
-  let bundle: SecretBundle | null = null;
-  if (file.secrets && opts.passphrase) {
-    bundle = openSecretBundle(file.secrets, opts.passphrase);
-  }
   const secretsSkipped = !bundle;
 
   const rowsRestored = Object.values(file.dump.tables).reduce((n, rows) => n + rows.length, 0);

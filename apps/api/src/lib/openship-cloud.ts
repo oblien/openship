@@ -17,40 +17,24 @@
  */
 
 import { Oblien } from "@repo/adapters";
+import { repos } from "@repo/db";
 import { env } from "../config/env";
-import { safeErrorMessage } from "@repo/core";
+import { DEFAULT_PLAN_TIER, safeErrorMessage, type PlanTierId } from "@repo/core";
 import { cacheStore } from "./cache-store";
+import { getOblienClient } from "./oblien-client";
+import { setQuotaForTier } from "../modules/billing/billing-oblien-quota";
 
-// ─── Oblien client (master credentials - SaaS only) ─────────────────────────
+// ─── Oblien client ──────────────────────────────────────────────────────────
 
-let _client: Oblien | null = null;
-
-export function getOblienClient(): Oblien {
-  if (_client) return _client;
-
-  // Hard gate: master Oblien credentials must only live on the SaaS
-  // API process. If a self-hosted install somehow set OBLIEN_CLIENT_ID
-  // (env-var typo, copied .env from cloud, etc.) and called this
-  // function, the resulting client would have multi-tenant authority
-  // — refuse to instantiate. CLOUD_MODE is the same flag every other
-  // SaaS-only code path checks (cloud-saas.controller, namespace
-  // minting), so this stays in lockstep with the rest of the boundary.
-  if (!env.CLOUD_MODE) {
-    throw new Error(
-      "Oblien master client is only available in CLOUD_MODE — refusing to instantiate on self-hosted",
-    );
-  }
-
-  const clientId = env.OBLIEN_CLIENT_ID;
-  const clientSecret = env.OBLIEN_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error("Oblien credentials not configured (OBLIEN_CLIENT_ID / OBLIEN_CLIENT_SECRET)");
-  }
-
-  _client = new Oblien({ clientId, clientSecret });
-  return _client;
-}
+/**
+ * Re-exported from the leaf `oblien-client` module, which is where it now lives.
+ * Keeping the name importable from here means the five consumers that only ever
+ * wanted a client did not have to move — while `billing-oblien-quota`, the one
+ * module that was on the other side of the cycle, imports the leaf DIRECTLY. That
+ * asymmetry is the whole point: if it came back through this file, the cycle would
+ * re-form and the static import below would be the thing that breaks.
+ */
+export { getOblienClient } from "./oblien-client";
 
 // ─── Webhook registration ────────────────────────────────────────────────────
 
@@ -64,6 +48,15 @@ const OBLIEN_WEBHOOK_EVENTS = [
   "credits.low",
   "credits.depleted",
   "namespace.quota.threshold",
+  // DELIBERATELY NOT `namespace.suspended` / `namespace.restored`. Oblien's billing
+  // docs list them, but the SDK's `WebhookEvent` union at 2.2.45 stops at
+  // `namespace.quota.threshold` — they belong to the newer billing plane this
+  // client can't speak. Subscribing would at best be a no-op and at worst make
+  // `webhooks.update` reject the whole event set, taking the credits events down
+  // with it. Suspension is detected by polling instead
+  // (`reconcileOblienEntitlement`), which is what Oblien's own docs recommend
+  // anyway: "delivery is best-effort … reconcile via the entitlement endpoint."
+  // Add them here the moment the SDK's union does.
 ] as const;
 
 /**
@@ -136,13 +129,39 @@ function namespaceSlugForOrg(orgId: string): string {
 }
 
 /**
- * Ensure an Oblien namespace exists for an org. Idempotent via
- * Oblien's `namespaces.ensure`.
+ * Ensure an Oblien namespace exists for an org, and PERSIST the slug.
+ *
+ * Resolution order is DB → cache → Oblien, and the write order is DB before
+ * cache. Both directions matter:
+ *
+ *   - Reading the DB first means the namespace survives a cache eviction and a
+ *     restart. It previously lived in `cacheStore` ONLY, so `organization
+ *     .oblien_namespace` stayed NULL forever — and every consumer of that column
+ *     opens with `if (!org.oblienNamespace) return`. The whole entitlement path
+ *     (setQuota, resource_limits, credit top-ups, the `credits.usage` webhook
+ *     match) was therefore a silent no-op.
+ *   - Writing the DB BEFORE the cache means a failed DB write retries on the next
+ *     call instead of being masked by a cache hit for the TTL.
+ *
+ * Idempotent via Oblien's own `namespaces.ensure`, so adopting a namespace that
+ * already exists is the normal path, not an error.
  */
 export async function ensureNamespace(organizationId: string): Promise<string> {
+  const existing = await repos.organization
+    .findById(organizationId)
+    .catch(() => null);
+  if (existing?.oblienNamespace) return existing.oblienNamespace;
+
   const store = await cacheStore<string>("oblien-namespaces");
   const cached = await store.get(organizationId);
-  if (cached) return cached;
+  if (cached) {
+    // Cache hit with no DB row: a previous run persisted only to the cache.
+    // Heal the row rather than leaving the column NULL.
+    await repos.organization
+      .setOblienNamespace(organizationId, cached)
+      .catch(() => {});
+    return cached;
+  }
 
   const client = getOblienClient();
   const slug = namespaceSlugForOrg(organizationId);
@@ -153,8 +172,95 @@ export async function ensureNamespace(organizationId: string): Promise<string> {
   });
 
   const namespace = ensured.data.slug || slug;
+  await repos.organization.setOblienNamespace(organizationId, namespace);
   await store.set(organizationId, namespace, NAMESPACE_CACHE_TTL_S);
   return namespace;
+}
+
+/**
+ * Cache namespace recording that an org's Oblien ceiling has been asserted.
+ *
+ * This is a `cacheStore`, not a module-level `Set`, and the difference is not
+ * cosmetic:
+ *
+ *   - MULTI-REPLICA. The SaaS runs several API replicas. A per-process Set means
+ *     each replica asserts separately, so the memo did roughly nothing for the
+ *     N-1 replicas that had not seen the org yet. Backed by Redis this is shared,
+ *     which is correct: the ceiling lives on Oblien, so if ANY replica pushed it,
+ *     it is pushed.
+ *   - BOUNDED. A Set accumulates one entry per org for the life of the process and
+ *     is never swept — a slow leak that grows with the tenant count. `cacheStore`
+ *     evicts (`maxSize`) and expires.
+ *   - SELF-HEALING. A permanent memo means a ceiling that drifted (a failed
+ *     upgrade webhook, a manual edit on Oblien) is only repaired by the hourly
+ *     reconciler. With a TTL the spend path re-asserts on its own.
+ *
+ * It also matches how `ensureNamespace` above already memoizes the namespace slug,
+ * so there is one idiom in this file rather than two.
+ */
+const QUOTA_ASSERTED_NS = "oblien-quota-asserted";
+
+/**
+ * How long an assertion is trusted.
+ *
+ * Deliberately the reconciler's cadence (hourly). Shorter would push redundant
+ * writes onto the analytics fan-out — `collectCloud` issues one namespace token
+ * PER DOMAIN, in parallel, so a 10-domain project would otherwise pay 20 Oblien
+ * writes to open a geo panel. Longer would leave the spend path trusting a
+ * ceiling nothing has re-checked since before the last drift sweep.
+ */
+const QUOTA_ASSERTED_TTL_S = 3600;
+
+async function quotaAssertedStore() {
+  return cacheStore<number>(QUOTA_ASSERTED_NS, { maxSize: 10_000 });
+}
+
+/**
+ * Namespace for RUNNING A WORKLOAD — guarantees the ceiling exists before the
+ * caller can spend anything. Use this, never bare `ensureNamespace`, anywhere a
+ * namespace is about to become compute.
+ *
+ * THE HOLE THIS CLOSES. `ensureNamespace` returns early the moment
+ * `organization.oblien_namespace` is set, and nothing in it touches quota. Org
+ * creation does pair the two (`provisionOrgNamespace`), but that call is
+ * fire-and-forget in `auth.ts` — deliberately, so a slow Oblien can't fail
+ * signup. So when it failed, the first deploy called bare `ensureNamespace`,
+ * which CREATED and RECORDED the namespace with no quota at all. From then on
+ * every later call hit the early return, the boot backfill skipped the org
+ * (it has a namespace, so it looks done), and the org ran fully metered with no
+ * credit ceiling and no resource ceiling. Free, unlimited compute, indefinitely.
+ *
+ * FAILS CLOSED, and that is the point: if the ceiling cannot be asserted we do
+ * not hand back a namespace to spend against. `setQuotaForTier` throws on an
+ * Oblien error and this deliberately does not catch it — a deploy that fails
+ * loudly is recoverable, an uncapped tenant is not. (Enterprise is the one tier
+ * with `monthlyCredits === null`; `setQuotaForTier` returns early for it, which
+ * is the negotiated-contract case, not a bypass.)
+ *
+ * `setQuotaForTier` is a STATIC import. It used to be a dynamic one, purely to
+ * dodge a cycle (`billing-oblien-quota` reached back here for the client) — that
+ * cycle is gone now the client lives in the `oblien-client` leaf, so the dependency
+ * is declared honestly at the top of the file where a reader can see it.
+ */
+export async function ensureNamespaceWithQuota(organizationId: string): Promise<string> {
+  const namespace = await ensureNamespace(organizationId);
+
+  const store = await quotaAssertedStore();
+  if (await store.get(organizationId)) return namespace;
+
+  const org = await repos.organization.findById(organizationId).catch(() => null);
+  await setQuotaForTier(organizationId, (org?.planTierId as PlanTierId) ?? DEFAULT_PLAN_TIER);
+
+  // Recorded only after the push actually succeeded — a throw above must leave the
+  // org unmarked so the next attempt retries instead of trusting a failed write.
+  await store.set(organizationId, Date.now(), QUOTA_ASSERTED_TTL_S);
+  return namespace;
+}
+
+/** Test seam: forget every recorded assertion. */
+export async function __resetQuotaAssertedForTests(): Promise<void> {
+  const store = await quotaAssertedStore();
+  await store.invalidateByPrefix("");
 }
 
 // ─── Token minting ───────────────────────────────────────────────────────────
@@ -189,7 +295,10 @@ export interface NamespaceClientResult {
  */
 export async function issueNamespaceToken(organizationId: string): Promise<NamespaceTokenResult> {
   const client = getOblienClient();
-  const namespace = await ensureNamespace(organizationId);
+  // `ensureNamespaceWithQuota`, NOT bare `ensureNamespace`. This token is full
+  // namespace authority — create workspaces, deploy, run — so the ceiling has to
+  // be on Oblien before it leaves this function.
+  const namespace = await ensureNamespaceWithQuota(organizationId);
 
   try {
     const result = await client.tokens.create({

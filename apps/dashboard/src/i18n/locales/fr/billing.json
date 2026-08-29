@@ -3,6 +3,8 @@
     "title": "Capacité et utilisation",
     "subtitle": "Capacité incluse dans votre forfait et ce que vous avez utilisé. Les chiffres en direct se synchronisent depuis Openship Cloud.",
     "routes": "Routes gratuites",
+    "runningServices": "Services en cours",
+    "projects": "Projets",
     "workspaces": "Espaces de travail",
     "unlimited": "Illimité",
     "used": "utilisé",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "Les recharges de crédits ponctuelles arrivent bientôt : vous pourrez ajouter des crédits en plus de votre allocation mensuelle ici.",
   "header": {
-    "credits": "Credits",
+    "credits": "Calcul",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -81,7 +83,7 @@
     "title": "Recharger des crédits",
     "description": "Packs de crédits ponctuels facturés via Stripe. Les crédits n'expirent jamais et s'ajoutent à votre allocation mensuelle.",
     "tryAgain": "Réessayer",
-    "credits": "crédits",
+    "credits": "minutes de calcul",
     "redirecting": "Redirection…",
     "buy": "Acheter",
     "empty": "Aucun pack de recharge disponible pour le moment.",
@@ -93,25 +95,24 @@
     "portalError": "Échec de l'ouverture du portail de facturation"
   },
   "overview": {
-    "creditsLeft": "crédits restants",
+    "creditsLeft": "minutes de calcul restantes",
     "planLabel": "Forfait {name}",
     "usedThisPeriod": "Utilisé cette période",
     "resets": "Réinitialisation",
     "resetsInDay": "Dans {n} jour",
     "resetsInDays": "Dans {n} jours",
     "none": "—",
-    "upgradeToPro": "Passer à Pro",
     "recentActivity": "Activité récente",
     "last7Days": "7 derniers jours",
     "viewFullUsage": "Voir l'utilisation complète",
     "noUsageYet": "Aucune utilisation pour l'instant",
     "usageError": "Échec du chargement de l'utilisation",
-    "needMoreCredits": "Besoin de plus de crédits ?",
+    "needMoreCredits": "Besoin de plus de minutes de calcul ?",
     "oneTimeTopups": "Recharges ponctuelles, sans modifier l'abonnement",
     "seeAllPacks": "Voir tous les packs",
     "packsError": "Échec du chargement des packs",
     "noPacks": "Aucun pack de recharge disponible.",
-    "creditsAmount": "{n} crédits",
+    "creditsAmount": "{n} minutes de calcul",
     "oneTime": "{price} en une fois",
     "buy": "Acheter",
     "checkoutError": "Échec du démarrage du paiement"
@@ -122,7 +123,7 @@
       "balance": "Solde",
       "balanceSuffix": "sur {limit} crédits",
       "consumed": "Consommé cette période",
-      "credits": "crédits",
+      "credits": "minutes de calcul",
       "burnRate": "Rythme de consommation",
       "burnRateSuffix": "crédits/jour (7 derniers jours)",
       "projected": "Projection de fin de période",
@@ -141,7 +142,7 @@
       "subtitle": "Crédits attribués proportionnellement à l'utilisation mesurée des ressources dans la plage sélectionnée.",
       "resource": "Ressource",
       "units": "Unités",
-      "credits": "Crédits",
+      "credits": "Minutes de calcul",
       "percentOfTotal": "% du total",
       "loading": "Chargement…",
       "empty": "Aucune utilisation dans la plage sélectionnée."
@@ -200,7 +201,8 @@
       "incomplete_expired": "Expiré",
       "unpaid": "Impayé",
       "paused": "En pause"
-    }
+    },
+    "includedTitle": "Ce qui est inclus"
   },
   "paymentPanel": {
     "title": "Moyen de paiement",

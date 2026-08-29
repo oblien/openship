@@ -28,9 +28,12 @@ import { BuildLogger } from "@repo/adapters";
 import type { BuildConfigSnapshotLike } from "../build-config";
 import {
   cleanupBuildArtifact,
+  onCancelled,
   onFailure,
+  onNoChanges,
   onReconciling,
   onSuccess,
+  routeIssuesWarning,
   setDeploymentStatus,
   type LifecycleContext,
 } from "../deployment-lifecycle";
@@ -38,8 +41,11 @@ import type { DeployableService } from "../../../lib/deployable-service";
 import { webhookProxyTarget } from "../../../config";
 
 import { buildComposeImages } from "./build.service";
-import { deployComposeServices } from "./deploy.service";
+import { composeDeployMadeNoChanges, deployComposeServices } from "./deploy.service";
+import { COMPOSE_SENTINEL } from "../../../lib/container-ref";
 import { safeErrorMessage } from "@repo/core";
+import * as sessionManager from "../session-manager";
+import type { HostPortTargetIdentity } from "../../../lib/host-port-target";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -54,6 +60,11 @@ export interface ComposePipelineOpts {
   /** Target host executor (SSH/local) — writes app template config files onto
    *  the Docker host for read-only bind-mounts. Null on cloud. */
   executor: CommandExecutor | null;
+  /** The target IS this machine (`platform.localHost`) — host-path writes go
+   *  through the host channel, not `executor`. */
+  localHost?: boolean;
+  /** Physical TCP bind namespace resolved from the actual deployment target. */
+  hostPortTarget?: HostPortTargetIdentity | null;
   usesManagedRouting: boolean;
   logger: BuildLogger;
   ctx: LifecycleContext;
@@ -90,6 +101,8 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     ssl,
     system,
     executor,
+    localHost,
+    hostPortTarget,
     usesManagedRouting,
     logger,
     ctx,
@@ -116,6 +129,18 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   const refreshIds = (snapshot as { refreshServiceIds?: string[] }).refreshServiceIds;
   const refreshServiceIds =
     !dep.forceAll && refreshIds && refreshIds.length > 0 ? new Set(refreshIds) : undefined;
+  /**
+   * EXCLUSIVE scope: never deploy, fail or reap a service outside `targetServiceIds`.
+   *
+   * `targetServiceIds` alone only means "build/recreate these and carry the rest forward",
+   * and carrying requires a previous deployment to carry FROM. A caller whose untargeted
+   * services must be untouchable even with no previous release (a migration reusing
+   * already-running containers in place) sets this on the snapshot.
+   */
+  const strictScope =
+    !dep.forceAll &&
+    !!targetServiceIds &&
+    Boolean((snapshot as { strictServiceScope?: boolean }).strictServiceScope);
 
   const composeBuild = await buildComposeImages({
     project,
@@ -135,6 +160,23 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     refreshServiceIds,
   });
 
+  // Cancelled during the image phase: stop here. setDeploymentStatus below has no
+  // terminal-state guard, so without this the cancelled row would be flipped back
+  // to "deploying" and the services the user cancelled would start anyway.
+  if (composeBuild.cancelled) {
+    for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
+      await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
+        const detail = safeErrorMessage(err);
+        logger.log(
+          `Warning: failed to clean up built service image ${serviceId}: ${detail}\n`,
+          "warn",
+        );
+      });
+    }
+    await onCancelled(ctx, composeBuild.durationMs);
+    return;
+  }
+
   if (composeBuild.buildFailures.size > 0) {
     logger.log(
       `Build phase completed with ${composeBuild.buildFailures.size} failed service image${composeBuild.buildFailures.size === 1 ? "" : "s"}. Deploying available services...\n`,
@@ -146,6 +188,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   await setDeploymentStatus(dep.id, "deploying", {
     extra: { buildDurationMs: composeBuild.durationMs },
   });
+  sessionManager.broadcastInstallPhase(dep.id, { id: "services", status: "active" });
 
   const composeResult = await deployComposeServices(project, dep, runtime, logger, {
     builtImages: composeBuild.imageRefs,
@@ -156,9 +199,13 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     ssl,
     system,
     executor,
+    localHost,
+    hostPortTarget,
+    promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
     usesManagedRouting,
     serverId: snapshot.serverId,
     targetServiceIds,
+    strictScope,
     routeOptions: project.webhookDomain
       ? {
           webhookDomain: project.webhookDomain,
@@ -173,9 +220,8 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // running fine. Persist `reconciling` and leave the images in place (reconcile
   // may confirm ready; cleaning up now would hit the same dead connection).
   if (composeResult.status === "reconciling") {
-    const primary = composeResult.services.find((s) => s.containerId);
     await onReconciling(ctx, {
-      containerId: primary?.containerId,
+      containerId: composeResult.primaryContainerId,
       warningMessage:
         composeResult.warning ?? "Connection lost during deploy — verifying remote state.",
     });
@@ -186,38 +232,68 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
       await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
         const detail = safeErrorMessage(err);
-        logger.log(`Warning: failed to clean up built service image ${serviceId}: ${detail}\n`, "warn");
+        logger.log(
+          `Warning: failed to clean up built service image ${serviceId}: ${detail}\n`,
+          "warn",
+        );
       });
     }
     await onFailure(ctx, composeResult.error ?? "Compose deploy failed", composeBuild.durationMs);
     return;
   }
 
+  // Which services actually got deployed — everything else's build artifact is
+  // unused and gets reclaimed below.
+  //
+  // `staticRoot` is part of the test, not a nicety: a self-hosted static sub-app
+  // is served from disk by the edge, so it deliberately carries a staticRoot
+  // INSTEAD of a containerId (see MultiServiceDeployResult.services). Reading
+  // "no containerId" as "not deployed" put its doc-root — which is the SAME path
+  // the vhost was just pointed at — into the unused list, so every SUCCESSFUL
+  // compose deploy `rm -rf`'d the static site it had just published, reported
+  // ready, and then 404'd every request.
   const deployedServiceIds = new Set(
     composeResult.services
-      .filter((service) => service.containerId)
+      .filter((service) => service.containerId || service.staticRoot)
       .map((service) => service.serviceId),
   );
   for (const [serviceId, imageRef] of composeBuild.builtImageRefs) {
     if (deployedServiceIds.has(serviceId)) continue;
     await cleanupBuildArtifact(runtime, imageRef).catch((err) => {
       const detail = safeErrorMessage(err);
-      logger.log(`Warning: failed to clean up unused service image ${serviceId}: ${detail}\n`, "warn");
+      logger.log(
+        `Warning: failed to clean up unused service image ${serviceId}: ${detail}\n`,
+        "warn",
+      );
     });
   }
 
-  const primary = composeResult.services.find((s) => s.containerId);
   // Routing failures are best-effort (domains are optional — never fail the
   // deploy). Fold them into the SAME top-level "action required" signal the
   // single-app pipeline uses (`edgeUnsynced` + `deployWarning` → routingUnsynced
   // → project attention + Domains-tab dot), cleared by Retry routing / next deploy.
-  const routingWarning = composeResult.routeWarnings?.length
-    ? `Some domains aren't routed yet — the app is deployed and running; fix DNS/routing and ` +
-      `Retry from the Domains tab: ${composeResult.routeWarnings.join("; ")}`
-    : undefined;
+  const routingWarning =
+    composeResult.routeWarnings?.length || composeResult.tlsPendingDomains?.length
+      ? routeIssuesWarning(composeResult.routeWarnings ?? [], composeResult.tlsPendingDomains ?? [])
+      : undefined;
   const successWarning = routingWarning ?? composeResult.warning;
+  sessionManager.broadcastInstallPhase(dep.id, { id: "ready", status: "done" });
+
+  // Every service was carried forward: this row owns no container and no image, so
+  // promoting it would point the project at an empty release and offer it as a
+  // rollback target (#498). Settle it without advancing. NOT via onFailure /
+  // onCancelled — both destroy the deployment's service containers, which here are
+  // the live ones still serving.
+  if (composeDeployMadeNoChanges(composeResult)) {
+    await onNoChanges(ctx, {
+      warningMessage: successWarning,
+      durationMs: composeBuild.durationMs,
+    });
+    return;
+  }
+
   await onSuccess(ctx, {
-    containerId: primary?.containerId ?? "compose",
+    containerId: composeResult.primaryContainerId ?? COMPOSE_SENTINEL,
     url: composeResult.publicUrl,
     durationMs: composeBuild.durationMs,
     warningMessage: successWarning,
@@ -236,5 +312,3 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     },
   });
 }
-
-

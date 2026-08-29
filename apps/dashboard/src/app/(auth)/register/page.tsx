@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signUp } from "@/lib/auth-client";
+import { signUpNext } from "./signup-next";
 import { useToast } from "@/components/toast";
 import { useI18n } from "@/components/i18n-provider";
 import { AuthShell } from "@/components/auth-shell";
@@ -58,16 +59,18 @@ function RegisterPageInner() {
         email,
         password,
       });
-      if (result.error) {
-        if (result.error.message?.toLowerCase().includes("verify")) {
-          router.push(`/verify-email?email=${encodeURIComponent(email)}`);
-          return;
-        }
-        toast("error", result.error.message ?? t.auth.errors.createFailed);
+      const next = signUpNext(result, { email, postLoginUrl });
+      if (next.kind === "error") {
+        toast("error", next.message ?? t.auth.errors.createFailed);
+      } else if (next.kind === "verify") {
+        router.push(next.href);
+        return;
       } else if (postLoginUrl) {
-        window.location.href = postLoginUrl;
+        // Full navigation, not router.push: the post-login target may be outside
+        // this app (the cloud-authorize handoff), which the router cannot reach.
+        window.location.href = next.href;
       } else {
-        router.push("/");
+        router.push(next.href);
       }
     } catch (err) {
       toast("error", isNetworkError(err)

@@ -1,17 +1,91 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { StackId, ComposeAdvanced, OrchestratorMode, RoutingConfig } from "@repo/core";
-import type { CloudResourceTier, CloudResourceCustom, PublicEndpoint, PortCheckUI, OutputCheckUI } from "@/context/deployment/types";
+import type {
+  StackId,
+  ComposeAdvanced,
+  OrchestratorMode,
+  RoutingConfig,
+  OpenshipResourceTier,
+  OpenshipReadiness,
+  WorkloadType,
+} from "@repo/core";
+import type {
+  CloudResourceTier,
+  CloudResourceCustom,
+  PublicEndpoint,
+  PortCheckUI,
+  OutputCheckUI,
+} from "@/context/deployment/types";
+
+/** How a rollback to a given deployment would run — see the API's restore plan. */
+export interface RestorePlanUI {
+  /** `redeploy-pinned` = instant (reuses the retained image), `unit-swap` =
+   *  instant (restarts the retained unit), `reacquire-image` = pulls the frozen
+   *  registry reference again, `rebuild` = builds the commit again,
+   *  `ineligible` = can't be restored (already active, not successful). */
+  mode: "redeploy-pinned" | "unit-swap" | "reacquire-image" | "rebuild" | "ineligible";
+  /** True when the restore clones the repo (so it needs GitHub access). */
+  needsRepository: boolean;
+  /** Services that must rebuild because their image aged out. */
+  rebuildServices: string[];
+  /**
+   * Which env keys the release's frozen snapshot would change, and how it lands.
+   * KEYS ONLY — the API never sends values here. Absent when the plan is
+   * ineligible or the preview couldn't be derived.
+   */
+  env?: {
+    /** `overlay` = frozen shadows matching keys; `replace` = frozen used
+     *  verbatim (keys added since are dropped); `unchanged` = the container is
+     *  restarted, not recreated. */
+    strategy: "overlay" | "replace" | "unchanged";
+    changes: Array<{
+      key: string;
+      direction: "frozen-wins" | "removed-since" | "added-since";
+      /** Defined per-service today but captured unscoped — one value would
+       *  land on every service. */
+      scopeAmbiguous?: boolean;
+      serviceName?: string;
+    }>;
+    /** Count BEFORE the cap — show this, not `changes.length`. */
+    totalChanges: number;
+    truncated: boolean;
+  };
+  /** Services that exist today but not in this release. They keep running. */
+  untouchedServices: string[];
+  code?: string;
+  reason?: string;
+}
 
 export type PrepareProjectSource =
-  | { source?: "github"; owner: string; repo: string; branch?: string; force?: string | boolean }
-  | { source: "local"; path: string };
+  | {
+      source?: "github";
+      owner: string;
+      repo: string;
+      branch?: string;
+      force?: string | boolean;
+      /** Pin the compose file location (file or directory) instead of detecting the root. */
+      composePath?: string;
+      /** Env already configured for this deploy, for compose interpolation. */
+      env?: Record<string, string>;
+    }
+  | {
+      source: "local";
+      path: string;
+      composePath?: string;
+      /** Env already configured for this deploy, for compose interpolation. */
+      env?: Record<string, string>;
+    };
 
 export interface PrepareComposeService {
+  /** Set only when this service was hydrated from a PERSISTED row (an edit / redeploy
+   *  of a project that already exists), never by a fresh compose scan. Its presence is
+   *  what tells the env editor a stored-env reveal is possible for this service. */
+  serviceId?: string;
   name: string;
   image?: string;
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   ports: string[];
   dependsOn: string[];
   environment: Record<string, string>;
@@ -23,6 +97,11 @@ export interface PrepareComposeService {
       defaultValue?: string;
       resolvedValue: string;
       expression?: string;
+      /** The compose file marks this row mandatory (`${VAR:?…}`) and at least
+       *  one referenced variable is unresolved. */
+      required?: boolean;
+      /** Names referenced by an embedded expression that still need a value. */
+      unresolvedVariables?: string[];
     }
   >;
   volumes: string[];
@@ -162,6 +241,9 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
     branches?: Array<{ name: string }>;
   };
   singleAppCandidate?: PrepareSingleAppCandidate;
+  /** The compose path this scan used (request value, or the one openship.json
+   *  declared). Absent when the root was detected normally. */
+  composePath?: string;
   services?: PrepareComposeService[];
   monorepoApps?: PrepareMonorepoApp[];
   monorepoWorkspace?: PrepareMonorepoWorkspace;
@@ -172,6 +254,10 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
   //    ships the file. Seed wizard defaults; absent → detection is unchanged. ──
   /** Declared serve mode ("static" ⇒ no server). Seeds `options.hasServer`. */
   productionMode?: "host" | "static" | "standalone";
+  /** Declared runtime workload ("web"|"worker"|"static", #538). Wins over
+   *  `productionMode` — seeds `options.workloadType` directly so a repo whose
+   *  openship.json declares `workload: worker` lands on the worker selection. */
+  workloadType?: WorkloadType;
   /** Declared runtime isolation. Seeds `runtimeMode` for a brand-new deploy. */
   runtimeMode?: "bare" | "docker";
   /** Declared project domains, normalized to the create shape. Seed endpoints. */
@@ -183,7 +269,24 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
     targetPath?: string;
   }>;
   /** Declared cloud sizing (tier OR explicit cpu/mem/disk). Seeds resource tier. */
-  resources?: { tier?: "micro" | "low" | "medium" | "high"; cpuCores?: number; memoryMb?: number; diskMb?: number };
+  /** Tier ids come from @repo/core (OpenshipResourceTier) — not re-spelled here. */
+  resources?: {
+    tier?: OpenshipResourceTier;
+    cpuCores?: number;
+    memoryMb?: number;
+    diskMb?: number;
+  };
+  /**
+   * Declared readiness gate. Seeds the wizard's Health section; absent (the
+   * common case) leaves it off, which is also what the pipeline does.
+   */
+  readiness?: OpenshipReadiness;
+  /**
+   * What the repo's openship.json parse refused (#641). Advisory — the deploy
+   * runs either way, on the fields that did parse. Reaches the wizard without a
+   * controller change because /deployments/prepare spreads ProjectInfo raw.
+   */
+  configDiagnostics?: { errors: string[]; warnings: string[]; wholeFile?: true };
   error?: string;
   current_status?: string;
   exists?: boolean;
@@ -199,21 +302,17 @@ export const deployApi = {
     api.get<any>(endpoints.deploy.list, { params: opts }),
 
   /** Cancel a deployment */
-  cancel: (id: string) =>
-    api.post<any>(endpoints.deploy.cancel(id)),
+  cancel: (id: string) => api.post<any>(endpoints.deploy.cancel(id)),
 
   /** Delete a deployment */
-  deleteDeployment: (id: string) =>
-    api.delete<any>(endpoints.deploy.delete(id)),
+  deleteDeployment: (id: string) => api.delete<any>(endpoints.deploy.delete(id)),
 
   /** Reject a partial deployment and restore previous active deployment if available */
-  reject: (id: string) =>
-    api.post<any>(endpoints.deploy.reject(id)),
+  reject: (id: string) => api.post<any>(endpoints.deploy.reject(id)),
 
   /** Keep (confirm) a partial deployment that is awaiting a decision — clears
    *  the pending marker so it stops reading as "Action Required". */
-  keep: (id: string) =>
-    api.post<any>(endpoints.deploy.keep(id)),
+  keep: (id: string) => api.post<any>(endpoints.deploy.keep(id)),
 
   /** Dismiss an advisory port-check for `target` (the exposed port for a
    *  single-app, or the service id for a compose service) so it won't re-nag
@@ -231,16 +330,19 @@ export const deployApi = {
   checkOutput: (projectId: string) =>
     api.post<{ data: OutputCheckUI[] }>(endpoints.projects.outputCheck(projectId)),
 
-  /** Roll back to a previous successful deployment. The orchestrator
-   *  validates artifact-retained + not-already-active before swapping. */
-  rollback: (id: string) =>
-    api.post<any>(endpoints.deploy.rollback(id)),
+  /** Roll back to a previous successful deployment. The orchestrator resolves
+   *  HOW at call time — instant from the retained image, or a rebuild from the
+   *  target's commit — so this never fails just because an artifact aged out. */
+  rollback: (id: string) => api.post<any>(endpoints.deploy.rollback(id)),
+
+  /** How a rollback to this deployment WOULD run, for the confirm dialog's copy.
+   *  Read-only; safe to call when the menu opens. */
+  restorePlan: (id: string) => api.get<{ data: RestorePlanUI }>(endpoints.deploy.restorePlan(id)),
 
   /** Pin / unpin a deployment. Pinned deployments are exempt from the
    *  retention prune — their artifact stays rollback-restorable
    *  indefinitely. Hard-capped at 10 per project. */
-  pin: (id: string, pinned: boolean) =>
-    api.post<any>(`deployments/${id}/pin`, { pinned }),
+  pin: (id: string, pinned: boolean) => api.post<any>(`deployments/${id}/pin`, { pinned }),
 
   /** Trigger a redeploy. Pass `useExistingCommit: true` to rebuild from
    *  the SAME commit SHA the old deployment used (fallback path when the
@@ -307,6 +409,8 @@ export const deployApi = {
       image?: string;
       build?: string;
       dockerfile?: string;
+      buildArgs?: Record<string, string | null>;
+      advanced?: ComposeAdvanced;
       ports?: string[];
       dependsOn?: string[];
       environment?: Record<string, string>;
@@ -325,8 +429,7 @@ export const deployApi = {
      *  build host (relay on desktop, token otherwise); default clones on the
      *  API host and transfers. The API gates + falls back as needed. */
     cloneStrategy?: "api-host" | "server";
-  }) =>
-    api.post<any>(endpoints.deploy.buildAccess, payload),
+  }) => api.post<any>(endpoints.deploy.buildAccess, payload),
 
   /** Poll build status */
   getBuildStatus: (deploymentId: string) =>
@@ -337,16 +440,14 @@ export const deployApi = {
     api.get<SwarmBuildStatus>(endpoints.deploy.buildStatus(deploymentId)),
 
   /** Start a build by deployment ID */
-  buildStart: (deployment_id: string) =>
-    api.post<any>(endpoints.deploy.buildStart(deployment_id)),
+  buildStart: (deployment_id: string) => api.post<any>(endpoints.deploy.buildStart(deployment_id)),
 
   /** Re-deploy an existing deployment */
   buildRedeploy: (deployment_id: string) =>
     api.post<any>(endpoints.deploy.buildRedeploy(deployment_id)),
 
   /** Check SSL certificate status for a domain */
-  sslStatus: (domain: string) =>
-    api.post<any>(endpoints.deploy.sslStatus, { domain }),
+  sslStatus: (domain: string) => api.post<any>(endpoints.deploy.sslStatus, { domain }),
 
   /** Renew SSL certificate */
   sslRenew: (domain: string, includeWww = false) =>

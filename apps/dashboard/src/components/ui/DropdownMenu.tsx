@@ -23,6 +23,8 @@ interface DropdownMenuProps {
   className?: string;
   triggerClassName?: string;
   disabled?: boolean;
+  /** Accessible name for the icon-only trigger (also its tooltip). */
+  triggerLabel?: string;
 }
 
 const DropdownMenu: React.FC<DropdownMenuProps> = ({
@@ -32,6 +34,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
   className = "",
   triggerClassName = "",
   disabled = false,
+  triggerLabel,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -61,8 +64,8 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
         };
       default:
         return {
-          color: "hsl(var(--foreground))",
-          hoverBg: "hsl(var(--muted))",
+          color: "var(--foreground)",
+          hoverBg: "var(--muted)",
         };
     }
   };
@@ -85,8 +88,11 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
           }`
         }`}
         type="button"
+        aria-label={triggerLabel}
+        title={triggerLabel}
+        aria-expanded={isOpen}
         style={{
-          backgroundColor: isOpen && !triggerClassName ? "hsl(var(--muted))" : undefined,
+          backgroundColor: isOpen && !triggerClassName ? "var(--muted)" : undefined,
         }}
       >
         {trigger || <MoreHorizontal className="w-4 h-4 text-muted-foreground" />}
@@ -123,7 +129,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
                       }`}
                     type="button"
                     style={{
-                      color: action.disabled ? "hsl(var(--muted-foreground))" : styles.color,
+                      color: action.disabled ? "var(--muted-foreground)" : styles.color,
                     }}
                   >
                     {action.icon && (

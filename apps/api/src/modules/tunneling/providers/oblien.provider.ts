@@ -5,14 +5,15 @@
  *   - The master client is constructed from CLOUD_MODE config and the
  *     stored session token (see lib/openship-cloud.ts).
  *   - Tunnels are scoped to an Oblien namespace per-organization,
- *     resolved via ensureNamespace.
+ *     resolved via ensureNamespaceWithQuota (the quota-asserting entry point —
+ *     a tunnel is billable capacity, so it must not precede a credit ceiling).
  *
  * Provider context payload (input.context):
  *   - organizationId: string  (required — used to resolve namespace)
  */
 
 import { env } from "../../../config/env";
-import { getOblienClient, ensureNamespace } from "../../../lib/openship-cloud";
+import { getOblienClient, ensureNamespaceWithQuota } from "../../../lib/openship-cloud";
 import type {
   TunnelAgent,
   TunnelProvider,
@@ -51,7 +52,9 @@ export const oblienProvider: TunnelProvider = {
 
     let namespace: string;
     try {
-      namespace = await ensureNamespace(organizationId);
+      // A tunnel is billable namespace capacity, so it goes through the
+      // quota-asserting entry point like every other spend path.
+      namespace = await ensureNamespaceWithQuota(organizationId);
     } catch (err) {
       throw new ProvisionFailedError(
         "oblien",

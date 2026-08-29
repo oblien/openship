@@ -6,46 +6,48 @@ import {
   ExternalLink,
   Copy,
   RotateCcw,
-  RefreshCw,
   XCircle,
   Trash2,
   Pin,
   PinOff,
 } from "lucide-react";
 import { generateIcon } from "@/utils/icons";
-import { deployApi, getApiErrorMessage } from "@/lib/api";
+import { deployApi, getApiErrorMessage, type RestorePlanUI } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { RollbackConfirmDialog } from "./RollbackConfirmDialog";
+import type { Deployment as DeploymentRow } from "../types";
+import { canConfirmRestore, canRequestRestorePlan, restoreModeCopy } from "./restore-ui";
 
-interface Deployment {
-  id: string;
-  status: string;
-  domain: string;
-  owner?: string;
-  repo?: string;
-  commit: {
-    hash: string;
-    /** Full SHA when known — required by "Redeploy this commit". */
-    fullHash?: string | null;
-  };
-  /** Rollback state — flows from the orchestrator-aware listing endpoint. */
-  artifactRetainedAt?: string | null;
-  pinned?: boolean;
-  isActive?: boolean;
-}
+/** Picked from the shared row type rather than re-declared with `status: string`:
+ *  a local structural copy let the status checks below drift onto the API's
+ *  vocabulary (`ready`) while the list mapper hands us the UI one (`success`),
+ *  which silently disabled rollback and hid Pin entirely. */
+type Deployment = Pick<
+  DeploymentRow,
+  "id" | "status" | "domain" | "owner" | "repo" | "artifactRetainedAt" | "pinned" | "isActive"
+>;
 
 interface DeploymentMenuProps {
   deployment: Deployment;
   triggerClassName?: string;
   onStatusChange?: () => void;
+  /** Lets the row lift its stacking context while the menu is open — the
+   *  dropdown's own z-index can't escape the row's. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
   deployment,
   triggerClassName,
   onStatusChange,
+  onOpenChange,
 }) => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
+  // Wrapped in an object so a null PLAN (the preview call failed) still opens the
+  // dialog — the rollback itself doesn't need the preview.
+  const [confirmPlan, setConfirmPlan] = useState<{ plan: RestorePlanUI | null } | null>(null);
+  const [rollbackBusy, setRollbackBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,24 +66,21 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     };
   }, [isOpen]);
 
+  // Mirrored via effect, not wrapped around each setIsOpen call — there are six
+  // of them and a new one would otherwise forget to report.
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
+
   // `isInFlight` = status-wise busy (the cancel/delete affordances care
   // about this). Distinct from `deployment.isActive` which means
   // "currently the active version" — the chip / rollback gating cares
   // about that one.
   const isInFlight = ["pending", "queued", "building", "deploying"].includes(deployment.status);
-  const canRollback =
-    deployment.status === "ready" &&
-    !deployment.isActive &&
-    !!deployment.artifactRetainedAt;
-  // Surfaced when rollback is unavailable because the artifact was pruned —
-  // the user can still rebuild this exact commit from source. Requires a
-  // commit SHA to be on file (manual deploys without one are excluded).
-  const canRedeployCommit =
-    !canRollback &&
-    !deployment.isActive &&
-    !isInFlight &&
-    !!deployment.commit?.fullHash &&
-    deployment.commit.fullHash !== "N/A";
+  // The row cannot know every restorable source (notably a frozen release-image
+  // reference after its local image was pruned). Let every settled successful,
+  // inactive release ask the authoritative restore planner.
+  const canRollback = canRequestRestorePlan(deployment) && !isInFlight;
 
   const handleCancel = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,32 +97,44 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     e.stopPropagation();
     setIsOpen(false);
     if (!canRollback) return;
-    const ok = window.confirm(t.deployments.menu.confirmRollback);
-    if (!ok) return;
+    // Ask the API how this restore will actually run so the confirm can say
+    // "instant" or "rebuild" truthfully instead of guessing from a DB flag —
+    // and which env keys the release's frozen snapshot would change.
+    const plan = await deployApi
+      .restorePlan(deployment.id)
+      .then((res) => res.data)
+      .catch(() => null);
+    setConfirmPlan({ plan });
+  };
+
+  const confirmRollback = async () => {
+    if (!canConfirmRestore(confirmPlan?.plan ?? null)) return;
+    setRollbackBusy(true);
     try {
       await deployApi.rollback(deployment.id);
+      setConfirmPlan(null);
       onStatusChange?.();
     } catch (err) {
+      setConfirmPlan(null);
       window.alert(getApiErrorMessage(err, t.deployments.menu.rollbackFailed));
+    } finally {
+      setRollbackBusy(false);
     }
   };
 
-  const handleRedeployCommit = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsOpen(false);
-    if (!canRedeployCommit) return;
-    const shortHash = deployment.commit.hash;
-    const ok = window.confirm(
-      interpolate(t.deployments.menu.confirmRedeploy, { hash: shortHash }),
-    );
-    if (!ok) return;
-    try {
-      await deployApi.redeploy(deployment.id, { useExistingCommit: true });
-      onStatusChange?.();
-    } catch (err) {
-      window.alert(getApiErrorMessage(err, t.deployments.menu.redeployFailed));
-    }
-  };
+  const mode = restoreModeCopy(confirmPlan?.plan ?? null);
+  const modeLine =
+    mode === "rebuild"
+      ? t.deployments.menu.rollbackModeRebuild
+      : mode === "reacquire-image"
+        ? t.deployments.menu.rollbackModeReacquireImage
+        : mode === "mixed"
+          ? interpolate(t.deployments.menu.rollbackModeMixed, {
+              count: String(confirmPlan?.plan?.rebuildServices.length ?? 0),
+            })
+          : mode === "instant"
+            ? t.deployments.menu.rollbackModeInstant
+            : "";
 
   const handleTogglePin = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -159,7 +170,10 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
-        className={triggerClassName || "w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"}
+        className={
+          triggerClassName ||
+          "w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        }
       >
         <MoreVertical className="w-4 h-4" />
       </button>
@@ -187,7 +201,13 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
               }}
               className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
             >
-              {generateIcon('https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg', 16, 'currentColor', {}, true)}
+              {generateIcon(
+                "https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg",
+                16,
+                "currentColor",
+                {},
+                true,
+              )}
               {t.deployments.menu.viewRepository}
             </button>
           )}
@@ -231,9 +251,9 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
             </>
           )}
 
-          {/* Rollback path — instant restore from the preserved artifact.
-              Enabled iff status=ready, not currently active, AND artifact
-              is still retained (not pruned). */}
+          {/* Restore this version. The API picks instant-from-artifact vs
+              rebuild-from-commit, so this is enabled whenever EITHER is
+              possible; the confirm dialog names the mode it resolved. */}
           {!isInFlight && deployment.status !== "building" && (
             <>
               <div className="h-px bg-border/50 my-2" />
@@ -245,36 +265,21 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
                     ? t.deployments.menu.rollbackTitle.enabled
                     : deployment.isActive
                       ? t.deployments.menu.rollbackTitle.active
-                      : !deployment.artifactRetainedAt
-                        ? t.deployments.menu.rollbackTitle.pruned
-                        : t.deployments.menu.rollbackTitle.notReady
+                      : t.deployments.menu.rollbackTitle.notReady
                 }
                 className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <RotateCcw className="w-4 h-4" />
                 {t.deployments.menu.rollback}
               </button>
-
-              {/* Fallback for when the artifact has been pruned out of the
-                  rollback window: rebuild the same commit from source. Only
-                  shown when rollback isn't available, so the two CTAs never
-                  overlap. */}
-              {canRedeployCommit && (
-                <button
-                  onClick={handleRedeployCommit}
-                  title={t.deployments.menu.redeployTitle}
-                  className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  {t.deployments.menu.redeploy}
-                </button>
-              )}
             </>
           )}
 
-          {/* Pin / Unpin — toggles the artifact's exemption from
-              retention prune. Available for any ready deployment. */}
-          {!isInFlight && deployment.status === "ready" && (
+          {/* Pin / Unpin — toggles the artifact's exemption from retention
+              prune. Successful deploys only: the API rejects a pin on anything
+              but `ready`, so `partial_failure` is excluded even though it can be
+              rolled back to. */}
+          {!isInFlight && deployment.status === "success" && (
             <button
               onClick={handleTogglePin}
               disabled={!deployment.pinned && !deployment.artifactRetainedAt}
@@ -306,7 +311,15 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
           )}
         </div>
       )}
+
+      <RollbackConfirmDialog
+        isOpen={!!confirmPlan}
+        plan={confirmPlan?.plan ?? null}
+        modeLine={modeLine}
+        busy={rollbackBusy}
+        onConfirm={confirmRollback}
+        onClose={() => setConfirmPlan(null)}
+      />
     </div>
   );
 };
-

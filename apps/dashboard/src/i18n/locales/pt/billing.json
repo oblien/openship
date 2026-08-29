@@ -3,6 +3,8 @@
     "title": "Capacidade e uso",
     "subtitle": "Capacidade incluída no seu plano e quanto você usou. Os números ao vivo são sincronizados do Openship Cloud.",
     "routes": "Rotas gratuitas",
+    "runningServices": "Serviços em execução",
+    "projects": "Projetos",
     "workspaces": "Espaços de trabalho",
     "unlimited": "Ilimitado",
     "used": "usado",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "As recargas de crédito avulsas chegarão em breve — aqui você poderá adicionar créditos além da sua franquia mensal.",
   "header": {
-    "credits": "Credits",
+    "credits": "Computação",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -80,7 +82,7 @@
     "title": "Recarregar créditos",
     "description": "Pacotes de crédito avulsos cobrados via Stripe. Os créditos nunca expiram e se acumulam sobre a sua franquia mensal.",
     "tryAgain": "Tentar novamente",
-    "credits": "créditos",
+    "credits": "minutos de computação",
     "redirecting": "Redirecionando…",
     "buy": "Comprar",
     "empty": "Nenhum pacote de recarga disponível no momento.",
@@ -92,25 +94,24 @@
     "portalError": "Falha ao abrir o portal de cobrança"
   },
   "overview": {
-    "creditsLeft": "créditos restantes",
+    "creditsLeft": "minutos de computação restantes",
     "planLabel": "Plano {name}",
     "usedThisPeriod": "Usado neste período",
     "resets": "Renova",
     "resetsInDay": "Em {n} dia",
     "resetsInDays": "Em {n} dias",
     "none": "—",
-    "upgradeToPro": "Fazer upgrade para o Pro",
     "recentActivity": "Atividade recente",
     "last7Days": "Últimos 7 dias",
     "viewFullUsage": "Ver uso completo",
     "noUsageYet": "Nenhum uso ainda",
     "usageError": "Falha ao carregar o uso",
-    "needMoreCredits": "Precisa de mais créditos?",
+    "needMoreCredits": "Precisa de mais minutos de computação?",
     "oneTimeTopups": "Recargas avulsas, sem alterar a assinatura",
     "seeAllPacks": "Ver todos os pacotes",
     "packsError": "Falha ao carregar os pacotes",
     "noPacks": "Nenhum pacote de recarga disponível.",
-    "creditsAmount": "{n} créditos",
+    "creditsAmount": "{n} minutos de computação",
     "oneTime": "{price} pagamento único",
     "buy": "Comprar",
     "checkoutError": "Falha ao iniciar o checkout"
@@ -121,7 +122,7 @@
       "balance": "Saldo",
       "balanceSuffix": "de {limit} créditos",
       "consumed": "Consumido neste período",
-      "credits": "créditos",
+      "credits": "minutos de computação",
       "burnRate": "Taxa de consumo",
       "burnRateSuffix": "créditos/dia (últimos 7d)",
       "projected": "Projeção de fim de período",
@@ -140,16 +141,28 @@
       "subtitle": "Créditos atribuídos proporcionalmente ao uso medido de recursos no intervalo selecionado.",
       "resource": "Recurso",
       "units": "Unidades",
-      "credits": "Créditos",
+      "credits": "Minutos de computação",
       "percentOfTotal": "% do total",
       "loading": "Carregando…",
       "empty": "Nenhum uso no intervalo selecionado."
     },
     "resources": {
-      "cpu": { "label": "Tempo de CPU", "units": "vCPU-horas" },
-      "memory": { "label": "Memória", "units": "GB-horas" },
-      "disk": { "label": "IO de disco", "units": "GB" },
-      "network": { "label": "Rede", "units": "GB" }
+      "cpu": {
+        "label": "Tempo de CPU",
+        "units": "vCPU-horas"
+      },
+      "memory": {
+        "label": "Memória",
+        "units": "GB-horas"
+      },
+      "disk": {
+        "label": "IO de disco",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Rede",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Espaço de trabalho",
@@ -187,7 +200,8 @@
       "incomplete_expired": "Expirado",
       "unpaid": "Não pago",
       "paused": "Pausado"
-    }
+    },
+    "includedTitle": "O que está incluído"
   },
   "paymentPanel": {
     "title": "Forma de pagamento",

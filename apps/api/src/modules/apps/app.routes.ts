@@ -26,6 +26,17 @@ r.get(
   ctrl.catalogEntry,
 );
 r.get(
+  "/catalog/:id/host-fit",
+  {
+    tag: "project:list",
+    mcp: {
+      description:
+        "Check whether a destination meets an app's declared minimum resources, before installing. Query: deployTarget, serverId.",
+    },
+  },
+  ctrl.hostFit,
+);
+r.get(
   "/custom",
   { tag: "project:list", mcp: { description: "List this org's custom (user-uploaded, unverified) apps." } },
   ctrl.listCustom,
@@ -34,6 +45,7 @@ r.post(
   "/custom",
   {
     tag: "project:write",
+    collection: true,
     body: AddCustomAppBody,
     mcp: { description: "Add a custom app from an uploaded JSON definition (stored per-org, unverified)." },
   },
@@ -51,7 +63,10 @@ r.post(
     collection: true,
     projectCreate: true,
     body: InstallAppBody,
-    mcp: { description: "Install an app from the catalog as a project (or return a flow route for wizard apps)." },
+    mcp: {
+      description:
+        "Install an app from the catalog as a project (or return a flow route for wizard apps). Public hostnames come ONLY from `routes` — omit it and the app installs port-only (no domain is invented).",
+    },
   },
   ctrl.install,
 );

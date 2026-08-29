@@ -37,7 +37,8 @@ export interface BillingState {
    * Live resource capacity + consumption, sourced from Openship Cloud. Optional
    * and additive: the self-hosted billing proxy forwards it verbatim when the
    * SaaS provides it, and the dashboard's Capacity panel falls back to the
-   * tier's static `oblienLimits` for any ceiling the cloud hasn't sent yet.
+   * tier's `limits` from the pricing catalog for any ceiling the cloud hasn't
+   * sent yet.
    *
    * Each meter is `{ used, max }` where either side may be `null`:
    *   - `used === null` → cloud hasn't reported consumption yet ("syncing").
@@ -80,17 +81,33 @@ export interface CapacityMeter {
 
 /**
  * Per-resource capacity snapshot. All fields optional so the cloud can grow the
- * set without a dashboard release. Units:
- *   routes/workspaces/vcpus → whole counts · ramMb → MB · diskGb/bandwidthGb → GB.
+ * set without a dashboard release. Every meter here is a whole count except
+ * `buildMinutes` (minutes) and `credits` (which the panel reads off the balance,
+ * not this block).
+ *
+ * The vCPU / RAM / disk / bandwidth meters that used to live here are GONE on
+ * purpose. Three of them were Oblien's PER-WORKSPACE ceilings, not a namespace
+ * pool, so a used/max bar was the wrong shape for them at any value — and their
+ * `used` was never populated, so the panel rendered four permanently-empty rows.
+ * Bandwidth was enforced by nothing at all; it now draws from credits, which is
+ * a meter that can actually fill. Per-service machine size is shown as a plain
+ * value instead (see BillingCapacity.tsx).
  */
 export interface BillingCapacity {
   /** Free *.opsh.io edge routes the org is using vs its allowed maximum. */
   routes?: CapacityMeter;
-  workspaces?: CapacityMeter;
-  vcpus?: CapacityMeter;
-  ramMb?: CapacityMeter;
-  diskGb?: CapacityMeter;
-  bandwidthGb?: CapacityMeter;
+  /** Concurrently running services (one Oblien workspace each) vs
+   *  `limits.runningServices` — the ceiling a customer actually feels. */
+  services?: CapacityMeter;
+  /** Projects vs `limits.maxProjects`. Openship-enforced; Oblien has no project
+   *  concept, so this ceiling exists only on our side. */
+  projects?: CapacityMeter;
+  /**
+   * Build minutes used this period vs the plan's monthly allowance. Together
+   * with `routes` these are the only two meters the server ENFORCES on (a deploy
+   * is refused at the max), so they are the two that must never read as blank.
+   */
+  buildMinutes?: CapacityMeter;
 }
 
 /**
@@ -140,8 +157,18 @@ export interface UsageResponse {
   usage: UsageUnits | null;
 }
 
-/** Subscription tiers eligible for self-serve Stripe Checkout. */
-export type SubscriptionPlanTierId = "pro" | "team";
+/**
+ * Tiers eligible for self-serve Stripe Checkout.
+ *
+ * Derived from `PlanTierId` rather than listed, because the hardcoded
+ * `"pro" | "team"` silently excluded every tier added to the catalog afterwards —
+ * `starter` ($10) could not be passed to checkout at all, so the cheapest paid
+ * plan was unbuyable from the dashboard. `free` has no checkout (it's the
+ * default) and `enterprise` is contract sales, so those two are excluded by name;
+ * a new PURCHASABLE tier is now included automatically, and the server rejects
+ * anything genuinely unpurchasable with `BILLING_PLAN_NOT_PURCHASABLE`.
+ */
+export type SubscriptionPlanTierId = Exclude<PlanTierId, "free" | "enterprise">;
 export type SubscriptionInterval = "monthly" | "annual";
 
 /* ------------------------------------------------------------------ */

@@ -30,7 +30,7 @@
  */
 
 import type { Context } from "hono";
-import { NotFoundError } from "@repo/core";
+import { NotFoundError, ORG_SINGLETON_RESOURCE_TYPES } from "@repo/core";
 import { repos } from "@repo/db";
 import type { Permission, ResourceType } from "@repo/db";
 import { getRequestContext, withScopedOrg, type RequestContext } from "./request-context";
@@ -38,28 +38,19 @@ import { grantSourceFor, type GrantSource } from "./grant-source";
 import { env } from "../config";
 import { resolveOrgCloudUserId } from "./cloud/transport";
 
-/** Grantable resource roots — the types that can be the target of a grant. */
-const GRANTABLE_ROOTS: ResourceType[] = [
-  "project",
-  "server",
-  "mail_server",
-  "backup_destination",
-  "billing",
-  "audit",
-  // Org-singleton features — listed so the resolver accepts their tags
-  // even though restricted-role grants on them are unusual in practice.
-  "analytics",
-  "github",
-  // GitHub access-control grant targets (default-deny, owner-granted):
-  // installation-level + single-repo, alongside the org-wide "github".
-  "github_installation",
-  "github_repository",
-  "permissions",
-  "settings",
-  "job",
-  "terminal",
-  "cloud",
-];
+/**
+ * Resources that exist exactly once per org and carry no resource id in the URL —
+ * their routes assert `resourceId: "*"` and the org comes from request scope.
+ *
+ * Sourced from @repo/core so the route middleware, the wildcard arm below, the
+ * grant picker, and the MCP tool filter cannot disagree about which types are
+ * feature-shaped. `route-permission.ts` re-exports this for its existing
+ * importers; defining it there instead would make this module import from it and
+ * cycle.
+ */
+export const ORG_SINGLETON_RESOURCES: ReadonlySet<string> = new Set<string>(
+  ORG_SINGLETON_RESOURCE_TYPES,
+);
 
 /** Resource types accepted by permission.check — includes leaves. */
 export type CheckedResourceType =
@@ -140,10 +131,16 @@ async function resolveResourceOrg(
   resourceType: CheckedResourceType,
   resourceId: string,
 ): Promise<ResolvedResource | null> {
-  if (GRANTABLE_ROOTS.includes(resourceType as ResourceType)) {
-    const orgId = await loadRootOrgId(resourceType as ResourceType, resourceId);
-    if (!orgId) return null;
-    return { orgId, rootType: resourceType as ResourceType, rootId: resourceId };
+  // A ROOT type resolves directly. There used to be a GRANTABLE_ROOTS membership
+  // test in front of this, but it was inert: every type it listed WITHOUT a
+  // `loadRootOrgId` case resolved to null anyway, and the leaf switch below
+  // returns null for those same types via its default arm. The root cases and the
+  // leaf cases are disjoint, so trying the root first and falling through on null
+  // is equivalent — and costs no extra query, since a leaf type hits
+  // `loadRootOrgId`'s default arm without touching the DB.
+  const rootOrgId = await loadRootOrgId(resourceType as ResourceType, resourceId);
+  if (rootOrgId) {
+    return { orgId: rootOrgId, rootType: resourceType as ResourceType, rootId: resourceId };
   }
 
   switch (resourceType) {
@@ -252,7 +249,7 @@ export const PROJECT_ROOTED: ReadonlySet<CheckedResourceType> = new Set([
 
 /**
  * Cloud fallback for the org lookup in `assert`: when a project-rooted resource
- * has no local row, it may live on the SaaS. Return the request-scope org IFF
+ * has no local row, it may live on the SaaS. Return the caller's scope org IFF
  * that org has a cloud link to proxy through; otherwise null (→ 404, IDOR-safe).
  *
  * The role check in `checkPermission` then runs against this org: owner/admin/
@@ -261,12 +258,11 @@ export const PROJECT_ROOTED: ReadonlySet<CheckedResourceType> = new Set([
  * remains the authoritative per-project gate; a bogus id still 404s once proxied.
  */
 async function resolveCloudFallbackOrg(
-  c: Context,
   resourceType: CheckedResourceType,
+  scopeOrg: string | null,
 ): Promise<string | null> {
   if (env.CLOUD_MODE) return null; // the SaaS IS canonical — no upstream to fall back to
   if (!PROJECT_ROOTED.has(resourceType)) return null;
-  const scopeOrg = resolveRequestScopeOrg(c);
   if (!scopeOrg) return null;
   const ownerUserId = await resolveOrgCloudUserId(scopeOrg).catch(() => null);
   return ownerUserId ? scopeOrg : null;
@@ -356,6 +352,48 @@ export async function checkPermission(
     }
   }
 
+  // ── Collection / wildcard arm ──────────────────────────────────────────────
+  // Every assertion at resourceId "*" — a `:list` scope, a `collection: true`
+  // write, or an org-singleton route — is authorized by a WILDCARD grant on the
+  // asserted type, and by nothing else.
+  //
+  // This SUBSUMES the org-singleton-only arm that used to live here: a singleton's
+  // only id IS "*", so that was this same rule with a narrower type set. Widening
+  // it to every type fixes the absurdity that a `{server,"*",read}` grant could
+  // read every server BY ID (the grant lookup below matches `resource_id = $id OR
+  // resource_id = '*'`) while 404ing on enumerating them.
+  //
+  // TERMINAL on purpose: `resolveResourceOrg` cannot resolve "*" for ANY type —
+  // `loadRootOrgId` returns null for it in every case — so the per-resource arm
+  // below is a guaranteed deny at "*". Returning here says that out loud and
+  // avoids a second, pointless grant query.
+  //
+  // POSITION IS LOAD-BEARING:
+  //   • AFTER the {project,"*",create} arm above, because `permitsAction` is false
+  //     for "create" on every action. Running first — terminal — would deny both
+  //     abilities that arm exists to allow. Placed after, a create-only grant
+  //     still cannot reach ensure/scan/import: those fall through to here and are
+  //     denied, exactly as before.
+  //   • BEFORE the per-resource arm, for the terminality reason above.
+  //
+  // Keyed on the id, not `input.scope`: every caller that sets `scope: "list"`
+  // also passes resourceId "*" (see route-permission's isList and collection
+  // branches), and one predicate cannot disagree with itself.
+  //
+  // The org is already resolved by the caller (`resolveInputOrg` → request scope,
+  // pinned to the token's bound org for a scoped principal — see the unbound
+  // rejection in middleware/auth.ts), and membership in it is asserted above, so
+  // reading the grant directly adds no new trust input.
+  if (input.resourceId === "*") {
+    const wildcard = await source.findForResource(
+      organizationId,
+      userId,
+      input.resourceType as ResourceType,
+      "*",
+    );
+    return wildcard ? permitsAction(wildcard.permissions, input.action) : false;
+  }
+
   let root = await resolveResourceOrg(input.resourceType, input.resourceId);
   if (!root) {
     // A `project` with no local row is a CLOUD project (canonical on the
@@ -378,42 +416,60 @@ export async function checkPermission(
   );
   if (!grant) return false;
 
-  // Exhaustive switch — adding a new Permission value (delete/list/etc.)
-  // without updating this arm fails the build via the `never` check.
-  switch (input.action) {
+  return permitsAction(grant.permissions, input.action);
+}
+
+/**
+ * Does a grant's permission array authorize `action`?
+ *
+ * Cumulative by design — read ⇐ read|write|admin, write ⇐ write|admin — which is
+ * what lets the dashboard render the three levels as a lossless view of the
+ * underlying arrays (mcp-access-templates.ts).
+ *
+ * The single definition shared by the wildcard arm, the per-resource arm, and the
+ * MCP tool filter (`filterToolsForPrincipal`), so "can call" and "is listed"
+ * cannot drift — the same reason `roleAllowsResourceType` is exported. Exhaustive
+ * switch: adding a new Permission value without updating this fails the build via
+ * the `never` check.
+ */
+export function permitsAction(permissions: readonly Permission[], action: Permission): boolean {
+  switch (action) {
     case "read":
-      return grant.permissions.some((p) => p === "read" || p === "write" || p === "admin");
+      return permissions.some((p) => p === "read" || p === "write" || p === "admin");
     case "write":
-      return grant.permissions.some((p) => p === "write" || p === "admin");
+      return permissions.some((p) => p === "write" || p === "admin");
     case "admin":
-      return grant.permissions.includes("admin");
+      return permissions.includes("admin");
     case "create":
-      // "create" is a collection-only capability (handled above for "*"); it is
-      // never a per-resource action, so it grants nothing on a specific id.
+      // "create" is a collection-only capability (handled by the project "*" arm);
+      // it is never a per-resource action, so it grants nothing on a specific id.
       return false;
     default: {
-      const _exhaustive: never = input.action;
+      const _exhaustive: never = action;
       return false;
     }
   }
 }
 
 /**
- * Resolve the org an authz check for `input` runs against: the request-scope org
- * for list scope / org-singletons (resourceId "*"), else the resource's OWN org
- * (with the cloud-project fallback — a project with no local row may be a CLOUD
- * project canonical on the SaaS). Shared by `assert` + `checkPermissionOnResource`
- * so use-time and mint-time org resolution can never drift.
+ * Resolve the org an authz check for `input` runs against: `scopeOrg` for the arms
+ * that have no resource to resolve (list scope / org-singletons at resourceId "*"),
+ * else the resource's OWN org — with the cloud-project fallback, since a project
+ * with no local row may be a CLOUD project canonical on the SaaS.
+ *
+ * `scopeOrg` is supplied by the caller, and the difference between the two callers
+ * is the point: `assert` ESTABLISHES request scope (from `X-Organization-Id`), while
+ * `checkPermissionOnResource` runs afterwards and CONSUMES the scope `assert`
+ * already resolved (`ctx.organizationId`). Everything downstream of that one choice
+ * is shared, so use-time and mint-time org resolution can never drift.
  */
 async function resolveInputOrg(
-  ctx: RequestContext,
   input: PermissionInput,
+  scopeOrg: string | null,
 ): Promise<string | null> {
-  if (input.scope === "list" || input.resourceId === "*") {
-    return resolveRequestScopeOrg(ctx.hono);
-  }
+  if (input.scope === "list" || input.resourceId === "*") return scopeOrg;
   const resource = await resolveResourceOrg(input.resourceType, input.resourceId);
-  return resource?.orgId ?? (await resolveCloudFallbackOrg(ctx.hono, input.resourceType));
+  return resource?.orgId ?? (await resolveCloudFallbackOrg(input.resourceType, scopeOrg));
 }
 
 /**
@@ -438,12 +494,30 @@ function permissionOpts(ctx: RequestContext) {
  * verifying the granted resource belongs to that org — so a grant naming another
  * org's resource id would be accepted at mint (privilege escalation, SaaS audit).
  * This makes mint-time acceptance consistent with `assert`'s use-time check.
+ *
+ * The arms with no resource to resolve — list scope and org-singletons
+ * (`resourceId: "*"`) — take their authority from the caller's ROLE in an org, so
+ * WHICH org is the whole decision. It is `ctx.organizationId`, never the raw
+ * `X-Organization-Id` header, for two reasons:
+ *
+ *   - Every caller runs AFTER `assert` (via routePermission) has resolved the
+ *     request's authoritative org and rebound ctx to it, and then reads its actual
+ *     DATA from `ctx.organizationId`. Re-deriving from the header would gate on one
+ *     org what the handler goes on to do in another — e.g. `canRunJob` on
+ *     `/projects/:id/…` checked `{job,"*",write}` against the header while the
+ *     project resolved to a different org.
+ *   - A mint path writes the binding to `ctx.organizationId` (MCP consent picks the
+ *     org explicitly — see `mintContextFor`), so a caller-chosen header could name a
+ *     different org: a member of the target org gets a `billing`/`audit` grant
+ *     validated against an org they happen to own. GHSA-qv27-39pc-qw9f finding 1.
+ *
+ * Consequence: this never touches `ctx.hono`, so it also holds for a background ctx.
  */
 export async function checkPermissionOnResource(
   ctx: RequestContext,
   input: PermissionInput,
 ): Promise<boolean> {
-  const organizationId = await resolveInputOrg(ctx, input);
+  const organizationId = await resolveInputOrg(input, ctx.organizationId);
   if (!organizationId) return false;
   return checkPermission(ctx.userId, organizationId, input, permissionOpts(ctx));
 }
@@ -474,11 +548,13 @@ export async function checkPermissionOnResource(
 export async function assert(ctx: RequestContext, input: PermissionInput): Promise<void> {
   const c = ctx.hono;
 
-  // Resolve the resource's OWN org (list/singleton → request scope) + gate on
-  // role. Shared with checkPermissionOnResource so mint-time acceptance and
-  // use-time enforcement can't drift. On deny we throw NotFoundError (not 403)
-  // so out-of-permission resources don't leak existence — the IDOR-safe pattern.
-  const organizationId = await resolveInputOrg(ctx, input);
+  // Resolve the resource's OWN org + gate on role. This is where request scope is
+  // ESTABLISHED, so the list/singleton arms read the header here (and only here) —
+  // every later check in the request consumes the org this rebinds ctx to. Shared
+  // with checkPermissionOnResource so mint-time acceptance and use-time enforcement
+  // can't drift. On deny we throw NotFoundError (not 403) so out-of-permission
+  // resources don't leak existence — the IDOR-safe pattern.
+  const organizationId = await resolveInputOrg(input, resolveRequestScopeOrg(c));
   if (!organizationId) {
     throw new NotFoundError(input.resourceType, input.resourceId);
   }

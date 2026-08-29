@@ -1,38 +1,116 @@
+import type { Platform } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
 import { cloudClient } from "./cloud/client";
-import { resolveEdgeTargetHost } from "./edge-target";
+import { isTargetUnverified } from "./cloud/request-error";
+import { canonicalEdgeTarget, resolveEdgeTargetHost } from "./edge-target";
+import { isCloudManagedHostname, managedHostnameToSlug } from "./public-endpoints";
+import { ensureTargetVerified } from "./edge-target-verify";
 
 const NO_CLOUD_MEMBER =
   "Cannot sync edge proxy: no member of this organization has linked Openship Cloud";
 
 /**
- * Ensure an Oblien edge proxy exists for a managed deploy slug.
+ * A managed-edge failure the caller has to answer differently.
  *
- * Sends slug + target host to the SaaS, which forwards to Oblien with the org's
- * namespace token. Oblien resolves + pins the target IP (its SSRF guard) and
- * scopes the slug to the namespace — no ownership challenge needed, so this is
- * a plain best-effort sync.
+ * The three cases read alike as plain Errors and are not alike at all: an
+ * unresolvable target is the operator's config (400), a missing Cloud link is a
+ * setup step (409), and an upstream refusal is neither (502). The setup wizard maps
+ * these onto its HTTP response, which is why the funnel has to distinguish them
+ * rather than throwing one opaque Error — the reason the wizard used to keep its own
+ * copy of this call.
+ */
+export class ManagedEdgeError extends Error {
+  readonly status: 400 | 409 | 502;
+  constructor(message: string, status: 400 | 409 | 502) {
+    super(message);
+    this.name = "ManagedEdgeError";
+    this.status = status;
+  }
+}
+
+/**
+ * Ensure an Openship Cloud edge proxy exists for a managed deploy slug.
+ *
+ * THE one funnel. Sends slug + target host to the SaaS, which forwards to Cloud with
+ * the org's namespace token; Cloud scopes the slug to the namespace and pins the
+ * route to the target's validated IP.
+ *
+ * Cloud refuses to route to a target whose control hasn't been proven, so a
+ * `target_unverified` refusal is not a failure — it is the signal to prove it. We
+ * verify (issue a challenge, serve it on this box's edge, ask Cloud to probe) and
+ * retry the sync exactly ONCE. Everything about that is invisible on the happy path:
+ * an already-proven target never touches the verification code.
+ *
+ * Returns the target it wired (and any caveat about it) so the caller can SHOW
+ * that. The target is the whole substance of this route and it used to be
+ * invisible: on the box, in the deploy log, and in the Domains tab alike. An
+ * operator whose free URL didn't work had nowhere to see that it had been
+ * pointed at a hostname rather than their server.
  */
 export async function ensureManagedEdgeProxy(
   organizationId: string,
   slug: string,
-  opts?: { serverId?: string },
-): Promise<void> {
-  if (!slug.trim()) return;
+  opts?: {
+    serverId?: string;
+    /** A candidate address for THIS box, from setup's `--public-url`. A candidate,
+     *  not an override — it gets the same guards as every other source. */
+    preferHost?: string;
+    /** Routing for the box that is the target, when the caller already holds it.
+     *  Only used if a verification turns out to be needed. */
+    routing?: Platform["routing"];
+    onLog?: (message: string, level?: "warn") => void;
+  },
+): Promise<{ target: string; warning?: string }> {
+  if (!slug.trim()) return { target: "" };
 
-  // The edge target MUST be a public host Oblien can reach on :80 — NOT the deploy
+  // The edge target MUST be a public host Cloud can reach on :80 — NOT the deploy
   // server's display `sshHost` (which is `127.0.0.1` for an isLocal box with no
-  // public URL, making Oblien proxy to its own loopback → 404). resolveEdgeTargetHost
+  // public URL, making Cloud proxy to its own loopback → 404). resolveEdgeTargetHost
   // returns null (with a reason) rather than a dead loopback so we surface an
   // actionable warning instead of silently wiring a broken route.
-  const { host, reason } = await resolveEdgeTargetHost(organizationId, {
+  const { host, reason, warning } = await resolveEdgeTargetHost(organizationId, {
     serverId: opts?.serverId,
+    ...(opts?.preferHost ? { preferHost: opts.preferHost } : {}),
   });
   if (!host) {
-    throw new Error(`Cannot configure edge proxy: ${reason ?? "target host could not be resolved"}`);
+    throw new ManagedEdgeError(
+      `Cannot configure edge proxy: ${reason ?? "target host could not be resolved"}`,
+      400,
+    );
   }
-  const result = await cloudClient({ organizationId }).edgeProxy.sync({ slug, target: host });
-  if (!result) throw new Error(NO_CLOUD_MEMBER);
+
+  const client = cloudClient({ organizationId });
+  const sync = async () => {
+    const result = await client.edgeProxy.sync({ slug, target: host });
+    if (!result) throw new ManagedEdgeError(NO_CLOUD_MEMBER, 409);
+    return result;
+  };
+
+  try {
+    await sync();
+  } catch (err) {
+    if (!isTargetUnverified(err)) {
+      throw err instanceof ManagedEdgeError ? err : new ManagedEdgeError(safeErrorMessage(err), 502);
+    }
+    // Prove control, then retry once. `canonicalEdgeTarget` is the SAME normalizer
+    // the SaaS applies before calling Cloud, so what we verify is what gets routed.
+    opts?.onLog?.(`Proving this server controls ${host} for Openship Cloud routing...\n`);
+    const verdict = await ensureTargetVerified(organizationId, canonicalEdgeTarget(host), {
+      ...(opts?.serverId ? { serverId: opts.serverId } : {}),
+      ...(opts?.routing ? { routing: opts.routing } : {}),
+      ...(opts?.onLog ? { onLog: opts.onLog } : {}),
+    });
+    if (!verdict.verified) {
+      throw new ManagedEdgeError(
+        `Openship Cloud won't route to ${host} until it can confirm this server controls it: ` +
+          `${verdict.reason ?? "verification did not complete"}`,
+        502,
+      );
+    }
+    await sync();
+  }
+
+  return { target: host, warning };
 }
 
 export interface ManagedEdgeTarget {
@@ -51,13 +129,24 @@ export interface ManagedEdgeTarget {
  */
 export async function syncManagedEdgeRoutes(
   targets: ManagedEdgeTarget[],
-  opts: { organizationId: string; serverId?: string; onLog?: (msg: string, level?: "warn") => void },
+  opts: {
+    organizationId: string;
+    serverId?: string;
+    onLog?: (msg: string, level?: "warn") => void;
+  },
 ): Promise<{ failures: string[] }> {
   const failures: string[] = [];
   for (const tgt of targets) {
     opts.onLog?.(`Syncing managed edge proxy for ${tgt.hostname}...\n`);
     try {
-      await ensureManagedEdgeProxy(opts.organizationId, tgt.subdomain, { serverId: opts.serverId });
+      const { target, warning } = await ensureManagedEdgeProxy(opts.organizationId, tgt.subdomain, {
+        serverId: opts.serverId,
+        ...(opts.onLog ? { onLog: opts.onLog } : {}),
+      });
+      // Name the target. It's the one fact that explains whether this URL will
+      // serve the app, and the operator could not see it anywhere before.
+      opts.onLog?.(`  ${tgt.hostname} → http://${target} (Openship Cloud edge → this server)\n`);
+      if (warning) opts.onLog?.(`Note: ${tgt.hostname} is ${warning}\n`, "warn");
     } catch (err) {
       const reason = safeErrorMessage(err);
       failures.push(`${tgt.hostname} (${reason})`);
@@ -93,6 +182,43 @@ export async function deregisterManagedEdgeRoutes(
     }
   }
   return { failures };
+}
+
+/**
+ * Release the managed edge routes for a set of HOSTNAMES.
+ *
+ * The hostname-taking counterpart to `deregisterManagedEdgeRoutes`, which takes
+ * slugs. Callers hold hostnames (a `domain` row, a project's endpoints) and every
+ * one of them deriving the slug itself is how the deregister ended up wired into
+ * exactly ONE of the ~4 paths that free a free subdomain: a deleted project, a
+ * deleted domain and a torn-down project all left the route live on Oblien's edge,
+ * so the old `*.opsh.io` URL kept resolving and — because slugs are globally
+ * unique — the org could later be REFUSED when re-claiming its own slug.
+ *
+ * Non-managed hostnames (a custom domain, a subdomain of the operator's own
+ * HOST_DOMAIN) are skipped: they never had a Cloud edge route to release. The
+ * suffix test is `isCloudManagedHostname`, the same predicate the quota counts on.
+ *
+ * SECURITY: the delete is namespace-scoped upstream — the SaaS resolves the
+ * caller's own namespace token, lists the proxies IN it, and deletes by the id it
+ * found there. A slug belonging to another org is simply not found, so passing a
+ * foreign hostname here cannot remove anyone else's route. Unknown slugs report
+ * `removed: false` rather than erroring, which is what makes retrying safe.
+ */
+export async function releaseManagedHostnames(
+  hostnames: readonly (string | null | undefined)[],
+  opts: { organizationId: string },
+): Promise<{ failures: string[] }> {
+  const slugs = [
+    ...new Set(
+      hostnames
+        .filter((h): h is string => !!h && isCloudManagedHostname(h))
+        .map((h) => managedHostnameToSlug(h))
+        .filter((s): s is string => !!s),
+    ),
+  ];
+  if (slugs.length === 0) return { failures: [] };
+  return deregisterManagedEdgeRoutes(slugs, opts);
 }
 
 /** The user-facing "free routing didn't sync" message. `retryHint` is the

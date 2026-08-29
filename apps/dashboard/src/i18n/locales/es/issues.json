@@ -1,0 +1,92 @@
+{
+  "title": "Problemas",
+  "subtitle": "Todo lo que Openship encontró mal en tus proyectos, servidores y dominios.",
+  "tabs": {
+    "open": "Abiertos",
+    "resolved": "Resueltos"
+  },
+  "resolvedNote": "El historial cubre incidentes de contenedores y servidores; las demás comprobaciones informan del estado actual, así que un certificado o despliegue arreglado simplemente deja de aparecer aquí.",
+  "rescan": "Volver a analizar",
+  "rescanning": "Analizando",
+  "filters": {
+    "searchPlaceholder": "Buscar problemas",
+    "all": "Todos",
+    "outage": "Caída",
+    "action_required": "Requiere acción",
+    "advisory": "Aviso",
+    "clear": "Borrar filtros"
+  },
+  "scopes": {
+    "platform": "Openship",
+    "server": "Servidores",
+    "project": "Proyectos",
+    "domain": "Dominios"
+  },
+  "scopeSubtitles": {
+    "platform": "Esta instalación en sí",
+    "server": "Las máquinas donde se ejecutan tus cargas de trabajo",
+    "project": "Proyectos desplegados y sus contenedores",
+    "domain": "Nombres de host propios y certificados"
+  },
+  "kinds": {
+    "deploy_blocked": "Despliegue bloqueado",
+    "prompt": "Esperando una decisión",
+    "partial_decision": "Versión parcial",
+    "routing_unsynced": "Enrutamiento sin sincronizar",
+    "domain_unverified": "Dominio sin verificar",
+    "ssl_error": "Problema de certificado",
+    "port_advisory": "Aviso de puerto",
+    "workload_unhealthy": "Fallan las comprobaciones de salud",
+    "workload_crash_loop": "Reinicios en bucle",
+    "workload_down": "Contenedor detenido",
+    "server_unreachable": "Servidor inaccesible",
+    "edge_down": "El edge está detenido",
+    "edge_absent": "Edge no instalado",
+    "mail_down": "El motor de correo está detenido",
+    "update_available": "Actualización disponible",
+    "component_behind": "Actualización de componente disponible"
+  },
+  "since": "Desde {when}",
+  "resolvedWhen": "Resuelto {when}",
+  "expiresIn": "Se cancela en {n} min",
+  "view": "Ver",
+  "fix": "Arreglar",
+  "install": "Instalar",
+  "update": "Actualizar",
+  "mailSetup": "Configurar correo",
+  "selfUpdateNote": "Esta instalación se actualiza desde la línea de comandos.",
+  "empty": {
+    "openTitle": "Nada requiere atención",
+    "openBody": "Sin despliegues bloqueados ni en espera, sin problemas de certificados ni dominios, nada desactualizado, nada en un puerto incorrecto. Las comprobaciones siguen ejecutándose en segundo plano.",
+    "resolvedTitle": "Sin incidentes resueltos",
+    "resolvedBody": "Los incidentes de contenedores y servidores aparecen aquí cuando se recuperan, y se conservan 30 días.",
+    "filteredTitle": "Sin resultados",
+    "filteredBody": "Hay problemas abiertos, pero ninguno coincide con este filtro."
+  },
+  "summary": {
+    "title": "Resumen",
+    "subtitle": "Estado de un vistazo",
+    "totalOpen": "abiertas",
+    "totalResolved": "resueltas",
+    "bySeverity": "Por gravedad",
+    "byArea": "Por área"
+  },
+  "home": {
+    "attentionTitle": "Necesita atención",
+    "attentionSubtitle": "Algo está roto o espera una decisión",
+    "updatesTitle": "Actualizaciones disponibles",
+    "updatesSubtitle": "Nuevas versiones listas para aplicar",
+    "more": "{n} más",
+    "hide": "Ocultar hasta que algo cambie"
+  },
+  "loadFailed": "No se pudieron cargar los problemas",
+  "toast": {
+    "title": "Problemas",
+    "rescanned": "Análisis finalizado",
+    "rescanPartial": "Análisis finalizado, {n} comprobación(es) fallida(s)",
+    "rescanFailed": "El análisis falló",
+    "resolved": "Listo",
+    "resolveFailed": "No se pudo aplicar esa corrección",
+    "confirmDestructive": "Esto tiene un efecto secundario que no se puede deshacer. ¿Continuar?"
+  }
+}

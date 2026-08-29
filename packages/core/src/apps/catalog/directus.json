@@ -1,8 +1,10 @@
 {
-  "available": false,
+  "available": true,
+  "verified": true,
   "id": "directus",
   "name": "Directus",
-  "description": "Headless CMS with an instant REST + GraphQL API over your data. Create the admin on first visit.",
+  "description": "Headless CMS with an instant REST + GraphQL API over your data. Sign in with the admin email and generated password below.",
+  "repository": "https://github.com/directus/directus",
   "kind": "template",
   "logo": "directus",
   "category": "cms",
@@ -16,24 +18,41 @@
     {
       "name": "directus",
       "image": "directus/directus:latest",
-      "ports": [
-        "8055:8055"
-      ],
       "exposedPort": 8055,
       "exposed": true,
+      "routes": [
+        {
+          "port": 8055
+        }
+      ],
       "environment": {
         "DB_CLIENT": "sqlite3",
         "DB_FILENAME": "/directus/database/data.db",
-        "PUBLIC_URL": "{{publicUrl:directus}}"
+        "PUBLIC_URL": "{{publicUrl:directus}}",
+        "ADMIN_EMAIL": "admin@example.com"
       },
       "secretEnv": [
-        "SECRET"
+        "SECRET",
+        "ADMIN_PASSWORD"
       ],
       "volumes": [
         "directus_database:/directus/database",
         "directus_uploads:/directus/uploads"
       ],
-      "restart": "unless-stopped"
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8055/server/health || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 8,
+        "startPeriod": "30s"
+      },
+      "restart": "unless-stopped",
+      "ports": [
+        "8211:8055"
+      ]
     }
   ],
   "configFields": [
@@ -44,6 +63,68 @@
       "help": "Auto-generated. Signs access tokens.",
       "generate": "secret",
       "secret": true
+    },
+    {
+      "key": "ADMIN_PASSWORD",
+      "service": "directus",
+      "label": "Admin password",
+      "help": "Auto-generated. The password for the admin account created on first boot. Directus has no sign-up screen, so without this no account would exist at all.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Sign in to Directus",
+    "description": "The admin account below is created automatically on the first boot. Change the password after your first sign-in.",
+    "guide": {
+      "intro": "A headless CMS plus a REST and GraphQL API over whatever collections you create.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Admin app",
+        "source": "template:{{env:directus:PUBLIC_URL}}/admin",
+        "kind": "url",
+        "recommended": true,
+        "help": "The Directus admin app. Sign in with the email and password below."
+      },
+      {
+        "id": "url",
+        "label": "API URL",
+        "source": "publicUrl:directus",
+        "kind": "url",
+        "envKey": "DIRECTUS_URL",
+        "help": "Base URL for the REST + GraphQL API."
+      },
+      {
+        "id": "email",
+        "label": "Admin email",
+        "source": "env:directus:ADMIN_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:directus:ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "The admin is created only on the FIRST boot against an empty database. If you reinstall over an existing directus_database volume no new admin is made — reset one with `npx directus users passwd` inside the container."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "directus",
+      "port": 8055,
+      "label": "Directus",
+      "kind": "http",
+      "defaultMode": "domain"
     }
   ]
 }

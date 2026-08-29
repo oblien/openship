@@ -2,9 +2,14 @@
  * `openship config init` / `openship config validate` — author and check the
  * repo-root `openship.json` (Openship's declarative deploy config).
  *
- * `validate` runs the SAME parser the deploy pipeline uses
- * (`parseOpenshipConfigJson` from @repo/core), so a file that validates here
- * behaves identically on deploy. `init` scaffolds a minimal, valid starter with
+ * `validate` runs the SAME validator the deploy pipeline uses
+ * (`parseOpenshipConfigJson` from @repo/core, over the same `parseOpenshipConfig`
+ * the API calls), so a file that validates here behaves identically on deploy —
+ * and since #641 the deploy REPORTS the same refusals instead of applying what it
+ * can and staying quiet. This command keeps the engine's exact JSON syntax-error
+ * text, which the API deliberately does NOT forward: it quotes the offending
+ * bytes back, and only here is that the user's own file on their own machine.
+ * `init` scaffolds a minimal, valid starter with
  * the `$schema` line (editor autocomplete) plus whatever we can cheaply detect
  * locally (package manager from the lockfile, a build script from package.json).
  */

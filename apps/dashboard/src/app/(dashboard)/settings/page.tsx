@@ -5,13 +5,16 @@
  * scroll tabs (mobile). Mirrors the project-detail page pattern.
  *
  * Tabs:
- *   - general   → GitHub connection, deploy defaults, build preferences
- *   - tokens    → clone credentials, API access tokens
- *   - mcp        → MCP connection (endpoint + client config)
- *   - team      → organization members + invitations (moved from /members)
- *   - audit     → audit log feed (moved from /audit), admin+ only
- *   - cloud     → cloud connection (self-hosted only)
- *   - instance  → instance info + data export/import (self-hosted, owner-gated)
+ *   - general        → GitHub connection, deploy defaults, build preferences
+ *   - tokens         → clone credentials, API access tokens
+ *   - mcp             → MCP connection (endpoint + client config)
+ *   - team           → organization members + invitations (moved from /members)
+ *   - dns            → DNS provider credentials for automatic records, admin+ only
+ *   - audit          → audit log feed (moved from /audit), admin+ only
+ *   - cloud          → cloud connection (self-hosted only)
+ *   - infrastructure → edge/mail container versions + scan, untracked edge
+ *                      routes (self-hosted/desktop)
+ *   - instance       → instance info, updates, data export/import
  */
 
 import { Suspense, useEffect } from "react";
@@ -30,13 +33,17 @@ import { CloneCredentials } from "./_components/CloneCredentials";
 import { PersonalAccessTokens } from "./_components/PersonalAccessTokens";
 import { McpConnection } from "./_components/McpConnection";
 import { InstanceInfo } from "./_components/InstanceInfo";
+import { UntrackedEdgeRoutes } from "./_components/UntrackedEdgeRoutes";
 import { LanguageSetting } from "./_components/LanguageSetting";
 import { PreferencesSetting } from "./_components/PreferencesSetting";
+import { ProductViewSetting } from "./_components/ProductViewSetting";
+import { MailModeSetting } from "./_components/MailModeSetting";
 import { UpdatesTab } from "./_components/UpdatesTab";
+import { InfrastructureTab } from "./_components/InfrastructureTab";
 import { TeamTab } from "./_components/TeamTab";
 import { NotificationsTab } from "./_components/NotificationsTab";
 import { EmailSettings } from "./_components/EmailSettings";
-import { AuditTab } from "./_components/AuditTab";
+import { Credentials } from "./_components/Credentials";
 import { DataTransferTab } from "./_components/DataTransferTab";
 import {
   SettingsSidebar,
@@ -61,15 +68,27 @@ export default function SettingsPage() {
 }
 
 function SettingsPageInner() {
-  const { selfHosted, deployMode } = usePlatform();
+  const { selfHosted, deployMode, productView } = usePlatform();
   const { refresh } = useCloud();
   const { showToast } = useToast();
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const { activeTab } = useSettingsTabs();
 
+  /**
+   * Openship Mail drops the cards that only a deploy platform has a use for —
+   * GitHub, build preferences, clone credentials. An operator running this box as
+   * a mail server has no repository in the picture.
+   *
+   * Presentation only, like the rail: Settings → General → "Full platform" brings
+   * every card straight back, and nothing hidden here is load-bearing for mail.
+   * Webmail installs from a published image (the `webmail` catalog app), so a
+   * mail-only box needs no stored git credential to deploy or update it.
+   */
+  const mailOnly = productView === "mail";
+
   // Build preferences: only self-hosted — SaaS manages builds.
-  const showBuildPreferences = selfHosted;
+  const showBuildPreferences = selfHosted && !mailOnly;
   // Deploy defaults: only meaningful where the picker exists (desktop / self-hosted)
   const showDeployDefaults = selfHosted;
 
@@ -111,7 +130,6 @@ function SettingsPageInner() {
         <div className="space-y-6 min-w-0">
           {activeTab === "general" && (
             <>
-              <GitHubConnection />
               {/* Deploy Defaults + Routing hidden for now — advanced/rarely-needed,
                   reduces general-settings noise. The edge defaults to loopback-port
                   and both keep a per-project override; re-enable by uncommenting. */}
@@ -119,16 +137,16 @@ function SettingsPageInner() {
               {showBuildPreferences && <BuildPreferences />}
               {/* {showBuildPreferences && <RoutePreferences />} */}
               <LanguageSetting />
+              {/* Per-user shell: full platform vs Openship Mail's mail-only rail.
+                  Renders nothing on the SaaS. */}
+              <ProductViewSetting />
               <PreferencesSetting />
             </>
           )}
 
-          {activeTab === "tokens" && (
-            <>
-              <PersonalAccessTokens />
-              <CloneCredentials />
-            </>
-          )}
+          {/* Tokens is INBOUND only — somebody authenticating TO Openship. The clone PAT
+              moved to Credentials, which is everything pointing the other way. */}
+          {activeTab === "tokens" && <PersonalAccessTokens />}
 
           {activeTab === "mcp" && <McpConnection />}
 
@@ -138,15 +156,43 @@ function SettingsPageInner() {
 
           {activeTab === "email" && selfHosted && <EmailSettings />}
 
-          {activeTab === "audit" && <AuditTab />}
+          {/* Git sources — the App installation (per-org, mints tokens on demand) and the
+              clone PAT (per-USER). Neither fits an org-scoped credential row, which is why
+              they keep their own storage; they get their own TAB because they are one
+              subject with several shapes, and further providers land beside them. */}
+          {activeTab === "git" && !mailOnly && (
+            <>
+              <GitHubConnection />
+              <CloneCredentials />
+            </>
+          )}
+
+          {activeTab === "credentials" && <Credentials />}
 
           {activeTab === "cloud" && selfHosted && <CloudConnection />}
+
+          {/* Infrastructure — the servers this install runs: edge/mail container
+              versions across the fleet + scan + auto-update toggle, and the
+              leftover edge routes. Self-hosted/desktop only. */}
+          {activeTab === "infrastructure" && (selfHosted || deployMode === "desktop") && (
+            <>
+              <InfrastructureTab />
+              {/* Hostnames the local edge still serves with no Openship record —
+                  the leftovers a record-only delete deliberately keeps running.
+                  Owner-gated inside the component, renders nothing when clean.
+                  Self-hosted only: on the SaaS the edge isn't the operator's. */}
+              {selfHosted && <UntrackedEdgeRoutes />}
+            </>
+          )}
 
           {activeTab === "instance" && (
             <>
               <InstanceInfo />
-              {/* Updates live under Instance (the "this install" home). Not on
-                  the SaaS — the managed cloud has nothing for the user to update. */}
+              {/* Instance-wide default product mode (Openship Mail vs the full
+                  platform). Owner-gated inside; self-hosted only. */}
+              <MailModeSetting />
+              {/* Updates to this install — not on the SaaS, where the managed
+                  cloud has nothing for the user to update. */}
               {(selfHosted || deployMode === "desktop") && <UpdatesTab />}
               {/* Full-DB export/import (owner-gated inside the component);
                   self-hosted only — SaaS has no portable DB. */}

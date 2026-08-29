@@ -1,10 +1,35 @@
 import type { CommandExecutor, LogEntry } from "../types";
-import { sq } from "./local-shell";
-import { resolveOurEdgeContainer } from "./proxy/detect";
+import { EXECUTOR_DELEGATE } from "./elevated-executor";
+import { logEntry, sq } from "./local-shell";
+import { edgeFailureReason, resolveOurEdgeContainer } from "./proxy/detect";
+import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
 
 /** Wrap a command so it runs INSIDE the named edge container. */
 export function containerCommand(container: string, command: string): string {
   return `docker exec ${sq(container)} sh -c ${sq(command)}`;
+}
+
+/**
+ * Ask the HOST why the edge container refused a command, and say it in one line.
+ *
+ * `inner` is the host executor — the same channel the `docker exec` went out on — so
+ * this works over SSH to a remote server with no second Docker client and no tunnel.
+ * Both probes are best-effort: a partial answer ("restarting", no reason) still beats
+ * the daemon's bare container id, and a probe that fails must not replace the real
+ * failure with an error about diagnosing it.
+ */
+async function diagnoseEdgeDown(inner: CommandExecutor, container: string): Promise<string> {
+  const status = await inner
+    .exec(`docker inspect -f '{{.State.Status}}' ${sq(container)} 2>/dev/null`)
+    .catch(() => null);
+  const logs = await inner
+    .exec(`docker logs --tail 40 ${sq(container)} 2>&1`)
+    .catch(() => null);
+  return explainEdgeDown({
+    container,
+    status: status?.trim() || null,
+    reason: logs ? edgeFailureReason(logs) : null,
+  });
 }
 
 /**
@@ -134,25 +159,48 @@ export async function writeEdgeFile(
  *
  * Privilege is the caller's problem, exactly as with `probeEdge`'s own
  * `docker ps`: pass an already-elevated inner executor if the SSH user needs
- * sudo to reach the daemon.
+ * sudo to reach the daemon. Generic in the inner executor so that problem stays
+ * *solved* once it is — a `RootChecked` inner yields a `RootChecked` wrapper, which is
+ * what `NginxProviderOptions.executor` demands, so the composition carries the proof
+ * instead of dropping it here and re-raising the question at the provider.
  *
  * A Proxy forwards every other (optional) executor method — rawExec, forwardPort,
  * openShell, onDisconnect, dispose — transparently to the inner executor.
  */
-export function edgeContainerExecutor(
-  inner: CommandExecutor,
+export function edgeContainerExecutor<E extends CommandExecutor>(
+  inner: E,
   container: string,
   opts?: { files?: EdgeFilesAt },
-): CommandExecutor {
+): E {
   const inContainer = (command: string) => containerCommand(container, command);
 
   const overrides: Partial<CommandExecutor> = {
-    exec: (command: string, execOpts?: { timeout?: number }) =>
-      inner.exec(inContainer(command), execOpts),
-    streamExec: (command: string, onLog: (log: LogEntry) => void, execOpts?: { signal?: AbortSignal }) =>
-      execOpts === undefined
-        ? inner.streamExec(inContainer(command), onLog)
-        : inner.streamExec(inContainer(command), onLog, execOpts),
+    // Both command paths enrich a "the container isn't up" failure with the
+    // container's name, state and `[emerg]` — see `diagnoseEdgeDown`. Gated on the
+    // narrow daemon/nginx signatures (`isEdgeDownFailure`), because a non-zero exit
+    // is ordinary here: the container-file probes report a missing path that way, and
+    // paying two `docker` round-trips per miss would be a real cost on every read.
+    exec: async (command: string, execOpts?: { timeout?: number }) => {
+      try {
+        return await inner.exec(inContainer(command), execOpts);
+      } catch (err) {
+        const message = (err as { message?: string })?.message ?? String(err);
+        if (!isEdgeDownFailure(message)) throw err;
+        throw new Error(`${await diagnoseEdgeDown(inner, container)}\n${message}`);
+      }
+    },
+    // streamExec REPORTS failure instead of throwing it, and its callers build the
+    // error they raise out of what was streamed (`_execCertbot` accumulates the log
+    // lines and throws that text). So the explanation has to go through `onLog` to
+    // reach them — appending it only to the return value would leave certbot's
+    // caller raising the daemon's bare container id, which is the original bug.
+    streamExec: async (command: string, onLog: (log: LogEntry) => void, opts?: { signal?: AbortSignal }) => {
+      const result = await inner.streamExec(inContainer(command), onLog, opts);
+      if (result.code === 0 || !isEdgeDownFailure(result.output)) return result;
+      const explanation = await diagnoseEdgeDown(inner, container);
+      onLog(logEntry(explanation, "error"));
+      return { code: result.code, output: `${explanation}\n${result.output}` };
+    },
     // A rename is a FILE op, so it follows the files, never the commands. Stated
     // here rather than left to the Proxy's passthrough: if the inner executor has no
     // `rename`, the fallback must still be the INNER shell (the host) — routing it
@@ -204,6 +252,16 @@ export function edgeContainerExecutor(
 
   return new Proxy(inner, {
     get(target, prop) {
+      // The one thing that must NOT pass through. `EXECUTOR_DELEGATE` means "a different
+      // view of the same machine", which is true of `elevatedExecutor` and false here: this
+      // wrapper composes `exec`/`streamExec` into `docker exec`, so a probe run through it
+      // measures the OpenResty container, not the box. Left transparent, the lookup reaches
+      // an elevated `inner` (which is what the only call site passes) and answers with the
+      // raw host executor — so `resolveEnvironment` would file the container's os-release,
+      // uid and init system under the HOST's cache key and serve it to every host caller.
+      // Answering `undefined` costs a second probe in the case that does not exist yet, and
+      // that is the right trade against publishing an alpine image as the operator's server.
+      if (prop === EXECUTOR_DELEGATE) return undefined;
       if (Object.prototype.hasOwnProperty.call(overrides, prop)) {
         return (overrides as Record<string | symbol, unknown>)[prop];
       }

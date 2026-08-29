@@ -1,0 +1,85 @@
+{
+  "plans": {
+    "free": {
+      "name": "Free",
+      "tagline": "静的サイトを Openship Cloud に無料でデプロイできます。"
+    },
+    "starter": {
+      "name": "Starter",
+      "tagline": "はじめての本格的なアプリに。コンテナ、データベース、必要なものが一式そろいます。"
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "成長の余地が必要な本番アプリ向け。"
+    },
+    "team": {
+      "name": "Scale",
+      "tagline": "共有インフラで大量のトラフィックをさばくチーム向け。"
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "tagline": "カスタムの上限、専用インフラ、SLA。"
+    }
+  },
+  "features": {
+    "everythingIn": "{inherited} の全機能に加えて:",
+    "staticOnly": "静的サイトのみ — SSG、SPA、素の HTML",
+    "anyWorkload": "何でも動かせる — コンテナ、Compose、ワーカー、Postgres、Redis",
+    "runningServices": "同時に稼働するアプリ・データベース・ワーカー {runningServices} 個",
+    "computeMinutes": "毎月 {computeMinutes} コンピュート分",
+    "buildMinutes": "毎月 {buildMinutes} 分のビルド時間",
+    "power": "アプリ 1 つあたり最大 {powerCpu} vCPU と {powerRamGb} GB RAM",
+    "projects": "プロジェクト {maxProjects} 個",
+    "projectsUnlimited": "プロジェクトは無制限",
+    "freeSubdomains": "無料の {freeDomainSuffix} サブドメイン {freeSubdomains} 個",
+    "freeSubdomainsUnlimited": "無料の {freeDomainSuffix} サブドメインが無制限",
+    "gitDeploys": "GitHub、GitLab、任意の Git リモートからデプロイ",
+    "customDomains": "カスタムドメインは無制限、TLS 込み",
+    "deployLogs": "ビルドとデプロイのライブログ",
+    "auditLog": "すべての変更を記録する監査ログ",
+    "unlimitedSeats": "チームメンバーは無制限 — 人数課金は一切なし",
+    "sso": "SSO と SAML",
+    "customLimits": "契約ごとに調整するカスタムの上限",
+    "dedicatedInfra": "専用インフラと専用リージョン",
+    "onboarding": "導入と移行を専任チームがフルサポート",
+    "communitySupport": "コミュニティサポート",
+    "emailSupport": "メールサポート",
+    "prioritySupport": "優先サポート",
+    "dedicatedSupport": "SLA 付きの専任サポート",
+    "selfHostedOpenSource": "プラットフォーム全体がオープンソース(Apache 2.0)",
+    "selfHostedUnlimited": "デプロイ、プロジェクト、サーバー、ドメインすべて無制限",
+    "selfHostedServices": "マネージドサービスはすべて利用可能 — Postgres、Redis、メール",
+    "selfHostedClients": "CLI、Web、デスクトップ — バックエンドは一つ",
+    "selfHostedFreeSubdomains": "Openship Cloud に接続すると、無料の {freeDomainSuffix} サブドメインが {freeSubdomains} 個"
+  },
+  "selfHosted": {
+    "name": "セルフホスト",
+    "tagline": "プラットフォーム全体を自分のマシンで動かせます。Linux マシンならどれでも、どのプロバイダーでも、どのリージョンでも。使用量の計測もユーザー数の上限もテレメトリもありません。",
+    "priceLabel": "無料",
+    "priceNote": "Apache 2.0 — 永久無料、クレジットカード不要",
+    "cta": "セルフホストを始める"
+  },
+  "creditPacks": {
+    "pack_5k": "{computeMinutes} コンピュート分",
+    "pack_25k": "{computeMinutes} コンピュート分",
+    "pack_100k": "{computeMinutes} コンピュート分"
+  },
+  "ui": {
+    "perMonth": "/月",
+    "perYear": "/年",
+    "custom": "カスタム",
+    "free": "無料",
+    "unlimited": "無制限",
+    "mostPopular": "一番人気",
+    "monthsFree": "{months} か月無料",
+    "ctaStart": "無料で始める",
+    "ctaChoose": "{name} を選択",
+    "ctaContact": "営業に相談",
+    "billedMonthly": "月額請求、いつでもキャンセル可能",
+    "campaignBadge": "{percentOff}% オフ",
+    "campaignEnds": "キャンペーンは {date} まで",
+    "wasPrice": "通常 {price}",
+    "standardTitle": "すべてのプランに含まれるもの",
+    "creditPackNote": "小規模アプリ約 {appHours} 時間、またはビルド {buildMinutes} 分"
+  }
+}

@@ -54,6 +54,15 @@ export const getStatusConfig = (status: string) => {
         borderColor: "border-neutral-border",
         label: "Canceled",
       };
+    case "no_changes":
+      // Settled and healthy: nothing shipped because nothing had changed.
+      return {
+        icon: 'checkmark-72-1658234612.png',
+        color: "var(--color-neutral)",
+        bgColor: "bg-neutral-bg",
+        borderColor: "border-neutral-border",
+        label: "No changes",
+      };
     case "building":
       return {
         icon: 'loading-51-1663582768.png',

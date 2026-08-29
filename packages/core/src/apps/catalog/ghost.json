@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "ghost",
   "name": "Ghost",
-  "description": "Modern publishing platform for blogs, newsletters, and membership sites.",
+  "description": "Modern publishing platform for blogs, newsletters, and membership sites. Claim the owner account on your first visit.",
   "kind": "template",
   "logo": "ghost",
   "category": "cms",
@@ -30,9 +30,6 @@
     {
       "name": "ghost",
       "image": "ghost:5-alpine",
-      "ports": [
-        "2368:2368"
-      ],
       "exposedPort": 2368,
       "exposed": true,
       "dependsOn": [
@@ -52,7 +49,10 @@
       "volumes": [
         "ghost_content:/var/lib/ghost/content"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "8212:2368"
+      ]
     }
   ],
   "configFields": [
@@ -72,5 +72,33 @@
       "generateGroup": "ghostdb",
       "secret": true
     }
-  ]
+  ],
+  "connection": {
+    "title": "Set up Ghost",
+    "description": "Ghost has no preset login. Open Ghost Admin and the first screen creates the owner account.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Ghost Admin",
+        "source": "template:{{env:ghost:url}}/ghost/",
+        "kind": "url",
+        "recommended": true,
+        "help": "Create the owner account here on first visit."
+      },
+      {
+        "id": "url",
+        "label": "Site",
+        "source": "publicUrl:ghost",
+        "kind": "url",
+        "help": "The public blog."
+      }
+    ],
+    "firstLogin": {
+      "note": "Claim the owner account at /ghost/ immediately — it is unauthenticated until you do, so the first visitor owns the blog. Ghost may restart a few times on first boot while MySQL initialises; that is expected."
+    }
+  },
+  "verified": true
 }

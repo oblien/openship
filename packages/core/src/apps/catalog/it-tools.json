@@ -1,5 +1,5 @@
 {
-  "available": false,
+  "available": true,
   "id": "it-tools",
   "name": "IT-Tools",
   "description": "A handy collection of developer and sysadmin utilities. No login, no setup.",
@@ -16,12 +16,33 @@
     {
       "name": "it-tools",
       "image": "corentinth/it-tools:latest",
-      "ports": [
-        "80:80"
-      ],
       "exposedPort": 80,
       "exposed": true,
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "8205:80"
+      ]
     }
-  ]
+  ],
+  "connection": {
+    "title": "Open IT-Tools",
+    "description": "A collection of developer and sysadmin utilities. No login, no setup, nothing stored.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "IT-Tools",
+        "source": "publicUrl:it-tools",
+        "kind": "url",
+        "recommended": true,
+        "help": "Opens the tool collection. No sign-in required."
+      }
+    ],
+    "firstLogin": {
+      "note": "Nothing to log into and nothing persisted — every tool runs in your browser. Anyone who can reach this URL can use it, so keep it internal if that matters."
+    }
+  },
+  "verified": true
 }

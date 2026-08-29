@@ -10,6 +10,7 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `framework` | enum | Stack slug (see list below). Overrides detection. |
 | `packageManager` | enum | `npm` `yarn` `pnpm` `bun` `go` `cargo` `pip` `poetry` `pipenv` `uv` `bundler` `composer` `maven` `gradle` `dotnet` `mix` |
 | `rootDirectory` | string | App dir relative to repo root (e.g. `./`, `apps/web`). |
+| `composePath` | string | Compose file outside the detected root — the file (`deploy/stack.yml`, which also covers non-standard names) or the folder holding it (`deploy/docker-compose`). Makes the project a compose deploy; `build:` contexts resolve relative to that folder, as compose does. |
 | `installCommand` | string | Dependency install command. |
 | `buildCommand` | string | Build command. |
 | `startCommand` | string | Production start command. |
@@ -30,6 +31,7 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `runtime` | `bare` \| `docker` | Runtime isolation for a single app. Services/docker projects are always `docker`. Seeds a new deploy's runtime. |
 | `productionMode` | `host` \| `static` \| `standalone` | `static` ⇒ served as files, no server (sets `hasServer=false`). |
 | `port` | integer 1–65535 | Server port. |
+| `volumes` | string[] | Paths kept across deploys. Bare path = relative to the app (`storage`), or a full mount (`uploads:/app/storage`, `/srv/data:/app/var`). Omit to inherit the framework defaults (Laravel keeps `storage/`); `[]` turns persistence off. Compose services use `services[].volumes` instead. |
 
 ## Env
 
@@ -66,20 +68,28 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `cleanUrls` | boolean | Strip `.html`. |
 | `trailingSlash` | boolean | Enforce/remove trailing slash. |
 
-## Resources (cloud only)
+## Resources
 
 `resources` is a named tier OR explicit values. Explicit values become the `custom` tier.
 
+**Self-hosted defaults to `unlimited`** — no caps, because the machine is the operator's own and
+is itself the ceiling. Only declare this to deliberately cap a container. A non-zero value is
+validated against the TARGET MACHINE's real capacity, so a big box can be used fully. Cloud
+workspaces are metered and must be sized: `unlimited` is rejected there and an omitted value
+falls back to `low`.
+
 | Field | Type | Range |
 |---|---|---|
-| `tier` | `micro` \| `low` \| `medium` \| `high` | — |
-| `cpuCores` | number | 0.25–4 |
-| `memoryMb` | integer | 128–8192 |
-| `diskMb` | integer | 64–204800 |
+| `tier` | `unlimited` \| `micro` \| `low` \| `medium` \| `high` | `unlimited` is self-hosted only |
+| `cpuCores` | number | `0` = no limit; otherwise ≥ 0.25, up to the machine's cores |
+| `memoryMb` | integer | `0` = no limit; otherwise ≥ 128, up to the machine's RAM |
+| `diskMb` | integer | `0` = no limit; otherwise 64–204800 (cloud workspaces only) |
 
 ## Services (compose)
 
 `services` is an array; declaring it makes the project a multi-service (Docker) project.
+To deploy an EXISTING compose file instead of re-declaring its services here, set
+[`composePath`](#build) and leave `services` out.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -97,6 +107,10 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `exposedPort` | string | Which container port is exposed. |
 | `domain` | string | Public hostname for this service. |
 | `healthcheck` | object | `{ test, interval, timeout, retries, startPeriod, disable }`. |
+| `resources` | object | Per-service caps, overriding the top-level `resources` field by field. Same shape; `0` = no limit. |
+
+A compose file's own `mem_limit` / `cpus` / `deploy.resources.limits` are read and applied the
+same way — no need to restate them here.
 
 ## Monorepo
 

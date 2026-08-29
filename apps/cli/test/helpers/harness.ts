@@ -13,6 +13,32 @@
  */
 import { vi } from "vitest";
 
+// ─── @repo/adapters partial mocks ────────────────────────────────────────────
+
+/**
+ * The docker-socket resolver, for the hand-built `vi.mock("@repo/adapters")`
+ * factories. compose.ts imports it to decide the HOST side of the api's socket
+ * mount, and a partial mock without it fails the whole file.
+ *
+ * A STUB, not the real one, and deliberately: the real resolver reads $DOCKER_HOST
+ * and `~/.docker`'s active context, so a case asserting which socket the compose
+ * file mounts would otherwise answer "whichever daemon this developer's machine
+ * happens to run" — Colima, Rancher, rootless — instead of what the case describes.
+ * The real precedence (context files, unix:// forms, tcp/ssh rejection) is covered
+ * where it lives, in packages/adapters/src/runtime/docker-transport.test.ts. This
+ * keeps only the part compose.ts's own logic is layered on: DOCKER_HOST, else the
+ * default.
+ */
+export const dockerSocketMock = {
+  DEFAULT_DOCKER_SOCKET_PATH: "/var/run/docker.sock",
+  resolveLocalDockerSocketPath: (_opts: unknown, env: NodeJS.ProcessEnv = process.env): string => {
+    const host = env.DOCKER_HOST?.trim() ?? "";
+    if (host.startsWith("unix://")) return host.slice("unix://".length).trim();
+    if (host.startsWith("/")) return host;
+    return "/var/run/docker.sock";
+  },
+};
+
 // ─── stdout / stderr capture ─────────────────────────────────────────────────
 
 const ANSI = /\[[0-9;]*m/g;

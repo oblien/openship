@@ -21,7 +21,12 @@ function deps(over: Partial<EdgePreflightDeps> = {}): EdgePreflightDeps {
     makeExecutor: () => ({}) as any,
     foreignProxyOnEdge: vi.fn(async () => ({ status: status(), blocked: true, owner: "nginx" })),
     importSites: vi.fn(async () => ({ sites: [tlsSite], warnings: [] })),
-    beginEdgeTakeover: vi.fn(async () => {}),
+    // `privilegeDegraded` is spelled out rather than left off: this file is not
+    // typechecked (apps/cli/tsconfig.json includes only `src/**`), so an incomplete
+    // fake is how the real function grew the field while this path kept reporting a
+    // refused stop as a port conflict.
+    beginEdgeTakeover: vi.fn(async () => ({ freed: true, stillBound: [], privilegeDegraded: false })),
+    rollbackHostEdge: vi.fn(async () => true),
     recoverInterruptedTakeover: vi.fn(async () => {}),
     ourEdgeContainerRunning: vi.fn(async () => false),
     collectCerts: vi.fn(async () => ({ "a.com": { certPem: "CERT", keyPem: "KEY" } })),
@@ -94,6 +99,7 @@ describe("planAndApplyHostEdge", () => {
       }),
       beginEdgeTakeover: vi.fn(async () => {
         order.push("stop");
+        return { freed: true, stillBound: [], privilegeDegraded: false };
       }),
     });
     await planAndApplyHostEdge({}, d);
@@ -113,6 +119,7 @@ describe("planAndApplyHostEdge", () => {
       confirm: vi.fn(async () => "migrate"),
       beginEdgeTakeover: vi.fn(async () => {
         order.push("begin");
+        return { freed: true, stillBound: [], privilegeDegraded: false };
       }),
       importSites: vi.fn(async () => {
         order.push("import");
@@ -123,6 +130,51 @@ describe("planAndApplyHostEdge", () => {
     // beginEdgeTakeover journals then frees — the CLI must never call the raw
     // freeEdgeTargets, or a failed compose up leaves 80/443 dark with no record.
     expect(order).toEqual(["import", "begin"]);
+  });
+
+  // A stop that doesn't release the socket is the difference between "we took over"
+  // and "the edge will crash-loop on bind()". Proceeding here is what made every
+  // surface report success for a box that served nothing.
+  it("refuses to proceed — and hands the proxy back — when the ports never come free", async () => {
+    const d = deps({
+      confirm: vi.fn(async () => "takeover"),
+      beginEdgeTakeover: vi.fn(async () => ({
+        freed: false,
+        stillBound: [80, 443],
+        privilegeDegraded: false,
+      })),
+    });
+    const plan = await planAndApplyHostEdge({}, d);
+    expect(plan.proceed).toBe(false);
+    expect(plan.blockedBy).toContain("80 and 443");
+    expect(d.rollbackHostEdge).toHaveBeenCalledTimes(1);
+    // The other side of the discriminator: the stop DID run here, so "something else
+    // holds the port" is the true reading and the privilege advice would be a wrong
+    // turn. Guards the clause against being appended unconditionally.
+    expect(plan.blockedBy).not.toContain("passwordless sudo");
+  });
+
+  // Same `stillBound`, opposite cause and opposite remedy. Unelevated, every stop
+  // inside freeEdgeTargets is `|| true`-swallowed, so nothing was stopped and the ports
+  // were never contended — telling the operator to hunt for another holder is a retry
+  // loop that cannot succeed as this login.
+  it("names the privilege refusal instead of blaming another holder", async () => {
+    const d = deps({
+      confirm: vi.fn(async () => "takeover"),
+      beginEdgeTakeover: vi.fn(async () => ({
+        freed: false,
+        stillBound: [80],
+        privilegeDegraded: true,
+      })),
+    });
+    const plan = await planAndApplyHostEdge({}, d);
+    expect(plan.proceed).toBe(false);
+    expect(plan.blockedBy).toContain("could not run the stop as root");
+    expect(plan.blockedBy).toContain("passwordless sudo");
+    // Still says what is observably true — the port is bound — so the two surfaces
+    // (this and the api's 409) agree on the fact and only differ on the cause.
+    expect(plan.blockedBy).toContain("80");
+    expect(d.rollbackHostEdge).toHaveBeenCalledTimes(1);
   });
 
   it("restores an interrupted takeover BEFORE probing, and reports our edge health", async () => {

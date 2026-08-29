@@ -14,6 +14,7 @@
  */
 
 import { audit, type AuditContext, type AuditEventInput } from "../../lib/audit";
+import { ambientCallSource } from "../../lib/call-source";
 
 interface HookActor {
   organizationId: string;
@@ -26,6 +27,9 @@ function ctx({ organizationId, actorUserId }: HookActor): AuditContext {
     actorUserId: actorUserId ?? null,
     ipAddress: null,
     userAgent: null,
+    // Header-derived by the ambient middleware — the hook has no Hono context,
+    // but "a browser did this" vs "a token did this" still survives.
+    source: ambientCallSource(),
   };
 }
 

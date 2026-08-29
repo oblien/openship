@@ -22,11 +22,19 @@
  *   value and doubles inner `'` per the PostgreSQL standard. Identifiers
  *   (table / column names) are NEVER taken from user input - they're hard-
  *   coded in the service files.
+ *
+ * Transport:
+ *   HOW psql is reached is not decided here. `runMailSql` resolves the box's mail
+ *   topology, renders the right invocation and types its failures (the engine's
+ *   pg sidecar, or `sudo -u postgres` on a legacy pre-container install) — see
+ *   `../mail-engine.ts`. This file was hardcoded to the sidecar, which is why
+ *   every admin read on a legacy box 500'd with "No such container". Same SQL
+ *   either way; the whole difference is the prefix, and it lives in one place.
  */
 
 import type { CommandExecutor } from "@repo/adapters";
-import { sshManager } from "../../../lib/ssh-manager";
 import { safeErrorMessage } from "@repo/core";
+import { runMailSql, type MailTarget } from "../mail-engine";
 
 /**
  * Quote a value as a PostgreSQL string literal. Escapes embedded single
@@ -53,26 +61,6 @@ export function qInt(value: number): string {
 }
 
 /**
- * Shell-quote a string for safe embedding in a `bash -c …` command argv.
- * Wraps in single quotes and escapes embedded single quotes via the standard
- * `'\''` trick. We use this when handing the assembled psql command to the
- * SSH executor.
- */
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
-/**
- * Build the `sudo -u postgres psql …` command. `-A -t` strips headers and
- * alignment, `ON_ERROR_STOP=1` makes the command fail loud on SQL errors.
- */
-function psqlCommand(sql: string): string {
-  return `sudo -u postgres psql -d vmail -A -t -v ON_ERROR_STOP=1 -c ${shellQuote(
-    sql,
-  )}`;
-}
-
-/**
  * Run a SELECT and parse the result as rows of T. The caller writes their
  * SELECT normally (with WHERE / ORDER BY / LIMIT as needed); this function
  * wraps it in `json_agg(row_to_json(...))` and parses the JSON.
@@ -91,9 +79,7 @@ export async function queryRows<T>(
   sql: string,
 ): Promise<T[]> {
   const wrapped = `SELECT COALESCE(json_agg(row_to_json(__t)), '[]'::json) FROM (${sql}) __t`;
-  const cmd = psqlCommand(wrapped);
-
-  const out = await runCmd(serverIdOrExec, cmd);
+  const out = await runSql(serverIdOrExec, wrapped);
   const trimmed = out.trim();
   if (!trimmed) return [];
 
@@ -144,7 +130,7 @@ export async function execute(
   serverIdOrExec: string | CommandExecutor,
   sql: string,
 ): Promise<string> {
-  return runCmd(serverIdOrExec, psqlCommand(sql));
+  return runSql(serverIdOrExec, sql);
 }
 
 /**
@@ -167,24 +153,23 @@ export async function transaction(
   // same safe path `execute()` uses. NEVER a heredoc: a heredoc with a fixed
   // delimiter lets any value containing a line equal to that delimiter close it
   // early and turn the following lines into shell commands (OS command
-  // injection). shellQuote wraps the multiline SQL in one inert argv string, so
-  // newlines and any delimiter-looking text stay literal data. psql `-c` runs a
+  // injection). The `-c` value is wrapped in one inert argv string, so newlines
+  // and any delimiter-looking text stay literal data. psql `-c` runs a
   // multi-statement BEGIN;…COMMIT; string in one transaction; ON_ERROR_STOP=1
   // still rolls the whole block back and surfaces the error.
-  await runCmd(serverIdOrExec, psqlCommand(body));
+  await runSql(serverIdOrExec, body);
 }
 
 /**
- * Internal: dispatch the actual shell command. Accepts either a serverId
- * (acquires the executor via the SSH manager) or an already-acquired
- * executor (when the caller wants to reuse it across several calls).
+ * Internal: run SQL on whichever mail engine this box has. Accepts either a
+ * serverId (the executor is acquired for us) or an already-acquired executor
+ * (when the caller reuses one across several calls).
+ *
+ * A stopped engine / gone container surfaces as a typed
+ * `MailEngineUnavailableError`, and a `vmail` that was never seeded as
+ * `MailDbNotInitializedError` carrying the exact bootstrap command (→ 409 + a code the
+ * dashboard branches on), not as a raw shell error the panel prints as "API 500".
  */
-async function runCmd(
-  serverIdOrExec: string | CommandExecutor,
-  cmd: string,
-): Promise<string> {
-  if (typeof serverIdOrExec === "string") {
-    return sshManager.withExecutor(serverIdOrExec, (exec) => exec.exec(cmd));
-  }
-  return serverIdOrExec.exec(cmd);
+async function runSql(serverIdOrExec: MailTarget, sql: string): Promise<string> {
+  return runMailSql(serverIdOrExec, sql);
 }

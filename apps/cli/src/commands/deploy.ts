@@ -85,8 +85,22 @@ export const deployCommand = new Command("deploy")
           },
         });
         deploymentId = result.deploymentId;
-        payload = { success: true, deployment_id: result.deploymentId, project_id: result.projectId };
+        payload = {
+          success: true,
+          deployment_id: result.deploymentId,
+          project_id: result.projectId,
+          ...(result.configDiagnostics && { configDiagnostics: result.configDiagnostics }),
+        };
         spinner?.succeed(deploymentId ? `Deployment queued: ${deploymentId}` : "Deployment queued");
+        // AFTER the spinner resolves, or these lines land mid-spinner-frame. The
+        // deploy already went ahead on whatever parsed (#641) — this only says
+        // which parts of openship.json didn't apply. The server strips control
+        // characters from these strings, so they cannot repaint the line.
+        if (result.configDiagnostics?.wholeFile) {
+          err("  ✗ openship.json was ignored entirely — deployed with detected settings:");
+        }
+        for (const e of result.configDiagnostics?.errors ?? []) err(`    • ${e}`);
+        for (const w of result.configDiagnostics?.warnings ?? []) info(`    ⚠ ${w}`);
       } catch (e) {
         spinner?.fail("Folder deploy failed");
         err(e instanceof ApiError ? e.message : String(e));

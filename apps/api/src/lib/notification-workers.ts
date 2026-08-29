@@ -18,7 +18,7 @@ import { createHmac } from "node:crypto";
 import { repos, type NotificationChannel, type NotificationDelivery } from "@repo/db";
 import { sendMail } from "./mail";
 import { decrypt } from "./encryption";
-import { findCategory } from "./notification-categories";
+import { findCategory, headlineForEventType } from "./notification-categories";
 import { env } from "../config/env";
 import { safeFetch } from "./safe-fetch";
 import { safeErrorMessage } from "@repo/core";
@@ -37,19 +37,28 @@ interface RenderedMessage {
  * category for the title (stable across event types) and pull relevant
  * payload fields into the body. Channel-specific formatting (HTML for
  * email, Slack blocks) wraps this primitive output.
+ *
+ * Exported for the message tests: this is the function that decides what an operator
+ * actually reads, and the payload's `eventType` can disagree with its category's
+ * direction (see `headlineForEventType`).
  */
-function renderMessage(delivery: NotificationDelivery): RenderedMessage {
+export function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   const cat = findCategory(delivery.category);
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
 
-  const title = cat?.label ?? delivery.category;
+  // A handful of event types share a category with their own opposite — the toggle is
+  // one subscription, the message is one event — and carry their own headline.
+  const own =
+    typeof payload.eventType === "string" ? headlineForEventType(payload.eventType) : undefined;
+  const title = own?.title ?? cat?.label ?? delivery.category;
 
   // Build a body from the payload's most useful fields. Workers can
   // override formatting if they want — Slack does because blocks beat
   // plain text — but this default works for email + webhook + in-app.
   const lines: string[] = [];
 
-  if (cat?.description) lines.push(cat.description);
+  const description = own?.description ?? cat?.description;
+  if (description) lines.push(description);
   if (payload.message) lines.push(String(payload.message));
 
   if (payload.branch) lines.push(`Branch: ${payload.branch}`);
@@ -140,6 +149,36 @@ export function buildDiscordMessage(input: {
   };
 }
 
+// Telegram caps sendMessage `text` at 4096 characters.
+const TELEGRAM_TEXT_LIMIT = 4096;
+
+/**
+ * Escape the three characters Telegram's HTML parse mode reserves. Not the same
+ * job as `escapeHtml` below: Telegram decodes `&`/`<`/`>` entities only, and an
+ * unescaped one anywhere in the text 400s the ENTIRE send — so a repo named
+ * `foo & bar` or a log line containing `<nil>` would silently drop every alert.
+ */
+function escapeTelegramHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** `parse_mode: "HTML"` text for a rendered message, bold headline + body,
+ *  clamped to Telegram's limit. */
+export function buildTelegramText(input: { title: string; body: string }): string {
+  const head = `<b>${escapeTelegramHtml(input.title)}</b>`;
+  const body = escapeTelegramHtml(input.body);
+  const text = body ? `${head}\n\n${body}` : head;
+  if (text.length <= TELEGRAM_TEXT_LIMIT) return text;
+  // Slicing already-escaped text can land inside an entity ("…&am"), which
+  // Telegram rejects outright — drop a dangling one before the ellipsis.
+  return `${text.slice(0, TELEGRAM_TEXT_LIMIT - 1).replace(/&[a-z]*$/, "")}…`;
+}
+
+/** Replace a bot token wherever it appears in an error string. */
+function redactBotToken(message: string, botToken: string): string {
+  return botToken ? message.split(botToken).join("bot<redacted>") : message;
+}
+
 /* ─── Channel workers ─────────────────────────────────────────────────────── */
 
 async function sendEmail(
@@ -152,41 +191,26 @@ async function sendEmail(
   }
 
   const { title, body } = renderMessage(delivery);
-  await sendMail({
+  const delivered = await sendMail({
     to: config.address,
     subject: `[Openship] ${title}`,
     text: body,
     html: `<pre style="font-family:system-ui,sans-serif;font-size:14px">${escapeHtml(body)}</pre>`,
   });
-}
-
-/** Validate a webhook URL to prevent SSRF. */
-function assertPublicWebhookUrl(url: string): void {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("Webhook URL is malformed");
-  }
-  if (parsed.protocol !== "https:") {
-    throw new Error("Webhook URL must use HTTPS");
-  }
-  const host = parsed.hostname.toLowerCase();
-  const blocked =
-    host === "localhost" ||
-    host === "0.0.0.0" ||
-    host === "::1" ||
-    host === "127.0.0.1" ||
-    host.endsWith(".local") ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    /^169\.254\./.test(host) ||
-    /^0\./.test(host) ||
-    host === "[::1]";
-  if (blocked) {
-    throw new Error(`Webhook URL targets a private or loopback host: ${host}`);
+  // THROW when nothing could carry it. `sendMail` only warns on an empty transport
+  // chain, so ignoring its result meant this worker returned normally and the delivery
+  // was marked SENT having delivered nothing. Worse, `POST /channels/:id/test` flips a
+  // channel to `verified` whenever the send doesn't throw — so an instance with no SMTP
+  // produced a channel that looked verified and working and had never delivered once.
+  //
+  // Throwing is exactly right here: this worker's contract is "throw = retry", so the
+  // alert is retried and the reason lands in the delivery row's lastError, and the test
+  // endpoint's catch now refuses to verify the channel.
+  if (!delivered) {
+    throw new Error(
+      "No email transport is configured on this instance, so the message could not be " +
+        "sent. Configure SMTP in Settings → Email.",
+    );
   }
 }
 
@@ -198,7 +222,6 @@ async function sendWebhook(
   if (!config?.url) {
     throw new Error("Webhook channel has no URL configured");
   }
-  assertPublicWebhookUrl(config.url);
 
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
   const body = JSON.stringify({
@@ -231,16 +254,21 @@ async function sendWebhook(
   // SSRF-safe delivery: safeFetch resolves once, pins the validated IP (closes
   // the DNS-rebind window a validate-then-fetch leaves open), preserves SNI/Host,
   // and never follows a 3xx into the internal network (maxRedirects defaults to 0,
-  // so a 3xx is non-2xx → thrown). Multi-tenant (CLOUD_MODE) always rejects
+  // so a 3xx is non-2xx → thrown). It is the ONLY gate here — a literal pre-check
+  // would be strictly weaker (no DNS pin) and, being unconditional, silently made
+  // the two opt-ins below dead code. Multi-tenant (CLOUD_MODE) always rejects
   // internal targets; a single-tenant box can opt into its own LAN with
   // NOTIFY_WEBHOOK_ALLOW_INTERNAL.
   const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  // Plaintext http is only for that LAN opt-in: a receiver on the box's own
+  // network has no usable cert, but a public destination must never get the
+  // payload (and its HMAC) in cleartext.
   const res = await safeFetch(config.url, {
     method: "POST",
     headers,
     body,
     timeoutMs: 10_000,
-    allowHttp: true,
+    allowHttp: allowPrivate,
     allowPrivate,
   });
   if (!res.ok) {
@@ -385,6 +413,68 @@ async function sendMSTeams(
   }
 }
 
+async function sendTelegram(
+  delivery: NotificationDelivery,
+  channel: NotificationChannel,
+): Promise<void> {
+  const config = channel.config as {
+    botToken?: string;
+    chatId?: string;
+    messageThreadId?: string;
+  };
+  if (!config?.botToken) throw new Error("Telegram channel has no bot token configured");
+  if (!config?.chatId) throw new Error("Telegram channel has no chat ID configured");
+
+  // Bot token is encrypted at storage time.
+  const botToken = decrypt(config.botToken);
+
+  const { title, body } = renderMessage(delivery);
+  const payload: Record<string, unknown> = {
+    chat_id: config.chatId,
+    text: buildTelegramText({ title, body }),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  // Forum topic, when the channel points at one thread of a supergroup.
+  if (config.messageThreadId) payload.message_thread_id = Number(config.messageThreadId);
+
+  // The host is fixed (api.telegram.org), so unlike the user-URL workers there's
+  // no allowPrivate escape hatch to honor — still routed through safeFetch for
+  // the IP pin, the redirect refusal and the timeout.
+  let res: Awaited<ReturnType<typeof safeFetch>>;
+  let raw: string;
+  try {
+    res = await safeFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      timeoutMs: 10_000,
+    });
+    raw = await res.text().catch(() => "");
+  } catch (err) {
+    // The token sits in the URL path, and delivery errors are persisted and shown
+    // in the dashboard — never let a transport error carry it out of here.
+    throw new Error(redactBotToken(safeErrorMessage(err), botToken));
+  }
+
+  if (!res.ok) {
+    throw new Error(`Telegram API returned ${res.status}: ${raw.slice(0, 200)}`);
+  }
+  // Telegram answers HTTP 200 with `{ok:false, description}` for the most common
+  // misconfigurations (bot never started by the user, kicked from the group, bad
+  // chat id). Checking only the status would mark those delivered — and, worse,
+  // flip the channel to `verified`.
+  let parsed: { ok?: boolean; description?: string } | null = null;
+  try {
+    parsed = JSON.parse(raw) as { ok?: boolean; description?: string };
+  } catch {
+    return; // 200 with an unparseable body: accept rather than retry forever.
+  }
+  if (parsed && parsed.ok === false) {
+    throw new Error(`Telegram rejected the message: ${(parsed.description ?? "unknown error").slice(0, 200)}`);
+  }
+}
+
 /* ─── Worker registry ─────────────────────────────────────────────────────── */
 
 const WORKERS: Record<
@@ -397,6 +487,7 @@ const WORKERS: Record<
   slack: sendSlack,
   discord: sendDiscord,
   msteams: sendMSTeams,
+  telegram: sendTelegram,
 };
 
 /**

@@ -35,7 +35,7 @@
  */
 
 import type { CommandExecutor } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, mailHostname } from "@repo/core";
 import { decrypt, encrypt } from "../../../lib/encryption";
 import { sshManager } from "../../../lib/ssh-manager";
 import {
@@ -101,7 +101,7 @@ export async function ensureOpenshipTestMailbox(
     const email = `${PLATFORM_LOCAL_PART}@${targetDomain}`;
     // Submission host is always the primary install — every domain shares
     // the same `mail.<state.domain>` MX / submission endpoint.
-    const smtpHost = `mail.${state.domain}`;
+    const smtpHost = mailHostname(state.domain);
     const rotate = opts?.rotate === true;
 
     // Fast path: cached creds match target identity and no rotation

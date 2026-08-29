@@ -19,8 +19,9 @@ export {
   createProject,
   updateProject,
   linkProjectRepo,
+  setProjectReleaseImageSource,
   getGitInfo,
-  getProjectCommitStatus,
+  resolveProjectWebhookState,
   setBranch,
   listProjectEnvironments,
   createProjectEnvironment,
@@ -29,6 +30,8 @@ export {
   getLatestDeploymentSession,
   enrichProject,
   enrichProjectsBatch,
+  resolveProjectDeployTarget,
+  deploymentIsBlocked,
 } from "./project-crud.service";
 
 export { previewProjectDeletion } from "./project-cleanup.service";

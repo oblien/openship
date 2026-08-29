@@ -4,13 +4,69 @@
       "overview": "概览",
       "domains": "域名",
       "mailboxes": "邮箱",
+      "notifications": "通知",
+      "sending": "发送",
       "dns": "DNS",
       "health": "健康状态",
-      "test": "测试",
       "backup": "备份",
       "advanced": "高级"
     },
     "ariaLabel": "邮件管理分区"
+  },
+  "notifications": {
+    "heading": "通知规则",
+    "description": "当邮件送达此服务器上的某个地址时，在通知渠道中收到提醒。",
+    "newRule": "新建规则",
+    "newTitle": "新建通知规则",
+    "editTitle": "编辑通知规则",
+    "edit": "编辑",
+    "emptyTitle": "暂无通知规则",
+    "emptyBody": "添加一条规则，当邮件送达此服务器上的某个邮箱或域名时，即可在 Slack、Telegram、Discord 或 webhook 中收到通知。",
+    "noChannels": "你还没有已验证的通知渠道。请先在 设置 → 通知 中添加并验证一个，然后回来创建规则。",
+    "addChannel": "添加通知渠道",
+    "manageChannels": "管理渠道",
+    "fieldName": "名称",
+    "namePlaceholder": "支持收件箱 → #support",
+    "fieldScope": "监听范围",
+    "scopeMailbox": "单个邮箱",
+    "scopeDomain": "整个域名",
+    "scopeAll": "此服务器上的所有域名",
+    "scopeAllSummary": "所有域名",
+    "fieldAddress": "地址",
+    "fieldDomain": "域名",
+    "mailboxCaveat": "按 To 和 Cc 邮件头进行匹配，因此通过 Bcc 或别名送达此邮箱的邮件不会被匹配。如果需要覆盖每一封邮件，请监听整个域名。",
+    "fieldFrom": "From 包含",
+    "fieldSubject": "主题包含",
+    "patternPlaceholder": "可选",
+    "patternHint": "不区分大小写。使用 * 作为通配符——其余内容均按字面匹配。",
+    "fieldChannels": "通知这些渠道",
+    "fieldEnabled": "规则已启用",
+    "channelCount": "{count} 个渠道",
+    "colRule": "规则",
+    "colWatch": "监听对象",
+    "colChannels": "渠道",
+    "colStatus": "状态",
+    "active": "已开启",
+    "disabled": "已关闭",
+    "paused": "已暂停",
+    "deleteTitle": "删除通知规则",
+    "deleteConfirm": "删除规则",
+    "deleting": "删除中…",
+    "deleteHint": "现有通知不受影响。已捕获但尚未处理的邮件将被丢弃。",
+    "save": "保存规则",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "test": "立即测试",
+    "testing": "测试中…",
+    "testResult": "已读取 {read} 封捕获的邮件：{matched} 封匹配到规则，{dropped} 封被过滤掉。未发送或删除任何邮件。",
+    "testFailed": "无法运行测试。",
+    "loadFailed": "无法加载通知规则。",
+    "saveFailed": "无法保存规则。",
+    "deleteFailed": "无法删除规则。",
+    "confirmDelete": "删除规则“{name}”？除非仍有其他规则需要，否则将停止捕获其地址的邮件。"
+  },
+  "sending": {
+    "testLiveNote": "通过当前生效的路径发送，而不是上方尚未保存的更改。"
   },
   "overview": {
     "mailServer": "邮件服务器",
@@ -43,6 +99,22 @@
     "addMailbox": "添加邮箱",
     "addDomain": "添加域名",
     "reviewDns": "查看 DNS 记录"
+  },
+  "webmail": {
+    "title": "网页邮箱",
+    "subtitle": "用户登录使用的邮件客户端。",
+    "opening": "正在打开网页邮箱项目…",
+    "noServerTitle": "还没有邮件服务器",
+    "noServerBody": "网页邮箱只是客户端，需要一台可登录的邮件服务器。请先完成邮件服务器设置，然后回到这里安装它。",
+    "installTitle": "尚未安装网页邮箱",
+    "installBody": "部署网页邮箱客户端，即可在浏览器中查看邮箱。它会作为一个普通的 openship 项目安装，因此可以像其他部署一样在“项目”中管理。",
+    "adoptTitle": "网页邮箱不在此处管理",
+    "chooseTitle": "要打开哪台邮件服务器？",
+    "chooseBody": "每台邮件服务器都有各自的网页邮箱。请选择要打开的域名。",
+    "incompleteTitle": "邮件服务器尚未就绪",
+    "incompleteBody": "{server} 仍在设置中。网页邮箱需要登录到它，请先完成邮件服务器设置，然后再从这里安装网页邮箱。",
+    "incompleteAction": "完成邮件设置",
+    "runningNote": "{hostname} 上已有网页邮箱在运行，但这里没有任何东西在管理它。在此安装会将其接管为一个项目，而不是再部署第二个。"
   },
   "domains": {
     "heading": "域名",
@@ -209,9 +281,53 @@
     "dnsScanDesc": "对此服务器预期的每一条记录进行实时公共 DNS 检查。",
     "rescan": "重新扫描",
     "dnsEmpty": "尚无 DNS 记录存档。完成安装向导以填充扫描内容。",
+    "delivery": {
+      "title": "外发投递",
+      "desc": "这台服务器把邮件交给谁，以及外发途中是否有邮件卡住。",
+      "sendPath": "发送路径",
+      "direct": "直接投递给收件方",
+      "directHint": "邮件从这台服务器直接发往每个收件人的邮件服务器。",
+      "relay": "通过 {host} 中继",
+      "relayAll": "此服务器上的所有发件人都通过中继发送。",
+      "relaySelected": "仅所选发件人使用中继：{domains}",
+      "queue": "队列",
+      "queueEmpty": "为空 - 没有邮件等待外发。",
+      "queueOne": "{count} 封邮件等待外发。",
+      "queueOther": "{count} 封邮件等待外发。",
+      "sampled": "队列比我们读取的范围更大，因此下方的原因是最近的几条。",
+      "reasons": "邮件被延迟投递的原因",
+      "affectedOne": "{count} 封邮件",
+      "affectedOther": "{count} 封邮件",
+      "kind": {
+        "auth": "认证被拒绝",
+        "tls": "加密失败",
+        "network": "无法连接",
+        "rejected": "被收件方拒收",
+        "other": "已延迟"
+      },
+      "hint": {
+        "authRelay": "中继拒绝了这组凭据。请在 Sending 标签页重新输入 SMTP 用户名和密码。",
+        "auth": "下一跳拒绝了认证。",
+        "tls": "无法与下一跳协商 TLS。",
+        "network": "这台服务器无法连接下一跳。请检查外发端口 25 和 587 是否放通。",
+        "rejected": "收件方暂时拒收了这封邮件，Postfix 会继续重试。",
+        "other": "Postfix 会按自己的计划重试。"
+      },
+      "status": {
+        "ok": "正在发送",
+        "warn": "延迟",
+        "fail": "未在发送",
+        "unknown": "未知"
+      }
+    },
     "logs": "日志",
     "openLogs": "打开日志",
     "up": "已运行 {time}",
+    "optional": "可选",
+    "daemonHint": {
+      "fatal": "supervisord 已放弃，不会自行重试。请从菜单中重启。",
+      "backoff": "反复崩溃，supervisord 仍在重试。查看日志了解原因。"
+    },
     "menu": {
       "restart": "重启",
       "restarting": "重启中…",
@@ -229,7 +345,9 @@
       "restartFailed": "重启失败",
       "startFailedTitle": "{label} 启动失败",
       "stopFailedTitle": "{label} 停止失败",
-      "restartFailedTitle": "{label} 重启失败"
+      "restartFailedTitle": "{label} 重启失败",
+      "notConfirmedTitle": "{label} 尚未启动",
+      "notConfirmed": "监控进程已接受请求，但 {label} 当前为 {state}。请打开日志查看原因。"
     },
     "daemonStatus": {
       "running": "运行中",
@@ -237,6 +355,7 @@
       "stopping": "停止中",
       "stopped": "已停止",
       "failed": "失败",
+      "crashed": "已崩溃",
       "missing": "缺失",
       "unknown": "未知"
     },
@@ -262,7 +381,14 @@
       "partDown": "{names} 已宕机",
       "partNotInstalled": "{names} 未安装",
       "partDnsOne": "缺少 {count} 条 DNS 记录",
-      "partDnsOther": "缺少 {count} 条 DNS 记录"
+      "partDnsOther": "缺少 {count} 条 DNS 记录",
+      "partDelivery": "外发邮件未被投递",
+      "degradedLabel": "可用，但防护能力下降",
+      "partScanning": "{names} 未运行 - 新邮件正在未经病毒扫描的情况下投递",
+      "partSignatures": "{names} 未运行 - 病毒特征库不再更新，邮件将使用逐渐过期的特征库进行扫描",
+      "partAdvisory": "{names} 未运行",
+      "almostSubQueueOne": "{count} 封邮件等待外发 - 请查看下方的外发投递。",
+      "almostSubQueueOther": "{count} 封邮件等待外发 - 请查看下方的外发投递。"
     },
     "time": {
       "secondsAgo": "{n} 秒前",
@@ -277,7 +403,9 @@
     "schedules": {
       "manual": "仅手动",
       "daily": "每天",
-      "weekly": "每周"
+      "weekly": "每周",
+      "monthly": "每月",
+      "custom": "自定义（cron）"
     },
     "whatTitle": "备份内容",
     "whatDesc": "账户和认证信息始终包含在内；邮件数据和密钥为可选项。",
@@ -293,6 +421,31 @@
     "noDest": "尚无备份目标。请在“备份”页面添加一个（例如一台现有的服务器）。",
     "destinationLabel": "目标",
     "autoLabel": "自动备份",
+    "timeLabel": "时间",
+    "timeHint": "服务器时间",
+    "weekdayLabel": "星期",
+    "dayOfMonthLabel": "每月几号",
+    "cronLabel": "cron 表达式",
+    "cronHint": "五个字段，按服务器时区计算。",
+    "scheduleJobHint": "自动备份作为定时任务运行。",
+    "manageDest": "管理",
+    "retentionTitle": "保留策略",
+    "retentionDesc": "在目标位置保留多少历史。较旧的备份会在每日清理中连同文件一起删除。",
+    "keepCountLabel": "保留最近",
+    "keepCountUnit": "份备份",
+    "keepDaysLabel": "多少天后删除",
+    "keepDaysUnit": "天",
+    "retentionNoLimit": "不限制",
+    "retentionUnlimitedWarning": "什么都不会被删除 — 这个目标位置会持续增长。",
+    "weekdays": {
+      "sun": "星期日",
+      "mon": "星期一",
+      "tue": "星期二",
+      "wed": "星期三",
+      "thu": "星期四",
+      "fri": "星期五",
+      "sat": "星期六"
+    },
     "saveSettings": "保存设置",
     "backupNow": "立即备份",
     "recentTitle": "最近的备份",
@@ -301,6 +454,7 @@
     "migrate": "迁移",
     "toastTitle": "备份",
     "pickDest": "请先选择一个备份目标。",
+    "scheduleIncomplete": "为该计划选择一个时间，或改回手动。",
     "saved": "备份设置已保存。",
     "saveFailed": "无法保存备份设置",
     "started": "备份已开始。运行时它会显示在下方。",
@@ -376,6 +530,16 @@
     "body": "全新的发信域名尚无声誉，因此在最初的 24-48 小时内，服务商可能会把早期邮件归入垃圾邮件。这是正常现象。在你的测试收件箱中将邮件标记为“非垃圾邮件”，投递性便会快速改善。 ",
     "dismissLink": "我知道了，隐藏此提示",
     "dismiss": "关闭"
+  },
+  "engine": {
+    "downTitle": "此服务器上的邮件引擎未运行",
+    "downBody": "停止期间既不会投递也不会接收邮件，而这里的所有标签页都依赖它。重新启动是安全的：不会重装，也不会修改配置。",
+    "legacyNote": "此服务器使用直接安装在宿主机上的旧版引擎（systemd 的 Postfix/Dovecot），因此没有容器可供查看。",
+    "start": "启动引擎",
+    "missingTitle": "此服务器上没有邮件引擎",
+    "missingBody": "Openship 在这里找不到任何邮件引擎——既没有引擎容器，也没有 Postfix/Dovecot 服务单元。请重新运行邮件设置以重新安装。",
+    "rerunSetup": "重新运行邮件设置",
+    "cardBlocked": "邮件引擎运行后才可用。"
   },
   "welcome": {
     "invalidEmail": "请输入有效的电子邮件地址",
@@ -458,6 +622,7 @@
     "close": "关闭",
     "logsLoadFailed": "加载日志失败",
     "loadingLogs": "正在加载日志…",
-    "noJournal": "此单元没有日志条目。"
+    "noLogLines": "此组件暂无日志内容。",
+    "rowActions": "{name} 的操作"
   }
 }

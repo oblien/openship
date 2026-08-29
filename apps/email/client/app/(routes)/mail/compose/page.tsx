@@ -7,17 +7,19 @@ import {
 } from '@/components/ui/dialog';
 import { CreateEmail } from '@/components/create/create-email';
 import { authProxy } from '@/lib/auth-proxy';
-import { useLoaderData } from 'react-router';
+import { useLoaderData, replace } from 'react-router';
 import type { Route } from './+types/page';
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   const session = await authProxy.api.getSession({ headers: request.headers });
-  if (!session) return Response.redirect(`${import.meta.env.VITE_PUBLIC_APP_URL}/login`);
+  if (!session) throw replace('/login');
   const url = new URL(request.url);
   if (url.searchParams.get('to')?.startsWith('mailto:')) {
-    return Response.redirect(
-      `${import.meta.env.VITE_PUBLIC_APP_URL}/mail/compose/handle-mailto?mailto=${encodeURIComponent(url.searchParams.get('to') ?? '')}`,
-    );
+    // `/api/mailto-handler` is where routes.ts mounts mailto-handler.ts. The
+    // old target, `/mail/compose/handle-mailto`, matches no route at all - it
+    // fell through to the splat 404.
+    const mailto = new URLSearchParams({ mailto: url.searchParams.get('to') ?? '' });
+    throw replace(`/api/mailto-handler?${mailto}`);
   }
 
   return Object.fromEntries(url.searchParams.entries()) as {

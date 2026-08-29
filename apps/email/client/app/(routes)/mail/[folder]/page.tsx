@@ -1,4 +1,4 @@
-import { useLoaderData, useNavigate } from 'react-router';
+import { useLoaderData, useNavigate, replace } from 'react-router';
 
 import { MailLayout } from '@/components/mail/mail';
 import { useLabels } from '@/hooks/use-labels';
@@ -20,10 +20,10 @@ const ALLOWED_FOLDERS = new Set([
 ]);
 
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
-  if (!params.folder) return Response.redirect(`${import.meta.env.VITE_PUBLIC_APP_URL}/mail/inbox`);
+  if (!params.folder) throw replace('/mail/inbox');
 
   const session = await authProxy.api.getSession({ headers: request.headers });
-  if (!session) return Response.redirect(`${import.meta.env.VITE_PUBLIC_APP_URL}/login`);
+  if (!session) throw replace('/login');
 
   return {
     folder: params.folder,

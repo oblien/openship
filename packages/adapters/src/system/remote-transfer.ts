@@ -7,7 +7,13 @@ import { join } from "node:path";
 import { formatBytes } from "@repo/core";
 import { getTarCreateEnv } from "../archive";
 import type { LogEntry, SshConfig } from "../types";
-import { emitBufferedLines, flushBufferedLines, hasLocalCommand, logEntry, sq } from "./local-shell";
+import {
+  emitBufferedLines,
+  flushBufferedLines,
+  hasLocalCommand,
+  logEntry,
+  sq,
+} from "./local-shell";
 import { reconcileKnownHosts } from "./ssh-support";
 
 /**
@@ -32,7 +38,10 @@ type LogCallback = (log: LogEntry) => void;
  */
 export function packLocalArchive(tarArgs: string[], outFile: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const tar = spawn("tar", tarArgs, { stdio: ["ignore", "pipe", "pipe"], env: getTarCreateEnv() });
+    const tar = spawn("tar", tarArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: getTarCreateEnv(),
+    });
     const out = createWriteStream(outFile);
     let stderr = "";
     let tarCode: number | null = null;
@@ -41,7 +50,12 @@ export function packLocalArchive(tarArgs: string[], outFile: string): Promise<vo
     const settle = () => {
       if (!tarClosed || !outClosed) return;
       if (tarCode === 0) resolve();
-      else reject(new Error(`tar failed (exit ${tarCode})${stderr.trim() ? `: ${stderr.trim().slice(-300)}` : ""}`));
+      else
+        reject(
+          new Error(
+            `tar failed (exit ${tarCode})${stderr.trim() ? `: ${stderr.trim().slice(-300)}` : ""}`,
+          ),
+        );
     };
     tar.stderr.on("data", (d: Buffer) => {
       stderr += d.toString();
@@ -97,6 +111,20 @@ export interface RsyncDeps {
 }
 
 /**
+ * Make text key material acceptable to the OpenSSH binary used by rsync.
+ *
+ * ssh2 accepts an OpenSSH private key without a final line feed, while the
+ * OpenSSH client rejects that exact file as "invalid format". Pasted keys also
+ * commonly arrive with Windows line endings. Keep the credential as stored, but
+ * normalize the short-lived file we hand to `ssh -i`.
+ */
+export function formatPrivateKeyForOpenSsh(privateKey: string): string {
+  const normalized = privateKey.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+
+  return normalized.endsWith("\n") ? normalized : `${normalized}\n`;
+}
+
+/**
  * Whether the fast rsync transport is usable for this connection. rsync runs the
  * REAL OpenSSH client (10-30 MB/s vs ssh2's ~0.5-1), so we prefer it — but it
  * needs the local rsync+ssh binaries, the remote rsync binary, and (password
@@ -106,7 +134,10 @@ export async function canUseRemoteRsync(
   deps: RsyncDeps,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (deps.config.privateKey && deps.config.privateKeyPassphrase && !deps.config.sshAgent) {
-    return { ok: false, reason: "encrypted SSH keys without an agent are not supported by non-interactive rsync" };
+    return {
+      ok: false,
+      reason: "encrypted SSH keys without an agent are not supported by non-interactive rsync",
+    };
   }
 
   const [localRsync, localSsh, localSshpass, remoteRsync] = await Promise.all([
@@ -118,7 +149,8 @@ export async function canUseRemoteRsync(
 
   if (!localRsync) return { ok: false, reason: "local rsync is not installed" };
   if (!localSsh) return { ok: false, reason: "local ssh is not installed" };
-  if (!localSshpass) return { ok: false, reason: "local sshpass is not installed for password-based rsync" };
+  if (!localSshpass)
+    return { ok: false, reason: "local sshpass is not installed for password-based rsync" };
   if (!remoteRsync) return { ok: false, reason: "remote rsync is not installed" };
 
   return { ok: true };
@@ -179,7 +211,7 @@ async function withTemporaryPrivateKey<T>(
   const keyPath = join(tempDir, "id_rsa");
 
   try {
-    await fsWriteFile(keyPath, config.privateKey);
+    await fsWriteFile(keyPath, formatPrivateKeyForOpenSsh(config.privateKey), { mode: 0o600 });
     await chmod(keyPath, 0o600);
     return await fn(keyPath);
   } finally {
@@ -260,7 +292,12 @@ export async function uploadFileWithRsync(
     let lastCode = 1;
     for (let attempt = 1; attempt <= retries; attempt++) {
       if (attempt > 1) {
-        onLog?.(logEntry(`Connection dropped — resuming upload (attempt ${attempt}/${retries})...`, "warn"));
+        onLog?.(
+          logEntry(
+            `Connection dropped — resuming upload (attempt ${attempt}/${retries})...`,
+            "warn",
+          ),
+        );
       }
       const args = [
         "-a", // already gzipped, so no `-z`

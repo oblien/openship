@@ -25,7 +25,7 @@ export function TemplateGrid() {
               className="flex flex-col items-center gap-3 p-5 rounded-xl border border-border/50 bg-background hover:bg-muted/40 hover:border-border transition-all group"
             >
               <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                {fw.icon("hsl(var(--foreground))")}
+                {fw.icon("var(--foreground)")}
               </div>
               <span className="text-sm font-medium text-foreground">{fw.name}</span>
             </button>

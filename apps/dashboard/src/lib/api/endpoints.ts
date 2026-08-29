@@ -23,18 +23,23 @@ export const endpoints = {
     outputCheck: (id: string | number) => `projects/${id}/output-check`,
     toggle: (id: string | number, action: "enable" | "disable") => `projects/${id}/${action}`,
     retryRouting: (id: string | number) => `projects/${id}/routing/retry`,
+    pendingActions: (id: string | number) => `projects/${id}/pending-actions`,
     edgeStatus: (id: string | number) => `projects/${id}/routing/edge-status`,
     clearCache: (id: string | number) => `projects/${id}/clear-cache`,
     clearBuild: (id: string | number) => `projects/${id}/clear-build`,
+    incidents: (id: string | number) => `projects/${id}/incidents`,
+    edgeConfig: (id: string | number) => `projects/${id}/edge-config`,
     routeRules: (id: string | number) => `projects/${id}/route-rules`,
     routeRule: (id: string | number, ruleId: string) => `projects/${id}/route-rules/${ruleId}`,
     deploymentSession: (id: string | number) => `projects/${id}/deployment-session`,
     connect: (id: string | number) => `projects/${id}/connect`,
     connections: (id: string | number) => `projects/${id}/connections`,
+    storage: (id: string | number) => `projects/${id}/storage`,
     connection: (id: string | number, linkId: string) => `projects/${id}/connections/${linkId}`,
     env: (id: string | number) => `projects/${id}/env`,
     git: (id: string | number) => `projects/${id}/git`,
     gitLink: (id: string | number) => `projects/${id}/git/link`,
+    releaseImageSource: (id: string | number) => `projects/${id}/release-image-source`,
     branches: (id: string | number) => `projects/${id}/branches`,
     branch: (id: string | number) => `projects/${id}/branch`,
     autoDeploy: (id: string | number) => `projects/${id}/auto-deploy`,
@@ -48,6 +53,7 @@ export const endpoints = {
     incomingWebhookDeliveries: (id: string | number, hookId: string) =>
       `projects/${id}/incoming-webhooks/${hookId}/deliveries`,
     resources: (id: string | number) => `projects/${id}/resources`,
+    rollbackCapacity: (id: string | number) => `projects/${id}/rollback-capacity`,
     cloneToken: (id: string | number) => `projects/${id}/clone-token`,
     sleepMode: (id: string | number) => `projects/${id}/sleep-mode`,
     deployments: (id: string | number) => `projects/${id}/deployments`,
@@ -60,6 +66,9 @@ export const endpoints = {
     swarmStack: (id: string | number) => `projects/${id}/swarm/stack`,
     folderSession: "projects/folder/session",
     folderScan: (sessionId: string) => `projects/folder/scan/${sessionId}`,
+    // #336: POST { service, keys } — real (unmasked) values for one folder-scan
+    // service's named keys.
+    folderEnvReveal: (sessionId: string) => `projects/folder/scan/${sessionId}/env-reveal`,
     folderUpload: (sessionId: string) => `projects/folder/upload/${sessionId}`,
   },
 
@@ -69,6 +78,7 @@ export const endpoints = {
   apps: {
     catalog: "apps/catalog",
     catalogEntry: (id: string) => `apps/catalog/${id}`,
+    catalogHostFit: (id: string) => `apps/catalog/${id}/host-fit`,
     install: "apps",
     custom: "apps/custom",
     customEntry: (appId: string) => `apps/custom/${appId}`,
@@ -110,6 +120,9 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/env`,
     envSet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
+    // #336: POST { keys } — real (unmasked) values for the named keys only.
+    envReveal: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/env-reveal`,
   },
 
   /* ---------------------------------------------------------------- */
@@ -122,6 +135,7 @@ export const endpoints = {
     keep: (id: string) => `deployments/${id}/keep`,
     skipPortCheck: (id: string) => `deployments/${id}/skip-port-check`,
     rollback: (id: string) => `deployments/${id}/rollback`,
+    restorePlan: (id: string) => `deployments/${id}/restore-plan`,
     cancel: (id: string) => `deployments/${id}/cancel`,
     prepare: "deployments/prepare",
     buildAccess: "deployments/build/access",
@@ -144,6 +158,28 @@ export const endpoints = {
     certificate: (id: string) => `domains/${encodeURIComponent(id)}/certificate`,
     primary: (id: string) => `domains/${encodeURIComponent(id)}/primary`,
     records: (id: string) => `domains/${encodeURIComponent(id)}/records`,
+    dnsPlan: (id: string) => `domains/${encodeURIComponent(id)}/dns/plan`,
+    dnsApply: (id: string) => `domains/${encodeURIComponent(id)}/dns/apply`,
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  DNS (Provider credentials & zones)                              */
+  /* ---------------------------------------------------------------- */
+  /* ---------------------------------------------------------------- */
+  /*  Credentials (third-party secrets: registry logins, DNS tokens)  */
+  /* ---------------------------------------------------------------- */
+  credentials: {
+    providers: "credentials/providers",
+    list: "credentials",
+    byId: (id: string) => `credentials/${encodeURIComponent(id)}`,
+    verify: (id: string) => `credentials/${encodeURIComponent(id)}/verify`,
+  },
+
+  dns: {
+    providers: "dns/providers",
+    credentials: "dns/credentials",
+    credentialById: (id: string) => `dns/credentials/${encodeURIComponent(id)}`,
+    verifyZone: "dns/verify-zone",
   },
 
   /* ---------------------------------------------------------------- */
@@ -193,6 +229,9 @@ export const endpoints = {
       `github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/clone-token`,
     repoBranches: (owner: string, repo: string) =>
       `github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
+    /** Recursive path list, for the source-access path picker. */
+    repoTree: (owner: string, repo: string) =>
+      `github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree`,
     status: "github/status",
     connect: "github/connect",
     connectRedirect: "github/connect/redirect",
@@ -231,7 +270,11 @@ export const endpoints = {
     overview: "analytics/overview",
     deployments: "analytics/deployments",
     usage: "analytics/usage",
+    resources: "analytics/resources",
+    usageHistory: "analytics/usage/history",
     usageStream: "analytics/usage/stream",
+    geo: "analytics/geo",
+    pathsCollection: "analytics/paths-collection",
     container: "analytics/container",
     dashboard: "analytics/dashboard",
     server: (serverId: string) => `analytics/server/${serverId}`,
@@ -245,6 +288,9 @@ export const endpoints = {
   system: {
     browse: "system/browse",
     settings: "system/settings",
+    /** Vhosts the local edge serves that Openship no longer tracks. */
+    edgeUntracked: "system/edge/untracked",
+    edgeUntrackedRemove: "system/edge/untracked/remove",
     emailSettings: "system/settings/email",
     emailSettingsTest: "system/settings/email/test",
     onboarding: "system/onboarding",
@@ -260,6 +306,7 @@ export const endpoints = {
     servers: "system/servers",
     server: (id: string) => `system/servers/${id}`,
     serverReachability: (id: string) => `system/servers/${id}/reachability`,
+    serverDeletionPreview: (id: string) => `system/servers/${id}/deletion-preview`,
     serverRateLimit: (id: string) => `system/servers/${id}/rate-limit`,
     serverPortsScan: (id: string) => `system/servers/${id}/ports/scan`,
     // Native-module versioning + migration (OpenResty, …)
@@ -267,6 +314,27 @@ export const endpoints = {
     serverModulesScan: (id: string) => `system/servers/${id}/modules/scan`,
     serverModuleApply: (id: string, module: string) =>
       `system/servers/${id}/modules/${module}/apply`,
+    // Managed-container versioning (edge / mail images pinned to APP_VERSION)
+    serverContainers: (id: string) => `system/servers/${id}/containers`,
+    serverContainersScan: (id: string) => `system/servers/${id}/containers/scan`,
+    serverContainerApply: (id: string, component: string) =>
+      `system/servers/${id}/containers/${component}/apply/stream`,
+    // Read-only siblings of the apply stream, for page-reload re-attach:
+    // /session reports a running swap, /stream (GET) re-attaches to it.
+    serverContainerApplySession: (id: string, component: string) =>
+      `system/servers/${id}/containers/${component}/apply/session`,
+    serverContainerApplyAttach: (id: string, component: string) =>
+      `system/servers/${id}/containers/${component}/apply/stream`,
+    containersBehind: () => `system/containers/behind`,
+    // Actionable-issue rollup (edge down / absent-with-projects) for the dot + home
+    containersIssues: () => `system/containers/issues`,
+    // Global infra view (every server × component) + detect-only refresh
+    allContainers: () => `system/containers`,
+    allContainersScan: () => `system/containers/scan`,
+    // Fleet bulk apply — server-derived targets, body only picks the intents
+    allContainersApply: () => `system/containers/apply-all`,
+    // Live fleet progress: queued/running applies + the ones that just settled
+    allContainersApplying: () => `system/containers/applying`,
     // Per-server GitHub auth (self-hosted)
     serverGithub: (id: string) => `system/servers/${id}/github`,
     serverGithubConnect: (id: string) => `system/servers/${id}/github/connect`,
@@ -290,6 +358,9 @@ export const endpoints = {
       switchBack: "system/migration/switch-back",
     },
     dataTransfer: {
+      preview: "system/data-transfer/preview",
+      directSession: "system/data-transfer/direct/session",
+      directSend: "system/data-transfer/direct/send",
       export: "system/data-transfer/export",
       import: "system/data-transfer/import",
     },
@@ -302,8 +373,7 @@ export const endpoints = {
     steps: "mail/steps",
     status: "mail/status",
     servers: "mail/servers",
-    forgetServer: (serverId: string) =>
-      `mail/servers/${encodeURIComponent(serverId)}`,
+    forgetServer: (serverId: string) => `mail/servers/${encodeURIComponent(serverId)}`,
     scan: "mail/scan",
     adopt: "mail/adopt",
     setup: "mail/setup",
@@ -316,8 +386,7 @@ export const endpoints = {
     portsCheck: "mail/ports/check",
     portsResolve: "mail/ports/resolve",
     admin: {
-      domains: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/domains`,
+      domains: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/domains`,
       domain: (serverId: string, domain: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}`,
       domainDependents: (serverId: string, domain: string) =>
@@ -326,28 +395,31 @@ export const endpoints = {
         `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns`,
       domainDnsAcknowledge: (serverId: string, domain: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns/acknowledge`,
+      domainDnsPlan: (serverId: string, domain: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns/plan`,
+      domainDnsApply: (serverId: string, domain: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/domains/${encodeURIComponent(domain)}/dns/apply`,
       pendingDomainDns: (serverId: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/domains-dns/pending`,
-      mailboxes: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/mailboxes`,
+      mailboxes: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/mailboxes`,
       mailbox: (serverId: string, email: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/mailboxes/${encodeURIComponent(email)}`,
-      aliases: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/aliases`,
+      aliases: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/aliases`,
       alias: (serverId: string, id: number) =>
         `mail/admin/${encodeURIComponent(serverId)}/aliases/${id}`,
-      stats: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/stats`,
-      dnsScan: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/dns-scan`,
-      relay: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/relay`,
+      inboundRules: (serverId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/inbound-rules`,
+      inboundRule: (serverId: string, ruleId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/inbound-rules/${encodeURIComponent(ruleId)}`,
+      inboundRulesTest: (serverId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/inbound-rules/test`,
+      stats: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/stats`,
+      dnsScan: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/dns-scan`,
+      relay: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/relay`,
       backupPolicy: (serverId: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/backup-policy`,
-      backupRuns: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/backup-runs`,
-      testEmail: (serverId: string) =>
-        `mail/admin/${encodeURIComponent(serverId)}/test-email`,
+      backupRuns: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/backup-runs`,
+      testEmail: (serverId: string) => `mail/admin/${encodeURIComponent(serverId)}/test-email`,
       componentAction: (serverId: string, key: string, action: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/components/${encodeURIComponent(key)}/${encodeURIComponent(action)}`,
       componentLogs: (serverId: string, key: string) =>
@@ -375,11 +447,15 @@ export const endpoints = {
   dockerMigration: {
     scan: "migration/scan",
     scanStream: "migration/scan/stream",
+    revealEnv: "migration/reveal-env",
     adopt: "migration/adopt",
     reimport: "migration/reimport",
     repoCompose: "migration/repo-compose",
     preview: "migration/preview",
     migrate: "migration/migrate",
+    /** Move a project we already own to another server (door B) — the run it starts is an
+     *  ordinary migration run, so every id-addressed route above serves it too. */
+    projectMove: "migration/project",
     migration: (id: string) => `migration/migrations/${id}`,
     cutover: (id: string) => `migration/migrations/${id}/cutover`,
     cancel: (id: string) => `migration/migrations/${id}/cancel`,
@@ -401,6 +477,15 @@ export const endpoints = {
     cloneCredentials: "settings/clone-credentials",
     cloneStrategyPreference: "settings/clone-strategy-preference",
     forwardGit: "settings/forward-git",
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Audit log (activity feed, filter facets, recording switch)      */
+  /* ---------------------------------------------------------------- */
+  audit: {
+    list: "audit",
+    facets: "audit/facets",
+    settings: "audit/settings",
   },
 
   /* ---------------------------------------------------------------- */
@@ -427,6 +512,15 @@ export const endpoints = {
     behind: "updates?behind=1",
     scan: "updates/scan",
     apply: (projectId: string) => `updates/${projectId}/apply`,
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Issues (org-wide feed over every check the system runs)         */
+  /* ---------------------------------------------------------------- */
+  issues: {
+    open: "issues",
+    resolved: "issues?status=resolved",
+    rescan: "issues/rescan",
   },
 
   /* ---------------------------------------------------------------- */
@@ -488,22 +582,17 @@ export const endpoints = {
   /*  Backups (policies + runs)                                       */
   /* ---------------------------------------------------------------- */
   backups: {
-    listPolicies: (projectId: string | number) =>
-      `projects/${projectId}/backup-policies`,
-    createPolicy: (projectId: string | number) =>
-      `projects/${projectId}/backup-policies`,
+    listPolicies: (projectId: string | number) => `projects/${projectId}/backup-policies`,
+    createPolicy: (projectId: string | number) => `projects/${projectId}/backup-policies`,
     updatePolicy: (policyId: string) => `backup-policies/${policyId}`,
     deletePolicy: (policyId: string) => `backup-policies/${policyId}`,
     runNow: (policyId: string) => `backup-policies/${policyId}/run`,
-    listRuns: (projectId: string | number) =>
-      `projects/${projectId}/backup-runs`,
+    listRuns: (projectId: string | number) => `projects/${projectId}/backup-runs`,
     getRun: (runId: string) => `backup-runs/${runId}`,
     protectRun: (runId: string) => `backup-runs/${runId}/protect`,
     prepareRestore: (runId: string) => `backup-runs/${runId}/restore/prepare`,
-    applyRestore: (restoreId: string) =>
-      `backup-restores/${restoreId}/apply`,
-    cancelRestore: (restoreId: string) =>
-      `backup-restores/${restoreId}/cancel`,
+    applyRestore: (restoreId: string) => `backup-restores/${restoreId}/apply`,
+    cancelRestore: (restoreId: string) => `backup-restores/${restoreId}/cancel`,
     getRestore: (restoreId: string) => `backup-restores/${restoreId}`,
   },
 } as const;

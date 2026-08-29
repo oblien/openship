@@ -6,6 +6,10 @@
  * resolved directly without a build step.
  */
 
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
+
 import type {
   AmbientGitVia,
   MultiServiceRuntimeAdapter,
@@ -13,6 +17,7 @@ import type {
   BuildResult,
 } from "@repo/adapters";
 import { BuildLogger, STATIC_RELEASE_BASE } from "@repo/adapters";
+import { composeBuildIssues, type ComposeAdvanced } from "@repo/core";
 import { repos, type Deployment, type Project, type Service } from "@repo/db";
 
 import {
@@ -21,7 +26,16 @@ import {
   type BuildConfigSnapshotLike,
 } from "../build-config";
 import * as sessionManager from "../session-manager";
-import { serviceKind, isStaticService } from "../../../lib/deployable-service";
+import { pinnedImageForService } from "../pinned-artifacts";
+import { newerThanRestoredRelease } from "./project-services";
+import {
+  serviceKind,
+  isStaticService,
+  hasSourceBuildRecipe,
+  resolveSubAppRecipe,
+} from "../../../lib/deployable-service";
+import { normalizeProjectRootDirectory } from "../../../lib/project-root-detector";
+import { resolveComposeEnvironmentTemplates } from "../../../lib/compose-parser";
 import { resolveServicePort } from "./domain-helpers";
 
 function sanitizeComposeImageName(value: string): string {
@@ -31,6 +45,205 @@ function sanitizeComposeImageName(value: string): string {
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "service"
   );
+}
+
+/** Resolve Compose build args against this deployment's final build environment.
+ * Bare/null keys are omitted when unavailable (preserving Dockerfile defaults),
+ * while persisted `${...}` expressions are evaluated here rather than leaking or
+ * freezing a scan-time `.env` value. */
+export function resolveComposeBuildArgs(
+  raw: Record<string, string | null> | null | undefined,
+  buildEnv: Record<string, string>,
+  templateKeys: readonly string[] = [],
+): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  const resolved: Record<string, string> = {};
+  const missing = new Set<string>();
+  const templates = new Set(templateKeys);
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === null) {
+      if (Object.hasOwn(buildEnv, key)) resolved[key] = buildEnv[key]!;
+    } else if (templates.has(key)) {
+      // Compose interpolates every args value against the invocation environment
+      // independently. Sibling args are not variables (`A=one`, `B=${A:-two}`
+      // yields B=two unless the invocation env itself defines A).
+      const dynamic = resolveComposeEnvironmentTemplates(buildEnv, { [key]: value });
+      for (const item of dynamic.missingRequired) missing.add(item.variable);
+      resolved[key] = dynamic.env[key] ?? "";
+    } else {
+      resolved[key] = value;
+    }
+  }
+  if (missing.size > 0) {
+    throw new Error(
+      `Compose build arguments require missing variable(s): ${[...missing].join(", ")}`,
+    );
+  }
+  return Object.keys(resolved).length > 0 ? resolved : undefined;
+}
+
+/** A catalog template ships this service's Docker build context INLINE
+ *  (`advanced.build`) — no repo, no pullable image. */
+function hasInlineBuild(service: { advanced: unknown }): boolean {
+  return !!(service.advanced as ComposeAdvanced | null)?.build;
+}
+
+interface InlineBuildContexts {
+  /** serviceId → the shared context root + this service's Dockerfile inside it. */
+  byServiceId: Map<string, { root: string; dockerfile: string }>;
+  cleanup(): Promise<void>;
+}
+
+/**
+ * Materialize every inline build context to a subdir under ONE shared temp root
+ * on the orchestrator, and hand back the Dockerfile each service should build
+ * (relative to that root, which `prepareSourceTree` consumes as `localPath` —
+ * no git clone).
+ *
+ * One shared root rather than one per service for two reasons: `runtime.buildImages`
+ * builds a whole batch against a single tree (specs[0]'s), and the subdir IS the
+ * COPY prefix template authors write against — `COPY <service-name>/<file>`, which
+ * only resolves when the Docker context is the root that subdir sits in.
+ *
+ * Callers own `cleanup()` once the build phase is done; a throw in here cleans up
+ * after itself, so a failed materialize never leaks a temp dir per deploy.
+ */
+async function materializeInlineBuildContexts(buildable: Service[]): Promise<InlineBuildContexts> {
+  const inline = buildable.filter(hasInlineBuild);
+  const byServiceId = new Map<string, { root: string; dockerfile: string }>();
+  if (inline.length === 0) return { byServiceId, cleanup: async () => {} };
+
+  // One batch = one tree, so an inline context and a repo checkout can't coexist in
+  // it: the inline service would fall through to the repo's ROOT Dockerfile and
+  // build the wrong image under its own tag. Reachable only by hand — `advanced` is
+  // an open object on the compose-sync route — since a catalog install produces
+  // inline builds plus image-only sidecars, and those aren't buildable.
+  if (inline.length !== buildable.length) {
+    const repoBuilt = buildable
+      .filter((service) => !hasInlineBuild(service))
+      .map((service) => service.name)
+      .join(", ");
+    throw new Error(
+      `Services with an inline build context can't be built alongside repo-built services (${repoBuilt}) — they need different build sources. Split them into separate projects.`,
+    );
+  }
+
+  const root = await mkdtemp(join(tmpdir(), "openship-catalog-build-"));
+  const cleanup = () => rm(root, { recursive: true, force: true }).catch(() => {});
+
+  try {
+    const subdirOwner = new Map<string, string>();
+    for (const service of inline) {
+      const build = (service.advanced as ComposeAdvanced).build!;
+      // `advanced` is stored unvalidated, so a malformed blob has to be named here —
+      // writeFile would only ever report ERR_INVALID_ARG_TYPE.
+      if (typeof build.dockerfile !== "string" || !build.dockerfile.trim()) {
+        throw new Error(
+          `Service "${service.name}" has an inline build context with no Dockerfile contents.`,
+        );
+      }
+
+      // Must be the sanitized service NAME, since that is what an author can write in
+      // a COPY path (service.id is unknowable to them) — so two names that sanitize
+      // alike would share a context dir AND an ambiguous prefix. Reject rather than
+      // clobber one's Dockerfile and build the wrong image under the other's tag.
+      const subdir = sanitizeComposeImageName(service.name);
+      const clash = subdirOwner.get(subdir);
+      if (clash) {
+        throw new Error(
+          `Inline build services "${clash}" and "${service.name}" both map to build-context subdir "${subdir}" — rename one so their Docker build contexts don't collide.`,
+        );
+      }
+      subdirOwner.set(subdir, service.name);
+
+      // Exactly one segment BELOW the root: sanitizing preserves dots, so a service
+      // named ".." would otherwise write its context into os.tmpdir() — outside the
+      // directory cleanup() removes.
+      const serviceDir = join(root, subdir);
+      if (dirname(serviceDir) !== root) {
+        throw new Error(
+          `Service "${service.name}" maps to an invalid build-context subdir "${subdir}".`,
+        );
+      }
+
+      await mkdir(serviceDir, { recursive: true });
+      await writeFile(join(serviceDir, "Dockerfile"), build.dockerfile, "utf-8");
+
+      for (const file of build.files ?? []) {
+        // Same unvalidated-blob reason as the Dockerfile check above.
+        if (typeof file?.path !== "string" || typeof file?.content !== "string") {
+          throw new Error(
+            `Service "${service.name}" has an inline build file with a non-string path or content.`,
+          );
+        }
+        // A context file must stay inside its service dir, and must not BE it (that
+        // would writeFile over a directory). Matches a real parent ref only, not a
+        // filename that merely starts with two dots ("..keep", "..dockerignore").
+        const dest = join(serviceDir, file.path);
+        const rel = relative(serviceDir, dest);
+        if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+          throw new Error(`Invalid build file path "${file.path}" for service "${service.name}"`);
+        }
+        await mkdir(dirname(dest), { recursive: true });
+        await writeFile(dest, file.content, "utf-8");
+      }
+
+      byServiceId.set(service.id, { root, dockerfile: `${subdir}/Dockerfile` });
+    }
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+
+  return { byServiceId, cleanup };
+}
+
+/**
+ * Resolve a compose service's `build.context` to a path relative to the CLONE
+ * ROOT, which is what BuildConfig.rootDirectory means.
+ *
+ * Compose resolves `build.context` relative to the compose FILE's directory, not
+ * the repo root — so for a compose file at `deploy/docker-compose/`, `build: ./api`
+ * means `deploy/docker-compose/api` and `build: ../../api` means `api`. Using the
+ * raw value (as this did before) silently built the wrong directory for every
+ * compose file that isn't at the repo root.
+ *
+ * `..` is resolved rather than rejected: pointing back at the repo root is normal
+ * for a compose file kept in a `deploy/` subfolder. Escaping ABOVE the clone root
+ * is refused. Falling back to another directory would silently build a different
+ * artifact than the compose file requested.
+ *
+ * The directory half is normalized by the shared `normalizeProjectRootDirectory`
+ * rather than a local regex pair, so a repo-relative directory means the same
+ * thing here as everywhere else. That also makes the two halves symmetric — the
+ * local version split the CONTEXT on `[\\/]` but the DIRECTORY on `/` only, so a
+ * backslash or stray whitespace in the directory produced a literally broken path.
+ */
+export function resolveComposeBuildContext(composeDirectory: string, context: string): string {
+  const invalid = composeBuildIssues(context)[0];
+  if (invalid) {
+    throw new Error(`Invalid Compose build context: ${invalid.reason}`);
+  }
+
+  // Already maps "." / "./" / "" → "", so no special-casing is needed below.
+  const normalizedDirectory = normalizeProjectRootDirectory(composeDirectory);
+  const segments = [...normalizedDirectory.split("/"), ...context.trim().split(/[\\/]/)].filter(
+    (segment) => segment.length > 0 && segment !== ".",
+  );
+
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (segment !== "..") {
+      resolved.push(segment);
+      continue;
+    }
+    if (resolved.length === 0) {
+      throw new Error("Invalid Compose build context: path escapes the linked repository.");
+    }
+    resolved.pop();
+  }
+
+  return resolved.join("/");
 }
 
 /**
@@ -66,7 +279,13 @@ interface SubAppOverrideInputs {
   };
   snapshot: Pick<
     BuildConfigSnapshotLike,
-    "framework" | "buildImage" | "packageManager" | "installCommand" | "buildCommand" | "startCommand" | "outputDirectory"
+    | "framework"
+    | "buildImage"
+    | "packageManager"
+    | "installCommand"
+    | "buildCommand"
+    | "startCommand"
+    | "outputDirectory"
   >;
   logger: Pick<BuildLogger, "log">;
 }
@@ -92,21 +311,26 @@ function resolveSubAppOverrides(opts: SubAppOverrideInputs): {
     }
   };
 
-  const installCommand = service.installCommand ?? snapshot.installCommand ?? undefined;
+  // The row-vs-snapshot RULE comes from the shared resolver; this function keeps
+  // only what is its own — the operator-facing log line per inherited command, and
+  // the wider set of build fields. Re-deriving the rule here is what let the
+  // buildable selector and the static-vs-server decision drift apart.
+  const recipe = resolveSubAppRecipe(service, snapshot);
+  const installCommand = recipe.installCommand ?? undefined;
   if (service.installCommand === null && installCommand !== undefined) {
     noteCommandFallback("installCommand", installCommand);
   }
-  const buildCommand = service.buildCommand ?? snapshot.buildCommand ?? undefined;
+  const buildCommand = recipe.buildCommand ?? undefined;
   if (service.buildCommand === null && buildCommand !== undefined) {
     noteCommandFallback("buildCommand", buildCommand);
   }
-  const startCommand = service.startCommand ?? snapshot.startCommand ?? undefined;
+  const startCommand = recipe.startCommand ?? undefined;
   if (service.startCommand === null && startCommand !== undefined) {
     noteCommandFallback("startCommand", startCommand);
   }
 
   return {
-    stack: service.framework ?? snapshot.framework ?? undefined,
+    stack: recipe.framework ?? undefined,
     buildImage: service.buildImage ?? snapshot.buildImage ?? undefined,
     packageManager: service.packageManager ?? snapshot.packageManager ?? undefined,
     installCommand,
@@ -123,6 +347,12 @@ export interface ComposeBuildImagesResult {
   buildFailures: Map<string, string>;
   /** Count of image-only (external) services included in imageRefs */
   externalCount: number;
+  /**
+   * At least one service build came back "cancelled" (the user cancelled the
+   * deployment). Distinct from buildFailures: the caller must stop WITHOUT
+   * marking the deployment failed.
+   */
+  cancelled: boolean;
   durationMs: number;
 }
 
@@ -157,6 +387,7 @@ export async function buildComposeImages(opts: {
   const imageRefs = new Map<string, string>();
   const builtImageRefs = new Map<string, string>();
   const buildFailures = new Map<string, string>();
+  const cancelledServices = new Set<string>();
   const startedAt = Date.now();
 
   // Buildable = anything that needs a per-service image build.
@@ -174,22 +405,25 @@ export async function buildComposeImages(opts: {
   //     would drop every Dockerfile-based monorepo sub-app to neither bucket -
   //     the same silent "No image available" failure.
   // External = compose rows with a pre-built image and no Dockerfile build.
-  // ONE-TIME image handover (migration cutover): a service named here deploys
-  // from an already-present image (a transferred / running container's image)
-  // with NO build and NO pull — it is seeded straight into imageRefs, exactly
-  // like a freshly-built one, so the SAME native deploy step consumes it. Keyed
-  // by service name (migration knows repo-service names). Only present on the
-  // migration's first deploy (per-deployment snapshot), so a later Redeploy has
-  // no handover and rebuilds/pulls natively — no separate migration deploy path.
-  const handover = opts.snapshot.handoverImages ?? {};
-  const isHandedOver = (service: { name: string }) => {
-    const img = handover[service.name];
-    return typeof img === "string" && img.length > 0;
-  };
+  // PINNED ARTIFACT: a service whose image is pinned deploys from that
+  // already-present image with NO build and NO pull — seeded straight into
+  // imageRefs, exactly like a freshly-built one, so the SAME native deploy step
+  // consumes it. Two producers, one mechanism (see pinned-artifacts.ts): the
+  // migration cutover's one-time handover, and a rollback restoring a past
+  // release's retained images. A plain Redeploy strips the pins and rebuilds
+  // natively — no separate migration or rollback deploy path exists.
+  const isHandedOver = (service: { name: string }) =>
+    !!pinnedImageForService(opts.snapshot, service.name);
+
+  // Rollback: a service added after the restored release is carried forward by
+  // the deploy step, so building it here is pure waste — and for a source-built
+  // one it fails, because the release's commit may not contain it at all.
+  const isNewerThanRelease = newerThanRestoredRelease(opts.dep);
 
   const buildable = enabled.filter(
     (service) =>
       !isHandedOver(service) &&
+      !isNewerThanRelease(service) &&
       // Smart redeploy: skip building services that aren't in the target
       // subset — they're carried forward at deploy with their existing image.
       // Also skip env-only refresh services — they recreate from their
@@ -197,287 +431,395 @@ export async function buildComposeImages(opts: {
       (!opts.targetServiceIds || opts.targetServiceIds.has(service.id)) &&
       !opts.refreshServiceIds?.has(service.id) &&
       (!!service.build ||
+        // Catalog template shipping an inline Docker build context: no repo and no
+        // `build` column, so it needs the materialization below to build at all.
+        hasInlineBuild(service) ||
         (serviceKind(service) === "monorepo" &&
           !service.image &&
-          // Apply the SAME project-snapshot fallback that the build-spec resolver
-          // (resolveSubAppOverrides) and preflight use — a monorepo row whose
-          // command lives on the project snapshot (null on the row: an inheriting
-          // sub-app, or the #231 materialized app row) must be selected as
-          // buildable HERE too. Keying off the raw row dropped it to neither
-          // bucket → the misleading "No image available" the comment above warns of.
-          ((service.framework ?? opts.snapshot.framework) === "docker" ||
-            !!(service.buildCommand ?? opts.snapshot.buildCommand) ||
-            !!(service.startCommand ?? opts.snapshot.startCommand)))),
+          // Asked of the RESOLVED recipe, not the raw row: a monorepo row whose
+          // command lives on the project snapshot (an inheriting sub-app, or the
+          // #231 materialized app row) must be selected as buildable HERE too.
+          // Keying off the raw row dropped it to neither bucket → the misleading
+          // "No image available" the comment above warns of.
+          //
+          // Two accepting verdicts, deliberately separate:
+          //   • `hasSourceBuildRecipe` — shared verbatim with the row-materializer
+          //     so the two cannot disagree (#589).
+          //   • `isStaticService` — a static sub-app is served as FILES, and its
+          //     extract-only recipe is a valid Dockerfile with an EMPTY build step.
+          //     So a sub-app that is already just files (hand-written HTML, a
+          //     committed `dist/`) has no command to declare and is still buildable.
+          //     This arm lives here rather than inside `hasSourceBuildRecipe`
+          //     because it is a row-level fact and that helper is shared with a
+          //     PROJECT-level gate — see its docblock.
+          (hasSourceBuildRecipe(resolveSubAppRecipe(service, opts.snapshot)) ||
+            isStaticService(resolveSubAppRecipe(service, opts.snapshot))))),
   );
   const external = enabled.filter(
-    (service) => !isHandedOver(service) && !service.build && !!service.image,
+    (service) =>
+      !isHandedOver(service) && !service.build && !hasInlineBuild(service) && !!service.image,
   );
 
-  // This seeds the UI check-list immediately so users see every service.
-  for (const service of enabled) {
-    sessionManager.broadcastServiceStatus(opts.dep.id, {
-      serviceName: service.name,
-      serviceId: service.id,
-      status: "pending",
-    });
-  }
+  // Repo-less catalog builds need their context on disk before any spec is built,
+  // and gone once the build phase ends (the images live on the deploy host).
+  const inlineBuilds = await materializeInlineBuildContexts(buildable);
 
-  for (const service of enabled) {
-    if (!isHandedOver(service)) continue;
-    imageRefs.set(service.id, handover[service.name]);
-    sessionManager.broadcastServiceStatus(opts.dep.id, {
-      serviceName: service.name,
-      serviceId: service.id,
-      status: "built",
-    });
-  }
+  try {
+    // This seeds the UI check-list immediately so users see every service.
+    for (const service of enabled) {
+      sessionManager.broadcastServiceStatus(opts.dep.id, {
+        serviceName: service.name,
+        serviceId: service.id,
+        status: "pending",
+      });
+    }
 
-  for (const service of external) {
-    if (service.image) {
-      imageRefs.set(service.id, service.image);
+    for (const service of enabled) {
+      const pinned = pinnedImageForService(opts.snapshot, service.name);
+      if (!pinned) continue;
+      imageRefs.set(service.id, pinned);
       sessionManager.broadcastServiceStatus(opts.dep.id, {
         serviceName: service.name,
         serviceId: service.id,
         status: "built",
       });
     }
-  }
 
-  if (buildable.length > 0) {
-    opts.logger.step(
-      "build",
-      "running",
-      `Building ${buildable.length} compose service image${buildable.length === 1 ? "" : "s"}...`,
-    );
-  } else {
-    opts.logger.step(
-      "build",
-      "completed",
-      "Compose services use pre-built images - skipping build phase",
-    );
-  }
+    for (const service of external) {
+      if (service.image) {
+        imageRefs.set(service.id, service.image);
+        sessionManager.broadcastServiceStatus(opts.dep.id, {
+          serviceName: service.name,
+          serviceId: service.id,
+          status: "built",
+        });
+      }
+    }
 
-  // Prepare a build spec per service: constructs the per-service BuildConfig +
-  // logger and broadcasts "building". Kept SEPARATE from the build itself so a
-  // runtime that builds every service on one daemon (Docker) can clone/transfer
-  // the shared source ONCE and build N images from it (see runtime.buildImages)
-  // instead of re-cloning per service.
-  const buildSpecFor = (service: Service) => {
-    const isMonorepo = serviceKind(service) === "monorepo";
-    // Build context resolution:
-    //   - Compose service with Dockerfile  → service.build (the context dir)
-    //   - Monorepo sub-app                 → service.rootDirectory
-    //   - Fallback                         → snapshot.rootDirectory
-    const context = service.build ?? service.rootDirectory ?? opts.snapshot.rootDirectory;
-    const dockerfileLabel = service.dockerfile ? ` using ${service.dockerfile}` : "";
-    opts.logger.log(
-      `Building ${isMonorepo ? "monorepo app" : "compose service"} "${service.name}" from ${context || "."}${dockerfileLabel}...\n`,
-      "info",
-      { serviceName: service.name },
-    );
+    if (buildable.length > 0) {
+      opts.logger.step(
+        "build",
+        "running",
+        `Building ${buildable.length} compose service image${buildable.length === 1 ? "" : "s"}...`,
+      );
+      sessionManager.broadcastInstallPhase(opts.dep.id, { id: "images", status: "active" });
+    } else {
+      opts.logger.step(
+        "build",
+        "completed",
+        "Compose services use pre-built images - skipping build phase",
+      );
+      // Pull-only app (the common catalog case): no image to build → show the phase
+      // complete instantly rather than briefly "active".
+      sessionManager.broadcastInstallPhase(opts.dep.id, { id: "images", status: "skipped" });
+    }
 
-    // NOTE: "building" is broadcast when this service's build actually STARTS
-    // (after the shared clone), not here — otherwise every service shows as
-    // building while we're still in the shared clone/prepare phase.
-
-    // Per-service logger keeps native terminal bytes intact and routes by
-    // serviceName. Inner step events are forwarded as plain service logs;
-    // the outer orchestrator owns the top-level step lifecycle.
-    const serviceLogger = new BuildLogger((entry) => {
-      opts.logger.callback({
-        timestamp: entry.timestamp,
-        message: entry.message,
-        level: entry.level,
-        serviceName: service.name,
-        serviceId: service.id,
-        rawData: entry.rawData,
-      });
-    });
-
-    if (opts.runtime.name === "cloud" && !opts.project.localPath) {
+    // Prepare a build spec per service: constructs the per-service BuildConfig +
+    // logger and broadcasts "building". Kept SEPARATE from the build itself so a
+    // runtime that builds every service on one daemon (Docker) can clone/transfer
+    // the shared source ONCE and build N images from it (see runtime.buildImages)
+    // instead of re-cloning per service.
+    const buildSpecFor = (service: Service) => {
+      const inlineBuild = inlineBuilds.byServiceId.get(service.id);
+      // An inline context is a Dockerfile build by definition, so a monorepo row
+      // carrying one must not reach the source-build factory below — that one
+      // ignores localPath and would build the project's repo instead.
+      const isMonorepo = !inlineBuild && serviceKind(service) === "monorepo";
+      // Build context resolution:
+      //   - Inline catalog build             → the shared materialized ROOT. The
+      //     subdir rides in the Dockerfile path instead, which is what makes the
+      //     author's `COPY <service-name>/<file>` resolve on every runtime (docker
+      //     builds with the context dir; cloud tars up `rootDirectory`).
+      //   - Compose service with Dockerfile  → service.build, resolved against the
+      //     compose file's directory (compose semantics — see
+      //     resolveComposeBuildContext)
+      //   - Monorepo sub-app                 → service.rootDirectory
+      //   - Fallback                         → snapshot.rootDirectory
+      const context = inlineBuild
+        ? ""
+        : service.build != null
+          ? resolveComposeBuildContext(opts.snapshot.rootDirectory ?? "", service.build)
+          : (service.rootDirectory ?? opts.snapshot.rootDirectory);
+      // #634: `build` is a build CONTEXT, so the runtime must point docker AT it —
+      // not merely resolve the Dockerfile inside it while building the whole clone.
+      // Without this the service's own `COPY requirements.txt` looked for the file at
+      // the repo root, and the repo's root `.dockerignore` pruned the service's tree.
+      //
+      // Only where the user actually declared a context. `rootDirectory` (monorepo
+      // sub-apps) stays a subdir WITHIN a whole-repo context — those build from a
+      // generated recipe that COPYs the workspace root. An inline catalog build keeps
+      // the root too: its context is the materialized root and the per-service subdir
+      // rides in the Dockerfile path, which is what makes a template author's
+      // `COPY <service-name>/<file>` resolve.
+      const buildContextDirectory = !inlineBuild && service.build != null ? context : undefined;
+      const dockerfile = inlineBuild?.dockerfile ?? service.dockerfile;
+      const from =
+        buildContextDirectory !== undefined ? `build context ${context || "."}` : context || ".";
       opts.logger.log(
-        `Resolving Dockerfile for compose service "${service.name}" from the build source checkout.\n`,
+        `Building ${isMonorepo ? "monorepo app" : "compose service"} "${service.name}" from ${from}${dockerfile ? ` using ${dockerfile}` : ""}...\n`,
         "info",
         { serviceName: service.name },
       );
-    }
 
-    // BuildConfig differs by kind:
-    //   - Compose service (Dockerfile in repo) → createDockerfileBuildConfig
-    //     forces stack="docker", clears install/build/start so the runtime
-    //     defers everything to the repo Dockerfile.
-    //   - Monorepo sub-app (source build)      → createMonorepoSourceBuildConfig
-    //     keeps the sub-app's stack/installCommand/buildCommand/startCommand/
-    //     outputDirectory so the runtime synthesizes a Dockerfile from them.
-    const buildSlug = `${sanitizeComposeImageName(opts.project.slug ?? opts.project.name)}-${sanitizeComposeImageName(service.name)}`;
-    const buildConfig = isMonorepo
-      ? createMonorepoSourceBuildConfig({
-          project: opts.project,
-          dep: opts.dep,
-          snapshot: opts.snapshot,
-          sessionId: `${opts.buildSessionId}-${service.id}`,
-          envVars: opts.buildEnvVars,
-          resources: opts.buildResources,
-          gitToken: opts.gitToken,
-          overrides: {
-            slug: buildSlug,
-            ...resolveSubAppOverrides({ service, snapshot: opts.snapshot, logger: serviceLogger }),
-            rootDirectory: context,
-            port: resolveServicePort(service, opts.snapshot.port) ?? opts.snapshot.port,
-            // A static sub-app (no start command) serves FILES; a server sub-app
-            // runs its start command. Derived from framework + start command.
-            //
-            // On self-hosted the files are moved to the host and served by the edge
-            // — no container, no port, no second web server. That is why
-            // `staticExtractOnly` is gated on the runtime: on CLOUD there is no host
-            // directory to serve (Oblien runs the workload), so those keep the
-            // generated nginx image and stay a proxied container.
-            ...(isStaticService(service)
-              ? {
-                  isStatic: true,
-                  hasServer: false,
-                  ...(opts.runtime.name === "cloud"
-                    ? {}
-                    : {
-                        staticExtractOnly: true,
-                        staticOutDir: `${STATIC_RELEASE_BASE}/.builds/${opts.buildSessionId}-${service.id}`,
-                      }),
-                }
-              : { hasServer: true }),
-          },
-        })
-      : createDockerfileBuildConfig({
-          project: opts.project,
-          dep: opts.dep,
-          snapshot: opts.snapshot,
-          sessionId: `${opts.buildSessionId}-${service.id}`,
-          envVars: opts.buildEnvVars,
-          resources: opts.buildResources,
-          gitToken: opts.gitToken,
-          overrides: {
-            slug: buildSlug,
-            rootDirectory: context,
-            dockerfilePath: service.dockerfile ?? undefined,
-            hasServer: true,
-          },
+      // NOTE: "building" is broadcast when this service's build actually STARTS
+      // (after the shared clone), not here — otherwise every service shows as
+      // building while we're still in the shared clone/prepare phase.
+
+      // Per-service logger keeps native terminal bytes intact and routes by
+      // serviceName. Inner step events are forwarded as plain service logs;
+      // the outer orchestrator owns the top-level step lifecycle.
+      const serviceLogger = new BuildLogger((entry) => {
+        opts.logger.callback({
+          timestamp: entry.timestamp,
+          message: entry.message,
+          level: entry.level,
+          serviceName: service.name,
+          serviceId: service.id,
+          rawData: entry.rawData,
         });
+      });
 
-    // Clone-on-server credential, shared across the fan-out (all services share
-    // one repo): the relay helper (desktop), a per-server ssh key, the server's
-    // own ambient credentials, or the token already on buildConfig.gitToken.
-    if (opts.cloneOnServer) buildConfig.cloneOnServer = true;
-    if (opts.gitCredentialHelperPath) {
-      buildConfig.gitCredentialHelperPath = opts.gitCredentialHelperPath;
-    }
-    if (opts.gitSsh) buildConfig.gitSsh = opts.gitSsh;
-    if (opts.gitAmbient) buildConfig.gitAmbient = opts.gitAmbient;
+      if (opts.runtime.name === "cloud" && !opts.project.localPath) {
+        opts.logger.log(
+          `Resolving Dockerfile for compose service "${service.name}" from the build source checkout.\n`,
+          "info",
+          { serviceName: service.name },
+        );
+      }
 
-    return { service, buildConfig, serviceLogger };
-  };
+      // BuildConfig differs by kind:
+      //   - Compose service (Dockerfile in repo) → createDockerfileBuildConfig
+      //     forces stack="docker", clears install/build/start so the runtime
+      //     defers everything to the repo Dockerfile.
+      //   - Monorepo sub-app (source build)      → createMonorepoSourceBuildConfig
+      //     keeps the sub-app's stack/installCommand/buildCommand/startCommand/
+      //     outputDirectory so the runtime synthesizes a Dockerfile from them.
+      const buildSlug = `${sanitizeComposeImageName(opts.project.slug ?? opts.project.name)}-${sanitizeComposeImageName(service.name)}`;
+      const buildConfig = isMonorepo
+        ? createMonorepoSourceBuildConfig({
+            project: opts.project,
+            dep: opts.dep,
+            snapshot: opts.snapshot,
+            sessionId: `${opts.buildSessionId}-${service.id}`,
+            envVars: opts.buildEnvVars,
+            resources: opts.buildResources,
+            gitToken: opts.gitToken,
+            overrides: {
+              slug: buildSlug,
+              ...resolveSubAppOverrides({
+                service,
+                snapshot: opts.snapshot,
+                logger: serviceLogger,
+              }),
+              rootDirectory: context,
+              port: resolveServicePort(service, opts.snapshot.port) ?? opts.snapshot.port,
+              // A static sub-app (no start command) serves FILES; a server sub-app
+              // runs its start command. Derived from framework + start command.
+              //
+              // On self-hosted the files are moved to the host and served by the edge
+              // — no container, no port, no second web server. That is why
+              // `staticExtractOnly` is gated on the runtime: on CLOUD there is no host
+              // directory to serve (Oblien runs the workload), so those keep the
+              // generated nginx image and stay a proxied container.
+              ...(isStaticService(resolveSubAppRecipe(service, opts.snapshot))
+                ? {
+                    isStatic: true,
+                    hasServer: false,
+                    ...(opts.runtime.name === "cloud"
+                      ? {}
+                      : {
+                          staticExtractOnly: true,
+                          staticOutDir: `${STATIC_RELEASE_BASE}/.builds/${opts.buildSessionId}-${service.id}`,
+                        }),
+                  }
+                : { hasServer: true }),
+            },
+          })
+        : createDockerfileBuildConfig({
+            project: opts.project,
+            dep: opts.dep,
+            snapshot: opts.snapshot,
+            sessionId: `${opts.buildSessionId}-${service.id}`,
+            envVars: opts.buildEnvVars,
+            resources: opts.buildResources,
+            gitToken: opts.gitToken,
+            overrides: {
+              slug: buildSlug,
+              // BOTH: `rootDirectory` stays the context because the cloud runtime
+              // reads only that field as its context root, while
+              // `buildContextDirectory` is what narrows the docker build on a
+              // self-hosted target. Same value, two readers.
+              rootDirectory: context,
+              buildContextDirectory,
+              dockerfilePath: dockerfile ?? undefined,
+              buildArgs: resolveComposeBuildArgs(
+                service.buildArgs,
+                opts.buildEnvVars,
+                service.advanced?.buildArgTemplateKeys,
+              ),
+              // Inline catalog build: the source IS the materialized root, so
+              // prepareSourceTree copies it instead of cloning a repo.
+              ...(inlineBuild ? { localPath: inlineBuild.root } : {}),
+              hasServer: true,
+            },
+          });
 
-  // Record a per-service build result: image refs / failures + status broadcast.
-  const applyBuildResult = (service: Service, buildResult: BuildResult) => {
-    if (buildResult.status === "failed" || !buildResult.imageRef) {
-      const failureMessage =
-        buildResult.errorMessage ?? `Failed to build service "${service.name}"`;
-      buildFailures.set(service.id, failureMessage);
+      // Clone-on-server credential, shared across the fan-out (all services share
+      // one repo): the relay helper (desktop), a per-server ssh key, the server's
+      // own ambient credentials, or the token already on buildConfig.gitToken.
+      // Never for an inline build — cloning on the host replaces the shared tree,
+      // so the materialized context would never reach the build.
+      if (opts.cloneOnServer && !inlineBuild) buildConfig.cloneOnServer = true;
+      if (opts.gitCredentialHelperPath) {
+        buildConfig.gitCredentialHelperPath = opts.gitCredentialHelperPath;
+      }
+      if (opts.gitSsh) buildConfig.gitSsh = opts.gitSsh;
+      if (opts.gitAmbient) buildConfig.gitAmbient = opts.gitAmbient;
+
+      return { service, buildConfig, serviceLogger };
+    };
+
+    // Record a per-service build result: image refs / failures + status broadcast.
+    const applyBuildResult = (service: Service, buildResult: BuildResult) => {
+      // Cancelled ≠ failed: tracked separately so the pipeline can stop without
+      // recording a build failure on the deployment. The per-service SSE status
+      // union has no "cancelled" member, so the tab reports the reason instead of
+      // being left spinning on "building".
+      if (buildResult.status === "cancelled") {
+        cancelledServices.add(service.id);
+        opts.logger.log(`Compose service "${service.name}" build cancelled\n`, "info", {
+          serviceName: service.name,
+        });
+        sessionManager.broadcastServiceStatus(opts.dep.id, {
+          serviceName: service.name,
+          serviceId: service.id,
+          status: "failed",
+          error: "Build cancelled",
+        });
+        return;
+      }
+
+      if (buildResult.status === "failed" || !buildResult.imageRef) {
+        const failureMessage =
+          buildResult.errorMessage ?? `Failed to build service "${service.name}"`;
+        buildFailures.set(service.id, failureMessage);
+        opts.logger.log(
+          `Compose service "${service.name}" build failed: ${failureMessage}\n`,
+          "error",
+          { serviceName: service.name },
+        );
+        sessionManager.broadcastServiceStatus(opts.dep.id, {
+          serviceName: service.name,
+          serviceId: service.id,
+          status: "failed",
+          error: failureMessage,
+        });
+        return;
+      }
+
+      imageRefs.set(service.id, buildResult.imageRef);
+      builtImageRefs.set(service.id, buildResult.imageRef);
       opts.logger.log(
-        `Compose service "${service.name}" build failed: ${failureMessage}\n`,
-        "error",
+        `Compose service "${service.name}" image ready: ${buildResult.imageRef}\n`,
+        "info",
         { serviceName: service.name },
       );
       sessionManager.broadcastServiceStatus(opts.dep.id, {
         serviceName: service.name,
         serviceId: service.id,
-        status: "failed",
-        error: failureMessage,
+        status: "built",
       });
-      return;
-    }
+    };
 
-    imageRefs.set(service.id, buildResult.imageRef);
-    builtImageRefs.set(service.id, buildResult.imageRef);
-    opts.logger.log(
-      `Compose service "${service.name}" image ready: ${buildResult.imageRef}\n`,
-      "info",
-      { serviceName: service.name },
-    );
-    sessionManager.broadcastServiceStatus(opts.dep.id, {
-      serviceName: service.name,
-      serviceId: service.id,
-      status: "built",
-    });
-  };
+    const specs = buildable.map(buildSpecFor);
 
-  const specs = buildable.map(buildSpecFor);
-
-  if (typeof opts.runtime.buildImages === "function") {
-    // Docker: clone + prune the shared repo ONCE (transfer once for SSH), then
-    // build every image from that single tree — sequentially — no per-service
-    // re-clone. Per-service status/imageRef is applied via onResult the moment
-    // each build settles (not after the whole batch), so the UI follows the one
-    // service that's currently building and each tab streams its own output.
-    await opts.runtime.buildImages(
-      specs.map((spec) => ({
-        config: spec.buildConfig,
-        serviceName: spec.service.name,
-        logger: spec.serviceLogger,
-        // Flip to "building" only when THIS image's build starts (post-clone),
-        // so services stay "pending" through the shared clone/prepare phase.
-        onStart: () =>
+    if (typeof opts.runtime.buildImages === "function") {
+      // Docker: clone + prune the shared repo ONCE (transfer once for SSH), then
+      // build every image from that single tree — sequentially — no per-service
+      // re-clone. Per-service status/imageRef is applied via onResult the moment
+      // each build settles (not after the whole batch), so the UI follows the one
+      // service that's currently building and each tab streams its own output.
+      await opts.runtime.buildImages(
+        specs.map((spec) => ({
+          config: spec.buildConfig,
+          serviceName: spec.service.name,
+          logger: spec.serviceLogger,
+          // Flip to "building" only when THIS image's build starts (post-clone),
+          // so services stay "pending" through the shared clone/prepare phase.
+          onStart: () =>
+            sessionManager.broadcastServiceStatus(opts.dep.id, {
+              serviceName: spec.service.name,
+              serviceId: spec.service.id,
+              status: "building",
+            }),
+          onResult: (result) => applyBuildResult(spec.service, result),
+        })),
+        opts.logger,
+      );
+    } else {
+      // Runtimes without a batch build (e.g. cloud — each service is a separate
+      // instance): build per service, as before.
+      await Promise.all(
+        specs.map(async (spec) => {
           sessionManager.broadcastServiceStatus(opts.dep.id, {
             serviceName: spec.service.name,
             serviceId: spec.service.id,
             status: "building",
-          }),
-        onResult: (result) => applyBuildResult(spec.service, result),
-      })),
-      opts.logger,
-    );
-  } else {
-    // Runtimes without a batch build (e.g. cloud — each service is a separate
-    // instance): build per service, as before.
-    await Promise.all(
-      specs.map(async (spec) => {
-        sessionManager.broadcastServiceStatus(opts.dep.id, {
-          serviceName: spec.service.name,
-          serviceId: spec.service.id,
-          status: "building",
-        });
-        applyBuildResult(spec.service, await opts.runtime.build(spec.buildConfig, spec.serviceLogger));
-      }),
-    );
-  }
-
-  if (buildable.length > 0) {
-    // Count of images actually BUILT (builtImageRefs is set only on a build) —
-    // not imageRefs.size, which also holds external/pull + handed-over images.
-    const succeeded = builtImageRefs.size;
-    if (buildFailures.size === 0) {
-      opts.logger.step(
-        "build",
-        "completed",
-        `All ${succeeded} service image${succeeded === 1 ? "" : "s"} built successfully`,
+          });
+          applyBuildResult(
+            spec.service,
+            await opts.runtime.build(spec.buildConfig, spec.serviceLogger),
+          );
+        }),
       );
-      opts.logger.log("Compose image build phase complete. Preparing deployment phase...\n");
-    } else if (succeeded > 0) {
-      opts.logger.step(
-        "build",
-        "failed",
-        `Built ${succeeded}/${buildable.length} images, but ${buildFailures.size} failed`,
-      );
-      opts.logger.log(
-        "Compose image build phase failed. Deployment will not continue.\n",
-        "error",
-      );
-    } else {
-      opts.logger.step(
-        "build",
-        "failed",
-        `All ${buildFailures.size} service image builds failed`,
-      );
-      opts.logger.log("Compose image build phase failed. Deployment will not continue.\n", "error");
     }
+
+    // Non-empty only for services derived from `buildable`, so it implies there was
+    // something to build.
+    if (cancelledServices.size > 0) {
+      // "failed" is the closest step state there is — BuildLogger has no cancelled
+      // one — but no install phase is marked done: the deployment's own cancelled
+      // status is the outcome the user is waiting on.
+      opts.logger.step("build", "failed", "Image build cancelled");
+      opts.logger.log("Compose image build cancelled. Deployment will not continue.\n", "error");
+    } else if (buildable.length > 0) {
+      // Count of images actually BUILT (builtImageRefs is set only on a build) —
+      // not imageRefs.size, which also holds external/pull + handed-over images.
+      const succeeded = builtImageRefs.size;
+      if (buildFailures.size === 0) {
+        opts.logger.step(
+          "build",
+          "completed",
+          `All ${succeeded} service image${succeeded === 1 ? "" : "s"} built successfully`,
+        );
+        opts.logger.log("Compose image build phase complete. Preparing deployment phase...\n");
+        sessionManager.broadcastInstallPhase(opts.dep.id, { id: "images", status: "done" });
+      } else if (succeeded > 0) {
+        opts.logger.step(
+          "build",
+          "failed",
+          `Built ${succeeded}/${buildable.length} images, but ${buildFailures.size} failed`,
+        );
+        opts.logger.log(
+          "Compose image build phase failed. Deployment will not continue.\n",
+          "error",
+        );
+        sessionManager.broadcastInstallPhase(opts.dep.id, { id: "images", status: "failed" });
+      } else {
+        opts.logger.step(
+          "build",
+          "failed",
+          `All ${buildFailures.size} service image builds failed`,
+        );
+        opts.logger.log(
+          "Compose image build phase failed. Deployment will not continue.\n",
+          "error",
+        );
+        sessionManager.broadcastInstallPhase(opts.dep.id, { id: "images", status: "failed" });
+      }
+    }
+  } finally {
+    await inlineBuilds.cleanup();
   }
 
   return {
@@ -485,6 +827,7 @@ export async function buildComposeImages(opts: {
     builtImageRefs,
     buildFailures,
     externalCount: external.length,
+    cancelled: cancelledServices.size > 0,
     durationMs: Date.now() - startedAt,
   };
 }

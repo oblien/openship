@@ -36,7 +36,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { CommandExecutor } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, mailHostname } from "@repo/core";
 import { decrypt, encrypt } from "../../../lib/encryption";
 import { sshManager } from "../../../lib/ssh-manager";
 import {
@@ -120,7 +120,7 @@ export async function ensureOpenshipPlatformMailbox(
     }
     const domain = rawDomain;
     const email = `${PLATFORM_LOCAL_PART}@${domain}`;
-    const smtpHost = `mail.${state.domain}`;
+    const smtpHost = mailHostname(state.domain);
     const rotate = opts?.rotate === true;
 
     // Fast path: cached creds match target identity and no rotation requested.

@@ -86,6 +86,7 @@ import {
 } from "@repo/adapters";
 import { env } from "../config/env";
 import { isOblienConfigured } from "./platform-mode";
+import { resolveAcmeProviderOptions } from "./acme-config";
 
 // Re-export the platform accessor so existing callers that do
 // `import { platform } from "@/lib/controller-helpers"` keep working
@@ -97,7 +98,7 @@ export { getPlatform as platform } from "@repo/adapters";
  * a 404-shaped error if it doesn't, to avoid leaking existence across
  * orgs (404, not 403 — IDOR-safe). NULL `organizationId` fails closed.
  */
-import { NotFoundError } from "@repo/core";
+import { ForbiddenError, NotFoundError } from "@repo/core";
 
 export function assertResourceInOrg<T extends { organizationId?: string | null }>(
   resource: T | null | undefined,
@@ -108,6 +109,64 @@ export function assertResourceInOrg<T extends { organizationId?: string | null }
   if (!resource || resource.organizationId !== organizationId) {
     throw new NotFoundError(resourceLabel, resourceId);
   }
+}
+
+/**
+ * Refuse a runtime action on the Openship control-plane self-app.
+ *
+ * The self-app IS the process serving the request, so "stop it" is a request to
+ * kill the thing that would report the result. Every mutating surface needs the
+ * same answer for the same reason — pausing the PROJECT stops the api container,
+ * deleting its `postgres` SERVICE drops the control plane's own database, and its
+ * DEPLOYMENT row is an adopt over a CLI-supervised host process, so rolling it
+ * back or pinning it would detach the live app. Read paths (status, logs, shell,
+ * container info) are deliberately NOT gated: showing the operator that state is
+ * the reason the self-app is linked at all.
+ *
+ * One definition, because it had grown three — a project copy, a services copy,
+ * and a deployments wrapper — and they had already drifted: one of them told
+ * operators to run `openship restart`, which is not a command (`restart` exists
+ * only under `deployment` and `service`).
+ */
+/**
+ * Is this project Openship itself?
+ *
+ * The boolean behind {@link assertNotControlPlane}, split out because not every
+ * caller wants a throw: the migration adopt path needs to RECOGNIZE the control
+ * plane's own containers so it can leave them out of a user's project (#584), and
+ * refusing there would fail the user's whole migration over a container they never
+ * selected. Same one definition either way — `appTemplateId` is stamped by
+ * `ensureControlPlaneApp` and is the only durable marker (the NAME is operator-
+ * visible text, and the slug differs between the self-app and the deploy project).
+ */
+export function isControlPlaneProject(
+  project: { appTemplateId?: string | null } | null | undefined,
+): boolean {
+  return project?.appTemplateId === "openship";
+}
+
+export function assertNotControlPlane(
+  project: { appTemplateId?: string | null } | null | undefined,
+): void {
+  if (isControlPlaneProject(project)) {
+    throw new ForbiddenError(
+      "The Openship control plane manages its own runtime — manage it with the CLI on the host " +
+        "(`openship up`, `openship stop`, `openship update`), not from the dashboard.",
+    );
+  }
+}
+
+/**
+ * The same policy for callers holding only a project id — a deployment row, a
+ * `projectId` route param.
+ *
+ * Exists so those callers have ONE shape instead of each resolving the project
+ * itself: that per-module resolve is what grew into two divergent copies of the
+ * check. Callers that already hold the project must use {@link assertNotControlPlane}
+ * directly rather than re-fetching it here.
+ */
+export async function assertNotControlPlaneById(projectId: string): Promise<void> {
+  assertNotControlPlane(await repos.project.findById(projectId));
 }
 
 /** Extract and validate a required route parameter */
@@ -196,6 +255,7 @@ export function resolvePlatformConfig(): PlatformConfig {
       target: "cloud",
       cloudClientId: env.OBLIEN_CLIENT_ID,
       cloudClientSecret: env.OBLIEN_CLIENT_SECRET,
+      allowHostBuild: !env.CLOUD_MODE,
     };
   }
 
@@ -207,6 +267,7 @@ export function resolvePlatformConfig(): PlatformConfig {
   return {
     target: "selfhosted",
     runtime: env.DEPLOY_MODE === "bare" ? "bare" : "docker",
+    nginx: resolveAcmeProviderOptions(),
   };
 }
 

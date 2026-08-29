@@ -20,10 +20,18 @@
  * one pass over the box.
  */
 
+import type { ProxySettings } from "@repo/core";
+
 import type { CommandExecutor, ManualCert } from "../../types";
 import type { EdgeStatus, ImportedSite, ProxyKind, ProxyScanResult } from "../types";
 import { probeEdge } from "./detect";
-import { canImportProxy, detectInstalledProxy, scanImportableSites, scanOpenshipEdge } from "./import";
+import {
+  canImportProxy,
+  detectInstalledProxy,
+  scanImportableSites,
+  scanOpenshipEdge,
+  scanOpenshipEdgeStrict,
+} from "./import";
 import { caddyStoreCert } from "./import/caddy-certs";
 import { traefikAcmeCert, traefikDeclaredCertPaths } from "./import/traefik-certs";
 import {
@@ -53,6 +61,14 @@ export interface ProxySiteRoute {
   path: string;
   domains: string[];
   ssl: ProxySiteRouteSsl;
+  /**
+   * Adoptable reverse-proxy tunables the source vhost declared (`ImportedSite.proxy`).
+   * Carried through the by-port index so a migrating project inherits the limits it
+   * was already running under — adopting a site whose nginx allowed 200 MB uploads
+   * and silently dropping it back to nginx's 1 MB default breaks the app on the
+   * first upload after the cutover, with nothing in the UI to explain it.
+   */
+  proxy?: ProxySettings;
   /** Config file the vhost came from (traceability). */
   source?: string;
 }
@@ -93,11 +109,15 @@ export function buildProxyRouteIndex(sites: ImportedSite[]): Map<number, ProxySi
             existing.ssl.keyPath = site.tls.keyPath;
           }
         }
+        // Same precedence as the cert above: the TLS vhost is the one really
+        // serving the traffic, so its tunables win over the :80 helper's.
+        if (site.proxy && (site.ssl || !existing.proxy)) existing.proxy = site.proxy;
       } else {
         list.push({
           port,
           path: up.path,
           domains: [...site.serverNames],
+          ...(site.proxy ? { proxy: site.proxy } : {}),
           ssl: site.ssl
             ? { enabled: true, certPath: site.tls?.certPath, keyPath: site.tls?.keyPath }
             : { enabled: false },
@@ -171,6 +191,15 @@ export interface EdgeProxyApi {
   container: string | null;
   /** Everything it serves, normalized. One scan, memoized. */
   listSites(): Promise<ProxyScanResult>;
+  /**
+   * Every loopback host port dialled by OUR edge. Unlike `listSites`, a config,
+   * transport, or permission failure rejects instead of masquerading as an
+   * empty inventory. Allocation uses this to fail closed around existing routes.
+   */
+  listLoopbackUpstreamPortsStrict(opts?: {
+    /** Bypass the per-instance memoized inventory and replace it with a fresh scan. */
+    refresh?: boolean;
+  }): Promise<Set<number>>;
   /** Sites reverse-indexed by the published host port they forward to. */
   sitesByPort(): Promise<Map<number, ProxySiteRoute[]>>;
   /** The vhost answering for `host`, or null. */
@@ -233,7 +262,14 @@ export function edgeProxyFor(
   kind: ProxyKind,
   opts: { ours?: boolean; container?: string | null } = {},
 ): EdgeProxyApi {
-  return makeApi(exec, kind, opts.ours ?? kind === "openresty", opts.container ?? null);
+  // `ours` defaults FALSE: a bare kind shortcut is a FOREIGN proxy unless the
+  // caller says otherwise. It used to default `kind === "openresty"` — the stale
+  // bare-edge assumption ("an openresty IS our edge"), which is wrong now that our
+  // edge is a container. That default made the one caller (harvesting certs from a
+  // proxy we're migrating FROM) read a foreign OpenResty through `scanOpenshipEdge`
+  // instead of `scanForeignOpenResty`, so a legacy bare edge's vhost-declared certs
+  // at non-default paths were silently not harvested — the sites migrated with no TLS.
+  return makeApi(exec, kind, opts.ours ?? false, opts.container ?? null);
 }
 
 /**
@@ -281,6 +317,28 @@ function makeApi(
     return scan;
   };
 
+  let strictLoopbackPorts: Promise<Set<number>> | null = null;
+  const listLoopbackUpstreamPortsStrict = (opts: { refresh?: boolean } = {}) => {
+    if (!ours) {
+      return Promise.reject(
+        new Error("Strict loopback upstream inventory is only available for the Openship edge"),
+      );
+    }
+    if (opts.refresh || !strictLoopbackPorts) {
+      const nextScan = scanOpenshipEdgeStrict(exec, container).then(
+        ({ loopbackUpstreamPorts }) => loopbackUpstreamPorts,
+      );
+      strictLoopbackPorts = nextScan;
+      // A transient transport/config failure must remain visible to this caller,
+      // but it must not poison the API instance forever. The next call retries a
+      // real scan; it never falls back to an older successful inventory.
+      void nextScan.catch(() => {
+        if (strictLoopbackPorts === nextScan) strictLoopbackPorts = null;
+      });
+    }
+    return strictLoopbackPorts;
+  };
+
   const siteFor = async (host: string): Promise<ImportedSite | null> => {
     const target = host.toLowerCase();
     const { sites } = await listSites();
@@ -318,6 +376,7 @@ function makeApi(
     ours,
     container,
     listSites,
+    listLoopbackUpstreamPortsStrict,
     sitesByPort: async () => buildProxyRouteIndex((await listSites()).sites),
     siteFor,
     certFor: async (host) => (await certCandidateFor(host)).cert,

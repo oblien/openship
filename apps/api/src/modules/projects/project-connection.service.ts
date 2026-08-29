@@ -9,15 +9,23 @@
  * URL is encrypted at rest (via the project env merge path).
  */
 
-import { repos } from "@repo/db";
-import { ValidationError, isValidEnvKey, getAppEndpoints } from "@repo/core";
+import { repos, type Project } from "@repo/db";
+import {
+  ValidationError,
+  isValidEnvKey,
+  getAppEndpoints,
+  getAppConnection,
+  getOutputPort,
+  type AppTemplate,
+} from "@repo/core";
 import { getTemplateForOrg } from "../apps/catalog-source";
 import type { RequestContext } from "../../lib/request-context";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
+import { isLocalHostRow } from "../../lib/box-org";
 import { permission } from "../../lib/permission";
-import { getAppConnectionView } from "../apps/app-settings.service";
+import { getAppConnectionView, type AppConnectionOutput } from "../apps/app-settings.service";
 import { mergeEnvVars } from "./project-env.service";
-import { toInternalUrl } from "./project-connection.util";
+import { toInternalUrl, isNetworkUrl } from "./project-connection.util";
 
 const ENVIRONMENT = "production";
 
@@ -169,6 +177,198 @@ async function applyConnectionToTarget(
   }
 }
 
+/** Both authorized ends of a prospective connection plus the chosen output. */
+interface ConnectionEnds {
+  source: Project;
+  target: Project;
+  output: AppConnectionOutput;
+  template: AppTemplate | undefined;
+  /** Container port the output's catalog `source` names — see `getOutputPort`. */
+  declaredPort: number | null;
+}
+
+/**
+ * Load and authorize both ends of a connection and resolve the chosen output.
+ * Shared by `createConnection` and `internalModeAvailable` so a caller that has to
+ * pick a mode BEFORE connecting sees exactly what the create will see.
+ */
+async function loadConnectionEnds(
+  ctx: RequestContext,
+  targetProjectId: string,
+  sourceProjectId: string,
+  outputId: string,
+): Promise<ConnectionEnds> {
+  // Both projects must exist, be in the SAME org (no cross-tenant flow), and the
+  // caller must be able to read the source + write the target.
+  const target = await repos.project.findById(targetProjectId);
+  assertResourceInOrg(target, "Project", ctx.organizationId, targetProjectId);
+  const source = await repos.project.findById(sourceProjectId);
+  assertResourceInOrg(source, "Project", target.organizationId, sourceProjectId);
+  if (source.id === target.id) {
+    throw new ValidationError("A project can't connect to itself.");
+  }
+  await permission.assert(ctx, {
+    resourceType: "project",
+    resourceId: sourceProjectId,
+    action: "read",
+  });
+  await permission.assert(ctx, {
+    resourceType: "project",
+    resourceId: targetProjectId,
+    action: "write",
+  });
+
+  // Resolve the connection value from the source app's already-computed outputs.
+  const view = await getAppConnectionView(ctx, sourceProjectId);
+  const output = view.outputs.find((o) => o.id === outputId);
+  if (!output || !output.value) {
+    throw new ValidationError("That connection value isn't available yet on the source app.");
+  }
+
+  // The source app template — used to default the reach mode from the endpoint's
+  // declared scope and to rewrite the internal host.
+  const template = await getTemplateForOrg(source.organizationId, source.appTemplateId ?? "");
+  const spec = template
+    ? getAppConnection(template)?.outputs.find((o) => o.id === outputId)
+    : undefined;
+  return { source, target, output, template, declaredPort: spec ? getOutputPort(spec) : null };
+}
+
+/**
+ * WHICH MACHINE a project's workload sits on, collapsed so that every encoding of
+ * "this box" compares equal.
+ *
+ * `box` covers all of them deliberately: a project with no server binding deploys to
+ * the host docker socket, and so does the auto-registered isLocal "This Server" row
+ * AND a plain loopback/SERVER_IP row for this host (deployment-runtime
+ * `resolveTargetPlatform`, `isLocalHostRow`). One daemon means one set of
+ * `openship-<slug>` networks, so treating those as different machines refuses pairs
+ * that are demonstrably co-located.
+ */
+type ProjectHost = { kind: "cloud" } | { kind: "box" } | { kind: "server"; id: string };
+
+const hostKey = (h: ProjectHost): string => (h.kind === "server" ? `server:${h.id}` : h.kind);
+
+/**
+ * Resolve which machine a project's workload sits on.
+ *
+ * Snapshot serverId FIRST, durable column second — the order `readDeployMeta` uses,
+ * and for its reason: the snapshot is where the live release ACTUALLY runs while the
+ * column is where the project is bound, and an alias only resolves next to the
+ * running container. (`resolveSnapshotTarget` and `countActiveByServer` deliberately
+ * invert this — they answer "where would the NEXT deploy go", a different question.)
+ *
+ * Cloud is the UNION of both signals, mirroring project-resources.service: the
+ * `cloudWorkspaceId` column alone is not enough, because a self-hosted instance
+ * orchestrating a cloud deploy deliberately leaves it null to stay local-canonical
+ * (deployment-lifecycle, `isLocalOrchestratedCloud`) — for that shape the snapshot is
+ * the only cloud signal there is, and reading the column alone declares it local.
+ *
+ * A project bound to nothing and never deployed is NOT unknown: `resolveSnapshotTarget`
+ * resolves exactly that shape to the host default, so its first deploy lands on this
+ * box and `box` is the honest answer. Reporting it as "no idea" instead read as
+ * "nothing to refuse" at the call sites, which handed a remote source's alias to a
+ * project that was about to deploy somewhere else entirely.
+ */
+async function resolveProjectHost(project: Project): Promise<ProjectHost> {
+  const dep = project.activeDeploymentId
+    ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+    : null;
+  const meta = (dep?.meta ?? null) as { deployTarget?: string; serverId?: string } | null;
+  if (meta?.deployTarget === "cloud" || project.cloudWorkspaceId) return { kind: "cloud" };
+
+  const serverId = meta?.serverId ?? project.serverId ?? null;
+  if (!serverId) return { kind: "box" };
+
+  const row = await repos.server
+    .getInOrganization(serverId, project.organizationId)
+    .catch(() => null);
+  // A row we cannot read is not PROVABLY this box, so it stays its own machine — the
+  // failure mode of guessing "local" here is a dead alias, which is what this check
+  // exists to prevent.
+  return row && (await isLocalHostRow(row).catch(() => false))
+    ? { kind: "box" }
+    : { kind: "server", id: serverId };
+}
+
+/** The east-west value an internal connection should inject, or why it can't. */
+type InternalResolution = { value: string } | { error: string };
+
+/**
+ * Resolve what INTERNAL mode would inject for this output, or the reason it isn't
+ * viable. ONE resolver, because a caller that must choose a mode up front used to
+ * infer availability from WHICH error `createConnection` happened to throw first —
+ * so the answer depended on the shape of an unrelated output's value.
+ */
+async function resolveInternalValue(ends: ConnectionEnds): Promise<InternalResolution> {
+  const { source, target, output, template, declaredPort } = ends;
+
+  // GH-631: a non-URL value (password, token, API key, bucket name) names no host,
+  // so internal mode has nothing to rewrite and nothing to reach — inject it
+  // verbatim. Answered BEFORE reachability on purpose: a credential is equally
+  // valid whichever box the source runs on, gating it on network topology would
+  // re-break the case that was reported, and resolving hosts costs queries this
+  // path has no use for.
+  if (!isNetworkUrl(output.value)) return { value: output.value };
+
+  // Everything below hands the consumer a HOST to reach east-west, which rides on
+  // joining the source app's docker network at deploy (attachLinkedNetworks). Those
+  // networks are per-machine and a failed attach only WARNS, so a link across two
+  // machines injects an alias that resolves nowhere and still deploys green.
+  const [sourceHost, targetHost] = await Promise.all([
+    resolveProjectHost(source),
+    resolveProjectHost(target),
+  ]);
+
+  if (sourceHost.kind === "cloud" || targetHost.kind === "cloud") {
+    return { error: "Internal mode isn't available for a cloud-hosted app yet — use Public." };
+  }
+  if (hostKey(sourceHost) !== hostKey(targetHost)) {
+    return {
+      error:
+        "Internal mode needs both projects on the same server — they're on different servers, so use Public.",
+    };
+  }
+
+  // A synthesized output (plain app / raw compose, no template) already carries
+  // the east-west address as its value — the synthesizer built it from the same
+  // alias+port the container answers to on the shared network. Inject verbatim;
+  // toInternalUrl would need a template and return null.
+  if (output.internal) return { value: output.value };
+
+  // Template source: rewrite host → the source app's internal service alias. The
+  // output's declared/derived `service` and `port` are authoritative for which
+  // alias+port to target; if it can't resolve, internal isn't viable here.
+  const internal = toInternalUrl(output.value, template, output.service, declaredPort);
+  return internal
+    ? { value: internal }
+    : {
+        error:
+          "Internal mode isn't available for this connection — use Public, or pick a database app's URL.",
+      };
+}
+
+/**
+ * Would wiring `outputId` from `sourceProjectId` into `targetProjectId` as an
+ * INTERNAL connection actually resolve? For a caller that has to commit to one
+ * mode for a SET of outputs (the object-storage bind) and so must ask before it
+ * writes. Answered by the same resolver `createConnection` runs, so the two can't
+ * disagree. An unavailable internal is the answer here, not an error.
+ */
+export async function internalModeAvailable(
+  ctx: RequestContext,
+  targetProjectId: string,
+  input: { sourceProjectId: string; outputId: string },
+): Promise<boolean> {
+  const ends = await loadConnectionEnds(
+    ctx,
+    targetProjectId,
+    input.sourceProjectId,
+    input.outputId,
+  );
+  return !("error" in (await resolveInternalValue(ends)));
+}
+
 export async function createConnection(
   ctx: RequestContext,
   targetProjectId: string,
@@ -182,36 +382,13 @@ export async function createConnection(
     throw new ValidationError("Enter a valid environment variable name (letters, digits, _).");
   }
 
-  // Both projects must exist, be in the SAME org (no cross-tenant flow), and the
-  // caller must be able to read the source + write the target.
-  const target = await repos.project.findById(targetProjectId);
-  assertResourceInOrg(target, "Project", ctx.organizationId, targetProjectId);
-  const source = await repos.project.findById(input.sourceProjectId);
-  assertResourceInOrg(source, "Project", target.organizationId, input.sourceProjectId);
-  if (source.id === target.id) {
-    throw new ValidationError("A project can't connect to itself.");
-  }
-  await permission.assert(ctx, {
-    resourceType: "project",
-    resourceId: input.sourceProjectId,
-    action: "read",
-  });
-  await permission.assert(ctx, {
-    resourceType: "project",
-    resourceId: targetProjectId,
-    action: "write",
-  });
-
-  // Resolve the connection value from the source app's already-computed outputs.
-  const view = await getAppConnectionView(ctx, input.sourceProjectId);
-  const output = view.outputs.find((o) => o.id === input.outputId);
-  if (!output || !output.value) {
-    throw new ValidationError("That connection value isn't available yet on the source app.");
-  }
-
-  // Resolve the source app template ONCE — used both to default the reach mode
-  // from the endpoint's declared scope and to rewrite the internal host below.
-  const template = await getTemplateForOrg(source.organizationId, source.appTemplateId ?? "");
+  const ends = await loadConnectionEnds(
+    ctx,
+    targetProjectId,
+    input.sourceProjectId,
+    input.outputId,
+  );
+  const { source, target, output, template } = ends;
 
   // Default the reach mode from the source endpoint's declared `scope` when the
   // caller didn't choose: a DB endpoint (scope "internal") wires internal, a
@@ -229,29 +406,16 @@ export async function createConnection(
 
   let value = output.value;
   if (mode === "internal") {
-    // Internal reachability rides on joining the source app's docker network at
-    // deploy (attachLinkedNetworks). A cloud-hosted source (Oblien) has no
-    // attachable shared network on this pipe yet, so an internal alias would be
-    // unreachable — steer to Public instead of injecting a dead host.
-    const srcDep = source.activeDeploymentId
-      ? await repos.deployment.findById(source.activeDeploymentId).catch(() => null)
-      : null;
-    const srcTarget = (srcDep?.meta as { deployTarget?: string } | null)?.deployTarget;
-    if (srcTarget === "cloud") {
-      throw new ValidationError(
-        "Internal mode isn't available for a cloud-hosted app yet — use Public.",
-      );
+    const resolved = await resolveInternalValue(ends);
+    if ("error" in resolved) {
+      // An EXPLICIT internal ask gets the reason. A DEFAULTED one falls back to
+      // public — failing a request that never asked for internal turns a working
+      // public wire-up into an error the caller can't act on.
+      if (input.mode === "internal") throw new ValidationError(resolved.error);
+      mode = "public";
+    } else {
+      value = resolved.value;
     }
-    // Rewrite host → the source app's internal service alias. The output's
-    // declared/derived `service` is authoritative for which alias+port to
-    // target; if it can't resolve, internal isn't viable here.
-    const internal = toInternalUrl(value, template, output.service);
-    if (!internal) {
-      throw new ValidationError(
-        "Internal mode isn't available for this connection — use Public, or pick a database app's URL.",
-      );
-    }
-    value = internal;
   }
 
   // Don't silently clobber a manually-set env var: if `envKey` already exists on

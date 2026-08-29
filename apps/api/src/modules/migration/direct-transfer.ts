@@ -28,12 +28,19 @@
  */
 
 import type { CommandExecutor, LogEntry } from "@repo/adapters";
+import { shellQuote } from "@repo/core";
 
-/** POSIX single-quote escape — matches adapters' `sq` (duplicated across the
- *  codebase; trivial, kept local to avoid a cross-package export). */
-export function sq(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
+/**
+ * POSIX single-quote escape.
+ *
+ * Re-exported from `@repo/core`, not re-typed: this module builds every rsync/ssh/pkill
+ * argv in the migration, so it is the single biggest consumer of the one function standing
+ * between a data-derived string and root on the target. The old local copy justified itself
+ * with "kept local to avoid a cross-package export" — which was never true, since siblings
+ * in this very directory already import from `@repo/core`. Nine byte-identical copies
+ * existed before the canonical one; this was the tenth.
+ */
+export const sq = shellQuote;
 
 /** SSH endpoint of a server (from its DB row). */
 export interface ServerConn {

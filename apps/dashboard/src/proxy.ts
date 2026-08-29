@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { PRODUCT_VIEW_COOKIE, PRODUCT_VIEW_HEADER } from "@/lib/product-view";
 
 // Cookie presence only — never proof of a valid session. Server-side
 // `getSession()` in (dashboard) layout is the real authoritative
@@ -13,6 +14,14 @@ const PUBLIC_ROUTES = [
   "/verify-email",
   "/authorize",
   "/onboarding",
+  // The MCP OAuth consent page. It must reach its own render even without a
+  // session cookie, because it sends the user to /login with a `returnTo` that
+  // comes BACK here and resumes the client's authorize. This middleware's
+  // redirect uses `from`, which nothing reads (getPostAuthRedirect only honors
+  // `returnTo`/`callback`), so intercepting it stranded the user on `/` and the
+  // MCP client's flow never completed.
+  "/mcp/authorize",
+  "/accept-invite",
 ];
 
 const SESSION_COOKIE_SUFFIX = ".session_token";
@@ -51,6 +60,13 @@ export function proxy(req: NextRequest) {
   // here in the proxy — so we inject a header the layout can read reliably.
   const locale = req.cookies.get("openship-locale")?.value;
   if (locale) requestHeaders.set("x-openship-locale", locale);
+
+  // Same trick for the per-user product view (full platform vs Openship Mail).
+  // The (dashboard) layout resolves the rail on the server so first paint is
+  // already correct — reading it from an unreliable cookies() would flip the
+  // whole sidebar after hydration.
+  const productView = req.cookies.get(PRODUCT_VIEW_COOKIE)?.value;
+  if (productView) requestHeaders.set(PRODUCT_VIEW_HEADER, productView);
 
   return NextResponse.next({ request: { headers: requestHeaders } });
 }

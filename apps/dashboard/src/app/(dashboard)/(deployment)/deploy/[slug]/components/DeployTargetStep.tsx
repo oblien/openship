@@ -1,22 +1,30 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Server, Cloud, Cpu, ArrowRight, Pencil, ChevronDown, ChevronUp, CheckCircle2, Loader2, Plus, Settings2, Zap, Globe, GitBranch, Search, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Cloud, Cpu, GitBranch, Globe, Loader2, Pencil, Plus, RotateCcw, Search, Server, Settings2, ShieldAlert, ShieldCheck, Zap } from "lucide-react";
+import {
+  RESOURCE_TIER_ORDER,
+  RESOURCE_TIER_SPECS,
+  formatCpuCores,
+  formatMemoryMb,
+} from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
 import { useDeployment } from "@/context/DeploymentContext";
-import { usesServiceDeployment } from "@/context/deployment/types";
+import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import type { DeploymentConfig } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
-import { settingsApi } from "@/lib/api/settings";
+import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
 import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
 import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode } from "@/context/deployment/types";
 import { createPersistedValue } from "@/lib/persisted-value";
-import { AddServerModal } from "./AddServerModal";
+import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
+import { useAddServerModal } from "@/components/servers/add-server-modal";
 import ServerRuntimePicker from "./ServerRuntimePicker";
+import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 // ─── Option card ─────────────────────────────────────────────────────────────
@@ -97,6 +105,12 @@ interface ServerPickerProps {
  *  each list row. */
 const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ server, active }) => {
   const { t } = useI18n();
+  // TODO: temporary desktop gate (useLocalDeployGate). Flag the local host as
+  // not-yet-available so the user sees it here rather than only on Deploy.
+  // Reads context only — no server fetch, and a no-op outside desktop mode.
+  const { deployMode } = usePlatform();
+  const localComingSoon =
+    server.isLocal && deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED;
   return (
     <>
       <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
@@ -114,7 +128,9 @@ const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ s
           )}
         </p>
         <p className="text-[11px] text-muted-foreground truncate">
-          {server.isLocal ? (
+          {localComingSoon ? (
+            "Running here is coming soon — connect a server"
+          ) : server.isLocal ? (
             t.deploy.targetStep.thisServerHost
           ) : (
             <>
@@ -274,6 +290,12 @@ interface CompactSummaryProps {
    *  never show the Static chip even when the project-level hasServer/framework
    *  is unset (those live per-service). */
   isServices?: boolean;
+  /** Retention shown as its own chip. Rollback is configured inside the collapsed
+   *  Advanced panel, so without this the summary bar gave no hint that retention
+   *  exists at all — an operator could ship without ever learning they get
+   *  restorable versions. `null`/undefined window = the auto (disk-sized) value. */
+  rollbackWindow?: number | null;
+  rollbackStrategy?: "git" | "snapshot";
   onEdit: () => void;
 }
 
@@ -286,9 +308,12 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   hasServer = true,
   runtimeMode,
   isServices = false,
+  rollbackWindow,
+  rollbackStrategy,
   onEdit,
 }) => {
   const { t } = useI18n();
+  const { selfHosted } = usePlatform();
   const targetLabels: Record<DeployTarget, { label: string; icon: React.ReactNode }> = {
     local: { label: t.deploy.summary.targetLocal, icon: <Cpu className="size-3.5" /> },
     server: { label: t.deploy.summary.targetServer, icon: <Server className="size-3.5" /> },
@@ -343,42 +368,69 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     // edge-served files — regardless of the project-level hasServer/framework
     // (which are unset for compose). Show the tier on cloud, else Sandboxed.
     deployTarget === "cloud" && cloudResourceTier ? (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
         <Zap className="size-3" />
         <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
       </span>
     ) : (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success-bg text-[11px] font-medium text-success shrink-0">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
         <ShieldCheck className="size-3" />
         {t.deploy.summary.runtimeSandboxed}
       </span>
     )
   ) : !hasServer ? (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-info-bg text-[11px] font-medium text-info shrink-0">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
       <Globe className="size-3" />
       {t.deploy.summary.runtimeStatic}
     </span>
   ) : deployTarget === "cloud" ? (
     cloudResourceTier ? (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
         <Zap className="size-3" />
         <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
       </span>
     ) : null
   ) : deployTarget === "server" && runtimeMode === "bare" ? (
     <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0"
+      className="inline-flex items-center gap-1 text-[11px] font-medium text-warning shrink-0"
       title={t.deploy.summary.runtimeDirectHint}
     >
       <ShieldAlert className="size-3" />
       {t.deploy.summary.runtimeDirectWarning}
     </span>
   ) : deployTarget === "server" && runtimeMode === "docker" ? (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success-bg text-[11px] font-medium text-success shrink-0">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
       <ShieldCheck className="size-3" />
       {t.deploy.summary.runtimeSandboxed}
     </span>
   ) : null;
+
+  // Retention lives inside the collapsed Advanced panel, so surface it here as
+  // its own chip — otherwise nothing on this bar hints that rollback exists.
+  //
+  // Gated on `selfHosted` for the same reason the Advanced panel is: on a cloud
+  // instance that panel isn't rendered at all, so a chip pointing at it would
+  // advertise a control the operator can't reach.
+  const rollbackChip = !selfHosted ? null : (
+    <span
+      className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0"
+      title={
+        rollbackStrategy === "snapshot"
+          ? t.deploy.summary.rollbackSnapshotHint
+          : t.deploy.summary.rollbackGitHint
+      }
+    >
+      <RotateCcw className="size-3" />
+      {rollbackWindow == null
+        ? t.deploy.summary.rollbackAuto
+        : interpolate(
+            rollbackWindow === 1
+              ? t.deploy.summary.rollbackOne
+              : t.deploy.summary.rollbackOther,
+            { count: String(rollbackWindow) },
+          )}
+    </span>
+  );
 
   return (
     <button
@@ -421,6 +473,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
         )}
       </div>
       {runtimeChip}
+      {rollbackChip}
       <Pencil className="size-3.5 text-muted-foreground transition-opacity" />
     </button>
   );
@@ -436,7 +489,7 @@ export interface ResolvedTargets {
   hasCloudOption: boolean;
   /** True when there's a real choice to make */
   hasChoice: boolean;
-  /** Refetch the server list - used after returning from /servers/new */
+  /** Refetch the server list - used after the add-server modal saves one */
   refreshServers: () => void;
 }
 
@@ -500,7 +553,12 @@ export function useDesktopTargets(): ResolvedTargets {
 // Priority on seed: settings-API default > localStorage > auto-select fallback.
 
 export type LastPick = {
-  target: DeployTarget;
+  /** A pickable target only — the same two this step renders. Never "local":
+   *  that one is derived from the absence of a binding, and this step has no card
+   *  for it, so remembering it would select a target the UI can't show. A legacy
+   *  stored "local" fails validation below and falls through to the auto-pick,
+   *  which lands on this box's own server row (with its real address). */
+  target: Exclude<DeployTarget, "local">;
   serverId?: string | null;
 };
 
@@ -509,7 +567,7 @@ export const lastPickStore = createPersistedValue<LastPick>(
   (raw): raw is LastPick => {
     if (!raw || typeof raw !== "object") return false;
     const obj = raw as { target?: unknown; serverId?: unknown };
-    if (obj.target !== "local" && obj.target !== "server" && obj.target !== "cloud") return false;
+    if (obj.target !== "server" && obj.target !== "cloud") return false;
     if (obj.serverId !== undefined && obj.serverId !== null && typeof obj.serverId !== "string") return false;
     return true;
   },
@@ -529,17 +587,29 @@ export const lastPickStore = createPersistedValue<LastPick>(
  * async "spin then advance" was the visible flash on entry. The summary bar is
  * the affordance to change the pick (onEdit → the full step).
  *
- * `enabled` is false for existing projects: their saved target hydrates from
- * initializeFromProject and must never be overwritten by the global default.
+ * `enabled` is false for an existing project that HAS a saved target: that one
+ * hydrates from initializeFromProject and must never be overwritten by the global
+ * default. It stays TRUE for a saved project with no target yet — bound to nothing
+ * and never deployed — because there is nothing to preserve there, and leaving it off
+ * is what let DEFAULT_CONFIG's "cloud" reach the deploy payload. The caller resolves
+ * which case it is from the hydration result, not from the fact that it loaded a
+ * project; see the `savedTargetState` gate in the deploy page.
  */
 export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean): void {
   const { updateConfig } = useDeployment();
+  const { deployMode } = usePlatform();
+  // Stable for the session (deployMode comes from the platform context), so the
+  // one-shot effect below can read it without widening its tight dep array.
+  const localDeployBlocked = deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED;
   const appliedRef = useRef(false);
   useEffect(() => {
     if (!enabled || !targets.ready || appliedRef.current) return;
     let cancelled = false;
     const seed = (
-      def?: { defaultDeployTarget?: DeployTarget | null; defaultServerId?: string | null } | null,
+      def?: {
+        defaultDeployTarget?: DefaultDeployTarget | null;
+        defaultServerId?: string | null;
+      } | null,
     ) => {
       if (cancelled || appliedRef.current) return;
       appliedRef.current = true;
@@ -554,10 +624,6 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
         updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         return;
       }
-      if (target === "local") {
-        updateConfig({ deployTarget: "local", serverId: undefined });
-        return;
-      }
       // 2. Soft last-pick, validated against the current target list.
       const last = lastPickStore.read();
       if (last?.target === "server" && last.serverId && targets.servers.some((s) => s.id === last.serverId)) {
@@ -568,13 +634,15 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
         updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         return;
       }
-      if (last?.target === "local") {
-        updateConfig({ deployTarget: "local", serverId: undefined });
-        return;
-      }
       // 3. A server exists → deploy to it (prefer the local host); else cloud.
+      // TODO: temporary desktop gate — while running on this machine is disabled,
+      // prefer a REMOTE server so a desktop user isn't silently defaulted onto a
+      // destination the Deploy button will refuse. Falls back to the old pick when
+      // the local host is the only server (the gate then explains it on click).
       if (targets.servers.length > 0) {
-        const preferred = targets.servers.find((s) => s.isLocal) ?? targets.servers[0];
+        const preferred = localDeployBlocked
+          ? (targets.servers.find((s) => !s.isLocal) ?? targets.servers[0])
+          : (targets.servers.find((s) => s.isLocal) ?? targets.servers[0]);
         updateConfig({ deployTarget: "server", serverId: preferred.id });
         return;
       }
@@ -591,6 +659,10 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
 // ─── Main step ───────────────────────────────────────────────────────────────
 
 interface DeployTargetStepProps {
+  /** Existing project this deploy edits, when there is one. Enables the rollback
+   *  + backup controls in the Advanced panel (there's nothing to persist to for a
+   *  project that hasn't been created yet). */
+  projectId?: string | null;
   targets: ResolvedTargets;
   onContinue: () => void;
   /**
@@ -603,27 +675,31 @@ interface DeployTargetStepProps {
 }
 
 // ─── Cloud resource tiers ────────────────────────────────────────────────────
-// Placeholder runtime shapes for the Openship Cloud power picker. The
-// numbers here are the UX surface only — the backend owns the
-// authoritative cpu/mem/disk values per tier and translates them at
-// provision time. Billing is credits-based (no $/mo shown here).
+// DERIVED from the one tier table in @repo/core, which the backend provisioner
+// (cloud-resources.ts) and the self-hosted Machine Power card also read. These
+// used to be hand-written display strings next to a comment admitting "the
+// backend owns the authoritative values" — i.e. a copy that could silently drift
+// from what a tier actually provisions. Label + bestFor are still looked up from
+// the dictionary by `id` inside CloudPowerPicker.
 type CloudResourceTier = NonNullable<DeploymentConfig["cloudResourceTier"]>;
 
-// Specs are technical values (kept verbatim); label + bestFor are looked up
-// from the dictionary by `id` inside CloudPowerPicker.
 const CLOUD_RESOURCE_TIERS: Array<{
     id: Exclude<CloudResourceTier, "custom">;
     cpu: string;
     ram: string;
     disk: string;
-}> = [
-    { id: "micro", cpu: "0.25 vCPU", ram: "256 MB", disk: "4 GB" },
-    { id: "low", cpu: "0.5 vCPU", ram: "512 MB", disk: "8 GB" },
-    { id: "medium", cpu: "1 vCPU", ram: "1 GB", disk: "16 GB" },
-    { id: "high", cpu: "2 vCPU", ram: "2 GB", disk: "32 GB" },
-];
+}> = RESOURCE_TIER_ORDER.map((id) => {
+    const spec = RESOURCE_TIER_SPECS[id];
+    return {
+        id: id as Exclude<CloudResourceTier, "custom">,
+        cpu: formatCpuCores(spec.cpuCores),
+        ram: formatMemoryMb(spec.memoryMb),
+        disk: formatMemoryMb(spec.diskMb),
+    };
+});
 
-const CUSTOM_DEFAULTS = { cpuCores: 1, memoryMb: 1024, diskMb: 16384 };
+/** Custom starts from the middle preset rather than a second literal. */
+const CUSTOM_DEFAULTS = { ...RESOURCE_TIER_SPECS.medium };
 
 // ─── Custom-values modal ─────────────────────────────────────────────────────
 // Rendered via showModal() so the inputs get proper breathing room
@@ -910,7 +986,7 @@ const CloudPowerPicker: React.FC = () => {
     );
 };
 
-const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue, autoSkipAllowed = true }) => {
+const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue, autoSkipAllowed = true, projectId }) => {
   const { config, updateConfig } = useDeployment();
   const { requireCloud } = useCloud();
   const { selfHosted, deployMode } = usePlatform();
@@ -918,7 +994,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // operator's machine-local `gh`, which only exists on a desktop host.
   const isDesktop = deployMode === "desktop";
   const { showToast } = useToast();
-  const { showModal, hideModal } = useModal();
   const { t } = useI18n();
   const ts = t.deploy.targetStep;
   const { ready, servers, hasCloudConnected, hasCloudOption, hasChoice, refreshServers } = targets;
@@ -954,21 +1029,11 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // Add server inline via modal. On create, refresh the server list and
   // auto-select the new one so the user lands on it immediately - no extra
   // clicks, no tab juggling, deploy config stays intact.
+  const addServerModal = useAddServerModal();
   const openAddServer = () => {
-    const id = showModal({
-      width: "720px",
-      maxWidth: "92vw",
-      showCloseButton: false,
-      customContent: (
-        <AddServerModal
-          onCancel={() => hideModal(id)}
-          onCreated={(server) => {
-            hideModal(id);
-            refreshServers();
-            updateConfig({ deployTarget: "server", serverId: server.id });
-          }}
-        />
-      ),
+    addServerModal((server) => {
+      refreshServers();
+      updateConfig({ deployTarget: "server", serverId: server.id });
     });
   };
   const isServiceDeployment = usesServiceDeployment(config);
@@ -999,13 +1064,14 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   useEffect(() => {
     if (config.projectId || runtimeDefaultedRef.current) return;
     if (config.deployTarget !== "server") return;
-    if (!config.options.hasServer || config.projectType === "docker" || isServiceDeployment) return;
+    if (workloadOf(config.options) === "static" || config.projectType === "docker" || isServiceDeployment) return;
     runtimeDefaultedRef.current = true;
     if (config.runtimeMode !== "docker") updateConfig({ runtimeMode: "docker" });
   }, [
     config.projectId,
     config.deployTarget,
     config.options.hasServer,
+    config.options.workloadType,
     config.projectType,
     isServiceDeployment,
     config.runtimeMode,
@@ -1049,9 +1115,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         } else if (target === "cloud") {
           updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
           applied = true;
-        } else if (target === "local") {
-          updateConfig({ deployTarget: "local", serverId: undefined });
-          applied = true;
         }
 
         // No explicit settings-API default? Try the soft "last pick"
@@ -1067,9 +1130,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
               }
             } else if (last.target === "cloud" && hasCloudOption) {
               updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
-              applied = true;
-            } else if (last.target === "local") {
-              updateConfig({ deployTarget: "local", serverId: undefined });
               applied = true;
             }
           }
@@ -1331,14 +1391,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     if (config.cloneStrategy == null) updateConfig({ cloneStrategy: "server" });
   }, [config.projectId, showCloneStrategy, config.cloneStrategy, updateConfig]);
 
-  // Advanced-panel summary line (build location). Clone location has its own
-  // right-panel picker, so it isn't summarized here.
-  const advancedSummary = showBuildStrategy
-    ? interpolate(ts.build.advancedSummary, {
-        action: config.options.hasBuild ? ts.build.actionBuild : ts.build.actionPrepare,
-        location: visibleBuildOptions.find((o) => o.value === config.buildStrategy)?.label ?? "—",
-      })
-    : ts.build.options;
 
   const hasAnyDeployTarget = deployTargetOptions.length > 0;
   const canContinue = ready && (
@@ -1380,6 +1432,37 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     ? (selectedServer.name || selectedServer.sshHost)
     : null;
 
+  // Publish that resolved name into the config, so the screens AFTER this step can
+  // name the machine too. Every place that picks a server (auto-seed, last-used,
+  // preferred, an explicit pick here, the sidebar's) sets only `serverId` — the id is
+  // the truth and the name is derived from it — so the progress screens had nothing
+  // but the bare word "Server" to show. Derived HERE, the one place holding both the
+  // id and the servers list, rather than appended to each of those call sites: that
+  // list only grows, and the next one added would forget.
+  useEffect(() => {
+    if (config.deployTarget !== "server") {
+      // Not a server deploy: a name left over from a previous pick would outlive the
+      // target it described.
+      if (config.serverName !== undefined) updateConfig({ serverName: undefined });
+      return;
+    }
+    // No resolution yet (list still loading, or an id we don't have a row for) is not
+    // evidence of "no name" — clearing here would wipe the one a saved project
+    // restored before this step's fetch landed.
+    if (!summaryServerName) return;
+    if (summaryServerName !== config.serverName) updateConfig({ serverName: summaryServerName });
+  }, [config.deployTarget, config.serverName, summaryServerName, updateConfig]);
+
+  // What this step actually PICKED, in the vocabulary both memories below use: a
+  // binding, or nothing. `config.deployTarget` can also be "local", which is not a
+  // pick — it's what an unbound project derives — so neither the cross-device
+  // default nor the soft last-pick may store it. Null therefore means "nothing to
+  // remember": the default is cleared and the last-pick is left alone.
+  const pickedTarget: DefaultDeployTarget | null =
+    config.deployTarget === "server" || config.deployTarget === "cloud"
+      ? config.deployTarget
+      : null;
+
   // Persist the current pick as the user's default - fire-and-forget so it
   // never blocks the deploy flow. Failures are surfaced as a toast; the
   // deploy itself continues either way.
@@ -1388,8 +1471,8 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     setSavingDefault(true);
     try {
       await settingsApi.updateDeployDefaults({
-        defaultDeployTarget: config.deployTarget,
-        defaultServerId: config.deployTarget === "server" ? (config.serverId ?? null) : null,
+        defaultDeployTarget: pickedTarget,
+        defaultServerId: pickedTarget === "server" ? (config.serverId ?? null) : null,
       });
       showToast(ts.savedToast, "success", ts.savedToastTitle);
     } catch {
@@ -1416,10 +1499,12 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     // Persist the soft "remember this target for next time" memory now — on
     // commit, not on every tentative click. This is what lets a returning user
     // skip straight to config next deploy.
-    lastPickStore.write({
-      target: config.deployTarget,
-      serverId: config.deployTarget === "server" ? (config.serverId ?? null) : null,
-    });
+    if (pickedTarget) {
+      lastPickStore.write({
+        target: pickedTarget,
+        serverId: pickedTarget === "server" ? (config.serverId ?? null) : null,
+      });
+    }
 
     void persistDefault();
     onContinue();
@@ -1442,10 +1527,10 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     showFullPicker && config.deployTarget === "server" && !!config.serverId;
   // Runtime-isolation (Sandbox/Direct) applies only to a self-hosted server APP
   // that runs a process: docker/compose always run sandboxed, and a static app
-  // (files served by the edge, hasServer=false) has nothing to isolate. Shown in
-  // the Advanced panel (right column).
+  // (files served by the edge) has nothing to isolate. A worker runs a process,
+  // so it isolates like a web app. Shown in the Advanced panel (right column).
   const showRuntimeIsolation =
-    config.options.hasServer &&
+    workloadOf(config.options) !== "static" &&
     config.projectType !== "docker" &&
     !isServiceDeployment;
   const showRightPanel = showCloudPicker || showServerAdvanced;
@@ -1457,6 +1542,21 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // runtime detail expands into the space only when asked for. Cloud keeps its own
   // right-hand power panel; single-column onboarding is untouched.
   const serverLayout = showServerAdvanced;
+
+  // Advanced-panel summary line. Says WHAT'S INSIDE, not just the build location:
+  // a collapsed panel labelled only "Build on Remote" hides the rollback window
+  // and the clone location, so there's no way to know they're in there.
+  const advancedSections = [
+    showRuntimeIsolation ? t.deploy.runtime.heading : null,
+    showBuildStrategy
+      ? interpolate(ts.build.advancedSummary, {
+          action: config.options.hasBuild ? ts.build.actionBuild : ts.build.actionPrepare,
+          location: visibleBuildOptions.find((o) => o.value === config.buildStrategy)?.label ?? "—",
+        })
+      : null,
+    ts.rollbackTitle,
+    showCloneStrategy ? ts.clone.heading : null,
+  ].filter(Boolean) as string[];
 
   // Action controls (extracted so they can live in the left column on a single-
   // column layout, or move into the right column — above the Advanced/Cloud
@@ -1578,7 +1678,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
           buildStrategy={config.buildStrategy}
           serverName={summaryServerName}
           showBuildStrategy={showBuildStrategy}
-          hasServer={config.options.hasServer}
+          hasServer={workloadOf(config.options) !== "static"}
           runtimeMode={config.runtimeMode}
           isServices={config.projectType === "services" || config.serviceDeploymentMode === "services"}
           onEdit={() => setExpanded(true)}
@@ -1692,7 +1792,20 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground">{ts.build.advanced}</p>
-                    <p className="truncate text-xs text-muted-foreground">{advancedSummary}</p>
+                    {/* Each section as its own wrapping chip, NOT one joined line.
+                        Joined + `truncate` in this narrow column cut the list off
+                        mid-word ("Rollback & backups · Cl…"), so the panel hid the
+                        very sections the summary exists to advertise. */}
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {advancedSections.map((section) => (
+                        <span
+                          key={section}
+                          className="rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground"
+                        >
+                          {section}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 {advancedOpen ? (
@@ -1749,6 +1862,18 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                       </div>
                     </div>
                   )}
+
+                  {/* Rollback window + backup summary for the chosen target. The
+                      same retention controls the project's Git settings show. */}
+                  <RollbackBackupPanel
+                    projectId={projectId}
+                    enabled={advancedOpen}
+                    // A static project (nothing runs as a process) retains built
+                    // FILES, not images — the same distinction the "Static ·
+                    // edge-served" chip on the summary makes. A worker builds and
+                    // retains an image like any running workload.
+                    artifactKind={workloadOf(config.options) === "static" && !isServiceDeployment ? "files" : "image"}
+                  />
 
                   {/* Clone location — docker/compose server deploys (sandboxed). */}
                   {showCloneStrategy && (

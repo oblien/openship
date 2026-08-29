@@ -19,8 +19,10 @@
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "embed:lua": "bun scripts/embed-lua.ts",
     "embed:catalog": "bun scripts/embed-catalog.ts",
+    "edge:conf": "bun scripts/generate-edge-conf.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "test:bun": "bun test --preload ./test/bun-vitest-shim.ts src/runtime/docker-ssh-agent.test.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
@@ -31,7 +33,8 @@
     "dockerode": "^4.0.9",
     "ignore": "^7.0.5",
     "oblien": "^2.2.45",
-    "ssh2": "^1.17.0"
+    "ssh2": "^1.17.0",
+    "tar-fs": "^2.1.4"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",

@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "stirling-pdf",
   "name": "Stirling PDF",
-  "description": "Split, merge, convert, OCR and edit PDFs locally. Default login is admin / stirling — change it.",
+  "description": "Split, merge, convert, OCR and edit PDFs locally. Sign in with the admin account below.",
   "kind": "template",
   "logo": "stirling-pdf",
   "category": "other",
@@ -16,16 +16,67 @@
     {
       "name": "stirling-pdf",
       "image": "stirlingtools/stirling-pdf:latest",
-      "ports": [
-        "8080:8080"
-      ],
       "exposedPort": 8080,
       "exposed": true,
       "volumes": [
         "stirling_config:/configs",
         "stirling_tessdata:/usr/share/tessdata"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "environment": {
+        "SECURITY_ENABLELOGIN": "true",
+        "SECURITY_INITIALLOGIN_USERNAME": "admin"
+      },
+      "secretEnv": [
+        "SECURITY_INITIALLOGIN_PASSWORD"
+      ],
+      "ports": [
+        "8209:8080"
+      ]
     }
-  ]
+  ],
+  "configFields": [
+    {
+      "key": "SECURITY_INITIALLOGIN_PASSWORD",
+      "service": "stirling-pdf",
+      "label": "Admin password",
+      "help": "Auto-generated. Replaces Stirling's public default password.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "connection": {
+    "title": "Sign in to Stirling PDF",
+    "description": "Login is enabled and the admin account below is seeded on first boot, so the well-known default password is never used.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Stirling PDF",
+        "source": "publicUrl:stirling-pdf",
+        "kind": "url",
+        "recommended": true,
+        "help": "Sign in with the username and password below."
+      },
+      {
+        "id": "username",
+        "label": "Admin username",
+        "source": "env:stirling-pdf:SECURITY_INITIALLOGIN_USERNAME",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:stirling-pdf:SECURITY_INITIALLOGIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "Seeding these two values is what prevents Stirling from creating its documented admin/stirling account. The password above works as-is."
+    }
+  },
+  "verified": true
 }

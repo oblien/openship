@@ -1,8 +1,8 @@
 {
-  "available": false,
+  "available": true,
   "id": "uptime-kuma",
   "name": "Uptime Kuma",
-  "description": "Self-hosted uptime monitoring with status pages and alerts.",
+  "description": "Self-hosted uptime monitoring with status pages and alerts. Create your admin account on the first visit.",
   "kind": "template",
   "logo": "uptime-kuma",
   "category": "other",
@@ -16,15 +16,36 @@
     {
       "name": "uptime-kuma",
       "image": "louislam/uptime-kuma:1",
-      "ports": [
-        "3001:3001"
-      ],
       "exposedPort": 3001,
       "exposed": true,
       "volumes": [
         "uptime_kuma_data:/app/data"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "3008:3001"
+      ]
     }
-  ]
+  ],
+  "connection": {
+    "title": "Set up Uptime Kuma",
+    "description": "Uptime Kuma ships with no default login — the first page you see creates the admin account.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Uptime Kuma",
+        "source": "publicUrl:uptime-kuma",
+        "kind": "url",
+        "recommended": true,
+        "help": "First visit prompts you to create the administrator account."
+      }
+    ],
+    "firstLogin": {
+      "note": "Do this immediately after deploy: until you create the admin, anyone who opens this URL can claim the instance. Monitors and history live in the uptime_kuma_data volume."
+    }
+  },
+  "verified": true
 }

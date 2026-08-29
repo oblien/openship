@@ -1,11 +1,11 @@
 ---
 title: Billing
-description: The Billing area (Openship Cloud only) is coming soon. Self-hosted Openship has no billing.
+description: The Billing area (Openship Cloud only) shows your plan, usage, and invoices. Self-hosted Openship has no billing.
 ---
 
-<Callout type="info" title="Coming soon">
-The Billing area isn't available yet. Openship Cloud pricing and billing are
-still being finalized, and pricing will be published before Cloud becomes paid.
+<Callout title="Openship Cloud only">
+The Billing area appears only on **Openship Cloud**. A self-hosted install has
+nothing to bill, so the screen doesn't exist there.
 </Callout>
 
 ## Self-hosted has no billing
@@ -15,7 +15,23 @@ the Billing area simply doesn't appear. You only pay for your own infrastructure
 
 ## Openship Cloud
 
-Once Openship Cloud launches, the Billing area will let you watch your usage,
-manage your plan, and view invoices. Until then there's nothing to configure.
+On Cloud, **Billing** is where you watch usage, change plan, and pull invoices.
+Plans, prices, and per-plan limits are published on the
+[pricing page](/pricing); the header strip on this screen shows how much of your
+plan's credits, bandwidth, build minutes, and capacity you've used in the current
+period.
 
-Want a heads-up when it's ready? [Get in touch](/contact).
+| Tab | What it does |
+| --- | --- |
+| **Overview** | Current plan, billing period, and credit balance. |
+| **Usage** | Metered usage over the period, charted. |
+| **Plans** | Upgrade or downgrade — starts a Stripe Checkout session. |
+| **Top-ups** | One-shot credit packs (coming to the dashboard). |
+| **Payment Method** | Opens the Stripe portal to manage cards. |
+| **Invoices** | Opens the Stripe portal to download invoices. |
+
+Cancelling from **Plans** flips the subscription to end at the close of the
+period you've already paid for; the organisation then drops back to the free
+tier. Nothing is deleted.
+
+For the endpoints behind this screen, see the [billing API](/docs/api/billing).

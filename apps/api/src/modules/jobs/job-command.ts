@@ -28,11 +28,18 @@ import { sshManager } from "../../lib/ssh-manager";
 import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
 import { jobRunBus } from "./job-run.sse";
+import { boundedStorableText } from "../deployments/build-log-sanitize";
 import { resolveServerIds, type CommandConfig, type JobNotifyConfig, type JobRunState } from "./job.types";
 
 /** Cap stored output so a chatty command can't bloat the row. */
 const MAX_OUTPUT = 200_000;
+const MAX_ERROR = 4_096;
 const VALID_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Stand-in when the captured text is the reason the row won't write. */
+const OUTPUT_UNSTORABLE =
+  "[output omitted — the captured command output could not be stored; see server logs]";
+const ERROR_UNSTORABLE = "Command failed (details could not be stored; see server logs)";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -183,17 +190,69 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
     if (attempt < maxAttempts && backoffMs) await sleep(backoffMs);
   }
 
-  await repos.jobRun.finish(run.id, {
+  await finishRunRow(run.id, row.key, {
     status: finalStatus,
     durationMs: Date.now() - startedMs,
     summary: { exitCode, attempts: attemptsUsed },
-    output: chunks.join("\n").slice(0, MAX_OUTPUT),
-    error: finalStatus === "failed" ? lastError ?? "Command failed" : undefined,
+    output: boundedStorableText(chunks.join("\n"), MAX_OUTPUT),
+    error:
+      finalStatus === "failed"
+        ? boundedStorableText(lastError ?? "Command failed", MAX_ERROR)
+        : undefined,
   });
-  jobRunBus.publish(run.id, { type: "complete", status: finalStatus, error: lastError });
+  try {
+    jobRunBus.publish(run.id, { type: "complete", status: finalStatus, error: lastError });
+  } catch (err) {
+    console.error(`[job] ${row.key} run ${run.id}: terminal SSE publish failed: ${safeErrorMessage(err)}`);
+  }
 
   await emitJobRun(row, run.id, finalStatus);
   if (finalStatus === "success") await fireDependents(row.key);
+}
+
+type FinishData = {
+  status: "success" | "failed";
+  durationMs: number;
+  summary: Record<string, unknown>;
+  output: string;
+  error?: string;
+};
+
+/**
+ * Close the run row without ever letting its OUTPUT strand it at "running".
+ *
+ * `output`/`error` are raw remote command bytes and `job_run.output` is a text
+ * column: a NUL makes the UPDATE throw, and that throw used to precede the
+ * terminal `complete` SSE event, the notification, and the dependency fan-out —
+ * so the row sat "running" forever, the stream never closed, and dependents
+ * never fired. The outcome is therefore retried with progressively less payload
+ * until the row is terminal; only a dead database can defeat all three.
+ */
+async function finishRunRow(runId: string, jobKey: string, data: FinishData): Promise<void> {
+  const attempts: FinishData[] = [
+    data,
+    { ...data, output: OUTPUT_UNSTORABLE },
+    {
+      status: data.status,
+      durationMs: data.durationMs,
+      summary: data.summary,
+      output: OUTPUT_UNSTORABLE,
+      error: data.status === "failed" ? ERROR_UNSTORABLE : undefined,
+    },
+  ];
+  for (const attempt of attempts) {
+    try {
+      await repos.jobRun.finish(runId, attempt);
+      return;
+    } catch (err) {
+      console.error(
+        `[job] ${jobKey} run ${runId}: finish write rejected: ${safeErrorMessage(err)}`,
+      );
+    }
+  }
+  console.error(
+    `[job] ${jobKey} run ${runId}: could not record the terminal status — the row is left "running" for the boot sweep to reconcile`,
+  );
 }
 
 /** Scheduled tick — awaited (inside a runner timer). Reads the latest row so

@@ -13,9 +13,8 @@
  * backup's data loads.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  X,
   Loader2,
   AlertTriangle,
   Check,
@@ -30,6 +29,8 @@ import {
 } from "@/lib/api";
 import { useRestoreRunStream } from "@/hooks/useRestoreRunStream";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { useHostedModal } from "./_shared/hosted-modal";
 
 interface MailServerOption {
   id: string;
@@ -39,7 +40,28 @@ interface MailServerOption {
   completed: boolean;
 }
 
-export function MailRestoreModal({
+export function MailRestoreModal(props: {
+  run: BackupRun;
+  mode: "in_place" | "to_fork";
+  sourceServerId: string;
+  domain: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  // `closable: false` — the run is destructive on the target and its only live
+  // progress view is inside this modal, so a stray backdrop click must not take
+  // it away. The footer's own Cancel/Close is the way out.
+  useHostedModal({
+    open: true,
+    onClose: props.onClose,
+    maxWidth: "520px",
+    closable: false,
+    content: () => <MailRestoreContent {...props} />,
+  });
+  return null;
+}
+
+function MailRestoreContent({
   run,
   mode,
   sourceServerId,
@@ -122,70 +144,59 @@ export function MailRestoreModal({
   const title = mode === "to_fork" ? t.emailsAdmin.restore.titleMigrate : t.emailsAdmin.restore.titleRestore;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-border/60 bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b border-border/50 px-5 py-4">
-          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+    <div className="p-6 space-y-5">
+      <h3 className="text-xl font-bold text-foreground">{title}</h3>
+
+      <div className="space-y-4">
+        {phase === "review" ? (
+          <ReviewStep
+            mode={mode}
+            domain={domain}
+            targets={targets}
+            targetId={targetId}
+            setTargetId={setTargetId}
+            confirmText={confirmText}
+            setConfirmText={setConfirmText}
+            backupDate={run.startedAt}
+          />
+        ) : (
+          <ProgressStep status={status} domain={domain} />
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-danger-border bg-danger-bg px-3.5 py-2.5 text-sm text-danger">
+          {error}
+        </div>
+      )}
+
+      <div className="flex items-center justify-end gap-3 pt-1">
+        {done || failed ? (
           <button
             onClick={onClose}
-            disabled={busy}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+            className="px-4 py-2.5 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            <X className="size-4" />
+            {t.emailsAdmin.restore.close}
           </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {phase === "review" ? (
-            <ReviewStep
-              mode={mode}
-              domain={domain}
-              targets={targets}
-              targetId={targetId}
-              setTargetId={setTargetId}
-              confirmText={confirmText}
-              setConfirmText={setConfirmText}
-              backupDate={run.startedAt}
-            />
-          ) : (
-            <ProgressStep status={status} domain={domain} />
-          )}
-
-          {error && (
-            <div className="rounded-xl border border-danger-border bg-danger-bg px-3.5 py-2.5 text-sm text-danger">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-3 border-t border-border/50 px-5 py-4">
-          {done || failed ? (
+        ) : (
+          <>
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={busy}
+              className="px-4 py-2.5 text-sm font-semibold rounded-xl bg-muted text-foreground hover:bg-muted/80 border border-border transition-colors disabled:opacity-50"
             >
-              {t.emailsAdmin.restore.close}
+              {t.emailsAdmin.restore.cancel}
             </button>
-          ) : (
-            <>
-              <button
-                onClick={onClose}
-                disabled={busy}
-                className="px-4 py-2 text-sm font-semibold rounded-xl bg-muted text-foreground hover:bg-muted/80 border border-border disabled:opacity-50"
-              >
-                {t.emailsAdmin.restore.cancel}
-              </button>
-              <button
-                onClick={start}
-                disabled={!canStart || phase === "running"}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl bg-danger-solid text-white hover:bg-danger-solid/90 disabled:opacity-50"
-              >
-                {phase === "running" && <Loader2 className="size-3.5 animate-spin" />}
-                {mode === "to_fork" ? t.emailsAdmin.restore.migrate : t.emailsAdmin.restore.restore}
-              </button>
-            </>
-          )}
-        </div>
+            <button
+              onClick={start}
+              disabled={!canStart || phase === "running"}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-xl bg-danger-solid text-white hover:bg-danger-solid/90 transition-colors disabled:opacity-50"
+            >
+              {phase === "running" && <Loader2 className="size-3.5 animate-spin" />}
+              {mode === "to_fork" ? t.emailsAdmin.restore.migrate : t.emailsAdmin.restore.restore}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -223,27 +234,25 @@ function ReviewStep({
       </p>
 
       {mode === "to_fork" && (
-        <label className="block">
+        <div>
           <span className="block text-sm font-medium text-foreground mb-1.5">{r.targetServer}</span>
           {targets.length === 0 ? (
             <p className="text-xs text-muted-foreground rounded-xl border border-border/60 bg-muted/20 px-3.5 py-2.5">
               {r.noTargetsBefore}<span className="font-mono">{domain}</span>{r.noTargetsAfter}
             </p>
           ) : (
-            <select
+            <CustomSelect
               value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-            >
-              <option value="">{r.selectServer}</option>
-              {targets.map((srv) => (
-                <option key={srv.id} value={srv.id}>
-                  {srv.domain || srv.name} · {srv.host}
-                </option>
-              ))}
-            </select>
+              placeholder={r.selectServer}
+              options={targets.map((srv) => ({
+                value: srv.id,
+                label: srv.domain || srv.name,
+                description: srv.host,
+              }))}
+              onChange={setTargetId}
+            />
           )}
-        </label>
+        </div>
       )}
 
       <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3.5 py-2.5">

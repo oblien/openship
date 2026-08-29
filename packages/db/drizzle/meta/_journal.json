@@ -517,49 +517,357 @@
       "idx": 73,
       "version": "7",
       "when": 1785358401651,
-      "tag": "0073_add_swarm_persistence",
+      "tag": "0073_project_volumes_object_storage",
       "breakpoints": true
     },
     {
       "idx": 74,
       "version": "7",
-      "when": 1785358402651,
-      "tag": "0074_add_swarm_source_version",
+      "when": 1785450107324,
+      "tag": "0074_project_compose_path",
       "breakpoints": true
     },
     {
       "idx": 75,
       "version": "7",
-      "when": 1785358403651,
-      "tag": "0075_add_swarm_cluster_binding_unique",
+      "when": 1785536507324,
+      "tag": "0075_service_command_argv",
       "breakpoints": true
     },
     {
       "idx": 76,
       "version": "7",
-      "when": 1785358404651,
-      "tag": "0076_add_swarm_source_status",
+      "when": 1785622907324,
+      "tag": "0076_rollback_retention",
       "breakpoints": true
     },
     {
       "idx": 77,
       "version": "7",
-      "when": 1785358405651,
-      "tag": "0077_add_swarm_managed_input",
+      "when": 1785709307324,
+      "tag": "0077_domain_redirect",
       "breakpoints": true
     },
     {
       "idx": 78,
       "version": "7",
-      "when": 1785358406651,
-      "tag": "0078_add_swarm_storage_acknowledgements",
+      "when": 1785795707324,
+      "tag": "0078_grant_source_scope",
       "breakpoints": true
     },
     {
       "idx": 79,
       "version": "7",
-      "when": 1785358407651,
-      "tag": "0079_add_swarm_volume_replacement_acknowledgements",
+      "when": 1785882107324,
+      "tag": "0079_project_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1785968507324,
+      "tag": "0080_deployment_error_classification",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1786054907324,
+      "tag": "0081_project_readiness_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1786141307324,
+      "tag": "0082_edge_target_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1786227707324,
+      "tag": "0083_service_incident",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1786314107324,
+      "tag": "0084_analytics_daily_rollup",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1786400507324,
+      "tag": "0085_resource_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1786486907324,
+      "tag": "0086_remote_infra_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1786573307324,
+      "tag": "0087_server_container_version_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1786659707324,
+      "tag": "0088_audit_source_and_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1786746107324,
+      "tag": "0089_auto_scan_infra",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1786746107325,
+      "tag": "0090_project_collect_paths",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1786832507325,
+      "tag": "0091_project_server_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1786918907325,
+      "tag": "0092_project_internal_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1787005307325,
+      "tag": "0093_service_incident_org_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1787091707325,
+      "tag": "0094_backup_restore_meta",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1787178107325,
+      "tag": "0095_backup_restore_cancel",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1787264507325,
+      "tag": "0096_backup_policy_retention_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1787350907325,
+      "tag": "0097_update_status_upstream_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1787437307325,
+      "tag": "0098_instance_product_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1787523707325,
+      "tag": "0099_mail_webmail_project",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1787610107325,
+      "tag": "0100_server_ssh_private_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1787696507325,
+      "tag": "0101_mail_resume_step",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1787782907325,
+      "tag": "0102_project_workload_axes",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1787869307325,
+      "tag": "0103_dns_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1787955707325,
+      "tag": "0104_instance_host_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1788042107325,
+      "tag": "0105_mail_inbound_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1788128507325,
+      "tag": "0106_mcp_call_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1788214907325,
+      "tag": "0107_build_minute_metering_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1788301307325,
+      "tag": "0108_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1788387707325,
+      "tag": "0109_service_build_args",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1788474107325,
+      "tag": "0110_service_deployment_host_ports",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1788560507325,
+      "tag": "0111_host_port_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1788646907325,
+      "tag": "0112_backup_run_execution_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1788733307325,
+      "tag": "0113_docker_migration_execution_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1788819707325,
+      "tag": "0114_build_session_execution_lease_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1788906107325,
+      "tag": "0115_orphan_target_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1788992507325,
+      "tag": "0116_domain_ssl_challenge",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1789078907325,
+      "tag": "0117_add_swarm_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1789165307325,
+      "tag": "0118_add_swarm_source_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1789251707325,
+      "tag": "0119_add_swarm_cluster_binding_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1789338107325,
+      "tag": "0120_add_swarm_source_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1789424507325,
+      "tag": "0121_add_swarm_managed_input",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1789510907325,
+      "tag": "0122_add_swarm_storage_acknowledgements",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1789597307325,
+      "tag": "0123_add_swarm_volume_replacement_acknowledgements",
       "breakpoints": true
     }
   ]

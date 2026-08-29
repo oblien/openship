@@ -34,3 +34,44 @@ export function withLoopbackPublish(
   const kept = portSpecs.filter((spec) => specContainerPort(spec) !== containerPort);
   return [...kept, `127.0.0.1:${hostPort}:${containerPort}`];
 }
+
+/**
+ * Republish EVERY routed container port on its own pinned loopback host port.
+ *
+ * A service can own several routes (minio's console + `s3` API), and each needs a
+ * DISTINCT host port or the edge cannot tell them apart.
+ */
+export function withLoopbackPublishAll(
+  portSpecs: readonly string[],
+  /** routed container port → the loopback host port pinned for it. */
+  pinned: ReadonlyMap<number, number>,
+): string[] {
+  let out = [...portSpecs];
+  for (const [containerPort, hostPort] of pinned) {
+    out = withLoopbackPublish(out, containerPort, hostPort);
+  }
+  return out;
+}
+
+/**
+ * The host port a route's upstream should dial for `port`.
+ *
+ * The pinned map is authoritative. `resultHostPort` — a single scalar read back
+ * off the daemon — is only meaningful for the PRIMARY routed port: applying it to
+ * a secondary port is what made every extra subdomain proxy to the first route's
+ * port (minio's `s3` host served the console). Undefined means "no host port",
+ * which sends the caller to container-IP addressing instead of a wrong guess.
+ */
+export function upstreamHostPortFor(args: {
+  port: number;
+  pinned: ReadonlyMap<number, number>;
+  primaryPort?: number;
+  resultHostPort?: number | null;
+  sameService: boolean;
+}): number | undefined {
+  const { port, pinned, primaryPort, resultHostPort, sameService } = args;
+  return (
+    pinned.get(port) ??
+    (sameService && port === primaryPort && resultHostPort ? resultHostPort : undefined)
+  );
+}

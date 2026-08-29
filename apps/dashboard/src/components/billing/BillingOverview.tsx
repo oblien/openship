@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Loader2, Sparkles } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
-import { PLANS } from "@repo/core";
+import { PLAN_IDS, PLANS, type PlanTierId } from "@repo/core";
 import { api } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
@@ -95,6 +95,10 @@ function statusPillClass(status: string): string {
   const s = status.toLowerCase();
   if (s === "active") return "bg-success-bg text-success border-success-border";
   if (s === "past_due" || s === "unpaid") return "bg-danger-bg text-danger border-danger-border";
+  // `credit_exhausted` means Oblien has STOPPED this org's workloads. It fell through
+  // to the neutral pill below, so the state where nothing is running looked no more
+  // urgent than a tidy cancellation.
+  if (s === "credit_exhausted") return "bg-danger-bg text-danger border-danger-border";
   if (s === "canceled" || s === "cancelled") return "bg-muted text-muted-foreground border-border";
   return "bg-muted text-muted-foreground border-border";
 }
@@ -316,14 +320,14 @@ function RecentActivityCard() {
             <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <Area
                 type="monotone"
                 dataKey="credits"
-                stroke="hsl(var(--primary))"
+                stroke="var(--primary)"
                 strokeWidth={1.75}
                 fill="url(#sparkFill)"
                 isAnimationActive={false}
@@ -482,13 +486,31 @@ function BuyCreditsCard({ available }: { available: boolean }) {
  * upgrade / manage entry point. Credits balance is the secondary card below —
  * general credits exist but aren't the first thing the user sees.
  */
+/**
+ * The next tier up the published ladder, or undefined at the top.
+ *
+ * Read from `PLAN_IDS` so inserting a tier into the catalog cannot skip it, and
+ * the negotiated top tier is excluded — its card is a sales conversation, not an
+ * upgrade button. Mirrors the derivation the sidebar previously owned; it lives
+ * here now because this is the one place that offers an upgrade.
+ */
+function nextPaidPlan(tier: PlanTierId): PlanTierId | undefined {
+  const at = PLAN_IDS.indexOf(tier);
+  const next = at < 0 ? undefined : PLAN_IDS[at + 1];
+  return next && !PLANS[next].contactSales ? next : undefined;
+}
+
 function PlanCard({ state }: { state: BillingState }) {
   const { t } = useI18n();
   const plan = PLANS[state.tier];
   const planName = plan?.name ?? state.tier;
   const isFree = state.tier === "free";
   const allowance = state.monthlyCreditLimit;
-  const features = plan?.features ?? [];
+  // The tier one step up the published ladder — the same derivation the sidebar
+  // used to do. Hardcoding "Pro" here was what put two DIFFERENT upgrade offers on
+  // one screen, and it would have named the wrong tier the moment a plan was
+  // inserted into the ladder.
+  const nextTier = nextPaidPlan(state.tier);
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-6">
@@ -509,7 +531,7 @@ function PlanCard({ state }: { state: BillingState }) {
           )}
         </div>
 
-        {isFree ? (
+        {isFree && nextTier ? (
           <Link
             href="/billing/plans"
             className="relative inline-flex w-fit items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium text-primary-foreground"
@@ -518,7 +540,7 @@ function PlanCard({ state }: { state: BillingState }) {
             <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary to-primary/90" />
             <span className="relative flex items-center gap-1.5">
               <Sparkles className="size-3.5" />
-              {t.billing.overview.upgradeToPro}
+              {interpolate(t.billing.sidebar.upgradeTo, { name: PLANS[nextTier].name })}
             </span>
           </Link>
         ) : (
@@ -532,21 +554,15 @@ function PlanCard({ state }: { state: BillingState }) {
         )}
       </div>
 
-      {(allowance != null || features.length > 0) && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {allowance != null && (
-            <span className="inline-flex items-center rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-              {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(allowance) })}
-            </span>
-          )}
-          {features.map((f) => (
-            <span
-              key={f}
-              className="inline-flex items-center rounded-lg bg-muted px-2.5 py-1 text-xs text-muted-foreground"
-            >
-              {f}
-            </span>
-          ))}
+      {/* The tier's ALLOWANCE stays — it is the one number this card is about.
+          The feature bullets moved to the right column ("What's included"), where
+          they read as a list instead of a wrapped hedge of pills, and where they
+          no longer compete with this card's status and CTA. */}
+      {allowance != null && (
+        <div className="mt-4">
+          <span className="inline-flex items-center rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+            {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(allowance) })}
+          </span>
         </div>
       )}
     </div>

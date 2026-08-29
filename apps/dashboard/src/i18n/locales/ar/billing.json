@@ -3,6 +3,8 @@
     "title": "السعة والاستخدام",
     "subtitle": "السعة المضمّنة في خطتك ومقدار ما استخدمته. تتم مزامنة الأرقام الحية من Openship Cloud.",
     "routes": "المسارات المجانية",
+    "runningServices": "الخدمات العاملة",
+    "projects": "المشاريع",
     "workspaces": "مساحات العمل",
     "unlimited": "غير محدود",
     "used": "مُستخدم",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "عمليات شحن الأرصدة لمرة واحدة قادمة قريبًا — ستتمكن هنا من إضافة أرصدة فوق حصتك الشهرية.",
   "header": {
-    "credits": "Credits",
+    "credits": "الحوسبة",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -80,7 +82,7 @@
     "title": "شحن الأرصدة",
     "description": "باقات أرصدة لمرة واحدة تُحصّل عبر Stripe. الأرصدة لا تنتهي صلاحيتها وتُضاف فوق حصتك الشهرية.",
     "tryAgain": "حاول مرة أخرى",
-    "credits": "رصيد",
+    "credits": "دقيقة حوسبة",
     "redirecting": "جارٍ إعادة التوجيه…",
     "buy": "شراء",
     "empty": "لا توجد باقات شحن متاحة حاليًا.",
@@ -92,25 +94,24 @@
     "portalError": "تعذّر فتح بوابة الفوترة"
   },
   "overview": {
-    "creditsLeft": "رصيد متبقٍ",
+    "creditsLeft": "دقيقة حوسبة متبقية",
     "planLabel": "خطة {name}",
     "usedThisPeriod": "المُستخدَم هذه الفترة",
     "resets": "التجديد",
     "resetsInDay": "خلال يوم واحد",
     "resetsInDays": "خلال {n} يوم",
     "none": "—",
-    "upgradeToPro": "الترقية إلى Pro",
     "recentActivity": "النشاط الأخير",
     "last7Days": "آخر 7 أيام",
     "viewFullUsage": "عرض الاستخدام الكامل",
     "noUsageYet": "لا يوجد استخدام بعد",
     "usageError": "تعذّر تحميل الاستخدام",
-    "needMoreCredits": "بحاجة إلى مزيد من الأرصدة؟",
+    "needMoreCredits": "بحاجة إلى مزيد من دقائق الحوسبة؟",
     "oneTimeTopups": "شحن لمرة واحدة، دون تغيير الاشتراك",
     "seeAllPacks": "عرض كل الباقات",
     "packsError": "تعذّر تحميل الباقات",
     "noPacks": "لا توجد باقات شحن متاحة.",
-    "creditsAmount": "{n} رصيد",
+    "creditsAmount": "{n} دقيقة حوسبة",
     "oneTime": "{price} لمرة واحدة",
     "buy": "شراء",
     "checkoutError": "تعذّر بدء عملية الدفع"
@@ -121,7 +122,7 @@
       "balance": "الرصيد",
       "balanceSuffix": "من أصل {limit} رصيد",
       "consumed": "المُستهلَك هذه الفترة",
-      "credits": "رصيد",
+      "credits": "دقيقة حوسبة",
       "burnRate": "معدل الاستهلاك",
       "burnRateSuffix": "رصيد/يوم (آخر 7 أيام)",
       "projected": "التوقع في نهاية الفترة",
@@ -140,7 +141,7 @@
       "subtitle": "الأرصدة موزّعة تناسبيًا على استخدام الموارد المقيس في النطاق المحدد.",
       "resource": "المورد",
       "units": "الوحدات",
-      "credits": "الأرصدة",
+      "credits": "دقائق الحوسبة",
       "percentOfTotal": "٪ من الإجمالي",
       "loading": "جارٍ التحميل…",
       "empty": "لا يوجد استخدام في النطاق المحدد."
@@ -199,7 +200,8 @@
       "incomplete_expired": "منتهٍ",
       "unpaid": "غير مدفوع",
       "paused": "متوقّف مؤقتًا"
-    }
+    },
+    "includedTitle": "ما يشمله"
   },
   "paymentPanel": {
     "title": "طريقة الدفع",

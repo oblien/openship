@@ -6,6 +6,8 @@ import {
   resolveDeploymentRuntimeForRead,
 } from "../../lib/deployment-runtime";
 import { resolveLiveServiceState } from "./live-state";
+import { isRealContainerRef } from "../../lib/container-ref";
+import { pickPrimaryServiceId } from "../../lib/public-endpoints";
 import type { DeploymentConfigSnapshot } from "../deployments/build.service";
 
 /**
@@ -111,18 +113,104 @@ export async function liveContainerIdWithRuntime(
   runtime: HostContainerLister | null | undefined,
   args: { service: { id: string; name: string }; projectId: string; slug: string; tracked: string | null },
 ): Promise<string | null> {
-  if (!runtime?.supports("hostContainerQuery") || !runtime.listAllContainers) return args.tracked;
+  return (await liveContainerStateWithRuntime(runtime, args)).containerId;
+}
+
+/**
+ * The same resolution, keeping the RUNNING fact instead of discarding it.
+ *
+ * `resolveLiveServiceState` already computes a status for the container it matched;
+ * every caller above threw it away, so consumers that need "can I exec in here"
+ * — a logical database dump, above all — had only an id, and an id is also what a
+ * stopped container has.
+ *
+ * `running: null` means we could not ask (no host query, unreachable host, failed
+ * enumeration). Never conflate that with `false`: unknown must let a caller proceed,
+ * or the cloud and bare sources lose their dumps.
+ *
+ * Only `stopped` reports `false`. That status is docker's
+ * created/exited/paused/removing set — exactly the states where `docker exec`
+ * refuses — while an unhealthy-but-running container stays `true`, because a dump
+ * against it works.
+ */
+export async function liveContainerStateWithRuntime(
+  runtime: HostContainerLister | null | undefined,
+  args: { service: { id: string; name: string }; projectId: string; slug: string; tracked: string | null },
+): Promise<{ containerId: string | null; running: boolean | null }> {
+  if (!runtime?.supports("hostContainerQuery") || !runtime.listAllContainers) {
+    return { containerId: args.tracked, running: null };
+  }
   const containers = await runtime.listAllContainers().catch(() => null);
-  if (!containers) return args.tracked;
-  return (
-    resolveLiveServiceState({
-      services: [args.service],
-      live: containers,
-      projectId: args.projectId,
-      slug: args.slug,
-      trackedIds: { [args.service.id]: args.tracked },
-    }).get(args.service.id)?.containerId ?? null
+  if (!containers) return { containerId: args.tracked, running: null };
+  const match = resolveLiveServiceState({
+    services: [args.service],
+    live: containers,
+    projectId: args.projectId,
+    slug: args.slug,
+    trackedIds: { [args.service.id]: args.tracked },
+  }).get(args.service.id);
+  if (!match?.containerId) return { containerId: null, running: null };
+  return { containerId: match.containerId, running: match.status !== "stopped" };
+}
+
+/**
+ * The container a PROJECT-level question means — "its logs", "its container info",
+ * "its resource usage" — for the deployment `dep`.
+ *
+ * `dep.containerId` cannot answer it for a multi-service release: it holds ONE
+ * service's container, chosen without reference to which service the project's URL
+ * points at, so it named the database an app `dependsOn` (#498). It can also hold
+ * the `"compose"` sentinel, which is no container at all. So the primary service is
+ * picked the way the access URL is picked, and its container read from `dep`'s own
+ * rows.
+ *
+ * Resolved LIVE against the host, and the row healed, for the ACTIVE release only.
+ * The live matcher keys on identity (project+service label) rather than deployment,
+ * so it answers with whatever runs NOW — right for the current release, wrong for a
+ * historical one, whose recorded container is the point of asking. These endpoints
+ * accept any deployment id, so healing unconditionally would rewrite history from a
+ * GET.
+ *
+ * Null means the primary service's container is genuinely gone.
+ */
+export async function livePrimaryContainerId(
+  runtime: HostContainerLister | null | undefined,
+  dep: { id: string; projectId: string; containerId: string | null },
+): Promise<string | null> {
+  const recorded = isRealContainerRef(dep.containerId) ? dep.containerId : null;
+  const [project, rows] = await Promise.all([
+    repos.project.findById(dep.projectId).catch(() => null),
+    repos.service.listByDeployment(dep.id).catch(() => []),
+  ]);
+  // THIS release's own rows decide whether it was a service deploy. The project's
+  // current service list would misread a single-app release that later gained a
+  // sidecar, and answer for the sidecar.
+  if (!project || rows.length === 0) return recorded;
+
+  const [services, domainRows] = await Promise.all([
+    repos.service.listByProject(dep.projectId).catch(() => []),
+    repos.domain.listByProject(dep.projectId).catch(() => []),
+  ]);
+  const candidates = services.filter(
+    (svc) => svc.enabled && rows.some((r) => r.serviceId === svc.id && r.containerId),
   );
+  const primaryId = pickPrimaryServiceId(candidates, domainRows);
+  const svc = candidates.find((s) => s.id === primaryId);
+  const row = svc ? rows.find((r) => r.serviceId === svc.id) : undefined;
+  if (!svc || !row?.containerId) return recorded;
+
+  if (project.activeDeploymentId !== dep.id) return row.containerId;
+
+  const live = await liveContainerIdWithRuntime(runtime, {
+    service: { id: svc.id, name: svc.name },
+    projectId: dep.projectId,
+    slug: project.slug,
+    tracked: row.containerId,
+  });
+  if (live && live !== row.containerId) {
+    await repos.service.updateServiceDeployment(row.id, { containerId: live }).catch(() => {});
+  }
+  return live;
 }
 
 /**
@@ -149,13 +237,27 @@ export async function liveContainerIdForService(
   service: { id: string; name: string },
   opts?: { projectId?: string },
 ): Promise<string | null> {
+  return (await liveContainerForService(project, dep, service, opts)).containerId;
+}
+
+/**
+ * `liveContainerIdForService` plus the running fact — see
+ * `liveContainerStateWithRuntime` for why the two travel together and why
+ * `running: null` (unknown) is not `false`.
+ */
+export async function liveContainerForService(
+  project: { slug: string; organizationId: string },
+  dep: { id: string; meta?: unknown },
+  service: { id: string; name: string },
+  opts?: { projectId?: string },
+): Promise<{ containerId: string | null; running: boolean | null }> {
   const tracked = await containerIdForService(dep, service);
   const projectId = opts?.projectId;
 
   const runtime = await resolveServiceRuntimeForRead(project, { meta: dep.meta });
-  if (!runtime) return tracked;
+  if (!runtime) return { containerId: tracked, running: null };
   try {
-    return await liveContainerIdWithRuntime(runtime, {
+    return await liveContainerStateWithRuntime(runtime, {
       service: { id: service.id, name: service.name },
       projectId: projectId ?? "",
       slug: project.slug,

@@ -132,6 +132,29 @@ describe("tokenFor — self-hosted local (gh-cli → app → project → user-pa
     expect(await tokenFor(ctxNoOrg, "local", withOwner)).toEqual({ token: "ghtok", source: "gh-cli" });
   });
 
+  // `only` exists for endpoints where exactly ONE credential can do the job.
+  // GitHub's Checks API takes App installation tokens only, and the walk above
+  // returns the FIRST token that resolves without ever retrying — so a working
+  // gh CLI silently shadowed a working App installation and every check run
+  // 403'd forever. Pinning is the fix; these two cases are what it must hold.
+  it("`only` pins past a resolvable gh token to the App", async () => {
+    setGh("ghtok");
+    setApp(true);
+    setProjectPat("projtok");
+    expect(
+      await tokenFor(ctxNoOrg, "local", { ...withOwner, only: ["app-installation"] }),
+    ).toEqual({ token: "apptok", source: "app-installation" });
+  });
+
+  it("`only` narrows, never substitutes — no App means null, not the next credential", async () => {
+    setGh("ghtok");
+    setProjectPat("projtok");
+    setSettings({ userPat: "usertok" });
+    expect(
+      await tokenFor(ctxNoOrg, "local", { ...withOwner, only: ["app-installation"] }),
+    ).toBeNull();
+  });
+
   it("App wins once gh is absent", async () => {
     setApp(true);
     setProjectPat("projtok");

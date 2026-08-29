@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   parseListeningPorts,
+  probePortListeningOnce,
   waitForPortListening,
   type PortProbeExecutor,
 } from "./port-listen";
@@ -89,5 +90,29 @@ describe("waitForPortListening", () => {
       listening: false,
       checked: true,
     });
+  });
+});
+
+describe("probePortListeningOnce", () => {
+  test("is inconclusive when both procfs address-family reads fail", async () => {
+    const executor: PortProbeExecutor = {
+      exec: async () => {
+        throw new Error("permission denied");
+      },
+    };
+
+    await expect(probePortListeningOnce(executor, 443)).resolves.toBeNull();
+  });
+
+  test("uses the readable family when only the other procfs read fails", async () => {
+    const executor: PortProbeExecutor = {
+      exec: async (command) => {
+        if (command.includes("tcp6")) throw new Error("missing");
+        return `${HEADER}\n${IPV4_LISTEN_3000}\n`;
+      },
+    };
+
+    await expect(probePortListeningOnce(executor, 3000)).resolves.toBe(true);
+    await expect(probePortListeningOnce(executor, 9999)).resolves.toBe(false);
   });
 });

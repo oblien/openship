@@ -6,6 +6,7 @@
  */
 
 import { SSEMessage, SSEMessageProcessor } from "@/hooks/useSSEStream";
+import type { InstallPhaseId, InstallPhaseStatus } from "@repo/core";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ export interface BuildMessage extends SSEMessage {
     | "cancelled"
     | "prompt"
     | "service-status"
+    | "install-phase"
     | "unknown";
   promptId?: string;
   title?: string;
@@ -58,6 +60,9 @@ export interface BuildMessage extends SSEMessage {
   warningMessage?: string;
   serviceName?: string;
   serviceId?: string;
+  id?: InstallPhaseId;
+  status?: InstallPhaseStatus;
+  label?: string;
 }
 
 export interface BuildMessageCallbacks {
@@ -81,6 +86,11 @@ export interface BuildMessageCallbacks {
     details?: Record<string, unknown>;
   }) => void;
   onServiceStatus?: (status: ServiceStatusEvent) => void;
+  onInstallPhase?: (phase: {
+    id: InstallPhaseId;
+    status: InstallPhaseStatus;
+    label?: string;
+  }) => void;
 }
 
 export const createBuildMessageProcessor = (
@@ -111,6 +121,13 @@ export const createBuildMessageProcessor = (
       // Per-service status update (compose projects)
       if (jsonData?.type === "service-status") {
         return { type: "service-status", ...jsonData };
+      }
+
+      // Named install-phase boundary (guided app install stepper). Must be
+      // caught before the `phase` catch-all — it carries no top-level `phase`
+      // key, so it never routes to onPhaseChange.
+      if (jsonData?.type === "install-phase") {
+        return { type: "install-phase", ...jsonData };
       }
 
       // Prompt message (pipeline waiting for user decision)
@@ -279,6 +296,16 @@ export const createBuildMessageProcessor = (
             containerId: (message as any).containerId,
             hostPort: (message as any).hostPort,
           });
+          break;
+
+        case "install-phase":
+          if (message.id && message.status) {
+            callbacks.onInstallPhase?.({
+              id: message.id,
+              status: message.status,
+              label: message.label,
+            });
+          }
           break;
       }
 

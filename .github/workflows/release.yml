@@ -15,6 +15,13 @@ permissions:
   contents: write
 
 jobs:
+  # Typecheck + tests. `publish` and `publish-npm` depend on this, so a red test
+  # stops the release instead of publishing alongside it. Runs on the manual
+  # dispatch too — that path publishes npm, which is immutable.
+  gate:
+    name: Release gate
+    uses: ./.github/workflows/release-gate.yml
+
   build-openship:
     name: Build openship release artifact
     if: github.event_name == 'push'
@@ -192,6 +199,63 @@ jobs:
           path: |
             ${{ steps.package.outputs.artifact }}
             ${{ steps.package.outputs.artifact }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  build-cli-payload:
+    name: Build CLI runtime payload (downloaded by scripts/install.sh)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Read bun version
+        id: bun-version
+        run: echo "version=$(cat .bun-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-version.outputs.version }}
+
+      # Node is the SHIPPED runtime: the payload's `npm install` + load canary +
+      # `node dist/index.js --version` must run under node, not bun.
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Restore bun cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # tsup + stage-server (Bun.build) → dist/, then stage-cli-payload stages the
+      # arch-independent prod closure and tars openship-cli-<TAG>.tar.gz. The tag
+      # is taken from GITHUB_REF_NAME by the staging script.
+      - name: Build CLI payload
+        run: bun run --cwd apps/cli build:payload
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: openship-cli-release
+          # .cli-payload is a hidden dir (leading dot); upload-artifact excludes
+          # hidden files by default, so without this the tarball is silently
+          # dropped ("No files were found") and the release ships no CLI payload.
+          include-hidden-files: true
+          path: |
+            apps/cli/.cli-payload/openship-cli-*.tar.gz
+            apps/cli/.cli-payload/openship-cli-*.tar.gz.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -489,9 +553,15 @@ jobs:
     # mismatch. `always()` keeps the manual npm-only path working: on a
     # workflow_dispatch the `publish` job is skipped (push-only), and we publish
     # anyway; on a tag push we require `publish` to have succeeded.
-    needs: [publish]
+    #
+    # `gate` is required on BOTH paths, and is the one condition with no escape
+    # hatch: the tag path inherits it through `publish`, and the dispatch path —
+    # which skips `publish` entirely — would otherwise put an untested,
+    # unreplaceable version on npm.
+    needs: [gate, publish]
     if: >-
       always() &&
+      needs.gate.result == 'success' &&
       (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
     # OIDC trusted publishing: npm verifies this workflow's identity instead of
     # a long-lived token. id-token:write lets the runner mint the OIDC token.
@@ -595,7 +665,7 @@ jobs:
   publish:
     name: Publish GitHub release
     if: github.event_name == 'push'
-    needs: [build-openship, build-email, build-dashboard, build-desktop, build-desktop-macos]
+    needs: [gate, build-openship, build-email, build-dashboard, build-cli-payload, build-desktop, build-desktop-macos]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -619,6 +689,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: openship-dashboard-release
+          path: dist
+
+      - name: Download CLI payload artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: openship-cli-release
           path: dist
 
       - name: Download desktop installers
@@ -645,6 +721,8 @@ jobs:
             "dist/openship-email-${TAG}-linux-amd64.tar.gz.sha256"
             "dist/openship-dashboard-${TAG}.tar.gz"
             "dist/openship-dashboard-${TAG}.tar.gz.sha256"
+            "dist/openship-cli-${TAG}.tar.gz"
+            "dist/openship-cli-${TAG}.tar.gz.sha256"
           )
           # Idempotent: on a re-run the release already exists and `gh release
           # create` would fail — re-upload the core assets with --clobber instead

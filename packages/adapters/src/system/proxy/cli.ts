@@ -28,6 +28,7 @@ export {
   // The edge container's name + the one parse of "why isn't it running" — the CLI
   // needs both so it stops hardcoding the name and re-implementing the parse.
   EDGE_CONTAINER_NAME,
+  isOurEdgeContainer,
   edgeFailureReason,
   edgeIsBroken,
   edgeCrashReason,
@@ -36,6 +37,11 @@ export {
 // Recover the sites of a proxy we already STOPPED: probeEdge can't see it (it
 // holds no ports), but its vhosts are still on disk and the parsers are read-only.
 export { detectInstalledProxy, scanImportableSites } from "./import";
+// Static-root remediation: detect adopted static docroots the containerized edge
+// can't see, and copy them into its bind mount host-side before cutover. Same
+// module already in the lean graph, so no new deps.
+export { unreachableStaticRoots, copyStaticRootIntoEdge } from "./import";
+export type { UnreachableStaticRoot } from "./import";
 // The read api — the CLI harvests the source proxy's certs host-side (a
 // containerized edge can't read the host FS) and needs the SAME reader the api
 // uses, or caddy/traefik boxes carry nothing. Shell + node:crypto only; no ssh2 /

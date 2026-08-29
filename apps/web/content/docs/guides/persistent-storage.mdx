@@ -1,0 +1,148 @@
+---
+title: Persistent storage & object storage
+description: Keep the files your app writes — pick the paths that survive a redeploy, or connect an S3 bucket so uploads live outside the container entirely.
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+Every deploy replaces your app with a fresh copy. That's what makes deploys safe to repeat — and it's also
+why a file your app wrote yesterday is gone today unless you tell Openship to keep it. This page covers the
+two ways to do that: **persistent storage** for paths on the machine, and **object storage** for a bucket
+that lives outside your app altogether.
+
+<Callout title="Which one do I want?">
+- **Uploads that users must never lose** → object storage (a bucket). It also keeps working if you run more
+  than one copy of your app.
+- **A cache, a SQLite file, a framework's own scratch directory** → persistent storage (a path).
+- **A real database** → neither. Add a database service and connect it (see
+  [Multi-service projects](/docs/guides/compose-multi-service)).
+</Callout>
+
+## Persistent storage (paths that survive a deploy)
+
+Openship already knows what some frameworks write. A Laravel app keeps `storage/` with no configuration at
+all, because that's where Laravel puts uploads, sessions, cache and its logs. Open **Configuration →
+Persistent storage** to see what your project keeps.
+
+<Steps>
+
+<Step>
+
+### Open Configuration → Persistent storage
+
+The card lists the paths currently kept. It also tells you WHERE the list came from: *"Framework defaults for
+this stack"* means Openship chose it, *"Set for this project"* means you did.
+
+</Step>
+
+<Step>
+
+### Press Edit and list the paths, one per line
+
+A plain path is relative to your app:
+
+```
+storage
+public/uploads
+```
+
+You can also give a full mount if you want to control the volume name or use a directory on the host:
+
+```
+uploads:/app/public/uploads
+/srv/app-data:/app/var
+```
+
+</Step>
+
+<Step>
+
+### Save, then deploy
+
+Storage changes apply on the **next deploy** — the running container keeps the mounts it started with.
+
+</Step>
+
+</Steps>
+
+To go back to the framework's own defaults, press **Use framework defaults**. To keep nothing at all, save an
+empty list — that's a real choice, and Openship won't quietly re-add the defaults.
+
+You can declare the same thing in your repo instead, so a fresh deploy of the same code gets it automatically:
+
+```json title="openship.json"
+{
+  "volumes": ["storage", "uploads:/app/public/uploads"]
+}
+```
+
+### Things worth knowing
+
+- **The first deploy seeds the directory.** Whatever your app ships at that path (Laravel's `storage/`
+  skeleton, for instance) is copied in, so the app doesn't start against an empty directory.
+- **Later releases don't refresh it.** That's the point — it's your data now, not the image's. So don't list
+  a path that also contains code. Laravel's `database/` directory holds migrations as well as the SQLite
+  file, which is why Openship keeps `storage/` and not `database/`.
+- **Volume names are scoped per project.** Two projects that both keep `storage` never share one volume.
+- **Multi-service projects** declare mounts per service instead — see the Services tab, or
+  `services[].volumes` in `openship.json`.
+- **Openship Cloud has no volumes.** A declared path is reported and skipped there; use object storage.
+
+## Object storage (an S3 bucket)
+
+A path on the machine stops data loss, but it doesn't scale: run two copies of your app and each one gets its
+own uploads directory, which shows up as files that exist for some visitors and 404 for others. A bucket is
+shared by every copy and outlives the machine.
+
+Openship connects a bucket to your app's own filesystem configuration, so you don't have to hunt for the
+right variable names. A Laravel app gets `FILESYSTEM_DISK=s3` plus the `AWS_*` variables its S3 disk reads; a
+Django app gets the `AWS_STORAGE_BUCKET_NAME` / `AWS_S3_*` names django-storages reads; anything else gets
+neutral `S3_*` names.
+
+<Steps>
+
+<Step>
+
+### Open Configuration → Object storage and press Connect
+
+</Step>
+
+<Step>
+
+### Choose where the bucket comes from
+
+**An installed MinIO app** — if you've installed MinIO from the Apps catalog, pick it here. Its endpoint and
+keys are filled in for you, and your app joins its private network, so the traffic never leaves the box. The
+bucket MinIO created on install is prefilled.
+
+**An external provider** — Amazon S3, Cloudflare R2, Wasabi, Backblaze B2, DigitalOcean Spaces, or any other
+S3-compatible service. Enter the endpoint (not needed for Amazon S3), region, bucket, and the access key +
+secret.
+
+</Step>
+
+<Step>
+
+### Press Test & connect
+
+Openship writes, reads and deletes one throwaway object before saving anything. If the bucket doesn't exist
+or the keys are read-only, you find out here — not the first time a user uploads a file.
+
+</Step>
+
+</Steps>
+
+The card then shows the bucket, the provider, and exactly which variables were set. It applies on the next
+deploy. **Disconnect** removes those variables again — only the ones the connection added, never anything you
+set by hand.
+
+<Callout type="info" title="Where the credentials live">
+The keys are stored as encrypted environment variables on the project, the same place all your secrets live.
+There's no second copy anywhere, and deleting the connection deletes them.
+</Callout>
+
+### Using the bucket from your code
+
+Once connected, your framework's normal file API writes to the bucket — `Storage::put(...)` in Laravel,
+`default_storage` in Django. For other stacks, read the `S3_*` variables the card lists and hand them to your
+S3 client of choice.

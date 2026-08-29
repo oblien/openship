@@ -37,6 +37,10 @@ interface RoutingModePickerProps {
   onEndpointsChange: (endpoints: PublicEndpoint[], runtimePort?: string) => void;
   allowPortEdit?: boolean;
   saveMode?: "change" | "explicit";
+  /** Show the per-endpoint "Redirect to" control. Matters here because the www
+   *  toggle CREATES a redirect — hiding the control would leave the user with a
+   *  301 they didn't see and can't change. */
+  allowRedirects?: boolean;
 }
 
 // Segmented tab styling — identical to RoutingSettingsCard's Free/Custom tabs so
@@ -56,6 +60,7 @@ export function RoutingModePicker({
   onEndpointsChange,
   allowPortEdit = false,
   saveMode = "change",
+  allowRedirects = false,
 }: RoutingModePickerProps) {
   const { t } = useI18n();
   const w = t.widgets.routing.settingsCard;
@@ -71,7 +76,15 @@ export function RoutingModePicker({
       (e) => e.domainType === "custom" && e.customDomain?.trim().toLowerCase() === `www.${wwwCandidate}`,
     );
 
-  /** Add/remove the `www.` endpoint, mirroring the apex's port or target path. */
+  /**
+   * Add/remove the `www.` endpoint, mirroring the apex's port or target path.
+   *
+   * The sibling starts as a 301 to the apex: it's a full, independent endpoint
+   * (own DNS record, own verification, own certificate) whose job is to funnel
+   * traffic to the canonical host. Two hostnames both serving the app is
+   * duplicate content, and picking a canonical one later is a migration; the
+   * direction is editable on the endpoint's own card either way.
+   */
   const toggleWww = (on: boolean) => {
     if (!wwwCandidate) return;
     const host = `www.${wwwCandidate}`;
@@ -89,6 +102,8 @@ export function RoutingModePicker({
       createPublicEndpoint({
         domainType: "custom",
         customDomain: host,
+        redirectTo: wwwCandidate,
+        redirectStatus: 301,
         ...(primary?.port ? { port: primary.port } : {}),
         ...(primary?.targetPath ? { targetPath: primary.targetPath } : {}),
       }),
@@ -132,6 +147,7 @@ export function RoutingModePicker({
             allowPortEdit={allowPortEdit}
             saveMode={saveMode}
             hideTypeToggle
+            allowRedirects={allowRedirects}
             onChange={onEndpointsChange}
             wwwToggle={
               mode === "custom"

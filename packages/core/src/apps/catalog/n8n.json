@@ -17,9 +17,6 @@
     {
       "name": "n8n",
       "image": "n8nio/n8n:latest",
-      "ports": [
-        "5678:5678"
-      ],
       "exposedPort": 5678,
       "exposed": true,
       "environment": {
@@ -34,7 +31,10 @@
       "volumes": [
         "n8n_data:/home/node/.n8n"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "8213:5678"
+      ]
     }
   ],
   "configFields": [
@@ -100,5 +100,35 @@
         }
       ]
     }
-  ]
+  ],
+  "connection": {
+    "title": "Set up n8n",
+    "description": "n8n has no preset login. Open the editor and the first screen creates your owner account.",
+    "guide": {
+      "defaultMode": "public",
+      "intro": "Your project gets a private n8n instance for building workflows.",
+      "useHint": "Webhook nodes are published under the webhook base URL below — use that origin when registering callbacks with third parties."
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Editor",
+        "source": "publicUrl:n8n",
+        "kind": "url",
+        "recommended": true,
+        "help": "First visit asks you to create the owner account."
+      },
+      {
+        "id": "webhookUrl",
+        "label": "Webhook base URL",
+        "source": "env:n8n:WEBHOOK_URL",
+        "kind": "url",
+        "envKey": "N8N_WEBHOOK_URL",
+        "help": "Base origin n8n advertises for Webhook nodes."
+      }
+    ],
+    "firstLogin": {
+      "note": "Create the owner account as soon as it deploys — the setup screen is unauthenticated until you do. Never change the generated encryption key afterwards or every stored credential becomes unreadable. n8n issues https-only session cookies, so sign in over the domain rather than a plain-http address."
+    }
+  }
 }

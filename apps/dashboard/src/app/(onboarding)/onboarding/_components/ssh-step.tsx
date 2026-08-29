@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getApiOrigin } from "@/lib/api/urls";
 import { useI18n } from "@/components/i18n-provider";
-import { api, endpoints, getApiErrorMessage } from "@/lib/api";
+import { getApiErrorMessage, systemApi, type SshProbeInput } from "@/lib/api";
 import { validateSshPayload } from "@repo/onboarding";
 import type { SshPayload } from "@repo/onboarding";
 import type { StepProps } from "./step-props";
@@ -77,7 +77,7 @@ export function SshStep({ state, onUpdate, onNext, onBack }: StepProps) {
     setTestOk(false);
     setError(null);
     try {
-      const payload: Record<string, unknown> = {
+      const payload: SshProbeInput = {
         sshHost: trimmedHost,
         sshPort: parseInt(port, 10) || 22,
         sshUser: user.trim() || "root",
@@ -91,10 +91,7 @@ export function SshStep({ state, onUpdate, onNext, onBack }: StepProps) {
       if (jumpHost.trim()) payload.sshJumpHost = jumpHost.trim();
       if (sshArgs.trim()) payload.sshArgs = sshArgs.trim();
 
-      const res = await api.post<{ ok: boolean; message: string }>(
-        endpoints.system.onboardingTestConnection,
-        payload,
-      );
+      const res = await systemApi.onboardingTestConnection(payload);
       if (res.ok) setTestOk(true);
       else setError(res.message || t.onboarding.ssh.testFailed);
     } catch (err) {
@@ -361,7 +358,7 @@ export function SshStep({ state, onUpdate, onNext, onBack }: StepProps) {
 
         <a
           className="ob-tutorial-link"
-          href="https://openship.io/docs/self-hosting"
+          href="https://openship.io/docs/guides/custom-servers"
           target="_blank"
           rel="noopener noreferrer"
         >

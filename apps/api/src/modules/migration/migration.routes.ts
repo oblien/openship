@@ -6,7 +6,6 @@
  */
 
 import { Hono } from "hono";
-import { localOnly } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
 import * as migration from "./migration.controller";
 
@@ -14,14 +13,17 @@ const r = secureRouter(new Hono(), {
   module: "migration",
   basePath: "/api/migration",
   ids: { server: "serverId" },
+  localOnly: true,
 });
 
-r.use("*", localOnly);
 
 // Read-only: inspect a server's Docker and return the adoptable stack.
 r.post("/scan", { tag: "server:write", collection: true }, migration.scanServer);
 // Streaming variant (SSE): step progress + result, no fixed timeout.
 r.get("/scan/stream", { tag: "server:write", collection: true }, migration.scanServerStream);
+// On-demand reveal of ONE discovered container's real env (scan masks it). Write-
+// gated: the masked scan is a read, revealing the real secret is a write (#336).
+r.post("/reveal-env", { tag: "server:write", collection: true }, migration.revealServiceEnv);
 // Create an Openship project from the selected discovered services (records only).
 r.post("/adopt", { tag: "server:write", collection: true }, migration.adoptServer);
 // Re-import an orphaned Openship project (DR / cross-instance), preserving its id.
@@ -33,6 +35,11 @@ r.post("/repo-compose", { tag: "server:read", readOnly: true, collection: true }
 r.post("/preview", { tag: "server:write", collection: true }, migration.previewMigration);
 // Start a full migration (adopt → move → deploy → verify → await cutover).
 r.post("/migrate", { tag: "server:write", collection: true }, migration.startMigration);
+
+// Project move (door B): relocate a project this instance already owns. `server:write`
+// like the rest of this module — the handler additionally asserts `project:write`, because
+// neither permission implies the other when a run mutates a workload on two machines.
+r.post("/project", { tag: "server:write", collection: true }, migration.startProjectMove);
 // Migration run status, live progress, and the opt-in destructive cutover.
 r.get("/migrations/:id", { tag: "server:read", collection: true }, migration.getMigration);
 r.get("/migrations/:id/stream", { tag: "server:read", collection: true }, migration.streamMigration);
@@ -45,7 +52,9 @@ r.post("/migrations/:id/resume", { tag: "server:write", collection: true }, migr
 r.post("/migrations/:id/cleanup-target", { tag: "server:write", collection: true }, migration.cleanupTargetData);
 // Delete a terminal run's record (history cleanup; project + data untouched).
 r.delete("/migrations/:id", { tag: "server:write", collection: true }, migration.deleteMigration);
-// The in-flight run for a server, so a reloaded client can re-attach.
+// The in-flight run for a server, so a reloaded client can re-attach. A PROJECT's live run is
+// not here — it rides on the project payload (`readActiveMigration`), which is what every
+// surface that renders a project already reads. See the handler.
 r.get("/active", { tag: "server:read", collection: true }, migration.getActiveMigration);
 // Recent runs for a server (the "Migrations" tab list, like project deployments).
 r.get("/runs", { tag: "server:read", collection: true }, migration.getMigrationRuns);

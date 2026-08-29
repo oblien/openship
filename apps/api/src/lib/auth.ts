@@ -8,9 +8,9 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { db, getDriver, repos, schema, and, eq, gt } from "@repo/db";
 import { env, runtimeTarget, runtimeTargetId, trustedOrigins } from "../config/env";
 import { resolveAuthBaseUrl, resolveDashboardPublicUrl, refreshSelfAppPublicUrl } from "./public-url";
-import { sendMail, smtpEnabled, requireEmailVerificationStrict } from "./mail";
+import { sendMail, smtpEnabled, canSendMail, requireEmailVerificationStrict } from "./mail";
 import {
-  resetPasswordEmail,
+  resetPasswordOtpEmail,
   verifyEmailTemplate,
   verifyOtpEmailTemplate,
   organizationInviteEmail,
@@ -144,13 +144,23 @@ export const auth = betterAuth({
     minPasswordLength: 8,
     maxPasswordLength: 128,
 
-    /* Password reset - only functional when SMTP is configured */
-    sendResetPassword: smtpEnabled
-      ? async ({ user, url }: { user: User; url: string; token: string }) => {
-          const email = resetPasswordEmail(user, url);
-          await sendMail({ to: user.email, ...email });
-        }
-      : undefined,
+    /* Password reset is CODE-based, so there is deliberately no
+       `sendResetPassword` here.
+
+       Leaving it defined would send a second, link-bearing email alongside the
+       code — Better Auth calls this callback from /request-password-reset, which
+       is a different endpoint from the OTP one, so both would fire for anyone
+       still hitting the old route. The reset code is sent by the emailOTP
+       plugin's `sendVerificationOTP` (type: "forget-password"), which refuses
+       up front when nothing can deliver — see the guard there. */
+
+    /* Kick every existing session when a password is reset.
+       The commonest reason somebody resets a password is that they believe
+       someone else has it. Leaving their sessions alive means the reset does
+       not actually evict the intruder — it only stops them signing in AGAIN.
+       Better Auth has the switch; it was simply never turned on (the retired
+       link flow had the same hole). */
+    revokeSessionsOnPasswordReset: true,
 
     /* Email verification.
        - SaaS (CLOUD_MODE): ALWAYS required. No account can sign in until it
@@ -165,7 +175,17 @@ export const auth = betterAuth({
     sendVerificationEmail: smtpEnabled
       ? async ({ user, url }: { user: User; url: string; token: string }) => {
           const email = verifyEmailTemplate(user, url);
-          await sendMail({ to: user.email, ...email });
+          const delivered = await sendMail({ to: user.email, ...email });
+          // `requireEmailVerification` blocks sign-in until the address is confirmed,
+          // so a silently-dropped verification mail is an account that can never be
+          // used. Fail the request instead of creating one.
+          if (!delivered) {
+            throw new APIError("SERVICE_UNAVAILABLE", {
+              message:
+                "Could not send the verification email — this instance has no working " +
+                "email transport. Configure SMTP in Settings → Email.",
+            });
+          }
         }
       : undefined,
   },
@@ -391,11 +411,82 @@ export const auth = betterAuth({
       rateLimit: { window: 60, max: 5 },
       overrideDefaultEmailVerification: true,
       async sendVerificationOTP({ email, otp, type }) {
-        // Only the email-verification flow is used today (sign-in / reset /
-        // change-email OTP types are not enabled). Send a link-free code email.
+        // Two flows, both link-free by design. `sign-in` and `change-email` OTP
+        // types are not enabled, so they fall through and send nothing.
         if (type === "email-verification") {
           const tmpl = verifyOtpEmailTemplate(otp, { expiresMinutes: 10 });
-          await sendMail({ to: email, ...tmpl });
+          const delivered = await sendMail({ to: email, ...tmpl });
+
+          // DEV ESCAPE HATCH, `local-saas` ONLY.
+          //
+          // That target is a localhost-only SaaS used for development
+          // (`OPENSHIP_TARGET=local-saas`, ports 4100/3100) and it normally has no
+          // mail transport at all. Because CLOUD_MODE is true there,
+          // `requireEmailVerification` is forced on — so without this, signup on a
+          // dev machine is a dead end: the account is created, no session is issued,
+          // and the code needed to finish is inside an email nothing can send.
+          //
+          // Printing an auth credential to a log is only acceptable because of how
+          // narrow the gate is: `runtimeTargetId` comes from OPENSHIP_TARGET, an
+          // explicit operator choice validated against a fixed table (an unknown
+          // value throws at boot), and the `cloud-saas` row — production — cannot
+          // reach this branch. It is NOT gated on NODE_ENV, which flips by accident.
+          if (runtimeTargetId === "local-saas") {
+            console.warn(
+              `\n[dev:local-saas] email verification code for ${email}: ${otp}\n` +
+                `  (expires in 10 min. Logged because this target has no mail transport; ` +
+                `never happens on cloud-saas.)\n`,
+            );
+            // Deliberately does NOT throw on a delivery failure here, unlike every
+            // other target. The code above is the delivery channel on this target, so
+            // failing the request would make the account uncreatable.
+            return;
+          }
+
+          if (!delivered) {
+            throw new APIError("SERVICE_UNAVAILABLE", {
+              message:
+                "Could not send the verification code — this instance has no working " +
+                "email transport. Configure SMTP in Settings → Email.",
+            });
+          }
+          return;
+        }
+        // Password reset. This replaced the link flow (`sendResetPassword` in the
+        // emailAndPassword block is deliberately gone): a "click here to change your
+        // password" URL is the most phishing-shaped mail we send, gets scored and
+        // rewritten by gateways, and a rewritten link is indistinguishable from an
+        // attack to whoever reads it. Same reasoning that already made verification
+        // a code.
+        if (type === "forget-password") {
+          // Refuse loudly when nothing can deliver. `sendMail` returns SILENTLY with
+          // no transport configured (it warns to the server log and moves on), which
+          // on this flow means the operator is told to check their inbox for a code
+          // that was never sent, and waits — with the account still locked out. That
+          // is worse than an error. `smtpEnabled` cannot express this: it is a
+          // constant `true` ("callbacks wired; runtime decides delivery"), so
+          // `canSendMail()` is the only honest check.
+          if (!(await canSendMail())) {
+            throw new APIError("SERVICE_UNAVAILABLE", {
+              message:
+                "This instance has no email transport configured, so a reset code " +
+                "cannot be sent. Configure SMTP in Settings → Email, or reset the " +
+                "password from the server with `openship reset-admin`.",
+            });
+          }
+          const tmpl = resetPasswordOtpEmail(otp, { expiresMinutes: 10 });
+          // Check the RESULT as well as the pre-flight above. `canSendMail()` reads a
+          // transport cache with a 60s TTL, so it can say yes for a config that has
+          // since been changed or broken — and being told to check your inbox while
+          // locked out is the worst place to be optimistic.
+          if (!(await sendMail({ to: email, ...tmpl }))) {
+            throw new APIError("SERVICE_UNAVAILABLE", {
+              message:
+                "Could not send the reset code — this instance has no working email " +
+                "transport. Configure SMTP in Settings → Email, or reset the password " +
+                "from the server with `openship reset-admin`.",
+            });
+          }
         }
       },
     }),
@@ -496,7 +587,7 @@ export const auth = betterAuth({
             const settings = await repos.instanceSettings.get();
             const source = settings?.invitationMailSource === "cloud" ? "cloud" : "platform";
 
-            await sendMail({
+            const delivered = await sendMail({
               to: data.email,
               preferSource: source,
               // organizationId is required by lib/mail.ts when
@@ -506,6 +597,18 @@ export const auth = betterAuth({
               organizationId: data.organization.id,
               ...email,
             });
+            // An invite that cannot be delivered must not report success: the invitee
+            // has a pending row and no way to learn about it, and the inviter believes
+            // it went out. `sendMail` only warns on an empty chain, so this is the only
+            // place that can tell. Throwing surfaces it on the invite request itself.
+            if (!delivered) {
+              throw new APIError("SERVICE_UNAVAILABLE", {
+                message:
+                  `Could not email the invitation to ${data.email} — this instance has ` +
+                  `no working email transport. Configure SMTP in Settings → Email and ` +
+                  `invite again.`,
+              });
+            }
           }
         : undefined,
 
@@ -565,6 +668,22 @@ export const auth = betterAuth({
               },
             },
           );
+
+          // Give the org its Oblien namespace and push its tier's ceilings.
+          // Cloud only, and fire-and-forget: a slow or unreachable Oblien must
+          // not fail org creation (the boot backfill re-attempts anything that
+          // fails here). Without this a free org had no namespace recorded and
+          // therefore no credit quota and no resource ceiling — metered,
+          // joinable, and uncapped.
+          if (env.CLOUD_MODE) {
+            void import("../modules/billing/billing-namespace.provision")
+              .then(({ provisionOrgNamespace }) => provisionOrgNamespace(organization.id))
+              .catch((err) =>
+                console.warn(
+                  `[auth] namespace provisioning failed for org ${organization.id}: ${err instanceof Error ? err.message : String(err)}`,
+                ),
+              );
+          }
         },
 
         beforeDeleteOrganization: async ({ organization, user }) => {

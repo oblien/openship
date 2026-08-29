@@ -49,6 +49,50 @@ Openship tracks the compose fields it models: `image`, `build`, `dockerfile`, `p
 `environment`, `volumes`, `command`, `restart`, and `healthcheck`. Everything else in your file — `networks`,
 build args, labels, `profiles`, comments — is left untouched: Openship neither reads it nor rewrites it.
 
+#### Compose file in a subfolder
+
+Openship looks for the compose file at the project root. If yours lives somewhere else — say
+`deploy/docker-compose/docker-compose.yml` — open **Compose file** in the deploy wizard and enter
+the path, then hit **Scan**. Openship re-reads the repo and picks up the services it declares. You
+can give either the file or the folder that holds it, and the filename doesn't have to be the
+standard one (`stack.yml` works).
+
+Relative `build:` contexts are resolved the way compose resolves them — against the compose file's
+own folder — so a file in `deploy/docker-compose/` can use `build: ../../api` to build the `api`
+directory at the repo root.
+
+#### What `build:` means
+
+`build:` is the docker build **context**: the directory docker builds from. `COPY` and `ADD` paths in
+that service's Dockerfile are relative to it, `dockerfile:` is looked up inside it, and the
+`.dockerignore` that applies is the one in that directory — exactly as `docker compose build` behaves.
+Use `build: .` when the service really does build from the repo root.
+
+Two consequences worth knowing:
+
+- A service whose `build:` directory has no Dockerfile fails with a clear error. It does not fall back
+  to a Dockerfile elsewhere in the repo — that would build a different image under this service's name.
+- Compose `build.args` and `build.target` are not modelled. Build arguments come from the service's
+  environment variables instead (each is passed as a `--build-arg`).
+
+#### BuildKit
+
+Modern Dockerfile syntax — `RUN --mount=type=cache`, `# syntax=` directives, heredocs — needs BuildKit.
+Openship uses it automatically for a Dockerfile that requires it when it builds against a Docker socket,
+and on a remote server whenever that host's Docker CLI has the `buildx` plugin. If a build fails with
+`the --mount option requires BuildKit`, install the plugin on the build host (the `docker-buildx-plugin`
+package, or Docker's official packages) and redeploy. The build log names which builder it used.
+
+To keep it in the repo instead of setting it per project, declare it in
+[`openship.json`](/docs/reference/openship-json):
+
+```json
+{ "composePath": "deploy/docker-compose/docker-compose.yml" }
+```
+
+The wizard field wins if you later change it there — the config file seeds the value, your edit is
+what deploys.
+
 <Callout title="Openship never writes to your repo" type="info">
 Edits you make in the dashboard are stored by Openship and used on every deploy. Your `docker-compose.yml` is
 never changed. If you want the file itself to reflect a change (so a teammate or a fresh clone sees it), edit

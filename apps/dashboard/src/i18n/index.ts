@@ -36,9 +36,11 @@ import misc from "./locales/en/misc.json";
 import migration from "./locales/en/migration.json";
 import jobs from "./locales/en/jobs.json";
 import swarm from "./locales/en/swarm.json";
+import issues from "./locales/en/issues.json";
+import autoDns from "./locales/en/autoDns.json";
 
 /** The base (English) dictionary — bundled, used as the type + fallback. */
-export const baseDictionary = { brand, auth, dashboard, settings, servers, billing, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, swarm };
+export const baseDictionary = { brand, auth, dashboard, settings, servers, billing, library, onboarding, deploy, deployments, importProject, projects, projectSettings, projectDetail, emails, emailsAdmin, chrome, overview, widgets, misc, migration, jobs, swarm, issues, autoDns };
 export type Dictionary = typeof baseDictionary;
 
 export const locales = ["en", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr"] as const;

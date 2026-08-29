@@ -20,6 +20,10 @@ r.delete("/:id", { tag: "settings:write" }, ctrl.revoke);
 r.post("/mcp-authorize", { tag: "settings:write" }, ctrl.authorizeMcpClient);
 // Connected MCP clients (OAuth bindings) — list + disconnect (revoke).
 r.get("/mcp-clients", { tag: "settings:read" }, ctrl.listMcpClients);
+// The detail route carries the binding's GRANTS, which the settings editor needs to
+// prefill — `mcp-authorize` replaces them wholesale, so editing without them would
+// overwrite the user's scope with whatever the form defaulted to.
+r.get("/mcp-clients/:clientId", { tag: "settings:read" }, ctrl.getMcpClient);
 r.delete("/mcp-clients/:clientId", { tag: "settings:write" }, ctrl.disconnectMcpClient);
 
 export const tokenRoutes = r.hono;

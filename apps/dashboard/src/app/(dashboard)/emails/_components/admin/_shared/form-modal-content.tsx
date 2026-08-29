@@ -30,6 +30,8 @@ interface FormModalContentProps {
   initialError?: string;
   /** Disable submit (e.g. while a required field is empty). */
   disabled?: boolean;
+  /** Override the cancel button's label (e.g. "Skip"). */
+  cancelLabel?: string;
 }
 
 export function FormModalContent({
@@ -43,6 +45,7 @@ export function FormModalContent({
   children,
   initialError,
   disabled,
+  cancelLabel,
 }: FormModalContentProps) {
   const { t } = useI18n();
   const [submitting, setSubmitting] = useState(false);
@@ -93,7 +96,7 @@ export function FormModalContent({
           disabled={submitting}
           className="px-4 py-2.5 text-sm font-semibold rounded-xl bg-muted text-foreground hover:bg-muted/80 border border-border transition-colors disabled:opacity-50"
         >
-          {t.emailsAdmin.shared.cancel}
+          {cancelLabel ?? t.emailsAdmin.shared.cancel}
         </button>
         <button
           type="submit"

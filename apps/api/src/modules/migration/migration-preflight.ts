@@ -11,10 +11,12 @@
 
 import { edgeProxy } from "@repo/adapters";
 import { discoverServerStack } from "./docker-inspect.service";
+import { classifyManagedContainers } from "./managed-containers";
+import { selectDiscoveredServices } from "./select-services";
 import { createServerCommandExecutor } from "../../lib/deployment-runtime";
 import { sshManager } from "../../lib/ssh-manager";
 import { sizeOfMoveSet, type SizedItem } from "./migration-size";
-import { sq } from "./direct-transfer";
+import { probeTargetVolumeConflicts } from "./volume-conflict";
 
 /**
  * Which bind-mount host paths are worth (and safe to) copy across servers.
@@ -143,21 +145,49 @@ export async function buildMigrationPreview(opts: {
   targetServerId: string;
   serviceNames: string[];
   organizationId: string;
+  /** Container ids of the selected services — globally unique, unlike a compose
+   *  service name. See {@link selectDiscoveredServices}. */
+  serviceContainerIds?: string[];
+  /** Must match the scan the operator selected from. The plan is what they approve, so
+   *  discovering in a different mode than the migration will run sizes a different set. */
+  flatDocker?: boolean;
   /** User-selected extra paths to move (sized in the plan). */
   customPaths?: Array<{ source: string; dest: string }>;
 }): Promise<MigrationPreview> {
   const { sourceServerId, targetServerId, serviceNames, organizationId } = opts;
   const customPaths = opts.customPaths ?? [];
 
-  const stack = await discoverServerStack(sourceServerId, organizationId);
-  const selected = new Set(serviceNames);
-  const chosen = stack.services.filter((s) => selected.has(s.name));
+  const stack = await discoverServerStack(sourceServerId, organizationId, undefined, {
+    flatDocker: opts.flatDocker,
+  });
+  // Identity-first (see select-services). The plan is sized and rendered from this
+  // set, so an unscoped name match also reported ANOTHER stack's volumes as part of
+  // this migration — including the control plane's own `postgres` (#584).
+  const selected = selectDiscoveredServices(stack.services, {
+    containerIds: opts.serviceContainerIds,
+    names: serviceNames,
+  });
+  // The SAME classification the migration uses, so the plan the operator approves is
+  // the plan that runs. Ours are dropped exactly as the migration drops them; a real
+  // conflict becomes a BLOCKED row rather than a failed preview — the preview is
+  // read-only, and a 502 where a plan should be teaches the operator nothing.
+  // `conflicts` already means VOLUME conflicts in this file — keep them distinct.
+  const { controlPlane, conflicts: managedConflicts } = await classifyManagedContainers(
+    selected,
+    organizationId,
+  );
+  const chosen =
+    controlPlane.size > 0
+      ? selected.filter((s) => !(s.containerId && controlPlane.has(s.containerId)))
+      : selected;
+  const managedByContainer = new Map(managedConflicts.map((c) => [c.containerId, c]));
   const sameServer = sourceServerId === targetServerId;
 
   const services: MigrationPreviewService[] = chosen.map((s) => {
     // Build-only = has a build context and no runnable registry image.
     const isBuild = Boolean(s.build) && !s.image;
     const isProxy = Boolean(s.proxyKind);
+    const managedBy = s.containerId ? managedByContainer.get(s.containerId) : undefined;
     const volumes = s.volumes
       .filter((v) => v.type === "volume" && v.source)
       .map((v) => ({ name: v.source as string, target: v.target }));
@@ -169,8 +199,10 @@ export async function buildMigrationPreview(opts: {
       source: s.source,
       image: s.image,
       classification: isBuild ? "build" : "registry",
-      blocked: isBuild,
-      reason: isBuild
+      blocked: isBuild || Boolean(managedBy),
+      reason: managedBy
+        ? `Already managed here by project "${managedBy.projectName}" — redeploy or edit that project instead of re-importing.`
+        : isBuild
         ? "Built-from-source services can't be migrated yet — publish an image or link a repo first."
         : isProxy
           ? `Reverse proxy (${s.proxyKind}) on ${(s.edgePorts ?? []).map((p) => `:${p}`).join("/")} — Openship's edge replaces it; not imported.`
@@ -238,19 +270,36 @@ export async function buildMigrationPreview(opts: {
   // hitting the run-time "refusing to overwrite" hard-fail. Best-effort — a
   // probe hiccup just omits the conflict (the run-time guard is the backstop).
   let conflicts: MigrationPreview["conflicts"];
+  /** Extra preview warnings this function raises (merged into `stack.warnings` below). */
+  const extraWarnings: string[] = [];
   if (!sameServer && volumesToMove.length > 0) {
     try {
-      const { executor } = await createServerCommandExecutor(targetServerId, organizationId);
-      const hasData = new Set<string>();
-      for (const name of volumesToMove) {
-        const out = await executor
-          .exec(
-            `if docker volume inspect ${sq(name)} >/dev/null 2>&1; then ` +
-              `mp=$(docker volume inspect ${sq(name)} -f '{{.Mountpoint}}'); ` +
-              `[ -n "$(ls -A "$mp" 2>/dev/null)" ] && echo CONFLICT || true; fi`,
-          )
-          .catch(() => "");
-        if (out.includes("CONFLICT")) hasData.add(name);
+      // Through the ADAPTER, which mounts the volume in a helper container and reports
+      // "not empty" for anything it cannot read. The shell probe this replaces ended in
+      // `.catch(() => "")`, so an unreadable `/var/lib/docker/volumes` (root-only 0700 —
+      // i.e. any non-root SSH account) read as "no conflict" and the plan step offered no
+      // choice before the move overwrote a populated volume. See volume-conflict.ts.
+      const hasData = await probeTargetVolumeConflicts({
+        targetServerId,
+        organizationId,
+        // No project exists yet at preview time; only the bare volume NAME is consulted.
+        projectId: "preview",
+        projectSlug: "",
+        queries: volumesToMove.map((name) => ({
+          serviceName: workloads.find((s) => s.volumes.some((v) => v.name === name))?.name ?? name,
+          volume: name,
+        })),
+      });
+      // An UNVERIFIED volume is not the same claim as an occupied one — say which, so an
+      // unreachable target reads as a connectivity problem rather than sending the operator
+      // hunting for data that may not be there.
+      const unverified = [...hasData].filter(([, why]) => why === "unknown").map(([v]) => v);
+      if (unverified.length > 0) {
+        extraWarnings.push(
+          `Could not verify ${unverified.length} target volume(s) (${unverified.join(", ")}) — ` +
+            `they are treated as holding data so the migration never overwrites them. Check the ` +
+            `target server is reachable and its docker API is usable by the SSH account.`,
+        );
       }
       if (hasData.size > 0) {
         // Flatten to one entry PER VOLUME — the unique isolation unit (two
@@ -275,7 +324,7 @@ export async function buildMigrationPreview(opts: {
     hasBlocked: workloads.some((s) => s.blocked),
     downtimeWarning: workloads.length > 0,
     droppedProxies,
-    warnings: stack.warnings,
+    warnings: [...stack.warnings, ...extraWarnings],
     ...(plan ? { plan } : {}),
     ...(sslByDomain ? { sslByDomain } : {}),
     ...(conflicts ? { conflicts } : {}),

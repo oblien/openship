@@ -1,8 +1,13 @@
 import { eq, and, isNull, isNotNull, inArray, desc, sql, type SQL } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { project, envVar, deployment } from "../schema";
+import { project, projectGroup, envVar, deployment, service } from "../schema";
 import { member } from "../schema/organization";
+// Cloning a project writes its group and service rows in the same transaction, so this repo
+// needs both insert types. Imported from their own repos (where they are already declared)
+// rather than re-derived here, so there is one definition of each row shape.
+import type { NewProjectGroup } from "./project-group.repo";
+import type { NewService } from "./service.repo";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,6 +33,18 @@ function envVarScope(projectId: string, environment?: string, serviceId?: string
   return conditions;
 }
 
+/**
+ * The server a project is actually deployed to: the DURABLE `project.server_id`
+ * binding, falling back to the active deployment's `meta.serverId` snapshot for
+ * legacy rows never backfilled. Shared by `countActiveByServer` and
+ * `listActiveByServer` so the "N projects" chip and the removal confirm's list
+ * can never disagree — a second copy of this coalesce is exactly how a modal
+ * ends up listing five workloads next to a card that says seven. Both queries
+ * join `deployment` on `project.active_deployment_id`, which is what makes the
+ * fallback readable at all.
+ */
+const boundServerId = sql<string>`coalesce(${project.serverId}, ${deployment.meta} ->> 'serverId')`;
+
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createProjectRepo(db: Database) {
@@ -41,6 +58,43 @@ export function createProjectRepo(db: Database) {
       return db.query.project.findFirst({
         where: and(eq(project.id, id), isNull(project.deletedAt)),
       });
+    },
+
+    /**
+     * Batch id → display name. Lets a list response (the audit feed) show
+     * "api-gateway" instead of "prj_8fk2abc" with one query per page.
+     * Includes soft-deleted rows on purpose: history about a deleted project
+     * should still name it.
+     */
+    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
+      if (ids.length === 0) return [];
+      return db
+        .select({ id: project.id, name: project.name })
+        .from(project)
+        .where(inArray(project.id, ids));
+    },
+
+    /**
+     * Ids of projects in an org whose name or slug matches a search term.
+     *
+     * The inverse of `listNamesByIds`, for the audit feed's free-text search:
+     * rows store `prj_8fk2abc`, so searching "api-gateway" can only work by
+     * resolving the name to ids first. Soft-deleted included — the row being
+     * searched for is often the deletion itself.
+     */
+    async searchIdsByName(organizationId: string, term: string, limit = 200): Promise<string[]> {
+      const pattern = `%${term}%`;
+      const rows = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            sql`(${project.name} ILIKE ${pattern} OR ${project.slug} ILIKE ${pattern})`,
+          ),
+        )
+        .limit(limit);
+      return rows.map((r) => r.id);
     },
 
     /** Slug uniqueness scoped to one org. */
@@ -189,9 +243,7 @@ export function createProjectRepo(db: Database) {
      * Project counts for the dashboard home — total and with-an-active-
      * deployment, in one aggregate query instead of listing every row.
      */
-    async countByOrganization(
-      organizationId: string,
-    ): Promise<{ total: number; active: number }> {
+    async countByOrganization(organizationId: string): Promise<{ total: number; active: number }> {
       const [row] = await db
         .select({
           total: sql<number>`count(*)::int`,
@@ -272,6 +324,96 @@ export function createProjectRepo(db: Database) {
       return { ...row, createdAt: new Date(), updatedAt: new Date() } as Project;
     },
 
+    /**
+     * Create a whole project — its group, the project row, its service rows and its env vars —
+     * in ONE transaction.
+     *
+     * Exists for duplicating a project (see `project-clone.service.ts`), where a partial
+     * result is the worst outcome available: a project row with no services is an empty
+     * project the operator has to notice and delete, and a project with services but no env is
+     * a stack that boots and fails on a missing DATABASE_URL. The step-by-step create path
+     * (`createServicesProject`) compensates by soft-deleting its group on failure, which
+     * cannot cover a failure *between* the service and env inserts.
+     *
+     * The caller decides every value — this deliberately computes nothing. What to copy, what
+     * to reset and what to override is a product decision that belongs with the service that
+     * understands the two projects; the repo's only job is that all of it lands or none does.
+     *
+     * Service ids are minted here, so the returned map is how the caller (and any env row
+     * scoped to a service) resolves a SOURCE service id to the row that now stands for it.
+     */
+    async createProjectWithRecords(input: {
+      group: Omit<NewProjectGroup, "id">;
+      /** Project row minus the two ids this method owns. */
+      project: Omit<NewProject, "id" | "groupId">;
+      /** `sourceId` is only used to key the returned map (and the env rows below). */
+      services: Array<{ sourceId: string; row: Omit<NewService, "id" | "projectId"> }>;
+      /** `sourceServiceId: null` = a project-level var; otherwise it follows that service. */
+      envVars: Array<{
+        sourceServiceId: string | null;
+        key: string;
+        value: string;
+        environment: string;
+        isSecret?: boolean;
+      }>;
+    }): Promise<{ project: Project; serviceIdBySourceId: Record<string, string> }> {
+      const groupId = generateId("app");
+      const projectId = generateId("proj");
+      const serviceIdBySourceId: Record<string, string> = {};
+      for (const svc of input.services) serviceIdBySourceId[svc.sourceId] = generateId("svc");
+
+      const projectRow = { id: projectId, groupId, ...input.project };
+
+      await db.transaction(async (tx) => {
+        await tx.insert(projectGroup).values({ id: groupId, ...input.group });
+        await tx.insert(project).values(projectRow);
+        if (input.services.length > 0) {
+          await tx.insert(service).values(
+            input.services.map((svc) => ({
+              id: serviceIdBySourceId[svc.sourceId]!,
+              projectId,
+              ...svc.row,
+            })),
+          );
+        }
+        if (input.envVars.length > 0) {
+          await tx.insert(envVar).values(
+            input.envVars.map((v) => {
+              let serviceId: string | null = null;
+              if (v.sourceServiceId) {
+                serviceId = serviceIdBySourceId[v.sourceServiceId] ?? null;
+                // A var scoped to a service the caller did not clone. Coalescing to null
+                // would PROMOTE it to a project-level var — one service's config, quietly
+                // handed to every other service in the new project. Dropping it silently is
+                // the other wrong answer. It can only mean the caller's service list and env
+                // list disagree, so refuse: we are inside the transaction, and nothing lands.
+                if (!serviceId) {
+                  throw new Error(
+                    `createProjectWithRecords: env var "${v.key}" is scoped to service ` +
+                      `${v.sourceServiceId}, which is not in the services being created`,
+                  );
+                }
+              }
+              return {
+                id: generateId("env"),
+                projectId,
+                serviceId,
+                environment: v.environment,
+                key: v.key,
+                value: v.value,
+                isSecret: v.isSecret ?? false,
+              };
+            }),
+          );
+        }
+      });
+
+      return {
+        project: { ...projectRow, createdAt: new Date(), updatedAt: new Date() } as Project,
+        serviceIdBySourceId,
+      };
+    },
+
     async update(id: string, data: Partial<NewProject>) {
       await db
         .update(project)
@@ -302,6 +444,28 @@ export function createProjectRepo(db: Database) {
         .update(project)
         .set({ ...data, updatedAt: new Date() })
         .where(and(eq(project.groupId, groupId), isNull(project.deletedAt)));
+    },
+
+    /** Update a source identity shared by every environment and its project_app
+     * row in one transaction. Source transitions span both tables; exposing one
+     * repository operation prevents a failed second write from leaving the
+     * group and its environments classified differently. */
+    async updateSourceByApp(
+      groupId: string,
+      projectData: Partial<NewProject>,
+      groupData: Partial<NewProjectGroup>,
+    ) {
+      const updatedAt = new Date();
+      await db.transaction(async (tx) => {
+        await tx
+          .update(project)
+          .set({ ...projectData, updatedAt })
+          .where(and(eq(project.groupId, groupId), isNull(project.deletedAt)));
+        await tx
+          .update(projectGroup)
+          .set({ ...groupData, updatedAt })
+          .where(and(eq(projectGroup.id, groupId), isNull(projectGroup.deletedAt)));
+      });
     },
 
     /** Update favicon cache metadata without touching the user-visible updatedAt field. */
@@ -343,24 +507,24 @@ export function createProjectRepo(db: Database) {
     },
 
     /**
-     * Atomically mark the project as "teardown in progress". Returns true
-     * when this caller claimed the flag, false if another teardown is
-     * already running (and the caller should reject with a 409). Uses a
-     * conditional UPDATE so the read+write is a single row-locked op.
+     * Mark a live project as "teardown in progress".
+     *
+     * The caller owns the cross-process project-runtime advisory lock. That
+     * lock—not this crash-prone boolean—is the concurrency owner, so an old
+     * `true` left by a dead process is safely reclaimed here in Cloud and
+     * self-hosted modes alike. Returns false only when the live row is gone.
      */
     async claimDeletion(id: string): Promise<boolean> {
       const rows = await db
         .update(project)
         .set({ deletionInProgress: true, updatedAt: new Date() })
-        .where(
-          and(eq(project.id, id), eq(project.deletionInProgress, false), isNull(project.deletedAt)),
-        )
+        .where(and(eq(project.id, id), isNull(project.deletedAt)))
         .returning();
       return rows.length > 0;
     },
 
     /** Release the deletion-in-progress flag — call on every failure path so
-     *  the row isn't stuck refusing all writes after a partial teardown. */
+     *  ordinary project writes are admitted again after a partial teardown. */
     async clearDeletionInProgress(id: string) {
       await db
         .update(project)
@@ -369,32 +533,17 @@ export function createProjectRepo(db: Database) {
     },
 
     /**
-     * Boot-time sweep of stuck deletion locks. A `deletionInProgress=true`
-     * flag can only be left behind by a teardown that died mid-flight — no
-     * teardown survives a process restart — so at startup every such flag is
-     * necessarily stale and must be cleared, otherwise the project refuses all
-     * future deletes with "Another delete is already running" forever. Mirrors
-     * backupRun.sweepStaleRuns / backupRestore.sweepStaleRestores. Returns the
-     * number of locks cleared.
-     */
-    async clearStaleDeletions(): Promise<number> {
-      const rows = await db
-        .update(project)
-        .set({ deletionInProgress: false, updatedAt: new Date() })
-        .where(eq(project.deletionInProgress, true))
-        .returning();
-      return rows.length;
-    },
-
-    /**
      * Count projects currently deployed to each server, keyed by server id.
-     * A project counts for a server when its ACTIVE deployment's meta.serverId
-     * matches. Powers the "N projects" chip + Projects stat on the Servers list.
+     * A project counts for a server when it has an ACTIVE deployment and resolves
+     * to that server — preferring the DURABLE `project.server_id` binding and
+     * falling back to the active deployment's `meta.serverId` for legacy rows not
+     * yet backfilled. Powers the "N projects" chip + Projects stat on the Servers
+     * list (and the container-issues classifier's absent-edge alarm).
      */
     async countActiveByServer(organizationId: string): Promise<Record<string, number>> {
       const rows = await db
         .select({
-          serverId: sql<string>`${deployment.meta} ->> 'serverId'`,
+          serverId: boundServerId,
           count: sql<number>`count(*)::int`,
         })
         .from(project)
@@ -403,10 +552,10 @@ export function createProjectRepo(db: Database) {
           and(
             eq(project.organizationId, organizationId),
             isNull(project.deletedAt),
-            sql`${deployment.meta} ->> 'serverId' is not null`,
+            sql`${boundServerId} is not null`,
           ),
         )
-        .groupBy(sql`${deployment.meta} ->> 'serverId'`);
+        .groupBy(boundServerId);
       const out: Record<string, number> = {};
       for (const r of rows) {
         if (r.serverId) out[r.serverId] = Number(r.count);
@@ -414,11 +563,57 @@ export function createProjectRepo(db: Database) {
       return out;
     },
 
-    /** Set the active deployment for a project */
+    /**
+     * The same set `countActiveByServer` counts, for ONE server, itemised — what
+     * "Remove server" is about to take with it. Left-joins the group so an app
+     * install can be named by its collection, and carries `activeDeploymentId`
+     * rather than a resolved status: there is no batch latest-status helper, and
+     * `getProjectStatus` already derives live-vs-draft from that pointer alone.
+     */
+    async listActiveByServer(organizationId: string, serverId: string) {
+      return db
+        .select({
+          id: project.id,
+          name: project.name,
+          slug: project.slug,
+          environmentName: project.environmentName,
+          environmentSlug: project.environmentSlug,
+          groupId: project.groupId,
+          groupName: projectGroup.name,
+          isApp: project.isApp,
+          appTemplateId: project.appTemplateId,
+          activeDeploymentId: project.activeDeploymentId,
+        })
+        .from(project)
+        .innerJoin(deployment, eq(project.activeDeploymentId, deployment.id))
+        .leftJoin(projectGroup, eq(project.groupId, projectGroup.id))
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            isNull(project.deletedAt),
+            sql`${boundServerId} = ${serverId}`,
+          ),
+        )
+        .orderBy(project.name, project.environmentSlug);
+    },
+
+    /**
+     * Set the active deployment for a project.
+     *
+     * Advancing the pointer to a real release also clears `disabledAt`: a release
+     * that just went live is, by definition, not a project someone turned off, and
+     * a stale marker would tell the health watch to ignore a running workload
+     * forever. Clearing to null (a deleted deployment) leaves the marker alone —
+     * that isn't a release going live.
+     */
     async setActiveDeployment(projectId: string, deploymentId: string | null) {
       await db
         .update(project)
-        .set({ activeDeploymentId: deploymentId, updatedAt: new Date() })
+        .set({
+          activeDeploymentId: deploymentId,
+          ...(deploymentId ? { disabledAt: null } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(project.id, projectId));
     },
 
@@ -605,20 +800,23 @@ export function createProjectRepo(db: Database) {
 
     /**
      * Env-var change metadata for a project+environment: each row's scope
-     * (serviceId, null = project-level / all services) and last-modified time.
-     * Used by smart redeploy to decide which services need an env-only
-     * refresh (updatedAt newer than the active deployment). Values are not
-     * returned (no decryption needed for a dirtiness check).
+     * (serviceId, null = project-level / all services), NAME, and last-modified
+     * time. Used by smart redeploy to decide which services need an env-only
+     * refresh (updatedAt newer than the active deployment), and by the service
+     * restart guard to name the drifted keys back to the operator.
+     *
+     * `key` is the variable's NAME, never its value — no decryption is involved,
+     * so this stays safe to surface in an API error body.
      */
     async listEnvVarChangeMeta(
       projectId: string,
       environment: string,
-    ): Promise<Array<{ serviceId: string | null; updatedAt: Date }>> {
+    ): Promise<Array<{ serviceId: string | null; key: string; updatedAt: Date }>> {
       const rows = await db.query.envVar.findMany({
         where: and(eq(envVar.projectId, projectId), eq(envVar.environment, environment)),
-        columns: { serviceId: true, updatedAt: true },
+        columns: { serviceId: true, key: true, updatedAt: true },
       });
-      return rows.map((r) => ({ serviceId: r.serviceId, updatedAt: r.updatedAt }));
+      return rows.map((r) => ({ serviceId: r.serviceId, key: r.key, updatedAt: r.updatedAt }));
     },
   };
 }

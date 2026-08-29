@@ -22,7 +22,8 @@
 
 import { repos, type Deployment } from "@repo/db";
 import { deploymentWorkloadRef, isSwarmStackRef, safeErrorMessage } from "@repo/core";
-import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { disposeRuntime, resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { isRealContainerRef } from "../../lib/container-ref";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { isConnectionLoss } from "../../lib/remote-state";
 import { swarmDeploymentReconciler } from "./swarm/reconcile.service";
@@ -70,7 +71,16 @@ export async function reconcileDeployment(deploymentId: string): Promise<Reconci
 
   // Server-backed: fast-fail if the host still isn't answering — leave the
   // deployment `reconciling` for the next tick rather than guessing.
+  //
+  // Org-checked BEFORE the probe: `meta.serverId` is a client-supplied snapshot value
+  // and the probe resolves the row unscoped, so without this a deploy body could aim a
+  // TCP dial at another org's host. A foreign id takes the same conservative branch as
+  // a deleted one (below at the runtime resolve) — unreachable, never a guess.
   if (!isCloud && serverId) {
+    const inOrg = await repos.server
+      .getInOrganization(serverId, dep.organizationId)
+      .catch(() => undefined);
+    if (!inOrg) return "unreachable";
     const probe = createReachabilityProbe();
     if (!(await probe.isReachable(serverId))) return "unreachable";
   }
@@ -86,110 +96,111 @@ export async function reconcileDeployment(deploymentId: string): Promise<Reconci
     return "unreachable";
   }
 
-  // Bare runtime can't inspect containers by id — leave reconciling; the
-  // one-active-per-project index excludes reconciling so a redeploy can land.
-  if (!runtime.supports("containerInfo")) return "unsupported";
+  // The resolved runtime holds a Docker-over-SSH loopback bridge for a remote
+  // server, and this runs on a SCHEDULE for every reconciling deployment — so a
+  // missed release accumulates one listener per tick, forever.
+  try {
+    // Bare runtime can't inspect containers by id — leave reconciling; the
+    // one-active-per-project index excludes reconciling so a redeploy can land.
+    if (!runtime.supports("containerInfo")) return "unsupported";
 
-  // Inspect targets: every service container, or the single-app container.
-  const serviceDeps = await repos.serviceDeployment.listByDeployment(dep.id);
-  const targets = serviceDeps
-    .filter((sd) => sd.containerId)
-    .map((sd) => ({
-      rowId: sd.id,
-      containerId: sd.containerId as string,
-      name: sd.serviceName ?? undefined,
-      isService: true,
-    }));
-  if (targets.length === 0 && dep.containerId && dep.containerId !== "compose") {
-    targets.push({
-      rowId: dep.id,
-      containerId: dep.containerId,
-      name: undefined,
-      isService: false,
-    });
-  }
-
-  // Services that terminally FAILED with no container (e.g. build error) count
-  // toward the verdict as "down" — otherwise a mix of build-failure +
-  // connection-loss could wrongly resolve to "ready" and mask the failure.
-  // `skipped` (unchanged, carried-forward) rows are NOT failures and are excluded.
-  const failedNoContainer = serviceDeps.filter((sd) => {
-    // `failed` vs `failure` — the compose catch writes "failed" while the repo
-    // union says "failure"; match both. Cast because "failed" isn't in the union.
-    const s = sd.status as string;
-    return !sd.containerId && (s === "failure" || s === "failed" || s === "cancelled");
-  }).length;
-
-  if (targets.length === 0) {
-    await repos.deployment.updateStatus(dep.id, "failed", {
-      errorMessage: "Reconcile found no containers to verify.",
-    });
-    return "finalized";
-  }
-
-  const missing: string[] = [];
-  let up = 0;
-  for (const t of targets) {
-    let state: "running" | "missing" | "down";
-    try {
-      const info = await runtime.getContainerInfo(t.containerId);
-      state =
-        info.status === "running" ? "running" : info.status === "missing" ? "missing" : "down";
-    } catch (err) {
-      // A connection error mid-inspect means the host went away again — abort
-      // the whole reconcile and retry later rather than recording half-truths.
-      if (isConnectionLoss(err)) return "unreachable";
-      state = "down";
+    // Inspect targets: every service container, or the single-app container.
+    const serviceDeps = await repos.serviceDeployment.listByDeployment(dep.id);
+    const targets = serviceDeps
+      .filter((sd) => sd.containerId)
+      .map((sd) => ({
+        rowId: sd.id,
+        containerId: sd.containerId as string,
+        name: sd.serviceName ?? undefined,
+        isService: true,
+      }));
+    if (targets.length === 0 && isRealContainerRef(dep.containerId)) {
+      targets.push({ rowId: dep.id, containerId: dep.containerId, name: undefined, isService: false });
     }
 
-    if (state === "running") up++;
-    if (state === "missing") missing.push(t.name ?? t.containerId.slice(0, 12));
+    // Services that terminally FAILED with no container (e.g. build error) count
+    // toward the verdict as "down" — otherwise a mix of build-failure +
+    // connection-loss could wrongly resolve to "ready" and mask the failure.
+    // `skipped` (unchanged, carried-forward) rows are NOT failures and are excluded.
+    const failedNoContainer = serviceDeps.filter((sd) => {
+      // `failed` vs `failure` — the compose catch writes "failed" while the repo
+      // union says "failure"; match both. Cast because "failed" isn't in the union.
+      const s = sd.status as string;
+      return !sd.containerId && (s === "failure" || s === "failed" || s === "cancelled");
+    }).length;
 
-    if (t.isService) {
-      await repos.serviceDeployment
-        .update(t.rowId, {
-          status: state === "running" ? "success" : state === "missing" ? "missing" : "failure",
-        })
-        .catch(() => {});
+    if (targets.length === 0) {
+      await repos.deployment.updateStatus(dep.id, "failed", {
+        errorMessage: "Reconcile found no containers to verify.",
+      });
+      return "finalized";
     }
-  }
 
-  const total = targets.length + failedNoContainer;
-  const verdict = up === total ? "ready" : up > 0 ? "partial_failure" : "failed";
+    const missing: string[] = [];
+    let up = 0;
+    for (const t of targets) {
+      let state: "running" | "missing" | "down";
+      try {
+        const info = await runtime.getContainerInfo(t.containerId);
+        state = info.status === "running" ? "running" : info.status === "missing" ? "missing" : "down";
+      } catch (err) {
+        // A connection error mid-inspect means the host went away again — abort
+        // the whole reconcile and retry later rather than recording half-truths.
+        if (isConnectionLoss(err)) return "unreachable";
+        state = "down";
+      }
 
-  const nextMeta: Record<string, unknown> = { ...meta };
-  if (missing.length > 0) {
-    nextMeta.drift = {
-      missingContainers: missing,
-      detectedAt: new Date().toISOString(),
-      serverId: serverId ?? null,
-    } satisfies DeploymentDrift;
-  } else {
-    delete nextMeta.drift;
-  }
+      if (state === "running") up++;
+      if (state === "missing") missing.push(t.name ?? t.containerId.slice(0, 12));
 
-  if (verdict === "failed") {
-    // Forward-only: a failed reconcile NEVER advances the project pointer.
-    await repos.deployment.updateStatus(dep.id, "failed", { meta: nextMeta });
+      if (t.isService) {
+        await repos.serviceDeployment
+          .update(t.rowId, {
+            status: state === "running" ? "success" : state === "missing" ? "missing" : "failure",
+          })
+          .catch(() => {});
+      }
+    }
+
+    const total = targets.length + failedNoContainer;
+    const verdict = up === total ? "ready" : up > 0 ? "partial_failure" : "failed";
+
+    const nextMeta: Record<string, unknown> = { ...meta };
+    if (missing.length > 0) {
+      nextMeta.drift = {
+        missingContainers: missing,
+        detectedAt: new Date().toISOString(),
+        serverId: serverId ?? null,
+      } satisfies DeploymentDrift;
+    } else {
+      delete nextMeta.drift;
+    }
+
+    if (verdict === "failed") {
+      // Forward-only: a failed reconcile NEVER advances the project pointer.
+      await repos.deployment.updateStatus(dep.id, "failed", { meta: nextMeta });
+      return "finalized";
+    }
+
+    if (verdict === "partial_failure") {
+      // Hold for an explicit keep/reject decision — same as the normal compose
+      // finalize path — so a connection-loss deploy that reconciles to a partial
+      // failure can't silently read as a clean "Deployed".
+      const existingCompose =
+        (nextMeta.composeDeployment as Record<string, unknown> | undefined) ?? {};
+      nextMeta.composeDeployment = { ...existingCompose, decision: "pending" };
+    }
+
+    await repos.deployment.updateStatus(dep.id, verdict, { errorMessage: null, meta: nextMeta });
+
+    const project = await repos.project.findById(dep.projectId);
+    if (project && !(await isSuperseded(project.activeDeploymentId, dep))) {
+      await repos.project.setActiveDeployment(project.id, dep.id);
+    }
     return "finalized";
+  } finally {
+    disposeRuntime(runtime);
   }
-
-  if (verdict === "partial_failure") {
-    // Hold for an explicit keep/reject decision — same as the normal compose
-    // finalize path — so a connection-loss deploy that reconciles to a partial
-    // failure can't silently read as a clean "Deployed".
-    const existingCompose =
-      (nextMeta.composeDeployment as Record<string, unknown> | undefined) ?? {};
-    nextMeta.composeDeployment = { ...existingCompose, decision: "pending" };
-  }
-
-  await repos.deployment.updateStatus(dep.id, verdict, { errorMessage: null, meta: nextMeta });
-
-  const project = await repos.project.findById(dep.projectId);
-  if (project && !(await isSuperseded(project.activeDeploymentId, dep))) {
-    await repos.project.setActiveDeployment(project.id, dep.id);
-  }
-  return "finalized";
 }
 
 // De-dupe concurrent on-demand reconciles (e.g. rapid deployment-detail loads)

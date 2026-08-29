@@ -28,11 +28,18 @@
  * null / no-op) so callers don't need an extra guard.
  */
 
-import { PLANS, type PlanTierId, safeErrorMessage } from "@repo/core";
+import {
+  PLANS,
+  DEFAULT_PLAN_TIER,
+  type PlanDefinition,
+  type PlanTierId,
+  safeErrorMessage,
+} from "@repo/core";
 import { repos } from "@repo/db";
 import type { NamespaceUsageUnits } from "@repo/adapters";
 
-import { getOblienClient } from "../../lib/openship-cloud";
+import { env } from "../../config/env";
+import { getOblienClient } from "../../lib/oblien-client";
 import {
   toOblienCredits,
   fromOblienCredits,
@@ -50,6 +57,40 @@ const QUOTA_NOTIFICATION_THRESHOLDS = [80, 95];
 /** Credits of overdraft allowed past the ceiling before enforcement bites. */
 const QUOTA_OVERDRAFT = 0;
 
+/**
+ * Account-wide default quota, auto-applied by Oblien to any namespace created
+ * without an explicit `setQuota`.
+ *
+ * Defence in depth, not the primary control — `ensureNamespaceWithQuota` is. This
+ * exists because "uncapped" is the wrong default for a metered tenant: any future
+ * code path that creates a namespace and forgets the quota push should land on the
+ * FREE tier's ceiling, not on unlimited. A bug that under-serves a paying customer
+ * gets a support ticket; a bug that hands out unmetered compute gets an invoice.
+ *
+ * Deliberately pinned to the free tier's grant rather than a hand-picked number,
+ * so it tracks the catalog instead of drifting from it.
+ */
+export async function ensureOblienDefaultQuota(): Promise<void> {
+  if (!env.CLOUD_MODE) return;
+
+  const freeGrantMilli = PLANS[DEFAULT_PLAN_TIER].monthlyCredits;
+  if (freeGrantMilli === null) return; // free is never null, but don't assume it
+
+  try {
+    await getOblienClient().namespaces.setDefaultQuota({
+      service: SERVICE_CODE,
+      quotaLimit: toOblienCredits(freeGrantMilli),
+      autoApply: true,
+    });
+  } catch (err) {
+    // Never fatal at boot: this is a backstop, and the real ceiling is pushed
+    // per-namespace on the spend path.
+    console.warn(
+      `[oblien] default quota registration failed (namespaces created without an explicit quota would be UNCAPPED): ${safeErrorMessage(err)}`,
+    );
+  }
+}
+
 // The milli↔Oblien-credit boundary lives in a pure, dependency-free module so
 // it's unit-testable in isolation. Re-exported since the webhook controller
 // reaches `fromOblienCredits` through this wrapper.
@@ -62,10 +103,22 @@ export { toOblienCredits, fromOblienCredits };
  * Shared by `setQuotaForTier`/`resetAndRegrant` so a plan change/renewal picks
  * up new caps. `namespaces.update` is idempotent server-side.
  */
+/**
+ * `organization.plan_tier_id` is a free-text column with no constraint, so a
+ * hand-edited row or a tier retired from the catalog can hold a string PLANS has
+ * no entry for. A bare `PLANS[tierId]` there is a TypeError thrown INSIDE a
+ * Stripe webhook transaction — which rolls the transaction back and makes Stripe
+ * retry the same event forever. Resolve to the free tier instead: the safe
+ * direction for a quota is the smallest one.
+ */
+function resolveTier(tierId: PlanTierId): PlanDefinition {
+  return PLANS[tierId] ?? PLANS[DEFAULT_PLAN_TIER];
+}
+
 async function applyResourceLimits(
   client: ReturnType<typeof getOblienClient>,
   namespace: string,
-  tier: (typeof PLANS)[PlanTierId],
+  tier: PlanDefinition,
 ): Promise<void> {
   if (!tier.oblienLimits) return;
   try {
@@ -73,8 +126,16 @@ async function applyResourceLimits(
       resource_limits: tier.oblienLimits,
     });
   } catch (err) {
-    throw new Error(
-      `Failed to apply ${tier.id} resource_limits to namespace ${namespace}: ${safeErrorMessage(err)}`,
+    // Deliberately NOT rethrown. This runs inside the Stripe webhook
+    // transaction, and a throw here rolled back the tier upsert — so a customer
+    // who had just paid stayed on their old plan while Stripe redelivered the
+    // event forever, and every retry hit the same failing namespace call. The
+    // credit quota (set just before this) is the entitlement that matters;
+    // resource ceilings are a backstop Oblien re-reads on the next push, and the
+    // anniversary cron re-applies them every period. Losing the ceiling for one
+    // period is strictly better than never granting the plan the customer bought.
+    console.error(
+      `[billing] failed to apply ${tier.id} resource_limits to namespace ${namespace} (tier change still applied): ${safeErrorMessage(err)}`,
     );
   }
 }
@@ -110,8 +171,127 @@ interface OblienQuotaRow {
 
 interface OblienDetailsResponse {
   data?: {
+    /** `active` | `suspended` — Oblien's own namespace lifecycle state. */
+    status?: string;
     quotas?: OblienQuotaRow[];
   };
+}
+
+/** What one reconciliation pass found and corrected for an org. */
+export interface EntitlementDrift {
+  /** Oblien had no compute quota row at all — the uncapped-tenant case. */
+  quotaMissing: boolean;
+  /** Oblien's ceiling disagreed with the tier's (in milli-credits). */
+  quotaLimitWas: number | null;
+  quotaLimitNow: number | null;
+  /** Oblien's namespace status, verbatim. */
+  oblienStatus: string | null;
+  /** Local status before/after the pass. */
+  statusWas: string;
+  statusNow: string;
+  /** True when anything was written. */
+  changed: boolean;
+}
+
+/**
+ * Compare Oblien's truth against ours for ONE org, and correct ours.
+ *
+ * Why polling exists at all: Oblien states plainly that webhook "delivery is
+ * best-effort with idempotent provisioning" and that callers should "reconcile via
+ * the entitlement endpoint". Until this existed, a single dropped
+ * `credits.depleted` left an org reading `active` forever — silently, permanently,
+ * with the customer's workloads stopped and their billing page claiming health.
+ * It also covers the two lifecycle events this SDK version cannot subscribe to
+ * (`namespace.suspended` / `namespace.restored`).
+ *
+ * Three drifts are repaired, and the FIRST is the one that matters most:
+ *
+ *   1. NO QUOTA ROW on Oblien → push the tier's ceiling. This is the uncapped
+ *      tenant: a namespace that exists, accrues spend, and has nothing stopping it.
+ *      `ensureNamespaceWithQuota` is the primary guard on the spend path; this is
+ *      the sweep that catches anything that got in before it, or around it.
+ *   2. CEILING MISMATCH → re-push. Covers a manual Oblien edit and a plan change
+ *      whose webhook never landed.
+ *   3. STATUS DRIFT → align `subscription_status` with Oblien's namespace state.
+ *
+ * Deliberately does NOT touch `past_due` / `canceled`: those are Stripe's verdict
+ * on whether the money arrived, and a namespace being up says nothing about that.
+ * Only the status this system owns (`credit_exhausted`) is cleared here.
+ *
+ * Never throws — one unreachable namespace must not stop a sweep.
+ */
+export async function reconcileOblienEntitlement(
+  orgId: string,
+): Promise<EntitlementDrift | null> {
+  const org = await repos.organization.findById(orgId).catch(() => null);
+  if (!org?.oblienNamespace) return null;
+
+  const tier = resolveTier(org.planTierId as PlanTierId);
+  const expected = tier.monthlyCredits; // milli; null = enterprise, uncapped by contract
+
+  let res: OblienDetailsResponse;
+  try {
+    res = (await getOblienClient().namespaces.getDetails(
+      org.oblienNamespace,
+    )) as OblienDetailsResponse;
+  } catch (err) {
+    console.warn(
+      `[billing] entitlement reconcile skipped for org ${orgId} (${org.oblienNamespace}): ${safeErrorMessage(err)}`,
+    );
+    return null;
+  }
+
+  const oblienStatus = typeof res?.data?.status === "string" ? res.data.status : null;
+  const row = (res?.data?.quotas ?? []).find((q) => q?.service === SERVICE_CODE);
+  const limitWas =
+    row && typeof row.quota_limit === "number" ? fromOblienCredits(row.quota_limit) : null;
+
+  const drift: EntitlementDrift = {
+    quotaMissing: !row,
+    quotaLimitWas: limitWas,
+    quotaLimitNow: limitWas,
+    oblienStatus,
+    statusWas: org.subscriptionStatus,
+    statusNow: org.subscriptionStatus,
+    changed: false,
+  };
+
+  // ── 1 + 2: the ceiling ────────────────────────────────────────────────────
+  // Enterprise (expected === null) is uncapped by contract, so an absent row is
+  // correct there and must not be "repaired" into a cap.
+  if (expected !== null && (!row || limitWas !== expected)) {
+    try {
+      await setQuotaForTier(orgId, tier.id as PlanTierId);
+      drift.quotaLimitNow = expected;
+      drift.changed = true;
+      console.warn(
+        `[billing] reconciled Oblien ceiling for org ${orgId} (${org.oblienNamespace}): ` +
+          `${drift.quotaMissing ? "MISSING" : String(limitWas)} → ${expected} milli (tier ${tier.id})`,
+      );
+    } catch (err) {
+      console.error(
+        `[billing] failed to reconcile ceiling for org ${orgId}: ${safeErrorMessage(err)}`,
+      );
+    }
+  }
+
+  // ── 3: the status ─────────────────────────────────────────────────────────
+  const STRIPE_OWNED = ["past_due", "canceled", "cancelled", "unpaid"];
+  if (!STRIPE_OWNED.includes(org.subscriptionStatus)) {
+    const target =
+      oblienStatus === "suspended"
+        ? "credit_exhausted"
+        : org.subscriptionStatus === "credit_exhausted" && oblienStatus === "active"
+          ? "active"
+          : null;
+    if (target && target !== org.subscriptionStatus) {
+      await repos.organization.setSubscriptionStatus(orgId, target).catch(() => {});
+      drift.statusNow = target;
+      drift.changed = true;
+    }
+  }
+
+  return drift;
 }
 
 /**
@@ -175,7 +355,7 @@ export async function setQuotaForTier(orgId: string, tierId: PlanTierId): Promis
   }
   if (!org.oblienNamespace) return;
 
-  const tier = PLANS[tierId];
+  const tier = resolveTier(tierId);
   if (tier.monthlyCredits === null) return;
 
   const client = getOblienClient();
@@ -272,7 +452,7 @@ export async function resetAndRegrant(orgId: string, tierId: PlanTierId): Promis
   }
   if (!org.oblienNamespace) return;
 
-  const tier = PLANS[tierId];
+  const tier = resolveTier(tierId);
   if (tier.monthlyCredits === null) return;
 
   const client = getOblienClient();

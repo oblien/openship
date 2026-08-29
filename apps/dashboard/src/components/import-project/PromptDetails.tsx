@@ -103,7 +103,7 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
             <p className="text-xs text-muted-foreground">
               {interpolate(dp.promptDetails.sites.lead, { count: String(sites.length) })}
             </p>
-            <div className="rounded-xl border border-border bg-muted/40 divide-y divide-border">
+            <div className="max-h-72 overflow-y-auto rounded-xl border border-border bg-muted/40 divide-y divide-border">
               {sites.map((site, i) => (
                 <div key={`${site.serverNames.join(",")}-${i}`} className="flex items-center gap-2 p-3 min-w-0">
                   <div className="min-w-0 flex-1">
@@ -138,7 +138,7 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
               <AlertTriangle className="size-3.5" />
               {dp.promptDetails.sites.warningsTitle}
             </div>
-            <ul className="space-y-1">
+            <ul className="max-h-40 space-y-1 overflow-y-auto">
               {warnings.map((w, i) => (
                 <li key={i} className="text-xs text-muted-foreground break-words">
                   {w}
@@ -156,6 +156,9 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
     { label: dp.promptDetails.port, value: details.port != null ? String(details.port) : null },
     { label: dp.promptDetails.process, value: typeof details.command === "string" ? details.command : null },
     { label: "PID", value: details.pid != null ? String(details.pid) : null },
+    // The container is the owner for any docker-published port, so it has to be visible
+    // — the operator is being asked to approve stopping THIS, not the daemon behind it.
+    { label: "Container", value: typeof details.containerName === "string" ? details.containerName : null },
     { label: "Systemd Unit", value: typeof details.systemdUnit === "string" ? details.systemdUnit : null },
     { label: dp.promptDetails.unitDescription, value: typeof details.systemdDescription === "string" ? details.systemdDescription : null },
     { label: dp.promptDetails.openshipDeployment, value: typeof details.deploymentId === "string" ? details.deploymentId : null },

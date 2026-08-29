@@ -4,8 +4,10 @@
  * Grounded in apps/api/src/modules/tokens/token.routes.ts (mounted at
  * /api/tokens). Self-scoped: every call operates on the caller's own tokens.
  *   list    GET    /tokens                 → { data: PublicToken[] }
- *   create  POST   /tokens                 { name, readOnly?, expiresInDays?, grants? }
+ *   create  POST   /tokens                 { name, readOnly?, expiresInDays?, grants?, fullAccess? }
  *                                          → 201 { data: { ...token, token } }  (plaintext ONCE)
+ *                                          Exactly one of grants / fullAccess:true is required —
+ *                                          the API will not infer "no limits" from an empty list.
  *   revoke  DELETE /tokens/:id             → { data: { revoked: true } }
  */
 import { Command } from "commander";
@@ -82,13 +84,33 @@ const createCmd = new Command("create")
     collectGrant,
     [] as Grant[],
   )
+  .option(
+    "--full-access",
+    "Mint an UNSCOPED token with your own full access (required when no --grant is given)",
+    false,
+  )
   .action(async (name: string, opts) => {
     const grants: Grant[] = opts.grant ?? [];
+    // The API refuses to infer "no limits" from an absent --grant, so say it here
+    // rather than letting the user meet a 400. Checked locally so the message can
+    // name the flags instead of the wire fields.
+    if (grants.length === 0 && !opts.fullAccess) {
+      fail(
+        new Error(
+          "Refusing to mint an unscoped token by default. Pass --grant <type:id:perms> to scope " +
+            "it, or --full-access to deliberately create one with your own full access.",
+        ),
+      );
+    }
+    if (grants.length > 0 && opts.fullAccess) {
+      fail(new Error("--grant and --full-access are mutually exclusive: pick one."));
+    }
     const body = {
       name,
       readOnly: opts.readOnly || undefined,
       expiresInDays: Number.isFinite(opts.expires) ? opts.expires : undefined,
       grants: grants.length > 0 ? grants : undefined,
+      fullAccess: grants.length === 0 ? true : undefined,
     };
     const sp = spin(`Creating token "${name}"…`);
     try {

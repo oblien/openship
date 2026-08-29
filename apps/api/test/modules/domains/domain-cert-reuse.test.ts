@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandExecutor } from "@repo/adapters";
 
 // reuseServerCertForDomain adopts an SSL cert the box ALREADY serves (Openship
-// re-migration, or a foreign proxy we're taking over) instead of re-issuing via
-// ACME — reading it on the HOST executor so it works even when the API runs in a
-// container whose own /etc/letsencrypt is a different (empty) volume.
+// re-migration, or a foreign proxy we're taking over) instead of re-issuing via ACME.
+// Each source is read on the executor that can actually see it: certbot's store is a
+// 1:1 bind mount in the api container, so on the LOCAL box it is read there with no
+// host channel involved (#490); a remote server's store needs that server's own SSH
+// executor, and a foreign proxy's config is host-only either way.
 
 const domainRepo = vi.hoisted(() => ({
   findById: vi.fn(),
@@ -17,7 +19,7 @@ const domainRepo = vi.hoisted(() => ({
 }));
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
-const serverRepo = vi.hoisted(() => ({ getInOrganization: vi.fn() }));
+const serverRepo = vi.hoisted(() => ({ getInOrganization: vi.fn(), get: vi.fn() }));
 
 const sslMocks = vi.hoisted(() => ({
   verifyExistingCert: vi.fn(),
@@ -27,8 +29,11 @@ const sslMocks = vi.hoisted(() => ({
 }));
 /** The adapter's proxy read api — swapped per test to stand in for a real proxy. */
 const edgeProxy = vi.hoisted(() => vi.fn());
-// The host executor createHostExecutor() returns — swapped per test.
+// The box's filesystem, however it is reached — swapped per test.
 const hostExec = vi.hoisted(() => ({ current: null as CommandExecutor | null }));
+/** `createExecutor()` — the LOCAL read. A spy so a test can pin WHICH path was taken,
+ *  not just that a cert was found: both routes see the same files on the local box. */
+const createExecutor = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/db", () => ({
   repos: {
@@ -59,7 +64,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   // `validateCertFor` stays REAL: the coverage/expiry/issuer rules are exactly what
   // these tests are here to pin, and mocking them out would let a wrong-hostname
   // cert pass the suite while failing on a real box.
-  return { ...actual, createHostExecutor: () => hostExec.current, edgeProxy };
+  return { ...actual, createHostExecutor: () => hostExec.current, createExecutor, edgeProxy };
 });
 
 import { validateCertFor } from "@repo/adapters";
@@ -144,6 +149,8 @@ beforeEach(() => {
   projectRepo.findById.mockResolvedValue({ ...project });
   deploymentRepo.findById.mockResolvedValue({ id: "dep_1", meta: { serverId: "srv_1" } });
   serverRepo.getInOrganization.mockResolvedValue({ id: "srv_1", isLocal: true });
+  serverRepo.get.mockResolvedValue({ id: "srv_1", isLocal: true, organizationId: "org_1" });
+  createExecutor.mockImplementation(() => hostExec.current);
   sslMocks.verifyExistingCert.mockResolvedValue({ verified: false });
   sslMocks.installDomainCert.mockResolvedValue({ expiresAt: "2027-01-01T00:00:00.000Z", verified: true });
   edgeProxy.mockResolvedValue(null);
@@ -171,7 +178,43 @@ describe("reuseServerCertForDomain", () => {
     expect(sslMocks.installDomainCert).not.toHaveBeenCalled();
   });
 
-  it("reads the HOST's /etc/letsencrypt directly (bare-edge: container volume is empty)", async () => {
+  // WHICH executor reads certbot's store, not just whether a cert turns up — on the
+  // local box both routes see the same files, so only the call pattern can tell them
+  // apart, and the difference is whether a blocked host channel breaks adoption (#490).
+  it("reads certbot's store LOCALLY on the local box — never over the host channel", async () => {
+    const { sshManager } = await import("../../../src/lib/ssh-manager");
+    hostExec.current = fakeExecutor({
+      [`${LIVE}/fullchain.pem`]: HOST_CERT.certPem,
+      [`${LIVE}/privkey.pem`]: HOST_CERT.keyPem,
+    });
+
+    expect(await reuseServerCertForDomain(ctx, "dom_1")).toBe(true);
+    expect(createExecutor).toHaveBeenCalled();
+    // The store was read before any SSH/host-channel acquire happened at all.
+    expect(sshManager.withExecutor).not.toHaveBeenCalled();
+  });
+
+  it("reads a REMOTE server's store over that server's own executor", async () => {
+    // A local read here would answer about the CONTROL PLANE's certs and adopt a cert
+    // the serving box doesn't have.
+    const { sshManager } = await import("../../../src/lib/ssh-manager");
+    serverRepo.getInOrganization.mockResolvedValue({ id: "srv_1", isLocal: false });
+    serverRepo.get.mockResolvedValue({
+      id: "srv_1",
+      isLocal: false,
+      sshHost: "203.0.113.7",
+      organizationId: "org_1",
+    });
+    hostExec.current = fakeExecutor({
+      [`${LIVE}/fullchain.pem`]: HOST_CERT.certPem,
+      [`${LIVE}/privkey.pem`]: HOST_CERT.keyPem,
+    });
+
+    expect(await reuseServerCertForDomain(ctx, "dom_1")).toBe(true);
+    expect(sshManager.withExecutor).toHaveBeenCalledWith("srv_1", expect.any(Function));
+  });
+
+  it("reads certbot's store for the serving box (bare-edge: the API's own tree is empty)", async () => {
     hostExec.current = fakeExecutor({
       [`${LIVE}/fullchain.pem`]: HOST_CERT.certPem,
       [`${LIVE}/privkey.pem`]: HOST_CERT.keyPem,

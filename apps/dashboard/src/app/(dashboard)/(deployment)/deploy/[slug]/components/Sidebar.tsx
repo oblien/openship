@@ -8,8 +8,11 @@ import DropdownMenu from "@/components/ui/DropdownMenu";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
 import { CloudWaitlistModal } from "./CloudWaitlistModal";
+import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
+import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
 import { useCloneStrategyGate } from "./CloneStrategyNudge";
+import { serviceDisplayHost } from "@/utils/route-display";
 import { useDeployment } from "@/context/DeploymentContext";
 import {
   publicEndpointsNeedCloud,
@@ -24,6 +27,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { projectsApi, githubApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { deploymentDnsTargets } from "@/lib/deployment-dns";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
 
@@ -35,6 +39,16 @@ const ComposeChecklist: React.FC = () => {
   if (services.length === 0) return null;
 
   const exposedServices = services.filter((s) => s.exposed);
+  // Only services that HAVE a route belong in a list of domains. This used to
+  // print `<service-name>.<baseDomain>` for a service with no chosen subdomain —
+  // a host the deploy never creates. Port-only services are still counted in the
+  // "exposed" checklist row above; they just aren't domains.
+  const routedServices = exposedServices
+    .map((svc) => ({
+      svc,
+      host: serviceDisplayHost(svc, { projectLabel: config.projectName ?? "", baseDomain }),
+    }))
+    .filter((entry): entry is { svc: typeof entry.svc; host: string } => !!entry.host);
   const exposableServices = services.filter((s) => s.ports.length > 0);
   const envConfigured = services.filter(
     (s) => Object.keys(s.environment).length > 0,
@@ -118,24 +132,18 @@ const ComposeChecklist: React.FC = () => {
       </div>
 
       {/* Exposed domains quick list */}
-      {exposedServices.length > 0 && (
+      {routedServices.length > 0 && (
         <div className="pt-2 border-t border-border/30 space-y-1.5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             {t.deploy.checklist.domains}
           </p>
-          {exposedServices.map((svc) => {
-            const domain =
-              svc.domainType === "custom" && svc.customDomain
-                ? svc.customDomain
-                : `${svc.domain || svc.name}.${baseDomain}`;
-            return (
-              <div key={svc.name} className="flex items-center gap-2">
-                <Globe className="size-3 text-primary" />
-                <span className="text-sm text-primary font-medium truncate">{domain}</span>
-                <span className="text-xs text-muted-foreground ms-auto">{svc.name}</span>
-              </div>
-            );
-          })}
+          {routedServices.map(({ svc, host }) => (
+            <div key={svc.name} className="flex items-center gap-2">
+              <Globe className="size-3 text-primary" />
+              <span className="text-sm text-primary font-medium truncate">{host}</span>
+              <span className="text-xs text-muted-foreground ms-auto">{svc.name}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -149,6 +157,8 @@ const Sidebar: React.FC = () => {
   const { t } = useI18n();
   const { requireCloud } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
+  // Desktop mode: the workload can't run on this machine yet (builds still can).
+  const localDeployGate = useLocalDeployGate();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const router = useRouter();
@@ -233,20 +243,14 @@ const Sidebar: React.FC = () => {
     // BEFORE the deploy so DNS is pointed when the first-deploy SSL attempt runs.
     // A failed attempt just marks the domain Action Required — never blocks the
     // deploy. Informational-blocking: Deploy proceeds, Cancel aborts.
-    const custom = selfHosted
-      ? config.publicEndpoints.find((e) => e.domainType === "custom" && e.customDomain?.trim())
-      : undefined;
-    if (custom?.customDomain) {
-      const apex = custom.customDomain.trim().toLowerCase().replace(/^www\./, "");
-      const includeWww = config.publicEndpoints.some(
-        (e) => e.domainType === "custom" && e.customDomain?.trim().toLowerCase() === `www.${apex}`,
-      );
+    const dnsTargets = selfHosted ? deploymentDnsTargets(config) : [];
+    if (dnsTargets.length > 0) {
       let modalId = "";
       modalId = showModal({
         customContent: (
           <DnsRecordsModal
-            hostname={apex}
-            includeWww={includeWww}
+            targets={dnsTargets}
+            serverId={config.deployTarget === "server" ? config.serverId : undefined}
             onConfirm={() => {
               hideModal(modalId);
               void doDeploy(overrides);
@@ -259,7 +263,7 @@ const Sidebar: React.FC = () => {
       return;
     }
     await doDeploy(overrides);
-  }, [doDeploy, selfHosted, config.publicEndpoints, showModal, hideModal]);
+  }, [doDeploy, selfHosted, config, showModal, hideModal]);
 
   const handleDeploy = useCallback(async () => {
     // TODO: removed — temporary SaaS gate. The managed cloud isn't open yet, so
@@ -271,6 +275,30 @@ const Sidebar: React.FC = () => {
       let modalId = "";
       modalId = showModal({
         customContent: <CloudWaitlistModal onClose={() => hideModal(modalId)} />,
+        maxWidth: "460px",
+      });
+      return;
+    }
+
+    // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
+    // remote servers; the workload can't run on this machine yet. Scoped to NEW
+    // projects on purpose — a project that already lives locally stays fully
+    // redeployable, so nobody is stranded mid-work. Building locally is
+    // untouched; only the deploy destination is gated.
+    if (
+      !config.projectId &&
+      localDeployGate.blocks({ deployTarget: config.deployTarget, serverId: config.serverId })
+    ) {
+      let modalId = "";
+      modalId = showModal({
+        customContent: (
+          <LocalDeployComingSoonModal
+            onClose={() => hideModal(modalId)}
+            onServerAdded={(server) =>
+              updateConfig({ deployTarget: "server", serverId: server.id })
+            }
+          />
+        ),
         maxWidth: "460px",
       });
       return;
@@ -371,7 +399,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy(buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined);
-  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
+  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
 
   // Edit mode (opened from the project Runtime page with ?mode=config): the
   // finish button SAVES the config to the project and returns — no deploy, no

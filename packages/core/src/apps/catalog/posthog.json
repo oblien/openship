@@ -1,0 +1,779 @@
+{
+  "available": true,
+  "verified": false,
+  "minEngine": "0.6.6",
+  "minResources": {
+    "memoryMb": 16384,
+    "cpuCores": 4
+  },
+  "id": "posthog",
+  "name": "PostHog",
+  "description": "Self-hosted PostHog — product analytics, session replay, and feature flags, with real event ingestion. This mirrors PostHog's own hobby topology: a Caddy path router in front of the Django app, the Rust capture/flags/hypercache/persons services, the Node ingestion consumers, ClickHouse + Kafka + Postgres + Redis + Valkey + S3. Heavy: 21 containers, roughly 4 vCPU / 16 GB RAM and 30+ GB disk. PostHog ships no tagged releases for self-hosting and rebuilds `latest` hourly, so this tracks a moving upstream.",
+  "repository": "https://github.com/PostHog/posthog",
+  "kind": "template",
+  "logo": "posthog",
+  "category": "analytics",
+  "tags": [
+    "analytics",
+    "product-analytics",
+    "events",
+    "session-replay",
+    "feature-flags"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "proxy",
+      "image": "caddy:2.10-alpine",
+      "exposed": true,
+      "exposedPort": 80,
+      "routes": [
+        {
+          "port": 80
+        }
+      ],
+      "dependsOn": [
+        "web",
+        "capture",
+        "replay-capture",
+        "feature-flags",
+        "hypercache-server",
+        "plugins",
+        "objectstorage"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1:80/openship-health || exit 1"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "60s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "db",
+      "image": "postgres:15.12-alpine",
+      "environment": {
+        "POSTGRES_USER": "posthog",
+        "POSTGRES_DB": "posthog"
+      },
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "posthog_pgdata:/var/lib/postgresql/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U posthog"
+        ],
+        "interval": "5s",
+        "timeout": "30s",
+        "retries": 30,
+        "startPeriod": "10s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "redis7",
+      "image": "redis:7.2-alpine",
+      "commandArgv": [
+        "redis-server",
+        "--maxmemory-policy",
+        "allkeys-lru",
+        "--maxmemory",
+        "200mb"
+      ],
+      "volumes": [
+        "posthog_redis:/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ],
+        "interval": "3s",
+        "timeout": "10s",
+        "retries": 10
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "valkey",
+      "image": "valkey/valkey:8.1-alpine",
+      "commandArgv": [
+        "valkey-server",
+        "--maxmemory-policy",
+        "allkeys-lru",
+        "--maxmemory",
+        "200mb"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "valkey-cli",
+          "ping"
+        ],
+        "interval": "3s",
+        "timeout": "10s",
+        "retries": 10
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "zookeeper",
+      "image": "zookeeper:3.7.0",
+      "environment": {
+        "ZOO_AUTOPURGE_PURGEINTERVAL": "1",
+        "ZOO_AUTOPURGE_SNAPRETAINCOUNT": "3"
+      },
+      "volumes": [
+        "posthog_zk_data:/data",
+        "posthog_zk_datalog:/datalog",
+        "posthog_zk_logs:/logs"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "echo ruok | nc -w 2 localhost 2181 | grep -q imok"
+        ],
+        "interval": "5s",
+        "timeout": "10s",
+        "retries": 20,
+        "startPeriod": "10s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "kafka",
+      "image": "apache/kafka:4.1.0",
+      "environment": {
+        "KAFKA_NODE_ID": "1",
+        "KAFKA_PROCESS_ROLES": "broker,controller",
+        "KAFKA_LISTENERS": "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+        "KAFKA_ADVERTISED_LISTENERS": "PLAINTEXT://kafka:9092",
+        "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT",
+        "KAFKA_CONTROLLER_LISTENER_NAMES": "CONTROLLER",
+        "KAFKA_INTER_BROKER_LISTENER_NAME": "PLAINTEXT",
+        "KAFKA_CONTROLLER_QUORUM_VOTERS": "1@kafka:9093",
+        "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
+        "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+        "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR": "1",
+        "KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS": "0",
+        "KAFKA_AUTO_CREATE_TOPICS_ENABLE": "true",
+        "KAFKA_NUM_PARTITIONS": "1",
+        "KAFKA_DEFAULT_REPLICATION_FACTOR": "1",
+        "KAFKA_LOG_RETENTION_HOURS": "1",
+        "KAFKA_LOG_DIRS": "/var/lib/kafka/data"
+      },
+      "volumes": [
+        "posthog_kafka:/var/lib/kafka/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"
+        ],
+        "interval": "5s",
+        "timeout": "10s",
+        "retries": 30,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "clickhouse",
+      "image": "clickhouse/clickhouse-server:26.6.2.158",
+      "dependsOn": [
+        "zookeeper",
+        "kafka"
+      ],
+      "environment": {
+        "CLICKHOUSE_SKIP_USER_SETUP": "1",
+        "KAFKA_HOSTS": "kafka:9092"
+      },
+      "volumes": [
+        "posthog_clickhouse:/var/lib/clickhouse"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"
+        ],
+        "interval": "3s",
+        "timeout": "10s",
+        "retries": 30,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "objectstorage",
+      "image": "chrislusf/seaweedfs:4.29",
+      "environment": {
+        "S3_BUCKET": "posthog,ducklake-dev,ai-blobs"
+      },
+      "volumes": [
+        "posthog_objectstorage:/data"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "web",
+      "image": "posthog/posthog:latest",
+      "commandArgv": [
+        "sh",
+        "-c",
+        "./bin/migrate && exec ./bin/docker-server"
+      ],
+      "dependsOn": [
+        "db",
+        "redis7",
+        "clickhouse",
+        "kafka",
+        "objectstorage",
+        "personhog-router"
+      ],
+      "environment": {
+        "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_DB_WRITER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_DB_READER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PGHOST": "db",
+        "PGUSER": "posthog",
+        "PGPASSWORD": "{{config:POSTGRES_PASSWORD}}",
+        "CLICKHOUSE_HOST": "clickhouse",
+        "CLICKHOUSE_DATABASE": "posthog",
+        "CLICKHOUSE_SECURE": "false",
+        "CLICKHOUSE_VERIFY": "false",
+        "CLICKHOUSE_API_USER": "api",
+        "CLICKHOUSE_API_PASSWORD": "apipass",
+        "CLICKHOUSE_APP_USER": "app",
+        "CLICKHOUSE_APP_PASSWORD": "apppass",
+        "CLICKHOUSE_BILLING_USER": "billing",
+        "CLICKHOUSE_BILLING_PASSWORD": "billingpass",
+        "CLICKHOUSE_DICT_READER_USER": "dict_reader",
+        "CLICKHOUSE_DICT_READER_PASSWORD": "dictreaderpass",
+        "CLICKHOUSE_LOGS_CLUSTER_HOST": "clickhouse",
+        "CLICKHOUSE_LOGS_CLUSTER_SECURE": "false",
+        "REDIS_URL": "redis://redis7:6379/",
+        "KAFKA_HOSTS": "kafka",
+        "DEPLOYMENT": "hobby",
+        "SECRET_KEY": "{{config:POSTHOG_SECRET}}",
+        "SITE_URL": "{{publicUrl:proxy}}",
+        "IS_BEHIND_PROXY": "true",
+        "DISABLE_SECURE_SSL_REDIRECT": "true",
+        "OTEL_SDK_DISABLED": "true",
+        "OPT_OUT_CAPTURE": "false",
+        "FLAGS_REDIS_ENABLED": "false",
+        "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags:3001",
+        "CDP_API_URL": "http://plugins:6738",
+        "RECORDING_API_URL": "http://recording-api:6738",
+        "PERSONHOG_ADDR": "personhog-router:50052",
+        "PERSONHOG_ENABLED": "true",
+        "OBJECT_STORAGE_ENABLED": "true",
+        "OBJECT_STORAGE_ENDPOINT": "http://objectstorage:8333",
+        "OBJECT_STORAGE_PUBLIC_ENDPOINT": "{{publicUrl:proxy}}",
+        "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+        "OBJECT_STORAGE_BUCKET": "posthog",
+        "OBJECT_STORAGE_ACCESS_KEY_ID": "posthog",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY": "posthog",
+        "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+        "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+        "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any"
+      },
+      "secretEnv": [
+        "DATABASE_URL",
+        "PERSONS_DB_WRITER_URL",
+        "PERSONS_DB_READER_URL",
+        "PGPASSWORD",
+        "SECRET_KEY"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "worker",
+      "image": "posthog/posthog:latest",
+      "commandArgv": [
+        "./bin/docker-worker-celery",
+        "--with-scheduler"
+      ],
+      "dependsOn": [
+        "db",
+        "redis7",
+        "clickhouse",
+        "kafka",
+        "objectstorage",
+        "web",
+        "personhog-router"
+      ],
+      "environment": {
+        "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_DB_WRITER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_DB_READER_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PGHOST": "db",
+        "PGUSER": "posthog",
+        "PGPASSWORD": "{{config:POSTGRES_PASSWORD}}",
+        "CLICKHOUSE_HOST": "clickhouse",
+        "CLICKHOUSE_DATABASE": "posthog",
+        "CLICKHOUSE_SECURE": "false",
+        "CLICKHOUSE_VERIFY": "false",
+        "CLICKHOUSE_API_USER": "api",
+        "CLICKHOUSE_API_PASSWORD": "apipass",
+        "CLICKHOUSE_APP_USER": "app",
+        "CLICKHOUSE_APP_PASSWORD": "apppass",
+        "CLICKHOUSE_BILLING_USER": "billing",
+        "CLICKHOUSE_BILLING_PASSWORD": "billingpass",
+        "CLICKHOUSE_DICT_READER_USER": "dict_reader",
+        "CLICKHOUSE_DICT_READER_PASSWORD": "dictreaderpass",
+        "CLICKHOUSE_LOGS_CLUSTER_HOST": "clickhouse",
+        "CLICKHOUSE_LOGS_CLUSTER_SECURE": "false",
+        "REDIS_URL": "redis://redis7:6379/",
+        "KAFKA_HOSTS": "kafka",
+        "DEPLOYMENT": "hobby",
+        "POSTHOG_SKIP_MIGRATION_CHECKS": "1",
+        "SECRET_KEY": "{{config:POSTHOG_SECRET}}",
+        "SITE_URL": "{{publicUrl:proxy}}",
+        "IS_BEHIND_PROXY": "true",
+        "DISABLE_SECURE_SSL_REDIRECT": "true",
+        "OTEL_SDK_DISABLED": "true",
+        "FLAGS_REDIS_ENABLED": "false",
+        "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags:3001",
+        "CDP_API_URL": "http://plugins:6738",
+        "RECORDING_API_URL": "http://recording-api:6738",
+        "PERSONHOG_ADDR": "personhog-router:50052",
+        "PERSONHOG_ENABLED": "true",
+        "OBJECT_STORAGE_ENABLED": "true",
+        "OBJECT_STORAGE_ENDPOINT": "http://objectstorage:8333",
+        "OBJECT_STORAGE_PUBLIC_ENDPOINT": "{{publicUrl:proxy}}",
+        "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+        "OBJECT_STORAGE_BUCKET": "posthog",
+        "OBJECT_STORAGE_ACCESS_KEY_ID": "posthog",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY": "posthog",
+        "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+        "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+        "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any"
+      },
+      "secretEnv": [
+        "DATABASE_URL",
+        "PERSONS_DB_WRITER_URL",
+        "PERSONS_DB_READER_URL",
+        "PGPASSWORD",
+        "SECRET_KEY"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "capture",
+      "image": "ghcr.io/posthog/posthog/capture:master",
+      "dependsOn": [
+        "kafka",
+        "redis7"
+      ],
+      "environment": {
+        "ADDRESS": "0.0.0.0:3000",
+        "CAPTURE_MODE": "events",
+        "KAFKA_TOPIC": "events_plugin_ingestion",
+        "KAFKA_HOSTS": "kafka:9092",
+        "REDIS_URL": "redis://redis7:6379/",
+        "RUST_LOG": "info,rdkafka=warn",
+        "CAPTURE_V1_SINKS": "msk",
+        "CAPTURE_V1_SINK_MSK_KAFKA_HOSTS": "kafka:9092",
+        "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_MAIN": "events_plugin_ingestion",
+        "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_HISTORICAL": "events_plugin_ingestion_historical",
+        "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_OVERFLOW": "events_plugin_ingestion_overflow",
+        "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_DLQ": "events_plugin_ingestion_dlq",
+        "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_EXCEPTION": "ingestion-errortracking-main",
+        "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_HEATMAP": "heatmaps_ingestion",
+        "CAPTURE_V1_SINK_MSK_KAFKA_TOPIC_CLIENT_INGESTION_WARNING": "ingestion-clientwarnings-main-1"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "replay-capture",
+      "image": "ghcr.io/posthog/posthog/capture:master",
+      "dependsOn": [
+        "kafka",
+        "redis7"
+      ],
+      "environment": {
+        "ADDRESS": "0.0.0.0:3000",
+        "CAPTURE_MODE": "recordings",
+        "KAFKA_TOPIC": "session_recording_snapshot_item_events",
+        "KAFKA_HOSTS": "kafka:9092",
+        "REDIS_URL": "redis://redis7:6379/",
+        "RUST_LOG": "info,rdkafka=warn"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "ingestion-general",
+      "image": "posthog/posthog-node:latest",
+      "commandArgv": [
+        "node",
+        "nodejs/dist/index.js"
+      ],
+      "dependsOn": [
+        "db",
+        "redis7",
+        "clickhouse",
+        "kafka",
+        "objectstorage",
+        "personhog-router"
+      ],
+      "environment": {
+        "PLUGIN_SERVER_MODE": "ingestion-v2-combined",
+        "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "BEHAVIORAL_COHORTS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "KAFKA_HOSTS": "kafka:9092",
+        "REDIS_URL": "redis://redis7:6379/",
+        "CLICKHOUSE_HOST": "clickhouse",
+        "CLICKHOUSE_DATABASE": "posthog",
+        "CLICKHOUSE_SECURE": "false",
+        "CLICKHOUSE_VERIFY": "false",
+        "COOKIELESS_REDIS_HOST": "redis7",
+        "COOKIELESS_REDIS_PORT": "6379",
+        "CDP_REDIS_HOST": "redis7",
+        "CDP_REDIS_PORT": "6379",
+        "CDP_VALKEY_HOST": "valkey",
+        "CDP_VALKEY_PORT": "6379",
+        "PERSONHOG_ADDR": "personhog-router:50052",
+        "PERSONHOG_ENABLED": "true",
+        "AI_BLOB_S3_BUCKET": "ai-blobs",
+        "AI_BLOB_S3_PREFIX": "aio/",
+        "AI_BLOB_S3_ENDPOINT": "http://objectstorage:8333",
+        "AI_BLOB_S3_REGION": "us-east-1",
+        "AI_BLOB_S3_ACCESS_KEY_ID": "any",
+        "AI_BLOB_S3_SECRET_ACCESS_KEY": "any",
+        "AI_BLOB_OFFLOAD_TEAMS": "*"
+      },
+      "secretEnv": [
+        "DATABASE_URL",
+        "PERSONS_DATABASE_URL",
+        "BEHAVIORAL_COHORTS_DATABASE_URL"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "ingestion-sessionreplay",
+      "image": "posthog/posthog-node:latest",
+      "commandArgv": [
+        "node",
+        "nodejs/dist/index.js"
+      ],
+      "dependsOn": [
+        "db",
+        "redis7",
+        "kafka",
+        "objectstorage"
+      ],
+      "environment": {
+        "PLUGIN_SERVER_MODE": "recordings-blob-ingestion-v2",
+        "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "KAFKA_HOSTS": "kafka:9092",
+        "REDIS_URL": "redis://redis7:6379/",
+        "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+        "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+        "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any",
+        "SESSION_RECORDING_V2_S3_TIMEOUT_MS": "120000",
+        "CDP_REDIS_HOST": "redis7",
+        "CDP_REDIS_PORT": "6379",
+        "CDP_VALKEY_HOST": "valkey",
+        "CDP_VALKEY_PORT": "6379"
+      },
+      "secretEnv": [
+        "DATABASE_URL"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "recording-api",
+      "image": "posthog/posthog-node:latest",
+      "commandArgv": [
+        "node",
+        "nodejs/dist/index.js"
+      ],
+      "dependsOn": [
+        "db",
+        "redis7",
+        "clickhouse"
+      ],
+      "environment": {
+        "PLUGIN_SERVER_MODE": "recording-api",
+        "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "REDIS_URL": "redis://redis7:6379/",
+        "CLICKHOUSE_HOST": "clickhouse",
+        "CLICKHOUSE_DATABASE": "posthog",
+        "CLICKHOUSE_SECURE": "false",
+        "CLICKHOUSE_VERIFY": "false",
+        "SESSION_RECORDING_API_REDIS_HOST": "redis7",
+        "SESSION_RECORDING_API_REDIS_PORT": "6379",
+        "SESSION_RECORDING_V2_S3_ENDPOINT": "http://objectstorage:8333",
+        "SESSION_RECORDING_V2_S3_ACCESS_KEY_ID": "any",
+        "SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY": "any",
+        "CDP_REDIS_HOST": "redis7",
+        "CDP_REDIS_PORT": "6379",
+        "CDP_VALKEY_HOST": "valkey",
+        "CDP_VALKEY_PORT": "6379"
+      },
+      "secretEnv": [
+        "DATABASE_URL"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "feature-flags",
+      "image": "ghcr.io/posthog/posthog/feature-flags:master",
+      "dependsOn": [
+        "db",
+        "redis7"
+      ],
+      "environment": {
+        "ADDRESS": "0.0.0.0:3001",
+        "WRITE_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "READ_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_WRITE_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_READ_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "REDIS_URL": "redis://redis7:6379/",
+        "COOKIELESS_REDIS_HOST": "redis7",
+        "COOKIELESS_REDIS_PORT": "6379",
+        "MAXMIND_DB_PATH": "/app/share/GeoLite2-City.mmdb",
+        "RUST_LOG": "info"
+      },
+      "secretEnv": [
+        "WRITE_DATABASE_URL",
+        "READ_DATABASE_URL",
+        "PERSONS_WRITE_DATABASE_URL",
+        "PERSONS_READ_DATABASE_URL"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:3001/_readiness"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "10s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "hypercache-server",
+      "image": "ghcr.io/posthog/posthog/hypercache-server:master",
+      "dependsOn": [
+        "redis7"
+      ],
+      "environment": {
+        "ADDRESS": "0.0.0.0:3002",
+        "REDIS_URL": "redis://redis7:6379/",
+        "RUST_LOG": "info"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:3002/_readiness"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "10s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "personhog-replica",
+      "image": "ghcr.io/posthog/posthog/personhog-replica:master",
+      "dependsOn": [
+        "db"
+      ],
+      "environment": {
+        "GRPC_ADDRESS": "0.0.0.0:50051",
+        "PRIMARY_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "METRICS_PORT": "9100",
+        "RUST_LOG": "info"
+      },
+      "secretEnv": [
+        "PRIMARY_DATABASE_URL"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "personhog-router",
+      "image": "ghcr.io/posthog/posthog/personhog-router:master",
+      "dependsOn": [
+        "personhog-replica"
+      ],
+      "environment": {
+        "GRPC_ADDRESS": "0.0.0.0:50052",
+        "REPLICA_URL": "http://personhog-replica:50051",
+        "BACKEND_TIMEOUT_MS": "5000",
+        "METRICS_PORT": "9101",
+        "RUST_LOG": "info"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "property-defs-rs",
+      "image": "ghcr.io/posthog/posthog/property-defs-rs:master",
+      "dependsOn": [
+        "db",
+        "kafka"
+      ],
+      "environment": {
+        "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "KAFKA_HOSTS": "kafka:9092",
+        "SKIP_WRITES": "false",
+        "SKIP_READS": "false",
+        "FILTER_MODE": "opt-out",
+        "RUST_LOG": "info"
+      },
+      "secretEnv": [
+        "DATABASE_URL"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "plugins",
+      "image": "posthog/posthog-node:latest",
+      "commandArgv": [
+        "node",
+        "nodejs/dist/index.js"
+      ],
+      "dependsOn": [
+        "db",
+        "redis7",
+        "valkey",
+        "clickhouse",
+        "kafka",
+        "objectstorage"
+      ],
+      "environment": {
+        "DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "PERSONS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "BEHAVIORAL_COHORTS_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "CYCLOTRON_DATABASE_URL": "postgres://posthog:{{config:POSTGRES_PASSWORD}}@db:5432/posthog",
+        "KAFKA_HOSTS": "kafka:9092",
+        "REDIS_URL": "redis://redis7:6379/",
+        "CLICKHOUSE_HOST": "clickhouse",
+        "CLICKHOUSE_DATABASE": "posthog",
+        "CLICKHOUSE_SECURE": "false",
+        "CLICKHOUSE_VERIFY": "false",
+        "SITE_URL": "{{publicUrl:proxy}}",
+        "SECRET_KEY": "{{config:POSTHOG_SECRET}}",
+        "CDP_REDIS_HOST": "redis7",
+        "CDP_REDIS_PORT": "6379",
+        "CDP_VALKEY_HOST": "valkey",
+        "CDP_VALKEY_PORT": "6379",
+        "OBJECT_STORAGE_ENABLED": "true",
+        "OBJECT_STORAGE_ENDPOINT": "http://objectstorage:8333",
+        "OBJECT_STORAGE_PUBLIC_ENDPOINT": "{{publicUrl:proxy}}",
+        "OBJECT_STORAGE_FORCE_PATH_STYLE": "true",
+        "OBJECT_STORAGE_BUCKET": "posthog",
+        "OBJECT_STORAGE_ACCESS_KEY_ID": "any",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY": "any"
+      },
+      "secretEnv": [
+        "DATABASE_URL",
+        "PERSONS_DATABASE_URL",
+        "BEHAVIORAL_COHORTS_DATABASE_URL",
+        "CYCLOTRON_DATABASE_URL",
+        "SECRET_KEY"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "db",
+      "label": "Database password",
+      "help": "Auto-generated. The Postgres password every PostHog service uses.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "POSTHOG_SECRET",
+      "service": "web",
+      "label": "Django secret key",
+      "help": "Auto-generated. Signs sessions and cookies (SECRET_KEY).",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "files": [
+    {
+      "service": "proxy",
+      "path": "/etc/caddy/Caddyfile",
+      "content": "{\n\tservers {\n\t\ttrusted_proxies static 127.0.0.1/32 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16\n\t}\n}\n\n# Host-less site address on purpose. PostHog's own default is\n# `http://localhost:8000`, which compiles to a Host matcher — behind Openship's\n# edge a foreign Host then returns an empty HTTP 200 instead of a 404, so every\n# ingestion POST would look successful while the events were silently dropped.\n# `:80` also emits no automatic_https and no tls app, so Caddy never tries ACME.\n:80 {\n\t# Health target for the container healthcheck. Deliberately answered by\n\t# Caddy itself: proxying /_health through to Django would report unhealthy\n\t# for the whole first-boot migration window and raise a false incident.\n\t@openship-health {\n\t\tpath /openship-health\n\t}\n\n\thandle @openship-health {\n\t\trespond \"ok\" 200\n\t}\n\n\t@replay-capture {\n\t\tpath /s\n\t\tpath /s/\n\t\tpath /s/*\n\t}\n\n\t@capture {\n\t\tpath /e\n\t\tpath /e/\n\t\tpath /e/*\n\t\tpath /i/v0\n\t\tpath /i/v0/\n\t\tpath /i/v0/*\n\t\tpath /i/v1/analytics/events\n\t\tpath /i/v1/analytics/events/\n\t\tpath /batch\n\t\tpath /batch/\n\t\tpath /batch/*\n\t\tpath /capture\n\t\tpath /capture/\n\t\tpath /capture/*\n\t}\n\n\t@flags {\n\t\tpath /flags\n\t\tpath /flags/\n\t\tpath /flags/*\n\t\tpath /api/feature_flag/local_evaluation\n\t\tpath /api/feature_flag/local_evaluation/\n\t\tpath /api/feature_flag/local_evaluation/*\n\t}\n\n\t@surveys {\n\t\tpath /surveys\n\t\tpath /surveys/\n\t\tpath /api/surveys\n\t\tpath /api/surveys/\n\t}\n\n\t@remote-config {\n\t\tpath /array/*\n\t}\n\n\t@webhooks {\n\t\tpath /public/webhooks\n\t\tpath /public/webhooks/\n\t\tpath /public/webhooks/*\n\t\tpath /public/m/\n\t\tpath /public/m/*\n\t}\n\n\t@objectstorage {\n\t\tpath /posthog\n\t\tpath /posthog/\n\t\tpath /posthog/*\n\t}\n\n\thandle @capture {\n\t\treverse_proxy capture:3000\n\t}\n\n\thandle @replay-capture {\n\t\treverse_proxy replay-capture:3000\n\t}\n\n\thandle @flags {\n\t\treverse_proxy feature-flags:3001\n\t}\n\n\thandle @surveys {\n\t\treverse_proxy hypercache-server:3002\n\t}\n\n\thandle @remote-config {\n\t\treverse_proxy hypercache-server:3002\n\t}\n\n\thandle @webhooks {\n\t\treverse_proxy plugins:6738\n\t}\n\n\thandle @objectstorage {\n\t\treverse_proxy objectstorage:8333\n\t}\n\n\thandle {\n\t\treverse_proxy web:8000\n\t}\n}\n"
+    },
+    {
+      "service": "clickhouse",
+      "path": "/etc/clickhouse-server/config.d/openship-posthog.xml",
+      "content": "<clickhouse>\n  <!-- PostHog creates every table as ReplicatedMergeTree ON CLUSTER, so the\n       macros, the clusters and ZooKeeper must all resolve or migrate_clickhouse\n       cannot create a single table. Shipped as a config.d overlay rather than a\n       replacement config.xml so the image's own defaults still apply. -->\n  <zookeeper>\n    <node>\n      <host>zookeeper</host>\n      <port>2181</port>\n    </node>\n  </zookeeper>\n  <macros>\n    <shard>01</shard>\n    <replica>ch1</replica>\n  </macros>\n  <distributed_ddl>\n    <path>/clickhouse/task_queue/ddl</path>\n  </distributed_ddl>\n  <!-- ~95 Kafka-engine tables each hold a background schedule slot. -->\n  <background_schedule_pool_size>256</background_schedule_pool_size>\n  <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>\n  <remote_servers>\n    <posthog><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog>\n    <posthog_single_shard><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_single_shard>\n    <posthog_migrations><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_migrations>\n    <posthog_writable><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_writable>\n    <posthog_primary_replica><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></posthog_primary_replica>\n    <ai_events><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></ai_events>\n    <aux><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></aux>\n    <ops><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></ops>\n    <sessions><shard><replica><host>clickhouse</host><port>9000</port></replica></shard></sessions>\n  </remote_servers>\n  <!-- PostHog's Kafka tables reference a named collection, not a broker list. -->\n  <named_collections>\n    <msk_cluster><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></msk_cluster>\n    <warpstream_ingestion><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_ingestion>\n    <warpstream_calculated_events><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_calculated_events>\n    <warpstream_replay><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_replay>\n    <warpstream_shared><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_shared>\n    <warpstream_cyclotron><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_cyclotron>\n    <warpstream_logs><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_logs>\n    <warpstream_traces><kafka_broker_list from_env=\"KAFKA_HOSTS\"/></warpstream_traces>\n  </named_collections>\n</clickhouse>\n"
+    },
+    {
+      "service": "clickhouse",
+      "path": "/etc/clickhouse-server/users.d/openship-posthog.xml",
+      "content": "<clickhouse>\n  <!-- CLICKHOUSE_SKIP_USER_SETUP=1 means the image creates no users, but the\n       Django app connects as api/app/billing/dict_reader on different query\n       paths. Passwords match the values the app is configured with; ClickHouse\n       is never published outside the project network. -->\n  <profiles>\n    <default>\n      <max_memory_usage>10000000000</max_memory_usage>\n      <use_uncompressed_cache>0</use_uncompressed_cache>\n      <load_balancing>random</load_balancing>\n    </default>\n  </profiles>\n  <users>\n    <default>\n      <password></password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n      <access_management>1</access_management>\n    </default>\n    <api>\n      <password>apipass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </api>\n    <app>\n      <password>apppass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </app>\n    <billing>\n      <password>billingpass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </billing>\n    <dict_reader>\n      <password>dictreaderpass</password>\n      <networks><ip>::/0</ip></networks>\n      <profile>default</profile>\n      <quota>default</quota>\n    </dict_reader>\n  </users>\n  <quotas>\n    <default><interval><duration>3600</duration></interval></default>\n  </quotas>\n</clickhouse>\n"
+    }
+  ],
+  "prepare": [
+    {
+      "service": "kafka",
+      "title": "Create Kafka topics",
+      "description": "Pre-creates the ingestion topics the Node consumers verify at startup.",
+      "command": "for t in events_plugin_ingestion events_plugin_ingestion_historical events_plugin_ingestion_overflow events_plugin_ingestion_dlq events_plugin_ingestion_ai events_plugin_ingestion_async session_recording_snapshot_item_events clickhouse_events_json clickhouse_ai_events_json clickhouse_heatmap_events clickhouse_flag_evaluations clickhouse_ingestion_warnings clickhouse_groups clickhouse_person clickhouse_person_distinct_id clickhouse_person_distinct_id2 clickhouse_person_overrides clickhouse_app_metrics2 clickhouse_session_replay_events clickhouse_session_recording_events clickhouse_tophog heatmaps_ingestion ingestion-clientwarnings-main-1 ingestion-errortracking-main log_entries plugin_log_entries events_dead_letter_queue; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic \"$t\" --partitions 1 --replication-factor 1 >/dev/null 2>&1 || true; done; echo done",
+      "capture": "topics",
+      "phase": "post-ready",
+      "readiness": {
+        "test": "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092",
+        "interval": 3000,
+        "retries": 30
+      }
+    }
+  ],
+  "connection": {
+    "title": "Open PostHog",
+    "description": "Open the PostHog UI and create your admin account on first load. The same hostname serves the UI and the event-ingestion endpoints, so an SDK pointed at this URL works with no extra configuration.",
+    "guide": {
+      "intro": "PostHog runs its own analytics UI — create the admin account when you first open it, then use the project API key it gives you in your SDK.",
+      "useHint": "Point your SDK's host at this URL. Caddy routes /e, /capture, /batch and /i/* to the capture service, /s/* to session replay, /flags to feature flags, and everything else to the app.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "ui",
+        "label": "PostHog",
+        "source": "publicUrl:proxy",
+        "kind": "url",
+        "recommended": true,
+        "help": "PostHog has no default login — the first visitor creates the admin account. This host also receives your events."
+      }
+    ],
+    "firstLogin": {
+      "note": "PostHog ships no default credentials — open the URL above and sign up to create the first (admin) account. First boot runs database migrations and can take several minutes before the UI answers."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "proxy",
+      "port": 80,
+      "label": "PostHog",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { DEFAULT_IMAGE_REGISTRY } from "./constants";
+import { buildImageRef } from "./image-ref";
 
 /**
  * THE single precedence for the edge container image reference, shared by
@@ -17,23 +17,18 @@ import { DEFAULT_IMAGE_REGISTRY } from "./constants";
  * driving it), while the version-agnostic adapters layer has no build version and
  * omits it — the API injects its pinned ref via `setDefaultEdgeImage`, so the
  * adapters fallback ("latest") is only reached when nothing was injected.
+ *
+ * The resolution order lives in `buildImageRef`, shared with `buildMailImageRef`;
+ * only the image name + these two env overrides differ.
  */
 export function buildEdgeImageRef(opts?: {
   explicit?: string | null;
   injectedDefault?: string | null;
   fallbackTag?: string;
 }): string {
-  const explicit = opts?.explicit?.trim();
-  if (explicit) return explicit;
-  const override = process.env.OPENSHIP_EDGE_IMAGE?.trim();
-  if (override) return override;
-  const injected = opts?.injectedDefault?.trim();
-  if (injected) return injected;
-  const registry = process.env.OPENSHIP_IMAGE_REGISTRY?.trim() || DEFAULT_IMAGE_REGISTRY;
-  const tag =
-    process.env.OPENSHIP_EDGE_TAG?.trim() ||
-    process.env.OPENSHIP_VERSION?.trim() ||
-    opts?.fallbackTag?.trim() ||
-    "latest";
-  return `${registry}/openship-edge:${tag}`;
+  return buildImageRef(opts, {
+    name: "openship-edge",
+    imageOverride: process.env.OPENSHIP_EDGE_IMAGE,
+    tagOverride: process.env.OPENSHIP_EDGE_TAG,
+  });
 }

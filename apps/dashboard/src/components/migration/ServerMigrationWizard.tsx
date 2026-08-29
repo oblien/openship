@@ -23,6 +23,7 @@ import {
   Link2,
   Globe,
   ChevronRight,
+  ChevronDown,
   KeyRound,
   ShieldCheck,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import { Modal } from "@/components/ui/Modal";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
 import {
   dockerMigrationApi,
+  isScanStreamStalled,
   deployApi,
   githubApi,
   getApiErrorMessage,
@@ -46,16 +48,15 @@ import {
   type PendingItem,
   type ConflictAction,
 } from "@/lib/api";
+import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
+import { parseSessionLog } from "./session-log-line";
 import { useGitHub } from "@/context/GitHubContext";
 import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryList";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Switch } from "@/components/ui/Switch";
-import {
-  createPublicEndpoint,
-  type PublicEndpoint,
-} from "@/context/deployment/types";
+import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { randomUUID } from "@/lib/random-uuid";
 import { extractOwnerRepoFromUrl } from "@/utils/repoSlug";
@@ -102,6 +103,7 @@ const synthServiceFromRepo = (c: ComposeRepoService): DiscoveredService => ({
   image: c.image,
   build: c.build,
   dockerfile: c.dockerfile,
+  buildArgs: c.buildArgs,
   ports: c.ports ?? [],
   env: c.environment ?? {},
   volumes: [],
@@ -129,10 +131,7 @@ interface PlanCard {
  *  container, PLUS every linked-repo compose service that has no container
  *  (built/pulled fresh). Mirrors a native compose deploy's service list; the
  *  mapping step is the only migration-specific overlay. */
-function buildPlanCards(
-  project: ImportProject,
-  services: DiscoveredService[],
-): PlanCard[] {
+function buildPlanCards(project: ImportProject, services: DiscoveredService[]): PlanCard[] {
   const picked = services.filter((s) => project.services.has(svcUid(s)));
   const cards: PlanCard[] = picked.map((s) => ({
     uid: svcUid(s),
@@ -162,6 +161,15 @@ const STANDALONE = "__standalone__";
 const groupKey = (g: DiscoveredGroup) => g.project ?? STANDALONE;
 
 const RUN_PHASES: MigrationStatus[] = ["adopting", "moving_data", "deploying", "verifying"];
+
+/**
+ * `project:run:status` triples whose project refresh has already been fired.
+ *
+ * Module scope on purpose — see the effect that uses it. It grows by a handful of entries per
+ * migration and is only consulted for the run on screen, so it is left unbounded rather than
+ * given an eviction policy that could drop a key and re-open the loop it exists to close.
+ */
+const publishedPhases = new Set<string>();
 
 /** Transfer-mode select values: "" = Settings default (→ direct cross-server),
  *  "stream" = relay via control host. auto/direct/rsync kept for back-compat. */
@@ -224,6 +232,11 @@ type VolumeStrategy = "reuse" | "copy";
 interface MigrateItem {
   name: string;
   serviceNames: string[];
+  /** Container ids of the picked services (`svcUid`). Sent alongside the names so the
+   *  server resolves the selection by IDENTITY: a compose service name is only unique
+   *  within its own stack, so a name-only migrate also matched same-named containers
+   *  from every other stack on the host — including Openship's own `postgres` (#584). */
+  serviceContainerIds?: string[];
   /** serviceName → "copy" (only copy entries are sent; reuse is the default). */
   volumeStrategies: Record<string, VolumeStrategy>;
   /** Project-level repo to link (records source; sent to the migrate API). */
@@ -314,6 +327,7 @@ export function ServerMigrationWizard({
   server,
   initialRunId,
   onBack,
+  origin = "server",
 }: {
   isOpen?: boolean;
   onClose: () => void;
@@ -323,13 +337,31 @@ export function ServerMigrationWizard({
    *  containers, right = the connection card until a scan swaps in the config). */
   variant?: "modal" | "tab";
   /** Connection summary for the tab's right column before a scan (server detail). */
-  server?: { sshHost: string; sshPort?: number | null; sshUser?: string | null; sshAuthMethod?: string | null } | null;
+  server?: {
+    sshHost: string;
+    sshPort?: number | null;
+    sshUser?: string | null;
+    sshAuthMethod?: string | null;
+  } | null;
   /** Open directly on an existing run's progress/steps/logs (any status,
    *  incl. terminal) — the Migrations list opens a row straight into this. */
   initialRunId?: string;
   /** Tab variant: renders a compact inline "← Back" (to the runs list) in the
    *  header rows, so it never adds a full row that pushes the layout down. */
   onBack?: () => void;
+  /**
+   * WHERE this panel was opened from, which decides whether the scan flow exists at all.
+   *
+   * `"server"` (default) is the original entry: pick a server, scan it, choose containers, then
+   * migrate. `"project"` is a project moving or duplicating itself — the workload is already
+   * decided by the project's own containers, so there is nothing to scan and nothing to select.
+   *
+   * This is a gate, not a style. Without it, any state that leaves `inProgress` false — a run
+   * that finished, a run id that no longer resolves, a retry — rendered the server scan screen
+   * inside a project's Advanced tab, offering to adopt containers from a box the operator had
+   * not asked about.
+   */
+  origin?: "server" | "project";
 }) {
   const { t } = useI18n();
   const m = t.migration;
@@ -386,7 +418,9 @@ export function ServerMigrationWizard({
   // Sequential multi-project migration state.
   const [queue, setQueue] = useState<MigrateItem[] | null>(null);
   const [queueIndex, setQueueIndex] = useState(0);
-  const [completed, setCompleted] = useState<Array<{ name: string; projectId?: string | null }>>([]);
+  const [completed, setCompleted] = useState<Array<{ name: string; projectId?: string | null }>>(
+    [],
+  );
   const [starting, setStarting] = useState(false);
   const [migrationId, setMigrationId] = useState<string | null>(null);
   const [confirmToken, setConfirmToken] = useState<string | null>(null);
@@ -404,6 +438,9 @@ export function ServerMigrationWizard({
   // doesn't re-hit the server (the scan `du`s volumes — expensive). Cleared on
   // reset(); a changed key (new services / custom paths) fetches fresh.
   const planCacheRef = useRef<Map<string, MigrationPreview>>(new Map());
+  /** Bumped by every scan and every reset; a scan whose generation has moved on has
+   *  lost its claim on the wizard's state. See handleScan. */
+  const scanGen = useRef(0);
 
   const reset = () => {
     setStep("select");
@@ -419,6 +456,7 @@ export function ServerMigrationWizard({
     setCustomPaths([]);
     setConflictResolution({});
     planCacheRef.current.clear();
+    scanGen.current++;
     setQueue(null);
     setQueueIndex(0);
     setCompleted([]);
@@ -478,9 +516,63 @@ export function ServerMigrationWizard({
     }
   };
 
+  /**
+   * Is this run a PROJECT move/duplicate rather than a scan-started adopt?
+   *
+   * The two need different failure recovery, and conflating them is what put an operator who
+   * clicked "Edit & retry" on a project's Advanced tab into a full server scan — "Existing
+   * services / Flat listing / Scanning existing reverse proxy…", door A's UI, for a run that
+   * never involved choosing containers.
+   */
+  const projectRun = run?.mode === "project_move" || run?.mode === "project_copy";
+  const projectMoveSnapshot = (
+    run?.inputSnapshot as
+      | { projectMove?: { projectId?: string; intent?: string; serviceNames?: string[] } }
+      | null
+      | undefined
+  )?.projectMove;
+
+  /**
+   * Retry a failed PROJECT run with the same inputs — one click, no scan.
+   *
+   * The right move for what actually fails here: an unreachable host, a rejected key, a
+   * transient network drop. Nothing about the workload needs re-choosing, and the workload is
+   * re-resolved server-side anyway (the run's `adopting` phase reads the project's own
+   * containers), so a retry always acts on current truth rather than a stale selection.
+   */
+  const [retrying, setRetrying] = useState(false);
+  const retryProjectRun = async () => {
+    const snap = projectMoveSnapshot;
+    if (!snap?.projectId || retrying) return;
+    setRetrying(true);
+    try {
+      const res = await dockerMigrationApi.startProjectMove({
+        projectId: snap.projectId,
+        targetServerId: run?.targetServerId ?? "",
+        intent: snap.intent === "copy" ? "copy" : "move",
+        serviceNames: snap.serviceNames,
+      });
+      // Re-point this panel at the NEW run. The failed run's record stays, as it does for a
+      // scan retry — the history is how you see that the first attempt happened.
+      setMigrationId(res.migrationId);
+      setRun(null);
+      setProgress(null);
+      setQueue([{ name: "", serviceNames: [], volumeStrategies: {} }]);
+      setQueueIndex(0);
+      setCompleted([]);
+    } catch (e: unknown) {
+      setError(getApiErrorMessage(e, m.tab.editRetry));
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   // Failed → "Edit & retry": drop back into a fresh flow on the SAME server
   // with the prior custom paths restored, re-scan, and let the user adjust
   // (services / env / paths) before re-running. The failed run's record stays.
+  //
+  // SCAN-started runs only. A project run has no scan to go back to; it retries in place or
+  // returns to the card that started it (see `retryProjectRun` above and `onBack`).
   const editRetry = () => {
     const snap = run?.inputSnapshot as { customPaths?: CustomPath[] } | null | undefined;
     const paths = Array.isArray(snap?.customPaths) ? snap!.customPaths! : [];
@@ -499,6 +591,12 @@ export function ServerMigrationWizard({
   const handleScan = async (flatOverride?: boolean) => {
     if (!selectedId) return;
     const flat = flatOverride ?? flatDocker;
+    // The fallback below can land up to two minutes after the stream gave up, and
+    // closing the wizard does NOT unmount this component — only the Modal's children
+    // go. Without a claim check, a scan the user walked away from repopulates the
+    // stack, and of the wrong server if they picked another one meanwhile.
+    const gen = ++scanGen.current;
+    const stale = () => scanGen.current !== gen;
     setScanning(true);
     setScanStatus("");
     setError(null);
@@ -506,13 +604,23 @@ export function ServerMigrationWizard({
     setProjects([]);
     setStep("select");
     try {
-      // Stream the inspect (SSE): step progress + no fixed timeout, so a slow
-      // SSH + docker inspect doesn't get aborted (the old plain POST hit the
-      // 15s client default through the same-origin proxy).
-      const scanned = await dockerMigrationApi.scanStream(selectedId, {
-        onProgress: setScanStatus,
-        flatDocker: flat,
-      });
+      // Stream the inspect (SSE): step progress + no total-duration bound, so a slow
+      // SSH + docker inspect doesn't get aborted (the old plain POST hit the 15s
+      // client default through the same-origin proxy). When the STREAM is what fails
+      // — an intermediary buffering text/event-stream, GH-570 — the plain POST still
+      // beats a spinner that never stops, so take it silently: same stack, only
+      // without the progress lines.
+      const scanned = await dockerMigrationApi
+        .scanStream(selectedId, { onProgress: setScanStatus, flatDocker: flat })
+        .catch(async (e: unknown) => {
+          if (!isScanStreamStalled(e)) throw e;
+          // Recovered, but an operator's proxy is still misconfigured — say so
+          // somewhere rather than hiding it behind a scan that silently got slower.
+          // The aborted scan also keeps running server-side; it's read-only.
+          console.warn(`[migration] ${(e as Error).message} — falling back to a plain scan`);
+          return (await dockerMigrationApi.scan(selectedId, { flatDocker: flat })).stack;
+        });
+      if (stale()) return;
       setStack(scanned);
       if (!scanned.adoptable) {
         setError(m.discover.nothing);
@@ -546,9 +654,10 @@ export function ServerMigrationWizard({
         ]);
       }
     } catch (e) {
+      if (stale()) return;
       setError(getApiErrorMessage(e, m.scanFailed));
     } finally {
-      setScanning(false);
+      if (!stale()) setScanning(false);
     }
   };
 
@@ -599,11 +708,16 @@ export function ServerMigrationWizard({
     id: string,
     composeServices: ComposeRepoService[],
     serviceMap: Record<string, string | null>,
-  ) => setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, composeServices, serviceMap } : p)));
+  ) =>
+    setProjects((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, composeServices, serviceMap } : p)),
+    );
 
   const setServiceMap = (id: string, uid: string, composeName: string | null) =>
     setProjects((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, serviceMap: { ...p.serviceMap, [uid]: composeName } } : p)),
+      prev.map((p) =>
+        p.id === id ? { ...p, serviceMap: { ...p.serviceMap, [uid]: composeName } } : p,
+      ),
     );
 
   const setServiceEnv = (id: string, uid: string, env: Record<string, string>) =>
@@ -751,7 +865,8 @@ export function ServerMigrationWizard({
   // Cross-server now MOVES locally-built images as data (docker save|load) — no
   // registry, no rebuild. Surface an info note up front (the image stream can be
   // large/slow) when a built service exists and a different target is picked.
-  const crossServerBuiltInfo = !sameServer && Boolean(stack?.services.some((s) => Boolean(s.build)));
+  const crossServerBuiltInfo =
+    !sameServer && Boolean(stack?.services.some((s) => Boolean(s.build)));
   const migratable = projects.filter((p) => p.services.size > 0 && p.name.trim().length > 0);
   // Union of all migratable service names (uid→name), for the transfer-plan scan.
   const planServiceNames = useMemo(
@@ -760,6 +875,22 @@ export function ServerMigrationWizard({
         new Set(
           migratable.flatMap((p) =>
             (stack?.services ?? []).filter((s) => p.services.has(svcUid(s))).map((s) => s.name),
+          ),
+        ),
+      ),
+    [migratable, stack],
+  );
+  // The same union by IDENTITY — the plan is sized from this set, so a name-only
+  // preview also sized another stack's volumes into this migration (#584).
+  const planServiceContainerIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          migratable.flatMap((p) =>
+            (stack?.services ?? [])
+              .filter((s) => p.services.has(svcUid(s)))
+              .map((s) => s.containerId)
+              .filter((id): id is string => Boolean(id)),
           ),
         ),
       ),
@@ -778,6 +909,7 @@ export function ServerMigrationWizard({
         sourceServerId: selectedId,
         targetServerId: targetId,
         serviceNames: item.serviceNames,
+        serviceContainerIds: item.serviceContainerIds,
         projectName: item.name,
         killOriginals,
         volumeStrategies: Object.keys(item.volumeStrategies).length
@@ -813,20 +945,24 @@ export function ServerMigrationWizard({
 
   const handleMigrate = () => {
     if (!canMigrate) return;
-    // Selection is keyed by uid; the migration API wants the actual container
-    // names — resolve uid → name from the scanned stack. Copy choices apply only
+    // Selection is keyed by uid, and so are the per-service maps we send: the server
+    // reads them back with the same precedence (`perService` — uid, then name), so a
+    // service keeps its own volume strategy / env / route even when another selected
+    // stack has a service by the same name. Collapsing these onto names is what let a
+    // "reuse in place" choice be applied to the wrong container (#584 class). Repo
+    // compose services with no container are still keyed by name below — they have no
+    // uid, and the server's name fallback is for exactly them. Copy choices apply only
     // to same-server migrations (cross-server always copies A→B and keeps A).
     const items: MigrateItem[] = migratable.map((p) => {
       const picked = (stack?.services ?? []).filter((s) => p.services.has(svcUid(s)));
       const volumeStrategies: Record<string, VolumeStrategy> = {};
       if (sameServer) {
         for (const s of picked) {
-          if (volumeStrategy[svcUid(s)] === "copy") volumeStrategies[s.name] = "copy";
+          if (volumeStrategy[svcUid(s)] === "copy") volumeStrategies[svcUid(s)] = "copy";
         }
       }
-      // Resolve the per-service maps from svcUid keys → service names (what the
-      // API + the post-verify apply key on). The build subpath is DERIVED from
-      // the discovered→compose mapping (matched compose service's build context).
+      // The build subpath is DERIVED from the discovered→compose mapping (the matched
+      // compose service's build context).
       const composeByName = new Map(p.composeServices.map((c) => [c.name, c]));
       const serviceSubpaths: Record<string, string> = {};
       const serviceRenames: Record<string, string> = {};
@@ -835,12 +971,12 @@ export function ServerMigrationWizard({
       for (const s of picked) {
         const mapped = p.serviceMap[svcUid(s)];
         const build = mapped ? composeByName.get(mapped)?.build?.trim() : undefined;
-        if (build) serviceSubpaths[s.name] = build;
+        if (build) serviceSubpaths[svcUid(s)] = build;
         // Adopt the row under the mapped REPO compose service name so a later
         // git-compose reconcile matches it in place (no duplicate / empty volume).
-        if (mapped && mapped !== s.name) serviceRenames[s.name] = mapped;
+        if (mapped && mapped !== s.name) serviceRenames[svcUid(s)] = mapped;
         const env = p.serviceEnvs[svcUid(s)];
-        if (env) serviceEnv[s.name] = env; // only edited services carry an override
+        if (env) serviceEnv[svcUid(s)] = env; // only edited services carry an override
         // Resolve the route by the per-container mode. "keep" reuses the domain
         // the foreign proxy already served; free/custom take the editor value
         // (domain-less placeholders filtered here, not mid-edit); none → skip.
@@ -863,7 +999,9 @@ export function ServerMigrationWizard({
         } else if (mode === "free" || mode === "custom") {
           routes = (p.serviceRoutes[uid] ?? []).filter(routeHasDomain);
         }
-        if (routes.length) routesByServiceName[s.name] = routes;
+        // Keyed by uid like the rest; the server translates these onto the adopted ROW
+        // names via the (now identity-keyed) rename map before publishing.
+        if (routes.length) routesByServiceName[uid] = routes;
       }
       // Repo compose services with no running container (built/pulled fresh from
       // the repo): carry their route + env override keyed by the REPO service
@@ -887,14 +1025,24 @@ export function ServerMigrationWizard({
       return {
         name: p.name.trim(),
         serviceNames: picked.map((s) => s.name),
+        serviceContainerIds: picked
+          .map((s) => s.containerId)
+          .filter((id): id is string => Boolean(id)),
         volumeStrategies,
         gitSource: p.repo
-          ? { provider: "github" as const, owner: p.repo.owner, repo: p.repo.repo, branch: p.repo.branch }
+          ? {
+              provider: "github" as const,
+              owner: p.repo.owner,
+              repo: p.repo.repo,
+              branch: p.repo.branch,
+            }
           : undefined,
         serviceSubpaths: Object.keys(serviceSubpaths).length ? serviceSubpaths : undefined,
         serviceRenames: Object.keys(serviceRenames).length ? serviceRenames : undefined,
         serviceEnv: Object.keys(serviceEnv).length ? serviceEnv : undefined,
-        routesByServiceName: Object.keys(routesByServiceName).length ? routesByServiceName : undefined,
+        routesByServiceName: Object.keys(routesByServiceName).length
+          ? routesByServiceName
+          : undefined,
       };
     });
     setQueue(items);
@@ -924,7 +1072,10 @@ export function ServerMigrationWizard({
     // Routes/domains are published SERVER-SIDE now (see toServerRoutes in the
     // migrate payload), so they land even if this effect never runs (wizard
     // unmounted / run opened from the list). Here we only advance the queue.
-    setCompleted((prev) => [...prev, { name: queue[queueIndex]?.name ?? "", projectId: run.projectId }]);
+    setCompleted((prev) => [
+      ...prev,
+      { name: queue[queueIndex]?.name ?? "", projectId: run.projectId },
+    ]);
     const nextIndex = queueIndex + 1;
     if (nextIndex < queue.length) {
       setQueueIndex(nextIndex);
@@ -1033,6 +1184,45 @@ export function ServerMigrationWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);
 
+  /**
+   * Publish the run's phase to the PROJECT payload every time it changes.
+   *
+   * A project's status pill reads `activeMigration` off that payload (API
+   * `readActiveMigration`), and the payload is revision-invalidated, not polled — so without
+   * this, a project would go on reading "Migrating" after its run succeeded, and would only
+   * start reading it at all on the next full page load. This wizard is the one place in the
+   * client that watches a run's status, and it does so for EVERY entry point (a project's
+   * Advanced tab, the server's Migrations tab, the Library modal) — so one effect here keeps
+   * every surface honest instead of each of them polling the migration API.
+   *
+   * On status CHANGE only: the poll above ticks every 2.5s, and invalidating on each tick
+   * would be a refetch storm. A run changes phase a handful of times from start to terminal.
+   */
+  useEffect(() => {
+    const status = run?.status;
+    if (!run || !status) return;
+    // BOTH projects a run can be about. A duplicate's `projectId` is repointed at the new
+    // project once the adopt step mints it, so invalidating only that would leave the SOURCE
+    // project — the one whose Advanced tab started the run — reading a phase it has moved on
+    // from. The source id is in the start snapshot, the same place the server reads it.
+    const snapshot = run.inputSnapshot as { projectMove?: { projectId?: unknown } } | null;
+    const source = snapshot?.projectMove?.projectId;
+    const ids = [run.projectId, typeof source === "string" ? source : null].filter(
+      (id): id is string => Boolean(id),
+    );
+    for (const id of new Set(ids)) {
+      // MODULE-level, not a ref. The guarded side effect refreshes the project, and a refresh
+      // can re-render — or, if a consumer ever gates on `isLoading` again, remount — this very
+      // component. Per-mount state cannot dedupe an effect that outlives its own mount: the ref
+      // reset on every remount and re-fired, which is the loop this replaced. "Phase X of run Y
+      // has been published" is a fact about the session, so it is stored like one.
+      const key = `${id}:${run.id}:${status}`;
+      if (publishedPhases.has(key)) continue;
+      publishedPhases.add(key);
+      invalidateProjectCaches(id);
+    }
+  }, [run]);
+
   // Poll the current run while a migration is in flight; stop once terminal.
   useEffect(() => {
     if (!migrationId) return;
@@ -1109,6 +1299,7 @@ export function ServerMigrationWizard({
 
   const inProgress = Boolean(queue);
   const failed = run?.status === "failed" || run?.status === "rolled_back";
+  const cutoverNeedsRetry = run?.status === "cutover" && Boolean(run.errorMessage);
   // Only go near-full-screen once there are RESULTS to show (an adoptable stack
   // or an in-flight migration). The empty prompt, the loading state, and a
   // "nothing found" result all stay a compact, content-sized dialog.
@@ -1187,507 +1378,549 @@ export function ServerMigrationWizard({
   // own Jobs-style header above the wizard.
   const modalHeader = (
     <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-b border-border/60 bg-muted/[0.18]">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="size-9 rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20 flex items-center justify-center shrink-0">
-              <Container className="size-[18px] text-primary" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold text-foreground leading-tight">{m.wizard.title}</h2>
-              <p className="text-xs text-muted-foreground truncate max-w-3xl">{m.wizard.intro}</p>
-            </div>
-          </div>
-          <button
-            onClick={close}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-          >
-            <X className="size-5" />
-          </button>
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="size-9 rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20 flex items-center justify-center shrink-0">
+          <Container className="size-[18px] text-primary" />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-foreground leading-tight">
+            {m.wizard.title}
+          </h2>
+          <p className="text-xs text-muted-foreground truncate max-w-3xl">{m.wizard.intro}</p>
+        </div>
+      </div>
+      <button
+        onClick={close}
+        className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+      >
+        <X className="size-5" />
+      </button>
     </div>
   );
 
   const body = inProgress ? (
-          /* ── Migration progress (queue) ── */
+    /* ── Migration progress (queue) ── */
+    <>
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <MigrationProgress
+          run={run}
+          error={error}
+          queueName={queue?.[queueIndex]?.name ?? ""}
+          queueIndex={queueIndex}
+          queueTotal={queue?.length ?? 1}
+          completed={completed}
+          deployServices={deploy?.services}
+          hasDomains={anyDomainAssigned}
+          progress={progress}
+        />
+      </div>
+      <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-t border-border/60">
+        {run?.status === "awaiting_cutover" || cutoverNeedsRetry ? (
           <>
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              <MigrationProgress
-                run={run}
-                error={error}
-                queueName={queue?.[queueIndex]?.name ?? ""}
-                queueIndex={queueIndex}
-                queueTotal={queue?.length ?? 1}
-                completed={completed}
-                deployServices={deploy?.services}
-                hasDomains={anyDomainAssigned}
-                progress={progress}
-              />
+            <span className="text-xs text-muted-foreground flex-1 min-w-0">
+              {m.cutover.warning}
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              {run?.status === "awaiting_cutover" && (
+                <button
+                  type="button"
+                  onClick={() => handleCutover(false)}
+                  disabled={cutoverBusy}
+                  className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                >
+                  {m.cutover.keep}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => handleCutover(true)}
+                disabled={cutoverBusy}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
+              >
+                {cutoverBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+                {m.cutover.stopRemove}
+              </button>
             </div>
-            <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-t border-border/60">
-              {run?.status === "awaiting_cutover" ? (
-                <>
-                  <span className="text-xs text-muted-foreground flex-1 min-w-0">{m.cutover.warning}</span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleCutover(false)}
-                      disabled={cutoverBusy}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
-                    >
-                      {m.cutover.keep}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCutover(true)}
-                      disabled={cutoverBusy}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
-                    >
-                      {cutoverBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                      {m.cutover.stopRemove}
-                    </button>
-                  </div>
-                </>
-              ) : allDone ? (
-                <>
-                  <span />
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={close}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                    >
-                      {m.wizard.close}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openProject}
-                      className={
-                        anyDomainAssigned
-                          ? "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
-                          : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                      }
-                    >
-                      {anyDomainAssigned && <ArrowRight className="size-4" />}
-                      {m.run.openProject}
-                    </button>
-                    {!anyDomainAssigned && (
-                      <button
-                        type="button"
-                        onClick={openDomains}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
-                      >
-                        <ArrowRight className="size-4" />
-                        {m.run.addDomains}
-                      </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <span />
-                  <div className="flex items-center gap-2 shrink-0">
-                    {failed && run?.deploymentId && (
-                      <button
-                        type="button"
-                        onClick={openDeployLogs}
-                        className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                      >
-                        {m.run.viewDeployLogs}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={cancelRun}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                    >
-                      {failed ? m.wizard.close : m.wizard.cancel}
-                    </button>
-                  </div>
-                </>
+          </>
+        ) : allDone ? (
+          <>
+            <span />
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={close}
+                className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              >
+                {m.wizard.close}
+              </button>
+              <button
+                type="button"
+                onClick={openProject}
+                className={
+                  anyDomainAssigned
+                    ? "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
+                    : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                }
+              >
+                {anyDomainAssigned && <ArrowRight className="size-4" />}
+                {m.run.openProject}
+              </button>
+              {!anyDomainAssigned && (
+                <button
+                  type="button"
+                  onClick={openDomains}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
+                >
+                  <ArrowRight className="size-4" />
+                  {m.run.addDomains}
+                </button>
               )}
             </div>
           </>
         ) : (
-          /* ── Selection (scan + tabs + two columns) ── */
           <>
-            {/* Server picker (only when the modal isn't pinned to a server).
-                Inspect Docker + Re-scan both live in the footer. */}
-            {!serverId && (
-              <div className="shrink-0 px-6 pt-4">
-                <ServerSelector value={selectedId} onSelect={pickServer} compact />
-              </div>
-            )}
-
-            {/* Project tabs */}
-            {adoptable && stack && projects.length > 0 && (
-              <div className="shrink-0 flex items-center gap-1.5 px-6 pt-4 flex-wrap">
-                {projects.map((p) => {
-                  const on = p.id === active?.id;
-                  return (
-                    <div
-                      key={p.id}
-                      className={`group inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer ${
-                        on
-                          ? "bg-muted text-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-muted/40"
-                      }`}
-                      onClick={() => setActiveId(p.id)}
-                    >
-                      <span className="font-medium truncate max-w-[160px]">
-                        {p.name || m.wizard.projectName}
-                      </span>
-                      <span className="text-xs text-muted-foreground">· {p.services.size}</span>
-                      {projects.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeProject(p.id);
-                          }}
-                          className="rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          aria-label={m.wizard.removeProject}
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+            <span />
+            <div className="flex items-center gap-2 shrink-0">
+              {failed && run?.deploymentId && (
                 <button
                   type="button"
-                  onClick={addProject}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                  onClick={openDeployLogs}
+                  className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
-                  <Plus className="size-3.5" />
-                  {m.wizard.addProject}
+                  {m.run.viewDeployLogs}
                 </button>
+              )}
+              <button
+                type="button"
+                onClick={cancelRun}
+                className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              >
+                {failed ? m.wizard.close : m.wizard.cancel}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  ) : (
+    /* ── Selection (scan + tabs + two columns) ── */
+    <>
+      {/* Server picker (only when the modal isn't pinned to a server).
+                Inspect Docker + Re-scan both live in the footer. */}
+      {!serverId && (
+        <div className="shrink-0 px-6 pt-4">
+          <ServerSelector value={selectedId} onSelect={pickServer} compact />
+        </div>
+      )}
+
+      {/* Project tabs */}
+      {adoptable && stack && projects.length > 0 && (
+        <div className="shrink-0 flex items-center gap-1.5 px-6 pt-4 flex-wrap">
+          {projects.map((p) => {
+            const on = p.id === active?.id;
+            return (
+              <div
+                key={p.id}
+                className={`group inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer ${
+                  on
+                    ? "bg-muted text-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted/40"
+                }`}
+                onClick={() => setActiveId(p.id)}
+              >
+                <span className="font-medium truncate max-w-[160px]">
+                  {p.name || m.wizard.projectName}
+                </span>
+                <span className="text-xs text-muted-foreground">· {p.services.size}</span>
+                {projects.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeProject(p.id);
+                    }}
+                    className="rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    aria-label={m.wizard.removeProject}
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={addProject}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+          >
+            <Plus className="size-3.5" />
+            {m.wizard.addProject}
+          </button>
+        </div>
+      )}
+
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-hidden px-6 py-4">
+        {/* Idle + loading keep the illustration (loading just pulses it). */}
+        {!stack && !error && <EmptyHint scanning={scanning} status={scanStatus} />}
+
+        {/* Scanned but nothing adoptable AND nothing to re-import → compact
+                  "nothing found" (not a giant empty modal). */}
+        {stack && !adoptable && !hasReimport && <NoResults message={m.discover.nothing} />}
+
+        {/* Only Openship projects to re-import (no generic candidates): show
+                  the re-import section on its own. */}
+        {stack && !adoptable && hasReimport && (
+          <div className="h-full min-h-0 overflow-y-auto pr-1">
+            <OpenshipReimportSection
+              serverId={selectedId ?? ""}
+              orphaned={orphanedOpenship}
+              alreadyManaged={stack.alreadyManaged}
+              onOpen={(pid) => router.push(`/projects/${pid}`)}
+            />
+          </div>
+        )}
+
+        {adoptable && stack && active && (
+          <div className="h-full min-h-0 flex flex-col gap-4">
+            {/* ── Step 1: SELECT the containers + (optional) link a repo. The
+                      full discovered grid lives ONLY here. ── */}
+            {step === "select" && (
+              <div className="grid h-full min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <aside className="flex min-h-0 min-w-0 flex-col">
+                  <p className="mb-2 shrink-0 px-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {m.discover.servicesTitle}
+                  </p>
+                  <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pe-1.5">
+                    {hasReimport && (
+                      <OpenshipReimportSection
+                        serverId={selectedId ?? ""}
+                        orphaned={orphanedOpenship}
+                        alreadyManaged={stack.alreadyManaged}
+                        onOpen={(pid) => router.push(`/projects/${pid}`)}
+                      />
+                    )}
+                    {stack.groups.map((group) => (
+                      <ServiceGroup
+                        key={groupKey(group)}
+                        group={group}
+                        activeProject={active}
+                        claimedBy={claimedBy}
+                        projectsById={projects}
+                        onToggle={(svc) => toggleService(svc, groupKey(group))}
+                        onToggleGroup={() => toggleGroup(group)}
+                        groupLabel={groupLabel}
+                      />
+                    ))}
+                  </div>
+                </aside>
+
+                <section className="flex min-h-0 min-w-0 flex-col lg:border-s lg:border-border/50 lg:ps-6">
+                  <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pe-1">
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-medium text-muted-foreground">
+                        {m.wizard.projectName}
+                      </label>
+                      <input
+                        value={active.name}
+                        onChange={(e) => renameProject(active.id, e.target.value)}
+                        placeholder={m.wizard.projectNamePlaceholder}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                      />
+                    </div>
+                    <RepoSourceCard
+                      project={active}
+                      github={github}
+                      parsing={parsingRepo === active.id}
+                      onRepoChange={(repo) => void onRepoChange(active.id, repo)}
+                    />
+                  </div>
+                </section>
               </div>
             )}
 
-            {/* Body */}
-            <div className="flex-1 min-h-0 overflow-hidden px-6 py-4">
-              {/* Idle + loading keep the illustration (loading just pulses it). */}
-              {!stack && !error && <EmptyHint scanning={scanning} status={scanStatus} />}
+            {/* ── Step 2: MAP — only the selected containers ↔ the repo's
+                      compose services. No grid, no unselected containers. ── */}
+            {step === "source" && (
+              <div className="h-full min-h-0 flex-1 overflow-y-auto pe-1">
+                <ServiceMapPanel
+                  project={active}
+                  stack={stack}
+                  parsing={parsingRepo === active.id}
+                  onSetMap={(uid, name) => setServiceMap(active.id, uid, name)}
+                />
+              </div>
+            )}
 
-              {/* Scanned but nothing adoptable AND nothing to re-import → compact
-                  "nothing found" (not a giant empty modal). */}
-              {stack && !adoptable && !hasReimport && <NoResults message={m.discover.nothing} />}
+            {/* ── Step 3: CONFIGURE — one card per selected container: its
+                      route, volume, and env. Nothing else. ── */}
+            {step === "domains" && (
+              <div className="h-full min-h-0 flex-1 overflow-y-auto pe-1">
+                <div className="grid gap-4 items-start grid-cols-[repeat(auto-fill,minmax(420px,1fr))]">
+                  {buildPlanCards(active, stack.services).map(({ uid, service, isNew, action }) => (
+                    <ServiceConfigCard
+                      key={uid}
+                      service={service}
+                      sourceServerId={selectedId}
+                      isNew={isNew}
+                      deployAction={action}
+                      routes={active.serviceRoutes[uid]}
+                      envOverride={active.serviceEnvs[uid]}
+                      sameServer={sameServer}
+                      volumeStrategy={volumeStrategy[uid]}
+                      routeMode={
+                        active.serviceRouteMode[uid] ??
+                        (hasKeepableRoute(service) ? "keep" : "none")
+                      }
+                      onSetRoutes={(r) => setServiceRoutes(active.id, uid, r)}
+                      onSetEnv={(env) => setServiceEnv(active.id, uid, env)}
+                      onSetStrategy={(strat) =>
+                        setVolumeStrategy((prev) => ({ ...prev, [uid]: strat }))
+                      }
+                      onSetRouteMode={(mode) => setServiceRouteMode(active.id, uid, mode)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {step === "plan" && (
+              <div className="h-full min-h-0 flex-1 overflow-y-auto pe-1">
+                <TransferPlanSummary
+                  sourceId={selectedId}
+                  targetId={targetId}
+                  serviceNames={planServiceNames}
+                  serviceContainerIds={planServiceContainerIds}
+                  flatDocker={flatDocker}
+                  transferMode={transferMode}
+                  setTransferMode={setTransferMode}
+                  compress={compress}
+                  setCompress={setCompress}
+                  customPaths={customPaths}
+                  setCustomPaths={setCustomPaths}
+                  conflictResolution={conflictResolution}
+                  setConflictResolution={setConflictResolution}
+                  cache={planCacheRef}
+                  onReady={setPlanReady}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
-              {/* Only Openship projects to re-import (no generic candidates): show
-                  the re-import section on its own. */}
-              {stack && !adoptable && hasReimport && (
-                <div className="h-full min-h-0 overflow-y-auto pr-1">
-                  <OpenshipReimportSection
-                    serverId={selectedId ?? ""}
-                    orphaned={orphanedOpenship}
-                    alreadyManaged={stack.alreadyManaged}
-                    onOpen={(pid) => router.push(`/projects/${pid}`)}
+        {/* Scan failed (no stack) → same compact "nothing found" frame. */}
+        {error && !stack && <NoResults message={error} isError />}
+      </div>
+
+      {/* Footer: target + cutover + migrate */}
+      <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-t border-border/60">
+        {adoptable && stack ? (
+          step === "select" ? (
+            /* Step 1 footer: flat toggle + rescan + Cancel + Next */
+            <>
+              {flatInline}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleScan()}
+                  disabled={!selectedId || scanning}
+                  title={m.wizard.rescan}
+                  aria-label={m.wizard.rescan}
+                  className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {scanning ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={close}
+                  className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  {m.wizard.cancel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep("source")}
+                  disabled={migratable.length === 0}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {m.wizard.steps.next}
+                  <ArrowRight className="size-4" />
+                </button>
+              </div>
+            </>
+          ) : step === "source" ? (
+            /* Step 2 footer: Back + Next */
+            <>
+              <span className="text-xs text-muted-foreground min-w-0">
+                {m.wizard.steps.sourceHint}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setStep("select")}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  <ArrowLeft className="size-4" />
+                  {m.wizard.steps.back}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep("domains")}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
+                >
+                  {m.wizard.steps.next}
+                  <ArrowRight className="size-4" />
+                </button>
+              </div>
+            </>
+          ) : step === "domains" ? (
+            /* Step 3 footer: move settings + Back + (Next cross / Migrate same) */
+            <>
+              <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
+                <div className="flex items-center gap-2 shrink-0">
+                  <ArrowRight className="size-4 text-muted-foreground" />
+                  <span className="text-sm font-medium text-foreground">
+                    {m.wizard.targetLabel}
+                  </span>
+                </div>
+                <div className="w-56 min-w-0">
+                  <ServerSelector
+                    value={targetId}
+                    onSelect={(s) => setTargetId(s?.id ?? null)}
+                    compact
+                    dropUp
                   />
                 </div>
-              )}
-
-              {adoptable && stack && active && (
-                <div className="h-full min-h-0 flex flex-col gap-4">
-                  {/* ── Step 1: SELECT the containers + (optional) link a repo. The
-                      full discovered grid lives ONLY here. ── */}
-                  {step === "select" && (
-                    <div className="grid h-full min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-                      <aside className="flex min-h-0 min-w-0 flex-col">
-                        <p className="mb-2 shrink-0 px-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          {m.discover.servicesTitle}
-                        </p>
-                        <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pe-1.5">
-                          {hasReimport && (
-                            <OpenshipReimportSection
-                              serverId={selectedId ?? ""}
-                              orphaned={orphanedOpenship}
-                              alreadyManaged={stack.alreadyManaged}
-                              onOpen={(pid) => router.push(`/projects/${pid}`)}
-                            />
-                          )}
-                          {stack.groups.map((group) => (
-                            <ServiceGroup
-                              key={groupKey(group)}
-                              group={group}
-                              activeProject={active}
-                              claimedBy={claimedBy}
-                              projectsById={projects}
-                              onToggle={(svc) => toggleService(svc, groupKey(group))}
-                              onToggleGroup={() => toggleGroup(group)}
-                              groupLabel={groupLabel}
-                            />
-                          ))}
-                        </div>
-                      </aside>
-
-                      <section className="flex min-h-0 min-w-0 flex-col lg:border-s lg:border-border/50 lg:ps-6">
-                        <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pe-1">
-                          <div className="space-y-1.5">
-                            <label className="text-[13px] font-medium text-muted-foreground">
-                              {m.wizard.projectName}
-                            </label>
-                            <input
-                              value={active.name}
-                              onChange={(e) => renameProject(active.id, e.target.value)}
-                              placeholder={m.wizard.projectNamePlaceholder}
-                              className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
-                            />
-                          </div>
-                          <RepoSourceCard
-                            project={active}
-                            github={github}
-                            parsing={parsingRepo === active.id}
-                            onRepoChange={(repo) => void onRepoChange(active.id, repo)}
-                          />
-                        </div>
-                      </section>
-                    </div>
-                  )}
-
-                  {/* ── Step 2: MAP — only the selected containers ↔ the repo's
-                      compose services. No grid, no unselected containers. ── */}
-                  {step === "source" && (
-                    <div className="h-full min-h-0 flex-1 overflow-y-auto pe-1">
-                      <ServiceMapPanel
-                        project={active}
-                        stack={stack}
-                        parsing={parsingRepo === active.id}
-                        onSetMap={(uid, name) => setServiceMap(active.id, uid, name)}
-                      />
-                    </div>
-                  )}
-
-                  {/* ── Step 3: CONFIGURE — one card per selected container: its
-                      route, volume, and env. Nothing else. ── */}
-                  {step === "domains" && (
-                    <div className="h-full min-h-0 flex-1 overflow-y-auto pe-1">
-                      <div className="grid gap-4 items-start grid-cols-[repeat(auto-fill,minmax(420px,1fr))]">
-                        {buildPlanCards(active, stack.services).map(({ uid, service, isNew, action }) => (
-                          <ServiceConfigCard
-                            key={uid}
-                            service={service}
-                            isNew={isNew}
-                            deployAction={action}
-                            routes={active.serviceRoutes[uid]}
-                            envOverride={active.serviceEnvs[uid]}
-                            sameServer={sameServer}
-                            volumeStrategy={volumeStrategy[uid]}
-                            routeMode={
-                              active.serviceRouteMode[uid] ??
-                              (hasKeepableRoute(service) ? "keep" : "none")
-                            }
-                            onSetRoutes={(r) => setServiceRoutes(active.id, uid, r)}
-                            onSetEnv={(env) => setServiceEnv(active.id, uid, env)}
-                            onSetStrategy={(strat) =>
-                              setVolumeStrategy((prev) => ({ ...prev, [uid]: strat }))
-                            }
-                            onSetRouteMode={(mode) => setServiceRouteMode(active.id, uid, mode)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {step === "plan" && (
-                    <div className="h-full min-h-0 flex-1 overflow-y-auto pe-1">
-                      <TransferPlanSummary
-                        sourceId={selectedId}
-                        targetId={targetId}
-                        serviceNames={planServiceNames}
-                        transferMode={transferMode}
-                        setTransferMode={setTransferMode}
-                        compress={compress}
-                        setCompress={setCompress}
-                        customPaths={customPaths}
-                        setCustomPaths={setCustomPaths}
-                        conflictResolution={conflictResolution}
-                        setConflictResolution={setConflictResolution}
-                        cache={planCacheRef}
-                        onReady={setPlanReady}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Scan failed (no stack) → same compact "nothing found" frame. */}
-              {error && !stack && <NoResults message={error} isError />}
-            </div>
-
-            {/* Footer: target + cutover + migrate */}
-            <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-t border-border/60">
-              {adoptable && stack ? (
-                step === "select" ? (
-                  /* Step 1 footer: flat toggle + rescan + Cancel + Next */
-                  <>
-                    {flatInline}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleScan()}
-                        disabled={!selectedId || scanning}
-                        title={m.wizard.rescan}
-                        aria-label={m.wizard.rescan}
-                        className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {scanning ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={close}
-                        className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                      >
-                        {m.wizard.cancel}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStep("source")}
-                        disabled={migratable.length === 0}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {m.wizard.steps.next}
-                        <ArrowRight className="size-4" />
-                      </button>
-                    </div>
-                  </>
-                ) : step === "source" ? (
-                  /* Step 2 footer: Back + Next */
-                  <>
-                    <span className="text-xs text-muted-foreground min-w-0">{m.wizard.steps.sourceHint}</span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setStep("select")}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                      >
-                        <ArrowLeft className="size-4" />
-                        {m.wizard.steps.back}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStep("domains")}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
-                      >
-                        {m.wizard.steps.next}
-                        <ArrowRight className="size-4" />
-                      </button>
-                    </div>
-                  </>
-                ) : step === "domains" ? (
-                  /* Step 3 footer: move settings + Back + (Next cross / Migrate same) */
-                  <>
-                    <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
-                      <div className="flex items-center gap-2 shrink-0">
-                        <ArrowRight className="size-4 text-muted-foreground" />
-                        <span className="text-sm font-medium text-foreground">{m.wizard.targetLabel}</span>
-                      </div>
-                      <div className="w-56 min-w-0">
-                        <ServerSelector value={targetId} onSelect={(s) => setTargetId(s?.id ?? null)} compact dropUp />
-                      </div>
-                      <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={killOriginals}
-                          onChange={(e) => setKillOriginals(e.target.checked)}
-                          className="size-4 rounded border-border"
-                        />
-                        {m.wizard.killOriginals}
-                      </label>
-                      <span
-                        className={`text-xs ${sameServer ? "text-muted-foreground" : "text-warning"}`}
-                      >
-                        {sameServer ? m.wizard.sameServer : m.run.downtimeNote}
-                      </span>
-                      {crossServerBuiltInfo && (
-                        <span className="text-xs text-muted-foreground w-full">{m.wizard.crossServerBuiltInfo}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setStep("source")}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                      >
-                        <ArrowLeft className="size-4" />
-                        {m.wizard.steps.back}
-                      </button>
-                      {sameServer ? (
-                        <button
-                          type="button"
-                          onClick={handleMigrate}
-                          disabled={!canMigrate}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {starting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                          {migratable.length > 1
-                            ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
-                            : m.wizard.migrate}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setStep("plan")}
-                          disabled={!canMigrate}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {m.wizard.steps.next}
-                          <ArrowRight className="size-4" />
-                        </button>
-                      )}
-                    </div>
-                  </>
+                <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={killOriginals}
+                    onChange={(e) => setKillOriginals(e.target.checked)}
+                    className="size-4 rounded border-border"
+                  />
+                  {m.wizard.killOriginals}
+                </label>
+                <span
+                  className={`text-xs ${sameServer ? "text-muted-foreground" : "text-warning"}`}
+                >
+                  {sameServer ? m.wizard.sameServer : m.run.downtimeNote}
+                </span>
+                {crossServerBuiltInfo && (
+                  <span className="text-xs text-muted-foreground w-full">
+                    {m.wizard.crossServerBuiltInfo}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setStep("source")}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  <ArrowLeft className="size-4" />
+                  {m.wizard.steps.back}
+                </button>
+                {sameServer ? (
+                  <button
+                    type="button"
+                    onClick={handleMigrate}
+                    disabled={!canMigrate}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {starting ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="size-4" />
+                    )}
+                    {migratable.length > 1
+                      ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
+                      : m.wizard.migrate}
+                  </button>
                 ) : (
-                  /* Plan footer: Back → Configure + Migrate. */
-                  <>
-                    <span className="text-xs text-muted-foreground min-w-0 flex-1">
-                      {sameServer ? m.wizard.sameServer : m.run.downtimeNote}
-                    </span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setStep("domains")}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                      >
-                        <ArrowLeft className="size-4" />
-                        {m.wizard.steps.back}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleMigrate}
-                        disabled={!canMigrate || !planReady}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {starting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                        {migratable.length > 1
-                          ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
-                          : m.wizard.migrate}
-                      </button>
-                    </div>
-                  </>
-                )
-              ) : (
-                <>
-                  {flatInline}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={close}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                    >
-                      {m.wizard.cancel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleScan()}
-                      disabled={!selectedId || scanning}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {scanning ? <Loader2 className="size-4 animate-spin" /> : stack ? <RefreshCw className="size-4" /> : <Search className="size-4" />}
-                      {scanning ? m.wizard.scanning : stack ? m.wizard.rescan : m.wizard.scan}
-                    </button>
-                  </div>
-                </>
-              )}
+                  <button
+                    type="button"
+                    onClick={() => setStep("plan")}
+                    disabled={!canMigrate}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {m.wizard.steps.next}
+                    <ArrowRight className="size-4" />
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            /* Plan footer: Back → Configure + Migrate. */
+            <>
+              <span className="text-xs text-muted-foreground min-w-0 flex-1">
+                {sameServer ? m.wizard.sameServer : m.run.downtimeNote}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setStep("domains")}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  <ArrowLeft className="size-4" />
+                  {m.wizard.steps.back}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMigrate}
+                  disabled={!canMigrate || !planReady}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {starting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ArrowRight className="size-4" />
+                  )}
+                  {migratable.length > 1
+                    ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
+                    : m.wizard.migrate}
+                </button>
+              </div>
+            </>
+          )
+        ) : (
+          <>
+            {flatInline}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={close}
+                className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              >
+                {m.wizard.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleScan()}
+                disabled={!selectedId || scanning}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {scanning ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : stack ? (
+                  <RefreshCw className="size-4" />
+                ) : (
+                  <Search className="size-4" />
+                )}
+                {scanning ? m.wizard.scanning : stack ? m.wizard.rescan : m.wizard.scan}
+              </button>
             </div>
           </>
-        );
+        )}
+      </div>
+    </>
+  );
 
   if (variant === "tab") {
     // Inline Services-tab layout: LEFT = discovered containers (scan controls +
@@ -1715,26 +1948,269 @@ export function ServerMigrationWizard({
       const runText = m.run as Record<string, string>;
       const runStatus = run?.status ?? "queued";
       const awaiting = runStatus === "awaiting_cutover";
+      const cutoverAction = awaiting || cutoverNeedsRetry;
       const partial = runStatus === "partial";
       // A run opened from the list can already be terminal-success; treat that
       // as done so the rail shows the result, not a spinner.
       const done = allDone || runStatus === "succeeded";
-      const running = !failed && !done && !awaiting && !partial;
+      const running = !failed && !done && !cutoverAction && !partial;
       const terminal = failed || runStatus === "succeeded"; // deletable record
       const railLabel = done
         ? queueTotal > 1
           ? interpolate(m.run.allSucceeded, { n: String(queueTotal) })
           : m.run.succeeded
-        : awaiting
-          ? m.run.awaiting_cutover
+        : cutoverAction
+          ? awaiting
+            ? m.run.awaiting_cutover
+            : runText.cutover
           : partial
             ? m.run.partial
-            : runText[runStatus] ?? m.run.queued;
+            : (runText[runStatus] ?? m.run.queued);
 
+      const railPanel = (
+        <div className="space-y-4">
+          {backBtn && <div className="flex">{backBtn}</div>}
+          <div className="flex flex-col items-center gap-3 text-center">
+            <span
+              className={`inline-flex size-12 items-center justify-center rounded-2xl ${
+                failed
+                  ? "bg-destructive/10 text-destructive"
+                  : done || awaiting
+                    ? "bg-success-bg text-success"
+                    : cutoverNeedsRetry || partial
+                      ? "bg-warning-bg text-warning"
+                      : "bg-primary/10 text-primary"
+              }`}
+            >
+              {failed ? (
+                <AlertCircle className="size-6" />
+              ) : done || awaiting ? (
+                <CheckCircle2 className="size-6" />
+              ) : cutoverNeedsRetry || partial ? (
+                <AlertCircle className="size-6" />
+              ) : (
+                <Loader2 className="size-6 animate-spin" />
+              )}
+            </span>
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-foreground">{railLabel}</p>
+              {queueTotal > 1 && running && (
+                <p className="text-xs text-muted-foreground">
+                  {interpolate(m.run.queueHeader, {
+                    index: String(queueIndex + 1),
+                    total: String(queueTotal),
+                    name: queue?.[queueIndex]?.name ?? "",
+                  })}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* The error text already shows in the LEFT card's failure banner
+            (above the session log) — don't duplicate it here in the rail. */}
+          {cutoverAction && (
+            <p className="text-xs leading-relaxed text-muted-foreground">{m.cutover.warning}</p>
+          )}
+
+          <div className="space-y-2">
+            {cutoverAction ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleCutover(true)}
+                  disabled={cutoverBusy}
+                  className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
+                >
+                  {cutoverBusy ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                  {m.cutover.stopRemove}
+                </button>
+                {awaiting && (
+                  <button
+                    type="button"
+                    onClick={() => handleCutover(false)}
+                    disabled={cutoverBusy}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                  >
+                    {m.cutover.keep}
+                  </button>
+                )}
+              </>
+            ) : partial ? (
+              // Resolve UI (edit/skip + Resume) is in the wide LEFT column.
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {m.tab.pendingTitle} →
+              </p>
+            ) : done ? (
+              <>
+                {!anyDomainAssigned && (
+                  <button
+                    type="button"
+                    onClick={openDomains}
+                    className="inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <ArrowRight className="size-4" />
+                    {m.run.addDomains}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={openProject}
+                  className={
+                    anyDomainAssigned
+                      ? "inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                      : "w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  }
+                >
+                  {anyDomainAssigned && <ArrowRight className="size-4" />}
+                  {m.run.openProject}
+                </button>
+                <button
+                  type="button"
+                  onClick={close}
+                  className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  {m.wizard.close}
+                </button>
+              </>
+            ) : (
+              <>
+                {failed && run?.deploymentId && (
+                  <button
+                    type="button"
+                    onClick={openDeployLogs}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  >
+                    {m.run.viewDeployLogs}
+                  </button>
+                )}
+                {/* PROJECT run → retry in place, or go back and pick a different target. A
+                  scan is not offered because there was never a selection to revisit. */}
+                {failed && projectRun && projectMoveSnapshot?.projectId && (
+                  <button
+                    type="button"
+                    onClick={() => void retryProjectRun()}
+                    disabled={retrying}
+                    className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40"
+                  >
+                    {retrying ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
+                    {m.tab.retryRun}
+                  </button>
+                )}
+                {failed && projectRun && onBack && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  >
+                    {m.tab.changeTarget}
+                  </button>
+                )}
+                {/* SCAN-started run → the original edit-&-retry, which re-scans on purpose. */}
+                {failed && !projectRun && run?.inputSnapshot && (
+                  <button
+                    type="button"
+                    onClick={editRetry}
+                    className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <RefreshCw className="size-4" />
+                    {m.tab.editRetry}
+                  </button>
+                )}
+                {failed && (run?.targetVolumes?.length ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void cleanupTarget()}
+                    disabled={cleanupBusy}
+                    className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-danger-border text-sm font-medium text-danger hover:bg-danger-bg transition-colors disabled:opacity-40"
+                  >
+                    {cleanupBusy ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-4" />
+                    )}
+                    {m.tab.cleanupTarget}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={cancelRun}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  {failed ? m.wizard.close : m.wizard.cancel}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Delete this run's record (terminal only; project + data untouched). */}
+          {terminal && (
+            <div className="border-t border-border/50 pt-3">
+              {confirmingDelete ? (
+                <div className="space-y-2">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {m.tab.confirmDelete}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(false)}
+                      disabled={deleteBusy}
+                      className="flex-1 px-3 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                    >
+                      {m.tab.close}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteRun()}
+                      disabled={deleteBusy}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
+                    >
+                      {deleteBusy ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-4" />
+                      )}
+                      {m.tab.delete}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-danger-border text-sm font-medium text-danger hover:bg-danger-bg transition-colors"
+                >
+                  <Trash2 className="size-4" />
+                  {m.tab.delete}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      );
       return (
-        <div ref={stepTopRef} className="grid grid-cols-1 gap-6 items-start lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-border/50 bg-card p-6">
+        // Splits at 2xl, not lg. This panel renders inside a project's Advanced tab, which
+        // already has the page's own 340px sidebar — so at lg the run view became the THIRD
+        // column and the deploy terminal wrapped every ~30 characters, which is what made a
+        // port-conflict error unreadable. The server's Migrations tab is cramped at that width
+        // too; one breakpoint fixes both rather than coupling the layout to the entry point.
+        //
+        // Stacked, the rail comes FIRST (order) so the status and the actions — Cancel, cutover,
+        // retry — stay at the top instead of below a tall log. DOM order is unchanged.
+        <div ref={stepTopRef} className="space-y-6">
+          {/* 1. STATUS + ACTIONS beside the STEP LIST — the summary, on one line.
+                 Two short blocks, so they split at `lg`; the logs below stay full width. */}
+          <div className="grid grid-cols-1 items-start gap-6 rounded-2xl border border-border/50 bg-card p-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+            {railPanel}
+            <div className="min-w-0">
               <MigrationProgress
                 run={run}
                 error={error}
@@ -1747,110 +2223,69 @@ export function ServerMigrationWizard({
                 progress={progress}
               />
             </div>
-            {/* Partial run → resolve the paths that didn't move (edit / skip),
-                then Resume to finish. Lives in the wide LEFT column. */}
-            {partial && migrationId && (
-              <PartialResolution
-                runId={migrationId}
-                pending={(run?.pendingItems ?? []) as PendingItem[]}
-              />
-            )}
           </div>
 
-          <div className="rounded-2xl border border-border/50 bg-card p-5 space-y-4 lg:sticky lg:top-4">
-            {backBtn && <div className="flex">{backBtn}</div>}
-            <div className="flex flex-col items-center gap-3 text-center">
-              <span
-                className={`inline-flex size-12 items-center justify-center rounded-2xl ${
-                  failed
-                    ? "bg-destructive/10 text-destructive"
-                    : done || awaiting
-                      ? "bg-success-bg text-success"
-                      : partial
-                        ? "bg-warning-bg text-warning"
-                        : "bg-primary/10 text-primary"
-                }`}
-              >
-                {failed ? (
-                  <AlertCircle className="size-6" />
-                ) : done || awaiting ? (
-                  <CheckCircle2 className="size-6" />
-                ) : partial ? (
-                  <AlertCircle className="size-6" />
-                ) : (
-                  <Loader2 className="size-6 animate-spin" />
-                )}
-              </span>
-              <div className="space-y-0.5">
-                <p className="text-sm font-semibold text-foreground">{railLabel}</p>
-                {queueTotal > 1 && running && (
-                  <p className="text-xs text-muted-foreground">
-                    {interpolate(m.run.queueHeader, {
-                      index: String(queueIndex + 1),
-                      total: String(queueTotal),
-                      name: queue?.[queueIndex]?.name ?? "",
-                    })}
-                  </p>
-                )}
-              </div>
+          {/* Partial run → resolve the paths that didn't move (edit / skip), then Resume. Its own
+              container: it is a form, not a status read-out. */}
+          {partial && migrationId && (
+            <PartialResolution
+              runId={migrationId}
+              pending={(run?.pendingItems ?? []) as PendingItem[]}
+            />
+          )}
+
+          {/* 2. THE SESSION LOG — the part an operator scrolls. Nested inside the card that also
+                 held the steps, scrolling it fought scrolling the page, and the four-line summary
+                 above it scrolled away exactly when it mattered. */}
+          {run?.logs && (
+            <div className="rounded-2xl border border-border/50 bg-card p-6">
+              <MigrationSessionLog run={run} status={runStatus} />
             </div>
+          )}
 
-            {/* The error text already shows in the LEFT card's failure banner
-                (above the session log) — don't duplicate it here in the rail. */}
-            {awaiting && (
-              <p className="text-xs leading-relaxed text-muted-foreground">{m.cutover.warning}</p>
-            )}
-
-            <div className="space-y-2">
-              {awaiting ? (
-                <>
-                  <button type="button" onClick={() => handleCutover(true)} disabled={cutoverBusy} className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40">{cutoverBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}{m.cutover.stopRemove}</button>
-                  <button type="button" onClick={() => handleCutover(false)} disabled={cutoverBusy} className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40">{m.cutover.keep}</button>
-                </>
-              ) : partial ? (
-                // Resolve UI (edit/skip + Resume) is in the wide LEFT column.
-                <p className="text-xs leading-relaxed text-muted-foreground">{m.tab.pendingTitle} →</p>
-              ) : done ? (
-                <>
-                  {!anyDomainAssigned && (
-                    <button type="button" onClick={openDomains} className="inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"><ArrowRight className="size-4" />{m.run.addDomains}</button>
-                  )}
-                  <button type="button" onClick={openProject} className={anyDomainAssigned ? "inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors" : "w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"}>{anyDomainAssigned && <ArrowRight className="size-4" />}{m.run.openProject}</button>
-                  <button type="button" onClick={close} className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">{m.wizard.close}</button>
-                </>
-              ) : (
-                <>
-                  {failed && run?.deploymentId && (
-                    <button type="button" onClick={openDeployLogs} className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">{m.run.viewDeployLogs}</button>
-                  )}
-                  {failed && run?.inputSnapshot && (
-                    <button type="button" onClick={editRetry} className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"><RefreshCw className="size-4" />{m.tab.editRetry}</button>
-                  )}
-                  {failed && (run?.targetVolumes?.length ?? 0) > 0 && (
-                    <button type="button" onClick={() => void cleanupTarget()} disabled={cleanupBusy} className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-danger-border text-sm font-medium text-danger hover:bg-danger-bg transition-colors disabled:opacity-40">{cleanupBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}{m.tab.cleanupTarget}</button>
-                  )}
-                  <button type="button" onClick={cancelRun} className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">{failed ? m.wizard.close : m.wizard.cancel}</button>
-                </>
-              )}
-            </div>
-
-            {/* Delete this run's record (terminal only; project + data untouched). */}
-            {terminal && (
-              <div className="border-t border-border/50 pt-3">
-                {confirmingDelete ? (
-                  <div className="space-y-2">
-                    <p className="text-xs leading-relaxed text-muted-foreground">{m.tab.confirmDelete}</p>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => setConfirmingDelete(false)} disabled={deleteBusy} className="flex-1 px-3 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40">{m.tab.close}</button>
-                      <button type="button" onClick={() => void deleteRun()} disabled={deleteBusy} className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40">{deleteBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}{m.tab.delete}</button>
-                    </div>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => setConfirmingDelete(true)} className="inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-danger-border text-sm font-medium text-danger hover:bg-danger-bg transition-colors"><Trash2 className="size-4" />{m.tab.delete}</button>
-                )}
+          {/* 3. THE DEPLOY LOGS + terminal — 360px of xterm, and only once there is a deployment
+                 that is running, verifying or failed. Full width, which is what it always wanted. */}
+          {run?.deploymentId &&
+            (failed || runStatus === "deploying" || runStatus === "verifying") && (
+              <div className="rounded-2xl border border-border/50 bg-card p-6">
+                <MigrationDeployLogs
+                  run={run}
+                  status={runStatus}
+                  failed={failed}
+                  deployServices={deploy?.services}
+                />
               </div>
             )}
-          </div>
+        </div>
+      );
+    }
+
+    /**
+     * Opened from a PROJECT and there is no run to show — so there is nothing to render here.
+     *
+     * Everything below this point is the scan flow: pick a server, scan it, choose containers,
+     * map a repo. A project move has no such step, so falling through would put "Existing
+     * services / Flat listing / Scanning existing reverse proxy…" inside a project's Advanced
+     * tab and invite the operator to adopt containers from a box they never asked about. That is
+     * exactly what a failed run's retry used to do.
+     *
+     * Reached when a run id stops resolving (deleted record, wrong org) or a retry is between
+     * runs. Hand control back to whoever opened this — the project's migration card — instead
+     * of inventing a screen for a state that has no meaning here.
+     */
+    if (origin === "project") {
+      return (
+        <div className="rounded-2xl border border-border/50 bg-card px-5 py-8 text-center">
+          <p className="text-sm text-muted-foreground">{m.tab.empty}</p>
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              {m.tab.back}
+            </button>
+          )}
         </div>
       );
     }
@@ -1870,11 +2305,24 @@ export function ServerMigrationWizard({
           </div>
           <ServerSelector value={targetId} onSelect={(s) => setTargetId(s?.id ?? null)} compact />
           <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-            <input type="checkbox" checked={killOriginals} onChange={(e) => setKillOriginals(e.target.checked)} className="size-4 rounded border-border" />
+            <input
+              type="checkbox"
+              checked={killOriginals}
+              onChange={(e) => setKillOriginals(e.target.checked)}
+              className="size-4 rounded border-border"
+            />
             {m.wizard.killOriginals}
           </label>
-          <span className={`block text-xs ${sameServer ? "text-muted-foreground" : "text-warning"}`}>{sameServer ? m.wizard.sameServer : m.run.downtimeNote}</span>
-          {crossServerBuiltInfo && <span className="block text-xs text-muted-foreground">{m.wizard.crossServerBuiltInfo}</span>}
+          <span
+            className={`block text-xs ${sameServer ? "text-muted-foreground" : "text-warning"}`}
+          >
+            {sameServer ? m.wizard.sameServer : m.run.downtimeNote}
+          </span>
+          {crossServerBuiltInfo && (
+            <span className="block text-xs text-muted-foreground">
+              {m.wizard.crossServerBuiltInfo}
+            </span>
+          )}
         </div>
       );
 
@@ -1915,7 +2363,9 @@ export function ServerMigrationWizard({
                   </div>
                 ) : (
                   <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-border/50 bg-card p-8 text-center">
-                    <p className="max-w-xs text-sm text-muted-foreground">{m.wizard.steps.repoConnectHint}</p>
+                    <p className="max-w-xs text-sm text-muted-foreground">
+                      {m.wizard.steps.repoConnectHint}
+                    </p>
                   </div>
                 )}
               </div>
@@ -1926,13 +2376,23 @@ export function ServerMigrationWizard({
                   parsing={parsingRepo === active.id}
                   onRepoChange={(repo) => void onRepoChange(active.id, repo)}
                 />
-                <p className="px-0.5 text-[13px] leading-relaxed text-muted-foreground">{m.wizard.steps.mapSkipHint}</p>
+                <p className="px-0.5 text-[13px] leading-relaxed text-muted-foreground">
+                  {m.wizard.steps.mapSkipHint}
+                </p>
                 <div className="flex items-center justify-between gap-3">
-                  <button type="button" onClick={() => setStep("select")} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => setStep("select")}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  >
                     <ArrowLeft className="size-4" />
                     {m.wizard.steps.back}
                   </button>
-                  <button type="button" onClick={() => setStep("domains")} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => setStep("domains")}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
                     {m.wizard.steps.next}
                     <ArrowRight className="size-4" />
                   </button>
@@ -1948,16 +2408,21 @@ export function ServerMigrationWizard({
                   <ServiceConfigCard
                     key={uid}
                     service={service}
+                    sourceServerId={selectedId}
                     isNew={isNew}
                     deployAction={action}
                     routes={active.serviceRoutes[uid]}
                     envOverride={active.serviceEnvs[uid]}
                     sameServer={sameServer}
                     volumeStrategy={volumeStrategy[uid]}
-                    routeMode={active.serviceRouteMode[uid] ?? (hasKeepableRoute(service) ? "keep" : "none")}
+                    routeMode={
+                      active.serviceRouteMode[uid] ?? (hasKeepableRoute(service) ? "keep" : "none")
+                    }
                     onSetRoutes={(r) => setServiceRoutes(active.id, uid, r)}
                     onSetEnv={(env) => setServiceEnv(active.id, uid, env)}
-                    onSetStrategy={(strat) => setVolumeStrategy((prev) => ({ ...prev, [uid]: strat }))}
+                    onSetStrategy={(strat) =>
+                      setVolumeStrategy((prev) => ({ ...prev, [uid]: strat }))
+                    }
                     onSetRouteMode={(mode) => setServiceRouteMode(active.id, uid, mode)}
                   />
                 ))}
@@ -1965,17 +2430,37 @@ export function ServerMigrationWizard({
               <div className="lg:sticky lg:top-6 space-y-4">
                 {targetCard}
                 <div className="flex items-center justify-between gap-3">
-                  <button type="button" onClick={() => setStep("source")} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => setStep("source")}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  >
                     <ArrowLeft className="size-4" />
                     {m.wizard.steps.back}
                   </button>
                   {sameServer ? (
-                    <button type="button" onClick={handleMigrate} disabled={!canMigrate} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                      {starting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                      {migratable.length > 1 ? interpolate(m.wizard.migrateN, { n: String(migratable.length) }) : m.wizard.migrate}
+                    <button
+                      type="button"
+                      onClick={handleMigrate}
+                      disabled={!canMigrate}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {starting ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <ArrowRight className="size-4" />
+                      )}
+                      {migratable.length > 1
+                        ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
+                        : m.wizard.migrate}
                     </button>
                   ) : (
-                    <button type="button" onClick={() => setStep("plan")} disabled={!canMigrate} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    <button
+                      type="button"
+                      onClick={() => setStep("plan")}
+                      disabled={!canMigrate}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
                       {m.wizard.steps.next}
                       <ArrowRight className="size-4" />
                     </button>
@@ -1993,6 +2478,8 @@ export function ServerMigrationWizard({
                   sourceId={selectedId}
                   targetId={targetId}
                   serviceNames={planServiceNames}
+                  serviceContainerIds={planServiceContainerIds}
+                  flatDocker={flatDocker}
                   transferMode={transferMode}
                   setTransferMode={setTransferMode}
                   compress={compress}
@@ -2008,13 +2495,28 @@ export function ServerMigrationWizard({
               <div className="lg:sticky lg:top-6 space-y-4">
                 {targetCard}
                 <div className="flex items-center justify-between gap-3">
-                  <button type="button" onClick={() => setStep("domains")} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => setStep("domains")}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  >
                     <ArrowLeft className="size-4" />
                     {m.wizard.steps.back}
                   </button>
-                  <button type="button" onClick={handleMigrate} disabled={!canMigrate || !planReady} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                    {starting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                    {migratable.length > 1 ? interpolate(m.wizard.migrateN, { n: String(migratable.length) }) : m.wizard.migrate}
+                  <button
+                    type="button"
+                    onClick={handleMigrate}
+                    disabled={!canMigrate || !planReady}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {starting ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="size-4" />
+                    )}
+                    {migratable.length > 1
+                      ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
+                      : m.wizard.migrate}
                   </button>
                 </div>
               </div>
@@ -2025,7 +2527,10 @@ export function ServerMigrationWizard({
     }
 
     return (
-      <div ref={stepTopRef} className="grid grid-cols-1 gap-6 items-start lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div
+        ref={stepTopRef}
+        className="grid grid-cols-1 gap-6 items-start lg:grid-cols-[minmax(0,1fr)_340px]"
+      >
         {/* ── LEFT: discovered containers ── */}
         <div className="min-w-0 space-y-4">
           {/* "← Back to migrations" leaves the flow; the rescan is a control of
@@ -2087,34 +2592,59 @@ export function ServerMigrationWizard({
                 progress={progress}
               />
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {run?.status === "awaiting_cutover" ? (
+                {run?.status === "awaiting_cutover" || cutoverNeedsRetry ? (
                   <>
-                    <button type="button" onClick={() => handleCutover(false)} disabled={cutoverBusy}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40">
-                      {m.cutover.keep}
-                    </button>
-                    <button type="button" onClick={() => handleCutover(true)} disabled={cutoverBusy}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40">
-                      {cutoverBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                    {run?.status === "awaiting_cutover" && (
+                      <button
+                        type="button"
+                        onClick={() => handleCutover(false)}
+                        disabled={cutoverBusy}
+                        className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                      >
+                        {m.cutover.keep}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleCutover(true)}
+                      disabled={cutoverBusy}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 transition-colors disabled:opacity-40"
+                    >
+                      {cutoverBusy ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-4" />
+                      )}
                       {m.cutover.stopRemove}
                     </button>
                   </>
                 ) : allDone ? (
                   <>
-                    <button type="button" onClick={close}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                    <button
+                      type="button"
+                      onClick={close}
+                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                    >
                       {m.wizard.close}
                     </button>
-                    <button type="button" onClick={openProject}
-                      className={anyDomainAssigned
-                        ? "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
-                        : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"}>
+                    <button
+                      type="button"
+                      onClick={openProject}
+                      className={
+                        anyDomainAssigned
+                          ? "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                          : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                      }
+                    >
                       {anyDomainAssigned && <ArrowRight className="size-4" />}
                       {m.run.openProject}
                     </button>
                     {!anyDomainAssigned && (
-                      <button type="button" onClick={openDomains}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+                      <button
+                        type="button"
+                        onClick={openDomains}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                      >
                         <ArrowRight className="size-4" />
                         {m.run.addDomains}
                       </button>
@@ -2123,13 +2653,19 @@ export function ServerMigrationWizard({
                 ) : (
                   <>
                     {failed && run?.deploymentId && (
-                      <button type="button" onClick={openDeployLogs}
-                        className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                      <button
+                        type="button"
+                        onClick={openDeployLogs}
+                        className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                      >
                         {m.run.viewDeployLogs}
                       </button>
                     )}
-                    <button type="button" onClick={cancelRun}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                    <button
+                      type="button"
+                      onClick={cancelRun}
+                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                    >
                       {failed ? m.wizard.close : m.wizard.cancel}
                     </button>
                   </>
@@ -2142,7 +2678,9 @@ export function ServerMigrationWizard({
                 {step === "select" && (
                   <>
                     <div className="space-y-1.5">
-                      <label className="text-[13px] font-medium text-muted-foreground">{m.wizard.projectName}</label>
+                      <label className="text-[13px] font-medium text-muted-foreground">
+                        {m.wizard.projectName}
+                      </label>
                       <input
                         value={active.name}
                         onChange={(e) => renameProject(active.id, e.target.value)}
@@ -2172,39 +2710,67 @@ export function ServerMigrationWizard({
 
                 {step === "domains" && (
                   <div className="space-y-4">
-                    {buildPlanCards(active, stack.services).map(({ uid, service, isNew, action }) => (
-                      <ServiceConfigCard
-                        key={uid}
-                        service={service}
-                        isNew={isNew}
-                        deployAction={action}
-                        routes={active.serviceRoutes[uid]}
-                        envOverride={active.serviceEnvs[uid]}
-                        sameServer={sameServer}
-                        volumeStrategy={volumeStrategy[uid]}
-                        routeMode={active.serviceRouteMode[uid] ?? (hasKeepableRoute(service) ? "keep" : "none")}
-                        onSetRoutes={(r) => setServiceRoutes(active.id, uid, r)}
-                        onSetEnv={(env) => setServiceEnv(active.id, uid, env)}
-                        onSetStrategy={(strat) => setVolumeStrategy((prev) => ({ ...prev, [uid]: strat }))}
-                        onSetRouteMode={(mode) => setServiceRouteMode(active.id, uid, mode)}
-                      />
-                    ))}
+                    {buildPlanCards(active, stack.services).map(
+                      ({ uid, service, isNew, action }) => (
+                        <ServiceConfigCard
+                          key={uid}
+                          service={service}
+                          sourceServerId={selectedId}
+                          isNew={isNew}
+                          deployAction={action}
+                          routes={active.serviceRoutes[uid]}
+                          envOverride={active.serviceEnvs[uid]}
+                          sameServer={sameServer}
+                          volumeStrategy={volumeStrategy[uid]}
+                          routeMode={
+                            active.serviceRouteMode[uid] ??
+                            (hasKeepableRoute(service) ? "keep" : "none")
+                          }
+                          onSetRoutes={(r) => setServiceRoutes(active.id, uid, r)}
+                          onSetEnv={(env) => setServiceEnv(active.id, uid, env)}
+                          onSetStrategy={(strat) =>
+                            setVolumeStrategy((prev) => ({ ...prev, [uid]: strat }))
+                          }
+                          onSetRouteMode={(mode) => setServiceRouteMode(active.id, uid, mode)}
+                        />
+                      ),
+                    )}
 
                     {/* Target + move options */}
                     <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-2.5">
                       <div className="flex items-center gap-2">
                         <ArrowRight className="size-4 text-muted-foreground" />
-                        <span className="text-sm font-medium text-foreground">{m.wizard.targetLabel}</span>
+                        <span className="text-sm font-medium text-foreground">
+                          {m.wizard.targetLabel}
+                        </span>
                       </div>
-                      <ServerSelector value={targetId} onSelect={(s) => setTargetId(s?.id ?? null)} compact />
+                      {/* dropUp: this card is `overflow-hidden` and the picker sits at its
+                          bottom, so a down-opening menu is hard-clipped. */}
+                      <ServerSelector
+                        value={targetId}
+                        onSelect={(s) => setTargetId(s?.id ?? null)}
+                        compact
+                        dropUp
+                      />
                       <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                        <input type="checkbox" checked={killOriginals} onChange={(e) => setKillOriginals(e.target.checked)} className="size-4 rounded border-border" />
+                        <input
+                          type="checkbox"
+                          checked={killOriginals}
+                          onChange={(e) => setKillOriginals(e.target.checked)}
+                          className="size-4 rounded border-border"
+                        />
                         {m.wizard.killOriginals}
                       </label>
-                      <span className={`block text-xs ${sameServer ? "text-muted-foreground" : "text-warning"}`}>
+                      <span
+                        className={`block text-xs ${sameServer ? "text-muted-foreground" : "text-warning"}`}
+                      >
                         {sameServer ? m.wizard.sameServer : m.run.downtimeNote}
                       </span>
-                      {crossServerBuiltInfo && <span className="block text-xs text-muted-foreground">{m.wizard.crossServerBuiltInfo}</span>}
+                      {crossServerBuiltInfo && (
+                        <span className="block text-xs text-muted-foreground">
+                          {m.wizard.crossServerBuiltInfo}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2214,6 +2780,8 @@ export function ServerMigrationWizard({
                     sourceId={selectedId}
                     targetId={targetId}
                     serviceNames={planServiceNames}
+                    serviceContainerIds={planServiceContainerIds}
+                    flatDocker={flatDocker}
                     transferMode={transferMode}
                     setTransferMode={setTransferMode}
                     compress={compress}
@@ -2232,46 +2800,76 @@ export function ServerMigrationWizard({
               <div className="px-5 py-4 border-t border-border/50 flex items-center justify-between gap-3">
                 {step === "select" ? (
                   <>
-                    <button type="button" onClick={close}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                    <button
+                      type="button"
+                      onClick={close}
+                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                    >
                       {m.wizard.cancel}
                     </button>
                     {rescanBtn}
-                    <button type="button" onClick={() => setStep("source")} disabled={migratable.length === 0}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    <button
+                      type="button"
+                      onClick={() => setStep("source")}
+                      disabled={migratable.length === 0}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
                       {m.wizard.steps.next}
                       <ArrowRight className="size-4" />
                     </button>
                   </>
                 ) : step === "source" ? (
                   <>
-                    <button type="button" onClick={() => setStep("select")}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setStep("select")}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                    >
                       <ArrowLeft className="size-4" />
                       {m.wizard.steps.back}
                     </button>
-                    <button type="button" onClick={() => setStep("domains")}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setStep("domains")}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    >
                       {m.wizard.steps.next}
                       <ArrowRight className="size-4" />
                     </button>
                   </>
                 ) : step === "domains" ? (
                   <>
-                    <button type="button" onClick={() => setStep("source")}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setStep("source")}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                    >
                       <ArrowLeft className="size-4" />
                       {m.wizard.steps.back}
                     </button>
                     {sameServer ? (
-                      <button type="button" onClick={handleMigrate} disabled={!canMigrate}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                        {starting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                        {migratable.length > 1 ? interpolate(m.wizard.migrateN, { n: String(migratable.length) }) : m.wizard.migrate}
+                      <button
+                        type="button"
+                        onClick={handleMigrate}
+                        disabled={!canMigrate}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {starting ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <ArrowRight className="size-4" />
+                        )}
+                        {migratable.length > 1
+                          ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
+                          : m.wizard.migrate}
                       </button>
                     ) : (
-                      <button type="button" onClick={() => setStep("plan")} disabled={!canMigrate}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                      <button
+                        type="button"
+                        onClick={() => setStep("plan")}
+                        disabled={!canMigrate}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                         {m.wizard.steps.next}
                         <ArrowRight className="size-4" />
                       </button>
@@ -2279,15 +2877,28 @@ export function ServerMigrationWizard({
                   </>
                 ) : (
                   <>
-                    <button type="button" onClick={() => setStep("domains")}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setStep("domains")}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                    >
                       <ArrowLeft className="size-4" />
                       {m.wizard.steps.back}
                     </button>
-                    <button type="button" onClick={handleMigrate} disabled={!canMigrate || !planReady}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                      {starting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                      {migratable.length > 1 ? interpolate(m.wizard.migrateN, { n: String(migratable.length) }) : m.wizard.migrate}
+                    <button
+                      type="button"
+                      onClick={handleMigrate}
+                      disabled={!canMigrate || !planReady}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {starting ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <ArrowRight className="size-4" />
+                      )}
+                      {migratable.length > 1
+                        ? interpolate(m.wizard.migrateN, { n: String(migratable.length) })
+                        : m.wizard.migrate}
                     </button>
                   </>
                 )}
@@ -2300,9 +2911,13 @@ export function ServerMigrationWizard({
                 <div className="size-9 rounded-xl bg-info/10 flex items-center justify-center shrink-0">
                   <Boxes className="size-[18px] text-info" />
                 </div>
-                <h3 className="text-sm font-semibold text-foreground leading-tight">{m.entry.cardTitle}</h3>
+                <h3 className="text-sm font-semibold text-foreground leading-tight">
+                  {m.entry.cardTitle}
+                </h3>
               </div>
-              <p className="text-[13px] leading-relaxed text-muted-foreground">{m.entry.cardDesc}</p>
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                {m.entry.cardDesc}
+              </p>
               {/* Scan-mode option sits directly above the button it changes. */}
               {flatOption(true)}
               <button
@@ -2311,7 +2926,11 @@ export function ServerMigrationWizard({
                 disabled={!selectedId || scanning}
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {scanning ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                {scanning ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Search className="size-4" />
+                )}
                 {scanning ? m.wizard.scanning : m.wizard.scan}
               </button>
             </div>
@@ -2346,9 +2965,11 @@ function EmptyHint({ scanning, status }: { scanning?: boolean; status?: string }
       <div className="flex flex-col items-center px-6 pb-12 pt-10 text-center">
         {/* The migration illustration — the same one the runs-list empty state
             uses. Pulses during the scan so the body never goes blank. */}
-        <MigrationIllustration className={`relative mb-7 h-32 w-72 max-w-full ${scanning ? "animate-pulse" : ""}`} />
+        <MigrationIllustration
+          className={`relative mb-7 h-32 w-72 max-w-full ${scanning ? "animate-pulse" : ""}`}
+        />
         <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
-          {scanning ? (status || t.migration.wizard.scanning) : t.migration.wizard.intro}
+          {scanning ? status || t.migration.wizard.scanning : t.migration.wizard.intro}
         </p>
       </div>
       {/* Safety guarantee footer — migration COPIES, never moves; nothing is
@@ -2373,11 +2994,44 @@ function NoResults({ message, isError }: { message: string; isError?: boolean })
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 200 130" fill="none">
           {/* empty dashed container — nothing inside */}
           <line x1="44" y1="98" x2="132" y2="98" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-          <rect x="52" y="54" width="70" height="44" rx="6" fill="var(--th-sf-02)" stroke="var(--th-bd-default)" strokeWidth="1.5" strokeDasharray="5 5" />
+          <rect
+            x="52"
+            y="54"
+            width="70"
+            height="44"
+            rx="6"
+            fill="var(--th-sf-02)"
+            stroke="var(--th-bd-default)"
+            strokeWidth="1.5"
+            strokeDasharray="5 5"
+          />
           {/* magnifier finding nothing (a dash in the lens) */}
-          <circle cx="132" cy="52" r="24" fill="var(--th-card-bg)" stroke="var(--th-bd-strong)" strokeWidth="2" />
-          <line x1="123" y1="52" x2="141" y2="52" stroke="var(--th-on-30)" strokeWidth="2.5" strokeLinecap="round" />
-          <line x1="150" y1="70" x2="166" y2="86" stroke="var(--th-bd-strong)" strokeWidth="4" strokeLinecap="round" />
+          <circle
+            cx="132"
+            cy="52"
+            r="24"
+            fill="var(--th-card-bg)"
+            stroke="var(--th-bd-strong)"
+            strokeWidth="2"
+          />
+          <line
+            x1="123"
+            y1="52"
+            x2="141"
+            y2="52"
+            stroke="var(--th-on-30)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <line
+            x1="150"
+            y1="70"
+            x2="166"
+            y2="86"
+            stroke="var(--th-bd-strong)"
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
           {/* decorative dots + sparkle */}
           <circle cx="26" cy="40" r="3" fill="var(--th-on-10)" />
           <circle cx="30" cy="110" r="4.5" fill="var(--th-on-08)" />
@@ -2385,7 +3039,11 @@ function NoResults({ message, isError }: { message: string; isError?: boolean })
           <path d="M18 74l1.6-3.2 1.6 3.2-3.2-1.6 3.2 0-3.2 1.6z" fill="var(--th-on-14)" />
         </svg>
       </div>
-      <p className={`max-w-sm text-sm ${isError ? "text-destructive/90" : "text-muted-foreground"}`}>{message}</p>
+      <p
+        className={`max-w-sm text-sm ${isError ? "text-destructive/90" : "text-muted-foreground"}`}
+      >
+        {message}
+      </p>
     </div>
   );
 }
@@ -2453,7 +3111,9 @@ export function OpenshipReimportSection({
             {orphaned.length}
           </span>
         </div>
-        <p className="max-w-2xl px-0.5 text-[13px] leading-relaxed text-muted-foreground">{m.intro}</p>
+        <p className="max-w-2xl px-0.5 text-[13px] leading-relaxed text-muted-foreground">
+          {m.intro}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 items-stretch">
@@ -2506,11 +3166,15 @@ export function OpenshipReimportSection({
                       </span>
                     </div>
                     {p.domains && p.domains.length > 0 && (
-                      <div className="truncate text-[13px] text-muted-foreground">{p.domains.join(", ")}</div>
+                      <div className="truncate text-[13px] text-muted-foreground">
+                        {p.domains.join(", ")}
+                      </div>
                     )}
                     <div className="flex items-center gap-2 text-[13px] text-muted-foreground/80">
                       <span>{p.hasSnapshot ? m.fullRestore : m.bestEffort}</span>
-                      {p.updatedAt && <span>· {interpolate(m.lastSeen, { when: formatSeen(p.updatedAt) })}</span>}
+                      {p.updatedAt && (
+                        <span>· {interpolate(m.lastSeen, { when: formatSeen(p.updatedAt) })}</span>
+                      )}
                     </div>
                   </div>
                   {err && (
@@ -2580,7 +3244,8 @@ function ServiceGroup({
   const selectable = group.services.filter(
     (s) => !isExcluded(s) && (claimedBy.get(svcUid(s)) ?? activeProject.id) === activeProject.id,
   );
-  const allOn = selectable.length > 0 && selectable.every((s) => activeProject.services.has(svcUid(s)));
+  const allOn =
+    selectable.length > 0 && selectable.every((s) => activeProject.services.has(svcUid(s)));
 
   const nameOf = (id: string) => projectsById.find((p) => p.id === id)?.name || "";
 
@@ -2594,7 +3259,9 @@ function ServiceGroup({
             {isCompose ? group.project : m.standaloneGroup}
           </span>
           <span className="shrink-0 text-xs text-muted-foreground">
-            {isCompose ? `${m.composeGroup} · ${group.services.length}` : `· ${group.services.length}`}
+            {isCompose
+              ? `${m.composeGroup} · ${group.services.length}`
+              : `· ${group.services.length}`}
           </span>
         </div>
         {!readOnly && bindable && selectable.length > 0 && (
@@ -2625,7 +3292,9 @@ function ServiceGroup({
               service={s}
               checked={activeProject.services.has(svcUid(s))}
               claimedIn={claimedElsewhere ? nameOf(owner!) : null}
-              bindHint={blockedByBind ? interpolate(m.otherComposeHint, { group: groupLabel(key) }) : null}
+              bindHint={
+                blockedByBind ? interpolate(m.otherComposeHint, { group: groupLabel(key) }) : null
+              }
               onToggle={() => onToggle(s)}
               readOnly={readOnly}
             />
@@ -2660,7 +3329,9 @@ function ServiceRow({
   const interactionBlocked = blocked || proxy || Boolean(claimedIn) || Boolean(bindHint);
   const inert = readOnly || interactionBlocked;
   const envCount = Object.keys(service.env).length;
-  const source = service.build ? `${m.build}: ${service.dockerfile ?? service.build}` : service.image;
+  const source = service.build
+    ? `${m.build}: ${service.dockerfile ?? service.build}`
+    : service.image;
 
   return (
     <label
@@ -2685,7 +3356,13 @@ function ServiceRow({
       >
         {checked && !interactionBlocked && <Check className="size-3" />}
       </span>
-      <input type="checkbox" checked={checked} onChange={onToggle} disabled={inert} className="sr-only" />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        disabled={inert}
+        className="sr-only"
+      />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
@@ -2708,7 +3385,9 @@ function ServiceRow({
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-muted-foreground">
           {source && <span className="max-w-full truncate text-muted-foreground/90">{source}</span>}
           {service.dependsOn.length > 0 && (
-            <span>· {m.dependsOn} {service.dependsOn.join(", ")}</span>
+            <span>
+              · {m.dependsOn} {service.dependsOn.join(", ")}
+            </span>
           )}
           {service.volumes.length > 0 && (
             <span>· {interpolate(m.nVolumes, { n: String(service.volumes.length) })}</span>
@@ -2874,7 +3553,9 @@ function RepoSourceCard({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
             <span className="inline-flex min-w-0 items-center gap-2 truncate text-sm font-medium text-foreground">
-              {parsing && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
+              {parsing && (
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+              )}
               {repo.owner}/{repo.repo}
             </span>
             <button
@@ -2980,12 +3661,18 @@ function ServiceMapPanel({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <Container className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate text-sm font-medium text-foreground" title={sv.name}>
+                      <span
+                        className="truncate text-sm font-medium text-foreground"
+                        title={sv.name}
+                      >
                         {sv.name}
                       </span>
                     </div>
                     {(sv.image || sv.build) && (
-                      <p className="mt-1 truncate text-[11px] text-muted-foreground/80" title={sv.image || sv.build}>
+                      <p
+                        className="mt-1 truncate text-[11px] text-muted-foreground/80"
+                        title={sv.image || sv.build}
+                      >
                         {sv.image || `${t.migration.discover.build}: ${sv.build}`}
                       </p>
                     )}
@@ -3029,6 +3716,7 @@ function ServiceMapPanel({
  *  discovered container's env and only carries an override once edited. */
 function ServiceConfigCard({
   service,
+  sourceServerId,
   routes,
   envOverride,
   sameServer,
@@ -3042,6 +3730,9 @@ function ServiceConfigCard({
   onSetRouteMode,
 }: {
   service: DiscoveredService;
+  /** Source server the container lives on — used to reveal its real (masked) env.
+   *  Null before a server is picked; repo-only `isNew` cards have no container. */
+  sourceServerId: string | null;
   routes: PublicEndpoint[] | undefined;
   envOverride: Record<string, string> | undefined;
   sameServer: boolean;
@@ -3060,8 +3751,17 @@ function ServiceConfigCard({
   const { t } = useI18n();
   const s = t.migration.wizard.steps;
   const d = t.migration.discover;
+  // Borrowed from the home status row: "1 issue"/"{n} issues" is already translated
+  // in all 9 locales there, where a migration-namespace copy would be English-only
+  // in the 5 locales that have no migration.json.
+  const issueLabel =
+    service.warnings.length === 1
+      ? t.dashboard.home.oneIssue
+      : interpolate(t.dashboard.home.manyIssues, { n: String(service.warnings.length) });
   const port = routes?.[0]?.port ?? firstContainerPort(service);
   const [envModalOpen, setEnvModalOpen] = useState(false);
+  const [imageEnvOpen, setImageEnvOpen] = useState(false);
+  const [warningsOpen, setWarningsOpen] = useState(false);
   const existing = service.existingRoute;
   // Flat {domain, path} pairs the foreign proxy already serves for this service —
   // a path-fan-out vhost yields several (e.g. api.onvo.me `/`, api.onvo.me `/v3`).
@@ -3095,7 +3795,9 @@ function ServiceConfigCard({
     onSetRouteMode(mode);
   };
 
-  const modes: RouteMode[] = existing ? ["keep", "free", "custom", "none"] : ["free", "custom", "none"];
+  const modes: RouteMode[] = existing
+    ? ["keep", "free", "custom", "none"]
+    : ["free", "custom", "none"];
   const modeLabel: Record<RouteMode, string> = {
     keep: s.routeKeep,
     free: s.routeFree,
@@ -3105,6 +3807,24 @@ function ServiceConfigCard({
 
   const envRecord = envOverride ?? service.env;
   const envRows = useMemo(() => envToRows(envRecord), [envRecord]);
+  // On-demand reveal: the scan masks env, so the eye / "Show values" fetches the
+  // real values for the opened keys of THIS container from the source server. Only
+  // wired when there's a running container to read (repo-only `isNew` cards have no
+  // server-side env).
+  const containerId = service.containerId;
+  const onReveal = useMemo(() => {
+    if (!sourceServerId || !containerId) return undefined;
+    const serverId = sourceServerId;
+    const cid = containerId;
+    return (keys: string[]) =>
+      dockerMigrationApi.revealEnv({ serverId, containerId: cid, keys }).then((r) => r.environment);
+  }, [sourceServerId, containerId]);
+  // Image-supplied vars not yet pinned as config — importing them adds them to the
+  // override, which empties this list and bumps the env count.
+  const pendingImageEnv = useMemo(
+    () => Object.entries(service.envImageDefaults ?? {}).filter(([k]) => !(k in envRecord)),
+    [service.envImageDefaults, envRecord],
+  );
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-4 space-y-3">
@@ -3123,6 +3843,28 @@ function ServiceConfigCard({
             the repo, or pull a registry image. `New` marks a repo service with no
             running container — it deploys fresh from the repo, not adopted. */}
         <span className="ms-auto flex items-center gap-1.5">
+          {/* Caveats collapse to a count here. Expanded by default they pushed a
+              wall of yellow prose above every card's Route row, which read as
+              "something is broken" on a stack where each bind mount is one line
+              of expected detail. */}
+          {service.warnings.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setWarningsOpen((v) => !v)}
+              aria-expanded={warningsOpen}
+              // Bordered so it reads as the one clickable thing in a row of
+              // same-toned static badges (`New` is warning-coloured too).
+              className="flex items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning transition-opacity hover:opacity-80"
+            >
+              <AlertTriangle className="size-3 shrink-0" />
+              {issueLabel}
+              {warningsOpen ? (
+                <ChevronDown className="size-3 shrink-0" />
+              ) : (
+                <ChevronRight className="size-3 shrink-0" />
+              )}
+            </button>
+          )}
           {isNew && (
             <span className="rounded-md bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning">
               {s.serviceNewBadge}
@@ -3144,6 +3886,18 @@ function ServiceConfigCard({
         </span>
       </div>
 
+      {/* What discovery could not carry over: build-time vars, bind mounts, dropped ports */}
+      {warningsOpen && service.warnings.length > 0 && (
+        <div className="space-y-1 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
+          {service.warnings.map((warning) => (
+            <p key={warning} className="flex items-start gap-1.5 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              {warning}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* Route: Free / Custom / None (+ Keep when a route was already detected) */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
@@ -3152,7 +3906,9 @@ function ServiceConfigCard({
           {existing && existing.length > 0 && (
             <span
               className={`ms-auto rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
-                existing.some((r) => r.ssl.enabled) ? "bg-success-bg text-success" : "bg-muted/60 text-muted-foreground"
+                existing.some((r) => r.ssl.enabled)
+                  ? "bg-success-bg text-success"
+                  : "bg-muted/60 text-muted-foreground"
               }`}
             >
               {existing.some((r) => r.ssl.enabled) ? s.sslOn : s.sslOff}
@@ -3269,6 +4025,48 @@ function ServiceConfigCard({
         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
       </button>
 
+      {/* Env the IMAGE supplies, not the operator (recovered from Docker's
+          create-time merge order). Deliberately muted, not a warning: nothing is
+          lost — the same image re-supplies it — but it's one click to pin as
+          explicit config, which is what you want before rebuilding from source. */}
+      {pendingImageEnv.length > 0 && (
+        <div className="rounded-lg border border-border/50 bg-muted/10 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setImageEnvOpen((v) => !v)}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-start text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {imageEnvOpen ? (
+                <ChevronDown className="size-3.5 shrink-0" />
+              ) : (
+                <ChevronRight className="size-3.5 shrink-0" />
+              )}
+              <span className="truncate">
+                {interpolate(d.envFromImage, { n: String(pendingImageEnv.length) })}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetEnv({ ...envRecord, ...Object.fromEntries(pendingImageEnv) })}
+              className="shrink-0 rounded-md border border-border/60 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+            >
+              {d.envFromImageImport}
+            </button>
+          </div>
+          {imageEnvOpen && (
+            <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
+              <p className="text-[11px] text-muted-foreground/70">{d.envFromImageHint}</p>
+              {pendingImageEnv.map(([key, value]) => (
+                <p key={key} className="truncate font-mono text-[11px] text-muted-foreground">
+                  {key}={value}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <Modal
         isOpen={envModalOpen}
         onClose={() => setEnvModalOpen(false)}
@@ -3304,8 +4102,10 @@ function ServiceConfigCard({
           <EnvironmentVariables
             mode="settings"
             borderless
+            hideTitle
             envVars={envRows}
             onEnvVarsChange={(rows) => onSetEnv(rowsToEnv(rows))}
+            onReveal={onReveal}
           />
         </div>
       </Modal>
@@ -3323,6 +4123,8 @@ function TransferPlanSummary({
   sourceId,
   targetId,
   serviceNames,
+  serviceContainerIds,
+  flatDocker,
   transferMode,
   setTransferMode,
   compress,
@@ -3337,6 +4139,10 @@ function TransferPlanSummary({
   sourceId: string | null;
   targetId: string | null;
   serviceNames: string[];
+  /** Container ids for the same set — resolves the plan by identity (#584). */
+  serviceContainerIds?: string[];
+  /** The scan mode the selection came from; the plan must be sized in the same mode. */
+  flatDocker?: boolean;
   transferMode: TransferModeSel;
   setTransferMode: (v: TransferModeSel) => void;
   compress: boolean;
@@ -3358,11 +4164,17 @@ function TransferPlanSummary({
 
   // Re-size when the service set OR the custom paths change (each is a discrete
   // add/remove action, so no keystroke spam).
-  const key = `${sourceId}|${targetId}|${[...serviceNames].sort().join(",")}|${customPaths
+  const key = `${sourceId}|${targetId}|${[...serviceNames].sort().join(",")}|${[
+    ...(serviceContainerIds ?? []),
+  ]
+    .sort()
+    .join(",")}|${flatDocker ? "flat" : "grouped"}|${customPaths
     .map((c) => `${c.source}>${c.dest}`)
     .join(",")}`;
 
-  const [preview, setPreview] = useState<MigrationPreview | null>(() => cache.current.get(key) ?? null);
+  const [preview, setPreview] = useState<MigrationPreview | null>(
+    () => cache.current.get(key) ?? null,
+  );
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [newSrc, setNewSrc] = useState("");
@@ -3382,7 +4194,14 @@ function TransferPlanSummary({
     setErr(null);
     onReady?.(false);
     dockerMigrationApi
-      .preview({ sourceServerId: sourceId, targetServerId: targetId, serviceNames, customPaths })
+      .preview({
+        sourceServerId: sourceId,
+        targetServerId: targetId,
+        serviceNames,
+        serviceContainerIds,
+        flatDocker,
+        customPaths,
+      })
       .then((res) => {
         if (!live) return;
         cache.current.set(key, res.preview);
@@ -3444,7 +4263,9 @@ function TransferPlanSummary({
                 type="button"
                 onClick={() => setConflictResolution((prev) => ({ ...prev, [c.volume]: action }))}
                 className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
-                  sel === action ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"
+                  sel === action
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:bg-muted/40"
                 }`}
               >
                 <span className="block text-sm font-medium text-foreground">{label}</span>
@@ -3492,12 +4313,16 @@ function TransferPlanSummary({
                     <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                       {plan[it.kind] ?? it.kind}
                     </span>
-                    {it.exists === false && <AlertCircle className="size-3.5 shrink-0 text-warning" />}
+                    {it.exists === false && (
+                      <AlertCircle className="size-3.5 shrink-0 text-warning" />
+                    )}
                     <span className="truncate text-muted-foreground" title={it.ref}>
                       {it.ref}
                     </span>
                   </span>
-                  <span className={`shrink-0 tabular-nums ${it.exists === false ? "text-warning" : "text-foreground"}`}>
+                  <span
+                    className={`shrink-0 tabular-nums ${it.exists === false ? "text-warning" : "text-foreground"}`}
+                  >
                     {it.exists === false
                       ? plan.missing
                       : it.bytes == null
@@ -3567,7 +4392,10 @@ function TransferPlanSummary({
         </span>
         {customPaths.map((c, i) => (
           <div key={`${c.source}>${c.dest}`} className="flex items-center gap-2 text-sm">
-            <span className="min-w-0 flex-1 truncate text-muted-foreground" title={`${c.source} → ${c.dest}`}>
+            <span
+              className="min-w-0 flex-1 truncate text-muted-foreground"
+              title={`${c.source} → ${c.dest}`}
+            >
               {c.source} <span className="text-muted-foreground/50">→</span> {c.dest}
             </span>
             <button
@@ -3659,6 +4487,18 @@ export function MigrationProgress({
   const m = t.migration;
   const runText = m.run as Record<string, string>;
   const status: MigrationStatus = run?.status ?? "queued";
+  /**
+   * Show per-line times only once the run is OVER.
+   *
+   * Live, you are watching it happen — "when" is now, and a clock in front of every message is
+   * noise. Finished, the timing IS the content: which step took the five seconds, where it
+   * stalled, how long the transfer ran. See `session-log-line`.
+   */
+  const logShowsTime =
+    status === "succeeded" ||
+    status === "failed" ||
+    status === "rolled_back" ||
+    status === "partial";
   const order: MigrationStatus[] = [
     "queued",
     "adopting",
@@ -3670,7 +4510,10 @@ export function MigrationProgress({
     "succeeded",
   ];
   const curIdx = order.indexOf(status);
-  const failed = status === "failed" || status === "rolled_back";
+  const failed =
+    status === "failed" ||
+    status === "rolled_back" ||
+    (status === "cutover" && Boolean(run?.errorMessage));
   const allDone = completed.length >= queueTotal;
 
   return (
@@ -3722,7 +4565,9 @@ export function MigrationProgress({
             </span>
           </div>
           {!hasDomains && (
-            <p className="px-1 text-xs leading-relaxed text-muted-foreground/80">{m.run.routeHint}</p>
+            <p className="px-1 text-xs leading-relaxed text-muted-foreground/80">
+              {m.run.routeHint}
+            </p>
           )}
         </div>
       ) : failed ? (
@@ -3760,13 +4605,16 @@ export function MigrationProgress({
                 <span className={state === "pending" ? "text-muted-foreground" : "text-foreground"}>
                   {runText[p]}
                 </span>
-                {p === "moving_data" && state === "active" && progress && progress.movedBytes > 0 && (
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    {progress.totalBytes && progress.totalBytes > 0
-                      ? ` · ${Math.min(100, Math.round((progress.movedBytes / progress.totalBytes) * 100))}%`
-                      : ` · ${formatBytes(progress.movedBytes)}`}
-                  </span>
-                )}
+                {p === "moving_data" &&
+                  state === "active" &&
+                  progress &&
+                  progress.movedBytes > 0 && (
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {progress.totalBytes && progress.totalBytes > 0
+                        ? ` · ${Math.min(100, Math.round((progress.movedBytes / progress.totalBytes) * 100))}%`
+                        : ` · ${formatBytes(progress.movedBytes)}`}
+                    </span>
+                  )}
               </li>
             );
           })}
@@ -3804,47 +4652,6 @@ export function MigrationProgress({
         </div>
       )}
 
-      {run?.deploymentId &&
-        (failed || status === "deploying" || status === "verifying") && (
-          <div className="space-y-2">
-            <p className="px-0.5 text-xs font-medium text-muted-foreground">{m.run.deployDetail}</p>
-            {deployServices && deployServices.length > 0 && (
-              <div className="space-y-1 rounded-xl border border-border/50 bg-muted/20 p-2.5">
-                {deployServices.map((s) => {
-                  const bad = /fail|error|crash|exit/i.test(s.status);
-                  const good = /ready|run|succeed|live|deployed|healthy/i.test(s.status);
-                  return (
-                    <div key={s.name} className="flex items-start gap-2 text-xs">
-                      <span
-                        className={`mt-1 inline-block size-1.5 shrink-0 rounded-full ${
-                          bad ? "bg-danger" : good ? "bg-success" : "bg-muted-foreground"
-                        }`}
-                      />
-                      <span className="text-foreground">{s.name}</span>
-                      <span className="text-muted-foreground">{s.status}</span>
-                      {s.error && <span className="min-w-0 flex-1 truncate text-danger">— {s.error}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {/* Native terminal — reuses the /deploy xterm (TerminalSurface +
-                useBuildStream attach-only), driven by the run's deploymentId.
-                Live while deploying/verifying, persisted logs on failure.
-                The xterm mounts `absolute inset-0` inside a fixed-height box so
-                its FitAddon can never drive the box taller than itself — without
-                that decoupling the fit↔ResizeObserver loop grows the panel
-                without bound in a content-sized (non-modal) layout. */}
-            <div className="relative h-[360px] w-full overflow-hidden rounded-xl border border-border/50">
-              <DeploymentTerminal
-                deploymentId={run.deploymentId}
-                live={status === "deploying" || status === "verifying"}
-                className="absolute inset-0"
-              />
-            </div>
-          </div>
-        )}
-
       {status === "awaiting_cutover" && (
         <div className="flex items-start gap-2 text-sm rounded-xl bg-success-bg text-success px-4 py-3">
           <CheckCircle2 className="size-4 mt-0.5 shrink-0" />
@@ -3861,18 +4668,125 @@ export function MigrationProgress({
 
       {/* Durable orchestration log — the "what happened" for debugging, shown for
           any run with output (live or after the fact). */}
-      {run?.logs && (
-        <div>
-          <p className="mb-1.5 text-xs font-medium text-muted-foreground">{m.tab.sessionLog}</p>
-          <div className="max-h-56 overflow-y-auto rounded-xl border border-border/50 bg-muted/20 px-4 py-3 font-mono text-[12px] leading-relaxed text-muted-foreground">
-            {run.logs.split("\n").map((line, i) => (
-              <div key={i} className="whitespace-pre-wrap break-all">
-                {line}
+    </div>
+  );
+}
+
+/**
+ * The target deploy's per-service result + its live terminal — its OWN panel.
+ *
+ * Extracted from `MigrationProgress` so the run view can stack three separate containers
+ * (status+steps, session log, deploy logs) instead of one tall card holding all of it. The steps
+ * are a four-line summary an operator glances at; a 360px terminal below them in the same box
+ * pushed that summary off screen exactly when it mattered.
+ *
+ * Renders nothing until there is a deployment to show, and only while it is deploying/verifying
+ * or after it failed — the states where its output is the thing you came for.
+ */
+export function MigrationDeployLogs({
+  run,
+  status,
+  failed,
+  deployServices,
+}: {
+  run: MigrationRun | null;
+  status: MigrationStatus;
+  failed: boolean;
+  deployServices?: Array<{ name: string; status: string; error?: string }>;
+}) {
+  const { t } = useI18n();
+  const m = t.migration;
+  if (!run?.deploymentId || !(failed || status === "deploying" || status === "verifying"))
+    return null;
+  return (
+    <div className="space-y-2">
+      <p className="px-0.5 text-xs font-medium text-muted-foreground">{m.run.deployDetail}</p>
+      {deployServices && deployServices.length > 0 && (
+        <div className="space-y-1 rounded-xl border border-border/50 bg-muted/20 p-2.5">
+          {deployServices.map((s) => {
+            const bad = /fail|error|crash|exit/i.test(s.status);
+            const good = /ready|run|succeed|live|deployed|healthy/i.test(s.status);
+            return (
+              <div key={s.name} className="flex items-start gap-2 text-xs">
+                <span
+                  className={`mt-1 inline-block size-1.5 shrink-0 rounded-full ${
+                    bad ? "bg-danger" : good ? "bg-success" : "bg-muted-foreground"
+                  }`}
+                />
+                <span className="text-foreground">{s.name}</span>
+                <span className="text-muted-foreground">{s.status}</span>
+                {s.error && (
+                  <span className="min-w-0 flex-1 truncate text-danger">— {s.error}</span>
+                )}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
+      {/* Native terminal — reuses the /deploy xterm (TerminalSurface +
+          useBuildStream attach-only), driven by the run's deploymentId.
+          Live while deploying/verifying, persisted logs on failure.
+          The xterm mounts `absolute inset-0` inside a fixed-height box so
+          its FitAddon can never drive the box taller than itself — without
+          that decoupling the fit↔ResizeObserver loop grows the panel
+          without bound in a content-sized (non-modal) layout. */}
+      <div className="relative h-[360px] w-full overflow-hidden rounded-xl border border-border/50">
+        <DeploymentTerminal
+          deploymentId={run.deploymentId}
+          live={status === "deploying" || status === "verifying"}
+          className="absolute inset-0"
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The durable orchestration log — "what happened", for any run with output.
+ *
+ * Its own panel for the same reason as the deploy logs above, and because it is the one part an
+ * operator scrolls: nesting a scroll region inside a card that also holds the step list meant
+ * scrolling the log fought scrolling the page.
+ */
+export function MigrationSessionLog({
+  run,
+  status,
+}: {
+  run: MigrationRun | null;
+  status: MigrationStatus;
+}) {
+  const { t } = useI18n();
+  const m = t.migration;
+  /** Times only once the run is OVER — see `session-log-line`. */
+  const logShowsTime =
+    status === "succeeded" ||
+    status === "failed" ||
+    status === "rolled_back" ||
+    status === "partial";
+  if (!run?.logs) return null;
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">{m.tab.sessionLog}</p>
+      <div className="max-h-56 overflow-y-auto rounded-xl border border-border/50 bg-muted/20 px-4 py-3 font-mono text-[12px] leading-relaxed text-muted-foreground">
+        {parseSessionLog(run.logs).map((line, i) => (
+          // Time in its OWN column, and only once the run is over — see `session-log-line`.
+          // Inline, the stored `[2026-08-16T21:54:22.358Z] ` prefix took 26 monospace
+          // characters in front of every message and wrapped mid-word with the message
+          // (`break-all`), which is what made the panel unreadable while a run was live.
+          <div key={i} className="flex gap-2.5">
+            {logShowsTime && (
+              <span
+                className="shrink-0 tabular-nums text-muted-foreground/50"
+                // The full instant stays one hover away rather than in the way.
+                title={line.iso ?? undefined}
+              >
+                {line.time ?? ""}
+              </span>
+            )}
+            <span className="min-w-0 whitespace-pre-wrap break-words">{line.message}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

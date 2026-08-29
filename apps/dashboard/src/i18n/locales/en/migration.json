@@ -172,6 +172,9 @@
     "bind": "host path",
     "nVolumes": "{n} volumes",
     "nEnv": "{n} env vars",
+    "envFromImage": "{n} vars come from the image",
+    "envFromImageHint": "Not imported as config — the image supplies these at runtime. Import them to pin the values before you rebuild from source.",
+    "envFromImageImport": "Import anyway",
     "alreadyManaged": "{count} container(s) already managed by Openship were skipped."
   },
   "reimport": {
@@ -248,7 +251,9 @@
     "editRetry": "Edit & retry",
     "safetyTitle": "Non-destructive & reversible.",
     "safetyBody": "Data is copied, never moved — your source is only briefly paused, and nothing is deleted unless you explicitly cut over.",
-    "cleanupTarget": "Remove copied data from target"
+    "cleanupTarget": "Remove copied data from target",
+    "retryRun": "Retry",
+    "changeTarget": "Change target"
   },
   "plan": {
     "missing": "not found"

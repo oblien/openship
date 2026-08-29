@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PricingCards, type ApiPlan } from "@/components/billing/PricingCards";
+import {
+  PricingCards,
+  type ApiPlan,
+  type ApiPricingUi,
+} from "@/components/billing/PricingCards";
 import { api } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/endpoints";
 import type { PlanTierId } from "@repo/core";
 import { Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
+interface PlansPayload {
+  locale: string;
+  annual: { enabled: boolean; monthsFree: number };
+  ui: ApiPricingUi;
+  plans: ApiPlan[];
+}
+
 interface PlansResponse {
-  data: { plans: ApiPlan[] };
+  data: PlansPayload;
 }
 
 interface CheckoutResponse {
@@ -17,8 +28,8 @@ interface CheckoutResponse {
 }
 
 export function BillingPlansRoute({ currentPlan }: { currentPlan: PlanTierId }) {
-  const { t } = useI18n();
-  const [plans, setPlans] = useState<ApiPlan[] | null>(null);
+  const { t, locale } = useI18n();
+  const [payload, setPayload] = useState<PlansPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState<string | null>(null);
@@ -27,8 +38,13 @@ export function BillingPlansRoute({ currentPlan }: { currentPlan: PlanTierId }) 
     let cancelled = false;
     async function fetchPlans() {
       try {
-        const res = await api.get<PlansResponse>(endpoints.billing.plans);
-        if (!cancelled) setPlans(res.data.plans);
+        // Plan copy is localized SERVER-side from the pricing catalog, so the
+        // reader's locale (a cookie the browser never sends as a language
+        // header) has to travel on the query string.
+        const res = await api.get<PlansResponse>(
+          `${endpoints.billing.plans}?locale=${encodeURIComponent(locale)}`,
+        );
+        if (!cancelled) setPayload(res.data);
       } catch {
         if (!cancelled) setError(t.billing.plansRoute.loadError);
       } finally {
@@ -39,7 +55,7 @@ export function BillingPlansRoute({ currentPlan }: { currentPlan: PlanTierId }) 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locale]);
 
   const handleSelectPlan = async (planTierId: PlanTierId) => {
     if (planTierId === "free" || planTierId === currentPlan) return;
@@ -66,7 +82,7 @@ export function BillingPlansRoute({ currentPlan }: { currentPlan: PlanTierId }) 
     );
   }
 
-  if (error || !plans) {
+  if (error || !payload) {
     return (
       <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
         <p className="text-sm text-muted-foreground">{error || t.billing.plansRoute.genericError}</p>
@@ -80,9 +96,19 @@ export function BillingPlansRoute({ currentPlan }: { currentPlan: PlanTierId }) 
     );
   }
 
+  // The Plans tab is where you BUY something, so the $0 tier has no place in it:
+  // it is nothing to buy, and for the overwhelming majority of viewers it is the
+  // plan they are already on — a card whose only button says "Current plan".
+  // Where you stand is stated on Overview and in the allowance cards above.
+  // Filtered on price rather than the id `free` so any future $0 tier is covered
+  // by the same rule. Downgrading is not lost: it happens by cancelling, which
+  // Stripe's portal owns, and `subscription.deleted` drops the org back to free.
+  const purchasable = payload.plans.filter((p) => p.price.monthly !== 0);
+
   return (
     <PricingCards
-      plans={plans}
+      plans={purchasable}
+      ui={payload.ui}
       currentPlan={currentPlan}
       onSelectPlan={handleSelectPlan}
       subscribingPlan={subscribing}

@@ -435,6 +435,9 @@ function auditAttempt(
       actorUserId: hook.createdBy ?? null,
       ipAddress: opts.clientIp ?? null,
       userAgent: opts.userAgent ?? null,
+      // The actor is whoever created the hook, but the caller is the remote
+      // system that fired it — that's what "webhook" records.
+      source: "webhook",
     },
     {
       eventType,

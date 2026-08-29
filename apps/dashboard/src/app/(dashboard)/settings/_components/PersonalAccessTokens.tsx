@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { KeyRound, Plus, Trash2, Copy, Check, Loader2, ShieldCheck, Lock, SlidersHorizontal } from "lucide-react";
+import { grantableTypesForMode } from "@repo/core";
 import { SettingsSection } from "./SettingsSection";
 import {
   tokensApi,
@@ -10,7 +11,7 @@ import {
   type PickerGrant,
   type ResourceType,
 } from "@/lib/api";
-import { GrantPickerModal } from "./GrantPickerModal";
+import { AccessEditorModal } from "./AccessEditorModal";
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
@@ -55,9 +56,7 @@ export function PersonalAccessTokens() {
   const [copied, setCopied] = useState(false);
 
   const { selfHosted } = usePlatform();
-  const availableTypes: ResourceType[] = selfHosted
-    ? ["project", "server", "mail_server", "backup_destination", "audit", "github_installation", "github_repository"]
-    : ["project", "backup_destination", "billing", "audit", "github_installation", "github_repository"];
+  const availableTypes: ResourceType[] = grantableTypesForMode(selfHosted);
 
   // Open the shared grant picker (blurred, centered) to set the token's scope.
   const openScopePicker = () => {
@@ -68,12 +67,16 @@ export function PersonalAccessTokens() {
       maxWidth: "min(94vw, 900px)",
       showCloseButton: false,
       customContent: (
-        <GrantPickerModal
+        <AccessEditorModal
           title={t.settings.tokens.scopePicker.title}
           subtitle={t.settings.tokens.scopePicker.subtitle}
           initial={scopeGrants}
           availableTypes={availableTypes}
           saveLabel={t.settings.tokens.scopePicker.saveLabel}
+          // A token: read-only and the create capability both apply, and the project
+          // wildcard must be suppressed — the mint refuses any non-create
+          // {project,"*"} grant, so offering it was a guaranteed 400.
+          show={{ templates: false, readOnlySwitch: false, createCapability: true }}
           onSave={(g) => setScopeGrants(g)}
           onClose={() => hideModal(id)}
         />
@@ -107,11 +110,15 @@ export function PersonalAccessTokens() {
     }
     setCreating(true);
     try {
+      // Scope intent is stated, not inferred: the guard above already rejects
+      // "scoped but nothing picked", so reaching here with no grants means the
+      // user left scoping off and really does want a full-access token.
+      const wantScoped = scopeEnabled && scopeGrants.length > 0;
       const res = await tokensApi.create({
         name: name.trim(),
         readOnly,
         ...(expiryDays > 0 ? { expiresInDays: expiryDays } : {}),
-        ...(scopeEnabled && scopeGrants.length > 0 ? { grants: scopeGrants } : {}),
+        ...(wantScoped ? { grants: scopeGrants } : { fullAccess: true }),
       });
       setNewToken(res.data.token);
       setShowForm(false);
@@ -318,6 +325,14 @@ export function PersonalAccessTokens() {
                 <p className="text-xs text-muted-foreground font-mono">
                   {tok.tokenPrefix}…
                   <span className="font-sans">{interpolate(t.settings.tokens.metaLine, { lastUsed: fmtDate(tok.lastUsedAt), expires: fmtDate(tok.expiresAt) })}</span>
+                  {tok.useCount > 0 && (
+                    <span className="font-sans">
+                      {interpolate(
+                        tok.useCount === 1 ? t.settings.tokens.callsOne : t.settings.tokens.callsMany,
+                        { count: tok.useCount.toLocaleString() },
+                      )}
+                    </span>
+                  )}
                 </p>
               </div>
               <button

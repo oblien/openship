@@ -10,9 +10,22 @@ import { join } from "node:path";
 import type { UpdateInfo } from "./updater";
 
 function buildHtml(info: UpdateInfo): string {
-  // Values are injected as a JSON blob and written via textContent in the
-  // script, so release-note contents can't inject markup.
-  const payload = JSON.stringify({ version: info.version, notes: info.notes });
+  // Values are injected as a JSON blob and written via textContent, so release
+  // notes can't inject markup — but only once `<` is escaped. JSON.stringify does
+  // not escape it, and the HTML parser ends an inline <script> at the first
+  // `</script` regardless of JS string context, so unescaped notes containing
+  // `</script>` would break out into markup in a window that carries the full
+  // preload bridge.
+  const title = info.announcement?.title || "Update available";
+  const message =
+    info.announcement?.message ||
+    (info.notes || "").trim() ||
+    "A new version is available.";
+  const payload = JSON.stringify({
+    version: info.version,
+    title,
+    message,
+  }).replace(/</g, "\\u003c");
   // Colors mirror the dashboard theme tokens (apps/dashboard styles/theme.css)
   // and follow the OS light/dark setting via prefers-color-scheme, so the modal
   // reads as part of the app rather than a stock system dialog.
@@ -47,7 +60,7 @@ function buildHtml(info: UpdateInfo): string {
     .go:hover{opacity:.9}
     button:disabled{opacity:.5;cursor:default}
   </style></head><body><div class="wrap">
-    <h1 id="title">Update available</h1>
+    <h1 id="title"></h1>
     <p class="sub" id="sub"></p>
     <pre id="notes"></pre>
     <p class="status" id="status">Downloading…</p>
@@ -58,10 +71,10 @@ function buildHtml(info: UpdateInfo): string {
   </div><script>
     const INFO = ${payload};
     const u = window.desktop && window.desktop.updates;
+    document.getElementById("title").textContent = INFO.title;
     document.getElementById("sub").textContent =
       "Openship " + INFO.version + " is ready to install.";
-    document.getElementById("notes").textContent = (INFO.notes || "").trim() ||
-      "A new version is available.";
+    document.getElementById("notes").textContent = INFO.message;
     const status = document.getElementById("status");
     const actions = document.getElementById("actions");
     document.getElementById("later").onclick = () => u && u.dismiss();
@@ -104,6 +117,8 @@ export function openUpdateWindow(
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Off for the same reason as the main window (see index.ts) — the preload
+      // requires @repo/onboarding, which a sandboxed preload can't resolve.
       sandbox: false,
     },
   });
@@ -111,6 +126,17 @@ export function openUpdateWindow(
   updateWin.on("closed", () => {
     updateWin = null;
   });
+
+  // This window renders one self-contained document and has no links, so any
+  // navigation attempt is something going wrong. Refuse all of it rather than
+  // letting an off-origin page inherit the preload bridge.
+  const denyNav = (e: Electron.Event, url: string) => {
+    e.preventDefault();
+    console.warn(`[security] blocked update-window navigation to ${url}`);
+  };
+  updateWin.webContents.on("will-navigate", denyNav);
+  updateWin.webContents.on("will-redirect", denyNav);
+  updateWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   void updateWin.loadURL(
     `data:text/html;charset=utf-8,${encodeURIComponent(buildHtml(info))}`,
   );

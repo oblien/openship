@@ -20,7 +20,15 @@ const r = secureRouter(new Hono(), {
 r.get("/", { tag: "domain:list", mcp: { description: "List domains for the org / project." } }, ctrl.list);
 r.post(
   "/",
-  { tag: "domain:write", body: AddDomainBody, mcp: { description: "Add a domain (free subdomain or custom)." } },
+  {
+    tag: "domain:write",
+    // `ctrl.add` asserts {project, body.projectId, write} itself (projectId is
+    // required by AddDomainBody). Without this the conditional-singleton
+    // fallback asserted {domain,"*"}, which no scoped token can pass.
+    collectionProject: true,
+    body: AddDomainBody,
+    mcp: { description: "Add a domain (free subdomain or custom)." },
+  },
   ctrl.add,
 );
 // Side-effect-free DNS probe — POST is used to carry hostname in body.
@@ -29,12 +37,17 @@ r.post("/preview", { tag: "domain:read", readOnly: true, body: PreviewDomainBody
 // Per-domain routes carry cloudDomainProxy (after the permission middleware):
 // a domain belonging to a cloud project is proxied to the SaaS; a local domain
 // falls through to the local handler.
+r.get("/:id", { tag: "domain:read", mcp: { description: "Read one domain's verify + SSL state." } }, cloudDomainProxy, ctrl.get);
 r.delete("/:id", { tag: "domain:admin" }, cloudDomainProxy, ctrl.remove);
 r.post("/:id/verify", { tag: "domain:write", mcp: { description: "Verify a domain's ownership / DNS." } }, cloudDomainProxy, ctrl.verify);
 // Self-hosted live-log verify (SSE): streams certbot's standalone HTTP-01 run.
 r.post("/:id/verify/stream", { tag: "domain:write" }, ctrl.verifyStream);
 r.post("/:id/primary", { tag: "domain:write", mcp: { description: "Set this domain as the project's primary domain." } }, cloudDomainProxy, ctrl.setPrimary);
 r.get("/:id/records", { tag: "domain:read", mcp: { description: "Get the DNS records for a domain." } }, cloudDomainProxy, ctrl.records);
+// On-demand DNS auto-configure via a connected provider (Settings→DNS). Plan is a
+// read-only dry-run; apply writes the records on operator press (never silently).
+r.get("/:id/dns/plan", { tag: "domain:read", mcp: { description: "Preview what auto-configuring this domain's DNS through a connected provider would change." } }, cloudDomainProxy, ctrl.dnsPlan);
+r.post("/:id/dns/apply", { tag: "domain:write", mcp: { description: "Auto-configure this domain's DNS through a connected provider." } }, cloudDomainProxy, ctrl.dnsApply);
 r.post("/:id/renew", { tag: "domain:write", mcp: { description: "Renew the domain's SSL certificate." } }, cloudDomainProxy, ctrl.renewSsl);
 r.post("/:id/verify-ssl", { tag: "domain:write", mcp: { description: "Check/verify the domain's SSL certificate." } }, cloudDomainProxy, ctrl.verifySsl);
 // Self-hosted only: installs a cert into the box's OpenResty. On Openship Cloud

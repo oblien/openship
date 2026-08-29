@@ -1,0 +1,15 @@
+-- Record WHICH integrity check a restore actually performed.
+--
+-- Prepare used to comment that it verified every artifact's sha256 while
+-- comparing only byte sizes. Now that it really re-hashes the archive, the row
+-- has to say so — because the check is downgradeable (a run with no recorded
+-- digest falls back to size-only, and a policy can defer verification to apply
+-- time), and "restore succeeded" means something different in each case. An
+-- operator reading a month-old restore has no other way to tell a re-hashed
+-- archive from a length-matched one.
+--
+-- Keys written today: `integrity` ("sha256" | "size-only" | "deferred"),
+-- `verifiedBytes`, `verifyMs`, `manifest` ("verified" | "missing").
+-- JSONB rather than columns so the cancel/partial-write facts that follow need
+-- no further migration.
+ALTER TABLE "backup_restore" ADD COLUMN IF NOT EXISTS "meta" jsonb DEFAULT '{}'::jsonb;

@@ -14,8 +14,12 @@
  *   - OVERLAP (docker/cloud): activate new → health-gate → route → deactivate
  *     old LAST. Old serves until traffic is repointed (zero-downtime) and a
  *     failure before the repoint leaves it untouched (auto-revert).
- *   - NON-OVERLAP (bare, fixed port): deactivate old → activate new → health →
- *     route, and on failure reactivatePrevious to restore the old one.
+ *   - NON-OVERLAP (fixed port): stop old (RETAINING it) → activate new → health →
+ *     route → retire the old one, and on failure reactivatePrevious to restore it.
+ *     Note this is NOT bare-only: Docker lands here too whenever the project's
+ *     routeStrategy is loopback-port (the default), since a pinned host port can't
+ *     be double-bound. Retaining rather than destroying is what makes the revert
+ *     real for both — see deactivateRetaining.
  *
  * Cloud:       activate handles expose (URL returned), no resolveTargetUrl.
  * Self-hosted: activate creates container, resolveTargetUrl + routing wire Nginx.
@@ -23,7 +27,7 @@
 
 import type { DeployConfig, LogCallback, RouteConfig, SslResult } from "../types";
 import type { BuildLogger } from "./build-pipeline";
-import { DeployError, safeErrorMessage } from "@repo/core";
+import { DeployError, safeErrorMessage, withTimeout } from "@repo/core";
 import {
   registerResolvedRoutes,
   type RouteRegistrationOptions,
@@ -45,6 +49,16 @@ export interface PromptPayload {
   message: string;
   actions: Array<{ id: string; label: string; variant?: string }>;
   details?: Record<string, unknown>;
+  /**
+   * ISO deadline after which the hold gives up and the pipeline aborts.
+   *
+   * Stamped by whoever HOLDS the prompt (the session manager owns the timeout),
+   * not by the code that raises it — so it is absent on the raising side and
+   * present by the time a client sees it. A human watching a modal doesn't need
+   * this; an API client that has to poll to notice the prompt at all does, or it
+   * cannot tell "still waiting" from "I have 12 seconds left".
+   */
+  expiresAt?: string;
 }
 
 export type PromptUserFn = (prompt: PromptPayload) => Promise<string>;
@@ -69,6 +83,37 @@ export interface DeployEnvironment {
   deactivate(containerId: string): Promise<void>;
 
   /**
+   * Stop the previous deployment while keeping it RESTORABLE — the non-overlap
+   * path's pre-stop, where the old workload must release a fixed port before the
+   * new one can bind but must also survive a failed health gate.
+   *
+   * Paired with `reactivatePrevious` (failure → bring it back) and
+   * `retireRetainedPrevious` (success → discard it). Omit and the pipeline falls
+   * back to `deactivate`, which for a container runtime force-removes: there is
+   * then nothing to revert to, so a failed gate loses the old deployment AND the
+   * new one (the caller reaps a failed deploy's container). That was the behaviour
+   * before this seam existed.
+   */
+  deactivateRetaining?(containerId: string): Promise<void>;
+
+  /**
+   * Discard a deployment that `deactivateRetaining` stopped, once the new one has
+   * succeeded. Only called for a container actually retained by this run.
+   */
+  retireRetainedPrevious?(containerId: string): Promise<void>;
+
+  /**
+   * Stop the workload THIS run activated, before reverting to the previous one.
+   *
+   * Required for a non-overlap revert to actually work: non-overlap exists because
+   * old and new contend for one fixed port, so while the failed new deployment is
+   * still running it holds that port and restarting the old one fails ("port is
+   * already allocated"). The caller reaps the failed container, but only after the
+   * pipeline returns — too late to matter here.
+   */
+  stopActivated?(containerId: string): Promise<void>;
+
+  /**
    * Can the NEW deployment run SIMULTANEOUSLY with the previous one?
    *
    * true  (docker/cloud — unique container name + own host port / isolated
@@ -89,10 +134,10 @@ export interface DeployEnvironment {
    * the deploy failed — in the overlap path this auto-reverts to the old
    * deployment (it was never touched).
    *
-   * DEFERRED SEAM: no runtime implements this yet. It is the single insertion
-   * point for the (separately-designed) health-check execution — once a runtime
-   * provides it, the pipeline needs no further changes. Until then the call is
-   * a no-op.
+   * The server deploy composes two checks here: a stabilization watch (the
+   * container didn't bounce or exit — asked of the runtime, so it also covers
+   * remote/SSH targets) and, for local targets, a TCP probe on the app's port.
+   * Omit it for deployments with nothing to probe (a static file-serve).
    */
   healthCheck?(containerId: string, config: DeployConfig): Promise<void>;
 
@@ -141,6 +186,13 @@ export interface DeployPipelineInput {
    * controls whether the pipeline calls deactivate.
    */
   deactivatePrevious?: boolean;
+  /**
+   * Ceiling on each best-effort teardown call (stop / retain / retire) of the
+   * PREVIOUS deployment. Defaults to {@link TEARDOWN_TIMEOUT_MS}. Exposed so tests
+   * can use a small value; 0 disables the bound (never do that in production —
+   * see the constant's note).
+   */
+  teardownTimeoutMs?: number;
   /** Verified domains that need routing. */
   domains: RoutedDomainInput[];
   /** Routing provider - omit when routing is handled by the runtime (cloud). */
@@ -173,6 +225,35 @@ export interface DeployPipelineResult {
   routeWarnings?: string[];
 }
 
+/**
+ * Hard ceiling on ONE best-effort teardown call against the previous deployment.
+ *
+ * These calls reach a container runtime over a transport that can half-open: a
+ * local Docker socket configures NO request timeout at all (contrast SSH's 600 s
+ * and TCP's 30 s in docker-transport.ts), and `destroy()` is an `inspect` +
+ * force-`remove` pair, either of which the daemon can accept and then never
+ * answer — a force-remove blocks while the container's main process is
+ * unkillable, an `inspect` can wedge on daemon-side state. A `.catch()` covers a
+ * REJECTION; it does nothing for a promise that never settles.
+ *
+ * That is openship#629: the overlap path stops the old deployment LAST, so an
+ * unbounded await there parked the whole deploy in `deploying` forever — routes
+ * and TLS already swapped to the new container, but `activeDeploymentId`, the
+ * release version, and the terminal SSE event all sit downstream of the return
+ * and never happened. Worse, the row keeps the project's one in-flight slot
+ * (a partial unique index), so no redeploy and no rollback could run either.
+ *
+ * 30 s matches the ceilings the API already puts on the SAME `runtime.destroy()`
+ * call elsewhere (project cleanup 30 s, service teardown 20 s, docker inspect 10 s).
+ *
+ * Note `withTimeout` races — it does NOT cancel the underlying request. Exceeding
+ * the bound means we stop WAITING; the request stays pending until its transport
+ * dies. That is the right trade for a janitorial step and the reason this bound is
+ * only applied to best-effort teardown, never to `activate` (whose result the
+ * deploy genuinely depends on).
+ */
+const TEARDOWN_TIMEOUT_MS = 30_000;
+
 // ─── Pipeline ────────────────────────────────────────────────────────────────
 
 /**
@@ -193,23 +274,78 @@ export async function runDeployPipeline(
 ): Promise<DeployPipelineResult> {
   const { config, previousContainerId, domains, routing, ssl, routeOptions, promptUser } = input;
   const overlap = env.canOverlap === true;
+  const teardownTimeoutMs = input.teardownTimeoutMs ?? TEARDOWN_TIMEOUT_MS;
+
+  /**
+   * Run one best-effort teardown call under a ceiling, downgrading BOTH a
+   * rejection and a timeout to a warning. Every teardown of the previous
+   * deployment goes through here so none of them can strand the deploy — the
+   * new container is already live, healthy and routed by the time these run,
+   * so failing the deploy over a janitorial step would take a working release
+   * down and repoint traffic at the older one.
+   */
+  const bestEffortTeardown = async (what: string, run: () => Promise<void>): Promise<void> => {
+    try {
+      await withTimeout(
+        run(),
+        teardownTimeoutMs,
+        `timed out after ${teardownTimeoutMs}ms (the container runtime never answered)`,
+      );
+    } catch (err) {
+      logger.log(`Warning: ${what}: ${safeErrorMessage(err)}\n`, "warn");
+    }
+  };
 
   // Track the container we activate so a failure DURING/AFTER routing can
   // report it back to the caller for cleanup — a started-but-unrouted
   // container must not orphan.
   let activatedContainerId: string | undefined;
 
+  // Set when the non-overlap pre-stop merely STOPPED the old deployment instead of
+  // destroying it. Two consumers: the failure path starts it again, and the success
+  // path retires it. Left undefined when nothing was retained, so neither fires.
+  let retainedPreviousId: string | undefined;
+
   // Stop the previous deployment — best-effort, never aborts the deploy.
   // Skipped when the caller opts out (deactivatePrevious === false): the old
   // one keeps serving until the caller's own post-deploy step stops+retains it.
   const deactivatePrevious = async () => {
     if (!previousContainerId || input.deactivatePrevious === false) return;
-    try {
-      logger.log("Stopping previous deployment…\n");
-      await env.deactivate(previousContainerId);
-    } catch (err) {
-      logger.log(`Warning: failed to stop previous deployment: ${safeErrorMessage(err)}\n`, "warn");
+    logger.log("Stopping previous deployment…\n");
+    await bestEffortTeardown("failed to stop previous deployment", () =>
+      env.deactivate(previousContainerId),
+    );
+  };
+
+  /**
+   * The non-overlap pre-stop. Prefers the RETAINING variant so a failure later in
+   * this run can restore the old deployment; falls back to the destructive
+   * `deactivate` for an environment that doesn't implement it.
+   */
+  const stopPreviousRetaining = async () => {
+    if (!previousContainerId || input.deactivatePrevious === false) return;
+    if (!env.deactivateRetaining) {
+      await deactivatePrevious();
+      return;
     }
+    logger.log("Stopping previous deployment (kept restorable until this one is healthy)…\n");
+    let stopped = false;
+    await bestEffortTeardown("failed to stop previous deployment", async () => {
+      await env.deactivateRetaining!(previousContainerId);
+      stopped = true;
+    });
+    // Only claim the retention when the stop actually landed. Recording it after a
+    // timeout would tell the failure path to "restore" a deployment that was never
+    // stopped, and the success path to retire one we may not own.
+    if (stopped) retainedPreviousId = previousContainerId;
+  };
+
+  /** Discard the retained previous deployment once the new one is live. */
+  const retireRetainedPrevious = async () => {
+    if (!retainedPreviousId || !env.retireRetainedPrevious) return;
+    await bestEffortTeardown("failed to clean up the previous deployment", () =>
+      env.retireRetainedPrevious!(retainedPreviousId!),
+    );
   };
 
   try {
@@ -226,7 +362,7 @@ export async function runDeployPipeline(
     // there's an unavoidable downtime window here. Overlap runtimes skip
     // this entirely — the old deployment keeps serving until the route swap.
     if (!overlap && previousContainerId) {
-      await deactivatePrevious();
+      await stopPreviousRetaining();
       // Give the OS a moment to release the port / socket.
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -294,6 +430,10 @@ export async function runDeployPipeline(
       await deactivatePrevious();
     }
 
+    // Non-overlap: the old deployment was stopped-and-kept in case this run failed.
+    // It didn't, so discard it now. No-op when nothing was retained.
+    await retireRetainedPrevious();
+
     logger.step("deploy", "completed", "Deployed successfully");
 
     return {
@@ -309,14 +449,32 @@ export async function runDeployPipeline(
     logger.step("deploy", "failed", `Deploy failed: ${msg}`);
     logger.log(`\x1b[1;31mDeploy failed: ${msg}\x1b[0m\n`, "error");
 
-    // Non-overlap auto-revert: the old deployment was stopped before the new
-    // one started, so on failure try to restart it (best-effort; the bare
-    // release dir was kept by deactivate=stop). Overlap runtimes never stopped
-    // the old one pre-success, so there is nothing to restore.
+    // Non-overlap auto-revert: the old deployment was stopped before the new one
+    // started, so on failure start it again (best-effort — the pre-stop RETAINS it
+    // for exactly this). Overlap runtimes never stopped the old one pre-success, so
+    // there is nothing to restore. Without this a failed health gate left the
+    // project with no running deployment at all, since the caller also reaps the
+    // failed deploy's own container.
     if (!overlap && previousContainerId && env.reactivatePrevious) {
       try {
         logger.log("Deploy failed — restarting the previous deployment…\n", "warn");
-        await env.reactivatePrevious(previousContainerId);
+        // Free the contended port FIRST. The failed deployment is still running
+        // (a health-gate failure means it started fine, it just never answered),
+        // and non-overlap exists precisely because both bind the same fixed port —
+        // so restarting the old one while the new one holds it fails outright.
+        // Bounded for the same reason as the success-path teardown: an unbounded
+        // await here would park the deployment in `deploying` instead of letting it
+        // reach `failed`, which is #629 wearing the failure path's clothes.
+        if (activatedContainerId && env.stopActivated) {
+          await bestEffortTeardown("couldn't stop the failed deployment before reverting", () =>
+            env.stopActivated!(activatedContainerId!),
+          );
+        }
+        await withTimeout(
+          env.reactivatePrevious(previousContainerId),
+          teardownTimeoutMs,
+          `timed out after ${teardownTimeoutMs}ms restarting the previous deployment`,
+        );
       } catch (revertErr) {
         logger.log(
           `Warning: failed to restart previous deployment: ${safeErrorMessage(revertErr)}\n`,

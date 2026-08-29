@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { shellQuote } from "@repo/core";
 import { basename } from "node:path";
 
 import type { LogEntry } from "../types";
@@ -26,9 +27,9 @@ const LOCAL_BUILD_ENV_KEYS = [
   "XDG_DATA_HOME",
 ] as const;
 
-export function sq(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
+/** Alias of `@repo/core`'s {@link shellQuote}. Kept as a name because ~300 call sites in
+ *  this package read `sq(...)`; there is one implementation, in core. */
+export const sq = shellQuote;
 
 export function logEntry(
   message: string,

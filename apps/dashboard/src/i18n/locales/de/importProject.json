@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Verzeichnis mit der Build-Ausgabe",
     "sourceFolderLabel": "Quellordner",
     "sourceFolderDesc": "Aus einem Unterverzeichnis innerhalb des Repositorys oder lokalen Projekts bauen.",
+    "composePath": {
+      "title": "Compose-Datei",
+      "subtitle": "Automatisch im Projektstamm erkannt",
+      "label": "Pfad zur Compose-Datei",
+      "description": "Für Repos, die compose außerhalb des Stammverzeichnisses ablegen — gib die Datei (deploy/stack.yml) oder den enthaltenden Ordner (deploy/docker-compose) an. Scannt das Repo neu und deployt die dort deklarierten Services.",
+      "apply": "Scannen",
+      "scanning": "Wird gescannt…",
+      "scanFailed": "Dieser Compose-Pfad konnte nicht gescannt werden.",
+      "subtitleOptIn": "Mit Docker Compose bereitstellen? Gib die Datei an."
+    },
+    "healthCheck": {
+      "title": "Health-Checks",
+      "subtitle": "Aus — das Deployment ist fertig, sobald die App läuft",
+      "subtitleOn": "Ein — das Deployment wartet erst auf die App",
+      "description": "Openship wartet nach dem Start nicht auf deine App, ein langsamer Start verzögert oder bricht also nie ein Deployment ab. Sobald es live ist, wird der Port trotzdem geprüft und gemeldet, ohne etwas zu blockieren. Aktiviere das nur, wenn das Deployment selbst fehlschlagen soll.",
+      "probeLabel": "Auf Antwort der App warten",
+      "probeDesc": "Nach dem Start des Containers den Port der App ansprechen und auf eine Verbindung warten.",
+      "pathLabel": "HTTP-Pfad",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Verlangt, dass ein GET hier mit unter 500 antwortet. Leer lassen, um jede TCP-Verbindung zu akzeptieren — das funktioniert auch für Dienste ohne HTTP.",
+      "timeoutLabel": "Abbrechen nach (Sekunden)",
+      "stabilizationLabel": "Auf Neustart-Schleifen achten",
+      "stabilizationDesc": "Beobachtet den Container nach dem Start und meldet eine Absturzschleife. Liest die Runtime aus und funktioniert daher auch auf entfernten Servern.",
+      "stabilizationWindowLabel": "Beobachten für (Sekunden)",
+      "onFailureLabel": "Wenn eine Prüfung fehlschlägt",
+      "onFailureWarn": "Deployment live lassen und zur Prüfung markieren",
+      "onFailureFail": "Deployment abbrechen und die vorherige Version weiter ausliefern"
+    },
     "buildImageLabel": "Build-Image",
     "buildImageDesc": "Builder-Container-Image für Cloud- oder Server-Builds. Überschreibe es, wenn das erkannte Basis-Image falsch ist.",
     "productionPathsLabel": "Produktionspfade",
@@ -73,6 +101,10 @@
     "serverOnPort": "Server auf Port {port}",
     "serverPortNotSet": "Server-Port nicht festgelegt",
     "staticFromEdge": "Statisch vom Edge",
+    "modeServer": "Server",
+    "modeWorker": "Worker",
+    "modeStatic": "Statisch",
+    "workerModeDesc": "Läuft kontinuierlich ohne Port oder öffentliche URL – ein Queue-Consumer, Cronjob oder Bot.",
     "buildSettingsTitle": "Build-Einstellungen"
   },
   "projectSettings": {
@@ -100,7 +132,7 @@
     "valuePlaceholder": "Wert",
     "dropHere": ".env-Datei hier ablegen",
     "noneTitle": "Keine Umgebungsvariablen",
-    "emptyHintEditing": "Klicke auf \"Variable hinzufügen\", verwende \".env einfügen\", lade eine Datei hoch oder füge etwas an beliebiger Stelle in diesem Feld ein",
+    "emptyHintEditing": "Füge einen .env-Block an beliebiger Stelle in diesem Feld ein oder lege hier eine .env-Datei ab.",
     "emptyHintReadonly": "Klicke auf \"Bearbeiten\", um Umgebungsvariablen zu verwalten",
     "pasteHint": "Füge einen vollständigen .env-Block an beliebiger Stelle in diesem Feld ein.",
     "addVariable": "Variable hinzufügen",
@@ -122,6 +154,11 @@
       "clipboardEmpty": "Zwischenablage ist leer",
       "clipboardInvalid": "Zwischenablage enthält keine gültigen KEY=VALUE-Umgebungsvariablen",
       "clipboardBlocked": "Zugriff auf die Zwischenablage wurde blockiert. Klicke in das Umgebungsfeld und füge mit Cmd/Strg+V ein."
+    },
+    "reveal": {
+      "show": "Werte anzeigen",
+      "hide": "Werte ausblenden",
+      "error": "Werte konnten nicht angezeigt werden"
     }
   },
   "composeServices": {
@@ -278,7 +315,6 @@
       "successful": "Bereitstellung erfolgreich",
       "deploying": "Wird bereitgestellt..."
     },
-    "viewDashboard": "Dashboard anzeigen",
     "visitSite": "Website besuchen",
     "warningTitle": "Bereitstellung abgeschlossen, aber einige Services benötigen noch Aufmerksamkeit.",
     "productionLogs": "Produktionsprotokolle",
@@ -317,10 +353,6 @@
       "successful": "Bereitstellung erfolgreich",
       "deploying": "Services werden bereitgestellt…"
     },
-    "running": "laufend",
-    "buildingSuffix": "· {count} werden gebaut",
-    "failedSuffix": "· {count} fehlgeschlagen",
-    "viewDashboard": "Dashboard anzeigen",
     "decisionBannerTitle": "Aktion erforderlich – einige Services sind fehlgeschlagen",
     "decisionBannerDefaultMsg": "Diese Bereitstellung wurde mit fehlgeschlagenen Services abgeschlossen. Behalte sie und behebe sie später, oder verwirf sie, um die vorherige Version wiederherzustellen.",
     "review": "Prüfen",
@@ -360,6 +392,12 @@
       "retryOther": "{count} fehlgeschlagene Services erneut versuchen"
     }
   },
+  "composeServiceTally": {
+    "running": "laufend",
+    "builtSuffix": "· {count} gebaut",
+    "buildingSuffix": "· {count} werden gebaut",
+    "failedSuffix": "· {count} fehlgeschlagen"
+  },
   "composeSidebar": {
     "status": {
       "cancelled": "Abgebrochen",
@@ -370,12 +408,20 @@
     },
     "detailsTitle": "Bereitstellungsdetails",
     "rowStatus": "Status",
+    "rowTarget": "Ziel",
+    "rowBuild": "Build",
     "rowBuildTime": "Build-Zeit",
     "rowServices": "Services",
     "rowProject": "Projekt",
-    "rowType": "Typ",
-    "running": "laufend",
-    "buildingSuffix": "· {count} werden gebaut",
-    "failedSuffix": "· {count} fehlgeschlagen"
+    "rowType": "Typ"
+  },
+  "configDiagnostics": {
+    "title": "Teile der openship.json dieses Repos wurden nicht angewendet",
+    "description": "Die unten aufgeführten Felder wurden übersprungen; der Rest der Datei wurde angewendet. Das Deployment läuft weiter.",
+    "titleWholeFile": "Die openship.json dieses Repos wurde ignoriert",
+    "descriptionWholeFile": "Nichts davon wurde angewendet. Das Deployment läuft weiter, mit den von Openship erkannten Einstellungen.",
+    "refused": "Abgelehnt",
+    "unrecognized": "Nicht erkannt",
+    "hint": "Führe `openship config validate` im Repo aus, um die Datei vor dem nächsten Deployment zu prüfen."
   }
 }

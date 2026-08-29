@@ -1,6 +1,15 @@
+import { CLOUD_FROM_LIST, UI } from "@/lib/pricing";
+
 /**
  * Deployment models - three big numbered panels. Middle (Hybrid) is the
  * inverted dark panel for visual rhythm. Big "01/02/03" as type-as-design.
+ *
+ * The "from" figure is the LIST price on purpose. This panel renders on the home
+ * page, which is statically prerendered, so anything time-dependent would freeze
+ * at build: a campaign price baked in here would keep advertising a discount
+ * after the offer closed. The list price can only go stale on a catalog edit,
+ * and that is a deploy. `/pricing` — which is rendered per request — is where
+ * the live campaign price is shown.
  */
 
 const MODELS = [
@@ -15,8 +24,8 @@ const MODELS = [
       "Auto-scaling, zero-downtime rolling deploys",
       "Backups, monitoring, alerts included",
     ],
-    price: "Coming soon",
-    priceNote: "Plans announced once billing is live",
+    price: CLOUD_FROM_LIST ? `From ${CLOUD_FROM_LIST}${UI.perMonth}` : UI.free,
+    priceNote: `Free tier to start — ${UI.billedMonthly}`,
   },
   {
     n: "02",
@@ -44,8 +53,8 @@ const MODELS = [
       "Or production locally, previews managed",
       "One billing, one team, one dashboard",
     ],
-    price: "Coming soon",
-    priceNote: "Available once plans open",
+    price: "Cloud plan + your servers",
+    priceNote: "One Cloud subscription, unlimited self-hosted boxes",
   },
 ];
 

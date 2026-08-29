@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { OS_DIR } from "./paths";
+import { LOG_DIR, OS_DIR } from "./paths";
 import chalk from "chalk";
 import { spinner, log, select, confirm, isCancel, cancel } from "@clack/prompts";
 import { serviceStatus, stop as stopService, type ServiceKind } from "./service";
@@ -23,7 +23,15 @@ import {
   storedApiPort as apiPort,
   storedDashboardPort as dashboardPort,
 } from "./ports";
-import { startService, ensureInternalToken } from "../commands/up";
+import { startService } from "../commands/up";
+import { internalFetch } from "./loopback-api";
+import {
+  summarizeHostChannelCause,
+  HOST_CHANNEL_AUTH_REJECTED_SHORT,
+  HOST_CHANNEL_PROVISION_COMMAND,
+  type HostChannelCause,
+} from "@repo/core";
+import type { HostChannelCheck } from "./host-channel-preflight";
 import {
   resolveDataDir,
   dataDirExists,
@@ -34,8 +42,6 @@ import {
   hasResetwal,
   deepHeal,
 } from "./heal";
-
-const LOG_DIR = join(OS_DIR, "logs");
 
 /** Narrow clack's cancel symbol; Ctrl-C/Esc exits cleanly. Copied from wizard.ts
  *  (that copy isn't exported) so both callers share one behaviour. */
@@ -52,18 +58,20 @@ export function ensure<T>(value: T | symbol): T {
 // them from this module; they are NOT a second implementation.
 export { storedPorts, apiPort, dashboardPort };
 
-/** Internal-token-gated GET against the loopback API. null on any failure. */
+/**
+ * Internal-token-gated GET against the loopback API. null on any failure.
+ *
+ * Goes through internalFetch so the token matches the install: this reader used to name
+ * the bare token file, so on a compose box every `/api/system/health` call 401'd and
+ * gatherStatus reported the database, project counts and host channel as unknown on a
+ * perfectly healthy stack — with `doctor --fix` then reading that as "db not ok".
+ */
 export async function internalGet(path: string, timeoutMs = 8000): Promise<any | null> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${apiPort()}${path}`, {
-      headers: { "X-Internal-Token": ensureInternalToken() },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  const call = await internalFetch(String(apiPort()), path, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (call.kind !== "response" || !call.res.ok) return null;
+  return await call.res.json().catch(() => null);
 }
 
 /** Is the local API answering its liveness stub right now? */
@@ -190,15 +198,146 @@ export interface ComponentCheck {
   name: string;
   state: CheckState;
   detail: string;
+  /** Stable key for callers that act on a specific row — `name` is display copy. */
+  id?: "api" | "dashboard" | "edge" | "host-control";
 }
 
-/** System-component rollup: API, dashboard, edge proxy. Best-effort — a piece
- *  we can't determine is reported as a warn, never a hard fail. */
-export async function componentChecks(apiUp: boolean): Promise<ComponentCheck[]> {
+/**
+ * The container→host SSH channel, dialed from inside the api container.
+ *
+ * `openship up --compose` provisions this channel (key + authorized_keys + env)
+ * without ever sending a packet over it, so on a default-deny host it is dead from
+ * birth and every host operation fails looking exactly like a bad key (#490). This
+ * row is where an operator finds that out on purpose — the install-time preflight
+ * points here by name.
+ *
+ * Null when there is no channel to speak of (bare install, non-Linux, or host
+ * control switched off): a row about a channel nobody wanted is noise. A channel that
+ * WAS wanted and never got provisioned is the opposite of noise — see below.
+ */
+async function hostControlCheck(api: ApiHostChannel | null): Promise<ComponentCheck | null> {
+  // Imported lazily: the probe shells out to `docker compose exec`, and doctor's
+  // other checks must not pay for that module on a bare install.
+  const { checkHostChannel } = await import("./host-channel-preflight");
+  return hostControlRow(await checkHostChannel().catch(() => null), api);
+}
+
+/**
+ * `GET /api/system/health`'s `hostChannel` section — the API reporting on its OWN
+ * process env.
+ *
+ * Narrowed to what a row needs, and typed here rather than imported: the CLI does not
+ * depend on apps/api. `state` is `hostChannelHealth`'s code verbatim on both sides.
+ */
+export interface ApiHostChannel {
+  ok?: boolean;
+  state?: string;
+  remedy?: string;
+}
+
+/** Said in exactly one place, because the local probe and the API fallback below are
+ *  the same state and an operator may hit either. */
+const NEVER_PROVISIONED_DETAIL = `never provisioned — run \`${HOST_CHANNEL_PROVISION_COMMAND}\``;
+
+/**
+ * The probe result → the row an operator reads. Exported so the copy and the fail/warn
+ * split are pinned without shelling into a container.
+ *
+ * `api` is the fallback for an install shape the LOCAL probe can't see: it needs
+ * `~/.openship/compose/docker-compose.yml` both to read the channel out of `.env` and to
+ * `docker compose exec` into the api container, and a stack brought up by running
+ * `docker/docker-compose.yml` by hand has neither. That install used to get no row at all
+ * — from the one command #509's error text names (see HOST_CHANNEL_NOT_PROVISIONED).
+ */
+export function hostControlRow(
+  res: HostChannelCheck | null,
+  api?: ApiHostChannel | null,
+): ComponentCheck | null {
+  const at = res?.target ?? "the host";
+  const row = (state: CheckState, detail: string): ComponentCheck => ({
+    name: "Host control",
+    state,
+    detail,
+    id: "host-control",
+  });
+
+  if (!res?.configured) {
+    // #509 closed the loop the wrong way round: the error an operator reads when a host
+    // op dies names `openship doctor` as the way to check this, and doctor printed no row
+    // at all for the state that produces that error. A channel that was never provisioned
+    // is exactly as broken as one that's firewalled off, and this is where an operator
+    // finds that out.
+    if (res?.unprovisioned) return row("fail", NEVER_PROVISIONED_DETAIL);
+    // Nothing local to report. The API knows its own env on EVERY install shape, so ask
+    // it before going silent — but only about the states it can establish structurally.
+    // `disabled` and `not_applicable` are a box that wanted no channel (a choice, and a
+    // bare install), which is the same non-event the local path returns null for.
+    switch (api?.state) {
+      case "not_configured":
+        return row("fail", NEVER_PROVISIONED_DETAIL);
+      case "ok":
+        return row("pass", "reachable from the api container");
+      // Real faults — but the endpoint deliberately withholds the address and the
+      // firewall rule (both belong on a surface an operator is standing at, not in a
+      // monitoring payload), so this row can only point at one that has them.
+      case "key_unreadable":
+      case "unreachable":
+        return row("fail", `${api.state.replace(/_/g, " ")} — see the api container's boot log`);
+      // Its own case, NOT grouped above: this is the one fault here an operator can act
+      // on without the withheld address, and #527 is what happens when the only thing
+      // we tell them is to go read a log.
+      case "auth_rejected":
+        return row("fail", HOST_CHANNEL_AUTH_REJECTED_SHORT);
+      // `disabled` (a hardening choice) and `not_applicable` (a bare install) are the
+      // same non-event the local path returns null for. Whitelisted rather than derived
+      // from `ok === false`, which `disabled` also is.
+      default:
+        return null;
+    }
+  }
+  // One clause per cause, from the shared vocabulary — a doctor row that disagreed
+  // with the install-time preflight about the same probe would be worse than no row.
+  const why = (cause: HostChannelCause) =>
+    summarizeHostChannelCause(cause, {
+      target: at,
+      host: res.target?.split(":")[0],
+      detail: res.detail,
+    });
+
+  switch (res.code) {
+    case "open":
+      return row("pass", `reachable at ${at}`);
+    // Only a dropped SYN is the firewall shape, so it is the only row that names the
+    // flag; pointing the others at ufw is the mistake the preflight exists to avoid.
+    case "timeout":
+      return row("fail", `${why("timeout")} — open the host firewall: openship up --open-host-firewall`);
+    case "refused":
+    case "unresolved":
+    case "no_route":
+      return row("fail", why(res.code));
+    // Couldn't determine: a warn, never a hard fail (see below).
+    case "unavailable":
+      return row("warn", `couldn't check from the api container${res.detail ? ` (${res.detail})` : ""}`);
+    default:
+      return row("warn", why("error"));
+  }
+}
+
+/** System-component rollup: API, dashboard, edge proxy, host control. Best-effort —
+ *  a piece we can't determine is reported as a warn, never a hard fail.
+ *
+ *  `apiHostChannel` is `/api/system/health`'s `hostChannel` section, already fetched by
+ *  `gatherStatus` — passed in rather than re-fetched, and the fallback for install shapes
+ *  the local probe can't see (see {@link hostControlRow}). */
+export async function componentChecks(
+  apiUp: boolean,
+  apiHostChannel: ApiHostChannel | null = null,
+): Promise<ComponentCheck[]> {
   const checks: ComponentCheck[] = [];
 
   checks.push({
     name: "API",
+    id: "api",
     state: apiUp ? "pass" : "fail",
     detail: apiUp ? `reachable on :${apiPort()}` : `not answering on :${apiPort()}`,
   });
@@ -216,6 +355,7 @@ export async function componentChecks(apiUp: boolean): Promise<ComponentCheck[]>
   }
   checks.push({
     name: "Dashboard",
+    id: "dashboard",
     state: dashUp ? "pass" : "warn",
     detail: dashUp ? `serving on :${dashboardPort()}` : `not serving on :${dashboardPort()}`,
   });
@@ -225,11 +365,14 @@ export async function componentChecks(apiUp: boolean): Promise<ComponentCheck[]>
   const edge = dockerNameRunning("openship-edge");
   checks.push(
     edge == null
-      ? { name: "Edge", state: "warn", detail: "docker unavailable — can't check" }
+      ? { name: "Edge", id: "edge", state: "warn", detail: "docker unavailable — can't check" }
       : edge
-        ? { name: "Edge", state: "pass", detail: "openship-edge running" }
-        : { name: "Edge", state: "warn", detail: "not installed (fine for a local box)" },
+        ? { name: "Edge", id: "edge", state: "pass", detail: "openship-edge running" }
+        : { name: "Edge", id: "edge", state: "warn", detail: "not installed (fine for a local box)" },
   );
+
+  const hostControl = await hostControlCheck(apiHostChannel);
+  if (hostControl) checks.push(hostControl);
 
   return checks;
 }
@@ -239,7 +382,7 @@ export async function componentChecks(apiUp: boolean): Promise<ComponentCheck[]>
 export interface DoctorStatus {
   service: { kind: ServiceKind; installed: boolean; running: boolean };
   apiUp: boolean;
-  health: { db?: { driver: string; ok: boolean; latencyMs: number | null; migrationsApplied: number | null }; projects?: { total: number; apps: number } | null; servicesConfigured?: number | null } | null;
+  health: { db?: { driver: string; ok: boolean; latencyMs: number | null; migrationsApplied: number | null }; projects?: { total: number; apps: number } | null; servicesConfigured?: number | null; hostChannel?: ApiHostChannel | null } | null;
   services: ServiceRow[];
   components: ComponentCheck[];
   corrupted: boolean;
@@ -256,7 +399,7 @@ export async function gatherStatus(): Promise<DoctorStatus> {
     apiUp,
     health,
     services: dockerServices(),
-    components: await componentChecks(apiUp),
+    components: await componentChecks(apiUp, health?.hostChannel ?? null),
     corrupted: looksCorrupted(),
     lastError: lastServiceError(),
     dataDir: resolveDataDir(),

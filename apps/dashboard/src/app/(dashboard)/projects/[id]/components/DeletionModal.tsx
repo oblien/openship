@@ -8,7 +8,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (deleteApp: boolean, wipeVolumes: boolean, recordOnly: boolean) => void;
+  onConfirm: (wipeVolumes: boolean, recordOnly: boolean) => void;
   projectName: string;
   projectId?: string | number;
   /** Static self-hosted signal from the caller (not cloud-managed). Gates the
@@ -43,7 +43,6 @@ export const DeletionModal = ({
 }: Props) => {
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
-  const [deleteApp, setDeleteApp] = useState(true);
   const [wipeVolumes, setWipeVolumes] = useState(false);
   // Record-only ("soft") delete: keep the workload + data on the server, drop
   // only the Openship record. Self-hosted only (hidden for cloud below).
@@ -64,7 +63,6 @@ export const DeletionModal = ({
   useEffect(() => {
     if (!isOpen) return;
     setInputValue("");
-    setDeleteApp(true);
     setWipeVolumes(false);
     setRecordOnly(false);
     setPreview(null);
@@ -119,7 +117,7 @@ export const DeletionModal = ({
 
   const handleConfirm = () => {
     if (isConfirmDisabled) return;
-    onConfirm(deleteApp, showWipeBlock ? wipeVolumes : false, recordOnly);
+    onConfirm(showWipeBlock ? wipeVolumes : false, recordOnly);
     onClose();
   };
 
@@ -189,24 +187,15 @@ export const DeletionModal = ({
             </div>
           )}
 
-          {/* App vs single environment */}
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/50 bg-muted/15 p-3">
-            <Checkbox
-              checked={deleteApp}
-              onCheckedChange={setDeleteApp}
-              tone="destructive"
-              className="mt-0.5"
-              aria-label={t.projectSettings.deletion.deleteAllAria}
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">{t.projectSettings.deletion.deleteAll}</span>
-              <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                {deleteApp
-                  ? t.projectSettings.deletion.deleteAllOn
-                  : t.projectSettings.deletion.deleteAllOff}
-              </span>
-            </span>
-          </label>
+          {/* No "delete all environments" choice here on purpose.
+              It used to be a DEFAULT-ON checkbox promising "Removes the project app
+              and every branch environment under it" — and the server never read the
+              flag. `teardownProject` hard-deletes THIS environment and soft-deletes
+              the app row only once its last environment is gone. So the operator was
+              told every branch had been removed while the siblings kept running,
+              which is the "it says deleted but it isn't" report. The remaining copy
+              describes exactly what happens; a real cascade delete would have to be
+              built server-side before it can be offered again. */}
 
           {/* Record-only (soft) delete — self-hosted only; keeps the workload on
               the server and drops just the Openship record. */}
@@ -345,12 +334,8 @@ export const DeletionModal = ({
             {recordOnly
               ? t.projectSettings.deletion.confirmRecordOnly
               : wipeVolumes
-                ? deleteApp
-                  ? t.projectSettings.deletion.confirmDeleteWipe
-                  : t.projectSettings.deletion.confirmDeleteEnvWipe
-                : deleteApp
-                  ? t.projectSettings.deletion.confirmDelete
-                  : t.projectSettings.deletion.confirmDeleteEnv}
+                ? t.projectSettings.deletion.confirmDeleteEnvWipe
+                : t.projectSettings.deletion.confirmDeleteEnv}
           </button>
         </div>
       </div>

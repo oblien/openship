@@ -2,7 +2,7 @@ import { stat, readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { isIgnoredRepoPath, type RepoTreeEntry } from "../../lib/project-root-detector";
 import type { ProjectReader } from "./project-reader";
-import { resolveFromReader, type ProjectInfo } from "./prepare.service";
+import { resolveFromReader, type ProjectInfo, type ResolveOptions } from "./prepare.service";
 
 // Local-filesystem project resolution. Loaded ONLY via dynamic import from the
 // non-cloud branch of resolveProjectInfo, so node:fs never enters the cloud
@@ -71,7 +71,10 @@ function createLocalReader(dirPath: string): ProjectReader {
   };
 }
 
-export async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
+export async function resolveFromLocal(
+  dirPath: string,
+  opts: ResolveOptions = {},
+): Promise<ProjectInfo> {
   const st = await stat(dirPath);
   if (!st.isDirectory()) {
     throw new Error("Path is not a directory");
@@ -91,5 +94,6 @@ export async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
       default_branch: "main",
     },
     "main",
+    opts,
   );
 }

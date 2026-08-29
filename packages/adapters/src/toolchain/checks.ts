@@ -6,12 +6,12 @@
  * Checks are fast, non-destructive, and run in parallel.
  */
 
-import { LANGUAGES, STACKS, safeErrorMessage, type Language, type StackDefinition, type StackId } from "@repo/core";
+import { LANGUAGES, STACKS, type Language, type StackDefinition, type StackId } from "@repo/core";
 import type { CommandExecutor } from "../types";
 import type { ToolchainStatus, ToolchainCheckResult } from "./types";
 import { toolchainCatalog } from "./catalog";
 import { formatDuration, systemDebug } from "../system/debug";
-import { isRemoteConnectionError } from "../system/errors";
+import { probeExec, withReason } from "../system/probe-exec";
 
 function parseVersionParts(version: string): number[] {
   const match = version.match(/\d+(?:\.\d+)*/)?.[0] ?? "0";
@@ -33,37 +33,16 @@ function compareVersions(actual: string, minimum: string): number {
   return 0;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Run a command via executor, return stdout or null on failure. */
-async function tryExec(
-  executor: CommandExecutor,
-  command: string,
-): Promise<string | null> {
-  const startedAt = Date.now();
-  systemDebug("toolchain", `exec:start ${command}`);
-  try {
-    const result = await executor.exec(command, { timeout: 10_000 });
-    systemDebug(
-      "toolchain",
-      `exec:ok ${command} (${formatDuration(startedAt)})`,
-    );
-    return result;
-  } catch (err) {
-    if (isRemoteConnectionError(err)) {
-      systemDebug(
-        "toolchain",
-        `exec:abort ${command} (${formatDuration(startedAt)}) ${safeErrorMessage(err)}`,
-      );
-      throw err;
-    }
-    const msg = safeErrorMessage(err);
-    systemDebug(
-      "toolchain",
-      `exec:fail ${command} (${formatDuration(startedAt)}) ${msg}`,
-    );
-    return null;
-  }
+/**
+ * Does an installed version satisfy the floor a stack asked for?
+ *
+ * Exported so the installer can hold a just-finished install to the same bar
+ * {@link checkTool} holds a pre-existing one to. It used to check nothing, so a distro
+ * package a major behind the stack's floor was reported as a successful install and the
+ * build then failed on syntax the runtime didn't have.
+ */
+export function meetsMinVersion(actual: string, minimum: string): boolean {
+  return compareVersions(actual, minimum) >= 0;
 }
 
 // ─── Single tool check ──────────────────────────────────────────────────────
@@ -85,19 +64,22 @@ export async function checkTool(
     };
   }
 
-  const output = await tryExec(executor, recipe.versionCommand);
-  if (!output) {
-    systemDebug("toolchain", `${name}:missing`);
+  const probe = await probeExec(executor, recipe.versionCommand, "toolchain");
+  if (!probe.output) {
+    systemDebug("toolchain", `${name}:missing ${probe.error ?? "exited 0 with no version"}`);
     return {
       name,
       label: recipe.label,
       installed: false,
       healthy: false,
-      message: recipe.missingMessage,
+      // A tool that isn't there and a tool whose `--version` was refused ("permission
+      // denied", "Command timed out") both land here, and only the second can say why —
+      // #408, the same conflation `system/checks.ts` reports its way out of.
+      message: withReason(recipe.missingMessage, probe.error),
     };
   }
 
-  const version = recipe.parseVersion(output);
+  const version = recipe.parseVersion(probe.output);
 
   if (opts?.minVersion && compareVersions(version, opts.minVersion) < 0) {
     systemDebug("toolchain", `${name}:outdated v${version} < ${opts.minVersion}`);

@@ -151,7 +151,10 @@ unsupported `kind`. `http_upload` is defined but not yet supported.
 
 <Callout title="400 — local destinations disabled" type="warn">
 A `local` destination requires `BACKUP_ALLOW_LOCAL_DESTINATION=true` and a configured `BACKUP_LOCAL_ROOT`,
-and the `endpoint` must resolve to an absolute path inside that root. Local destinations are always rejected
+and the `endpoint` must resolve to an absolute path inside that root. Both the root and the endpoint are
+symlink-resolved before the check, so a symlink that escapes the root is rejected. `BACKUP_LOCAL_ROOT`
+itself must be a dedicated directory — not `/`, `/var`, `/var/lib`, Openship's own state directory, or
+anything inside a system tree such as `/etc` or `/var/lib/docker`. Local destinations are always rejected
 in cloud mode.
 </Callout>
 

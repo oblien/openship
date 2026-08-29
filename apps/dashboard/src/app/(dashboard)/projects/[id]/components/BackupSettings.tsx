@@ -29,6 +29,12 @@ import {
   type BackupRun,
 } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
+import { workloadOf } from "@/context/deployment/types";
+import { RollbackRetentionCards } from "@/components/rollback/RollbackRetentionCards";
+import { projectsApi } from "@/lib/api";
+import type { RollbackCapacityUI } from "@/lib/api/projects";
+import { MAX_ROLLBACK_WINDOW } from "@repo/core";
+import { useToast } from "@/context/ToastContext";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
 import { RestoreWizard } from "@/components/backup/RestoreWizard";
 
@@ -89,6 +95,60 @@ export function BackupSettings(): React.JSX.Element {
     { existing: BackupPolicy | null; serviceId: string | null; serviceName?: string; serviceImage?: string | null } | null
   >(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  // Rollback retention lives here, next to backups: both answer "how far back can
+  // we recover, and at what disk cost?". The controls themselves are the shared
+  // component the deploy wizard's target panel also renders.
+  const { showToast } = useToast();
+  const [rollbackCapacity, setRollbackCapacity] = useState<RollbackCapacityUI | null>(null);
+  const [togglingRollback, setTogglingRollback] = useState(false);
+  const [savingRollbackWindow, setSavingRollbackWindow] = useState(false);
+
+  const loadRollbackCapacity = useCallback(async () => {
+    try {
+      const res = await projectsApi.getRollbackCapacity(projectId);
+      setRollbackCapacity(res.data ?? null);
+    } catch {
+      /* advisory — the cards fall back to the plain window value */
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadRollbackCapacity();
+  }, [loadRollbackCapacity]);
+
+  const rollbackStrategy: "git" | "snapshot" =
+    rollbackCapacity?.strategy === "snapshot" ? "snapshot" : "git";
+
+  const toggleRollbackStrategy = useCallback(async () => {
+    setTogglingRollback(true);
+    try {
+      await projectsApi.update(projectId, {
+        defaultRollbackStrategy: rollbackStrategy === "git" ? "snapshot" : "git",
+      });
+      await loadRollbackCapacity();
+    } catch (err) {
+      showToast(getApiErrorMessage(err, t.projectSettings.git.toast.rollbackStrategyFailed), "error");
+    } finally {
+      setTogglingRollback(false);
+    }
+  }, [projectId, rollbackStrategy, loadRollbackCapacity, showToast, t]);
+
+  const changeRollbackWindow = useCallback(
+    async (next: number) => {
+      const clamped = Math.max(0, Math.min(rollbackCapacity?.maxWindow ?? MAX_ROLLBACK_WINDOW, next));
+      if (clamped === (rollbackCapacity?.window ?? 5)) return;
+      setSavingRollbackWindow(true);
+      try {
+        await projectsApi.update(projectId, { rollbackWindow: clamped });
+        await loadRollbackCapacity();
+      } catch (err) {
+        showToast(getApiErrorMessage(err, t.projectSettings.git.toast.rollbackHistoryFailed), "error");
+      } finally {
+        setSavingRollbackWindow(false);
+      }
+    },
+    [projectId, rollbackCapacity, loadRollbackCapacity, showToast, t],
+  );
   const [restoreFromRun, setRestoreFromRun] = useState<BackupRun | null>(null);
 
   const reload = useCallback(async () => {
@@ -178,6 +238,35 @@ export function BackupSettings(): React.JSX.Element {
           }}
         />
       )}
+
+      {/* Rollback retention — how many past releases stay restorable, and the
+          measured disk cost. Same component the deploy wizard renders; the
+          project's Git tab no longer carries a second copy. */}
+      <SectionCard
+        title={t.projectSettings.git.rollbackHistory.title}
+        description={t.deploy.targetStep.rollbackHint}
+        icon={RotateCcw}
+        iconTone="primary"
+      >
+        <RollbackRetentionCards
+          strategy={rollbackStrategy}
+          capacity={rollbackCapacity}
+          // Static projects retain built FILES, not images. A worker runs a
+          // container and retains an image like any running workload (#538).
+          artifactKind={
+            workloadOf({
+              workloadType: projectData.workloadType ?? projectData.options?.workloadType,
+              hasServer: projectData.hasServer ?? projectData.options?.hasServer,
+            }) === "static" && (servicesData.services?.length ?? 0) === 0
+              ? "files"
+              : "image"
+          }
+          onToggleStrategy={toggleRollbackStrategy}
+          onChangeWindow={changeRollbackWindow}
+          togglingStrategy={togglingRollback}
+          savingWindow={savingRollbackWindow}
+        />
+      </SectionCard>
 
       <SectionCard
         title={t.projectSettings.backup.destinations.title}
@@ -387,7 +476,7 @@ export function BackupSettings(): React.JSX.Element {
                 <li key={run.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <StatusChip status={run.status} />
+                      <StatusChip status={run.status} statusLabels={t.widgets.backup.runCard.status} />
                       <span className="text-xs text-muted-foreground">
                         {new Date(run.startedAt).toLocaleString()}
                       </span>
@@ -454,7 +543,13 @@ export function BackupSettings(): React.JSX.Element {
   );
 }
 
-function StatusChip({ status }: { status: BackupRun["status"] }): React.JSX.Element {
+function StatusChip({
+  status,
+  statusLabels,
+}: {
+  status: BackupRun["status"];
+  statusLabels: ReturnType<typeof useI18n>["t"]["widgets"]["backup"]["runCard"]["status"];
+}): React.JSX.Element {
   const meta = (() => {
     switch (status) {
       case "succeeded":
@@ -468,10 +563,32 @@ function StatusChip({ status }: { status: BackupRun["status"] }): React.JSX.Elem
     }
   })();
   const Icon = meta.icon;
+  const label = (() => {
+    switch (status) {
+      case "queued":
+        return statusLabels.queued;
+      case "preparing":
+        return statusLabels.preparing;
+      case "snapshotting":
+        return statusLabels.snapshotting;
+      case "uploading":
+        return statusLabels.uploading;
+      case "verifying":
+        return statusLabels.verifying;
+      case "succeeded":
+        return statusLabels.succeeded;
+      case "failed":
+        return statusLabels.failed;
+      case "cancelled":
+        return statusLabels.cancelled;
+      case "server_error":
+        return statusLabels.serverError;
+    }
+  })();
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.color}`}>
       <Icon className={`size-3 ${status === "succeeded" || status === "failed" || status === "server_error" || status === "cancelled" ? "" : "animate-spin"}`} />
-      {status}
+      {label}
     </span>
   );
 }

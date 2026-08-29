@@ -21,6 +21,9 @@ import {
   X,
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { folderApi } from "@/lib/api/folder";
+import { servicesApi } from "@/lib/api/services";
+import { envRevealSource } from "./env-reveal-source";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -30,6 +33,7 @@ import {
 } from "@/context/deployment/types";
 import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
+import { parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -39,9 +43,6 @@ import { cn } from "@/lib/utils";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const getExposedPort = (svc: ComposeServiceInfo) =>
-  svc.ports[0]?.split(":").pop()?.split("/")[0];
 
 type EnvVarRow = { key: string; value: string; visible: boolean };
 
@@ -81,10 +82,11 @@ const envRecordsEqual = (a: Record<string, string>, b: Record<string, string>) =
 
 const missingEnvCount = (service: ComposeServiceInfo) =>
   Object.entries(service.environmentMeta ?? {}).filter(
-    ([key, meta]) => meta.source === "missing" && !service.environment[key],
+    ([key, meta]) =>
+      meta.required || (meta.source === "missing" && !service.environment[key]),
   ).length;
 
-const portDisplay = (port: string) => port.split(":").pop()?.split("/")[0] || port;
+const portDisplay = (port: string) => parseContainerPort(port) || port;
 
 // ─── Port / volume rows (compose string[] ↔ editable rows) ───────────────────
 // Round-trips are LOSSLESS for the fields the UI doesn't edit: a port keeps its
@@ -193,7 +195,7 @@ const ServiceDomainSection: React.FC<{
     );
   }
 
-  const primaryPort = service.exposedPort || getExposedPort(service) || "";
+  const primaryPort = service.exposedPort || serviceExposedPort(service) || "";
   const defaultSubdomain =
     service.name === "web" || service.name === "app" || service.name === "frontend"
       ? normalizeSubdomain(projectName)
@@ -489,7 +491,7 @@ const ServiceConfigSection: React.FC<{
     [onChange],
   );
 
-  const routedPort = service.exposedPort || getExposedPort(service) || "";
+  const routedPort = service.exposedPort || serviceExposedPort(service) || "";
   const statefulOnCloud = isCloud && (isStatefulImage(service.image) || service.volumes.length > 0);
   const portsStr = interpolate(service.ports.length === 1 ? cnt.portOne : cnt.portOther, { count: String(service.ports.length) });
   const volumesStr = interpolate(service.volumes.length === 1 ? cnt.volumeOne : cnt.volumeOther, { count: String(service.volumes.length) });
@@ -703,11 +705,44 @@ const ServiceCard: React.FC<{
   onDelete: () => void;
 }> = ({ service, projectName, onUpdate, onEnvChange, onDelete }) => {
   const { t } = useI18n();
+  const { config } = useDeployment();
   const cs = t.importProject.composeServices;
   const cnt = t.importProject.counts;
   const missingCount = missingEnvCount(service);
   const envCount = Object.keys(service.environment).length;
   const [envModalOpen, setEnvModalOpen] = useState(false);
+  // #336: env arrives masked, and a masked row the editor can't reveal is a dead end —
+  // unreadable AND unrevealable, which is what "no show button on some rows" was. So
+  // there are two sources, by where the values came from:
+  //   upload scan  → the upload session, scoped to THIS service so a sibling's secrets
+  //                  never ride along.
+  //   saved rows   → the service's own stored env, once we know its persisted id.
+  // Both are write-gated on the API, so a read-only member reveals nothing either way.
+  // Still undefined for a FIRST compose deploy off git: nothing is stored yet, so the
+  // values in hand are the compose file's own and were never masked.
+  // Memoized on the primitives, not rebuilt per render: `onReveal`'s identity is a
+  // dependency of the editor's one-shot `revealOnOpen` fetch, so a fresh function every
+  // render would be a fresh reason to re-run it.
+  const revealSource = useMemo(
+    () =>
+      envRevealSource({
+        uploadSessionId: config.uploadSessionId,
+        projectId: config.projectId,
+        serviceId: service.serviceId,
+        serviceName: service.name,
+      }),
+    [config.uploadSessionId, config.projectId, service.serviceId, service.name],
+  );
+  const onReveal = useMemo(() => {
+    if (!revealSource) return undefined;
+    if (revealSource.kind === "upload") {
+      const { sessionId, service: name } = revealSource;
+      return async (keys: string[]) => (await folderApi.reveal(sessionId, name, keys)).environment;
+    }
+    const { projectId, serviceId } = revealSource;
+    return async (keys: string[]) =>
+      (await servicesApi.revealEnv(projectId, serviceId, keys)).environment;
+  }, [revealSource]);
   const [envRows, setEnvRows] = useState<EnvVarRow[]>(() =>
     envToArray(service.environment, {}, service.environmentMeta),
   );
@@ -897,9 +932,13 @@ const ServiceCard: React.FC<{
             isEditingMode={true}
             showSettingsActions={false}
             borderless
+            hideTitle
             envVars={envRows}
             envMeta={service.environmentMeta}
             onEnvVarsChange={handleEnvChange}
+            onReveal={onReveal}
+            // You got here by pressing Edit on this service's env: show the values.
+            revealOnOpen
           />
         </div>
       </Modal>
@@ -968,7 +1007,7 @@ const ComposeServices: React.FC = () => {
           ? normalizeSubdomain(projectNameForHost)
           : normalizeSubdomain(`${projectNameForHost}-${svc.name}`);
       const eps = ensurePublicEndpoints(svc.publicEndpoints, {
-        port: svc.exposedPort || getExposedPort(svc) || "",
+        port: svc.exposedPort || serviceExposedPort(svc) || "",
         domain: svc.domain || defaultSub,
         customDomain: svc.customDomain || "",
         domainType: svc.domainType || "free",

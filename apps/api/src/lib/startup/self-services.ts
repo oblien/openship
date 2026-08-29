@@ -39,6 +39,14 @@ function publishedPort(c: DockerContainerSummary): number | null {
   return null;
 }
 
+/** Every published binding in the durable service-deployment JSON shape. */
+function publishedPorts(c: DockerContainerSummary): Record<string, number> | null {
+  const entries = (c.ports ?? [])
+    .filter((port) => port.publicPort)
+    .map((port) => [String(port.privatePort), port.publicPort!] as const);
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
+}
+
 /** Compose spec strings for a container's published ports (`3001:3001`). */
 export function portSpecs(c: DockerContainerSummary): string[] {
   const seen = new Set<string>();
@@ -134,6 +142,7 @@ export async function linkSelfAppServices(
             status: container.state === "running" ? "success" : "failure",
             imageRef: container.image ?? null,
             hostPort: publishedPort(container),
+            hostPorts: publishedPorts(container),
             ip: container.ip ?? null,
           })
           .catch(() => {});
@@ -144,9 +153,11 @@ export async function linkSelfAppServices(
     // PUBLIC service on the dashboard port that matches no container (shows
     // "Stopped") and carries a stray {slug}-{slug} free-subdomain route. The
     // self-app's only real units are the compose rows linked above, so drop any
-    // monorepo leftover. (The dashboard can't: assertNotControlPlaneService
-    // blocks deleting control-plane services.) Prevention lives in
-    // materializeAppServiceRow; this clears instances that predate that guard.
+    // monorepo leftover. (The dashboard can't: assertNotControlPlane blocks
+    // mutating control-plane services.) Prevention lives in the appTemplateId
+    // guard in reconcileAppServiceRow; this clears instances that predate it.
+    // Unconditional here, unlike that helper's own #589 repair, because the
+    // control plane's units are known: none of them is ever a monorepo row.
     const stale = await repos.service.listByProjectKind(projectId, "monorepo").catch(() => []);
     for (const row of stale) {
       await repos.service.remove(row.id).catch(() => {});

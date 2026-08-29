@@ -47,6 +47,18 @@ export const emailOtp = (authClient as any).emailOtp as {
     email: string;
     type: "email-verification" | "sign-in" | "forget-password";
   }) => Promise<{ data?: unknown; error?: { message?: string; code?: string } | null }>;
+  /**
+   * Reset a password with a code instead of a link — POST /email-otp/reset-password.
+   *
+   * The link flow (`resetPassword` below, with a `token` from the URL) is retired: a
+   * "click here to change your password" URL is the most phishing-shaped mail the
+   * product sends, and gateways score and rewrite it. `resetPassword` is kept
+   * exported only so an old link already sitting in someone's inbox still works.
+   */
+  resetPassword: (data: { email: string; otp: string; password: string }) => Promise<{
+    data?: unknown;
+    error?: { message?: string; code?: string } | null;
+  }>;
 };
 
 /**
@@ -55,10 +67,14 @@ export const emailOtp = (authClient as any).emailOtp as {
  * the client object so TypeScript doesn't complain about missing
  * static properties.
  */
-export const forgetPassword = (authClient as any).forgetPassword as (
-  opts: { email: string; redirectTo?: string },
-) => Promise<{ error?: { message?: string } }>;
-
+// No `requestPasswordReset` helper any more: starting a reset means SENDING A CODE,
+// which is `emailOtp.sendVerificationOtp({ type: "forget-password" })` above. The
+// link-issuing endpoint is deliberately unreachable from the client — leaving a
+// helper for it invites a caller that mails a link nobody can act on, since the
+// server no longer defines `sendResetPassword`.
+//
+// `resetPassword` (token) stays only so a reset email already in someone's inbox
+// still completes; the code path is `emailOtp.resetPassword`.
 export const resetPassword = (authClient as any).resetPassword as (
   opts: { newPassword: string; token?: string },
 ) => Promise<{ error?: { message?: string } }>;

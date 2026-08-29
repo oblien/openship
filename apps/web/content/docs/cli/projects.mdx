@@ -271,7 +271,7 @@ openship service create -p my-stack web \
 | Flag | Purpose |
 |---|---|
 | `--image <image>` | Container image (e.g. `postgres:16`). |
-| `--build <context>` | Build context path (relative to repo root). |
+| `--build <context>` | Docker build context — the directory docker builds from (relative to the compose file's folder, which is the repo root unless you set a compose path). |
 | `--dockerfile <path>` | Dockerfile path (relative to the build context). |
 | `--port <mapping>` | Port mapping, e.g. `8080:80`. Repeatable. |
 | `--depends-on <service>` | Service this one depends on. Repeatable. |

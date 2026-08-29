@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { Terminal, Server } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { workloadOf } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
 import { TerminalLogs } from "./logs/TerminalLogs";
 import { ServerLogs } from "./logs/ServerLogs";
@@ -31,10 +32,16 @@ export const LogsSettings = () => {
     typeof projectData?.options?.hasServer === "boolean" ||
     typeof projectData?.hasServer === "boolean" ||
     buildData.isLoading === false;
+  // A worker runs a container and produces logs like a web app; only a static
+  // (edge-served) deploy has no runtime logs. Resolve the workload so a worker
+  // (hasServer=false) still gets its logs surfaced (#538). Gate on
+  // hasResolvedServerMode so we don't assume "web" before the data loads.
   const effectiveHasServer =
-    projectData?.options?.hasServer === true ||
-    projectData?.hasServer === true ||
-    (buildData.isLoading === false && buildData.hasServer === true);
+    hasResolvedServerMode &&
+    workloadOf({
+      workloadType: projectData?.workloadType ?? projectData?.options?.workloadType ?? buildData.workloadType,
+      hasServer: projectData?.options?.hasServer ?? projectData?.hasServer ?? buildData.hasServer,
+    }) !== "static";
   const searchParams = useSearchParams();
   const router = useRouter();
   const serviceIdFromUrl = searchParams.get("service");

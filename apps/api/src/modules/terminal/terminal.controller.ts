@@ -180,23 +180,24 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
   let ticketServerId: string | null = null;
   // Resolve activeOrganizationId here — the WS upgrade route deliberately
   // skips the HTTP authMiddleware (auth happens inside this factory), so
-  // it's not pre-set on the Hono context. We mirror the middleware's
-  // logic: prefer session.activeOrganizationId, fall back to the user's
-  // oldest membership.
-  // not ctx-scoped: WebSocket upgrade path. This route runs OUTSIDE
-  // the normal Hono auth middleware (Bun WS doesn't carry the same
-  // request lifecycle), so it has to re-derive the active org from
-  // scratch. Both branches funnel through resolveActiveOrganizationId
-  // (the canonical resolver from middleware/active-organization.ts) so
-  // the WS path applies the same team-org-preferred + memberships[0]
-  // fallback as every other authed request — no behavior drift.
+  // it's not pre-set on the Hono context. Two paths, mirroring the
+  // sibling service-terminal controller:
+  //   - Ticket path: the ticket carries (userId, orgId, serverId) baked
+  //     in at mint time, when authMiddleware HAD resolved the org. Use
+  //     that org — re-deriving it here would scope the socket to a
+  //     different tenant than the one the mint-time checks passed in.
+  //   - Cookie path: no ticket, so re-derive from the session through
+  //     resolveActiveOrganizationId (the canonical resolver from
+  //     middleware/active-organization.ts), applying the same
+  //     team-org-preferred + memberships[0] fallback as every other
+  //     authed request.
   // Foreground non-WS callers must NOT duplicate this pattern — they
   // read ctx.organizationId, which authMiddleware already populated.
   let activeOrgId: string | null = null;
   if (ticket) {
     userId = ticket.userId;
     ticketServerId = ticket.serverId;
-    activeOrgId = await resolveActiveOrganizationId(userId, null).catch(() => null);
+    activeOrgId = ticket.organizationId;
   } else {
     try {
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -287,14 +288,16 @@ interface HandshakeCtx {
   resumeToken: string;
 }
 
-interface ConnState {
+export interface ConnState {
   ctx: HandshakeCtx;
   sessionId: string | null;
   shell: ShellSession | null;
   ws: WSLike | null;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
-  /** Guards the cleanup path so it can't run twice. */
+  /** True when this WebSocket connection has detached; stops its data pump and incoming messages. */
   closed: boolean;
+  /** True when this connection's session has been fully ended (shell killed, audit row closed). */
+  ended: boolean;
   /**
    * True when the client sent a `{type:"close"}` control frame, meaning
    * "I'm permanently closing this shell — do NOT park it". The onClose
@@ -318,6 +321,7 @@ function buildHandlers(ctx: HandshakeCtx) {
     ws: null,
     heartbeatTimer: null,
     closed: false,
+    ended: false,
     userTerminated: false,
   };
 
@@ -366,12 +370,24 @@ function buildHandlers(ctx: HandshakeCtx) {
         state.sessionId = existing.sessionId;
         attachWs(existing.sessionId, dataPump);
 
+        // Re-bind the timeout hook to this fresh WS/connection state so a
+        // later idle or hard-cap timeout closes the session from the live
+        // connection, not the stale parked one. Re-arm the idle timer so a
+        // resume does not inherit an expiry from the original WS.
+        existing.onTimeout = (_sid, reason) => {
+          sendControl(ws, { type: "error", code: reason as ErrorCode, message: reason });
+          safeWsClose(ws, 1011, reason);
+          void teardown(state, reason, null, /* alreadyUnregistered */ true, /* forceClose */ true);
+        };
+        touchSession(existing.sessionId);
+
         // Wire up shell-exit / heartbeat from the resumed channel.
         // (Note: existing.shell.onClose subscribers from the PREVIOUS
         // WS attachment are stale - they reference a dead `ws`. We
         // can't unsubscribe from ssh2's channel events, but those
-        // closures' `state.closed = true` guard makes their writes
-        // no-ops. The new onClose subscriber below is the live one.)
+        // closures are guarded by `state.ended` / `state.closed` and
+        // `alreadyUnregistered`, so they cannot double-close the audit
+        // row. The new onClose subscriber below is the live one.)
         existing.shell.onClose((code: number | null, signal?: string) => {
           sendControl(ws, { type: "exit", code, signal });
           safeWsClose(ws, 1000, "remote_exit");
@@ -574,16 +590,29 @@ function writeStdin(state: ConnState, buf: Buffer): void {
  *                       retain are preserved. The session manager's
  *                       idle + hard-cap timers continue running.
  *
- * Idempotent in both modes via the `state.closed` flag.
+ * `state.closed` tracks whether this WebSocket connection has detached.
+ * `state.ended` tracks whether the audit row has been finalized for this
+ * connection. A parked session is `closed` but not `ended`, so an idle/cap
+ * timeout that fires later (which passes `alreadyUnregistered=true`) can
+ * still close the DB row. Stale handlers from a previous WS (e.g. after a
+ * resume) are rejected by the `state.closed && !alreadyUnregistered` guard.
  */
-async function teardown(
+export async function teardown(
   state: ConnState,
   reason: TerminalExitReason,
   exitCode: number | null,
   alreadyUnregistered = false,
   forceClose = true,
 ) {
-  if (state.closed) return;
+  // Full teardown already completed for this connection.
+  if (state.ended) return;
+
+  // The WS side of this connection is already gone and this is not the
+  // timeout/unregister path that intentionally runs after the WS detached.
+  // This deflects stale shell.onClose callbacks from a previous WS after a
+  // resume, while still allowing the idle/cap timeout to finalize the row.
+  if (state.closed && !alreadyUnregistered) return;
+
   state.closed = true;
 
   if (state.heartbeatTimer) {
@@ -596,6 +625,10 @@ async function teardown(
     parkSession(state.sessionId);
     return;
   }
+
+  // Force-close: this session is ending. Mark it now so any re-entrant
+  // shell.onClose / onClose handler for this same connection no-ops.
+  state.ended = true;
 
   if (state.shell) {
     safeShellClose(state.shell);

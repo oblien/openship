@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   sq,
   injectGitToken,
+  gitCredentialPair,
   toGitHubSshUrl,
   assembleGitClone,
 } from "./git-clone";
@@ -20,9 +21,50 @@ describe("sq (POSIX single-quote)", () => {
 });
 
 describe("injectGitToken", () => {
-  it("injects x-access-token into an HTTPS URL", () => {
-    expect(injectGitToken("https://github.com/owner/repo.git", "tok123")).toBe(
-      "https://x-access-token:tok123@github.com/owner/repo.git",
+  it("injects x-access-token for a GitHub App installation token (ghs_…)", () => {
+    expect(injectGitToken("https://github.com/owner/repo.git", "ghs_1234")).toBe(
+      "https://x-access-token:ghs_1234@github.com/owner/repo.git",
+    );
+  });
+  it("rides a classic PAT in the username slot on github.com", () => {
+    expect(injectGitToken("https://github.com/owner/repo.git", "ghp_1234")).toBe(
+      "https://ghp_1234:x-oauth-basic@github.com/owner/repo.git",
+    );
+  });
+  it("rides a fine-grained PAT in the username slot on github.com", () => {
+    expect(injectGitToken("https://github.com/owner/repo.git", "github_pat_1234")).toBe(
+      "https://github_pat_1234:x-oauth-basic@github.com/owner/repo.git",
+    );
+  });
+  it("rides an OAuth token in the username slot on github.com", () => {
+    expect(injectGitToken("https://github.com/owner/repo.git", "gho_1234")).toBe(
+      "https://gho_1234:x-oauth-basic@github.com/owner/repo.git",
+    );
+  });
+  it("treats a legacy prefix-less PAT as a user token", () => {
+    const legacy = "a".repeat(40);
+    expect(injectGitToken("https://github.com/owner/repo.git", legacy)).toBe(
+      `https://${legacy}:x-oauth-basic@github.com/owner/repo.git`,
+    );
+  });
+  it("keeps x-access-token on non-GitHub hosts (arbitrary username accepted)", () => {
+    expect(injectGitToken("https://gitlab.com/owner/repo.git", "glpat-1")).toBe(
+      "https://x-access-token:glpat-1@gitlab.com/owner/repo.git",
+    );
+  });
+  it("keeps x-access-token on GitHub Enterprise (own domain, not github.com)", () => {
+    expect(injectGitToken("https://github.acme-corp.com/owner/repo.git", "ghp_1234")).toBe(
+      "https://x-access-token:ghp_1234@github.acme-corp.com/owner/repo.git",
+    );
+  });
+  it("trims a pasted token instead of percent-encoding the whitespace", () => {
+    expect(injectGitToken("https://github.com/owner/repo.git", "  ghp_1234\n")).toBe(
+      "https://ghp_1234:x-oauth-basic@github.com/owner/repo.git",
+    );
+  });
+  it("returns the URL unchanged when the token is only whitespace", () => {
+    expect(injectGitToken("https://github.com/owner/repo.git", "   ")).toBe(
+      "https://github.com/owner/repo.git",
     );
   });
   it("returns the URL unchanged when no token", () => {
@@ -31,9 +73,46 @@ describe("injectGitToken", () => {
     );
   });
   it("does not touch a non-HTTPS (scp-form) URL", () => {
-    expect(injectGitToken("git@github.com:owner/repo.git", "tok123")).toBe(
+    expect(injectGitToken("git@github.com:owner/repo.git", "ghp_1234")).toBe(
       "git@github.com:owner/repo.git",
     );
+  });
+
+  // A URL missing the password is not a complete credential: git sends an empty
+  // password, then on the 401 asks GIT_ASKPASS / the credential helper / the tty
+  // for the real one. Every clone path sets GIT_ASKPASS=/bin/echo, so a path that
+  // forgets it dies with "unable to get password from user" and never surfaces
+  // GitHub's reason. Both slots filled = self-contained on success and failure.
+  it("always emits BOTH Basic-auth slots, whatever the token or host", () => {
+    const tokens = ["ghs_1", "ghp_1", "github_pat_1", "gho_1", "ghu_1", "a".repeat(40), "glpat-1"];
+    const hosts = ["github.com", "github.acme-corp.com", "gitlab.com", "git.example.org"];
+    for (const host of hosts) {
+      for (const token of tokens) {
+        const out = injectGitToken(`https://${host}/owner/repo.git`, token);
+        const { username, password } = new URL(out);
+        expect(username, `${host} / ${token}`).not.toBe("");
+        expect(password, `${host} / ${token}`).not.toBe("");
+        expect(out).toContain(`@${host}/`);
+      }
+    }
+  });
+});
+
+describe("gitCredentialPair", () => {
+  it("carries the token in exactly one slot and a fixed literal in the other", () => {
+    const user = gitCredentialPair("github.com", "ghp_1234");
+    expect(user).toEqual({ username: "ghp_1234", password: "x-oauth-basic" });
+    const app = gitCredentialPair("github.com", "ghs_1234");
+    expect(app).toEqual({ username: "x-access-token", password: "ghs_1234" });
+  });
+  // Suffix-matching the host would pull gist./raw. subdomains into the github.com
+  // branch. Neither is a clone source, and the general form works on both, so the
+  // test is an exact host match on purpose.
+  it("matches github.com exactly — subdomains take the general form", () => {
+    expect(gitCredentialPair("gist.github.com", "ghp_1234")).toEqual({
+      username: "x-access-token",
+      password: "ghp_1234",
+    });
   });
 });
 
@@ -44,26 +123,22 @@ describe("toGitHubSshUrl", () => {
     );
   });
   it("appends .git when missing", () => {
-    expect(toGitHubSshUrl("https://github.com/owner/repo")).toBe(
-      "git@github.com:owner/repo.git",
-    );
+    expect(toGitHubSshUrl("https://github.com/owner/repo")).toBe("git@github.com:owner/repo.git");
   });
   it("strips any embedded credentials", () => {
-    expect(
-      toGitHubSshUrl("https://x-access-token:secret@github.com/owner/repo.git"),
-    ).toBe("git@github.com:owner/repo.git");
+    expect(toGitHubSshUrl("https://x-access-token:secret@github.com/owner/repo.git")).toBe(
+      "git@github.com:owner/repo.git",
+    );
   });
 });
 
 describe("assembleGitClone — token / public mode", () => {
   const inv = assembleGitClone({
     repoUrl: "https://github.com/owner/repo.git",
-    gitToken: "tok123",
+    gitToken: "ghp_1234",
   });
-  it("injects the token into the clone URL", () => {
-    expect(inv.cloneUrl).toBe(
-      "https://x-access-token:tok123@github.com/owner/repo.git",
-    );
+  it("injects the token into the clone URL (PAT as username on github.com)", () => {
+    expect(inv.cloneUrl).toBe("https://ghp_1234:x-oauth-basic@github.com/owner/repo.git");
   });
   it("fails fast instead of prompting (no interactive credential path)", () => {
     expect(inv.gitEnv).toContain("GIT_TERMINAL_PROMPT=0");
@@ -134,9 +209,9 @@ describe("assembleGitClone — option-injection guard", () => {
   // sq() makes the URL one shell WORD; it does not stop git from parsing a
   // leading dash as a flag. `--upload-pack=` would be RCE on the build host.
   it("refuses a URL that git would read as an option", () => {
-    expect(() =>
-      assembleGitClone({ repoUrl: "--upload-pack=touch /tmp/pwned" }),
-    ).toThrow(/must not start with/);
+    expect(() => assembleGitClone({ repoUrl: "--upload-pack=touch /tmp/pwned" })).toThrow(
+      /must not start with/,
+    );
   });
   it("refuses it regardless of leading whitespace", () => {
     expect(() => assembleGitClone({ repoUrl: "  --config=core.sshCommand=id" })).toThrow(

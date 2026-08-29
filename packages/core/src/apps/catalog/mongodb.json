@@ -1,6 +1,6 @@
 {
   "available": true,
-  "verified": true,
+  "verified": false,
   "id": "mongodb",
   "name": "MongoDB",
   "description": "MongoDB document database with the Mongo Express web admin UI.",
@@ -47,9 +47,6 @@
       "image": "mongo-express:1.0.2",
       "exposedPort": 8081,
       "exposed": true,
-      "ports": [
-        "8081:8081"
-      ],
       "routes": [
         {
           "port": 8081
@@ -65,19 +62,18 @@
       },
       "healthcheck": {
         "test": [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8081/"
+          "CMD-SHELL",
+          "wget -q -S --spider http://127.0.0.1:8081/ 2>&1 | grep -q \"HTTP/\""
         ],
         "interval": "10s",
         "timeout": "5s",
         "retries": 5,
         "startPeriod": "20s"
       },
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "8216:8081"
+      ]
     }
   ],
   "configFields": [
@@ -114,6 +110,7 @@
         "id": "admin",
         "label": "Mongo Express",
         "source": "publicUrl:mongo-express",
+        "kind": "url",
         "envKey": "MONGO_EXPRESS_URL",
         "help": "Sign in with the username + password below."
       },
@@ -135,19 +132,19 @@
       {
         "id": "dbUrl",
         "label": "Database URL",
-        "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@{{host}}:27017/",
-        "sourceLabel": "Public",
+        "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/",
+        "sourceLabel": "Internal",
         "variants": [
           {
-            "id": "internal",
-            "label": "Internal",
-            "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/"
+            "id": "host",
+            "label": "From this server",
+            "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@{{host}}:27017/"
           }
         ],
         "secret": true,
         "envKey": "MONGODB_URI",
         "recommended": true,
-        "help": "Direct MongoDB connection (root user). Published on port 27017. Switch to Internal for apps on the same project network."
+        "help": "Direct MongoDB connection (root user) on the project’s private network — use it from another service, or bind this app into a project. Port 27017 publishes on 127.0.0.1 only, so the \"From this server\" form works from the box itself or through an SSH tunnel, not from the internet."
       }
     ]
   },

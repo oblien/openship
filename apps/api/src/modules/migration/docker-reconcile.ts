@@ -20,8 +20,8 @@ import type {
   ProxyKind,
   SwarmTaskOwnership,
 } from "@repo/adapters";
-import { classifyProxy } from "@repo/adapters";
-import type { ComposeHealthcheck } from "@repo/core";
+import { classifyProxy, isBuildHelperMarkers, OPENSHIP_LABEL } from "@repo/adapters";
+import type { ComposeHealthcheck, ProxySettings } from "@repo/core";
 import type { ComposeService } from "../../lib/compose-parser";
 import type { ManifestProjectEntry } from "../../lib/openship-manifest";
 import type { ExistingRoute } from "./proxy-route-scan";
@@ -34,6 +34,14 @@ export interface DiscoveredVolumeMount {
   /** Path inside the container. */
   target: string;
   rw: boolean;
+}
+
+/** Compose declarations are keyed by PROJECT + service, because a bare service name
+ *  is not unique on a host running more than one stack. Lives here (the pure module)
+ *  and is used by both the reader in docker-inspect.service and the lookup below, so
+ *  the two can never disagree about the shape. */
+export function declaredKey(composeProject: string, serviceName: string): string {
+  return `${composeProject}\u0000${serviceName}`;
 }
 
 export interface DiscoveredService {
@@ -53,15 +61,30 @@ export interface DiscoveredService {
   /** compose build context (set → adoption builds this Dockerfile). */
   build?: string;
   dockerfile?: string;
+  buildArgs?: Record<string, string | null>;
   /** compose-style "host:container[/proto]" strings, from actual bindings. */
   ports: string[];
   env: Record<string, string>;
+  /** Env the container carries that provably came from the IMAGE, not the operator
+   *  — recovered from Docker's create-time merge order (see
+   *  {@link splitEnvByProvenance}). Not imported as explicit config (the same
+   *  image re-supplies it at runtime), but carried with VALUES so the wizard can
+   *  show exactly what was left behind and offer a one-click import (#394).
+   *  Absent when nothing was left behind. */
+  envImageDefaults?: Record<string, string>;
   volumes: DiscoveredVolumeMount[];
   networks: string[];
   dependsOn: string[];
   command?: string;
+  /** #332: structured argv (from the live container's Cmd, or the declared
+   *  compose command) so adoption re-runs the real Cmd, not a `sh -c`-wrapped
+   *  string. `null` = use image CMD. */
+  commandArgv?: string[] | null;
   restart?: string;
   healthcheck?: ComposeHealthcheck;
+  /** Live cpu/memory caps the container is running with, so adoption preserves
+   *  them instead of resetting to the project default. Undefined = uncapped. */
+  resources?: { cpuCores?: number; memoryMb?: number };
   /** Reverse-proxy kind when this container IS the edge proxy (image/command
    *  matches AND it binds a host edge port). Openship's OpenResty replaces it,
    *  so it's dropped from import — importing it is the 80/443 conflict. */
@@ -80,6 +103,10 @@ export interface DiscoveredService {
     path: string;
     domains: string[];
     ssl: { enabled: boolean; certPath?: string; keyPath?: string };
+    /** Adoptable reverse-proxy tunables the foreign vhost declared (upload limit,
+     *  timeouts, …). Carried so the migrated project keeps the limits it already ran
+     *  under instead of dropping to nginx's defaults on cutover. */
+    proxy?: ProxySettings;
     source?: string;
   }>;
   warnings: string[];
@@ -185,20 +212,102 @@ export function isDefaultNetwork(name: string, composeProjects: string[]): boole
   return composeProjects.some((p) => name === `${p}_default`) || name === "default";
 }
 
-function envArrayToRecord(env: string[], imageDefaults?: Set<string>): Record<string, string> {
+/** Cache key for a container's image data (env + default CMD). Prefers the
+ *  content-addressed ID so a tag that has since MOVED (a rebuild, a retag) can't
+ *  hand back a DIFFERENT image's defaults — which would silently drop real config
+ *  or keep stale vars. Falls back to the tag when inspect reported no ID. */
+export const imageRefKey = (detail: { imageId?: string; image?: string }): string =>
+  detail.imageId ?? detail.image ?? "";
+
+const envKey = (entry: string): string => {
+  const eq = entry.indexOf("=");
+  return eq > 0 ? entry.slice(0, eq) : entry;
+};
+
+/**
+ * Recover which of a container's env vars the OPERATOR set, and which the image
+ * merely baked in — by inverting Docker's create-time merge.
+ *
+ * The daemon (`daemon.merge`) builds `Config.Env` as:
+ *
+ *     [every var the client sent, in the client's order]
+ *       ++ [image vars whose KEY the client did NOT send, in image order]
+ *
+ * So the operator's block is a PREFIX and image-only vars are appended after it.
+ * That ordering is the provenance Docker records, and it's the only signal that
+ * distinguishes `environment: NODE_ENV: production` in a compose file from `ENV
+ * NODE_ENV=production` in the Dockerfile — the two produce a byte-identical
+ * entry, so a set-membership test on KEY=VALUE cannot tell them apart and drops
+ * real config (the #394 symptom: a service importing 1 env var out of 3).
+ * `docker exec … env` is NOT a better source: it alphabetises the merged result
+ * (destroying the ordering) and adds runtime-injected HOME/HOSTNAME.
+ *
+ * Reconstruction: find the smallest boundary `k` for which `containerEnv[k..]`
+ * is EXACTLY `imageEnv` minus the keys in `containerEnv[0..k-1]` (full KEY=VALUE
+ * compare, order included). Smallest, not largest: a container that carries the
+ * image's env verbatim satisfies every `k` trivially, and taking the largest
+ * would import the whole toolchain (NODE_VERSION, YARN_VERSION, …) as config.
+ *
+ * `recovered: false` = no boundary fits (a non-Docker runtime, or the image's env
+ * changed after the container was created) → callers fall back to subtracting
+ * exact KEY=VALUE matches.
+ */
+export function splitEnvByProvenance(
+  containerEnv: string[],
+  imageEnv: string[],
+): { userEnv: string[]; imageOnly: string[]; recovered: boolean } {
+  for (let k = 0; k <= containerEnv.length; k++) {
+    const userKeys = new Set(containerEnv.slice(0, k).map(envKey));
+    const expected = imageEnv.filter((e) => !userKeys.has(envKey(e)));
+    if (expected.length !== containerEnv.length - k) continue;
+    if (expected.every((e, i) => e === containerEnv[k + i])) {
+      return {
+        userEnv: containerEnv.slice(0, k),
+        imageOnly: containerEnv.slice(k),
+        recovered: true,
+      };
+    }
+  }
+  return { userEnv: containerEnv, imageOnly: [], recovered: false };
+}
+
+/**
+ * Container env (`Config.Env`, in order) → the config Openship imports, plus the
+ * vars it left behind because the image supplies them.
+ *
+ * `imageEnv` = the image's own ordered `Config.Env`. `declaredKeys` = keys the
+ * compose file declares under `environment:` — operator config by definition, so
+ * they are kept with the container's LIVE value (interpolation and `env_file`
+ * already resolved) even when that value equals the image default.
+ */
+function envArrayToRecord(
+  env: string[],
+  imageEnv?: string[],
+  declaredKeys?: Set<string>,
+): { record: Record<string, string>; imageDefaults: Record<string, string> } {
+  const { imageOnly, recovered } = imageEnv?.length
+    ? splitEnvByProvenance(env, imageEnv)
+    : { imageOnly: [] as string[], recovered: true };
+  // Provenance recovered → only the appended block is image-supplied. Not
+  // recovered → fall back to the old exact KEY=VALUE subtraction rather than
+  // importing the image's whole toolchain.
+  const imageSupplied = recovered ? new Set(imageOnly) : new Set(imageEnv ?? []);
+
   const out: Record<string, string> = {};
+  const imageDefaults: Record<string, string> = {};
   for (const entry of env) {
     const eq = entry.indexOf("=");
     if (eq <= 0) continue;
     const key = entry.slice(0, eq);
     if (ENV_DENYLIST.has(key)) continue;
-    // Drop entries identical to the image's baked-in default (exact KEY=VALUE),
-    // so an overridden var survives but the base image's dozen defaults don't
-    // masquerade as user config. Without image data, nothing is dropped.
-    if (imageDefaults?.has(entry)) continue;
-    out[key] = entry.slice(eq + 1);
+    const value = entry.slice(eq + 1);
+    if (imageSupplied.has(entry) && !declaredKeys?.has(key)) {
+      imageDefaults[key] = value;
+      continue;
+    }
+    out[key] = value;
   }
-  return out;
+  return { record: out, imageDefaults };
 }
 
 function portsToComposeStrings(ports: DockerPortBinding[]): string[] {
@@ -226,10 +335,12 @@ export const EDGE_PORTS = new Set([80, 443]);
 
 /** Parse a compose "host:container[/proto]" (or bare "container") port spec.
  *  `host` is the published host port (null for a bare container port — no host
- *  publish). Single source of truth for both edge detection and stripping;
- *  tolerates an optional host IP ("127.0.0.1:80:80"). */
+ *  publish). `hostIp` is the pinned host interface when present
+ *  ("127.0.0.1:80:80" → "127.0.0.1"), undefined otherwise. Single source of
+ *  truth for edge detection, stripping, and external-exposure classification. */
 export function parseComposePort(spec: string): {
   host: number | null;
+  hostIp?: string;
   container: string;
   proto?: string;
 } {
@@ -237,7 +348,28 @@ export function parseComposePort(spec: string): {
   const parts = hostAndPorts.split(":");
   const container = parts[parts.length - 1];
   const host = parts.length >= 2 ? Number(parts[parts.length - 2]) : NaN;
-  return { host: Number.isFinite(host) ? host : null, container, proto };
+  // Everything before the trailing host:container pair is the interface the
+  // publish was pinned to (undefined when the short "host:container" form pins
+  // none). Joined with ":" so a bracketless IPv6 interface survives round-trip.
+  const hostIp = parts.length >= 3 ? parts.slice(0, parts.length - 2).join(":") : undefined;
+  return { host: Number.isFinite(host) ? host : null, hostIp, container, proto };
+}
+
+/** Host interfaces a publish pinned to that keep it ON the box — never
+ *  reachable from another host. */
+const LOOPBACK_HOST_IPS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/** Was a host publish reachable from OUTSIDE the box? Docker publishes on ALL
+ *  interfaces (0.0.0.0) when the short form pins no host IP, and on the named
+ *  interface otherwise — so only an explicit loopback interface keeps it on-box.
+ *  This is the security-meaningful signal when a migration strips the publish:
+ *  the service loses genuine external reachability, not just a port number. An
+ *  unrecognized interface is treated as external — the conservative choice, so a
+ *  strip never under-reports what the operator loses. */
+export function isExternalHostPublish(hostIp?: string): boolean {
+  const ip = hostIp?.trim();
+  if (!ip || ip === "0.0.0.0" || ip === "::") return true;
+  return !LOOPBACK_HOST_IPS.has(ip);
 }
 
 /** Host edge ports (80/443) a service publishes — the conflict signal. */
@@ -281,8 +413,9 @@ function inspectHealthcheckToCompose(
 }
 
 /** Merge one container's inspect truth with its (optional) declared compose
- *  service. `imageDefaults` = the image's baked-in "KEY=VALUE" env, subtracted
- *  so only user-set vars are imported. */
+ *  service. `imageEnv` = the image's own ORDERED `Config.Env`; the order is what
+ *  makes operator-set vars separable from image-baked ones (see
+ *  {@link splitEnvByProvenance}). */
 /**
  * The compose-service IDENTITY for a discovered container — the name a migrated
  * service adopts. Priority:
@@ -329,7 +462,7 @@ export function openshipStackName(
 export function toDiscoveredService(
   detail: DockerContainerDetail,
   declared: ComposeService | undefined,
-  imageDefaults?: Set<string>,
+  imageEnv?: string[],
   imageCmd?: string[],
   proxyRoutesByPort?: Map<number, ExistingRoute[]>,
 ): DiscoveredService {
@@ -341,6 +474,17 @@ export function toDiscoveredService(
         `Bind mount ${m.source ?? "?"} → ${m.target}: data stays on the host, not migrated as a volume.`,
       );
     }
+  }
+
+  // Coolify injects every runtime variable explicitly and its Nixpacks builds
+  // bake the same values into the image, so subtracting image defaults dropped
+  // real configuration — often all of it. `coolify.managed` is stamped on every
+  // container it manages (bootstrap/helpers/docker.php).
+  const coolifyManaged = "coolify.managed" in detail.labels;
+  if (coolifyManaged) {
+    warnings.push(
+      "Coolify build-time variables (and any BuildKit secrets) are absent from a running container, so they cannot be imported — re-enter them before rebuilding. Runtime variables, including shared, linked-resource and secret values, were imported.",
+    );
   }
 
   // Drop the container's command when it merely restates the image's default
@@ -357,10 +501,18 @@ export function toDiscoveredService(
     containerCmd.every((tok, i) => tok === imageCmd[i]);
   const command =
     declared?.command ?? (isImageDefaultCmd ? undefined : containerCmd?.join(" "));
+  // #332: prefer the declared compose argv, else the container's live Cmd argv
+  // (verbatim — no join/`sh -c`). Null when it merely restates the image CMD.
+  const commandArgv =
+    declared?.commandArgv ?? (isImageDefaultCmd ? null : (containerCmd ?? null));
 
   const healthcheck =
     declared?.advanced?.healthcheck ??
     (detail.healthcheck ? inspectHealthcheckToCompose(detail.healthcheck) : undefined);
+
+  // Prefer what the compose file DECLARES; fall back to the container's live
+  // HostConfig, which also captures a hand-applied `docker update --memory`.
+  const resources = declared?.advanced?.resources ?? detail.resources;
 
   const name = discoveredServiceName(detail, declared);
   const image = detail.image || declared?.image;
@@ -397,11 +549,28 @@ export function toDiscoveredService(
     ];
     for (const port of publicPorts) {
       for (const hit of proxyRoutesByPort.get(port) ?? []) {
-        routes.push({ port: hit.port, path: hit.path, domains: hit.domains, ssl: hit.ssl, source: hit.source });
+        routes.push({
+          port: hit.port,
+          path: hit.path,
+          domains: hit.domains,
+          ssl: hit.ssl,
+          ...(hit.proxy ? { proxy: hit.proxy } : {}),
+          source: hit.source,
+        });
       }
     }
     if (routes.length > 0) existingRoute = routes;
   }
+
+  // Coolify sets every runtime var explicitly, so its containers carry the image's
+  // env verbatim in the same order — the one shape provenance can't resolve (every
+  // boundary fits, see splitEnvByProvenance). Skip the split entirely and import
+  // the lot; the label is the reliable signal.
+  const { record: env, imageDefaults: envImageDefaults } = envArrayToRecord(
+    detail.env,
+    coolifyManaged ? undefined : imageEnv,
+    declared ? new Set(Object.keys(declared.environment ?? {})) : undefined,
+  );
 
   return {
     name,
@@ -413,14 +582,18 @@ export function toDiscoveredService(
     imageId: detail.imageId,
     build: declared?.build,
     dockerfile: declared?.dockerfile,
+    buildArgs: declared?.buildArgs,
     ports,
-    env: envArrayToRecord(detail.env, imageDefaults),
+    env,
+    ...(Object.keys(envImageDefaults).length > 0 && { envImageDefaults }),
     volumes: mounts,
     networks: detail.networks,
     dependsOn: declared?.dependsOn ?? [],
     command,
+    commandArgv,
     restart: detail.restart?.name || declared?.restart,
     healthcheck,
+    resources,
     proxyKind,
     edgePorts: edgePorts.length > 0 ? edgePorts : undefined,
     existingRoute,
@@ -439,10 +612,12 @@ export function reconcileStack(opts: {
   networks: DockerNetworkInfo[];
   declared: Map<string, ComposeService>;
   alreadyManaged: number;
-  /** image ref → its baked-in "KEY=VALUE" env, subtracted from container env. */
-  imageDefaults?: Map<string, Set<string>>;
-  /** image ref → its baked-in default CMD tokens, dropped when the container
-   *  only restates it (see toDiscoveredService). */
+  /** {@link imageRefKey} → the image's ORDERED `Config.Env`, used to separate
+   *  operator-set vars from image-baked ones (skipped for Coolify-managed
+   *  containers — see toDiscoveredService). */
+  imageEnv?: Map<string, string[]>;
+  /** {@link imageRefKey} → its baked-in default CMD tokens, dropped when the
+   *  container only restates it (see toDiscoveredService). */
   imageCmds?: Map<string, string[]>;
   /** Openship projects recovered from the server (computed in the IO shell). */
   openshipProjects?: OpenshipProjectGroup[];
@@ -453,7 +628,7 @@ export function reconcileStack(opts: {
    * standalone/Compose candidates. */
   swarmTasks?: DiscoveredSwarmTask[];
 }): DiscoveredStack {
-  const { serverId, details, volumes, networks, declared, alreadyManaged, imageDefaults, imageCmds, proxyRoutesByPort } = opts;
+  const { serverId, details, volumes, networks, declared, alreadyManaged, imageEnv, imageCmds, proxyRoutesByPort } = opts;
 
   const composeProjects = [
     ...new Set(details.map((d) => d.composeProject).filter((p): p is string => Boolean(p))),
@@ -470,9 +645,11 @@ export function reconcileStack(opts: {
       null,
     service: toDiscoveredService(
       d,
-      d.composeService ? declared.get(d.composeService) : undefined,
-      imageDefaults?.get(d.image),
-      imageCmds?.get(d.image),
+      // Keyed by the container's OWN compose project (see declaredKey): looking this
+      // up by bare service name pulled another stack's declaration.
+      d.composeService ? declared.get(declaredKey(d.composeProject ?? "", d.composeService)) : undefined,
+      imageEnv?.get(imageRefKey(d)),
+      imageCmds?.get(imageRefKey(d)),
       proxyRoutesByPort,
     ),
   }));
@@ -516,7 +693,7 @@ export function reconcileStack(opts: {
   }
   if (composeProjects.length > 0 || declared.size > 0) {
     warnings.push(
-      "Compose `configs`, `secrets`, `expose`, and `depends_on` conditions are not modeled by Openship and won't carry over.",
+      "Compose `configs`, `secrets`, `expose`, `depends_on` conditions, and host-level keys (`privileged`, `cap_add`, `devices`, `sysctls`) are not modeled by Openship and won't carry over. A container currently sharing another's namespace (`network_mode`/`pid`) is adopted onto the project network instead — re-declare it in the stack's compose file if it must stay shared.",
     );
   }
   if (services.some((s) => Object.keys(s.env).length > 0)) {
@@ -574,7 +751,11 @@ export function reconcileStack(opts: {
  * real (locally-built) app containers.
  */
 export const isBuildHelper = (labels: Record<string, string>) =>
-  !!labels["openship.build"] && !labels["openship.deployment"] && !labels["openship.service"];
+  isBuildHelperMarkers({
+    build: labels[OPENSHIP_LABEL.build],
+    deployment: labels[OPENSHIP_LABEL.deployment],
+    service: labels[OPENSHIP_LABEL.service],
+  });
 
 /**
  * Reconstruct OPENSHIP-owned projects from their live containers + the server's
@@ -595,10 +776,11 @@ export function reconcileOpenshipProjects(opts: {
   knownHereIds: Set<string>;
   /** Project ids with a full recovery snapshot on the server (faithful restore). */
   snapshotIds: Set<string>;
-  imageDefaults?: Map<string, Set<string>>;
+  /** {@link imageRefKey} → the image's ordered `Config.Env`. */
+  imageEnv?: Map<string, string[]>;
   imageCmds?: Map<string, string[]>;
 }): OpenshipProjectGroup[] {
-  const { managedDetails, manifestById, knownHereIds, snapshotIds, imageDefaults, imageCmds } = opts;
+  const { managedDetails, manifestById, knownHereIds, snapshotIds, imageEnv, imageCmds } = opts;
 
   const byProject = new Map<string, DockerContainerDetail[]>();
   for (const d of managedDetails) {
@@ -614,7 +796,7 @@ export function reconcileOpenshipProjects(opts: {
   for (const [projectId, details] of byProject) {
     const entry = manifestById?.get(projectId);
     const services = details.map((d) => {
-      const svc = toDiscoveredService(d, undefined, imageDefaults?.get(d.image ?? ""), imageCmds?.get(d.image ?? ""));
+      const svc = toDiscoveredService(d, undefined, imageEnv?.get(imageRefKey(d)), imageCmds?.get(imageRefKey(d)));
       const serviceLabel = d.labels["openship.service"];
       return serviceLabel ? { ...svc, name: serviceLabel } : svc;
     });

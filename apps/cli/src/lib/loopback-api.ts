@@ -1,19 +1,21 @@
 /**
  * Loopback control-plane helpers, shared by the interactive install wizard
- * (commands/wizard.ts), the headless installer (lib/instance-provision.ts), and
- * `openship up` (commands/up.ts). Single home for the internal-token file + the
- * internal-token-gated POST/GET + the boot/health polls, so there's exactly ONE
- * copy (no per-command duplication).
+ * (commands/wizard.ts), the headless installer (lib/instance-provision.ts),
+ * `openship up` (commands/up.ts), doctor/repair and reset-admin-password. Single
+ * home for the internal-token-gated request + the boot/health polls, so there's
+ * exactly ONE copy (no per-command duplication).
  *
- * The API is bound to loopback and gated by X-Internal-Token; the same token
- * file the API boots with is read here so setup calls (bootstrap-admin,
- * self-register) authenticate without a browser session.
+ * The API is bound to loopback and gated by X-Internal-Token. WHICH token that is
+ * depends on the install method, so it is resolved in one place (lib/internal-token)
+ * rather than chosen per call site — the mistake that made every compose box answer
+ * "Unauthorized" to `openship reset-admin-password`.
  */
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { join } from "node:path";
-
+import {
+  internalTokenProblem,
+  internalTokenRejectedProblem,
+  internalTokenSources,
+} from "./internal-token";
 import { OS_DIR } from "./paths";
 
 /** The CLI's state dir (internal-token, auth-secret, data, logs); ~/.openship
@@ -22,36 +24,110 @@ import { OS_DIR } from "./paths";
 export { OS_DIR };
 
 /**
- * Persist a stable INTERNAL_TOKEN. The API is booted with it (so zero-auth is
- * off), and the setup flows read the SAME file to authenticate their one-shot
- * loopback calls. A browser reaching the API through the public proxy has no
- * token, so it can't create the admin.
+ * The outcome of an internal-token-gated call, as three DIFFERENT facts.
+ *
+ * Collapsing them is what made a compose box report "Unauthorized" for a token store
+ * the invoking user simply couldn't read: no-token (nothing on disk to try, or a
+ * root-owned `.env`) is a different operator action than unreachable (wrong port /
+ * nothing running) and than a 401 the API actually returned.
  */
-export function ensureInternalToken(): string {
-  const path = join(OS_DIR, "internal-token");
-  if (existsSync(path)) return readFileSync(path, "utf8").trim();
-  mkdirSync(OS_DIR, { recursive: true, mode: 0o700 });
-  const token = randomBytes(32).toString("hex");
-  writeFileSync(path, token, { mode: 0o600 });
-  return token;
+export type InternalCall =
+  | {
+      kind: "response";
+      res: Response;
+      /** The 401 came from internalAuth, and every token we hold was refused. */
+      tokenRejected?: boolean;
+    }
+  | { kind: "no-token"; detail: string }
+  | { kind: "unreachable"; detail: string };
+
+/**
+ * Was this 401 the internal-auth middleware refusing the token, or a HANDLER's own?
+ *
+ * The distinction decides whether the request may be repeated: internalAuth answers
+ * before the handler runs, so retrying it with another token repeats nothing — while
+ * `/api/system/cloud-connect` answers 401 with "Could not verify with Openship Cloud"
+ * AFTER exchanging a single-use PKCE code, where a retry would burn the code and the
+ * rewritten message would blame the wrong thing entirely.
+ *
+ * internalAuth's body is exactly `{"error":"Unauthorized"}` (middleware/internal-auth.ts),
+ * so that is the only shape treated as a token rejection. Anything else — including a
+ * body we can't parse — is passed through as-is, which is what the CLI did before it
+ * knew about candidates: no retry, no rewording, the API's own answer.
+ */
+function isInternalAuthRejection(body: string): boolean {
+  try {
+    return (JSON.parse(body) as { error?: unknown }).error === "Unauthorized";
+  } catch {
+    return false;
+  }
 }
 
-// The internal token differs by install method: the bare service reads/writes
-// `~/.openship/internal-token` (ensureInternalToken); the Compose stack boots the
-// api container with the token from `compose/.env` (composeInternalToken). Callers
-// provisioning the Compose stack pass that token explicitly so these loopback
-// calls authenticate against the RIGHT api — hence the optional `token` arg.
-export async function internalGet(port: string, path: string, token?: string): Promise<any | null> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-      headers: { "X-Internal-Token": token ?? ensureInternalToken() },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+/** Re-wrap a response whose body we had to read in order to classify it, so the caller
+ *  can still consume it normally. */
+function replay(res: Response, body: string): Response {
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+}
+
+/**
+ * The one internal-token-gated request path.
+ *
+ * `token` is for callers that KNOW which api they're addressing — the compose
+ * provisioning flows, which hold the token they just wrote. Everyone else omits it and
+ * gets `internalTokenSources()`: every token this box legitimately holds, tried in
+ * evidence order. Never mints: see lib/internal-token.
+ *
+ * Only a 401 from internalAuth is retried (see isInternalAuthRejection), and only that
+ * path reads the body — a streaming caller's response is handed back untouched, so the
+ * self-register SSE stream still arrives frame by frame.
+ */
+export async function internalFetch(
+  port: string,
+  path: string,
+  init: RequestInit = {},
+  token?: string,
+): Promise<InternalCall> {
+  const candidates = token ? [token] : internalTokenSources().tokens;
+  if (candidates.length === 0) return { kind: "no-token", detail: internalTokenProblem() };
+
+  const url = `http://127.0.0.1:${port}${path}`;
+  let refused: Response | undefined;
+  for (const candidate of candidates) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string> | undefined),
+          "X-Internal-Token": candidate,
+        },
+      });
+    } catch (err) {
+      return { kind: "unreachable", detail: (err as Error).message };
+    }
+    if (res.status !== 401) return { kind: "response", res };
+    const body = await res.text().catch(() => "");
+    if (!isInternalAuthRejection(body)) return { kind: "response", res: replay(res, body) };
+    refused = replay(res, body);
   }
+  // Every token we hold was refused — hand the last 401 back readable, flagged, so the
+  // caller can say WHICH kind of failure this is (internalTokenRejectedProblem).
+  return { kind: "response", res: refused!, tokenRejected: true };
+}
+
+/** Why a 401 came back after every candidate was tried. Re-exported so callers don't
+ *  each import the token module just to phrase this. */
+export { internalTokenRejectedProblem };
+
+export async function internalGet(port: string, path: string, token?: string): Promise<any | null> {
+  const call = await internalFetch(
+    port,
+    path,
+    { signal: AbortSignal.timeout(10000) },
+    token,
+  );
+  if (call.kind !== "response" || !call.res.ok) return null;
+  return await call.res.json().catch(() => null);
 }
 
 export async function internalPost(
@@ -60,18 +136,27 @@ export async function internalPost(
   body: unknown,
   token?: string,
 ): Promise<{ ok: boolean; data: any }> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+  const call = await internalFetch(
+    port,
+    path,
+    {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Internal-Token": token ?? ensureInternalToken() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30000),
-    });
-    const data = await res.json().catch(() => ({}));
-    return { ok: res.ok, data };
-  } catch (err) {
-    return { ok: false, data: { error: (err as Error).message } };
+    },
+    token,
+  );
+  // A token problem is reported as the error TEXT rather than a bare "failed": every
+  // caller of this prints `data.error`, so the fix (sudo, `openship up`, a port) lands
+  // in front of the operator instead of a generic Unauthorized.
+  if (call.kind !== "response") return { ok: false, data: { error: call.detail } };
+  const data = (await call.res.json().catch(() => ({}))) as Record<string, unknown>;
+  // Keyed off the flag, not the status: a handler's own 401 keeps its message.
+  if (call.tokenRejected && !token) {
+    return { ok: false, data: { ...data, error: internalTokenRejectedProblem() } };
   }
+  return { ok: call.res.ok, data };
 }
 
 /** POST the first admin to the internal-token-gated bootstrap endpoint. */

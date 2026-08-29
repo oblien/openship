@@ -10,19 +10,31 @@ import { forceMcpConsent } from "./middleware/mcp-consent";
 import { originGuard } from "./middleware/origin-guard";
 import { migrationGuard } from "./middleware/migration-guard";
 import { initPlatform } from "@repo/adapters";
+import { validatePlanPriceIds } from "@repo/core";
 import { resolvePlatformConfig } from "./lib/controller-helpers";
 import { runWithRequestStore } from "./lib/request-store";
+import { runWithCallSource } from "./lib/call-source";
 
 import { authRoutes } from "./modules/auth/auth.routes";
 import { auth } from "./lib/auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
+import {
+  MCP_RESOURCE_PATHS,
+  protectedResourceMetadata,
+  publicOriginFor,
+  rewriteMetadataOrigin,
+} from "./lib/mcp-resource";
 import { projectRoutes } from "./modules/projects/project.routes";
 import { appRoutes } from "./modules/apps/app.routes";
 import { appSettingsRoutes } from "./modules/apps/app-settings.routes";
 import { appConnectionRoutes } from "./modules/apps/app-connection.routes";
 import { projectConnectionRoutes } from "./modules/projects/project-connection.routes";
+import { projectStorageRoutes } from "./modules/projects/project-storage.routes";
 import { deploymentRoutes } from "./modules/deployments/deployment.routes";
 import { domainRoutes } from "./modules/domains/domain.routes";
+import { dnsRoutes } from "./modules/dns/dns.routes";
+import { credentialRoutes } from "./modules/credentials/credential.routes";
+import { issuesRoutes } from "./modules/issues/issues.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
 import { serviceRoutes } from "./modules/services/service.routes";
@@ -47,6 +59,7 @@ import { reconcileAllSchedules } from "./modules/backups/triggers/cron";
 import { reconcileJobs } from "./modules/jobs/job.service";
 import { scheduleBillingAnniversary } from "./modules/billing/billing-anniversary.cron";
 import { ensureOblienWebhook } from "./lib/openship-cloud";
+import { ensureOblienDefaultQuota } from "./modules/billing/billing-oblien-quota";
 import { backfillWebhookSecrets } from "./modules/github/github.service";
 import { backupOrchestrator } from "./modules/backups/backup.orchestrator";
 import { getJobRunner } from "./lib/job-runner";
@@ -59,6 +72,42 @@ export const app = new Hono();
 
 const oauthAuthServerMetadata = oAuthDiscoveryMetadata(auth);
 const oauthProtectedResourceMetadata = oAuthProtectedResourceMetadata(auth);
+
+/**
+ * Serve one of the plugin's discovery documents re-pointed at the origin THIS
+ * request arrived on, instead of the static baseURL it was built from (#543 —
+ * see `rewriteMetadataOrigin` for why that origin is unreachable).
+ *
+ * `no-store` because the document now varies by request origin on a box with no
+ * OPENSHIP_PUBLIC_URL: the plugin sets `Access-Control-Allow-Origin: *` and no
+ * cache directives, so a shared cache keyed on path alone could otherwise hand
+ * one client's resolved origin to another.
+ */
+function requestScopedMetadata(
+  handler: (req: Request) => Promise<Response>,
+): (req: Request) => Promise<Response> {
+  return async (req) => {
+    const res = await handler(req);
+    const body = await res.text();
+    const headers = new Headers(res.headers);
+    headers.set("Cache-Control", "no-store");
+    headers.delete("content-length");
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      // Non-JSON (an upstream error page): pass the plugin's own body through.
+      return new Response(body, { status: res.status, headers });
+    }
+    return new Response(JSON.stringify(rewriteMetadataOrigin(metadata, publicOriginFor(req))), {
+      status: res.status,
+      headers,
+    });
+  };
+}
+
+const serveAuthServerMetadata = requestScopedMetadata(oauthAuthServerMetadata);
+const serveProtectedResourceMetadata = requestScopedMetadata(oauthProtectedResourceMetadata);
 
 /* ---------- Global middleware ---------- */
 app.use(
@@ -74,6 +123,10 @@ app.use("*", logger());
 // auth-mode, installations) to one call each — a single /github/status was
 // fanning out into ~6 /cloud/account + 3 installations round-trips otherwise.
 app.use("*", (_c, next) => runWithRequestStore(() => next()));
+// Ambient call source (dashboard / mcp / cli / api). Seeded here so the audit
+// emitters that run outside the handler chain — Better Auth's organization hooks
+// — can still record WHERE a member/invitation change came from.
+app.use("*", (c, next) => runWithCallSource(c, () => next()));
 app.use("*", clientIpMiddleware);
 // CSRF defence: reject mutating requests from untrusted origins BEFORE
 // the auth chain touches the session. Webhooks (Stripe, Oblien) don't
@@ -123,8 +176,11 @@ app.route("/api/projects/:id/services", serviceRoutes);
 app.route("/api/projects/:id/app-settings", appSettingsRoutes);
 app.route("/api/projects/:id/app-connection", appConnectionRoutes);
 app.route("/api/projects/:id/connections", projectConnectionRoutes);
+app.route("/api/projects/:id/storage", projectStorageRoutes);
 app.route("/api/deployments", deploymentRoutes);
 app.route("/api/domains", domainRoutes);
+app.route("/api/dns", dnsRoutes);
+app.route("/api/credentials", credentialRoutes);
 app.route("/api/webhooks", webhookRoutes);
 app.route("/api/github", githubRoutes);
 app.route("/api/analytics", analyticsRoutes);
@@ -140,6 +196,8 @@ app.route("/api/audit", auditRoutes);
 app.route("/api/permissions", permissionsRoutes);
 app.route("/api/notifications", notificationsRoutes);
 app.route("/api/updates", updatesRoutes);
+// Org-wide issue feed — reads the caches the jobs above write; no detection of its own.
+app.route("/api/issues", issuesRoutes);
 app.route("/api/jobs", jobRoutes);
 // Platform status notices — banner feed (public read) + operator push (internal).
 // Both modes; primarily consumed on the SaaS.
@@ -147,10 +205,48 @@ app.route("/api/notices", noticeRoutes);
 
 /* ---------- OAuth 2.1 discovery (MCP) ---------- */
 // The mcp() plugin serves these under /api/auth, but MCP/OAuth 2.1 clients look
-// for them at the ORIGIN ROOT. Re-serve the plugin's own metadata handlers here
-// so `Authorization`-less requests to /api/mcp can be discovered end-to-end.
-app.get("/.well-known/oauth-authorization-server", (c) => oauthAuthServerMetadata(c.req.raw));
-app.get("/.well-known/oauth-protected-resource", (c) => oauthProtectedResourceMetadata(c.req.raw));
+// for them at the ORIGIN ROOT. Re-serve the plugin's documents here — through the
+// request-scoped rewrite — so `Authorization`-less requests to /api/mcp can be
+// discovered end-to-end.
+//
+// The protected-resource one needs the rewrite as much as the authorization-server
+// one: the plugin builds its `resource` + `authorization_servers` from the same
+// static baseURL, so a client that probes here instead of following our 401 hint
+// would echo the INTERNAL origin back as `resource=` on the token request — which
+// mcp-token.handler rejects as `invalid_target`, validating against the PUBLIC
+// origin's resources.
+app.get("/.well-known/oauth-authorization-server", (c) => serveAuthServerMetadata(c.req.raw));
+app.get("/.well-known/oauth-protected-resource", (c) => serveProtectedResourceMetadata(c.req.raw));
+
+// RFC 9728 §3.1: metadata for a resource whose identifier has a PATH lives at
+// the well-known prefix FOLLOWED BY that path. A client configured with
+// `https://host/api/mcp` looks there, not at the root — and the root document's
+// `resource` (the bare origin) doesn't match the URL it connected to, so a
+// strict client (Claude.ai) rejects the authorization it just completed.
+// Serve one document per URL that addresses this instance's MCP endpoint.
+const OAUTH_DISCOVERY_HEADERS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  // Origin-dependent when no OPENSHIP_PUBLIC_URL is set — never let a shared
+  // cache serve one client's resolved origin to another.
+  "Cache-Control": "no-store",
+} as const;
+
+for (const path of MCP_RESOURCE_PATHS) {
+  app.get(`/.well-known/oauth-protected-resource${path}`, (c) => {
+    const origin = publicOriginFor(c.req.raw);
+    const body = protectedResourceMetadata(origin, `${origin}${path}`);
+    return new Response(JSON.stringify(body), { status: 200, headers: OAUTH_DISCOVERY_HEADERS });
+  });
+  // RFC 8414 path-aware authorization-server metadata. Same document as the
+  // root one — served here so a client that only probes the path-aware location
+  // finds it instead of falling back.
+  app.get(`/.well-known/oauth-authorization-server${path}`, (c) =>
+    serveAuthServerMetadata(c.req.raw),
+  );
+}
 
 /* ---------- OAuth callback landing pages ---------- */
 const authCallbackHtml = `<!DOCTYPE html><html><head><title>Success</title></head><body><script>window.close();</script><p>Authentication successful. You can close this window.</p></body></html>`;
@@ -182,9 +278,8 @@ setupWebSocket(app);
 // exec via the Docker runtime adapter. The controller picks via
 // resolveDeploymentRuntime() from the service's active deployment.
 {
-  const { serviceTerminalRoutes } = await import(
-    "./modules/service-terminal/service-terminal.routes"
-  );
+  const { serviceTerminalRoutes } =
+    await import("./modules/service-terminal/service-terminal.routes");
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
@@ -237,8 +332,11 @@ if (env.CLOUD_MODE) {
   const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
   app.route("/api/billing", billingLocalRoutes);
 
-  // Analytics is scraped ON-DEMAND when a server's analytics is viewed
-  // (analytics.controller → scrapeServerIfStale) — no background interval.
+  // Analytics is scraped on two triggers, neither wired here: the
+  // `analytics:scrape` system job owns durability (the edge holds counters in RAM
+  // under a TTL, so an unswept server loses them), and the read handlers scrape
+  // on view for freshness. Both go through scrapeServerIfStale, which throttles
+  // and dedups, so they collapse rather than compete.
 }
 
 // ─── Backup job runner + boot reconcile ─────────────────────────────
@@ -248,38 +346,43 @@ if (env.CLOUD_MODE) {
 // desktop installs. The runner is module-singleton; first access
 // here triggers Redis detection.
 {
-  const sweepStale = repos.backupRun.sweepStaleRuns(
-    "API restart while backup in flight",
-  );
-  const sweepStaleRestores = repos.backupRestore.sweepStaleRestores(
-    "API restart while restore in flight",
-  );
-  // A deploy is an in-process task driven by an in-memory build session, so a
-  // restart orphans any deployment still building/deploying/queued — the UI
-  // would otherwise hang on "Building" forever. Flip those to cancelled at boot
-  // (reconciling is left for the reconcile scheduler). Fire-and-forget.
-  void repos.deployment
-    .sweepStaleInFlight("Interrupted by a server restart — redeploy to try again.")
-    .then((n) => {
-      if (n > 0) console.log(`[boot] cancelled ${n} stale in-flight deployment(s)`);
-    })
-    .catch((err) => console.warn("[boot] sweepStaleInFlight failed:", err));
-  // A project's deletionInProgress flag can only survive from a teardown that
-  // died mid-flight (no teardown outlives a restart), so clear stuck locks at
-  // boot — otherwise the project refuses all deletes forever ("Another delete
-  // is already running"). Fire-and-forget; logs the count if any were stuck.
-  void repos.project.clearStaleDeletions().then((n) => {
-    if (n > 0) console.log(`[boot] cleared ${n} stale project deletion lock(s)`);
-  }).catch((err) => console.warn("[boot] clearStaleDeletions failed:", err));
+  // These rows represent process-owned work. A self-hosted instance has one API
+  // process, so its boot proves the previous owner died. CLOUD_MODE has several
+  // replicas sharing the same DB: one replica starting proves nothing about a
+  // worker or teardown on another, and sweeping it would manufacture false
+  // quiescence while that other process can still mutate runtime resources.
+  if (!env.CLOUD_MODE) {
+    // A self-hosted process restart proves every in-process worker from the old
+    // process is gone. Complete reconciliation BEFORE starting the runner: a
+    // fire-and-forget sweep can otherwise terminalize a backup/deploy/restore
+    // that the new process has already claimed.
+    const [runs, restores, deployments] = await Promise.all([
+      repos.backupRun.sweepStaleRuns("API restart while backup in flight"),
+      repos.backupRestore.sweepStaleRestores("API restart while restore in flight"),
+      repos.deployment.sweepStaleInFlight(
+        "Interrupted by a server restart — redeploy to try again.",
+      ),
+    ]);
+    if (runs > 0 || restores > 0) {
+      console.log(`[boot] swept ${runs} stale backup runs + ${restores} stale restores`);
+    }
+    if (deployments > 0) {
+      console.log(`[boot] cancelled ${deployments} stale in-flight deployment(s)`);
+    }
+
+    // Stale project deletion flags are reclaimed under the project advisory
+    // lock by the next teardown attempt. A blanket boot sweep can overlap work
+    // started by this process and clear a fresh fence, so it is deliberately
+    // not used here.
+  }
   // A Docker migration is an in-memory FSM that quiesces (stops) the source
   // containers before the target deploy — a restart mid-migration would strand
   // a stopped production stack forever. Restart the originals + roll back any
   // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
   // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
   if (!env.CLOUD_MODE) {
-    void import("./modules/migration/migration.orchestrator")
-      .then(({ migrationOrchestrator }) => migrationOrchestrator.recoverInterruptedMigrations())
-      .catch((err) => console.warn("[boot] migration recovery failed:", err));
+    const { migrationOrchestrator } = await import("./modules/migration/migration.orchestrator");
+    await migrationOrchestrator.recoverInterruptedMigrations();
   }
 
   const runner = await getJobRunner();
@@ -292,9 +395,7 @@ if (env.CLOUD_MODE) {
   // prunes, deployment reconcile) into the `job` table and register every
   // enabled row on the runner. Operator cron/enabled overrides survive restarts.
   void reconcileJobs()
-    .then((stats) =>
-      console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`),
-    )
+    .then((stats) => console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`))
     .catch((err) => console.warn("[boot] reconcileJobs failed:", err));
 
   // Self-hosted (single box): any job_run still "running" at boot was orphaned
@@ -323,6 +424,63 @@ if (env.CLOUD_MODE) {
     console.warn("[boot] ensureOblienWebhook failed:", err),
   );
 
+  // Account-wide default credit ceiling, auto-applied by Oblien to any namespace
+  // created without an explicit setQuota. Backstop only — the spend path asserts
+  // the real ceiling — but it makes the free tier, not "unlimited", the failure
+  // mode of a forgotten quota push. Self-gating on CLOUD_MODE.
+  void ensureOblienDefaultQuota().catch((err) =>
+    console.warn("[boot] ensureOblienDefaultQuota failed:", err),
+  );
+
+  // Drain orgs that have no Oblien namespace recorded. Every org predates
+  // namespace persistence (the column was read in eleven places and written in
+  // none), so until this sweep finishes their credit quotas and resource
+  // ceilings do not exist on Oblien's side. Bounded per boot.
+  void import("./modules/billing/billing-namespace.provision")
+    .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
+    .then((stats) => {
+      if (stats.done > 0 || stats.failed > 0) {
+        console.log(
+          `[boot] Oblien namespaces backfilled: ${stats.done} provisioned, ${stats.failed} failed`,
+        );
+      }
+    })
+    .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
+
+  // Every PUBLISHED price must have a real Stripe price id in the environment.
+  // Now that the pricing catalog states actual prices, a missing id is a
+  // customer-visible failure: the plan card shows $39 and checkout 503s. This
+  // check already existed but had NO caller in either mode — wired here.
+  //
+  // Loud, not fatal: refusing to boot the whole SaaS over an unset price id
+  // would trade a broken checkout button for a total outage, and checkout
+  // already fails closed on its own (503 BILLING_NOT_CONFIGURED at the point of
+  // use, plus BILLING_ENABLED defaults off). Self-hosted logs it as information
+  // — it never sells anything.
+  // A live campaign must match its Stripe coupon, or the page advertises a
+  // discount the customer won't get. Only reaches Stripe when a campaign is
+  // actually running, so the common case costs nothing.
+  void import("./modules/billing/billing.service")
+    .then(({ verifyCampaigns }) => verifyCampaigns())
+    .then((problems) => {
+      for (const p of problems) console.error(`[boot] pricing campaign: ${p}`);
+    })
+    .catch((err) => console.warn("[boot] verifyCampaigns failed:", err));
+
+  {
+    const { missing } = validatePlanPriceIds();
+    if (missing.length > 0) {
+      const detail = missing.join(", ");
+      if (env.CLOUD_MODE) {
+        console.error(
+          `[boot] FATAL: published prices with no Stripe price id configured: ${detail}. Set those env vars or unpublish the price in packages/core/src/pricing/pricing.json.`,
+        );
+      } else {
+        console.log(`[boot] billing not configured (self-hosted, expected): ${detail}`);
+      }
+    }
+  }
+
   // Self-hosted only: backfill per-project GitHub webhook secrets for
   // auto-deploy projects registered before per-project secrets were wired
   // (self-gates on !CLOUD_MODE). Fixes silently-broken auto-deploy on installs
@@ -337,14 +495,6 @@ if (env.CLOUD_MODE) {
       `[boot] backup schedules: ${stats.registered} registered, ${stats.skipped} skipped`,
     ),
   );
-
-  void Promise.all([sweepStale, sweepStaleRestores]).then(([runs, restores]) => {
-    if (runs > 0 || restores > 0) {
-      console.log(
-        `[boot] swept ${runs} stale backup runs + ${restores} stale restores`,
-      );
-    }
-  });
 }
 
 // ─── Notification delivery runner ───────────────────────────────────

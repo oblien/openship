@@ -7,6 +7,7 @@
     "dev": "bun --watch run src/main.ts",
     "start": "bun run src/main.ts",
     "build": "tsc --noEmit",
+    "test": "bun test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

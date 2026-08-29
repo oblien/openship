@@ -127,6 +127,9 @@ export class SystemManager {
   /** In-memory cache to avoid even reading from disk/DB on hot paths. */
   private cachedState: SetupState | null = null;
 
+  /** In-flight background re-verification, if any (see kickBackgroundVerify). */
+  private verifyInFlight: Promise<unknown> | null = null;
+
   constructor(mode: RuntimeMode, opts: SystemManagerOptions) {
     this.mode = mode;
     this.executor = opts.executor;
@@ -146,7 +149,9 @@ export class SystemManager {
    * Returns false if:
    *   - No cached state (first boot)
    *   - Cached state says setupComplete = false
-   *   - Cache is stale (> 24h since last verification)
+   *
+   * A stale cache (> 24h) still answers true, with a re-verification kicked behind
+   * the call — this must never block.
    *
    * Use this on hot paths (every request). It's essentially free.
    */
@@ -154,13 +159,8 @@ export class SystemManager {
     const state = await this.loadState();
     if (!state?.setupComplete) return false;
 
-    // If cache is stale, trigger background re-verification
-    if (this.isStale(state)) {
-      // Don't await - let it run in the background
-      this.verify().catch(() => {});
-      // Still return true - stale cache is better than blocking
-      return true;
-    }
+    // Stale cache beats blocking a request: answer from cache, re-verify behind it.
+    if (this.isStale(state)) this.kickBackgroundVerify();
 
     return true;
   }
@@ -229,11 +229,20 @@ export class SystemManager {
         (name) => state.components[name]?.healthy === true,
       );
       if (allPresent) {
+        // Same staleness policy as isReady(): serve the cached answer, kick the 24h
+        // re-verify behind it. Without this the cache is authoritative FOREVER on a
+        // box reached only through ensureFeature/requireFeature — nothing outside
+        // this class calls isReady()/verify(), so a docker that was removed after
+        // provisioning would never be re-probed and ensureFeature would never
+        // self-heal it.
+        if (this.isStale(state)) this.kickBackgroundVerify();
         return { feature, ready: true, missing: [], message: `${feature} is ready` };
       }
     }
 
-    // Slow path: actually check the components
+    // Slow path: actually check the components. Deliberately NOT persisted — this
+    // checked one feature's subset, and freshness is one global stamp (see
+    // updateStateFromChecks).
     const statuses = await checkComponents(this.executor, rule.requires);
     const unhealthy = statuses.filter((s) => !s.healthy);
 
@@ -427,6 +436,23 @@ export class SystemManager {
     return this.cachedState;
   }
 
+  /**
+   * Run the staleness re-verification behind the caller — one at a time.
+   *
+   * The dedup is the point: a single deploy gates several features in a row, and
+   * every request calls isReady(), so an un-guarded kick would stack one full
+   * checkAll per call — each fanning 4 concurrent probes onto the same ssh
+   * connection, against sshd's MaxSessions (see mapWithConcurrency in checks.ts).
+   */
+  private kickBackgroundVerify(): void {
+    if (this.verifyInFlight) return;
+    this.verifyInFlight = this.verify()
+      .catch(() => {})
+      .finally(() => {
+        this.verifyInFlight = null;
+      });
+  }
+
   private isStale(state: SetupState): boolean {
     if (!state.lastVerifiedAt) return true;
     const age = Date.now() - new Date(state.lastVerifiedAt).getTime();
@@ -453,7 +479,19 @@ export class SystemManager {
     );
 
     existing.setupComplete = allRequired;
-    existing.lastVerifiedAt = new Date().toISOString();
+    // lastVerifiedAt is ONE stamp for the whole state, so only a check that covered
+    // every required component may move it. Stamping it from a partial check —
+    // ensureFeature("deploy") probes docker alone — would un-stale components nobody
+    // looked at and permanently silence the 24h re-verify for all of them.
+    // A required component with no registered check can never be covered, so it must
+    // not hold the stamp hostage — that would leave the state stale forever.
+    const checked = new Set(components.map((c) => c.name));
+    const coveredAll = this.required.every(
+      (name) => checked.has(name) || !COMPONENT_CHECKS[name],
+    );
+    if (coveredAll) {
+      existing.lastVerifiedAt = new Date().toISOString();
+    }
     existing.updatedAt = new Date().toISOString();
 
     this.cachedState = existing;

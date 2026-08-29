@@ -1,6 +1,6 @@
 {
   "available": true,
-  "verified": true,
+  "verified": false,
   "id": "kafka",
   "name": "Apache Kafka",
   "description": "Apache Kafka event-streaming broker (KRaft mode — no ZooKeeper) with the Kafbat Kafka UI web console for topics, messages, and consumer groups.",
@@ -45,9 +45,6 @@
       "image": "ghcr.io/kafbat/kafka-ui:latest",
       "exposedPort": 8080,
       "exposed": true,
-      "ports": [
-        "8080:8080"
-      ],
       "routes": [
         {
           "port": 8080
@@ -66,7 +63,10 @@
       "secretEnv": [
         "SPRING_SECURITY_USER_PASSWORD"
       ],
-      "restart": "unless-stopped"
+      "restart": "unless-stopped",
+      "ports": [
+        "8210:8080"
+      ]
     }
   ],
   "configFields": [
@@ -90,6 +90,7 @@
         "id": "ui",
         "label": "Kafka UI",
         "source": "publicUrl:kafka-ui",
+        "kind": "url",
         "help": "Sign in with the username + password below."
       },
       {

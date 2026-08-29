@@ -66,8 +66,10 @@
     "building": "Building",
     "deploying": "Deploying",
     "partial": "Partial",
+    "actionRequired": "Action required",
     "rejected": "Rejected",
     "verifying": "Verifying",
+    "noChanges": "No changes",
     "pending": "Pending"
   },
   "serviceStatus": {
@@ -150,11 +152,10 @@
     "rollbackTitle": {
       "enabled": "Restore the project to this version (code only — data is unchanged)",
       "active": "This is already the active version",
-      "pruned": "Rollback artifact has been pruned. Use 'Redeploy this commit' to rebuild from source instead.",
-      "notReady": "Only ready deployments can be rolled back to"
+      "pruned": "This deployment has no retained image and no commit to rebuild from",
+      "notReady": "Only ready deployments can be rolled back to",
+      "rebuildOnly": "Restore this version by rebuilding its commit (its image has been pruned)"
     },
-    "redeploy": "Redeploy this commit",
-    "redeployTitle": "Rebuild this exact commit from source. Slower than rollback but works after the artifact has been pruned.",
     "pin": "Pin",
     "unpin": "Unpin",
     "pinTitle": {
@@ -163,11 +164,32 @@
       "pruned": "Cannot pin — artifact has already been pruned"
     },
     "deleteDeployment": "Delete Deployment",
-    "confirmRollback": "Roll back to this version?\n\nThis restores the application code only. Database and volume data are unchanged.",
     "rollbackFailed": "Rollback failed",
-    "confirmRedeploy": "Redeploy commit {hash}?\n\nRebuilds this exact commit from source. Slower than rollback (full build runs again), but works even after the rollback artifact has been pruned. A new deployment will appear in the list.",
-    "redeployFailed": "Redeploy failed",
     "pinFailed": "Failed to pin deployment",
-    "unpinFailed": "Failed to unpin deployment"
+    "unpinFailed": "Failed to unpin deployment",
+    "rollbackModeInstant": "Instant restore — reuses this version's retained image, no rebuild.",
+    "rollbackModeRebuild": "Rebuild — this version's image is no longer on the host, so its commit is built again.",
+    "rollbackModeReacquireImage": "Registry restore — pulls the exact image reference recorded for this release; no source rebuild.",
+    "rollbackModeMixed": "Mostly instant — {count} service(s) lost their image and will be rebuilt."
+  },
+  "rollbackConfirm": {
+    "title": "Roll back to this version?",
+    "dataUnchanged": "This restores the application code only. Database and volume data are unchanged.",
+    "envHeading": "Environment variables",
+    "envSummaryOverlay": "{count} variable(s) change — this release's values are replayed over the current ones.",
+    "envSummaryReplace": "{count} variable(s) change — this release's environment is used exactly as captured.",
+    "envNoChanges": "No environment variables change.",
+    "envUnchanged": "The existing container is restarted rather than recreated, so its environment is untouched.",
+    "envNoValues": "Values are never shown here.",
+    "envTruncated": "Showing {shown} of {total}.",
+    "dirFrozenWins": "reverts to this release's value",
+    "dirRemovedSince": "comes back — deleted since this release",
+    "dirAddedSinceKept": "kept as it is now — added since this release",
+    "dirAddedSinceDropped": "dropped — added since this release",
+    "scopeAmbiguous": "captured without a service scope, so one value lands on every service",
+    "untouchedHeading": "Services added since this release",
+    "untouchedNote": "These keep running and are not touched: {names}",
+    "confirm": "Roll back",
+    "cancel": "Cancel"
   }
 }

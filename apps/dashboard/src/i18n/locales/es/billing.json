@@ -3,6 +3,8 @@
     "title": "Capacidad y uso",
     "subtitle": "Capacidad incluida en tu plan y cuánto has usado. Las cifras en vivo se sincronizan desde Openship Cloud.",
     "routes": "Rutas gratuitas",
+    "runningServices": "Servicios en ejecución",
+    "projects": "Proyectos",
     "workspaces": "Espacios de trabajo",
     "unlimited": "Ilimitado",
     "used": "usado",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "Las recargas de créditos únicas estarán disponibles pronto: aquí podrás añadir créditos además de tu asignación mensual.",
   "header": {
-    "credits": "Credits",
+    "credits": "Cómputo",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -80,7 +82,7 @@
     "title": "Recargar créditos",
     "description": "Paquetes de créditos de pago único cobrados a través de Stripe. Los créditos nunca caducan y se suman a tu asignación mensual.",
     "tryAgain": "Intentar de nuevo",
-    "credits": "créditos",
+    "credits": "minutos de cómputo",
     "redirecting": "Redirigiendo…",
     "buy": "Comprar",
     "empty": "No hay paquetes de recarga disponibles en este momento.",
@@ -92,25 +94,24 @@
     "portalError": "No se pudo abrir el portal de facturación"
   },
   "overview": {
-    "creditsLeft": "créditos restantes",
+    "creditsLeft": "minutos de cómputo restantes",
     "planLabel": "Plan {name}",
     "usedThisPeriod": "Usado en este período",
     "resets": "Se restablece",
     "resetsInDay": "En {n} día",
     "resetsInDays": "En {n} días",
     "none": "—",
-    "upgradeToPro": "Mejorar a Pro",
     "recentActivity": "Actividad reciente",
     "last7Days": "Últimos 7 días",
     "viewFullUsage": "Ver uso completo",
     "noUsageYet": "Aún no hay uso",
     "usageError": "No se pudo cargar el uso",
-    "needMoreCredits": "¿Necesitas más créditos?",
+    "needMoreCredits": "¿Necesitas más minutos de cómputo?",
     "oneTimeTopups": "Recargas de pago único, sin cambiar la suscripción",
     "seeAllPacks": "Ver todos los paquetes",
     "packsError": "No se pudieron cargar los paquetes",
     "noPacks": "No hay paquetes de recarga disponibles.",
-    "creditsAmount": "{n} créditos",
+    "creditsAmount": "{n} minutos de cómputo",
     "oneTime": "{price} pago único",
     "buy": "Comprar",
     "checkoutError": "No se pudo iniciar el pago"
@@ -121,7 +122,7 @@
       "balance": "Saldo",
       "balanceSuffix": "de {limit} créditos",
       "consumed": "Consumido en este período",
-      "credits": "créditos",
+      "credits": "minutos de cómputo",
       "burnRate": "Tasa de consumo",
       "burnRateSuffix": "créditos/día (últimos 7 días)",
       "projected": "Proyección de fin de período",
@@ -140,16 +141,28 @@
       "subtitle": "Créditos atribuidos proporcionalmente al uso medido de recursos en el rango seleccionado.",
       "resource": "Recurso",
       "units": "Unidades",
-      "credits": "Créditos",
+      "credits": "Minutos de cómputo",
       "percentOfTotal": "% del total",
       "loading": "Cargando…",
       "empty": "No hay uso en el rango seleccionado."
     },
     "resources": {
-      "cpu": { "label": "Tiempo de CPU", "units": "vCPU-horas" },
-      "memory": { "label": "Memoria", "units": "GB-horas" },
-      "disk": { "label": "E/S de disco", "units": "GB" },
-      "network": { "label": "Red", "units": "GB" }
+      "cpu": {
+        "label": "Tiempo de CPU",
+        "units": "vCPU-horas"
+      },
+      "memory": {
+        "label": "Memoria",
+        "units": "GB-horas"
+      },
+      "disk": {
+        "label": "E/S de disco",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Red",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Espacio de trabajo",
@@ -187,7 +200,8 @@
       "incomplete_expired": "Expirado",
       "unpaid": "Sin pagar",
       "paused": "Pausado"
-    }
+    },
+    "includedTitle": "Qué incluye"
   },
   "paymentPanel": {
     "title": "Método de pago",

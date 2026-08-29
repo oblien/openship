@@ -21,6 +21,7 @@
       "cloud": "Cloud",
       "defaults": "Standardwerte",
       "settings": "Einstellungen",
+      "dns": "DNS",
       "notifications": "Benachrichtigungen",
       "team": "Team",
       "members": "Mitglieder",
@@ -47,12 +48,14 @@
     "title": "Einstellungen",
     "tabs": {
       "general": "Allgemein",
-      "tokens": "Tokens",
+      "git": "Git",
+      "tokens": "API-Tokens",
       "mcp": "MCP",
       "team": "Team",
       "notifications": "Benachrichtigungen",
-      "audit": "Audit-Protokoll",
+      "credentials": "Zugangsdaten",
       "cloud": "Cloud",
+      "infrastructure": "Infrastruktur",
       "instance": "Instanz"
     }
   },
@@ -112,10 +115,6 @@
     "noServers": "Noch keine Server konfiguriert – füge einen über den Deploy-Picker hinzu.",
     "clearDefault": "Standard zurücksetzen (jedes Mal fragen)",
     "targets": {
-      "local": {
-        "label": "Dieser Rechner",
-        "desc": "Lokales Docker / Laufzeitumgebung"
-      },
       "server": {
         "label": "Mein Server",
         "desc": "Ein konfigurierter SSH-Server"
@@ -127,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "dein Server",
-      "cloud": "Openship Cloud",
-      "local": "Dieser Rechner"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Wähle zuerst einen Server aus",
@@ -454,6 +452,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "In-App"
     },
     "form": {
@@ -463,6 +462,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Bot-Token von @BotFather",
+      "telegramChatPlaceholder": "Chat-ID (z. B. -1001234567890)",
+      "telegramHint": "Erstelle mit @BotFather einen Bot und schreibe ihm dann eine Nachricht (oder füge ihn deiner Gruppe hinzu), damit er antworten darf.",
       "adding": "Wird hinzugefügt…",
       "addChannel": "Kanal hinzufügen",
       "labelRequired": "Bezeichnung ist erforderlich"
@@ -471,6 +473,7 @@
       "title": "Worüber benachrichtigt werden",
       "description": "Wähle aus, welche Ereignisse an welchen Kanal gehen. Jede Zelle ist ein Abonnement.",
       "empty": "Füge zuerst einen Kanal hinzu, um Ereignisse zu abonnieren.",
+      "allTab": "Alle",
       "eventHeader": "Ereignis",
       "cellAria": "{category} über {channel}",
       "notifyMe": "Benachrichtigen"
@@ -484,11 +487,11 @@
   },
   "audit": {
     "heading": "Audit-Protokoll",
-    "subtitle": "Jede Änderung in dieser Organisation, wer sie vorgenommen hat und wann.",
-    "searchPlaceholder": "Ereignisse, Akteure, Ressourcen suchen...",
-    "allEvents": "Alle Ereignisse",
-    "noMatch": "Keine Ereignisse entsprechen deiner Suche.",
-    "noEvents": "Noch keine Ereignisse.",
+    "subtitle": "Alles, was in dieser Organisation passiert ist, wer es getan hat und wann.",
+    "searchPlaceholder": "Apps, Server, Domains, Personen suchen…",
+    "noMatch": "Nichts entspricht diesen Filtern.",
+    "noEvents": "Bisher wurde nichts aufgezeichnet.",
+    "clearFilters": "Filter zurücksetzen",
     "showing": "{from}-{to} von {total} werden angezeigt",
     "actor": "Akteur",
     "name": "Name",
@@ -504,7 +507,50 @@
     "after": "Nachher",
     "removed": "Entfernt",
     "system": "System",
-    "actorPrefix": "Akteur {id}"
+    "actorPrefix": "Akteur {id}",
+    "recording": {
+      "title": "Aktivität aufzeichnen",
+      "description": "Jede Änderung in dieser Organisation wird protokolliert. Standardmäßig aktiviert.",
+      "paused": "Die Aufzeichnung ist aus. Es wird nichts Neues hinzugefügt — die Einträge unten wurden erfasst, bevor sie abgeschaltet wurde.",
+      "retention": "Einträge aufbewahren für",
+      "retentionOption": "{days} Tage",
+      "retentionHint": "Ältere Einträge werden automatisch gelöscht.",
+      "adminOnly": "Nur Inhaber und Admins können das ändern.",
+      "saveFailed": "Die Aktivitätseinstellungen konnten nicht gespeichert werden."
+    },
+    "filters": {
+      "anyone": "Alle",
+      "period": "Zeitraum",
+      "allTime": "Gesamter Zeitraum",
+      "today": "Heute",
+      "last7": "Letzte 7 Tage",
+      "last30": "Letzte 30 Tage",
+      "last90": "Letzte 90 Tage"
+    },
+    "tabs": {
+      "all": "Alle"
+    },
+    "sources": {
+      "all": "Alles",
+      "dashboard": "Dashboard",
+      "mcp": "KI-Assistent",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "System",
+      "unknown": "Unbekannt"
+    },
+    "day": {
+      "today": "Heute",
+      "yesterday": "Gestern"
+    },
+    "details": {
+      "who": "Wer",
+      "when": "Wann",
+      "cameFrom": "Herkunft",
+      "technical": "Technische Details",
+      "eventType": "Ereignistyp"
+    }
   },
   "updates": {
     "title": "Updates",
@@ -530,11 +576,43 @@
     "securityPulls": "zieht",
     "security4": "diese Daten nur — kein Drittanbieterdienst und kein von Openship betriebener Server kann Updates oder Signale an deine Installation senden. Hinweise sind an jedes Release gebunden, sodass unveröffentlichte Änderungen dich nie erreichen. Kritische Sicherheitshinweise werden immer einmal angezeigt; alles andere richtet sich nach dem obigen Schalter."
   },
+  "infrastructure": {
+    "title": "Plattformkomponenten",
+    "description": "Wie die Edge- und Mail-Container auf deinen Servern aktuell gehalten werden",
+    "autoUpdateLabel": "Server-Infrastruktur automatisch aktualisieren",
+    "autoUpdateDesc": "Wenn diese Control Plane aktualisiert wird, werden die Edge- und Mail-Container auf deinen verbundenen Servern automatisch mit aktualisiert. Standardmäßig aus — andernfalls werden Updates markiert und lassen sich pro Server mit einem Klick anwenden.",
+    "autoScanLabel": "Server-Infrastruktur automatisch prüfen",
+    "autoScanDesc": "Prüft deine Server im Hintergrund erneut, wenn du die Server-Seite oder die Startseite öffnest, sodass ein gestoppter oder fehlender Edge ohne manuellen Scan auffällt. Standardmäßig aktiv – nur Erkennung, es wird nichts verändert.",
+    "attentionOne": "1 Komponente benötigt Aufmerksamkeit",
+    "attentionMany": "{n} Komponenten benötigen Aufmerksamkeit",
+    "updatesOne": "1 Update verfügbar",
+    "updatesMany": "{n} Updates verfügbar",
+    "allHealthy": "Alle Plattform-Komponenten sind aktuell",
+    "manageLink": "In Server verwalten",
+    "hostControlLabel": "Auf diesem Rechner bereitstellen",
+    "hostControlDesc": "Erlaube OpenShip, Apps auf dem Server bereitzustellen, auf dem es selbst läuft – zusätzlich zu deinen verbundenen Servern. Aus bei Installation mit --no-host-control (nur Steuerungsebene) – aktiviere es, um diesen Rechner als Bereitstellungsziel hinzuzufügen.",
+    "hostControlEnvNote": "Dieser Rechner wurde bei der Installation auf reine Steuerungsebene gesetzt (--no-host-control). Das Aktivieren überschreibt das, sodass OpenShip hier bereitstellen kann.",
+    "hostControlError": "Host-Steuerung konnte nicht geändert werden – nur der Eigentümer des Arbeitsbereichs dieses Rechners darf das."
+  },
   "dataTransfer": {
     "export": {
       "title": "Daten exportieren",
       "description": "Lade die gesamte Instanzdatenbank als Datei herunter.",
       "intro": "Erstellt einen portablen Snapshot von allem — Projekte, Server, Deployments, Einstellungen. Lege eine Passphrase fest, um deine Geheimnisse einzuschließen (Umgebungsvariablen, Tokens, SSH-Anmeldedaten); sie werden damit neu verschlüsselt, sodass die Datei sicher verschoben werden kann. Lass das Feld leer, um ohne Geheimnisse zu exportieren.",
+      "filterTitle": "Optionaler Verlauf",
+      "filterDescription": "Konfiguration, Projekte, Server, Benutzer und Zugangsdaten sind immer enthalten. Deaktiviere nicht benötigte Verläufe, um große Exporte zu verkleinern.",
+      "filterAnalytics": "Analysen und Nutzungsdaten",
+      "filterActivity": "Audit- und Benachrichtigungsverlauf",
+      "filterBackups": "Sicherungs- und Wiederherstellungsverlauf",
+      "filterIncidents": "Verlauf der Systemvorfälle",
+      "filterMigrations": "Docker-Migrationsverlauf",
+      "coreRows": "Immer enthaltene Zeilen",
+      "selectedRows": "Ausgewählte Exportzeilen",
+      "countUnavailable": "nicht verfügbar",
+      "transferSecretNotice": "Um Zugangsdaten wie SSH-Passwörter und -Schlüssel, Umgebungsvariablen, Tokens und Backup-Zugangsdaten korrekt zu übertragen, erzeuge oder gib unten ein Übertragungsgeheimnis ein. Bewahre es separat auf und gib es beim Import erneut ein. Kopiere nicht das BETTER_AUTH_SECRET der Instanz auf das Ziel.",
+      "generateTransferSecret": "Übertragungsgeheimnis erzeugen",
+      "copyTransferSecret": "Übertragungsgeheimnis kopieren",
+      "copiedTransferSecret": "Übertragungsgeheimnis kopiert. Bewahre es sicher für den Import auf.",
       "passphraseLabel": "Passphrase (optional)",
       "passphrasePlaceholder": "Schützt deine Geheimnisse",
       "confirmLabel": "Passphrase bestätigen",
@@ -716,6 +794,36 @@
     "toast": {
       "setTo": "Routing-Strategie auf {mode} gesetzt",
       "failed": "Routing-Strategie konnte nicht aktualisiert werden"
+    }
+  },
+  "credentials": {
+    "title": "Zugangsdaten",
+    "description": "Tokens und Logins, die Openship für Sie nutzt — private Registry-Pulls, DNS-Einträge schreiben. Verschlüsselt gespeichert und nach dem Speichern nie wieder angezeigt.",
+    "noProviders": "Auf dieser Instanz sind keine Anbieter verfügbar.",
+    "noneForProvider": "Noch keine hinzugefügt.",
+    "add": "Hinzufügen",
+    "edit": "Bearbeiten",
+    "save": "Änderungen speichern",
+    "connect": "Zugangsdaten hinzufügen",
+    "delete": "Löschen",
+    "verify": "Beim Anbieter erneut prüfen",
+    "badgeActive": "Funktioniert",
+    "badgeInvalid": "Erfordert Aufmerksamkeit",
+    "fieldName": "Bezeichnung",
+    "namePlaceholder": "z. B. GHCR nur lesen",
+    "secretKeptPlaceholder": "•••••••• (gespeichert — leer lassen zum Beibehalten)",
+    "selectPlaceholder": "Auswählen…",
+    "verifyNote": "Openship prüft die Zugangsdaten beim Anbieter, bevor sie gespeichert werden.",
+    "confirmDelete": "\"{name}\" löschen? Alles, was darauf angewiesen ist, funktioniert nicht mehr.",
+    "toast": {
+      "loadFailed": "Zugangsdaten konnten nicht geladen werden",
+      "created": "Zugangsdaten hinzugefügt",
+      "updated": "Zugangsdaten aktualisiert",
+      "deleted": "Zugangsdaten gelöscht",
+      "saveFailed": "Zugangsdaten konnten nicht gespeichert werden",
+      "deleteFailed": "Zugangsdaten konnten nicht gelöscht werden",
+      "verifyOk": "Der Anbieter hat die Zugangsdaten akzeptiert",
+      "verifyFailed": "Der Anbieter hat die Zugangsdaten abgelehnt"
     }
   }
 }

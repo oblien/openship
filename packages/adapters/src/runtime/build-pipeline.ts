@@ -12,12 +12,18 @@
  */
 
 import type { BuildConfig, BuildStep, LogEntry, LogCallback } from "../types";
-import { safeErrorMessage, packageManagerEnsureCommand } from "@repo/core";
+import { safeErrorMessage, packageManagerEnsureCommand, nodeBinPathExport } from "@repo/core";
 import { sq, injectGitToken, assembleGitClone } from "./git-clone";
 import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 
 // Re-exported for the docker adapters that import these from here.
-export { sq, injectGitToken, toGitHubSshUrl, assembleGitClone } from "./git-clone";
+export {
+  sq,
+  injectGitToken,
+  gitCredentialPair,
+  toGitHubSshUrl,
+  assembleGitClone,
+} from "./git-clone";
 
 // ─── BuildLogger - single source of truth for step + log events ─────────────
 
@@ -139,6 +145,46 @@ export class BuildCancelledError extends Error {
     super(message);
     this.name = "BuildCancelledError";
   }
+}
+
+/**
+ * Kill every process whose CWD is (under) a build's private directory — SIGTERM,
+ * then SIGKILL the survivors.
+ *
+ * Aborting a build only gates our own API BETWEEN commands: the in-flight remote
+ * command (git / npm / `docker build`) keeps running on the target until someone
+ * signals it. Killing it also closes the streamExec channel, so the build unwinds
+ * to a cancelled result instead of finishing work nobody wants.
+ *
+ * The ` (deleted)` patterns are load-bearing. A cancelled build's own `finally`
+ * fires `rm -rf <contextDir>` the moment it unwinds, and Linux then reports the
+ * process's cwd link as "<dir> (deleted)" — which the bare patterns miss, leaving
+ * exactly the orphaned build this sweep exists to kill.
+ *
+ * `includeSuffixed` also matches `<dir>-*`: a compose deploy builds one image per
+ * service under `<buildSessionId>-<serviceId>`, while cancel only knows the parent
+ * session id.
+ *
+ * Best-effort: a no-op for local builds and non-Linux targets (nothing runs under
+ * this dir there) and when the command has already exited.
+ */
+export async function killProcessesUnderDir(
+  executor: { exec(command: string): Promise<string> },
+  dir: string,
+  opts?: { includeSuffixed?: boolean },
+): Promise<void> {
+  const quoted = sq(dir);
+  const roots = opts?.includeSuffixed ? [quoted, `${quoted}-*`] : [quoted];
+  const patterns = roots.flatMap((root) => [
+    root,
+    `${root}/*`,
+    `${root}" (deleted)"`,
+    `${root}/*" (deleted)"`,
+  ]);
+  const scan = (sig: string) =>
+    `for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null); ` +
+    `case "$c" in ${patterns.join("|")}) kill -${sig} "\${p##*/}" 2>/dev/null || true;; esac; done`;
+  await executor.exec(`${scan("TERM")}; sleep 2; ${scan("KILL")}`).catch(() => {});
 }
 
 export interface BuildPipelineResult {
@@ -299,15 +345,12 @@ export async function runBuildPipeline(
 
     // Put the project's locally-installed CLIs on PATH so a build/install command
     // that invokes a dependency binary directly — e.g. a vercel.json
-    // `buildCommand: "vite build"`, or `tsc` / `next` / `astro` — resolves it,
-    // mirroring how Vercel / Netlify / npm-scripts prepend `node_modules/.bin`.
+    // `buildCommand: "vite build"`, or `tsc` / `next` / `astro` — resolves it.
     // Both the build dir and the repo root are added (monorepos hoist deps up).
-    // Scoped to JS package managers: Go/Rust/Python/etc. have no `node_modules`,
-    // so the prefix would only add non-existent dirs to PATH.
-    const JS_PACKAGE_MANAGERS = new Set(["npm", "yarn", "pnpm", "bun"]);
-    const binPathExport = JS_PACKAGE_MANAGERS.has(config.packageManager)
-      ? `export PATH=${sq(`${buildDir}/node_modules/.bin`)}:${sq(`${env.projectDir}/node_modules/.bin`)}:"$PATH"`
-      : "";
+    // Shared with the Dockerfile generator, which needs the same PATH for the
+    // same reason — deriving it twice is how the two surfaces drifted apart and
+    // left the docker build strategy failing at exit 127 (openship#623).
+    const binPathExport = nodeBinPathExport(config.packageManager, [buildDir, env.projectDir]);
 
     const inDir = (cmd: string) => {
       const full = `cd ${sq(buildDir)} && ${cmd}`;

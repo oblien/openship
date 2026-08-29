@@ -7,10 +7,53 @@
  * row shapes. The /emails admin tabs consume these directly.
  */
 
+import type { RelayProviderId } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { DnsRecords, DnsRecord } from "./mail";
+import type { DnsRecords, DnsRecord, MailComponentStatus } from "./mail";
+import type { DnsPlanResult, DnsProvisionResult } from "./dns";
 import type { BackupRun } from "./backups";
+
+// ─── Inbound rules (mail arrives → notification channel) ────────────────────
+
+/** What a rule watches. `all` covers every domain on the server. */
+export type InboundScope = "mailbox" | "domain" | "all";
+
+export interface InboundRule {
+  id: string;
+  name: string;
+  scope: InboundScope;
+  /** Address for `mailbox`, domain for `domain`, null for `all`. */
+  target: string | null;
+  fromPattern: string | null;
+  subjectPattern: string | null;
+  maxSpamScore: number | null;
+  channelIds: string[];
+  enabled: boolean;
+  /** Set when burst control paused the rule; the reason is operator-facing. */
+  pausedReason: string | null;
+  lastMatchedAt: string | null;
+  createdAt: string;
+}
+
+export interface InboundRulePayload {
+  name: string;
+  scope: InboundScope;
+  target?: string | null;
+  fromPattern?: string | null;
+  subjectPattern?: string | null;
+  maxSpamScore?: number | null;
+  channelIds: string[];
+  enabled?: boolean;
+}
+
+export interface InboundTestResult {
+  read: number;
+  matched: number;
+  emitted: number;
+  dropped: number;
+  errors: string[];
+}
 
 // ─── Mail backup (plugs into the general backup system) ──────────────────────
 
@@ -191,16 +234,21 @@ export interface DnsScanResult {
 
 // ─── Outbound relay ──────────────────────────────────────────────────────────
 
-/** Per-additional-domain SES identity records (each SES domain verifies separately). */
+/** Per-domain provider identity records (providers verify each domain separately). */
 export type RelayIdentityMap = Record<string, { mailFromDomain?: string; sesDkim?: { name: string; value: string }[] }>;
 
 /** Masked relay status from the server (password is never returned). */
 export interface OutboundRelayStatus {
   enabled: boolean;
-  provider: "ses" | "custom";
-  /** "all" domains via a global relayhost, or only `domains` (per-sender routing). */
+  /** Provider id from `@repo/core` RELAY_PROVIDERS (`custom` for anything else). */
+  provider: RelayProviderId;
+  /** "all" senders via a global relayhost, or only `domains`/`addresses`. */
   scope?: "all" | "selected";
   domains?: string[];
+  /** Single senders (`contact@example.com`) relayed without their whole domain. */
+  addresses?: string[];
+  /** SPF include override — set when the provider's token isn't in the registry. */
+  spfInclude?: string;
   region?: string;
   host: string;
   port: number;
@@ -214,9 +262,11 @@ export interface OutboundRelayStatus {
 
 /** Enable/update payload. `password` blank on update keeps the stored one. */
 export interface ConfigureRelayPayload {
-  provider: "ses" | "custom";
+  provider: RelayProviderId;
   scope?: "all" | "selected";
   domains?: string[];
+  addresses?: string[];
+  spfInclude?: string;
   region?: string;
   host?: string;
   port: number;
@@ -273,6 +323,18 @@ export const mailAdminApi = {
       api.post<{ ok: boolean }>(
         endpoints.mail.admin.domainDnsAcknowledge(serverId, domain),
       ),
+    /** Dry-run auto-configure: preview what a connected provider would write for
+     *  this mail domain (MX/SPF/DKIM/DMARC), before touching anything. */
+    dnsPlan: (serverId: string, domain: string) =>
+      api.get<{ data: DnsPlanResult }>(
+        endpoints.mail.admin.domainDnsPlan(serverId, domain),
+      ),
+    /** Write this mail domain's records through the connected provider, on
+     *  press. On full success the manual "publish DNS" banner is cleared. */
+    dnsApply: (serverId: string, domain: string) =>
+      api.post<{ data: DnsProvisionResult }>(
+        endpoints.mail.admin.domainDnsApply(serverId, domain),
+      ),
     /** List every additional-domain that still needs DNS published. */
     pendingDns: (serverId: string) =>
       api.get<{ pending: AdditionalDomainDnsState[] }>(
@@ -324,6 +386,22 @@ export const mailAdminApi = {
       ),
     delete: (serverId: string, id: number) =>
       api.delete<{ ok: boolean }>(endpoints.mail.admin.alias(serverId, id)),
+  },
+  inbound: {
+    list: (serverId: string) =>
+      api.get<{ rules: InboundRule[] }>(endpoints.mail.admin.inboundRules(serverId)),
+    create: (serverId: string, payload: InboundRulePayload) =>
+      api.post<{ rule: InboundRule }>(endpoints.mail.admin.inboundRules(serverId), payload),
+    update: (serverId: string, ruleId: string, payload: Partial<InboundRulePayload>) =>
+      api.patch<{ rule: InboundRule }>(
+        endpoints.mail.admin.inboundRule(serverId, ruleId),
+        payload,
+      ),
+    remove: (serverId: string, ruleId: string) =>
+      api.delete<{ ok: boolean }>(endpoints.mail.admin.inboundRule(serverId, ruleId)),
+    /** Dry run: reports what WOULD notify, dispatching and deleting nothing. */
+    test: (serverId: string) =>
+      api.post<InboundTestResult>(endpoints.mail.admin.inboundRulesTest(serverId), {}),
   },
   stats: {
     get: (serverId: string) =>
@@ -417,12 +495,25 @@ export interface ComponentActionResult {
   unit: string;
   action: ComponentAction;
   output: string;
+  /**
+   * The daemon's state a moment after the supervisor accepted the job. Absent when
+   * the state was still transitional or the server couldn't re-probe — "accepted,
+   * not confirmed", which is not the same as a failure.
+   */
+  settled?: {
+    status: MailComponentStatus;
+    subState?: string;
+    activeSince?: string;
+    detail?: string;
+  };
 }
 
 export interface ComponentLogs {
   key: string;
   unit: string;
   lines: string[];
+  /** The read the server performed, in display form. Never re-derived client-side. */
+  source: string;
 }
 
 export interface BulkRestartResult {

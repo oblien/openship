@@ -1,6 +1,12 @@
 import { repos } from "@repo/db";
 import type { BuildLogger } from "@repo/adapters";
-import { resolveDeploymentRuntime, type PortCheckResult } from "../../lib/deployment-runtime";
+import {
+  disposePlatform,
+  resolveDeploymentPlatform,
+  type DeploymentMeta,
+  type PortCheckResult,
+  type ResolvedDeploymentPlatform,
+} from "../../lib/deployment-runtime";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { resolveProjectRouteState } from "../domains/project-route.service";
@@ -49,11 +55,15 @@ async function runPortProbe(
   project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
   deployment: NonNullable<Awaited<ReturnType<typeof repos.deployment.findById>>>,
 ): Promise<PortCheckResult[]> {
-  // resolveDeploymentRuntime + the probes can throw (target server removed from
+  // Resolving the platform + the probes can throw (target server removed from
   // the org, invalid SSH config, cloud deployment missing an org id). This is an
   // ADVISORY check, so degrade to [] (no hint) rather than surfacing an error.
+  let resolved: ResolvedDeploymentPlatform | null = null;
   try {
-    const { runtime } = await resolveDeploymentRuntime(deployment);
+    resolved = await resolveDeploymentPlatform((deployment.meta ?? {}) as DeploymentMeta, {
+      organizationId: deployment.organizationId,
+    });
+    const { runtime } = resolved.platform;
 
     // Compose / multi-service: probe each exposed service inside its OWN live
     // container — the service_deployment rows carry the per-service containerId.
@@ -92,5 +102,7 @@ async function runPortProbe(
     return await auditPorts(runtime, deployment.containerId, ports, silentLogger);
   } catch {
     return [];
+  } finally {
+    disposePlatform(resolved);
   }
 }

@@ -4,14 +4,23 @@ import {
   timestamp,
   boolean,
   integer,
+  bigint,
   jsonb,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { OrchestratorMode, RoutingConfig, ProjectCompositeRoute, ReleaseSource } from "@repo/core";
+import type {
+  OrchestratorMode,
+  RoutingConfig,
+  ProjectCompositeRoute,
+  ReleaseSource,
+  ProjectObjectStorage,
+  OpenshipReadiness,
+} from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
+import { servers } from "./servers";
 
 // ─── Project apps ────────────────────────────────────────────────────────────
 
@@ -109,8 +118,9 @@ export const project = pgTable(
      *   - "upload" → source came from a browser folder-upload; no durable origin
      *                (re-upload to redeploy). Can be switched to "github" later via
      *                the repo-link flow, becoming a normal git project.
-     *   - "release" → a prebuilt DIST (no repo, no build). Redeploys track a
-     *                VERSION, not a commit. Config lives in `releaseSource`.
+     *   - "release" → a prebuilt archive or container image (no clone/build).
+     *                Redeploys track a VERSION, not a commit. Config lives in
+     *                `releaseSource`.
      */
     gitProvider: text("git_provider").default("github"),
     /** Owner/org on the git provider */
@@ -135,9 +145,9 @@ export const project = pgTable(
     cloneTokenSetAt: timestamp("clone_token_set_at"),
 
     /**
-     * Release/dist source config (only when gitProvider === "release"). Either a
-     * GitHub-Releases asset (repo + assetTemplate) or an external HTTPS tarball
-     * (distUrl + sha256). `trackReleases` opts the project into release-webhook
+     * Release source config (only when gitProvider === "release"). The artifact
+     * is either an archive (GitHub asset or checksummed HTTPS tarball) or a
+     * versioned registry image. `trackReleases` is reserved for release-webhook
      * auto-deploy. See ReleaseSource in @repo/core.
      */
     releaseSource: jsonb("release_source").$type<ReleaseSource | null>(),
@@ -157,6 +167,19 @@ export const project = pgTable(
     productionPaths: text("production_paths"),
     /** Root directory within the repo (for monorepos) */
     rootDirectory: text("root_directory"),
+    /**
+     * Where this project's compose file lives, when it is NOT at the auto-detected
+     * root — either the file itself (`deploy/stack.yml`, which is also how a
+     * non-standard filename is deployed) or the directory holding it
+     * (`deploy/docker-compose`). Set by the user; seeded from `openship.json`'s
+     * `composePath` when they haven't set one.
+     *
+     * Read on every scan AND on every redeploy: the push-triggered compose-drift
+     * reconcile re-parses the file from the repo, so without this it would look at
+     * the wrong path and silently stop tracking upstream changes. Null = detect
+     * the root as usual.
+     */
+    composePath: text("compose_path"),
     /** Start command for production runtime */
     startCommand: text("start_command"),
     /** Docker image for build environment (e.g. node:22, oven/bun:latest) */
@@ -201,6 +224,39 @@ export const project = pgTable(
      */
     workspacePrepareCommand: text("workspace_prepare_command"),
 
+    /* ── Persistent storage ─────────────────────────────────────────────── */
+    /**
+     * Paths this app's container keeps across deploys. Accepts the same compose
+     * syntax as `service.volumes` (`name:/container/path`, host bind mounts, a
+     * `:ro` mode) plus the short app form — a bare path relative to the app root
+     * (`storage`), which `@repo/core` volumes.ts expands.
+     *
+     * NULL means "use the stack's declared `persistentPaths`" (so a Laravel app
+     * keeps `storage/` with no configuration); an explicit `[]` means the user
+     * turned persistence off. Compose services keep declaring their own volumes
+     * on `service.volumes` — this is the single-app half of the same idea.
+     */
+    volumes: jsonb("volumes").$type<string[] | null>(),
+    /**
+     * Bound object-storage bucket (S3-compatible) — NON-SECRET metadata only:
+     * provider, endpoint, region, bucket, path-style, the source app when the
+     * bucket came from a MinIO project, and which env keys the binding wrote.
+     * The access key + secret live in the project's encrypted env store, which
+     * is the one place credentials are kept. Null when nothing is bound.
+     */
+    objectStorage: jsonb("object_storage").$type<ProjectObjectStorage | null>(),
+
+    /**
+     * Deploy-time readiness gate (Openship's own, NOT the Docker HEALTHCHECK
+     * directive — that one lives per compose service in `service.advanced`).
+     *
+     * NULL = off, which is the default for every project: an unconfigured deploy
+     * does no post-start waiting at all. Only a project that explicitly opts in
+     * here gets a probe that can delay or veto a deploy. Set from the wizard's
+     * Health section, seeded by `openship.json`'s `readiness`.
+     */
+    readiness: jsonb("readiness").$type<OpenshipReadiness | null>(),
+
     /* ── Resources (VM-native format) ───────────────────────────────────── */
     /** JSON: { cpuCores, memoryMb } */
     resources: jsonb("resources"),
@@ -220,26 +276,65 @@ export const project = pgTable(
       .$type<OrchestratorMode>()
       .notNull()
       .default("standalone"),
-    /** Number of previous successful releases to retain for rollback (null = use instance default) */
+    /**
+     * Deployment-class axes (see @repo/core deployment-class.ts). These
+     * deconflate the legacy `hasServer`/`hasBuild` booleans, which each mixed
+     * two independent concerns (issue #538). All three are EXPLICIT OVERRIDES:
+     * NULL means "derive from the legacy flags + framework + source", so every
+     * pre-existing row keeps classifying exactly as before and no backfill is
+     * needed. Snapshotted onto each deployment's config, like `runtimeMode`.
+     *
+     *  sourceKind   — "git" | "image" | "upload": where code comes from (git
+     *                 needs a clone token; the #538-A gate reads this).
+     *  buildKind    — "dockerfile" | "buildpack" | "static" | "prebuilt".
+     *  workloadType — "web" | "worker" | "static": the third runtime state
+     *                 (#538-B). "worker" = a portless long-running container
+     *                 (no listening port, no route); reachable only by setting
+     *                 this explicitly.
+     */
+    sourceKind: text("source_kind"),
+    buildKind: text("build_kind"),
+    workloadType: text("workload_type"),
+    /**
+     * How many past releases stay restorable. Explicit operator override;
+     * NULL = AUTO — use `rollbackWindowComputed` (sized from the deploy
+     * host's free disk), falling back to
+     * `instance_settings.default_rollback_window`. Resolved in exactly one
+     * place: `resolveRollbackWindow` (modules/deployments/release-retention.ts).
+     */
     rollbackWindow: integer("rollback_window"),
     /**
-     * Default rollback strategy snapshotted onto each new deployment
-     * via `deployment.rollbackStrategy`.
-     *
-     *   - `"git"`      → no archive; rollback checks out the previous
-     *     successful deploy's commit_sha and rebuilds in place. Saves
-     *     disk at the cost of build time on restore. Default for new
-     *     projects since most are GitHub-backed and commits ARE the
-     *     rollback fuel.
-     *   - `"snapshot"` → archive image/workspace, rollback restores it.
-     *     Use when build is expensive and instant rollback matters.
-     *
-     * Stored per-project so a project can opt into either mode without
-     * touching the global default.
+     * The auto-sized window, recomputed once per successful deploy from
+     * `snapshotSizeBytes` + the host's free disk (see computeAutoRollbackWindow
+     * in @repo/core). Persisted so retention prune, the image GC and the deploy
+     * wizard's label all read it with zero I/O. Null = never measured.
      */
-    defaultRollbackStrategy: text("default_rollback_strategy")
-      .notNull()
-      .default("git"),
+    rollbackWindowComputed: integer("rollback_window_computed"),
+    /** Mean on-disk size of ONE retained release for this project, in bytes
+     *  (measured from the project's own built images). Null = never measured. */
+    snapshotSizeBytes: bigint("snapshot_size_bytes", { mode: "number" }),
+    /** When the auto window was last sized — i.e. the last time BOTH the
+     *  snapshot size and the host's free disk were readable. A deploy whose disk
+     *  probe failed still refreshes `snapshotSizeBytes` and leaves this (and
+     *  `rollbackWindowComputed`) alone, so "auto" is never claimed on a figure we
+     *  didn't measure. */
+    capacityMeasuredAt: timestamp("capacity_measured_at"),
+    /**
+     * Retention preference for this project's rollback artifacts:
+     *
+     *   - `"git"`      → don't hold a per-deployment unit; a restore rebuilds
+     *     from the target's commit. Cheapest on disk. Default.
+     *   - `"snapshot"` → keep past artifacts restorable so a rollback skips
+     *     the build entirely.
+     *
+     * NOTE this is a preference about RETENTION, not a frozen decision about
+     * how a given rollback runs: the restore mode is resolved at rollback time
+     * from what's actually still on the host (rollback/restore-plan.ts), so
+     * flipping this affects existing history too. On Docker an instant restore
+     * is available either way — images are retained by the rollback-window keep
+     * set regardless of this setting.
+     */
+    defaultRollbackStrategy: text("default_rollback_strategy").notNull().default("git"),
     /**
      * One-shot "rebuild every service on the next deploy regardless of
      * what changed" flag. Used by the dashboard's force-deploy toggle.
@@ -318,6 +413,36 @@ export const project = pgTable(
      */
     cloudWorkspaceId: text("cloud_workspace_id"),
 
+    /**
+     * Durable owner of the SERVER this project deploys to (self-hosted). The
+     * per-deployment `deployment.meta.serverId` is a volatile snapshot that a
+     * fresh/partial redeploy could fail to re-derive, which then let the deploy
+     * fall back to "local" and null the project's verified custom-domain ports —
+     * the Access-URL-regressed-to-localhost bug. This column is the single
+     * durable binding; `resolveSnapshotTarget` reads it first and re-stamps meta.
+     *
+     * Unlike a `deployTarget` column (which we deliberately do NOT add — see
+     * cloudWorkspaceId above), this doesn't duplicate a source of truth: the
+     * effective target is DERIVED — `cloudWorkspaceId ? "cloud" : serverId ?
+     * "server" : "local"`. That derivation lives in ONE function,
+     * `deriveProjectDeployTarget` in @repo/core, so this rule has a single
+     * implementation to change; read surfaces reach it through
+     * `projectService.resolveProjectDeployTarget`. ON DELETE SET NULL so removing a
+     * server unbinds its projects rather than cascade-deleting them.
+     */
+    serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
+
+    /**
+     * User-chosen internal DNS alias for a single-app native project. Resolves
+     * east-west ALONGSIDE the default `<slug>` alias on the project's
+     * `openship-<slug>` network (both point at the container) — it never
+     * replaces the default and never changes public exposure (edge stays the
+     * sole ingress). Null = no custom alias, default only. Normalized to a
+     * DNS-safe label (`normalizeServiceLabel`) before it reaches Docker.
+     * Compose services carry the equivalent in `service.advanced.alias`.
+     */
+    internalAlias: text("internal_alias"),
+
     /* ── State ──────────────────────────────────────────────────────────── */
     /** Currently active deployment ID */
     activeDeploymentId: text("active_deployment_id"),
@@ -336,12 +461,36 @@ export const project = pgTable(
     webhookSecret: text("webhook_secret"),
     /** Whether pushes to the branch trigger auto-deploy */
     autoDeploy: boolean("auto_deploy").notNull().default(false),
+    /**
+     * Collect per-path request counts at the edge ("Top Paths").
+     *
+     * OPT-IN, and the only analytics dimension that is: measured on the shipped edge
+     * image, the path block is 1.72 us of the log handler's ~3.0 us — 57% — and 1.38 us of
+     * that is string normalization rather than counter writes. It is also the
+     * highest-cardinality dimension (up to 2000 keys per domain per day, against ~200
+     * countries) and the largest column in the daily rollup.
+     *
+     * Everything else is effectively free because the edge is already handling the
+     * request; this one is not, so it is a choice rather than a default.
+     *
+     * Default false applies to EXISTING projects on upgrade too, which is deliberate —
+     * nobody opted into paying for this, so nobody keeps paying for it silently.
+     */
+    collectPaths: boolean("collect_paths").notNull().default(false),
     /** Auto-detected favicon URL from the deployed site */
     favicon: text("favicon"),
     /** Last time favicon detection was attempted for this project */
     faviconCheckedAt: timestamp("favicon_checked_at"),
     /** Soft delete */
     deletedAt: timestamp("deleted_at"),
+    /**
+     * Set when the operator disables the project (containers stopped on purpose),
+     * cleared on enable. Recorded because intent is otherwise unknowable from the
+     * outside: a stopped container looks identical whether a human stopped it or it
+     * crashed, so without this marker the health watch would page about every
+     * deliberately-disabled project forever.
+     */
+    disabledAt: timestamp("disabled_at"),
     /**
      * Set true at the start of the atomic teardown flow so concurrent
      * requests refuse to operate on the row. The teardown either succeeds
@@ -374,30 +523,34 @@ export const project = pgTable(
  * Values are encrypted at rest (application-level encryption).
  * Each var can be scoped to specific environments.
  */
-export const envVar = pgTable("env_var", {
-  id: text("id").primaryKey(), // "env_..."
-  projectId: text("project_id")
-    .notNull()
-    .references(() => project.id, { onDelete: "cascade" }),
-  /** Service ID for service-scoped env vars (null = project-level / all services) */
-  serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
+export const envVar = pgTable(
+  "env_var",
+  {
+    id: text("id").primaryKey(), // "env_..."
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    /** Service ID for service-scoped env vars (null = project-level / all services) */
+    serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
 
-  /** Variable key (e.g. "DATABASE_URL") */
-  key: text("key").notNull(),
-  /** Encrypted value */
-  value: text("value").notNull(),
-  /** Environments where this var is active */
-  environment: text("environment").notNull().default("production"), // production | preview | development
+    /** Variable key (e.g. "DATABASE_URL") */
+    key: text("key").notNull(),
+    /** Encrypted value */
+    value: text("value").notNull(),
+    /** Environments where this var is active */
+    environment: text("environment").notNull().default("production"), // production | preview | development
 
-  /** Preview-only: don't include in production builds */
-  isSecret: boolean("is_secret").notNull().default(false),
+    /** Preview-only: don't include in production builds */
+    isSecret: boolean("is_secret").notNull().default(false),
 
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (t) => [
-  // Env resolution runs on every build — covers project + service +
-  // environment filtering used by buildPipelineEnv.
-  index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
-  // Backup / restore reads all vars for a project.
-  index("idx_env_var_project").on(t.projectId),
-]);
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Env resolution runs on every build — covers project + service +
+    // environment filtering used by buildPipelineEnv.
+    index("idx_env_var_project_env_service").on(t.projectId, t.environment, t.serviceId),
+    // Backup / restore reads all vars for a project.
+    index("idx_env_var_project").on(t.projectId),
+  ],
+);

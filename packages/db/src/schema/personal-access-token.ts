@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
  * Personal Access Token — a revocable, per-user Bearer credential for
@@ -44,6 +44,14 @@ export const personalAccessToken = pgTable(
     oauthClientId: text("oauth_client_id"),
     expiresAt: timestamp("expires_at"),
     lastUsedAt: timestamp("last_used_at"),
+    /**
+     * Authenticated requests this credential has made. Written by the same
+     * best-effort UPDATE as `lastUsedAt`, so it costs nothing extra: one
+     * timestamp answers "is this still in use", the counter answers "how much" —
+     * the difference between an agent that ran one tool and one that ran a
+     * thousand. Approximate by design (the write is fire-and-forget).
+     */
+    useCount: integer("use_count").notNull().default(0),
     revokedAt: timestamp("revoked_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

@@ -31,6 +31,8 @@ export interface WizardAnswers {
   dockerRef?: string;
   dryRun: boolean;
   forceBranch: boolean;
+  /** Re-release an existing tag (delete + re-push). Maps to `--force`. */
+  force?: boolean;
 }
 
 export function buildWizardArgs(a: WizardAnswers): string[] {
@@ -57,5 +59,6 @@ export function buildWizardArgs(a: WizardAnswers): string[] {
 
   if (a.dryRun) out.push("--dry-run");
   if (a.forceBranch) out.push("--force-branch");
+  if (a.force) out.push("--force");
   return out;
 }

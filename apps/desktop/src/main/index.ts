@@ -43,6 +43,12 @@ import {
 } from "./updater";
 import { closeUpdateWindow, openUpdateWindow } from "./update-window";
 import { buildAppMenu } from "./menu";
+import {
+  classifyFrameNavigation,
+  isRendererConfigKey,
+  isSafeExternalUrl,
+  type RendererConfigKey,
+} from "./security";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -217,6 +223,10 @@ let mainWindow: BrowserWindow | null = null;
 /** The update found by the launch check, pending user action in the update window. */
 let pendingUpdate: UpdateInfo | null = null;
 
+/** The download/install currently running, or null. The single-flight lock that
+ *  keeps concurrent triggers from each starting their own download. */
+let updateInFlight: Promise<boolean> | null = null;
+
 function createWindow() {
   const bounds = store.get("windowBounds");
   // Never open larger than the display (a previously-stored oversized bound, or
@@ -264,6 +274,11 @@ function createWindow() {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Still off because the preload does `require("@repo/onboarding")`, which a
+      // sandboxed preload can't resolve — it would silently hit the fallback path
+      // and degrade onboarding's SSH validation to no-ops. Turning this on means
+      // bundling the preload in dev too (dev builds with plain `tsc`; only the
+      // packaged build runs esbuild), so it's tracked separately.
       sandbox: false,
     },
   });
@@ -308,11 +323,38 @@ function createWindow() {
 
   // Open external links in the system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http")) {
+    if (isSafeExternalUrl(url)) {
       shell.openExternal(url);
     }
     return { action: "deny" };
   });
+
+  // Keep the main frame on our own origins. Electron re-attaches the preload
+  // `contextBridge` to whatever the frame navigates to — `window.desktop` is not
+  // origin-scoped — so without this, one script primitive in the dashboard (which
+  // renders repo names, server hostnames and build logs) could point the frame at
+  // an attacker origin and inherit the whole native bridge.
+  //
+  // An off-origin http(s) target is handed to the system browser rather than just
+  // dropped: plenty of dashboard links (docs, github.com/settings/tokens/new) have
+  // no target="_blank", so they arrive here rather than at setWindowOpenHandler,
+  // and silently doing nothing would break them. Same destination as before, in a
+  // browser instead of inside the app frame.
+  //
+  // Resolve the origins per-event, never at registration: startLocalServices()
+  // rewrites them with the dynamically bound ports after this window exists.
+  const containNavigation = (e: Electron.Event, url: string) => {
+    const verdict = classifyFrameNavigation(url, [
+      getLocalDashboardUrl(),
+      getLocalApiUrl(),
+    ]);
+    if (verdict === "allow") return;
+    e.preventDefault();
+    if (verdict === "external") shell.openExternal(url);
+    else console.warn(`[security] blocked main-frame navigation to ${url}`);
+  };
+  mainWindow.webContents.on("will-navigate", containNavigation);
+  mainWindow.webContents.on("will-redirect", containNavigation);
 
   // Detect when onboarding completes via dashboard desktop-login redirect
   mainWindow.webContents.on("did-navigate", (_e, url) => {
@@ -706,12 +748,28 @@ ipcMain.handle("update:open", async () => {
   return true;
 });
 
+/** Single-flight guard over performUpdate. Every trigger funnels here — the
+ *  dashboard's beginUpdate() (update:start), the native modal's "Update now"
+ *  (also update:start), and the boot auto-update. Without coalescing, two
+ *  presses launch two downloadUpdate() calls that write the SAME temp file and
+ *  stream two progress tracks at once (the 33%-and-15% race). A concurrent call
+ *  now attaches to the run already in flight. The lock clears on failure so a
+ *  retry works; on success the app quits + relaunches, so nothing is left to
+ *  unlock. */
+function runUpdate(): Promise<boolean> {
+  if (updateInFlight) return updateInFlight;
+  updateInFlight = performUpdate().finally(() => {
+    updateInFlight = null;
+  });
+  return updateInFlight;
+}
+
 /** Download + install the pending update. The moment the download starts we
  *  hand the UI off to the dashboard's top-of-page update surface: the small
  *  native modal closes and progress streams into the main window instead, so
  *  the bar lives in the header the user already has — not stuck in the modal.
  *  Shared by the user-initiated IPC handler and the auto-update path. */
-async function runUpdate(): Promise<boolean> {
+async function performUpdate(): Promise<boolean> {
   await ensurePendingUpdate();
   if (!pendingUpdate) return false;
   // Close the notify modal — from here on progress belongs to the dashboard.
@@ -824,17 +882,25 @@ ipcMain.handle("window:toggle-devtools", () => {
 
 // ─── IPC: Config store ───────────────────────────────────────────────────────
 
-ipcMain.handle("config:get", (_event, key: keyof AppConfig) => {
+// Update preferences only — see RENDERER_CONFIG_KEYS. The store also holds
+// `system` (SSH host/user/password/passphrase) and `tunnel` tokens, so a generic
+// key passthrough would let any script in the loaded content read local
+// credentials off the bridge. There is deliberately no `getAll`.
+ipcMain.handle("config:get", (_event, key: unknown) => {
+  if (!isRendererConfigKey(key)) {
+    console.warn(`[security] blocked config:get for non-exposed key ${String(key)}`);
+    return undefined;
+  }
   return store.get(key);
 });
 
-ipcMain.handle("config:set", (_event, key: keyof AppConfig, value: unknown) => {
-  store.set(key, value as AppConfig[keyof AppConfig]);
+ipcMain.handle("config:set", (_event, key: unknown, value: unknown) => {
+  if (!isRendererConfigKey(key)) {
+    console.warn(`[security] blocked config:set for non-exposed key ${String(key)}`);
+    return false;
+  }
+  store.set(key, value as AppConfig[RendererConfigKey]);
   return true;
-});
-
-ipcMain.handle("config:getAll", () => {
-  return store.getAll();
 });
 
 // ─── IPC: App metadata ──────────────────────────────────────────────────────
@@ -851,13 +917,10 @@ ipcMain.handle("app:local-urls", () => {
   return { api: getLocalApiUrl(), dashboard: getLocalDashboardUrl() };
 });
 
-// ─── IPC: Navigation ────────────────────────────────────────────────────────
-
-ipcMain.handle("navigate", (_event, url: string) => {
-  if (mainWindow) {
-    mainWindow.loadURL(url);
-  }
-});
+// No renderer-driven navigation channel: `loadURL` from main bypasses the
+// `will-navigate` allowlist in createWindow(), so exposing one would have handed
+// the frame (and with it the native bridge) to any caller-supplied URL. Every
+// in-frame navigation below is main-initiated to an origin we own.
 
 // ─── IPC: Onboarding ────────────────────────────────────────────────────────
 
@@ -1098,15 +1161,24 @@ ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
   }
 });
 
+// http/https only. `shell.openExternal` hands the string to the OS dispatcher,
+// so an unvalidated scheme could launch a local handler or, on Windows, resolve a
+// UNC path and leak an NTLM hash outbound.
 ipcMain.handle("onboarding:open-external", (_event, url: string) => {
+  if (!isSafeExternalUrl(url)) {
+    console.warn(`[security] refused openExternal for ${url}`);
+    return;
+  }
   shell.openExternal(url);
 });
 
 ipcMain.handle("onboarding:browse-file", async () => {
   if (!mainWindow) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    // showHiddenFiles or the dialog can't reach ~/.ssh, where the key it asks
+    // for actually lives.
+    properties: ["openFile", "showHiddenFiles"],
     title: "Select SSH Key",
-    properties: ["openFile"],
     filters: [{ name: "All Files", extensions: ["*"] }],
   });
   return canceled || !filePaths.length ? null : filePaths[0];
@@ -1121,55 +1193,29 @@ ipcMain.handle("system:browse-folder", async () => {
   return canceled || !filePaths.length ? null : filePaths[0];
 });
 
-// ─── IPC: System settings (synced to API) ────────────────────────────────────
-
-ipcMain.handle("system:get-settings", async () => {
-  // Read from API (source of truth), fall back to local ConfigStore
-  const apiUrl = getLocalApiUrl();
-  if (apiUrl) {
-    try {
-      const res = await net.fetch(`${apiUrl}/api/system/setup`, {
-        headers: { "X-Internal-Token": internalToken },
-        signal: AbortSignal.timeout(3000),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as Record<string, unknown>;
-        if (data.configured) return data;
-      }
-    } catch {
-      // API unreachable - fall back to local copy
-    }
-  }
-  return store.get("system") ?? {};
+// Same dialog as onboarding:browse-file, reachable from the dashboard's
+// add-server form. Desktop is the mode where an SSH key really is a file on THIS
+// machine, so a native dialog is the only picker that makes sense — the API reads
+// the path off this same filesystem. `showHiddenFiles` because the key lives in
+// ~/.ssh, which the dialog hides by default.
+ipcMain.handle("system:browse-file", async () => {
+  if (!mainWindow) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: "Select SSH Key",
+    properties: ["openFile", "showHiddenFiles"],
+    filters: [{ name: "All Files", extensions: ["*"] }],
+  });
+  return canceled || !filePaths.length ? null : filePaths[0];
 });
 
-ipcMain.handle(
-  "system:update-settings",
-  async (_event, settings: Partial<SystemSettings>) => {
-    // Update local ConfigStore
-    const current = store.get("system") ?? {};
-    store.set("system", { ...current, ...settings });
-
-    // Also push to API so both stores stay in sync
-    const apiUrl = getLocalApiUrl();
-    if (apiUrl) {
-      try {
-        await net.fetch(`${apiUrl}/api/system/setup`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Internal-Token": internalToken,
-          },
-          body: JSON.stringify(settings),
-          signal: AbortSignal.timeout(5000),
-        });
-      } catch {
-        // Non-blocking - local copy is saved either way
-      }
-    }
-    return true;
-  }
-);
+// ─── IPC: System settings ────────────────────────────────────────────────────
+//
+// SSH credentials are deliberately NOT reachable from the renderer. There is no
+// read channel (the old one returned sshPassword/sshKeyPassphrase straight to the
+// page) and no write channel (which could have repointed the managed server).
+// The dashboard reads server settings from the API under a real session instead;
+// onboarding still supplies its SSH payload through `onboarding:complete`, which
+// pushes it to the API server-side.
 
 // ─── IPC: Reset (for settings → re-onboard) ─────────────────────────────────
 

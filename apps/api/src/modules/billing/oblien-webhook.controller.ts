@@ -255,7 +255,7 @@ async function handleCreditsDepleted(orgId: string): Promise<void> {
   if (!org) return;
 
   await audit.record(
-    { organizationId: orgId, actorUserId: null },
+    { organizationId: orgId, actorUserId: null, source: "webhook" },
     {
       eventType: "billing.credit_exhausted",
       resourceType: "organization",
@@ -269,6 +269,114 @@ async function handleCreditsDepleted(orgId: string): Promise<void> {
   notification.emit({
     organizationId: orgId,
     eventType: "billing.credit_exhausted",
+    resourceType: "organization",
+    resourceId: orgId,
+    payload: {
+      planTierId: org.planTierId,
+      oblienNamespace: org.oblienNamespace ?? null,
+    },
+  });
+}
+
+/**
+ * Oblien stopped the namespace's workspaces. Record it LOCALLY so the billing
+ * surface stops claiming everything is fine.
+ *
+ * Unlike `credits.depleted` this is not purely informational: depletion has a
+ * matching local status already (`credit_exhausted`, set by the hard-cap path),
+ * whereas a suspension could previously happen for a reason our credit events
+ * never mention — traffic/egress overage, a CDN storage cap — and leave
+ * `subscription_status` on `active` indefinitely.
+ *
+ * We reuse `credit_exhausted` rather than minting a `suspended` status. Two
+ * reasons, both deliberate: it is the status the anniversary cron already knows
+ * how to clear, and Oblien's own entitlement vocabulary
+ * (`canceled` / `past_due` / `credit_exhausted` / `active`) has no `suspended`
+ * either — keeping the two aligned is worth more than a more precise word. The
+ * true cause is preserved in the audit payload's `reason`, so a traffic
+ * suspension is still distinguishable in the record even though the customer-facing
+ * status is the same.
+ *
+ * We do NOT call Oblien to stop anything: it already did, and issuing our own
+ * suspend would race its state machine.
+ */
+async function handleNamespaceSuspended(
+  orgId: string,
+  payload: OblienWebhookPayload,
+): Promise<void> {
+  const org = await repos.organization.findById(orgId);
+  if (!org) return;
+
+  const data = (payload.data ?? {}) as Record<string, unknown>;
+  const reason = typeof data.reason === "string" ? data.reason : null;
+
+  const before = org.subscriptionStatus;
+  if (before !== "credit_exhausted") {
+    await repos.organization.setSubscriptionStatus(orgId, "credit_exhausted");
+  }
+
+  await audit.record(
+    { organizationId: orgId, actorUserId: null, source: "webhook" },
+    {
+      eventType: "billing.credit_exhausted",
+      resourceType: "organization",
+      resourceId: orgId,
+      before: { subscriptionStatus: before },
+      after: {
+        subscriptionStatus: "credit_exhausted",
+        oblienNamespace: org.oblienNamespace ?? null,
+        // The distinction the shared status can't carry.
+        reason: reason ?? "namespace_suspended",
+      },
+    },
+  );
+  notification.emit({
+    organizationId: orgId,
+    eventType: "billing.credit_exhausted",
+    resourceType: "organization",
+    resourceId: orgId,
+    payload: {
+      planTierId: org.planTierId,
+      oblienNamespace: org.oblienNamespace ?? null,
+      reason: reason ?? "namespace_suspended",
+    },
+  });
+}
+
+/**
+ * Oblien lifted the suspension — a top-up, a renewal, or an operator action put
+ * usage back under the ceiling.
+ *
+ * Only clears a status WE set for this reason. An org sitting in `past_due` or
+ * `canceled` is in that state because Stripe said so, and a namespace coming back
+ * online says nothing about whether the card cleared; flipping it to `active` here
+ * would hand a non-paying org a green badge.
+ */
+async function handleNamespaceRestored(orgId: string): Promise<void> {
+  const org = await repos.organization.findById(orgId);
+  if (!org) return;
+
+  const before = org.subscriptionStatus;
+  if (before === "credit_exhausted") {
+    await repos.organization.setSubscriptionStatus(orgId, "active");
+  }
+
+  await audit.record(
+    { organizationId: orgId, actorUserId: null, source: "webhook" },
+    {
+      eventType: "billing.credit_restored",
+      resourceType: "organization",
+      resourceId: orgId,
+      before: { subscriptionStatus: before },
+      after: {
+        subscriptionStatus: before === "credit_exhausted" ? "active" : before,
+        oblienNamespace: org.oblienNamespace ?? null,
+      },
+    },
+  );
+  notification.emit({
+    organizationId: orgId,
+    eventType: "billing.credit_restored",
     resourceType: "organization",
     resourceId: orgId,
     payload: {
@@ -403,6 +511,12 @@ export async function oblienWebhook(c: Context) {
           break;
         case "namespace.quota.threshold":
           await notifyQuotaThreshold(orgId, payload.data ?? {});
+          break;
+        case "namespace.suspended":
+          await handleNamespaceSuspended(orgId, payload);
+          break;
+        case "namespace.restored":
+          await handleNamespaceRestored(orgId);
           break;
       }
       await upsertWebhookEventProcessed(tx, eventId, eventType);

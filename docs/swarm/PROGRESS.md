@@ -127,7 +127,7 @@ Tests run:
 
 Evidence:
 
-- Migration `0073_add_swarm_persistence.sql` adds project orchestration,
+- Migration `0117_add_swarm_persistence.sql` adds project orchestration,
   typed runtime refs, stack/revision/registry tables, indexes, ownership FKs,
   and dump redaction.
 - Stack and registry repositories are organization-scoped. Revisions are

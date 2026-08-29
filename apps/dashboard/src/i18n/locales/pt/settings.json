@@ -21,6 +21,7 @@
       "cloud": "Cloud",
       "defaults": "Padrões",
       "settings": "Configurações",
+      "dns": "DNS",
       "notifications": "Notificações",
       "team": "Equipe",
       "members": "Membros",
@@ -47,12 +48,14 @@
     "title": "Configurações",
     "tabs": {
       "general": "Geral",
-      "tokens": "Tokens",
+      "git": "Git",
+      "tokens": "Tokens de API",
       "mcp": "MCP",
       "team": "Equipe",
       "notifications": "Notificações",
-      "audit": "Registro de auditoria",
+      "credentials": "Credenciais",
       "cloud": "Cloud",
+      "infrastructure": "Infraestrutura",
       "instance": "Instância"
     }
   },
@@ -112,10 +115,6 @@
     "noServers": "Nenhum servidor configurado ainda - adicione um pelo seletor de implantação.",
     "clearDefault": "Limpar padrão (perguntar sempre)",
     "targets": {
-      "local": {
-        "label": "Esta Máquina",
-        "desc": "Docker / runtime local"
-      },
       "server": {
         "label": "Meu Servidor",
         "desc": "Um servidor SSH configurado"
@@ -127,8 +126,7 @@
     },
     "labelFor": {
       "yourServer": "seu servidor",
-      "cloud": "Openship Cloud",
-      "local": "Esta Máquina"
+      "cloud": "Openship Cloud"
     },
     "toast": {
       "pickServer": "Escolha um servidor primeiro",
@@ -454,6 +452,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "No aplicativo"
     },
     "form": {
@@ -463,6 +462,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Token do bot obtido no @BotFather",
+      "telegramChatPlaceholder": "ID do chat (ex.: -1001234567890)",
+      "telegramHint": "Crie um bot com o @BotFather e depois envie uma mensagem a ele (ou adicione-o ao seu grupo) para que possa responder.",
       "adding": "Adicionando…",
       "addChannel": "Adicionar canal",
       "labelRequired": "O rótulo é obrigatório"
@@ -471,6 +473,7 @@
       "title": "Sobre o que ser notificado",
       "description": "Escolha quais eventos vão para qual canal. Cada célula é uma assinatura.",
       "empty": "Adicione um canal primeiro para assinar eventos.",
+      "allTab": "Todos",
       "eventHeader": "Evento",
       "cellAria": "{category} via {channel}",
       "notifyMe": "Notificar-me"
@@ -484,11 +487,11 @@
   },
   "audit": {
     "heading": "Registro de auditoria",
-    "subtitle": "Cada alteração nesta organização, quem a fez e quando.",
-    "searchPlaceholder": "Pesquisar eventos, atores, recursos...",
-    "allEvents": "Todos os eventos",
-    "noMatch": "Nenhum evento corresponde à sua pesquisa.",
-    "noEvents": "Nenhum evento ainda.",
+    "subtitle": "Tudo o que aconteceu nesta organização, quem fez e quando.",
+    "searchPlaceholder": "Pesquisar apps, servidores, domínios, pessoas…",
+    "noMatch": "Nada corresponde a estes filtros.",
+    "noEvents": "Nada foi registrado ainda.",
+    "clearFilters": "Limpar filtros",
     "showing": "Mostrando {from}-{to} de {total}",
     "actor": "Ator",
     "name": "Nome",
@@ -504,7 +507,50 @@
     "after": "Depois",
     "removed": "Removido",
     "system": "Sistema",
-    "actorPrefix": "Ator {id}"
+    "actorPrefix": "Ator {id}",
+    "recording": {
+      "title": "Registrar atividade",
+      "description": "Mantém um registro de cada alteração feita nesta organização. Ativado por padrão.",
+      "paused": "O registro está desativado. Nada novo está sendo adicionado — as entradas abaixo são as capturadas antes de ele ser desligado.",
+      "retention": "Manter entradas por",
+      "retentionOption": "{days} dias",
+      "retentionHint": "Entradas mais antigas são excluídas automaticamente.",
+      "adminOnly": "Apenas proprietários e administradores podem alterar isso.",
+      "saveFailed": "Não foi possível salvar as configurações de atividade."
+    },
+    "filters": {
+      "anyone": "Qualquer pessoa",
+      "period": "Período",
+      "allTime": "Todo o período",
+      "today": "Hoje",
+      "last7": "Últimos 7 dias",
+      "last30": "Últimos 30 dias",
+      "last90": "Últimos 90 dias"
+    },
+    "tabs": {
+      "all": "Tudo"
+    },
+    "sources": {
+      "all": "Tudo",
+      "dashboard": "Painel",
+      "mcp": "Assistente de IA",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "Sistema",
+      "unknown": "Desconhecido"
+    },
+    "day": {
+      "today": "Hoje",
+      "yesterday": "Ontem"
+    },
+    "details": {
+      "who": "Quem",
+      "when": "Quando",
+      "cameFrom": "Origem",
+      "technical": "Detalhes técnicos",
+      "eventType": "Tipo de evento"
+    }
   },
   "updates": {
     "title": "Atualizações",
@@ -530,11 +576,43 @@
     "securityPulls": "puxa",
     "security4": "esses dados — nenhum serviço de terceiros e nenhum servidor operado pelo Openship pode enviar atualizações ou sinais para sua instalação. Os comunicados são fixados a cada versão, então alterações não publicadas nunca chegam até você. Comunicados de segurança críticos são sempre exibidos uma vez; todo o resto respeita a opção acima."
   },
+  "infrastructure": {
+    "title": "Componentes da plataforma",
+    "description": "Como os contêineres de edge e e-mail nos seus servidores são mantidos atualizados",
+    "autoUpdateLabel": "Atualizar automaticamente a infraestrutura do servidor",
+    "autoUpdateDesc": "Quando este plano de controle for atualizado, atualiza automaticamente os contêineres de edge e e-mail nos seus servidores conectados. Desativado por padrão — caso contrário, as atualizações são sinalizadas para aplicar com um clique em cada servidor.",
+    "autoScanLabel": "Escanear a infraestrutura do servidor automaticamente",
+    "autoScanDesc": "Verifica seus servidores silenciosamente quando você abre a página de Servidores ou a página inicial, para que um edge parado ou ausente seja sinalizado sem um escaneamento manual. Ativado por padrão — apenas detecta, nunca altera nada.",
+    "attentionOne": "1 componente precisa de atenção",
+    "attentionMany": "{n} componentes precisam de atenção",
+    "updatesOne": "1 atualização disponível",
+    "updatesMany": "{n} atualizações disponíveis",
+    "allHealthy": "Todos os componentes da plataforma estão atualizados",
+    "manageLink": "Gerenciar em Servidores",
+    "hostControlLabel": "Implantar nesta máquina",
+    "hostControlDesc": "Permite que o OpenShip implante aplicativos no servidor em que ele é executado, junto com os seus servidores conectados. Desativado se instalado com --no-host-control (apenas plano de controle) — ative para adicionar esta máquina como destino de implantação.",
+    "hostControlEnvNote": "Esta máquina foi definida como apenas plano de controle na instalação (--no-host-control). Ativar isto substitui essa opção para que o OpenShip possa implantar aqui.",
+    "hostControlError": "Não foi possível alterar o controle do host — apenas o proprietário do espaço de trabalho desta máquina pode."
+  },
   "dataTransfer": {
     "export": {
       "title": "Exportar dados",
       "description": "Baixe todo o banco de dados da instância como um arquivo.",
       "intro": "Cria um snapshot portátil de tudo — projetos, servidores, implantações, configurações. Defina uma frase-senha para incluir seus segredos (variáveis de ambiente, tokens, credenciais SSH); eles são recriptografados sob ela, então o arquivo é seguro para mover. Deixe em branco para exportar sem segredos.",
+      "filterTitle": "Histórico opcional",
+      "filterDescription": "Configuração, projetos, servidores, usuários e credenciais são sempre incluídos. Desmarque históricos desnecessários para reduzir exportações grandes.",
+      "filterAnalytics": "Análises e amostras de uso",
+      "filterActivity": "Histórico de auditoria e notificações",
+      "filterBackups": "Histórico de backups e restaurações",
+      "filterIncidents": "Histórico de incidentes de integridade",
+      "filterMigrations": "Histórico de migrações do Docker",
+      "coreRows": "Linhas sempre incluídas",
+      "selectedRows": "Linhas selecionadas para exportação",
+      "countUnavailable": "indisponível",
+      "transferSecretNotice": "Para mover corretamente credenciais como senhas e chaves SSH, variáveis de ambiente, tokens e credenciais de backup, gere ou informe um segredo de transferência abaixo. Guarde-o separadamente e informe o mesmo segredo na importação. Não copie o BETTER_AUTH_SECRET da instância para o destino.",
+      "generateTransferSecret": "Gerar segredo de transferência",
+      "copyTransferSecret": "Copiar segredo de transferência",
+      "copiedTransferSecret": "Segredo de transferência copiado. Guarde-o com segurança para a importação.",
       "passphraseLabel": "Frase-senha (opcional)",
       "passphrasePlaceholder": "Protege seus segredos",
       "confirmLabel": "Confirmar frase-senha",
@@ -716,6 +794,36 @@
     "toast": {
       "setTo": "Estratégia de roteamento definida como {mode}",
       "failed": "Falha ao atualizar a estratégia de roteamento"
+    }
+  },
+  "credentials": {
+    "title": "Credenciais",
+    "description": "Tokens e logins que o Openship usa em seu nome — transferência de imagens privadas e escrita de registos DNS. Guardados cifrados e nunca mostrados de novo.",
+    "noProviders": "Não há fornecedores de credenciais disponíveis nesta instância.",
+    "noneForProvider": "Ainda não adicionou nenhuma.",
+    "add": "Adicionar",
+    "edit": "Editar",
+    "save": "Guardar alterações",
+    "connect": "Adicionar credencial",
+    "delete": "Eliminar",
+    "verify": "Verificar novamente com o fornecedor",
+    "badgeActive": "A funcionar",
+    "badgeInvalid": "Requer atenção",
+    "fieldName": "Etiqueta",
+    "namePlaceholder": "ex.: GHCR só leitura",
+    "secretKeptPlaceholder": "•••••••• (guardado — deixe vazio para manter)",
+    "selectPlaceholder": "Escolher…",
+    "verifyNote": "O Openship verifica a credencial com o fornecedor antes de a guardar.",
+    "confirmDelete": "Eliminar \"{name}\"? Tudo o que depende dela deixa de funcionar.",
+    "toast": {
+      "loadFailed": "Não foi possível carregar as credenciais",
+      "created": "Credencial adicionada",
+      "updated": "Credencial atualizada",
+      "deleted": "Credencial eliminada",
+      "saveFailed": "Não foi possível guardar a credencial",
+      "deleteFailed": "Não foi possível eliminar a credencial",
+      "verifyOk": "O fornecedor aceitou a credencial",
+      "verifyFailed": "O fornecedor rejeitou a credencial"
     }
   }
 }

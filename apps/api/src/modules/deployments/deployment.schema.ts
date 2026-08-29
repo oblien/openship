@@ -3,6 +3,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
+import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "../projects/project.schema";
 
 // ─── Route params ────────────────────────────────────────────────────────────
 
@@ -14,9 +15,7 @@ export const DeploymentIdParam = Type.Object({
 
 export const ListDeploymentsQuery = Type.Object({
   projectId: Type.Optional(Type.String()),
-  environment: Type.Optional(Type.Union([
-    Type.Literal("production"), Type.Literal("preview"),
-  ])),
+  environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")])),
   page: Type.Optional(Type.Number({ minimum: 1, default: 1 })),
   perPage: Type.Optional(Type.Number({ minimum: 1, maximum: 100, default: 20 })),
 });
@@ -27,9 +26,7 @@ export const TriggerDeployBody = Type.Object({
   projectId: Type.String({ minLength: 1 }),
   branch: Type.Optional(Type.String({ default: "main" })),
   commitSha: Type.Optional(Type.String()),
-  environment: Type.Optional(Type.Union([
-    Type.Literal("production"), Type.Literal("preview"),
-  ])),
+  environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")])),
 });
 
 /** Public endpoint (domain/route) as sent by the deploy wizard. */
@@ -39,6 +36,14 @@ const PublicEndpointInput = Type.Object({
   domain: Type.Optional(Type.String()),
   customDomain: Type.Optional(Type.String()),
   domainType: Type.Optional(Type.Union([Type.Literal("free"), Type.Literal("custom")])),
+  /** Canonical redirect to another hostname of the same project instead of serving
+   *  (validated by lib/domain-redirect.ts). Declared here because the deploy sends
+   *  the endpoint list back and an omitted redirect CLEARS the stored one — a
+   *  field the schema doesn't name is a field a deploy can silently drop. */
+  redirectTo: Type.Optional(Type.String()),
+  redirectStatus: Type.Optional(
+    Type.Union([Type.Literal(301), Type.Literal(302), Type.Literal(307), Type.Literal(308)]),
+  ),
 });
 
 /**
@@ -53,12 +58,32 @@ const BuildServiceInput = Type.Object({
   image: Type.Optional(Type.String()),
   build: Type.Optional(Type.String()),
   dockerfile: Type.Optional(Type.String()),
+  buildArgs: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]))),
   ports: Type.Array(Type.String()),
   dependsOn: Type.Array(Type.String()),
   environment: Type.Record(Type.String(), Type.String()),
   volumes: Type.Array(Type.String()),
   command: Type.Optional(Type.String()),
+  // #332: the string above is a lossy join for a list command, so it was not
+  // possible to express `["sh","-c","a && b"]` on this route at all — and these
+  // entries are persisted (requestBuildAccess → syncFromCompose), so a client
+  // replaying its service list re-split the stored argv. The repo now keeps an
+  // unchanged string from disturbing argv; this lets a client be explicit.
+  commandArgv: Type.Optional(Type.Array(Type.String())),
   restart: Type.Optional(Type.String()),
+  // Raw-parser provenance. Other advanced keys are accepted at runtime so the
+  // deploy snapshot can continue carrying healthchecks/resources/etc.; this one
+  // is named in the static schema because build execution reads it directly.
+  advanced: Type.Optional(
+    Type.Object(
+      {
+        buildArgTemplateKeys: Type.Optional(
+          Type.Array(Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" })),
+        ),
+      },
+      { additionalProperties: true },
+    ),
+  ),
   exposed: Type.Optional(Type.Boolean()),
   exposedPort: Type.Optional(Type.String()),
   domain: Type.Optional(Type.String()),
@@ -70,7 +95,7 @@ const BuildServiceInput = Type.Object({
   // Source-built (monorepo) sub-app fields — optional, mirror MonorepoSubAppFields.
   kind: Type.Optional(Type.Union([Type.Literal("compose"), Type.Literal("monorepo")])),
   enabled: Type.Optional(Type.Boolean()),
-  rootDirectory: Type.Optional(Type.String()),
+  rootDirectory: Type.Optional(Type.String({ pattern: NO_TRAVERSAL_PATTERN })),
   installCommand: Type.Optional(Type.String()),
   buildCommand: Type.Optional(Type.String()),
   startCommand: Type.Optional(Type.String()),
@@ -91,10 +116,14 @@ const BuildServiceInput = Type.Object({
 export const BuildAccessBody = Type.Object({
   projectId: Type.String({ description: "Target project id (from projects/ensure). Required." }),
   uploadSessionId: Type.Optional(
-    Type.String({ description: "Folder-upload session id — deploys the uploaded source instead of git." }),
+    Type.String({
+      description: "Folder-upload session id — deploys the uploaded source instead of git.",
+    }),
   ),
   branch: Type.Optional(Type.String({ description: "Git branch (git-source projects)." })),
-  environment: Type.Optional(Type.String({ description: "production | preview (default production)." })),
+  environment: Type.Optional(
+    Type.String({ description: "production | preview (default production)." }),
+  ),
   envVars: Type.Optional(
     Type.Record(Type.String(), Type.String(), { description: "Runtime env vars { KEY: value }." }),
   ),
@@ -104,19 +133,27 @@ export const BuildAccessBody = Type.Object({
     }),
   ),
   buildStrategy: Type.Optional(
-    Type.Union([Type.Literal("server"), Type.Literal("local")], { description: "Where the build runs." }),
+    Type.Union([Type.Literal("server"), Type.Literal("local")], {
+      description: "Where the build runs.",
+    }),
   ),
   deployTarget: Type.Optional(
     Type.Union([Type.Literal("local"), Type.Literal("server"), Type.Literal("cloud")], {
       description: "Usually omit for folder uploads — the upload session mode decides.",
     }),
   ),
-  serverId: Type.Optional(Type.String({ description: "Target server id when deployTarget='server'." })),
+  serverId: Type.Optional(
+    Type.String({ description: "Target server id when deployTarget='server'." }),
+  ),
   runtimeMode: Type.Optional(Type.Union([Type.Literal("bare"), Type.Literal("docker")])),
   orchestratorMode: Type.Optional(Type.Union([Type.Literal("standalone"), Type.Literal("swarm")])),
-  serviceDeploymentMode: Type.Optional(Type.Union([Type.Literal("services"), Type.Literal("single")])),
+  serviceDeploymentMode: Type.Optional(
+    Type.Union([Type.Literal("services"), Type.Literal("single")]),
+  ),
   services: Type.Optional(
-    Type.Array(BuildServiceInput, { description: "Compose / multi-service definitions (services mode)." }),
+    Type.Array(BuildServiceInput, {
+      description: "Compose / multi-service definitions (services mode).",
+    }),
   ),
   serviceIds: Type.Optional(
     Type.Array(Type.String(), {
@@ -135,15 +172,7 @@ export const BuildAccessBody = Type.Object({
         "ONE-TIME migration image handover: serviceName → an already-present image ref. Those services deploy from that image with no build/pull; used only on a migration's first deploy.",
     }),
   ),
-  cloudResourceTier: Type.Optional(
-    Type.Union([
-      Type.Literal("micro"),
-      Type.Literal("low"),
-      Type.Literal("medium"),
-      Type.Literal("high"),
-      Type.Literal("custom"),
-    ]),
-  ),
+  cloudResourceTier: Type.Optional(CloudResourceTierEnum()),
   cloudResourceCustom: Type.Optional(
     Type.Object(
       { cpuCores: Type.Number(), memoryMb: Type.Number(), diskMb: Type.Number() },
@@ -165,7 +194,22 @@ export const PrepareDeployBody = Type.Object({
   owner: Type.Optional(Type.String({ description: "GitHub repo owner (github source)." })),
   repo: Type.Optional(Type.String({ description: "GitHub repo name (github source)." })),
   branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),
-  path: Type.Optional(Type.String({ description: "Local filesystem path (local source; self-hosted only)." })),
+  path: Type.Optional(
+    Type.String({ description: "Local filesystem path (local source; self-hosted only)." }),
+  ),
+  composePath: Type.Optional(
+    Type.String({
+      maxLength: 300,
+      description:
+        'Where the compose file lives when it is not at the auto-detected root — the file itself ("deploy/stack.yml", which also covers non-standard filenames) or the directory holding it ("deploy/docker-compose"). Detects the project as a compose/services deploy; errors when no compose file is there.',
+    }),
+  ),
+  env: Type.Optional(
+    Type.Record(Type.String(), Type.String(), {
+      description:
+        "Env already configured for this deploy. Compose interpolation resolves against these on top of the repo .env, so a file declaring ${VAR:?...} scans once the user has supplied VAR.",
+    }),
+  ),
 });
 
 // POST /:id/build/respond — answer a build gate/prompt.

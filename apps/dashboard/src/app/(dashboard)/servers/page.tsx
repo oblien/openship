@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BlurIp } from "@/components/BlurIp";
@@ -21,12 +21,20 @@ import {
   ExternalLink,
   Layers,
   MapPin,
+  HardDrive,
 } from "lucide-react";
 import { systemApi } from "@/lib/api";
+import type { ContainerApplyActive, ContainerApplyIntent } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
+import DropdownMenu from "@/components/ui/DropdownMenu";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useToast } from "@/components/toast";
+import { useInfraFleet, type InfraSegment } from "@/hooks/useInfraFleet";
+import { useContainerApplyModal } from "@/hooks/useSystemPrepareModal";
+import { InfraFleetCard } from "@/components/infra/InfraFleetCard";
+import { InfraFilters } from "@/components/infra/InfraFilters";
 import { ComingSoonPanel } from "./_components/coming-soon-panel";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
@@ -55,6 +63,12 @@ interface ServerEntry {
 /** Per-state colors: an ambient presence dot on the avatar + a word on the right. */
 /** `dot` is a RING, not a filled pip — same treatment as the scanned-component
  *  circles (components-tab), which reads calmer than a solid dot at 6px. */
+/** A server's component bucket, or null while the fleet view hasn't loaded. */
+type InfraBucket = Exclude<InfraSegment, "all">;
+/** Sort weight per bucket — attention first, then updates, then healthy, then unknown. */
+const BUCKET_RANK: Record<InfraBucket, number> = { attention: 0, updates: 1, healthy: 2 };
+const bucketRank = (b: InfraBucket | null) => (b ? BUCKET_RANK[b] : 3);
+
 const STATUS: Record<Reachability, { dot: string; text: string }> = {
   online: { dot: "border-success-solid", text: "text-success" },
   offline: { dot: "border-danger-solid", text: "text-danger" },
@@ -64,14 +78,23 @@ const STATUS: Record<Reachability, { dot: string; text: string }> = {
 export default function ServersPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const { deployMode } = usePlatform();
+  const { selfHosted, deployMode, isServerHost, hostControlEnabled } = usePlatform();
+  const { toast } = useToast();
   const isDesktop = deployMode === "desktop";
+  /** Managed edge/mail containers exist only where we operate the boxes. */
+  const infraEnabled = selfHosted || isDesktop;
 
   const [activeTab, setActiveTab] = useState<ServersTab>("servers");
   const [servers, setServers] = useState<ServerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   /** Live reachability per server (see probeReachability). */
   const [reach, setReach] = useState<Record<string, Reachability>>({});
+  /**
+   * Why a row is offline, when the API knows. "Offline" on THIS box usually means
+   * the container→host SSH channel is firewalled, not that the machine is down
+   * (#490) — so the word alone sends people looking in the wrong place.
+   */
+  const [reachHint, setReachHint] = useState<Record<string, string>>({});
   /** Active (running) port-forward count per server — desktop-only. */
   const [forwardCounts, setForwardCounts] = useState<Record<string, number>>({});
 
@@ -103,6 +126,26 @@ export default function ServersPage() {
     fetchServers();
   }, [fetchServers]);
 
+  // "Add → This machine" (#527): register the box OpenShip runs on as a deploy
+  // target. Server-host only (desktop derives "here" without a row; the SaaS
+  // control plane is never its own target), and only while host control is on —
+  // with it off the create call 400s. Once the isLocal row exists it's already in
+  // the list, so the affordance collapses back to the plain "Add server" button.
+  const hasLocalServer = servers.some((s) => s.isLocal);
+  const canAddThisMachine = isServerHost && hostControlEnabled && !hasLocalServer;
+
+  const addThisMachine = useCallback(async () => {
+    try {
+      // Loopback triggers the backend's isLocal-adoption branch (box-org gated),
+      // never a plain SSH row — see createServer in servers.controller.ts.
+      const created = await systemApi.createServerEntry({ sshHost: "127.0.0.1", sshPort: 22 });
+      await fetchServers();
+      if (created?.id) router.push(`/servers/${created.id}`);
+    } catch {
+      toast("error", t.servers.list.addThisMachineError);
+    }
+  }, [fetchServers, router, toast, t]);
+
   // Real reachability: seed every server to "checking", then probe each in
   // parallel and flip its dot as the probe resolves (mirrors the tunnel fan-out).
   useEffect(() => {
@@ -113,7 +156,9 @@ export default function ServersPage() {
       void systemApi
         .probeReachability(s.id)
         .then((r) => {
-          if (!cancelled) setReach((prev) => ({ ...prev, [s.id]: r.reachable ? "online" : "offline" }));
+          if (cancelled) return;
+          setReach((prev) => ({ ...prev, [s.id]: r.reachable ? "online" : "offline" }));
+          if (!r.reachable && r.hint) setReachHint((prev) => ({ ...prev, [s.id]: r.hint! }));
         })
         .catch(() => {
           if (!cancelled) setReach((prev) => ({ ...prev, [s.id]: "offline" }));
@@ -158,6 +203,93 @@ export default function ServersPage() {
   const regionCount = new Set(servers.map((s) => s.country).filter(Boolean)).size;
   const onlinePct = servers.length ? Math.round((counts.online / servers.length) * 100) : 0;
 
+  // ── Managed containers (edge / mail) across the fleet ──────────────────────
+  const infra = useInfraFleet(infraEnabled);
+  const ic = t.servers.list.infra;
+  const openContainerApply = useContainerApplyModal();
+  const [segment, setSegment] = useState<InfraSegment>("all");
+  const [search, setSearch] = useState("");
+
+  /**
+   * Watch one in-flight component's log. GET re-attach by session id — never a POST,
+   * so opening the log can't start a second swap for a run already going. This is the
+   * only way into a bulk run's output from the page that launched it; the per-server
+   * page has the same modal on its own rows.
+   */
+  const openApplyLog = useCallback(
+    (target: ContainerApplyActive) => {
+      if (!target.sessionId) return;
+      openContainerApply(target.serverId, target.component, {
+        label:
+          target.component === "mail"
+            ? t.servers.containers.componentMail
+            : t.servers.containers.componentEdge,
+        intent: target.intent ?? "update",
+        attachSessionId: target.sessionId,
+        onDone: () => void infra.reload(),
+      });
+    },
+    // `infra.reload` is stable; the whole `infra` object is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [openContainerApply, t.servers.containers, infra.reload],
+  );
+
+  /**
+   * Start a bulk apply. Deliberately quiet on success: the card now shows the run
+   * itself — what's queued, what's pulling, and how it ended — so a toast claiming
+   * "Updating N components" the instant the request returns added a second, greener,
+   * less accurate account of the same thing. A toast is left only for what the card
+   * cannot show: nothing to do, targets it must hand back, and a failed start.
+   */
+  const runBulk = useCallback(
+    async (intent: ContainerApplyIntent) => {
+      try {
+        const res = await infra.applyAll(intent);
+        if (!res) return; // infra disabled (cloud) — the buttons aren't rendered there
+        if (res.started.length === 0 && res.skipped.length === 0) {
+          toast("info", ic.nothingToDo);
+          return;
+        }
+        const skipped = res.skipped.length;
+        if (skipped > 0) {
+          toast(
+            "info",
+            interpolate(skipped === 1 ? ic.skippedOne : ic.skippedMany, { n: String(skipped) }),
+          );
+        }
+      } catch {
+        toast("error", ic.applyFailed);
+      }
+    },
+    [infra, toast, ic],
+  );
+
+  /**
+   * Which bucket a server falls in. Read straight off the summary — the rule lives
+   * in `useInfraFleet` so the roll-up counts, these segments and the row chip cannot
+   * drift apart. `null` until the fleet view loads: an unread server matches no
+   * segment rather than being called healthy.
+   */
+  const bucketOf = useCallback(
+    (id: string): InfraBucket | null => infra.summaries.get(id)?.bucket ?? null,
+    [infra.summaries],
+  );
+
+  // Attention first, then updates — the row you have to act on is never below the
+  // fold. Order inside a bucket is preserved (Array.prototype.sort is stable).
+  const visibleServers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const rows = servers.filter((s) => {
+      if (q && !s.name.toLowerCase().includes(q) && !s.host.toLowerCase().includes(q)) return false;
+      return segment === "all" || bucketOf(s.id) === segment;
+    });
+    if (!infraEnabled) return rows;
+    return [...rows].sort((a, b) => bucketRank(bucketOf(a.id)) - bucketRank(bucketOf(b.id)));
+  }, [servers, search, segment, bucketOf, infraEnabled]);
+
+  /** The filter strip only earns its space once the list is long enough to hunt in. */
+  const showFilters = infraEnabled && servers.length > 6;
+
   const tabs: TabDef<ServersTab>[] = [
     { key: "servers", label: t.servers.tabsNav.servers, icon: Server },
     { key: "cluster", label: t.servers.tabsNav.cluster, icon: Boxes },
@@ -176,15 +308,41 @@ export default function ServersPage() {
           </h1>
           <p className="text-sm text-muted-foreground/70 mt-1">{t.servers.list.subtitle}</p>
         </div>
-        {activeTab === "servers" && (
-          <button
-            onClick={() => router.push("/servers/new")}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
-          >
-            <Plus className="size-4" />
-            {t.servers.list.addServer}
-          </button>
-        )}
+        {activeTab === "servers" &&
+          (canAddThisMachine ? (
+            <DropdownMenu
+              align="right"
+              triggerClassName="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
+              trigger={
+                <>
+                  <Plus className="size-4" />
+                  {t.servers.list.addServer}
+                </>
+              }
+              actions={[
+                {
+                  id: "remote",
+                  label: t.servers.list.addRemoteServer,
+                  icon: <Server className="size-4" />,
+                  onClick: () => router.push("/servers/new"),
+                },
+                {
+                  id: "this-machine",
+                  label: t.servers.list.addThisMachine,
+                  icon: <HardDrive className="size-4" />,
+                  onClick: () => void addThisMachine(),
+                },
+              ]}
+            />
+          ) : (
+            <button
+              onClick={() => router.push("/servers/new")}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
+            >
+              <Plus className="size-4" />
+              {t.servers.list.addServer}
+            </button>
+          ))}
       </div>
 
       <Tabs tabs={tabs} value={activeTab} onChange={setActiveTab} className="mb-6" />
@@ -214,13 +372,28 @@ export default function ServersPage() {
           </div>
         ) : servers.length === 0 ? (
           // Empty state stands alone (no Quick Info card) and centers.
-          <EmptyState onAdd={() => router.push("/servers/new")} />
+          <EmptyState
+            onAdd={() => router.push("/servers/new")}
+            onAddThisMachine={canAddThisMachine ? () => void addThisMachine() : undefined}
+          />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
             {/* ── LEFT COLUMN ── */}
             <div className="min-w-0">
+              {showFilters && (
+                <InfraFilters
+                  segment={segment}
+                  onSegmentChange={setSegment}
+                  search={search}
+                  onSearchChange={setSearch}
+                  counts={infra.counts}
+                />
+              )}
               <div className="overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/50">
-                {servers.map((server) => {
+                {visibleServers.length === 0 && (
+                  <p className="px-5 py-8 text-center text-sm text-muted-foreground">{ic.noMatches}</p>
+                )}
+                {visibleServers.map((server) => {
                   const state = reach[server.id] ?? "checking";
                   const sm = STATUS[state];
                   const authLabel =
@@ -231,6 +404,18 @@ export default function ServersPage() {
                         : null;
                   const AuthIcon = server.auth === "password" ? Lock : KeyRound;
                   const fwd = forwardCounts[server.id] ?? 0;
+                  // Component chip: one per row at most, and only when there IS
+                  // something to say (same rule as the project count below —
+                  // a healthy box gets no chip). Down/absent outranks an update.
+                  const comp = infra.summaries.get(server.id);
+                  const downParts = comp
+                    ? [
+                        ...[...comp.down, ...comp.missing].map((k) =>
+                          k === "edge" ? ic.chipEdgeDown : ic.chipMailDown,
+                        ),
+                        ...(comp.edgeAbsent ? [ic.chipEdgeMissing] : []),
+                      ]
+                    : [];
                   return (
                     <Link
                       key={server.id}
@@ -286,6 +471,24 @@ export default function ServersPage() {
                             )}
                           </span>
                         )}
+                        {downParts.length > 0 ? (
+                          <span className="inline-flex shrink-0 items-center rounded-md bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger">
+                            {downParts.join(" · ")}
+                          </span>
+                        ) : comp && comp.applying > 0 ? (
+                          // Mid-apply outranks the drift it is fixing: the row would
+                          // otherwise keep offering "1 update" for a swap already running.
+                          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-info-bg px-2 py-0.5 text-xs font-medium text-info">
+                            <Loader2 className="size-3 animate-spin" />
+                            {ic.chipUpdating}
+                          </span>
+                        ) : comp && comp.updates > 0 ? (
+                          <span className="inline-flex shrink-0 items-center rounded-md bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
+                            {interpolate(comp.updates === 1 ? ic.chipUpdateOne : ic.chipUpdates, {
+                              n: String(comp.updates),
+                            })}
+                          </span>
+                        ) : null}
                         {authLabel && (
                           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
                             <AuthIcon className="size-3.5" />
@@ -303,7 +506,7 @@ export default function ServersPage() {
                       {/* Status state + arrow */}
                       <div className="flex shrink-0 items-center gap-4">
                         <span
-                          title={t.servers.list[state]}
+                          title={reachHint[server.id] ?? t.servers.list[state]}
                           className={`inline-flex items-center gap-1.5 text-xs font-medium ${sm.text}`}
                         >
                           <span className={`size-2.5 rounded-full border-2 ${sm.dot}`} />
@@ -373,6 +576,22 @@ export default function ServersPage() {
                 </div>
               </div>
             </div>
+
+            {/* Managed containers across the fleet. Self-hosted/desktop only, and
+                only once at least one component is tracked — a box we've never
+                scanned has nothing to report. */}
+            {infraEnabled && !infra.empty && (
+              <InfraFleetCard
+                counts={infra.counts}
+                scanning={infra.scanning}
+                applying={infra.applying}
+                active={infra.active}
+                outcome={infra.outcome}
+                onScan={() => void infra.scan()}
+                onApply={(intent) => void runBulk(intent)}
+                onViewLogs={openApplyLog}
+              />
+            )}
           </div>
         </div>
       ))}
@@ -382,7 +601,15 @@ export default function ServersPage() {
 
 /** No-servers illustration + primer. Unchanged from the original list view,
  *  now scoped to the Servers tab. */
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState({
+  onAdd,
+  onAddThisMachine,
+}: {
+  onAdd: () => void;
+  /** Present only on a server-host with host control on — offers registering the
+   *  box OpenShip runs on right from the empty state (#527). */
+  onAddThisMachine?: () => void;
+}) {
   const { t } = useI18n();
   return (
     <div className="py-16 text-center">
@@ -433,8 +660,17 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
           <Plus className="size-4" />
           {t.servers.list.addFirstServer}
         </button>
+        {onAddThisMachine && (
+          <button
+            onClick={onAddThisMachine}
+            className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <HardDrive className="size-4" />
+            {t.servers.list.addThisMachine}
+          </button>
+        )}
         <a
-          href="https://openship.io/docs/self-hosting"
+          href="https://openship.io/docs/guides/custom-servers"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"

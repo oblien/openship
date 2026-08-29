@@ -52,5 +52,4 @@ export const siteConfig = {
     'Email Service',
     'Web Application',
   ],
-  //   metadataBase: new URL(import.meta.env.VITE_PUBLIC_APP_URL!),
 };

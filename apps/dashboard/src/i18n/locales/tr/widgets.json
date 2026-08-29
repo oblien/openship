@@ -27,7 +27,11 @@
       "projectNotFound": {
         "title": "Proje Bulunamadı",
         "subtitle": "Aradığınız proje mevcut değil veya silinmiş.",
-        "hints": ["Proje silinmiş", "Bu projeye erişim izniniz yok", "Proje URL'si yanlış"],
+        "hints": [
+          "Proje silinmiş",
+          "Bu projeye erişim izniniz yok",
+          "Proje URL'si yanlış"
+        ],
         "backToDashboard": "Kontrol Paneline Dön",
         "createNewProject": "Yeni Proje Oluştur"
       },
@@ -68,7 +72,7 @@
       "serverLabel": "Sunucu",
       "loadingServers": "Sunucular yükleniyor…",
       "noServerConnected": "Bağlı sunucu yok",
-      "connectServerFirst": "Önce bir sunucu bağlayın, ardından kuruluma devam etmek için geri dönün.",
+      "connectServerFirst": "Bu sayfadan ayrılmadan hemen bir sunucu ekleyin.",
       "addServer": "Sunucu Ekle",
       "selectServer": "Bir sunucu seçin…",
       "addNewServer": "Yeni sunucu ekle…"
@@ -134,7 +138,7 @@
       "copyUrl": "URL'yi kopyala",
       "rotateToken": "Jetonu yenile",
       "preHook": "Ön işlem (anlık görüntüden önce çalışır)",
-      "preHookHint": "Veritabanları için yaygın: pg_dump > /tmp/dump.sql. Başarısızlık çalıştırmayı iptal eder.",
+      "preHookHint": "Anlık görüntüden önce çalışır; buradaki bir betik yedeklenecek şeyi ÜRETEBİLİR — bir dökümü klasöre yazın (pg_dump > /tmp/dump/db.sql) ve o klasörü Dosyalar ile arşivleyin. Hata çalışmayı iptal eder, böylece eski bir klasör güncelmiş gibi asla yakalanmaz.",
       "postHook": "Son işlem (yüklemeden sonra çalışır)",
       "postHookHint": "Temizlik; hatalar günlüğe yazılır ancak çalıştırmayı başarısız kılmaz.",
       "policyEnabled": "İlke etkin",
@@ -155,6 +159,9 @@
       "customCommandLabel": "Döküm komutu",
       "customCommandHint": "Konteyner içinde çalışır; stdout çıktısı yedek çıktısı olarak kullanılır.",
       "customCommandRequired": "Özel yöntem için bir döküm komutu girin.",
+      "restoreCommandLabel": "Geri yükleme komutu",
+      "restoreCommandHint": "Çıktıyı stdin üzerinden alır — döküm komutunun tersi. Zorunlu: bu olmadan yedek alınır ama asla geri yüklenemez.",
+      "restoreCommandRequired": "Bir geri yükleme komutu girin — bu olmadan alınan özel yedek asla geri yüklenemez.",
       "advanced": "Gelişmiş seçenekler",
       "summaryTitle": "Özet",
       "summaryMethod": "Yöntem",
@@ -164,7 +171,33 @@
       "summaryCustom": "Özel komut",
       "retentionUnlimited": "Sınırsız",
       "keepN": "{n} adet sakla",
-      "olderThanN": "{n}g limiti"
+      "olderThanN": "{n}g limiti",
+      "methodDatabase": "Veritabanı",
+      "methodDatabaseDesc": "Mantıksal döküm",
+      "methodPath": "Dosyalar",
+      "methodPathDesc": "Belirttiğiniz klasörler",
+      "engineLabel": "Motor",
+      "engineHint": "İmaj tanınmasa bile bu döküm aracını zorlar — örneğin özel derlenmiş bir Postgres.",
+      "databaseHint": "{method} komutunu servisin içinde çalıştırır. Mantıksal döküm: farklı bir sürüme geri yüklenebilir ve başladığı ana göre tutarlıdır.",
+      "pathHint": "Çalışan servisin içinden, tam olarak belirttiğiniz klasörleri arşivler. Çökmeye dayanıklı tutarlılık — belirli bir ana ait kopya için birim anlık görüntüsü veya veritabanı dökümü kullanın.",
+      "pathsLabel": "Arşivlenecek klasörler",
+      "pathsHint": "Servisin içinde göründüğü gibi, satır başına bir mutlak yol. Her biri kendi geri yüklenebilir yapıtı olur.",
+      "pathsRequired": "Arşivlemek için en az bir mutlak klasör yolu girin.",
+      "clearPathLabel": "Geri yüklerken değiştir",
+      "clearPathHint": "Var olanın üzerine yazmak yerine, çıkarmadan önce klasörü boşaltır. Sistem ve üst düzey dizinler için reddedilir.",
+      "sourceIdsLabel": "Dahil edilecek birimler",
+      "sourceIdsHint": "Satır başına bir birim adı veya bağlama yolu. Bu servisin tüm birimleri ve bağlamaları için boş bırakın.",
+      "quiesceLabel": "Kopyalarken duraklat",
+      "quiesceHint": "Tutarlı bir kopya için servisi dondurur. Kopyalama bitene kadar erişilemez olur.",
+      "excludeLabel": "Hariç tut",
+      "excludeHint": "Satır başına bir tar deseni, örneğin ./cache veya *.sock.",
+      "compressionLabel": "Sıkıştırma",
+      "compressionZstd": "zstd — en küçük",
+      "compressionGzip": "gzip — çevrimdışı, daha büyük",
+      "compressionNone": "yok — sıkıştırma yapılmaz",
+      "compressionHint": "En iyi sıkıştırmayı zstd yapar; gzip her imajın içinde gelir, bu yüzden indirme gerektirmez ve internetsiz bir makinede de çalışır.",
+      "compressionAuto": "Otomatik — serviste ne varsa kullan",
+      "summaryPath": "Dosyalar ve klasörler"
     }
   },
   "cloud": {
@@ -228,7 +261,8 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "Yapılandırılmadı",
-      "selectDomain": "Alan adı seçin"
+      "selectDomain": "Alan adı seçin",
+      "allDomains": "Tüm alan adları"
     },
     "publicEndpoints": {
       "mappedToPort": "Port {port} ile eşleştirildi.",
@@ -259,7 +293,39 @@
       "permanent": "kalıcı",
       "cleanUrls": "Temiz URL'ler",
       "cleanUrlsHint": "(.html uzantısını kaldır)",
-      "trailingSlash": "Sondaki eğik çizgi"
+      "trailingSlash": "Sondaki eğik çizgi",
+      "proxyLimits": "İstek sınırları",
+      "proxyLimitsHint": "Yükleme boyutu ve zaman aşımları. Boş bırakılırsa proxy varsayılanları geçerli olur — 1 MB yükleme ve 60s zaman aşımı.",
+      "maxBodySize": "Maksimum yükleme boyutu",
+      "maxBodySizeHint": "örn. 25m. Daha büyük istekler 413 ile reddedilir. Varsayılan 1m.",
+      "readTimeout": "Okuma zaman aşımı",
+      "readTimeoutHint": "örn. 300s. Uygulamanın yanıtı ne kadar beklenecek. Varsayılan 60s.",
+      "sendTimeout": "Gönderme zaman aşımı",
+      "sendTimeoutHint": "örn. 300s. Uygulamaya gönderirken ne kadar beklenecek. Varsayılan 60s.",
+      "bodyTimeout": "Yükleme zaman aşımı",
+      "bodyTimeoutHint": "örn. 300s. Büyük yüklemeler için bunu da artırın, yoksa transfer ortasında kesilir. Varsayılan 60s.",
+      "proxyBuffering": "Yanıtları arabelleğe al",
+      "proxyBufferingHint": "(akış / SSE için kapatın)",
+      "gzip": "Yanıtları sıkıştır",
+      "gzipHint": "(metin, JSON, JS, CSS için gzip)",
+      "proxyGroups": {
+        "body": "İstek gövdesi",
+        "timeouts": "Upstream zaman aşımları",
+        "buffering": "Yanıt arabelleği",
+        "compression": "Sıkıştırma",
+        "headers": "Başlıklar ve protokol",
+        "upstreamTls": "Uygulamaya TLS"
+      },
+      "proxyInherit": "nginx varsayılanı",
+      "proxyNotSet": "ayarlanmadı",
+      "proxyLiveLabel": "Sunulan:",
+      "proxyLiveVaries": "sunucuya göre değişiyor",
+      "proxyDrift": "kayıtlı değerden farklı",
+      "proxyDriftSummary": "Edge şu ayarlar için farklı değerler sunuyor:",
+      "proxyAdoptLive": "Canlı değerleri benimse",
+      "proxyLiveUnavailable": "Bu projenin sunucusundaki canlı yapılandırma okunamadı.",
+      "proxyLiveSource": "Okunduğu yer:",
+      "proxyRefreshLive": "Canlı yapılandırmayı yeniden oku"
     },
     "settingsCard": {
       "recordLabels": {
@@ -277,6 +343,11 @@
       "checkingDns": "DNS kontrol ediliyor…",
       "addRecordHint": "Bir {primary} ve {txt} kaydı ekleyin",
       "viewRecords": "Kayıtları görüntüle",
+      "redirectTo": "Yönlendirme",
+      "redirectServeApp": "Uygulamayı burada sun",
+      "redirectToHost": "→ {hostname}",
+      "redirectPermanent": "301 kalıcı",
+      "redirectTemporary": "302 geçici",
       "exposedPort": "Dışa açık port",
       "staticPath": "Statik yol",
       "staticPathHint": "Derleme çıktısı içindeki bu alt dizinden dosyaları sunun. Kök çıktı için {path} kullanın.",

@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { FrameworkId } from "@/components/import-project/types";
+import type { EnvironmentVariable, FrameworkId } from "@/components/import-project/types";
 import { deployApi, projectsApi, servicesApi, serviceKind } from "@/lib/api";
 import { folderApi } from "@/lib/api/folder";
 import type { PrepareProjectResponse, PrepareComposeService, PrepareMonorepoApp } from "@/lib/api/deploy";
 import type { Service } from "@/lib/api/services";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
+import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
-import { STACKS, getBuildImage, type StackDefinition, type StackId } from "@repo/core";
+import { STACKS, getBuildImage, toWorkloadType, type DeployTarget, type StackDefinition, type StackId, type WorkloadType } from "@repo/core";
 import type { BuildStrategy, DeploymentConfig, DeploymentModeSnapshot, MonorepoAppConfig, MonorepoWorkspaceConfig, PublicEndpoint } from "./types";
 import {
   DEFAULT_CONFIG,
@@ -23,6 +24,7 @@ import {
   syncActiveModeSnapshot,
 } from "./mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
+import { useDefaultDomainType } from "@/context/CloudContext";
 
 type PersistedProject = Record<string, any> | null;
 
@@ -51,7 +53,10 @@ interface PreparedProjectContext {
   monorepoWorkspace?: MonorepoWorkspaceConfig;
 }
 
-function buildMonorepoApps(response: PrepareProjectResponse): MonorepoAppConfig[] | undefined {
+function buildMonorepoApps(
+  response: PrepareProjectResponse,
+  domainType: "free" | "custom",
+): MonorepoAppConfig[] | undefined {
   if (!response.monorepoApps?.length) return undefined;
 
   return response.monorepoApps.map((app): MonorepoAppConfig => {
@@ -78,7 +83,10 @@ function buildMonorepoApps(response: PrepareProjectResponse): MonorepoAppConfig[
       hasServer,
       hasBuild,
       envVars: [],
-      publicEndpoints: ensurePublicEndpoints(undefined, hasServer ? { port: portString } : { targetPath: "/" }),
+      publicEndpoints: ensurePublicEndpoints(
+        undefined,
+        hasServer ? { port: portString, domainType } : { targetPath: "/", domainType },
+      ),
     };
   });
 }
@@ -112,6 +120,45 @@ function envMapToRows(env?: Record<string, string>): DeploymentConfig["envVars"]
   }));
 }
 
+/**
+ * The compose pin to scan with: the caller's value, else whatever the saved
+ * project already has. The latter is what makes re-entering the wizard on a
+ * subpath-compose project detect it the same way it did the first time, instead
+ * of falling back to a single-app read of the repo root.
+ *
+ * Returns a `{ composePath }` fragment to spread into the prepare body — empty
+ * when there is nothing to pin, and for `""` (an explicit clear), so a blank
+ * value never reaches the API as a pin.
+ */
+function scanComposePath(
+  contextComposePath: string | undefined,
+  project: PersistedProject,
+): { composePath?: string } {
+  const declared =
+    contextComposePath ??
+    (typeof project?.composePath === "string" ? project.composePath : undefined);
+  const trimmed = declared?.trim();
+  return trimmed ? { composePath: trimmed } : {};
+}
+
+/**
+ * The env the scan should interpolate the compose file against (#383). A compose
+ * file declaring `${VAR:?...}` is unparseable until VAR has a value, so a re-scan
+ * has to carry what the user already entered — otherwise the wizard reports the
+ * file as broken even though the deploy itself would resolve the same variable.
+ *
+ * Returns an `{ env }` fragment to spread into the prepare body, empty when
+ * nothing is set so a blank map never reaches the API.
+ */
+function scanEnv(envVars: EnvironmentVariable[]): { env?: Record<string, string> } {
+  const env: Record<string, string> = {};
+  for (const { key, value } of envVars) {
+    const name = key.trim();
+    if (name) env[name] = value;
+  }
+  return Object.keys(env).length > 0 ? { env } : {};
+}
+
 function hasSavedProjectPort(project: PersistedProject) {
   if (!project) return false;
 
@@ -129,6 +176,10 @@ function hasSavedProjectPort(project: PersistedProject) {
     : false;
 }
 
+// Reading a SAVED project's endpoints into the wizard. Every routing field has to
+// survive the trip: the deploy sends this list back, and an omitted redirect CLEARS
+// the stored one — so dropping it here would make a redeploy quietly turn a
+// redirecting domain back into one that serves the app.
 function mapStoredPublicEndpoints(project: PersistedProject) {
   return project?.publicEndpoints?.map((endpoint: {
     port?: number;
@@ -136,12 +187,16 @@ function mapStoredPublicEndpoints(project: PersistedProject) {
     domain?: string;
     customDomain?: string;
     domainType?: "free" | "custom";
+    redirectTo?: string;
+    redirectStatus?: number;
   }) => createPublicEndpoint({
     port: endpoint.port ? String(endpoint.port) : "",
     targetPath: endpoint.targetPath || "",
     domain: endpoint.domain || "",
     customDomain: endpoint.customDomain || "",
     domainType: endpoint.domainType || "free",
+    redirectTo: endpoint.redirectTo || undefined,
+    redirectStatus: endpoint.redirectStatus || undefined,
   }));
 }
 
@@ -158,21 +213,31 @@ function buildSingleAppEndpoints(
   primaryDomain: string,
   hasServer: boolean,
   port: string,
+  domainType: "free" | "custom",
 ): PublicEndpoint[] {
   return ensurePublicEndpoints(
     mapStoredPublicEndpoints(project),
     hasServer
-      ? { port, domain: primaryDomain, domainType: "free" }
-      : { targetPath: "/", domain: primaryDomain, domainType: "free" },
+      ? { port, domain: primaryDomain, domainType }
+      : { targetPath: "/", domain: primaryDomain, domainType },
   );
 }
 
 function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfig["options"] {
-  // Declared productionMode wins: "static" is serverless; "host"/"standalone"
-  // always run a server. Absent → derive from the detected start command.
-  const hasServer = response.productionMode
-    ? response.productionMode !== "static"
-    : !!response.startCommand;
+  // An explicit declared workload (openship.json `workload`, #538) wins over
+  // everything and is the ONLY way to reach a worker. Otherwise fall back to the
+  // legacy collapse: productionMode "static" is serverless, "host"/"standalone"
+  // run a server, and an absent mode derives from the detected start command.
+  const declaredWorkload = toWorkloadType(response.workloadType);
+  const hasServer = declaredWorkload
+    ? declaredWorkload === "web"
+    : response.productionMode
+      ? response.productionMode !== "static"
+      : !!response.startCommand;
+  // A worker keeps its explicit type; web/static are equally described by
+  // hasServer, so derive (null) rather than pin a redundant value.
+  const workloadType: WorkloadType | undefined =
+    declaredWorkload && declaredWorkload !== "web" ? declaredWorkload : undefined;
   const hasBuild = !!response.buildCommand;
 
   return {
@@ -181,10 +246,12 @@ function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfi
     outputDirectory: response.outputDirectory ?? "",
     productionPaths: response.productionPaths.join(", "),
     startCommand: response.startCommand ?? "",
+    // A worker runs a process but binds no port — no productionPort.
     productionPort: hasServer ? String(response.port ?? "") : "",
     rootDirectory: response.rootDirectory || "./",
     hasServer,
     hasBuild,
+    workloadType,
   };
 }
 
@@ -193,12 +260,19 @@ function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfi
  * tier fields. A named tier maps straight through; explicit cpu/mem/disk becomes
  * the "custom" tier (missing values fall back to low-tier defaults). Returns an
  * empty object when nothing is declared, so the config keeps its default tier.
+ *
+ * `unlimited` is deliberately NOT forwarded: it's a self-hosted-only selection
+ * (the machine is the cap) and has no cloud spec, so passing it through would
+ * reach the provisioner as a tier with no cpu/memory behind it. A repo that
+ * declares it simply keeps the cloud default here.
  */
 function resolveCloudResources(
   resources: PrepareProjectResponse["resources"],
 ): Partial<Pick<DeploymentConfig, "cloudResourceTier" | "cloudResourceCustom">> {
   if (!resources) return {};
-  if (resources.tier) return { cloudResourceTier: resources.tier };
+  if (resources.tier && resources.tier !== "unlimited") {
+    return { cloudResourceTier: resources.tier };
+  }
   if (resources.cpuCores != null || resources.memoryMb != null || resources.diskMb != null) {
     return {
       cloudResourceTier: "custom",
@@ -323,6 +397,7 @@ function buildSavedProjectResponse(
 
 function resolvePreparedProjectContext(
   response: PrepareProjectResponse,
+  domainType: "free" | "custom",
 ): PreparedProjectContext {
   const projectType = response.projectType || "app";
   // Multi-app projects (compose services AND monorepos) default to separate
@@ -341,7 +416,7 @@ function resolvePreparedProjectContext(
   const composeDefaults = projectType === "services"
     ? buildComposeDefaults(response, detectedStack)
     : undefined;
-  const monorepoApps = projectType === "monorepo" ? buildMonorepoApps(response) : undefined;
+  const monorepoApps = projectType === "monorepo" ? buildMonorepoApps(response, domainType) : undefined;
   const monorepoWorkspace = projectType === "monorepo" ? buildMonorepoWorkspace(response) : undefined;
 
   return {
@@ -363,6 +438,7 @@ function resolvePreparedRoutingState(
   project: PersistedProject,
   repoName: string,
   context: Pick<PreparedProjectContext, "projectType" | "preparedOptions" | "monorepoApps">,
+  domainType: "free" | "custom",
 ): PreparedRoutingState {
   const effectiveHasServer = context.projectType === "services"
     ? context.preparedOptions.hasServer
@@ -394,7 +470,7 @@ function resolvePreparedRoutingState(
         port: app.port || "",
         targetPath: app.hasServer ? "" : "/",
         domain: label,
-        domainType: "free",
+        domainType,
       });
     });
     return {
@@ -428,7 +504,13 @@ function resolvePreparedRoutingState(
     effectiveHasServer,
     primaryPort,
     hasStoredPort,
-    publicEndpoints: buildSingleAppEndpoints(project, primaryDomain, effectiveHasServer, primaryPort),
+    publicEndpoints: buildSingleAppEndpoints(
+      project,
+      primaryDomain,
+      effectiveHasServer,
+      primaryPort,
+      domainType,
+    ),
   };
 }
 
@@ -494,6 +576,9 @@ function resolvePreparedSingleModeDefaults(
 export function useDeploymentConfig() {
   const [config, setConfig] = useState<DeploymentConfig>(DEFAULT_CONFIG);
   const userBuildPref = useRef<BuildMode>("auto");
+  // Free subdomains need Cloud, so a Cloud-less self-hosted instance seeds new
+  // endpoints as custom instead of offering a `.opsh.io` name preflight rejects.
+  const newEndpointDomainType = useDefaultDomainType();
 
   const normalizeConfig = useCallback((next: DeploymentConfig): DeploymentConfig => {
     return syncActiveModeSnapshot(syncPublicEndpointState(next));
@@ -536,6 +621,40 @@ export function useDeploymentConfig() {
       if (res?.buildMode) userBuildPref.current = res.buildMode;
     }).catch(() => { /* non-critical - fall back to stack default */ });
   }, []);
+
+  /**
+   * Name the target machine from its ID, whenever nothing else has.
+   *
+   * `serverId` is the truth and the name is derived from it — but the derivation lived in three
+   * places that each only cover their own entry path: the target step publishes it after picking,
+   * a saved project carries `project.serverName`, and the build-status payload resolves it for a
+   * loaded deploy. A deploy that reaches the progress screen by any OTHER route — redeploy, a
+   * migration's deploy, a wizard step whose server list hadn't resolved before the deploy
+   * started — arrived with an id and no name, and the panel showed the bare word "Server". Which
+   * is exactly the fact an operator most wants on a screen that is about to change a machine.
+   *
+   * Here rather than a fourth call site: this is the one place that sees every config, whatever
+   * produced it. It only ever FILLS a gap — never overwrites a name someone already resolved —
+   * so it cannot fight the other three.
+   */
+  useEffect(() => {
+    if (config.deployTarget !== "server" || !config.serverId || config.serverName) return;
+    let live = true;
+    void systemApi
+      .listServers()
+      .then((list) => {
+        if (!live) return;
+        const match = list.find((srv) => srv.id === config.serverId);
+        const name = match?.name || match?.sshHost;
+        // A server we can't find is not evidence of "no name" — leave the fallback wording
+        // rather than writing an empty string that would look resolved.
+        if (name) setConfig((prev) => (prev.serverName ? prev : { ...prev, serverName: name }));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [config.deployTarget, config.serverId, config.serverName]);
 
   const updateConfig = useCallback((updates: Partial<DeploymentConfig>) => {
     setConfig((prev) => {
@@ -600,8 +719,14 @@ export function useDeploymentConfig() {
         localPath,
         uploadSessionId,
       } = args;
-      const preparedContext = resolvePreparedProjectContext(response);
-      const routingState = resolvePreparedRoutingState(response, project, repoName, preparedContext);
+      const preparedContext = resolvePreparedProjectContext(response, newEndpointDomainType);
+      const routingState = resolvePreparedRoutingState(
+        response,
+        project,
+        repoName,
+        preparedContext,
+        newEndpointDomainType,
+      );
       const runtimeConfig = resolvePreparedRuntimeConfig(
         response,
         project,
@@ -617,13 +742,34 @@ export function useDeploymentConfig() {
         localPath,
         uploadSessionId,
         projectName: project?.name || repoName,
+        // The scan echoes back the compose path it actually used (request value or
+        // the one openship.json declared), so the field shows what's in effect and
+        // the value survives into the project row on save.
+        composePath: response.composePath ?? (project?.composePath as string | undefined),
         projectType: preparedContext.projectType,
         serviceDeploymentMode: preparedContext.serviceDeploymentMode,
         composeDefaults: preparedContext.composeDefaults,
         singleAppCandidate: preparedContext.singleAppCandidate,
         monorepoApps: preparedContext.monorepoApps,
         monorepoWorkspace: preparedContext.monorepoWorkspace,
-        routingConfig: response.routing ?? undefined,
+        // Same hydration rule as readiness/framework below: an EXISTING project keeps its
+        // SAVED rules, so re-opening "Edit build config" and saving cannot silently replace
+        // an operator's redirects/headers with whatever the repo's vercel.json happens to
+        // say. A brand-new deploy honours the fresh scan, which is the seeding case.
+        routingConfig: projectId
+          ? (project?.routingConfig ?? response.routing ?? undefined)
+          : (response.routing ?? undefined),
+        // Readiness gate. Same hydration rule as framework/runtimeMode: an
+        // EXISTING project keeps its SAVED value so a config-save can't silently
+        // clear a gate the operator turned on; a brand-new deploy honours what
+        // openship.json declared. Neither present ⇒ undefined ⇒ off.
+        readiness: projectId
+          ? (project?.readiness ?? undefined)
+          : (response.readiness ?? undefined),
+        // Deliberately NOT projectId-gated like readiness/framework: this is what
+        // the scan just observed in the repo, not a value the operator owns, so a
+        // config edit on an existing project must show the file's CURRENT state.
+        configDiagnostics: response.configDiagnostics ?? undefined,
         modeSnapshots: undefined,
         // For an EXISTING project (projectId set — config edit or redeploy)
         // prefer the SAVED framework so a fresh re-detection can't silently
@@ -688,7 +834,12 @@ export function useDeploymentConfig() {
       owner: string,
       repo: string,
       force?: string,
-      context?: { branch?: string; projectId?: string },
+      context?: {
+        branch?: string;
+        projectId?: string;
+        composePath?: string;
+        env?: Record<string, string>;
+      },
     ): Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }> => {
       try {
         let project: PersistedProject = null;
@@ -716,6 +867,8 @@ export function useDeploymentConfig() {
           repo: sourceRepo,
           branch: requestedBranch,
           force,
+          ...scanComposePath(context?.composePath, project),
+          ...(context?.env ? { env: context.env } : {}),
         });
 
         if (response?.error) {
@@ -765,7 +918,7 @@ export function useDeploymentConfig() {
   const initializeFromLocal = useCallback(
     async (
       path: string,
-      context?: { projectId?: string },
+      context?: { projectId?: string; composePath?: string; env?: Record<string, string> },
     ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
       try {
         let project: PersistedProject = null;
@@ -775,7 +928,12 @@ export function useDeploymentConfig() {
           project = projectResponse?.data?.project ?? projectResponse?.project ?? null;
         }
 
-        const response = await deployApi.prepare({ source: "local", path });
+        const response = await deployApi.prepare({
+          source: "local",
+          path,
+          ...scanComposePath(context?.composePath, project),
+          ...(context?.env ? { env: context.env } : {}),
+        });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -804,6 +962,55 @@ export function useDeploymentConfig() {
       }
     },
     [buildPreparedConfig],
+  );
+
+  // ── Re-scan pinned to an explicit compose path ─────────────────────────────
+  // The one config field that cannot be applied locally: projectType, the service
+  // list, and each service's env all come from the compose file, so pointing at a
+  // different file means re-reading the source. Routes back through the same
+  // initialize* path the wizard entered by, so the resulting config is identical
+  // to a fresh scan of that path — no partially-updated middle state.
+  const rescanWithComposePath = useCallback(
+    async (composePath: string): Promise<{ success: boolean; error?: string; errorType?: string }> => {
+      // "" clears the pin: the initialize* paths drop a blank value, so the scan
+      // falls back to ordinary root detection.
+      const trimmed = composePath.trim();
+      // Carry the env the user has already entered so a compose file with
+      // required variables re-scans instead of erroring as unparseable (#383).
+      const env = scanEnv(config.envVars);
+
+      if (config.localPath) {
+        return initializeFromLocal(config.localPath, {
+          projectId: config.projectId,
+          composePath: trimmed,
+          ...env,
+        });
+      }
+      if (!config.owner || !config.repo) {
+        return {
+          success: false,
+          error: "This project has no git or local source to re-scan",
+          errorType: "api_error",
+        };
+      }
+      const result = await initializeFromRepo(config.owner, config.repo, undefined, {
+        branch: config.branch,
+        projectId: config.projectId,
+        composePath: trimmed,
+        ...env,
+      });
+      return { success: result.success, error: result.error, errorType: result.errorType };
+    },
+    [
+      config.localPath,
+      config.owner,
+      config.repo,
+      config.branch,
+      config.projectId,
+      config.envVars,
+      initializeFromLocal,
+      initializeFromRepo,
+    ],
   );
 
   // ── Folder upload: seed from the uploaded source's scan ─────────────────────
@@ -887,6 +1094,9 @@ export function useDeploymentConfig() {
             productionPaths: scan.productionPaths,
             port: scan.port,
             services: scan.services,
+            // The upload scan reads the tarball's openship.json too, so a refused
+            // field has to reach the wizard from here as well (#641).
+            configDiagnostics: scan.configDiagnostics,
           } as unknown as PrepareProjectResponse;
         }
 
@@ -926,7 +1136,14 @@ export function useDeploymentConfig() {
     async (
       projectId: string,
       context?: { branch?: string },
-    ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
+    ): Promise<{
+      success: boolean;
+      error?: string;
+      errorType?: string;
+      /** The target this project already had, or `null` if it has none yet. The page
+       *  gates its target seeders on this: pinned when saved, seeded when not. */
+      savedTarget?: DeployTarget | null;
+    }> => {
       try {
         const res = await projectsApi.getInfo(projectId);
         const project: PersistedProject = res?.data?.project ?? res?.project ?? null;
@@ -953,6 +1170,22 @@ export function useDeploymentConfig() {
         const branch =
           typeof project.gitBranch === "string" ? project.gitBranch : (context?.branch ?? "");
 
+        // Re-validated rather than trusted: an older API build omits the field entirely,
+        // and anything but the three members means "no saved target", which is the same
+        // answer the server sends for a project bound to nothing that never deployed.
+        const rawTarget = project.deployTarget;
+        const savedTarget: DeployTarget | null =
+          rawTarget === "cloud" || rawTarget === "server" || rawTarget === "local"
+            ? rawTarget
+            : null;
+        const savedServerId = typeof project.serverId === "string" ? project.serverId : null;
+        // Carried with the id, not derived later: the progress screens name the target
+        // machine, and with only an id they fell back to the bare word "Server" — which
+        // is the one fact a wizard-driven deploy can't recover from anything else on the
+        // page. The API already resolves it (`server.name || server.sshHost`).
+        const savedServerName =
+          typeof project.serverName === "string" && project.serverName ? project.serverName : null;
+
         setConfig((prev) => {
           // Guard: don't let an EMPTY service-row fetch collapse an already-loaded
           // multi-service config to single-app. The DeploymentProvider is shared
@@ -965,7 +1198,19 @@ export function useDeploymentConfig() {
             (prev.projectType === "services" || prev.projectType === "monorepo") &&
             ((prev.services?.length ?? 0) > 0 || (prev.monorepoApps?.length ?? 0) > 0);
           if (serviceRows.length === 0 && prevHoldsThisMultiProject) {
-            return { ...prev, projectId, envVars: envVars.length ? envVars : prev.envVars };
+            return {
+              ...prev,
+              projectId,
+              envVars: envVars.length ? envVars : prev.envVars,
+              ...(savedTarget
+                ? {
+                    deployTarget: savedTarget,
+                    serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
+                    serverName:
+                      savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
+                  }
+                : null),
+            };
           }
 
           return {
@@ -988,10 +1233,24 @@ export function useDeploymentConfig() {
             // git source (the deploy guards treat this like local/upload).
             isApp: Boolean((project as { isApp?: boolean }).isApp),
             appTemplateId: (project as { appTemplateId?: string }).appTemplateId,
+            // Where this project already runs. Server-resolved (one rule, shared with
+            // the project cards) and applied AFTER the buildPreparedConfig spread so it
+            // wins — that core reseeds stack defaults and would otherwise leave
+            // DEFAULT_CONFIG's "cloud" standing. The page's target seeders are gated on
+            // this having landed; before it existed they were gated on a comment that
+            // claimed it, and a saved project's deploy went out addressed to "cloud".
+            ...(savedTarget
+              ? {
+                  deployTarget: savedTarget,
+                  serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
+                  serverName:
+                    savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
+                }
+              : null),
           };
         });
 
-        return { success: true };
+        return { success: true, savedTarget };
       } catch (err) {
         return {
           success: false,
@@ -1012,5 +1271,6 @@ export function useDeploymentConfig() {
     initializeFromLocal,
     initializeFromUpload,
     initializeFromProject,
+    rescanWithComposePath,
   };
 }

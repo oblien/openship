@@ -2,9 +2,12 @@ import { repos } from "@repo/db";
 import type { LogEntry } from "@repo/adapters";
 import * as sessionManager from "./session-manager";
 import { loadDeployment, type DeploymentConfigSnapshot } from "./build.service";
+import { snapshotToClass } from "./deployment-class";
 import { STEP_INDEX, STEP_PROGRESS } from "./build-steps";
 import { isMultiServiceProject } from "./compose";
 import { serviceKind } from "../../lib/deployable-service";
+import { terminalMessages } from "./terminal-messages";
+import { maskServicesEnv } from "../../lib/secret-env";
 import { resolveProjectRouteState } from "../domains/project-route.service";
 
 type SwarmRevisionDetail = {
@@ -186,8 +189,19 @@ export async function getBuildSessionStatus(deploymentId: string) {
 
   // Resolve the target server's display name (when this deployed to a server),
   // so the detail UI can show "Server · <name>" rather than a raw id.
+  //
+  // ORG-SCOPED, and it must be: `snapshot.serverId` is CLIENT-SUPPLIED (it arrives in
+  // the deploy body, and resolveSnapshotTarget gives that override top priority with no
+  // org check), and the deployment row is persisted with it BEFORE the target is
+  // validated — so a deploy that fails on "not in this organization" still leaves a row
+  // whose meta names a foreign server. An unscoped read here hands that server's name or
+  // sshHost back to anyone who can post a deploy: the cross-tenant name oracle the
+  // docblock on resolveOrgServer (lib/deployment-runtime.ts) exists to prevent. A
+  // foreign id must read as absent, exactly like a deleted one.
   const targetServer = snapshot?.serverId
-    ? await repos.server.get(snapshot.serverId).catch(() => null)
+    ? await repos.server
+        .getInOrganization(snapshot.serverId, dep.organizationId)
+        .catch(() => null)
     : null;
 
   // Derive step progress from persisted log entries when no active session
@@ -284,8 +298,10 @@ export async function getBuildSessionStatus(deploymentId: string) {
           // only (monorepo sub-apps carry a different shape). The dashboard
           // hydrates config.services from this so "Edit Configuration" shows the
           // real compose wizard even with an empty service table.
-          composeServices: (snapshot?.composeServices ?? []).filter(
-            (s) => serviceKind(s) === "compose",
+          // #336: env masked on output (deploy re-derives / unmask-merges real
+          // values on the way back in).
+          composeServices: maskServicesEnv(
+            (snapshot?.composeServices ?? []).filter((s) => serviceKind(s) === "compose"),
           ),
         }
       : {};
@@ -347,6 +363,11 @@ export async function getBuildSessionStatus(deploymentId: string) {
       startCommand: snapshot?.startCommand,
       rootDirectory: snapshot?.rootDirectory,
       hasServer: snapshot?.hasServer ?? !!snapshot?.startCommand?.trim(),
+      // The resolved runtime workload (web/worker/static) so "Edit Configuration"
+      // rehydrates a worker as a worker, not as a static site (both carry
+      // hasServer=false). Derived from the frozen triple, or the snapshot's own
+      // legacy fields for a pre-#538 deployment (#538-B).
+      workloadType: snapshotToClass(snapshot ?? {}).workload,
       serviceDeploymentMode: snapshot?.serviceDeploymentMode,
     },
     progress,
@@ -356,14 +377,16 @@ export async function getBuildSessionStatus(deploymentId: string) {
     screenshots: [],
     buildDurationMs: buildSessionRow?.durationMs ?? null,
     buildStartedAt: buildSessionRow?.startedAt?.toISOString() ?? null,
-    failureMessage: effectiveStatus === "failed" ? dep.errorMessage || "" : "",
-    // Surface the partial-deploy warning for any settled-but-not-failed state
-    // (ready / partial_failure / reconciling) so it survives a refresh in a new
-    // tab, not just while the SSE session says "ready".
-    warningMessage:
-      effectiveStatus !== "failed" && effectiveStatus !== "cancelled"
-        ? snapshot?.composeDeployment?.warningMessage || snapshot?.deployWarning || ""
-        : "",
+    // The terminal prose. See `terminalMessages` for why a CANCELLED row's reason
+    // is surfaced now, and why the warning keeps its narrower gate. (The warning
+    // covers any settled-but-not-failed state — ready / partial_failure /
+    // reconciling — so it survives a refresh in a new tab.)
+    ...terminalMessages({
+      effectiveStatus,
+      rowStatus: dep.status,
+      errorMessage: dep.errorMessage,
+      warning: snapshot?.composeDeployment?.warningMessage || snapshot?.deployWarning,
+    }),
     // Real persisted status (dep.status carries partial_failure; `status` above
     // stays SSE-facing "ready" so the build page still renders as finished) plus
     // the server-backed keep/reject decision so the "Action Required" banner +
@@ -386,10 +409,14 @@ export async function getBuildSessionStatus(deploymentId: string) {
     // A still-open decision prompt (edge 80/443 takeover, port conflict) so a
     // refresh re-shows the modal immediately, before the SSE stream replays it.
     pendingPrompt: memSession?.currentPrompt ?? null,
-    errorCode:
-      dep.errorMessage?.includes("PORT_IN_USE") || dep.errorMessage?.includes("EADDRINUSE")
-        ? "PORT_IN_USE"
-        : undefined,
+    // The persisted classification (migration 0080). This used to be re-derived
+    // as `errorMessage.includes("PORT_IN_USE") || includes("EADDRINUSE")`, which
+    // matched none of the coded messages — they all read "Port 3000 is already in
+    // use by …" — so it fired only for UNclassified failures whose raw process
+    // output happened to leak through, and missed every classified one. The code
+    // is now on the row, so a reload no longer loses it.
+    errorCode: dep.errorCode ?? undefined,
+    errorDetails: (dep.errorDetails as Record<string, unknown> | null) ?? undefined,
     projectType,
     swarm,
     ...composeData,

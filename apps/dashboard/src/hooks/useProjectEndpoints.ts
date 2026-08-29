@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { beginFetchState } from "./begin-fetch-state";
 import { api, ApiError, endpoints, projectsApi } from "@/lib/api";
 
 /**
@@ -39,7 +40,17 @@ interface ProjectInfoData {
 
 export interface AnalyticsSummaryResponse {
   totalRequests: number;
-  uniqueVisitors: number;
+  /** Non-static ("page") requests — NOT people. Five views from one browser = 5. */
+  pageRequests: number;
+  /**
+   * Genuinely distinct visitors, or null when this source can't tell.
+   *
+   * Non-null only where the source dedups (Oblien). The self-hosted edge dedups per
+   * DAY, which doesn't decompose into the minute buckets this summary is built
+   * from — so it's null there and the real number comes from `useAnalyticsGeo`.
+   * Null means "ask elsewhere", never "zero visitors".
+   */
+  uniqueVisitors: number | null;
   bandwidthIn: number;
   bandwidthOut: number;
   avgResponseTimeMs: number;
@@ -56,6 +67,55 @@ export interface AnalyticsPeriodResponse {
   avgResponseTimeMs: number;
 }
 
+/** /analytics/geo — the daily rollup behind the country map and top-paths list. */
+export interface AnalyticsGeoResponse {
+  total: number;
+  countries: { code: string; count: number; pct: number }[];
+  /**
+   * Distinct visitors summed PER DAY over the window, so a visitor returning on
+   * three days counts three. An UPPER bound on window-distinct visitors — the edge
+   * dedups within a day and per-day counts can't be merged without an HLL.
+   * Label it accordingly; don't render it as "visitors".
+   */
+  visitorDays: number;
+  /** Largest single day in the window — exact for that day, and a LOWER bound on
+   *  window-distinct visitors. Brackets the real number with `visitorDays`. */
+  peakDayVisitors: number;
+  topPaths: { path: string; count: number }[];
+  statuses: Record<string, number>;
+  /** False = the edge can't resolve countries at all, so an empty map is a FAULT
+   *  rather than "no visitors". Drives the advisory instead of a blank map. */
+  geoAvailable: boolean;
+  /** Visitor count may understate (edge visitor zone under eviction pressure). */
+  approximate: boolean;
+  source: "self-hosted" | "cloud" | "none";
+  /**
+   * Whether per-path aggregation is switched on for this project.
+   *
+   * "Off" and "on but nothing collected yet" both give an empty `topPaths` and need
+   * opposite UI — an Enable button versus a wait — so the two must be distinguishable.
+   * Always true for cloud, where Oblien's edge aggregates paths regardless.
+   */
+  pathsEnabled?: boolean;
+}
+
+/** /analytics/usage/history — persisted CPU/memory series from the resources:sample job. */
+export interface UsageHistoryResponse {
+  buckets: Array<{
+    minute: number;
+    cpuPercent: number;
+    memoryMb: number;
+    networkRxBytes: number;
+    networkTxBytes: number;
+    /** False when no sample landed here — render a GAP, never a zero. */
+    hasData: boolean;
+  }>;
+  services: Array<{ serviceKey: string; name: string }>;
+  granularityMinutes: number;
+  /** null = All (the per-bucket sum across services). */
+  serviceKey: string | null;
+}
+
 /** /analytics/overview — summary + periods from one server fetch (one cloud
  *  round-trip), so the dashboard doesn't hit the SaaS twice per project view. */
 export interface AnalyticsOverviewResponse {
@@ -70,7 +130,18 @@ export interface AnalyticsData {
   domain: string;
   summary: {
     totalRequests: number;
+    /**
+     * @deprecated Never was unique IPs — it's the non-static request count, which
+     * `pageRequests` now names correctly. Kept only so OverviewTab's existing card
+     * keeps rendering; new surfaces should read `pageRequests` (page views) or
+     * `uniqueVisitors` / `useAnalyticsGeo().visitors` (people).
+     */
     uniqueIPs: number;
+    /** Non-static ("page") requests. Honest name for the old `uniqueIPs`. */
+    pageRequests: number;
+    /** Real distinct visitors when the source dedups, else null — see the response
+     *  type. `useAnalyticsGeo().visitors` is the self-hosted answer. */
+    uniqueVisitors: number | null;
     uniqueRequests: number;
     totalIPs: number;
     uniqueIPsPercentage: string;
@@ -123,6 +194,8 @@ type CacheEntry<T> =
 
 const infoCache = new Map<string, CacheEntry<ProjectInfoData>>();
 const overviewCache = new Map<string, CacheEntry<AnalyticsOverviewResponse>>();
+const geoCache = new Map<string, CacheEntry<AnalyticsGeoResponse>>();
+const usageHistoryCache = new Map<string, CacheEntry<UsageHistoryResponse>>();
 
 // ─── Revision store (drives live refresh on invalidation) ──────────────────
 //
@@ -167,6 +240,10 @@ function useEndpoint<T>(
   // domain-scoped analytics key) so invalidateProjectCaches(projectId) still
   // notifies this hook.
   revisionId?: string | null,
+  // When set, refetch on this interval. Used by series that grow server-side
+  // on their own clock (the sampled usage history) so a chart that mounted
+  // empty animates as new points land, without a page reload. 0/undefined = off.
+  pollMs?: number,
 ): AsyncState<T> {
   // Ref tracks the LATEST id from props at any moment. Combined with
   // the `cancelled` flag, this prevents an in-flight fetch for project
@@ -199,8 +276,19 @@ function useEndpoint<T>(
     return { data: null, isLoading: true, error: null };
   });
 
+  /**
+   * Which id the data currently on screen belongs to — the difference between a REFRESH and a
+   * NAVIGATION, which need opposite answers below.
+   *
+   * Same id: we are re-reading data the user is already looking at, so it must keep showing.
+   * Different id: whatever we hold is another project's, and reporting it as loaded would
+   * render project A's page under project B's URL.
+   */
+  const loadedIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!id) {
+      loadedIdRef.current = null;
       setState({ data: null, isLoading: false, error: null });
       return;
     }
@@ -208,12 +296,17 @@ function useEndpoint<T>(
     // Cached ready → flip into resolved state and bail.
     const cached = cache.get(id);
     if (cached?.kind === "ready") {
+      loadedIdRef.current = id;
       setState({ data: cached.data, isLoading: false, error: null });
       return;
     }
 
     let cancelled = false;
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    // Stale-while-revalidate: a REFRESH keeps what's on screen, a first load reports loading.
+    // Load-bearing rather than a nicety — see `beginFetchState`, which owns the reasoning and
+    // the infinite-loop regression it exists to prevent.
+    const loadedId = loadedIdRef.current;
+    setState((prev) => beginFetchState(prev, loadedId, id));
 
     let promise: Promise<T>;
     if (cached?.kind === "loading") {
@@ -232,6 +325,7 @@ function useEndpoint<T>(
         // changed since the effect started. Both flags together cover
         // synchronous (cancelled) and racy (idRef mismatch) cases.
         if (cancelled || idRef.current !== id) return;
+        loadedIdRef.current = id;
         setState({ data, isLoading: false, error: null });
       })
       .catch((err: unknown) => {
@@ -241,6 +335,9 @@ function useEndpoint<T>(
         cache.delete(id);
         if (cancelled || idRef.current !== id) return;
         const message = err instanceof Error ? err.message : "Request failed";
+        // The data goes with the error, so the next revision must report loading again rather
+        // than revalidating something that is no longer on screen.
+        loadedIdRef.current = null;
         setState({ data: null, isLoading: false, error: message });
       });
 
@@ -251,6 +348,28 @@ function useEndpoint<T>(
     // invalidateProjectCaches() retriggers the effect for already-
     // mounted consumers, fetching fresh data without a remount.
   }, [id, cache, fetcher, revision]);
+
+  // Poll: re-fire the fetcher on an interval, bypassing the ready-cache
+  // short-circuit above. A transient failure keeps the last-good data on
+  // screen rather than blanking the chart — the next tick retries.
+  useEffect(() => {
+    if (!id || !pollMs || pollMs <= 0) return;
+    let cancelled = false;
+    const handle = setInterval(() => {
+      fetcher(id)
+        .then((data) => {
+          cache.set(id, { kind: "ready", data });
+          if (cancelled || idRef.current !== id) return;
+          loadedIdRef.current = id;
+          setState({ data, isLoading: false, error: null });
+        })
+        .catch(() => {});
+    }, pollMs);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [id, cache, fetcher, pollMs]);
 
   return state;
 }
@@ -302,6 +421,39 @@ async function fetchOverview(key: string): Promise<AnalyticsOverviewResponse> {
   };
 }
 
+async function fetchGeo(key: string): Promise<AnalyticsGeoResponse> {
+  const sepIndex = key.indexOf(OVERVIEW_KEY_SEP);
+  const projectId = sepIndex === -1 ? key : key.slice(0, sepIndex);
+  const domain = sepIndex === -1 ? undefined : key.slice(sepIndex + OVERVIEW_KEY_SEP.length);
+  const response = await api.get<{ data: AnalyticsGeoResponse; success?: boolean; error?: string }>(
+    endpoints.analytics.geo,
+    { params: { projectId, ...(domain ? { domain } : {}) } },
+  );
+  if (response.success === false || !response.data) {
+    throw new Error(response.error || "Failed to load visitor geography");
+  }
+  return response.data;
+}
+
+/**
+ * Cache key for the history read. Encodes the SERIES as well as the project, so
+ * switching All ⇄ a service refetches instead of returning the previous series'
+ * numbers under the new label.
+ */
+const HISTORY_SEP = "##";
+
+async function fetchUsageHistory(key: string): Promise<UsageHistoryResponse> {
+  const [projectId, serviceKey] = key.split(HISTORY_SEP);
+  const response = await api.get<{ data: UsageHistoryResponse; success?: boolean; error?: string }>(
+    endpoints.analytics.usageHistory,
+    { params: { projectId, ...(serviceKey ? { serviceKey } : {}) } },
+  );
+  if (response.success === false || !response.data) {
+    throw new Error(response.error || "Failed to load usage history");
+  }
+  return response.data;
+}
+
 // ─── Public hooks — one per endpoint ───────────────────────────────────────
 
 /**
@@ -331,6 +483,39 @@ export function useProjectInfo(id: string | null | undefined) {
 export function useAnalyticsOverview(id: string | null | undefined, domain?: string | null) {
   const key = id ? overviewCacheKey(id, domain) : id;
   return useEndpoint(key, overviewCache, fetchOverview, id);
+}
+
+/**
+ * Fetches /analytics/geo — the daily rollup: requests per country, real distinct
+ * visitors, top paths, status mix.
+ *
+ * Separate from /analytics/overview because the two have different shapes in the
+ * edge's shared memory: overview is a per-MINUTE series (the traffic chart), this
+ * is per-DAY aggregates. Countries, visitors and paths are only kept daily —
+ * holding them per minute would multiply the edge's key cardinality by ~1440 and
+ * evict the counters they annotate.
+ */
+export function useAnalyticsGeo(id: string | null | undefined, domain?: string | null) {
+  const key = id ? overviewCacheKey(id, domain) : id;
+  return useEndpoint(key, geoCache, fetchGeo, id);
+}
+
+/**
+ * Fetches /analytics/usage/history — the persisted CPU/memory series.
+ *
+ * Separate from the live SSE stream on purpose: the stream answers "right now" at 5s
+ * and keeps nothing, this answers "what happened overnight" from the sampled buckets.
+ */
+export function useProjectUsageHistory(
+  id: string | null | undefined,
+  serviceKey?: string | null,
+  // Poll interval (ms). The server samples every 5 min, so a mounted chart only
+  // sees new points if it re-reads — pass this on platforms that sample (VPS/cloud)
+  // and omit it where nothing is sampled (desktop) to avoid a pointless timer.
+  pollMs?: number,
+) {
+  const key = id ? `${id}${HISTORY_SEP}${serviceKey ?? ""}` : id;
+  return useEndpoint(key, usageHistoryCache, fetchUsageHistory, id, pollMs);
 }
 
 /**
@@ -383,18 +568,24 @@ export function mapAnalyticsData(
     1,
     Math.ceil((new Date(lastRequest).getTime() - new Date(firstRequest).getTime()) / 3_600_000),
   );
-  const uniqueIPs = summary.uniqueVisitors;
+  // Legacy `uniqueIPs` = page requests, which is what it always actually was.
+  // Preserved (rather than switched to the real visitor count) so OverviewTab's
+  // existing card keeps showing the same number it always showed instead of
+  // silently changing meaning; only its LABEL was ever wrong.
+  const pageRequests = summary.pageRequests ?? 0;
   const totalRequests = summary.totalRequests;
   return {
     success: true,
     domain,
     summary: {
       totalRequests,
-      uniqueIPs,
+      uniqueIPs: pageRequests,
+      pageRequests,
+      uniqueVisitors: summary.uniqueVisitors ?? null,
       uniqueRequests: totalRequests,
       totalIPs: totalRequests,
       uniqueIPsPercentage:
-        totalRequests > 0 ? ((uniqueIPs / totalRequests) * 100).toFixed(1) : "0.0",
+        totalRequests > 0 ? ((pageRequests / totalRequests) * 100).toFixed(1) : "0.0",
       firstRequest,
       lastRequest,
       timeRangeHours,
@@ -434,11 +625,28 @@ export function mapAnalyticsData(
  */
 export function invalidateProjectCaches(id: string) {
   infoCache.delete(id);
-  // Drop every domain-scoped overview entry for this project, not just the
-  // aggregate key (entries are keyed `id` or `id::domain`).
-  const prefix = `${id}${OVERVIEW_KEY_SEP}`;
+  // Overview AND geo share the `id` / `id::domain` key format — drop every
+  // domain-scoped entry for this project from both, not just the aggregate key.
+  const domainPrefix = `${id}${OVERVIEW_KEY_SEP}`;
   for (const key of overviewCache.keys()) {
-    if (key === id || key.startsWith(prefix)) overviewCache.delete(key);
+    if (key === id || key.startsWith(domainPrefix)) overviewCache.delete(key);
+  }
+  for (const key of geoCache.keys()) {
+    if (key === id || key.startsWith(domainPrefix)) geoCache.delete(key);
+  }
+  // Usage-history entries are keyed `id##serviceKey`. Without this the chart kept a
+  // stale empty series after the first sample landed — the revision bump re-ran the
+  // effect but the cached `{kind:"ready"}` short-circuited it back to the old data.
+  const historyPrefix = `${id}${HISTORY_SEP}`;
+  for (const key of usageHistoryCache.keys()) {
+    if (key === id || key.startsWith(historyPrefix)) usageHistoryCache.delete(key);
   }
   bumpRevision(id);
+}
+
+/** Invalidate a shared environment-list mutation once for every affected project. */
+export function invalidateProjectCachesFor(ids: Iterable<string>) {
+  for (const id of new Set(ids)) {
+    if (id) invalidateProjectCaches(id);
+  }
 }

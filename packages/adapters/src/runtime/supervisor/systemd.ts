@@ -13,15 +13,14 @@
  * Unit location: /etc/systemd/system/ (standard for admin-created units)
  */
 
-import type { CommandExecutor, LogEntry, LogCallback } from "../../types";
+import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage } from "../../types";
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
+import { sampleBareUsage, ZERO_USAGE } from "./usage";
 import { sq, parseLogLevel } from "../build-pipeline";
-import { probeListeningPort } from "../port-conflict";
+import { portOccupantDetails, probeListeningPort } from "../port-conflict";
+import { managedDeploymentUnitName } from "../../system/port-owner";
 import { execReliable } from "../../system/remote-journal";
 import { DeployError } from "@repo/core";
-
-/** Prefix for all openship systemd units */
-const UNIT_PREFIX = "openship";
 
 /**
  * Escape an env value for a double-quoted systemd `Environment=` assignment.
@@ -55,7 +54,7 @@ export class SystemdSupervisor implements ProcessSupervisor {
   // ── Helpers ──────────────────────────────────────────────────────────
 
   private unitName(deploymentId: string): string {
-    return `${UNIT_PREFIX}-${deploymentId}.service`;
+    return managedDeploymentUnitName(deploymentId);
   }
 
   private unitPath(deploymentId: string): string {
@@ -111,7 +110,7 @@ Restart=on-failure
 RestartSec=3
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=${UNIT_PREFIX}-${opts.deploymentId}
+SyslogIdentifier=${this.unitName(opts.deploymentId).replace(/\.service$/, "")}
 
 [Install]
 WantedBy=multi-user.target
@@ -161,16 +160,7 @@ WantedBy=multi-user.target
             (occupant ? ` by ${occupant.command}` : "") +
             ". Stop the existing process before deploying.",
           "PORT_IN_USE",
-          {
-            port: opts.port,
-            pid: occupant?.pid,
-            command: occupant?.command,
-            rawCommand: occupant?.rawCommand,
-            systemdUnit: occupant?.systemdUnit,
-            systemdDescription: occupant?.systemdDescription,
-            deploymentId: occupant?.deploymentId,
-            isManagedDeployment: occupant?.isManagedDeployment,
-          },
+          portOccupantDetails(opts.port, occupant),
         );
       }
 
@@ -232,6 +222,34 @@ WantedBy=multi-user.target
       return result.trim() === "active";
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Usage for the unit. Prefers the unit's cgroup, which accounts for the whole
+   * process tree — a `npm start` that forks the real server would otherwise report
+   * only the wrapper's near-zero usage.
+   *
+   * `MainPID` is fetched as the fallback identity (and as the liveness check) for a
+   * host without a readable cgroup; the probe picks the tier itself. `--value` is
+   * used so a stopped unit yields "0" rather than a `MainPID=0` line to parse.
+   */
+  async getUsage(deploymentId: string): Promise<ResourceUsage> {
+    const unitName = this.unitName(deploymentId);
+    try {
+      const out = await this.executor.exec(
+        `systemctl show ${sq(unitName)} -p MainPID --value 2>/dev/null || true`,
+      );
+      const pid = Number.parseInt(out.trim(), 10);
+      if (!Number.isFinite(pid) || pid <= 0) return { ...ZERO_USAGE };
+      return sampleBareUsage(this.executor, pid, [
+        // Where systemd places a unit started from /etc/systemd/system. The delegate
+        // path appears when the unit sets Delegate=yes; harmless to probe either way.
+        `/sys/fs/cgroup/system.slice/${unitName}`,
+        `/sys/fs/cgroup/system.slice/${unitName}/init.scope`,
+      ]);
+    } catch {
+      return { ...ZERO_USAGE };
     }
   }
 

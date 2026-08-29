@@ -1,0 +1,162 @@
+{
+  "available": true,
+  "verified": true,
+  "unlisted": true,
+  "id": "webmail",
+  "name": "Openship Webmail",
+  "description": "A fast, self-hosted webmail client. Point it at any IMAP/SMTP mailbox — an Openship Mail server, Gmail, Fastmail, or your company's — and read, search and send from a clean UI on your own domain. Nothing is stored outside your server.",
+  "kind": "template",
+  "logo": "webmail",
+  "category": "mail",
+  "tags": [
+    "mail",
+    "webmail",
+    "email",
+    "imap",
+    "smtp"
+  ],
+  "framework": "docker-compose",
+  "repository": "https://github.com/Mail-0/Zero",
+  "services": [
+    {
+      "name": "webmail",
+      "image": "ghcr.io/oblien/openship-webmail:latest",
+      "exposedPort": 4080,
+      "exposed": true,
+      "volumes": [
+        "webmail_data:/data"
+      ],
+      "environment": {
+        "TRUSTED_ORIGINS": "{{publicUrl:webmail}}"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "SESSION_ENCRYPTION_KEY",
+      "service": "webmail",
+      "label": "Session encryption key",
+      "help": "Auto-generated (32 random bytes, hex). Encrypts each signed-in user's IMAP password at rest. Changing it signs everyone out; they just sign in again.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "BRANDING_ADMIN_TOKEN",
+      "service": "webmail",
+      "label": "Branding admin token",
+      "help": "Auto-generated. Lets Openship write this webmail's white-label login page (logo, name, colors) over its admin API. Nothing else accepts it.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "backend",
+      "label": "Mail backend",
+      "description": "Which IMAP/SMTP server this webmail talks to. Leave the hosts blank and each address resolves to mail.<its own domain> at sign-in — the convention Openship Mail and iRedMail install. Set them to pin every mailbox to one server. Users can still override host and port on the sign-in screen.",
+      "fields": [
+        {
+          "key": "DEFAULT_IMAP_HOST",
+          "service": "webmail",
+          "label": "IMAP host",
+          "help": "Where mail is read from. Blank → mail.<domain of the address signing in>.",
+          "type": "text",
+          "placeholder": "mail.example.com",
+          "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "DEFAULT_SMTP_HOST",
+          "service": "webmail",
+          "label": "SMTP host",
+          "help": "Where mail is sent through. Blank → mail.<domain of the address signing in>.",
+          "type": "text",
+          "placeholder": "mail.example.com",
+          "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "DEFAULT_IMAP_PORT",
+          "service": "webmail",
+          "label": "IMAP port",
+          "help": "Blank → 993 (IMAPS). TLS is always required.",
+          "type": "number",
+          "integer": true,
+          "min": 1,
+          "max": 65535,
+          "placeholder": "993",
+          "advanced": true,
+          "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "DEFAULT_SMTP_PORT",
+          "service": "webmail",
+          "label": "SMTP port",
+          "help": "Blank → 587 (submission, STARTTLS). Use 465 for implicit TLS — the port alone selects the mode, and TLS is required either way.",
+          "type": "number",
+          "integer": true,
+          "min": 1,
+          "max": 65535,
+          "placeholder": "587",
+          "advanced": true,
+          "installStep": true,
+          "requiresRedeploy": true
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "label": "Access",
+      "description": "Where this webmail is reached from. Filled in from the hostname you route it on — override it only when something in front of it changes the origin the browser sees.",
+      "fields": [
+        {
+          "key": "TRUSTED_ORIGINS",
+          "service": "webmail",
+          "label": "Trusted origins",
+          "help": "Comma-separated origins allowed to sign in — scheme + host, no path. Defaults to this app's own public URL. Set it when the app is served through a proxy Openship doesn't route, e.g. an Openship Mail server fronting mail.<domain> for a cloud deploy.",
+          "type": "text",
+          "placeholder": "https://mail.example.com",
+          "advanced": true,
+          "requiresRedeploy": true
+        }
+      ]
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Sign in to Webmail",
+    "description": "Open the webmail URL and sign in with a full email address and its mailbox password. There is no separate account to create — the mailbox on your IMAP server is the account.",
+    "guide": {
+      "intro": "Your project runs its own webmail client. It holds no mail: every message is read live from IMAP, and only encrypted session credentials and per-user settings live on disk.",
+      "useHint": "Webmail is domain-only by design: sessions use Secure cookies, so sign-in never completes over plain http, and the container publishes nothing to the host — the edge reaches it on loopback. Point a hostname at it and TLS is issued automatically.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "webmail",
+        "label": "Webmail",
+        "source": "publicUrl:webmail",
+        "kind": "url",
+        "envKey": "WEBMAIL_URL",
+        "recommended": true,
+        "help": "Sign in with an email address on your mail server and its mailbox password."
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "webmail",
+      "port": 4080,
+      "label": "Webmail",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": [
+        "domain"
+      ]
+    }
+  ]
+}

@@ -8,6 +8,11 @@ export async function isRedisReachable(timeoutMs = 2000): Promise<boolean> {
     enableReadyCheck: false,
     connectTimeout: timeoutMs,
   });
+  // Connection failures are the expected negative result of this probe.
+  // ioredis reports them both by rejecting connect()/ping() and by emitting an
+  // `error` event; without a listener the latter becomes noisy "Unhandled error
+  // event" stderr even though the rejection below is handled correctly.
+  probe.on("error", () => {});
   try {
     await Promise.race([
       probe.connect(),

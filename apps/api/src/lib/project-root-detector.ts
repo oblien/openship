@@ -15,6 +15,7 @@ import {
   getBuildCommand,
   getInstallCommand,
   getStartCommand,
+  resolvePackageJson,
   type RepoFile,
   type StackResult,
 } from "./stack-detector";
@@ -166,7 +167,12 @@ export function isIgnoredRepoPath(value?: string): boolean {
   return normalized.split("/").some((segment) => IGNORED_REPO_DIRS.has(segment.toLowerCase()));
 }
 
-function buildSnapshot(input: ProjectRootSnapshotInput): ProjectRootSnapshot {
+/**
+ * Normalize one directory's raw listing into a snapshot + its detected stack.
+ * Exported for callers that already KNOW the root (a user-declared compose path),
+ * where the scoring in `selectPreferredProjectRoot` would only second-guess them.
+ */
+export function buildProjectRootSnapshot(input: ProjectRootSnapshotInput): ProjectRootSnapshot {
   const fileContents = normalizeFileContents(input.fileContents);
 
   return {
@@ -576,9 +582,16 @@ export function applyWorkspaceContext(
     return selectedProject;
   }
 
+  // Recover both manifests from their raw text when the parsed read came back
+  // empty — this function re-derives build/start OUTSIDE detectStack, so without
+  // it a sub-app whose package.json failed to parse gets the registry's bare
+  // `next build` even though its `build` script is sitting in fileContents (#623).
+  const rootPackageJson = resolvePackageJson(rootInput.packageJson, rootInput.fileContents);
+  const appPackageJson = resolvePackageJson(selectedProject.packageJson, selectedProject.fileContents);
+
   const packageManager = detectPackageManager(
     rootInput.files,
-    rootInput.packageJson as Record<string, unknown> & {
+    rootPackageJson as Record<string, unknown> & {
       packageManager?: string;
       scripts?: Record<string, string>;
       engines?: Record<string, string>;
@@ -599,8 +612,8 @@ export function applyWorkspaceContext(
       installCommand: installCommand
         ? buildRepoRootCommand(installCommand, selectedProject.rootDirectory)
         : selectedProject.stack.installCommand,
-      buildCommand: getBuildCommand(packageManager, selectedProject.stack.stack, selectedProject.packageJson),
-      startCommand: getStartCommand(packageManager, selectedProject.stack.stack, selectedProject.packageJson),
+      buildCommand: getBuildCommand(packageManager, selectedProject.stack.stack, appPackageJson),
+      startCommand: getStartCommand(packageManager, selectedProject.stack.stack, appPackageJson),
       buildImage: getBuildImage(selectedProject.stack.stack, packageManager),
     },
   };
@@ -646,7 +659,7 @@ function selectPreferredCandidate(
     fallback: (root: ProjectRootSnapshot) => ProjectRootSnapshot | null;
   },
 ): ProjectRootSnapshot | null {
-  const root = buildSnapshot(rootInput);
+  const root = buildProjectRootSnapshot(rootInput);
   if (!options.canSelect(root)) {
     return options.fallback(root);
   }
@@ -655,7 +668,7 @@ function selectPreferredCandidate(
   let bestScore = -1;
 
   for (const candidateInput of candidateInputs) {
-    const candidate = buildSnapshot(candidateInput);
+    const candidate = buildProjectRootSnapshot(candidateInput);
     if (!options.isEligible(candidate)) {
       continue;
     }
@@ -857,12 +870,15 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     segments.at(-1) ||
     rootDirectory ||
     "app";
-  // A per-app Dockerfile owns its own dependency, build, and startup commands.
-  // Supplying detected package-manager commands as well makes the normal app
-  // pipeline run them before Docker builds the image, which is both redundant and
-  // wrong for Dockerfile-first monorepos.
-  const dockerfileOwned = stack.projectType === "docker";
-
+  // A sub-app the Dockerfile owns carries no buildpack commands: the pipeline
+  // takes the Dockerfile branch on `stack === "docker"` (see cloud.ts /
+  // docker.ts) and ignores them, so a detected `npm i --force` — which
+  // detectStack still emits from a sibling package.json — is a lie in the UI and
+  // in the persisted service. Keyed on the STACK, not on "a Dockerfile exists":
+  // a Next.js app that merely ships an optional Dockerfile detects as `nextjs`
+  // and still builds via buildpack, so blanking its commands would leave it with
+  // nothing to install, build, or start.
+  const dockerOwnsBuild = stack.stack === "docker";
   // Static sub-apps keep an empty start command: the monorepo build pipeline
   // serves them as files — via the edge on self-hosted, a generated nginx image on
   // cloud (see isStaticService /
@@ -873,10 +889,14 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     rootDirectory,
     stack: stack.stack,
     category: stack.category,
-    packageManager: stack.packageManager,
-    buildCommand: dockerfileOwned ? "" : stack.buildCommand,
-    installCommand: dockerfileOwned ? "" : stack.installCommand,
-    startCommand: dockerfileOwned ? "" : stack.startCommand,
+    // Same "unknown" → "npm" normalization as prepare.service.ts's ProjectInfo
+    // builder (issue #415) — this MonorepoApp round-trips through the dashboard
+    // into project creation just like the single-root path does, and
+    // PackageManagerEnum rejects the raw sentinel the same way there.
+    packageManager: stack.packageManager === "unknown" ? "npm" : stack.packageManager,
+    buildCommand: dockerOwnsBuild ? "" : stack.buildCommand,
+    installCommand: dockerOwnsBuild ? "" : stack.installCommand,
+    startCommand: dockerOwnsBuild ? "" : stack.startCommand,
     buildImage: stack.buildImage,
     outputDirectory: stack.outputDirectory,
     productionPaths: stack.productionPaths,
@@ -901,7 +921,7 @@ export function discoverMonorepoApps(
   candidateInputs: ProjectRootSnapshotInput[],
 ): { apps: MonorepoApp[]; workspace: MonorepoWorkspace } | null {
   const candidates = candidateInputs
-    .map(buildSnapshot)
+    .map(buildProjectRootSnapshot)
     .filter(isMonorepoAppCandidate);
 
   const workspacePackageManager = detectPackageManager(
@@ -925,7 +945,7 @@ export function discoverMonorepoApps(
     prepareCommand = getInstallCommand(resolvedPackageManager) || "";
   } else {
     // Implicit monorepo: deployable root app + ≥1 self-contained nested app.
-    const rootSnapshot = buildSnapshot(rootInput);
+    const rootSnapshot = buildProjectRootSnapshot(rootInput);
     const independent = candidates.filter(isIndependentlyDeployable);
     if (!isDeployableRootApp(rootSnapshot) || independent.length < 1) return null;
     apps = [

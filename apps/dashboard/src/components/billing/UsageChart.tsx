@@ -1,6 +1,7 @@
 "use client";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { CHART_TOOLTIP_LABEL_STYLE, CHART_TOOLTIP_STYLE } from "@/lib/chart-theme";
 import type { Dictionary } from "@/i18n";
 
 interface UsageChartProps {
@@ -27,10 +28,10 @@ export function UsageChart({ buckets, granularity }: UsageChartProps) {
   return (
     <ResponsiveContainer width="100%" height={320}>
       <AreaChart data={buckets}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
         <XAxis dataKey="timestamp" tickFormatter={(v) => formatTick(v, granularity, t)} />
         <YAxis />
-        <Tooltip />
+        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} labelStyle={CHART_TOOLTIP_LABEL_STYLE} />
         <Legend />
         {SERIES.map((s) => (
           <Area key={s.key} type="monotone" dataKey={s.key} stackId="usage" stroke={s.color} fill={s.color} fillOpacity={0.4} name={t.billing.chart[s.labelKey]} />

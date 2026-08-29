@@ -1,17 +1,29 @@
 /**
  * HTTP surface for the team-mode migration flow.
  *
- *   POST /api/system/migration/preflight   — read-only readiness check
- *   POST /api/system/migration/start       — kick off the migration
- *   POST /api/system/migration/switch-back — reverse migration (PR 5)
+ *   POST /api/system/migration/preflight    — read-only readiness check
+ *   POST /api/system/migration/start        — kick off the migration
+ *   POST /api/system/migration/start-cloud  — migrate to Openship Cloud
+ *   POST /api/system/migration/start-tunnel — migrate behind a tunnel
+ *   POST /api/system/migration/switch-back  — reverse migration
  *
- * All endpoints require admin/owner role on the active org and refuse
- * to run when teamMode !== "single_user" (already migrated).
+ * AUTHORIZATION: every endpoint requires an INSTANCE administrator, enforced
+ * twice — `requireInstanceAdmin()` on the routes (system.routes.ts) and
+ * `assertInstanceAdmin(ctx)` at the top of each handler below. An org role is
+ * NOT sufficient and must never be substituted here: these operations export
+ * every org's data with secrets decrypted, so an org-scoped check (which
+ * resolves a caller-selected org, and which every user passes as owner of their
+ * personal org) does not gate them — GHSA-rwq6-r63g-3c8h.
+ *
+ * The four forward paths additionally refuse to run when
+ * teamMode !== "single_user"; switch-back has the inverse precondition and
+ * enforces it in switch-back.service.
  */
 
 import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { getRequestContext } from "../../../lib/request-context";
+import { assertInstanceAdmin } from "../../../middleware/instance-admin";
 import { runPreflight, type DomainChoice } from "./preflight.service";
 import {
   migrateInstanceToServer,
@@ -56,6 +68,9 @@ interface PreflightBody {
  * checklist before clicking Deploy.
  */
 export async function preflight(c: Context) {
+  const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
+
   const settings = await repos.instanceSettings.get();
   if ((settings?.teamMode ?? "single_user") !== "single_user") {
     return c.json(
@@ -84,6 +99,9 @@ export async function preflight(c: Context) {
   const result = await runPreflight({
     serverId: body.serverId,
     domain: body.domain,
+    // Org-scoped so preflight can't be used to probe another org's server row
+    // (it reports the reachability and hostname of whatever id it is handed).
+    organizationId: ctx.organizationId,
   });
   return c.json(result);
 }
@@ -100,6 +118,7 @@ export async function preflight(c: Context) {
  */
 export async function start(c: Context) {
   const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
 
   const settings = await repos.instanceSettings.get();
   if ((settings?.teamMode ?? "single_user") !== "single_user") {
@@ -165,6 +184,7 @@ export async function start(c: Context) {
  */
 export async function startCloud(c: Context) {
   const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
 
   const settings = await repos.instanceSettings.get();
   if ((settings?.teamMode ?? "single_user") !== "single_user") {
@@ -231,6 +251,7 @@ export async function startCloud(c: Context) {
  */
 export async function startTunnel(c: Context) {
   const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
 
   const settings = await repos.instanceSettings.get();
   if ((settings?.teamMode ?? "single_user") !== "single_user") {
@@ -304,6 +325,7 @@ export async function startTunnel(c: Context) {
  */
 export async function switchBack(c: Context) {
   const ctx = getRequestContext(c);
+  await assertInstanceAdmin(ctx);
 
   const body = await c.req
     .json<{ abandonRemote?: boolean }>()

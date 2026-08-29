@@ -2,6 +2,7 @@ import { repos, type Project, type Deployment } from "@repo/db";
 import { isServiceSuccessStatus, isServiceFailureStatus } from "@repo/core";
 import { runtimeTarget } from "../../config";
 import { buildBackgroundContext } from "../../lib/request-context";
+import { resolveOrgOwner } from "../../lib/org-actor";
 import { createCheckRun, updateCheckRun } from "../github/github.service";
 
 // Per-service GitHub-Checks + service_deployment fan-out for a multi-service
@@ -79,7 +80,15 @@ export async function preCreateServiceDeployments(
 }
 
 /**
- * GitHub Checks API per-service hook.
+ * GitHub Checks API per-service hook: report a service's FINAL state.
+ *
+ * Completion-only, by construction. There used to be a `phase: "start"` mode
+ * that opened an `in_progress` check, but nothing could call it: a targeted
+ * service has no `service_deployment` row until the compose loop records its
+ * outcome, so there was no id to hang the check on — and finalizeComposeDeploy
+ * only emits when the deploy settled `ready`, so any start check would have sat
+ * unresolved on the PR forever after a failure. Reporting once, at the end, is
+ * the only shape this pipeline can honour.
  *
  * Best-effort: any failure is logged but never blocks the deploy. We
  * skip entirely when the project isn't backed by GitHub or when there
@@ -90,78 +99,85 @@ export async function emitServiceCheckRun(opts: {
   dep: Deployment;
   serviceDeploymentId: string;
   serviceName: string;
-  phase: "start" | "complete";
   conclusion?: "success" | "failure" | "cancelled" | "neutral";
   output?: { title: string; summary: string };
 }): Promise<void> {
-  const { project, dep, serviceDeploymentId, serviceName, phase, conclusion, output } = opts;
+  const { project, dep, serviceDeploymentId, serviceName, conclusion, output } = opts;
   if (!project.gitOwner || !project.gitRepo || !dep.commitSha) return;
 
-  const orgMembers = await repos.member
-    .listByOrganization(dep.organizationId)
-    .catch(() => [] as Array<{ userId: string }>);
-  const actorUserId = orgMembers[0]?.userId;
-  if (!actorUserId) return;
+  // Act as the org OWNER, not `members[0]`. A check run is Openship reporting on a
+  // build it already ran — not a member action — but the GitHub authorization gate
+  // resolves the actor's real role from the DB, so an arbitrary first member
+  // (ordering is unspecified) made this feature work or silently vanish depending
+  // on who happened to sort first and what repos they were granted.
+  const actor = await resolveOrgOwner(dep.organizationId).catch(() => null);
+  if (!actor?.userId) return;
   const actorCtx = buildBackgroundContext({
-    userId: actorUserId,
+    userId: actor.userId,
     organizationId: dep.organizationId,
     label: "build:check-run",
   });
 
-  if (phase === "start") {
-    const result = await createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
-      name: `build:${serviceName}`,
-      headSha: dep.commitSha,
-      status: "in_progress",
-      detailsUrl: `${runtimeTarget.dashboard.replace(/\/$/, "")}/build/${dep.id}`,
-    });
-    if (result?.id) {
-      await repos.serviceDeployment
-        .update(serviceDeploymentId, {
-          checkRunId: result.id,
-          checkRunUrl: result.htmlUrl,
-        })
-        .catch(() => {});
-    }
-    return;
-  }
-
-  // phase === "complete"
   const sd = await repos.serviceDeployment.findById(serviceDeploymentId).catch(() => null);
+  // GitHub 422s a `completed` check run that carries no conclusion, and
+  // `conclusion` is optional in this signature — so default once, for both
+  // branches, instead of only defending the update path.
+  const finalConclusion = conclusion ?? "neutral";
   if (sd?.checkRunId) {
     await updateCheckRun(actorCtx, project.gitOwner, project.gitRepo, sd.checkRunId, {
       status: "completed",
-      conclusion: conclusion ?? "neutral",
+      conclusion: finalConclusion,
       output,
     });
-  } else if (conclusion === "neutral") {
-    // Skipped services were never started — create-and-complete in one
-    // call so they still show up as a `neutral` check on the PR.
-    const result = await createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
-      name: `build:${serviceName}`,
-      headSha: dep.commitSha,
-      status: "completed",
-      conclusion,
-      detailsUrl: `${runtimeTarget.dashboard.replace(/\/$/, "")}/build/${dep.id}`,
-      output: output ?? { title: "Skipped — no changes", summary: "Files under this service's root were unchanged." },
-    });
-    if (result?.id) {
-      await repos.serviceDeployment
-        .update(serviceDeploymentId, {
-          checkRunId: result.id,
-          checkRunUrl: result.htmlUrl,
-        })
-        .catch(() => {});
-    }
+    return;
+  }
+
+  // No start check ran — and for a targeted service none CAN. Its
+  // `service_deployment` row is written by the compose loop at the service's
+  // TERMINAL outcome, so there is no earlier id for an `in_progress` check to
+  // hang on; and finalizeComposeDeploy only reaches this emit on a `ready`
+  // deploy, so a start check would sit unresolved on the PR forever after a
+  // failed one. Create-and-complete in ONE call instead, for EVERY conclusion:
+  // gating this on `neutral` meant only SKIPPED services ever reached GitHub,
+  // and a full (unscoped) deploy — which pre-creates no rows at all — posted
+  // nothing whatsoever.
+  const result = await createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
+    name: `build:${serviceName}`,
+    headSha: dep.commitSha,
+    status: "completed",
+    conclusion: finalConclusion,
+    detailsUrl: `${runtimeTarget.dashboard.replace(/\/$/, "")}/build/${dep.id}`,
+    output:
+      output ??
+      (finalConclusion === "neutral"
+        ? { title: "Skipped — no changes", summary: "Files under this service's root were unchanged." }
+        : { title: `${serviceName} ${finalConclusion}`, summary: "" }),
+  });
+  if (result?.id) {
+    await repos.serviceDeployment
+      .update(serviceDeploymentId, {
+        checkRunId: result.id,
+        checkRunUrl: result.htmlUrl,
+      })
+      .catch(() => {});
   }
 }
 
 /**
- * Emit the initial per-service GitHub Checks for a fanned-out deploy:
- * targeted services get an `in_progress` "start" check, non-targeted ones
- * a neutral "skipped" check — so the PR check list is complete the moment
- * the deploy starts. Best-effort; the returned check_run_id is persisted
- * so the later `complete` emit patches the same Check.
+ * Emit the up-front GitHub Check for every service this deploy is SKIPPING, so
+ * an unchanged service reads as a deliberate `neutral` on the PR rather than as
+ * a missing check.
+ *
+ * Only skipped services, deliberately: `preCreateServiceDeployments` inserts
+ * rows for those and nothing else, because a TARGETED service has no row until
+ * the compose loop records its outcome. This function used to branch on
+ * `entry.targeted` to emit an `in_progress` start check, but that branch could
+ * never run — a targeted entry's `id` is null here, so the guard above it always
+ * skipped it. Targeted services get one create-and-complete check at finalize
+ * instead (see the `phase === "complete"` tail above), which is also the only
+ * shape that can't strand an `in_progress` check on a failed deploy.
+ *
+ * Best-effort; the check_run_id is persisted so a later patch hits the same Check.
  */
 export async function emitInitialServiceChecks(
   serviceFanOut: Awaited<ReturnType<typeof preCreateServiceDeployments>>,
@@ -169,26 +185,15 @@ export async function emitInitialServiceChecks(
   dep: Deployment,
 ): Promise<void> {
   for (const entry of serviceFanOut.values()) {
-    if (!entry.id) continue;
-    if (entry.targeted) {
-      await emitServiceCheckRun({
-        project,
-        dep,
-        serviceDeploymentId: entry.id,
-        serviceName: entry.serviceName,
-        phase: "start",
-      }).catch(() => {});
-    } else {
-      await emitServiceCheckRun({
-        project,
-        dep,
-        serviceDeploymentId: entry.id,
-        serviceName: entry.serviceName,
-        phase: "complete",
-        conclusion: "neutral",
-        output: { title: "Skipped — no changes", summary: "Files under this service's root were unchanged." },
-      }).catch(() => {});
-    }
+    if (!entry.id || entry.targeted) continue;
+    await emitServiceCheckRun({
+      project,
+      dep,
+      serviceDeploymentId: entry.id,
+      serviceName: entry.serviceName,
+      conclusion: "neutral",
+      output: { title: "Skipped — no changes", summary: "Files under this service's root were unchanged." },
+    }).catch(() => {});
   }
 }
 

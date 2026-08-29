@@ -1,20 +1,22 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Globe, Loader2, Sparkles } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Server, Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { domainsApi } from "@/lib/api";
 import type { DomainDnsRecord } from "@/lib/api/domains";
 import DnsConfiguration from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DnsConfiguration";
 
 interface DnsRecordsModalProps {
-  /** The apex/primary custom hostname the deploy will serve. */
-  hostname: string;
-  /** When set, fetch the project-aware records for the existing row; otherwise
-   *  preview from the hostname alone (server IP still resolves on self-hosted). */
-  domainId?: string | null;
-  /** Show the synthesized `www` CNAME line (the www variant endpoint is enabled). */
-  includeWww?: boolean;
+  /** Every custom hostname this deploy will serve. Compose may have several. */
+  targets: Array<{
+    hostname: string;
+    includeWww?: boolean;
+    /** Existing persisted row; absent during the pre-deploy preview. */
+    domainId?: string | null;
+  }>;
+  /** Selected remote deployment target, so A records point at that server. */
+  serverId?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -26,30 +28,71 @@ interface DnsRecordsModalProps {
  * provider). Informational-blocking: Deploy proceeds, Cancel aborts.
  */
 export default function DnsRecordsModal({
-  hostname,
-  domainId,
-  includeWww,
+  targets,
+  serverId,
   onConfirm,
   onCancel,
 }: DnsRecordsModalProps) {
   const { t } = useI18n();
   const d = t.deploy.dns;
-  const [records, setRecords] = useState<DomainDnsRecord[] | null>(null);
-  const [mode, setMode] = useState<"cloud" | "selfhosted">("selfhosted");
+  const [sections, setSections] = useState<Array<{
+    hostname: string;
+    domainId?: string;
+    records: DomainDnsRecord[];
+    mode: "cloud" | "selfhosted";
+  }>>([]);
   const [loading, setLoading] = useState(true);
+  const targetKey = JSON.stringify({ targets, serverId });
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const res = domainId
-          ? await domainsApi.records(domainId)
-          : await domainsApi.previewRecords(hostname);
+        const loaded = await Promise.all(
+          targets.map(async (target) => {
+            try {
+              const res = target.domainId
+                ? await domainsApi.records(target.domainId)
+                : await domainsApi.previewRecords(
+                    target.hostname,
+                    target.includeWww === true,
+                    serverId,
+                  );
+              const mode = res.data.mode === "cloud" ? "cloud" as const : "selfhosted" as const;
+              let records = res.data.records;
+              if (
+                target.includeWww &&
+                mode === "selfhosted" &&
+                !records.some((record) => record.type === "CNAME" && record.host.startsWith("www"))
+              ) {
+                records = [
+                  ...records,
+                  {
+                    type: "CNAME" as const,
+                    host: "www",
+                    name: `www.${target.hostname}`,
+                    value: target.hostname,
+                  },
+                ];
+              }
+              return {
+                hostname: target.hostname,
+                domainId: target.domainId ?? undefined,
+                records,
+                mode,
+              };
+            } catch {
+              return {
+                hostname: target.hostname,
+                domainId: target.domainId ?? undefined,
+                records: [],
+                mode: "selfhosted" as const,
+              };
+            }
+          }),
+        );
         if (cancelled) return;
-        setRecords(res.data.records);
-        setMode(res.data.mode === "cloud" ? "cloud" : "selfhosted");
-      } catch {
-        if (!cancelled) setRecords([]);
+        setSections(loaded);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -57,52 +100,52 @@ export default function DnsRecordsModal({
     return () => {
       cancelled = true;
     };
-  }, [hostname, domainId]);
-
-  // Synthesized, display-only `www → apex` CNAME. The backend still mints the
-  // apex A record used for actual verification; this is guidance only.
-  const shown = useMemo<DomainDnsRecord[]>(() => {
-    if (!records) return [];
-    if (!includeWww || mode === "cloud") return records;
-    const apex = hostname.replace(/^www\./, "");
-    if (records.some((r) => r.type === "CNAME" && r.host.startsWith("www"))) return records;
-    return [...records, { type: "CNAME", host: "www", name: `www.${apex}`, value: apex }];
-  }, [records, includeWww, mode, hostname]);
+  // The serialized key is stable across equivalent arrays, avoiding a refetch
+  // if a parent rebuilds the target list during an unrelated render.
+  }, [targetKey]);
 
   return (
-    <div className="p-6">
-      <div className="mb-1 flex items-center gap-3">
+    <div className="p-5">
+      {/* Same clean header as the "view DNS" modal — records + the hint carry
+          everything; the old "Point your domain, then deploy" title/subtitle and
+          the "auto-configure" row were redundant chrome. */}
+      <div className="mb-4 flex items-center gap-3">
         <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-          <Globe className="size-4 text-primary" />
+          <Server className="size-4 text-primary" />
         </div>
-        <h2 className="text-base font-semibold text-foreground">{d.modalTitle}</h2>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{d.title}</h2>
+          <p className="text-xs text-muted-foreground break-words">
+            {d.addRecordsFor}{" "}
+            <span className="font-medium text-foreground">
+              {targets.map((target) => target.hostname).join(", ")}
+            </span>
+          </p>
+        </div>
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">{d.modalSubtitle}</p>
+
+      <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+        {d.modalSubtitle}
+      </p>
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> {d.loadingRecords}
         </div>
       ) : (
-        <DnsConfiguration domain={hostname} records={shown} mode={mode} />
+        <div className="max-h-[60vh] space-y-4 overflow-y-auto pe-1">
+          {sections.map((section) => (
+            <DnsConfiguration
+              key={section.hostname}
+              domain={section.hostname}
+              records={section.records}
+              mode={section.mode}
+              showHeader={targets.length > 1}
+              domainId={section.domainId}
+            />
+          ))}
+        </div>
       )}
-
-      <button
-        type="button"
-        disabled
-        className="mt-3 flex w-full cursor-not-allowed items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-left opacity-70"
-      >
-        <span className="flex min-w-0 items-center gap-2.5">
-          <Sparkles className="size-4 shrink-0 text-primary" />
-          <span className="min-w-0">
-            <span className="block text-[13px] font-medium text-foreground">{d.autoConfigTitle}</span>
-            <span className="block truncate text-[12px] text-muted-foreground">{d.autoConfigDesc}</span>
-          </span>
-        </span>
-        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-          {d.comingSoon}
-        </span>
-      </button>
 
       <div className="mt-5 flex items-center justify-end gap-2">
         <button

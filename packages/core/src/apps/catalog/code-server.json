@@ -1,8 +1,10 @@
 {
-  "available": false,
+  "available": true,
+  "verified": true,
   "id": "code-server",
   "name": "code-server",
-  "description": "Run VS Code in your browser, on your server. Login uses an auto-generated password.",
+  "description": "Run VS Code in your browser, on your server. Sign in with the auto-generated password below.",
+  "repository": "https://github.com/coder/code-server",
   "kind": "template",
   "logo": "code-server",
   "category": "other",
@@ -15,21 +17,34 @@
   "services": [
     {
       "name": "code-server",
-      "image": "codercom/code-server:latest",
-      "ports": [
-        "8080:8080"
-      ],
+      "image": "codercom/code-server:4.132.0",
       "exposedPort": 8080,
       "exposed": true,
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
       "secretEnv": [
         "PASSWORD"
       ],
       "volumes": [
-        "code_server_config:/home/coder/.config",
-        "code_server_local:/home/coder/.local",
-        "code_server_project:/home/coder/project"
+        "code_server_home:/home/coder"
       ],
-      "restart": "unless-stopped"
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -o /dev/null http://127.0.0.1:8080/healthz || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 6,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped",
+      "ports": [
+        "8207:8080"
+      ]
     }
   ],
   "configFields": [
@@ -37,9 +52,48 @@
       "key": "PASSWORD",
       "service": "code-server",
       "label": "Login password",
-      "help": "Auto-generated. Required to sign in.",
+      "help": "Auto-generated. Required to sign in. Uses PASSWORD (plaintext) rather than HASHED_PASSWORD, which expects an argon2 digest.",
       "generate": "secret",
       "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Sign in to code-server",
+    "description": "VS Code in the browser. Sign in with the generated password below.",
+    "guide": {
+      "intro": "A full VS Code editor running on your server, reachable from any browser.",
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Editor",
+        "source": "publicUrl:code-server",
+        "kind": "url",
+        "recommended": true,
+        "help": "Opens the browser IDE. Sign in with the password below."
+      },
+      {
+        "id": "password",
+        "label": "Login password",
+        "source": "env:code-server:PASSWORD",
+        "secret": true
+      }
+    ],
+    "firstLogin": {
+      "note": "Your whole home directory is the persisted volume, so files, extensions and settings all survive a redeploy. The editor opens /home/coder by default."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "code-server",
+      "port": 8080,
+      "label": "Editor",
+      "kind": "http",
+      "defaultMode": "domain"
     }
   ]
 }

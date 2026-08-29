@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession, getDeploymentInfoOrNull } from "@/lib/server/session";
+import { resolveRequestProductView } from "@/lib/server/product-view";
 import { ApiUnavailable } from "@/components/api-unavailable";
 import { Sidebar } from "@/components/sidebar";
 import { UpdateCenter } from "@/components/updates/UpdateCenter";
@@ -141,6 +142,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .get("github/home", { cache: "no-store" })
     .catch(() => null);
 
+  // Resolve the rail HERE, on the server, so the first painted sidebar is already
+  // the right one. Doing it client-side from document.cookie would render the
+  // platform rail and then flip the entire nav after hydration. Passing the
+  // deployment info we just fetched keeps this on the fresh copy.
+  const productView = await resolveRequestProductView(deploymentInfo);
+
   return (
     <DashboardProviders
       initialGithubData={initialGithubData}
@@ -149,7 +156,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
       deployMode={deploymentInfo.deployMode}
       isServerHost={deploymentInfo.isServerHost}
       swarmSupportEnabled={deploymentInfo.swarmSupportEnabled}
+      hostControlEnabled={deploymentInfo.hostControlEnabled}
       authMode={deploymentInfo.authMode}
+      productMode={deploymentInfo.productMode ?? "platform"}
+      productView={productView}
       cloudAuthUrl={deploymentInfo.cloudAuthUrl}
       cloudApiUrl={deploymentInfo.cloudApiUrl}
       machineName={deploymentInfo.machineName}

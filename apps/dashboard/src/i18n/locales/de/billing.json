@@ -3,6 +3,8 @@
     "title": "Kapazität & Nutzung",
     "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus Openship Cloud synchronisiert.",
     "routes": "Kostenlose Routen",
+    "runningServices": "Laufende Dienste",
+    "projects": "Projekte",
     "workspaces": "Workspaces",
     "unlimited": "Unbegrenzt",
     "used": "genutzt",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "Einmalige Guthaben-Aufladungen kommen bald – hier können Sie zusätzlich zu Ihrem monatlichen Kontingent Guthaben hinzufügen.",
   "header": {
-    "credits": "Credits",
+    "credits": "Compute",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -80,7 +82,7 @@
     "title": "Guthaben aufladen",
     "description": "Einmalige Guthabenpakete, die über Stripe abgerechnet werden. Guthaben verfällt nie und wird zusätzlich zu deinem monatlichen Kontingent gutgeschrieben.",
     "tryAgain": "Erneut versuchen",
-    "credits": "Credits",
+    "credits": "Compute-Minuten",
     "redirecting": "Weiterleitung…",
     "buy": "Kaufen",
     "empty": "Derzeit sind keine Aufladepakete verfügbar.",
@@ -92,25 +94,24 @@
     "portalError": "Abrechnungsportal konnte nicht geöffnet werden"
   },
   "overview": {
-    "creditsLeft": "Credits übrig",
+    "creditsLeft": "Compute-Minuten übrig",
     "planLabel": "Tarif {name}",
     "usedThisPeriod": "In diesem Zeitraum verbraucht",
     "resets": "Zurücksetzung",
     "resetsInDay": "In {n} Tag",
     "resetsInDays": "In {n} Tagen",
     "none": "—",
-    "upgradeToPro": "Upgrade auf Pro",
     "recentActivity": "Letzte Aktivität",
     "last7Days": "Letzte 7 Tage",
     "viewFullUsage": "Vollständige Nutzung anzeigen",
     "noUsageYet": "Noch keine Nutzung",
     "usageError": "Nutzung konnte nicht geladen werden",
-    "needMoreCredits": "Mehr Credits benötigt?",
+    "needMoreCredits": "Mehr Compute-Minuten benötigt?",
     "oneTimeTopups": "Einmalige Aufladungen, keine Änderung des Abonnements",
     "seeAllPacks": "Alle Pakete ansehen",
     "packsError": "Pakete konnten nicht geladen werden",
     "noPacks": "Keine Aufladepakete verfügbar.",
-    "creditsAmount": "{n} Credits",
+    "creditsAmount": "{n} Compute-Minuten",
     "oneTime": "{price} einmalig",
     "buy": "Kaufen",
     "checkoutError": "Bezahlvorgang konnte nicht gestartet werden"
@@ -121,7 +122,7 @@
       "balance": "Guthaben",
       "balanceSuffix": "von {limit} Credits",
       "consumed": "In diesem Zeitraum verbraucht",
-      "credits": "Credits",
+      "credits": "Compute-Minuten",
       "burnRate": "Verbrauchsrate",
       "burnRateSuffix": "Credits/Tag (letzte 7 T.)",
       "projected": "Prognose zum Periodenende",
@@ -140,16 +141,28 @@
       "subtitle": "Credits werden anteilig der abgerechneten Ressourcennutzung im ausgewählten Zeitraum zugeordnet.",
       "resource": "Ressource",
       "units": "Einheiten",
-      "credits": "Credits",
+      "credits": "Compute-Minuten",
       "percentOfTotal": "% der Gesamtsumme",
       "loading": "Wird geladen…",
       "empty": "Keine Nutzung im ausgewählten Zeitraum."
     },
     "resources": {
-      "cpu": { "label": "CPU-Zeit", "units": "vCPU-Stunden" },
-      "memory": { "label": "Arbeitsspeicher", "units": "GB-Stunden" },
-      "disk": { "label": "Festplatten-IO", "units": "GB" },
-      "network": { "label": "Netzwerk", "units": "GB" }
+      "cpu": {
+        "label": "CPU-Zeit",
+        "units": "vCPU-Stunden"
+      },
+      "memory": {
+        "label": "Arbeitsspeicher",
+        "units": "GB-Stunden"
+      },
+      "disk": {
+        "label": "Festplatten-IO",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Netzwerk",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "Arbeitsbereich",
@@ -187,7 +200,8 @@
       "incomplete_expired": "Abgelaufen",
       "unpaid": "Unbezahlt",
       "paused": "Pausiert"
-    }
+    },
+    "includedTitle": "Enthaltene Leistungen"
   },
   "paymentPanel": {
     "title": "Zahlungsmethode",

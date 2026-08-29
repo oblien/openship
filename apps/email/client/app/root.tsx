@@ -17,6 +17,7 @@ import type { AppRouter } from '@zero/server/trpc';
 import { Button } from '@/components/ui/button';
 import { getLocale } from '@/paraglide/runtime';
 import { siteConfig } from '@/lib/site-config';
+import { runtimeBranding } from '@/lib/runtime-branding';
 import { signOut } from '@/lib/auth-client';
 import { TRPC_URL } from '@/lib/backend-url';
 import type { Route } from './+types/root';
@@ -58,11 +59,15 @@ export const getServerTrpc = (req: Request) =>
   });
 
 export const meta: MetaFunction = () => {
+  // Read from the document, not from the build-time siteConfig: the server has
+  // already substituted the operator's branding into this <head>, and
+  // re-rendering the constants here is what used to overwrite it (GH-568).
+  const { siteTitle, siteDescription } = runtimeBranding();
   return [
-    { title: siteConfig.title },
-    { name: 'description', content: siteConfig.description },
-    { property: 'og:title', content: siteConfig.title },
-    { property: 'og:description', content: siteConfig.description },
+    { title: siteTitle },
+    { name: 'description', content: siteDescription },
+    { property: 'og:title', content: siteTitle },
+    { property: 'og:description', content: siteDescription },
     { property: 'og:image', content: siteConfig.openGraph.images[0].url },
     // `og:url` is intentionally omitted - siteConfig URLs are relative now
     // (one build deploys anywhere), and scrapers resolve relative og:image

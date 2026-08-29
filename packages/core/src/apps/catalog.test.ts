@@ -25,6 +25,56 @@ describe("app catalog (JSON)", () => {
     expect(isValidAppTemplate(null)).toBe(false);
     expect(isValidAppTemplate({ id: "x", name: "X", description: "d", kind: "template", logo: "x", category: "bogus" })).toBe(false);
   });
+
+  it("every entry that uses commandArgv/stopGracePeriod declares minEngine >= 0.6.6 (issue #599)", () => {
+    // `commandArgv` and `stopGracePeriod` were added to the serviceSpec schema
+    // in commit 550fe22f, released as v0.6.6. Without minEngine >= 0.6.6 on the
+    // entry, the engine-gate cannot refuse to install the app on a pre-0.6.6
+    // engine — the install silently drops the field and the container runs the
+    // wrong role (PostHog worker, MinIO "sh is not a minio sub-command", …).
+    const MIN_ENGINE = "0.6.6";
+    for (const app of APP_TEMPLATES) {
+      for (const service of app.services ?? []) {
+        const usesPostRelease =
+          service.commandArgv !== undefined || service.stopGracePeriod !== undefined;
+        if (!usesPostRelease) continue;
+        expect(
+          app.minEngine,
+          `${app.id}/${service.name} uses a post-0.6.6 serviceSpec field but entry has no minEngine — engine gate cannot refuse pre-0.6.6 installs`,
+        ).toBeDefined();
+        expect(
+          templateEngineOk(app.minEngine, MIN_ENGINE),
+          `${app.id}/${service.name} declares minEngine=${app.minEngine}, must be >= ${MIN_ENGINE}`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+describe("mail has exactly one entry point in the catalog", () => {
+  /**
+   * Openship Mail and Openship Webmail used to be two cards with the same logo,
+   * the same category and overlapping copy — the mail wizard's "connect existing"
+   * branch installs the webmail app, so one of them was a subset of the other. The
+   * wizard is now the single door; webmail keeps its id and stays installable.
+   */
+  const listed = APP_TEMPLATES.filter((t) => !t.unlisted);
+
+  it("puts Openship Mail first", () => {
+    expect(listed[0]?.id).toBe("mail");
+  });
+
+  it("lists no second Openship-branded mail card", () => {
+    const own = listed.filter((t) => t.category === "mail" && /^Openship /.test(t.name));
+    expect(own.map((t) => t.id)).toEqual(["mail"]);
+  });
+
+  it("keeps webmail installable, just unlisted", () => {
+    const webmail = APP_TEMPLATES.find((t) => t.id === "webmail");
+    // `available: false` would make installApp throw "app-not-available" and break
+    // the wizard's connect-existing branch. Unlisting must not become a refusal.
+    expect(webmail).toMatchObject({ unlisted: true, available: true });
+  });
 });
 
 // A minimal valid template used to probe the stricter, version-aware gate.
@@ -183,5 +233,35 @@ describe("app template — strict fields + referential integrity", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it("accepts a service with an inline build context (no image)", () => {
+    expect(
+      isValidAppTemplate({
+        ...base,
+        services: [
+          {
+            name: "compute",
+            build: {
+              dockerfile: "FROM alpine:3.20\nENTRYPOINT [\"/bin/sh\"]\n",
+              files: [{ path: "run.sh", content: "echo hi" }],
+            },
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a service that sets BOTH image and build", () => {
+    expect(
+      isValidAppTemplate({
+        ...base,
+        services: [{ name: "db", image: "postgres:16", build: { dockerfile: "FROM postgres:16" } }],
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a service that sets NEITHER image nor build", () => {
+    expect(isValidAppTemplate({ ...base, services: [{ name: "db" }] })).toBe(false);
   });
 });

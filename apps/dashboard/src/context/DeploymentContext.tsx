@@ -27,6 +27,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     initializeFromLocal,
     initializeFromUpload,
     initializeFromProject,
+    rescanWithComposePath,
   } = useDeploymentConfig();
 
   const {
@@ -58,6 +59,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     initializeFromLocal,
     initializeFromUpload,
     initializeFromProject,
+    rescanWithComposePath,
     startDeployment,
     connectToBuild,
     loadBuildSession,

@@ -236,7 +236,7 @@ That's it. No new TS generator. iRedMail keeps doing what it does well.
 | **Dovecot** | IMAP / POP3 / LMTP / ManageSieve / LDA. Reads `vmail.mailbox`, `vmail.domain`. Writes `vmail.last_login`, `vmail.used_quota`, `vmail.share_folder`. | (uses `vmail`) |
 | **Amavisd** | Mail filtering bridge. Invokes ClamAV + SpamAssassin. | `amavisd` |
 | **iRedAPD** | Policy daemon (greylisting, throttling, SRS). | `iredapd` |
-| **ClamAV** | Antivirus. Stateless. | - |
+| **ClamAV** | Antivirus. Signature database on a bind mount, seeded from the image on first boot — clamd will not start without it. | - |
 | **SpamAssassin** | Spam scoring. Stateless. | - |
 | **fail2ban** | Brute-force protection on SMTP/IMAP/POP3 auth. | `fail2ban` |
 

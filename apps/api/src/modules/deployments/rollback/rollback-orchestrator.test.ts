@@ -1,132 +1,155 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  findDeployment: vi.fn(),
-  findProject: vi.fn(),
-  getRevision: vi.fn(),
+const FROZEN_RELEASE_IMAGE = `ghcr.io/acme/app@sha256:${"b".repeat(64)}`;
+
+interface TriggerRequest {
+  projectId: string;
+  branch?: string | null;
+  trigger: string;
+  forceAll: boolean;
+  commitSha?: string;
+  commitShaBefore?: string;
+  reuseSnapshot: {
+    envVars: Record<string, string> | null;
+    meta: Record<string, unknown>;
+  };
+}
+
+const h = vi.hoisted(() => ({
+  imagePresent: false,
+  inspectedImages: [] as string[],
   triggerDeployment: vi.fn(),
-  setArtifactRetainedAt: vi.fn(),
-  listReadyOrderedDesc: vi.fn(),
-  removeRevision: vi.fn(),
-  getStack: vi.fn(),
+  target: null as Record<string, unknown> | null,
+  active: null as Record<string, unknown> | null,
+  project: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@repo/db", () => ({
   repos: {
     deployment: {
-      findById: mocks.findDeployment,
-      setArtifactRetainedAt: mocks.setArtifactRetainedAt,
-      listReadyOrderedDesc: mocks.listReadyOrderedDesc,
+      findById: async (id: string) =>
+        id === h.target?.id ? h.target : id === h.active?.id ? h.active : null,
     },
-    project: { findById: mocks.findProject },
-    instanceSettings: { get: vi.fn() },
-    swarmStack: {
-      getRevisionInOrganization: mocks.getRevision,
-      removeRevisionInOrganization: mocks.removeRevision,
-      getForProjectInOrganization: mocks.getStack,
-    },
+    project: { findById: async () => h.project },
+    service: { listByDeployment: async () => [] },
+    serviceDeployment: { effectiveImagesAsOf: async () => new Map() },
+    member: { listByOrganization: async () => [{ userId: "org-owner" }] },
   },
 }));
+
+vi.mock("@repo/adapters", () => {
+  class DockerRuntime {
+    name = "docker";
+
+    supports(): boolean {
+      return false;
+    }
+
+    async imageExistsLocally(ref: string): Promise<boolean> {
+      h.inspectedImages.push(ref);
+      return h.imagePresent;
+    }
+
+    async dispose(): Promise<void> {}
+  }
+
+  return { DockerRuntime };
+});
+
+vi.mock("../../../lib/deployment-runtime", async () => {
+  const { DockerRuntime } = await import("@repo/adapters");
+  return {
+    // The production class intentionally has a private constructor; the mock
+    // factory supplies a public test double at runtime, so instantiate it from
+    // its prototype without weakening the production constructor contract.
+    resolveDeploymentRuntime: async () => ({ runtime: Object.create(DockerRuntime.prototype) }),
+  };
+});
 
 vi.mock("../build.service", () => ({
   checkNoActiveBuild: vi.fn(),
-  triggerDeployment: mocks.triggerDeployment,
+  triggerDeployment: h.triggerDeployment,
 }));
 
-import { onDeploymentReady, prune, rollback } from "./rollback-orchestrator";
+import { rollback } from "./rollback-orchestrator";
 
-const target = {
-  id: "dep-target",
-  projectId: "project-a",
-  organizationId: "org-a",
-  branch: "main",
-  commitSha: "newer-commit",
-  commitMessage: "newer deployment",
-  environment: "production",
-  status: "ready",
-  rollbackStrategy: "snapshot",
-  artifactRetainedAt: new Date("2026-07-30T00:00:00.000Z"),
-  envVars: { API_TOKEN: "enc1:snapshot" },
-  runtimeRef: {
-    kind: "swarm-stack",
-    clusterId: "cluster-a",
-    managerServerId: "server-a",
-    stackName: "blog",
-    revisionId: "swr-target",
-  },
-};
+beforeEach(() => {
+  h.imagePresent = false;
+  h.inspectedImages = [];
+  h.triggerDeployment.mockReset();
+  h.triggerDeployment.mockResolvedValue({ deployment: { id: "dep-restored" } });
 
-describe("Swarm rollback orchestration", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.findDeployment.mockResolvedValue(target);
-    mocks.findProject.mockResolvedValue({ id: "project-a", activeDeploymentId: "dep-active" });
-    mocks.getRevision.mockResolvedValue({
-      id: "swr-target",
-      revision: 3,
-      applyStatus: "ready",
-      renderedYamlEnc: "enc1:retained",
-      sourceCommitSha: "older-commit",
+  h.target = {
+    id: "dep-target",
+    projectId: "project-1",
+    organizationId: "org-1",
+    status: "ready",
+    containerId: "old-container",
+    imageRef: "ghcr.io/acme/app:v1.2.3",
+    commitSha: null,
+    commitShaBefore: null,
+    commitMessage: "Release v1.2.3",
+    branch: null,
+    environment: "production",
+    envVars: { API_KEY: "encrypted-frozen" },
+    artifactRetainedAt: new Date("2026-08-01T00:00:00Z"),
+    createdAt: new Date("2026-08-01T00:00:00Z"),
+    meta: {
+      framework: "docker",
+      branch: "frozen-release-branch",
+      source: "image",
+      build: "prebuilt",
+      workload: "web",
+      serviceDeploymentMode: "single",
+      releaseVersion: "1.2.3",
+      releaseTag: "v1.2.3",
+      releaseImageRef: FROZEN_RELEASE_IMAGE,
+      // A pin from an earlier restore must not turn reacquisition into a local
+      // handover. The planner proved the local image is absent.
+      handoverAppImage: "ghcr.io/acme/app:stale-local-pin",
+    },
+  };
+  h.active = {
+    id: "dep-active",
+    commitSha: "newer-commit",
+  };
+  h.project = {
+    id: "project-1",
+    organizationId: "org-1",
+    activeDeploymentId: "dep-active",
+    defaultRollbackStrategy: "snapshot",
+    gitProvider: "release",
+    // Deliberately different from the frozen ref. Rollback must not render this
+    // current template or resolve its current tag.
+    releaseSource: {
+      mode: "github",
+      artifactKind: "image",
+      repo: "acme/app",
+      imageTemplate: "ghcr.io/acme/app:changed-{tag}",
+    },
+  };
+});
+
+describe("rollback — reacquire a frozen release image", () => {
+  it("replays the immutable snapshot without a commit, repository, or stale local pin", async () => {
+    await rollback("dep-target");
+
+    expect(h.inspectedImages).toEqual(["ghcr.io/acme/app:v1.2.3"]);
+    expect(h.triggerDeployment).toHaveBeenCalledTimes(1);
+    const [, request] = h.triggerDeployment.mock.calls[0] as [unknown, TriggerRequest];
+
+    expect(request).toMatchObject({
+      projectId: "project-1",
+      branch: "frozen-release-branch",
+      trigger: "rollback",
+      forceAll: true,
+      commitShaBefore: "newer-commit",
     });
-    mocks.triggerDeployment.mockResolvedValue({ deployment: { id: "dep-rollback", trigger: "rollback" } });
-    mocks.setArtifactRetainedAt.mockResolvedValue(undefined);
-    mocks.listReadyOrderedDesc.mockResolvedValue([]);
-    mocks.removeRevision.mockResolvedValue(true);
-    mocks.getStack.mockResolvedValue(undefined);
-  });
-
-  it("creates a new standard deployment bound to the selected immutable Swarm revision", async () => {
-    await expect(rollback("dep-target")).resolves.toMatchObject({ id: "dep-rollback", trigger: "rollback" });
-    expect(mocks.getRevision).toHaveBeenCalledWith("swr-target", "org-a");
-    const [context, input] = mocks.triggerDeployment.mock.calls[0]!;
-    expect(context.organizationId).toBe("org-a");
-    expect(context.sessionId).toBe("bg:swarm:rollback");
-    expect(input).toEqual(expect.objectContaining({
-        projectId: "project-a",
-        trigger: "rollback",
-        commitSha: "older-commit",
-        forceAll: true,
-        swarmRollback: {
-          sourceDeploymentId: "dep-target",
-          sourceRevisionId: "swr-target",
-          environmentSnapshot: { API_TOKEN: "enc1:snapshot" },
-        },
-      }));
-  });
-
-  it("blocks before scheduling when the retained Swarm revision is unavailable", async () => {
-    mocks.getRevision.mockResolvedValue(undefined);
-    await expect(rollback("dep-target")).rejects.toMatchObject({ code: "ROLLBACK_ARTIFACT_GONE" });
-    expect(mocks.triggerDeployment).not.toHaveBeenCalled();
-  });
-
-  it("blocks an expired Swarm deployment even when its old revision row still exists", async () => {
-    mocks.findDeployment.mockResolvedValue({ ...target, artifactRetainedAt: null });
-    await expect(rollback("dep-target")).rejects.toMatchObject({ code: "ROLLBACK_ARTIFACT_GONE" });
-    expect(mocks.getRevision).not.toHaveBeenCalled();
-    expect(mocks.triggerDeployment).not.toHaveBeenCalled();
-  });
-
-  it("retains a stack revision without invoking a container archive", async () => {
-    await onDeploymentReady({
-      newDeployment: { ...target, id: "dep-new", runtimeRef: { ...target.runtimeRef, revisionId: "swr-new" } } as never,
-      previousActive: target as never,
-    });
-    expect(mocks.setArtifactRetainedAt).toHaveBeenCalledWith("dep-target", expect.any(Date));
-    expect(mocks.setArtifactRetainedAt).toHaveBeenCalledWith("dep-new", expect.any(Date));
-  });
-
-  it("purges an expired unpinned Swarm revision record before clearing rollbackability", async () => {
-    const newest = { ...target, id: "dep-new", runtimeRef: { ...target.runtimeRef, revisionId: "swr-new" } };
-    mocks.findProject.mockResolvedValue({
-      id: "project-a",
-      organizationId: "org-a",
-      activeDeploymentId: "dep-new",
-      rollbackWindow: 0,
-    });
-    mocks.listReadyOrderedDesc.mockResolvedValue([newest, target]);
-    await expect(prune("project-a")).resolves.toEqual({ purged: 1 });
-    expect(mocks.removeRevision).toHaveBeenCalledWith("swr-target", "org-a");
-    expect(mocks.setArtifactRetainedAt).toHaveBeenCalledWith("dep-target", null);
+    expect(request.commitSha).toBeUndefined();
+    expect(request.reuseSnapshot.envVars).toEqual({ API_KEY: "encrypted-frozen" });
+    expect(request.reuseSnapshot.meta.releaseImageRef).toBe(FROZEN_RELEASE_IMAGE);
+    expect(request.reuseSnapshot.meta.releaseTag).toBe("v1.2.3");
+    expect(request.reuseSnapshot.meta.handoverAppImage).toBeUndefined();
+    expect(JSON.stringify(request.reuseSnapshot.meta)).not.toContain("changed-{tag}");
   });
 });

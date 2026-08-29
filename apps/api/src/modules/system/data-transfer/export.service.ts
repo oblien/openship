@@ -4,23 +4,30 @@
  * payload so the file carries secrets ONLY inside the sealed bundle.
  */
 
-import { dumpSubgraph, stripEncryptedInPlace } from "@repo/db";
+import { countInstanceSubgraphTables, dumpSubgraph, stripEncryptedInPlace } from "@repo/db";
 
 import { env } from "../../../config/env";
 import { CloudInstanceNotTransferableError } from "./errors";
 import { sealSecretBundle } from "./passphrase-crypto";
 import { extractPlaintext } from "./secret-codec";
 import { SECRET_COLUMNS } from "./secret-registry";
-import type { DataTransferFile, SecretBundle, SecretEntry } from "./types";
+import { resolveExportSelection, summarizeExportCounts } from "./selection";
+import type { DataTransferFile, ExportPreview, ExportSelection, SecretBundle, SecretEntry } from "./types";
 
-export async function exportInstance(opts: { passphrase?: string }): Promise<DataTransferFile> {
-  // GATE 1: never export a multi-tenant SaaS instance (would leak all tenants).
+export async function previewInstanceExport(): Promise<ExportPreview> {
+  if (env.CLOUD_MODE) throw new CloudInstanceNotTransferableError();
+  return summarizeExportCounts(await countInstanceSubgraphTables());
+}
+
+/** Build a scrubbed snapshot plus its in-memory plaintext credential bundle. */
+export async function prepareInstanceExport(
+  selectionInput?: ExportSelection,
+): Promise<{ file: DataTransferFile; secrets: SecretBundle | null }> {
   if (env.CLOUD_MODE) throw new CloudInstanceNotTransferableError();
 
-  const dump = await dumpSubgraph({ kind: "instance" });
+  const { selection, excludedTables } = resolveExportSelection(selectionInput);
+  const dump = await dumpSubgraph({ kind: "instance" }, { excludeTables: excludedTables });
 
-  // Decrypt each secret cell (source instance can read its own data) into the
-  // bundle BEFORE stripping the payload.
   const entries: SecretEntry[] = [];
   for (const spec of SECRET_COLUMNS) {
     const rows = dump.tables[spec.sqlName];
@@ -33,19 +40,36 @@ export async function exportInstance(opts: { passphrase?: string }): Promise<Dat
     }
   }
 
-  // Now scrub ciphertext from the payload (idempotent with restore-side redaction).
   stripEncryptedInPlace(dump.tables);
 
-  const bundle: SecretBundle = { version: 1, entries };
-  const secrets =
-    opts.passphrase && entries.length > 0 ? sealSecretBundle(bundle, opts.passphrase) : null;
-
   return {
-    kind: "openship-instance-export",
-    envelopeVersion: 1,
-    createdAt: new Date().toISOString(),
-    sourceDriver: dump.sourceDriver,
-    dump,
-    secrets,
+    file: {
+      kind: "openship-instance-export",
+      envelopeVersion: 1,
+      createdAt: new Date().toISOString(),
+      sourceDriver: dump.sourceDriver,
+      selection,
+      summary: {
+        rows: Object.values(dump.tables).reduce((count, rows) => count + rows.length, 0),
+        tables: Object.keys(dump.tables).length,
+      },
+      dump,
+      secrets: null,
+    },
+    secrets: entries.length > 0 ? { version: 1, entries } : null,
+  };
+}
+
+export async function exportInstance(opts: {
+  passphrase?: string;
+  selection?: ExportSelection;
+}): Promise<DataTransferFile> {
+  const prepared = await prepareInstanceExport(opts.selection);
+  return {
+    ...prepared.file,
+    secrets:
+      opts.passphrase && prepared.secrets
+        ? sealSecretBundle(prepared.secrets, opts.passphrase)
+        : null,
   };
 }

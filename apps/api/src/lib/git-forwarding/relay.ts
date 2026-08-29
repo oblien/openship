@@ -181,7 +181,11 @@ function handleConnection(
     void getLocalGhToken()
       .then((token) => {
         if (!token) return finish(null, "no-token", meta);
-        // GitHub HTTPS token auth: token as password, any non-empty username.
+        // GitHub HTTPS token auth: it reads the token from either Basic-auth
+        // slot and ignores the other value, so the username here is a label.
+        // URL-form auth picks the pair GitHub documents per token type —
+        // see gitCredentialPair (packages/adapters/src/runtime/git-clone.ts);
+        // this is the credential-helper protocol, not a URL, so it stays put.
         finish(`username=x-access-token\npassword=${token}\n\n`, "granted", meta);
       })
       .catch(() => finish(null, "token-error", meta));

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Readable, Writable } from "node:stream";
+import { PassThrough, Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { transferImage } from "./image-transfer";
 import type { DockerRuntime } from "./docker";
@@ -100,5 +100,46 @@ describe("transferImage", () => {
     await expect(transferImage(fakeSource([Buffer.from("x")]), failingTarget, IMG)).rejects.toThrow(
       /unexpected EOF/,
     );
+  });
+
+  test("a source error during the target's connect window aborts, never crashes", async () => {
+    // dst.loadImage attaches counter's real consumer only AFTER an SSH connect;
+    // if the source dies in that gap, counter.destroy(err) fires 'error' on a
+    // Transform whose only listener isn't attached yet. Without the floor that's
+    // an unhandled 'error' event → process crash; a user listener here lets us
+    // ASSERT it never fired instead of just killing the worker.
+    const uncaught: unknown[] = [];
+    const onUncaught = (e: unknown) => uncaught.push(e);
+    process.on("uncaughtException", onUncaught);
+
+    try {
+      const stdout = new PassThrough();
+      const src = {
+        async saveImage() {
+          const awaitExit = new Promise<{ code: number; stderr: string }>((resolve) => {
+            stdout.once("error", () => resolve({ code: 1, stderr: "save aborted mid-stream" }));
+          });
+          return { stdout, awaitExit };
+        },
+      } as unknown as DockerRuntime;
+
+      // Target simulates the real connect gap: it does NOT consume `counter`
+      // immediately. During the gap the source dies, destroying `counter` — the
+      // exact moment that used to crash the process.
+      const target = {
+        async loadImage(body: Readable) {
+          stdout.destroy(new Error("connection reset by peer"));
+          await new Promise((r) => setTimeout(r, 20));
+          await pipeline(body, new Writable({ write: (_c, _e, cb) => cb() }));
+          return undefined;
+        },
+      } as unknown as DockerRuntime;
+
+      await expect(transferImage(src, target, IMG)).rejects.toBeTruthy();
+      await new Promise((r) => setTimeout(r, 30));
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.removeListener("uncaughtException", onUncaught);
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { lookup as dnsLookup } from "node:dns/promises";
 import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "../config/env";
 import { safeErrorMessage, withTimeout } from "@repo/core";
@@ -98,6 +99,38 @@ const PLATFORM_ENSURE_TIMEOUT_MS = 8_000;
 const platformTransportFailures = new Map<string, number>();
 
 /**
+ * `ensureOpenshipPlatformMailbox` reports `mail.<domain>` as the platform
+ * mailbox's SMTP host - correct for an external mail client, and correct
+ * for THIS process too when the api runs bare on the mail server box. But
+ * when containerized, that hostname commonly resolves to a loopback address
+ * via the HOST's own `/etc/hosts` self-entry (e.g. Ubuntu's default
+ * `127.0.1.1 <hostname>`) - meaningful only in the host's network
+ * namespace, not the container's. Connecting there fails immediately with
+ * ECONNREFUSED before ever reaching Postfix.
+ *
+ * Detected generically (not by hardcoding any domain): resolve the reported
+ * host and check if it's loopback. If so, and we have a working container
+ * -> host bridge address (the same one the SSH manager already uses to
+ * reach this box from inside a container), reconnect through that instead.
+ * A genuinely remote mail server resolves to a real address and is passed
+ * through untouched.
+ */
+async function resolveContainerReachableSmtpHost(reportedHost: string): Promise<string> {
+  const bridgeHost = process.env.OPENSHIP_HOST_SSH_HOST?.trim();
+  if (!bridgeHost) return reportedHost;
+  try {
+    const { address } = await dnsLookup(reportedHost);
+    const isLoopback = address === "::1" || address.startsWith("127.");
+    if (!isLoopback) return reportedHost;
+  } catch {
+    // Unresolvable - fall through and let nodemailer's own lookup fail with
+    // its normal error rather than silently substituting a guess.
+    return reportedHost;
+  }
+  return bridgeHost;
+}
+
+/**
  * Locate the active mail server and (re)build its platform-mailbox
  * transport. Returns null if no mail server is provisioned, or if the
  * ensure*-call throws (we don't want a transient mail-server fault to
@@ -152,14 +185,22 @@ async function getPlatformTransport(): Promise<{
       PLATFORM_ENSURE_TIMEOUT_MS,
       `platform mailbox lookup on ${installed.serverId}`,
     );
+    const smtpHost = await resolveContainerReachableSmtpHost(creds.smtpHost);
     const transport = nodemailer.createTransport({
-      host: creds.smtpHost,
+      host: smtpHost,
       port: creds.smtpPort,
       secure: creds.secure,
       auth: {
         user: creds.email,
         pass: creds.password,
       },
+      // When smtpHost got rewritten to the container->host bridge address,
+      // the TCP connection no longer matches the certificate's name (it's
+      // issued for the mail server's real hostname, e.g. mail.<domain>) -
+      // pin SNI/cert verification to the ORIGINAL hostname so TLS still
+      // validates against the right name while the socket itself reaches a
+      // container-routable address.
+      ...(smtpHost !== creds.smtpHost ? { tls: { servername: creds.smtpHost } } : {}),
     });
     const entry: CachedPlatformTransport = {
       transport,
@@ -358,12 +399,33 @@ async function getTransportChain(
   if (preferSource !== "platform" && envTransport) {
     chain.push({ transport: envTransport, from: envFrom, source: "env" });
   }
+  // Last resort for the "platform" preference: env is normally dropped so a branded
+  // invite can't quietly go out from a generic sender — but that only holds while a
+  // branded sender EXISTS. On a box whose only mail config is env SMTP the chain above
+  // is empty, and dropping env there doesn't downgrade the sender, it loses the mail
+  // entirely (sendMail's empty-chain path is a silent no-op). An invite delivered from
+  // the generic sender beats an invite that never arrives.
+  if (chain.length === 0 && envTransport) {
+    chain.push({ transport: envTransport, from: envFrom, source: "env" });
+  }
   return chain;
 }
 
-/** Send an email. No-ops with a warning when no transport is available; fails
- *  over across the transport chain when a send throws. */
-export async function sendMail(opts: SendMailOptions): Promise<void> {
+/**
+ * Send an email. Fails over across the transport chain when a send throws.
+ *
+ * RETURNS whether anything actually accepted the message. This used to be `void`,
+ * and the empty-chain path still only warns rather than throwing — which is right
+ * for the fire-and-forget callers, but it meant a caller could not TELL. That is how
+ * an email notification channel ended up marked `verified` and every delivery marked
+ * `sent` on a box with no transport at all: the send "succeeded" because it silently
+ * did nothing.
+ *
+ * So: callers that must react check the boolean (see the email notification worker),
+ * and callers that genuinely don't care keep ignoring it exactly as before. A hard
+ * throw here would have changed behaviour for all eight call sites at once.
+ */
+export async function sendMail(opts: SendMailOptions): Promise<boolean> {
   const preferSource = opts.preferSource ?? "auto";
 
   // Cloud relay branch — only meaningful on a local self-hosted instance.
@@ -375,7 +437,7 @@ export async function sendMail(opts: SendMailOptions): Promise<void> {
         "[mail] preferSource=cloud requires organizationId - skipping email to",
         opts.to,
       );
-      return;
+      return false;
     }
     // cloud-client is dual-side (local outbound → SaaS) with no local-
     // only side effects on import, so static import is fine. Cargo-cult
@@ -393,8 +455,9 @@ export async function sendMail(opts: SendMailOptions): Promise<void> {
       console.warn(
         `[mail] cloud invitation relay failed for org=${opts.organizationId}: ${result.error}`,
       );
+      return false;
     }
-    return;
+    return true;
   }
 
   const chain = await getTransportChain(preferSource);
@@ -403,7 +466,7 @@ export async function sendMail(opts: SendMailOptions): Promise<void> {
       `[mail] no transport configured (preferSource=${preferSource}) - skipping email to`,
       opts.to,
     );
-    return;
+    return false;
   }
 
   // Try each transport in priority order; fail over to the next on a send
@@ -420,7 +483,7 @@ export async function sendMail(opts: SendMailOptions): Promise<void> {
         html: opts.html,
         ...(opts.text ? { text: opts.text } : {}),
       });
-      return;
+      return true;
     } catch (err) {
       lastErr = err;
       const more = i < chain.length - 1;

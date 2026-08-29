@@ -39,6 +39,21 @@ export interface ServiceHandle {
   /** Runtime-specific container/workspace id when the service is
    *  currently deployed. Null if it has never deployed or was destroyed. */
   containerId: string | null;
+  /**
+   * Whether that container is actually RUNNING, when we were able to ask.
+   *
+   * `undefined`/`null` mean UNKNOWN — a runtime that cannot enumerate containers
+   * (cloud), an unreachable host, or a caller that never looked. Unknown is not
+   * "no": a producer must treat it as permission to proceed, or every cloud and
+   * bare source would lose its logical dump.
+   *
+   * Only `false` is evidence. It exists because `containerId` cannot carry this:
+   * a STOPPED container still has an id, so a dump producer that keys on presence
+   * alone selects itself and then fails at the exec (`is not running`) instead of
+   * falling back to the volume snapshot — which for a stopped database is the
+   * COLD, and therefore better, artifact.
+   */
+  containerRunning?: boolean | null;
   /** Project slug — used in destination key paths. */
   projectSlug: string;
   /** Whether this service's NAMED volumes are project-scoped
@@ -80,22 +95,86 @@ export interface ExecuteCommandOpts {
   user?: string;
   /** Working directory inside the service. */
   cwd?: string;
-  /** Kill the exec after this many milliseconds. Null = no timeout
-   *  (use cautiously — long-running dumps are legitimate). */
+  /**
+   * Give up after this long with NO stdout/stderr — not this long overall.
+   * Same reasoning as `StreamPathOpts.idleTimeoutMs`: a large `pg_dump` that is
+   * actively streaming must not be cut off by elapsed time alone, but a wedged
+   * exec that never prints a byte should fail within minutes, not hours.
+   * Executors own their defaults; `undefined` means "the executor's", never
+   * "unbounded".
+   */
+  idleTimeoutMs?: number;
+  /** Absolute ceiling regardless of traffic, behind `idleTimeoutMs`. Docker
+   *  exec default 6 hours, matching capture/restore helpers. */
   timeoutMs?: number;
 }
 
 export interface StreamPathOpts {
-  compression?: "zstd" | "gzip" | "none";
+  compression?: PayloadCompression;
   /** Glob-ish patterns to exclude (passed to tar `--exclude`). */
   exclude?: string[];
+  /**
+   * Give up after this long with NO output — not this long overall. Same
+   * reasoning as `ReceiveStreamOpts.idleTimeoutMs`, and deliberately the same
+   * default (10 min on the docker helper): a volume big enough to need hours to
+   * restore needs hours to capture, and the direction that fails silently is
+   * this one. Executors own their defaults; `undefined` means "the executor's",
+   * never "unbounded".
+   */
+  idleTimeoutMs?: number;
+  /** Absolute ceiling regardless of traffic, behind `idleTimeoutMs`. Docker
+   *  helper default 6 hours, matching restore. */
+  timeoutMs?: number;
+  /**
+   * Freeze the service's own processes while the copy runs, so the archive is a
+   * point-in-time image rather than a torn one.
+   *
+   * A `tar` of a live volume is CRASH-CONSISTENT: the app keeps writing while the copy
+   * walks the tree, so files captured early and late disagree, and a database data
+   * directory copied that way can be unrecoverable. Quiescing uses Docker's native cgroup
+   * freezer (`docker pause`) on the TARGET container — the tar helper is a separate
+   * container on the same volume and is not frozen, so the copy proceeds against a
+   * filesystem nobody is writing to.
+   *
+   * What it buys and what it does NOT:
+   *  - removes concurrent writes for the duration of the copy;
+   *  - does NOT flush the application's own in-memory buffers or force an fsync, so a
+   *    database still deserves its logical dump (pg_dump/mysqldump) over this.
+   *
+   * Opt-in, never implied: the service is unavailable for as long as the copy takes, which
+   * for a large volume is minutes. The caller chooses availability or consistency; the
+   * artifact records which it got.
+   */
+  quiesce?: boolean;
 }
 
 export interface ReceiveStreamOpts {
-  compression?: "zstd" | "gzip" | "none";
+  compression?: PayloadCompression;
   /** Wipe the target before extracting. Default false — adapter-
    *  specific safer modes (delete-then-recreate volume) take precedence. */
   clearTarget?: boolean;
+  /**
+   * Give up after this long with NO traffic in either direction — not this long
+   * overall. Default 10 minutes; 0/undefined at the executor means "use the
+   * default", never "unbounded".
+   *
+   * Idle rather than wall-clock because the two states are indistinguishable by
+   * elapsed time alone: a 50GB extract legitimately runs for hours, and #434's
+   * hang also lasts hours. They differ in traffic — `tar -x` consumes stdin
+   * continuously, a wedged helper moves nothing — so the idle timer separates
+   * them exactly where a wall-clock bound has to choose between strangling the
+   * first and missing the second.
+   */
+  idleTimeoutMs?: number;
+  /** Absolute ceiling regardless of traffic, as a last resort behind
+   *  `idleTimeoutMs`. Default 6 hours. */
+  timeoutMs?: number;
+  /**
+   * Abort an in-flight extract. Aborting mid-extract leaves the target holding
+   * partial data — the caller owns saying so; the executor only stops early and
+   * reaps the helper.
+   */
+  signal?: AbortSignal;
 }
 
 /** Executor — the runtime-shaped axis. Speaks "run this command inside
@@ -147,6 +226,24 @@ export interface BackupExecutor {
     opts?: { clearTarget?: boolean },
   ): Promise<{ bytesWritten: number }>;
 
+  /**
+   * The environment the service's process is ACTUALLY running with.
+   *
+   * Producers detect a database and authenticate to it from `ServiceHandle.env`,
+   * which is assembled from the service row plus the project's env-var rows. That
+   * covers everything Openship deployed and nothing it adopted: a service row built
+   * from a running container carries no `environment` at all, so `POSTGRES_DB` and
+   * `POSTGRES_USER` are simply absent and `PgDumpProducer.detects()` returns false
+   * for an image that is plainly postgres — the volume fallback then runs instead
+   * and finds nothing to snapshot (#611). The credentials are right there in the
+   * container's own `Config.Env`; nothing was reading them.
+   *
+   * Optional, and docker-only by nature — a bare host has no container to inspect,
+   * and a cloud workspace's env is not ours to enumerate. Absent means "no extra
+   * source of env", never an error.
+   */
+  readContainerEnv?(service: ServiceHandle): Promise<Record<string, string>>;
+
   /** Whether a named-volume source already exists on this daemon, and if so
    *  whether it holds data. Lets a caller REFUSE to overwrite a pre-existing,
    *  non-empty target volume (e.g. a cross-server migration that reuses bare
@@ -186,32 +283,99 @@ export type ExecutorFactory = (runtime: unknown) => BackupExecutor;
 
 // ─── Producer (WHAT) ─────────────────────────────────────────────────────────
 
-/** Canonical payload kinds. Stored in `backup_policy.payload_kind` as
- *  a string — the producer registry resolves by this name, so new
- *  kinds don't need a schema migration. */
-export type PayloadKind =
-  | "volume"
-  | "pg_dump"
-  | "mysql_dump"
-  | "redis_rdb"
-  | "mongo_dump"
-  | "custom_command";
+/**
+ * Canonical payload kinds. Stored in `backup_policy.payload_kind` as a string — the
+ * producer registry resolves by this name, so new kinds don't need a schema migration.
+ *
+ * RE-EXPORTED, not declared. The union used to be written out here as well as in
+ * `@repo/core`, where the dashboard reads it — the two were a documented "mirror",
+ * which is another way of saying the compiler was not checking them against each
+ * other. The catalog in core is the declaration; every fact about a kind (its label,
+ * its restore semantics, its config keys) is stated there once, and a kind that
+ * exists here without a spec there is a compile error.
+ */
+// `export … from` re-exports without binding the name locally, and four
+// declarations below annotate with it.
+import type { PayloadCompression, PayloadKind } from "@repo/core";
+export type { PayloadCompression, PayloadKind };
 
+/**
+ * The policy's `payloadConfig`, forwarded WHOLE by the orchestrator.
+ *
+ * D5: the orchestrator used to assemble this by hand-picking three keys, which
+ * dropped every custom_command key — so each mail-server backup captured an
+ * artifact with `restoreCommand: null` and could never be restored. The producer
+ * read those keys off `opts` through a cast, which is why the typechecker never
+ * saw the mismatch. A new payload key belongs HERE; the orchestrator forwards
+ * the config unfiltered so the two halves cannot drift again.
+ */
 export interface ProducerOpts {
   /** Which sources from `listSources()` to back up. Null = producer's
    *  default (usually "everything"). */
   sourceIds?: string[];
-  /** For custom_command: the command to run. */
+  /** For custom_command: the command to run. Legacy alias for
+   *  `produceCommand`, still honored. */
   command?: string;
   /** Extra patterns to exclude (forwarded to executor). */
   exclude?: string[];
+  /** custom_command: shell command whose stdout IS the artifact. */
+  produceCommand?: string;
+  /** custom_command: shell command whose stdin receives the artifact on
+   *  restore. Frozen into the artifact's metadata at capture time — an artifact
+   *  captured without it is permanently unrestorable. */
+  restoreCommand?: string;
+  /** custom_command: filename portion of the destination key. */
+  artifactName?: string;
+  /** Freeze the service while a volume is copied — see `StreamPathOpts.quiesce`.
+   *  Forwarded straight through from the policy's `payloadConfig`. */
+  quiesce?: boolean;
+  /**
+   * `path`: absolute directories inside the service to archive, one artifact each.
+   *
+   * Validated with `validateBackupPath` at save time AND again in the producer — these
+   * strings are interpolated into a shell command, and a policy row can predate the
+   * validation or arrive from an import.
+   */
+  paths?: string[];
+  /**
+   * `path`: empty the target directory before extracting into it, instead of merging.
+   *
+   * Defaults FALSE, unlike a volume restore's `clearTarget`. A volume is a
+   * single-purpose store, so replacing it wholesale is what an operator means; a
+   * folder can be shared with other things the service put there. Refused outright for
+   * a top-level or system directory — see `validateClearPath`.
+   */
+  clearPath?: boolean;
+  /**
+   * Compressor for a volume archive. Default `zstd` — the best ratio, and what every
+   * existing artifact used.
+   *
+   * Worth exposing because zstd is NOT in `alpine:3`: the helper `apk add`s it at runtime,
+   * which means a volume backup REQUIRES network egress from the helper (the executor's
+   * `NetworkDisabled: compression !== "zstd"` is that dependency written down) and pays the
+   * fetch on every capture and every restore. `gzip` is a busybox built-in, so it is
+   * offline-capable and immediate at a worse ratio — the right choice on an air-gapped box,
+   * and the reason the payload-matrix E2E finishes in seconds rather than minutes.
+   *
+   * Recorded on the artifact, and restore decompresses from that record, so changing it is
+   * safe for artifacts already captured.
+   */
+  compression?: PayloadCompression;
 }
 
+/**
+ * Deliberately does NOT carry a post-restore startup timeout. `startupTimeoutMs`
+ * lived here for a while, dropped on the floor by every producer and read by no
+ * executor — honoring it means building a readiness probe, which is a feature and
+ * belongs with `OpenshipReadiness`, not a field that quietly implies one exists.
+ */
 export interface RestoreOpts {
   /** Pass clearTarget through. */
   clearTarget?: boolean;
-  /** Wait this long for the service to come back up after restart. */
-  startupTimeoutMs?: number;
+  /** Forwarded to the executor so a cancel doesn't have to wait out the
+   *  whole extract. Producers that restore through `pipeIntoCommand` ignore
+   *  it — those writes are transactional at the engine, not the volume. */
+  signal?: AbortSignal;
 }
 
 /** A single backup artifact — one file in the destination. A producer
@@ -324,8 +488,12 @@ export interface PutOpts {
   /** Known byte size when available (S3 multipart threshold etc.). */
   size?: number;
   contentType?: string;
-  /** Pre-computed sha256 hex; if present, destination may verify
-   *  end-to-end (e.g. S3 Content-MD5 / ChecksumSHA256). */
+  /** Pre-computed sha256 hex. A GATE, not a hint: a destination that can check
+   *  it must refuse the object on mismatch rather than land it (see local.put).
+   *  Only settable when the caller holds the whole body — the run manifest. A
+   *  streamed artifact's digest doesn't exist until its bytes have already left,
+   *  so integrity there runs the other way round: `PutResult.etag` is compared
+   *  against the digest computed in flight (see uploadArtifact). */
   sha256?: string;
   /** Free-form object metadata stored alongside (S3 x-amz-meta-*,
    *  SFTP ignores). */
@@ -380,11 +548,7 @@ export interface BackupDestination {
    *  the API host. Only implemented when capabilities include
    *  `presignedGet`. */
   presignGet?(key: string, ttlSec: number): Promise<string>;
-  presignPut?(
-    key: string,
-    ttlSec: number,
-    opts?: { contentType?: string },
-  ): Promise<string>;
+  presignPut?(key: string, ttlSec: number, opts?: { contentType?: string }): Promise<string>;
 }
 
 export type DestinationFactory = (row: BackupDestinationRow) => BackupDestination;

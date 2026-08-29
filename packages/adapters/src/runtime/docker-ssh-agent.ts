@@ -1,13 +1,14 @@
 import net from "node:net";
 import type { Duplex } from "node:stream";
 
-import type { ClientChannel } from "ssh2";
-
 import {
+  attachDialStdioDiagnostics,
   connectSshClient,
+  dialStdioDiagnostics,
   execSshCommand,
   openSshUnixSocket,
-  openSshExecChannel,
+  openDockerDialStdioChannel,
+  DOCKER_DIAL_STDIO_COMMAND,
   type StreamLocalCapableClient,
 } from "../system/ssh-client";
 import type { SshConfig, CommandExecutor } from "../types";
@@ -17,26 +18,21 @@ import { safeErrorMessage, withTimeout } from "@repo/core";
 const DEFAULT_REMOTE_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
 const resolvedDockerSocketPathCache = new WeakMap<DockerConnectionOptions, Promise<string>>();
 
-// Opening a streamlocal channel to the remote Docker socket can hang FOREVER when
-// the SSH server silently refuses forwarding (AllowStreamLocalForwarding no) — the
-// request is accepted but never answered. Bound it so reachability fails fast with
-// the diagnostic below instead of stalling behind dockerode's 10-minute API timeout.
-const DOCKER_STREAMLOCAL_TIMEOUT_MS = 15_000;
-
-// The Docker Engine API carried over a plain SSH exec channel (no streamlocal).
-const DOCKER_DIAL_STDIO_COMMAND = "docker system dial-stdio";
-// One-time streamlocal capability probe per bridge. Short so the Bun-compiled
-// desktop (where streamlocal hangs) falls through to dial-stdio quickly instead
-// of stalling behind the 25s reachability cap on every connection.
-const STREAMLOCAL_PROBE_TIMEOUT_MS = 8_000;
 // Per-CHANNEL data-flow verification for a real bridge request (see
-// `bridgeClient`). The one-time probe above only proves the FIRST channel on a
-// connection can move data; some sshd/ssh2 combinations then open every later
-// channel "dead" (open resolves, no byte ever crosses). Bound both the open and
-// the first-byte wait with this — deliberately short so most of the caller's
-// reachability budget (e.g. the 25s migration-scan cap) is left for the
-// dial-stdio fallback to actually complete when a channel proves dead.
+// `bridgeClient`) and for the one-time capability probe. The probe only proves
+// the FIRST channel on a connection can move data; some sshd/ssh2 combinations
+// then open every later channel "dead" (open resolves, no byte ever crosses).
+// Bound both the open and the first-byte wait with this — deliberately short so
+// most of the caller's reachability budget (e.g. the 25s migration-scan cap) is
+// left for the dial-stdio fallback to complete when a channel proves dead.
 const STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS = 3_000;
+// How long a dial-stdio channel may say nothing before we commit the socket to it anyway.
+// NOT a verification gate — there is no transport left to fall back to. It is a REPORTING
+// window: a channel that dies in the first seconds (no dockerd, no permission, a forced
+// command) does so before this expires, and catching it here lets the request be answered
+// with the daemon's own words. Expiring costs nothing — a silent channel is committed, and
+// data already flows client→upstream through the capture while we wait.
+const DIAL_STDIO_ANSWER_TIMEOUT_MS = 3_000;
 // Cap on the client request buffered while choosing/verifying an upstream. A
 // real Docker API request that gets a response verifies on the first response
 // byte, long before this; the cap is only a safety valve against unbounded
@@ -61,10 +57,6 @@ function toSshConfig(opts: DockerConnectionOptions): SshConfig {
 function getConfiguredDockerSocketPath(opts: DockerConnectionOptions): string | null {
   const socketPath = opts.dockerSocketPath?.trim();
   return socketPath ? socketPath : null;
-}
-
-function getFallbackDockerSocketPath(opts: DockerConnectionOptions): string {
-  return getConfiguredDockerSocketPath(opts) ?? DEFAULT_REMOTE_DOCKER_SOCKET_PATH;
 }
 
 function normalizeSocketPathLines(lines: string[]): string[] {
@@ -111,15 +103,13 @@ async function discoverRemoteDockerSocketPathsWithClient(
   return normalizeSocketPathLines(lines);
 }
 
+/** Throws rather than answering `[]`: see {@link resolveRemoteDockerSocketPath} for why a
+ *  refused probe must not read as "this box has no docker socket". */
 async function discoverRemoteDockerSocketPathsWithExecutor(
   executor: CommandExecutor,
 ): Promise<string[]> {
-  try {
-    const output = await executor.exec(DOCKER_SOCKET_DISCOVERY_SCRIPT, { timeout: 10_000 });
-    return normalizeSocketPathLines(output.split(/\r?\n/));
-  } catch {
-    return [];
-  }
+  const output = await executor.exec(DOCKER_SOCKET_DISCOVERY_SCRIPT, { timeout: 10_000 });
+  return normalizeSocketPathLines(output.split(/\r?\n/));
 }
 
 async function discoverRemoteDockerSocketPaths(
@@ -153,156 +143,24 @@ async function resolveRemoteDockerSocketPath(
     return cachedPath;
   }
 
-  const pendingPath = discoverRemoteDockerSocketPaths(opts)
-    .then((paths) => paths[0] ?? DEFAULT_REMOTE_DOCKER_SOCKET_PATH)
-    .catch(() => DEFAULT_REMOTE_DOCKER_SOCKET_PATH);
+  // A probe that ANSWERED is a reading worth caching — including "no socket anywhere,
+  // so use the default". A probe that FAILED is not: the transport blipped, the command
+  // timed out, or an sshd forced command ran instead of our script. Falling back to the
+  // default is still right for this call, but CACHING that fallback pins it for the
+  // whole lifetime of `opts`, so one blip against a rootless or podman-only host keeps
+  // aiming every later attempt at /var/run/docker.sock with no re-probe. Un-poison
+  // instead — the rejection handler is a microtask, so it always runs after the `set`
+  // below, and a concurrent caller holding this same promise still gets the default.
+  const pendingPath = discoverRemoteDockerSocketPaths(opts).then(
+    (paths) => paths[0] ?? DEFAULT_REMOTE_DOCKER_SOCKET_PATH,
+    () => {
+      resolvedDockerSocketPathCache.delete(opts);
+      return DEFAULT_REMOTE_DOCKER_SOCKET_PATH;
+    },
+  );
 
   resolvedDockerSocketPathCache.set(opts, pendingPath);
   return pendingPath;
-}
-
-function shouldCollectSocketDiagnostics(error: unknown): boolean {
-  const message = safeErrorMessage(error);
-  return /channel open failure|open failed/i.test(message);
-}
-
-function formatSocketDiagnostics(lines: string[]): string {
-  if (lines.length === 0) {
-    return "";
-  }
-
-  return ` Remote diagnostics: ${lines.join("; ")}.`;
-}
-
-async function collectDockerSocketDiagnostics(
-  opts: DockerConnectionOptions,
-  socketPath: string,
-): Promise<string[]> {
-  let conn: StreamLocalCapableClient | null = null;
-
-  try {
-    conn = await connectSshClient(toSshConfig(opts));
-
-    const escapedPath = JSON.stringify(socketPath);
-    const command = [
-      "set -eu",
-      'printf "user=%s\\n" "$(whoami)"',
-      'printf "groups=%s\\n" "$(id -Gn 2>/dev/null || true)"',
-      `if [ -S ${escapedPath} ]; then`,
-      `  printf 'socket=yes path=%s\\n' ${escapedPath}`,
-      `  ls -ld ${escapedPath}`,
-      "else",
-      `  printf 'socket=no path=%s\\n' ${escapedPath}`,
-      `  if [ -e ${escapedPath} ]; then ls -ld ${escapedPath}; fi`,
-      "fi",
-    ].join("\n");
-
-    const result = await execSshCommand(conn, command);
-    const lines = [result.stdout, result.stderr]
-      .filter(Boolean)
-      .flatMap((text) => text.split(/\r?\n/))
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (result.code !== 0 && lines.length === 0) {
-      return [`remote diagnostic exited with code ${result.code}`];
-    }
-
-    if (!getConfiguredDockerSocketPath(opts)) {
-      const discoveredPaths = await discoverRemoteDockerSocketPathsWithClient(conn).catch(() => []);
-      lines.push(
-        discoveredPaths.length > 0
-          ? `discovered_sockets=${discoveredPaths.join(",")}`
-          : "discovered_sockets=none",
-      );
-    }
-
-    return lines;
-  } catch (error) {
-    return [
-      `remote diagnostic failed: ${safeErrorMessage(error)}`,
-    ];
-  } finally {
-    conn?.end();
-  }
-}
-
-export async function probeDockerSshBridge(opts: DockerConnectionOptions): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    let conn: StreamLocalCapableClient | null = null;
-
-    resolveRemoteDockerSocketPath(opts)
-      .then((socketPath) =>
-        connectSshClient(toSshConfig(opts)).then((client) => ({ client, socketPath })),
-      )
-      .then(async ({ client, socketPath }) => {
-        conn = client;
-        let stream: ClientChannel;
-
-        try {
-          stream = await openSshUnixSocket(client, socketPath);
-        } catch (error) {
-          throw new Error(
-            `SSH session established, but opening a streamlocal channel to ${socketPath} failed: ${safeErrorMessage(error)}`,
-          );
-        }
-
-        stream.once("close", () => {
-          client.end();
-        });
-        stream.end();
-        resolve();
-      })
-      .catch((error) => {
-        conn?.end();
-        reject(error instanceof Error ? error : new Error(String(error)));
-      });
-  });
-}
-
-export async function verifyDockerSshBridge(opts: DockerConnectionOptions): Promise<void> {
-  const socketPath = await resolveRemoteDockerSocketPath(opts).catch(() => getFallbackDockerSocketPath(opts));
-
-  // Fast path: use pooled executor’s streamlocal to verify
-  if (opts.executor?.forwardUnixSocket) {
-    try {
-      const stream = await withTimeout(
-        opts.executor.forwardUnixSocket(socketPath),
-        DOCKER_STREAMLOCAL_TIMEOUT_MS,
-        `Opening a streamlocal channel to ${socketPath} timed out after ${DOCKER_STREAMLOCAL_TIMEOUT_MS / 1000}s — ` +
-          "the SSH server likely disallows streamlocal forwarding (AllowStreamLocalForwarding).",
-      );
-      stream.destroy();
-      return;
-    } catch (error) {
-      const diagnostics = shouldCollectSocketDiagnostics(error)
-        ? formatSocketDiagnostics(await collectDockerSocketDiagnostics(opts, socketPath))
-        : "";
-
-      throw new Error(
-        `Cannot reach Docker daemon: ${safeErrorMessage(error)}. ` +
-          `Current failure: streamlocal tunnel could not be opened for ${socketPath}. ` +
-          "Check that the remote Docker-compatible socket exists, the SSH server allows streamlocal forwarding, and the SSH user can access that socket." +
-          diagnostics,
-      );
-    }
-  }
-
-  try {
-    await probeDockerSshBridge(opts);
-  } catch (error) {
-    const diagnostics = shouldCollectSocketDiagnostics(error)
-      ? formatSocketDiagnostics(await collectDockerSocketDiagnostics(opts, socketPath))
-      : "";
-
-    throw new Error(
-      `Cannot reach Docker daemon: ${safeErrorMessage(error)}. ` +
-        `Preflight steps: SSH login -> resolve remote Docker socket path -> open streamlocal tunnel -> Docker API ping. ` +
-        `Current failure: streamlocal tunnel could not be opened for ${socketPath}. ` +
-        "Check that the remote Docker-compatible socket exists, the SSH server allows streamlocal forwarding, and the SSH user can access that socket." +
-        diagnostics,
-    );
-  }
 }
 
 /** A loopback TCP listener that tunnels Docker API traffic to the remote socket. */
@@ -346,44 +204,207 @@ async function openStreamlocalUpstream(opts: DockerConnectionOptions): Promise<D
   }
 }
 
+/**
+ * Answer a bridged request with a real HTTP 502 carrying `reason`.
+ *
+ * This is the whole point of the file's error handling. A destroyed socket cannot carry a
+ * cause: dockerode sees a bare reset and reports `socket hang up`, so a server with no
+ * running dockerd, an unreachable socket, or an sshd ForceCommand all arrived as the same
+ * four words. docker-modem parses a non-stream JSON body and renders
+ * `(HTTP code 502) unexpected - <message>`, so the reason written here is the message the
+ * operator finally reads.
+ *
+ * Only valid while NOTHING has been written client-ward yet — appending a status line to a
+ * response already in flight would corrupt it. Every caller tracks that (`answered`).
+ */
+function respondBadGateway(client: net.Socket, reason: string): void {
+  if (client.destroyed || client.writableEnded) {
+    client.destroy();
+    return;
+  }
+  const body = JSON.stringify({ message: reason });
+  try {
+    client.end(
+      "HTTP/1.1 502 Bad Gateway\r\n" +
+        "Content-Type: application/json\r\n" +
+        `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+        "Connection: close\r\n" +
+        "\r\n" +
+        body,
+    );
+  } catch {
+    // Peer already gone — nothing to tell anyone.
+    client.destroy();
+  }
+}
+
 /** Bidirectional pipe between dockerode's TCP socket and the SSH upstream,
  *  propagating backpressure + end/close both ways. Terminal — call once. */
-function pipeThrough(client: net.Socket, upstream: Duplex): void {
+function pipeThrough(
+  client: net.Socket,
+  upstream: Duplex,
+  handoff: { answered: boolean; unansweredReason: () => string },
+): void {
+  let answered = handoff.answered;
   const teardown = () => {
     client.destroy();
     upstream.destroy();
   };
   client.on("error", teardown);
-  upstream.on("error", teardown);
+  // NOT `teardown`. An upstream error is the most common way a bridged request fails —
+  // sshd's ForceCommand exiting 142, `docker` missing, the exec channel dying — and
+  // `teardown` destroyed the CLIENT, which is the one socket the cause has to travel
+  // down. `respondBadGateway` refuses a destroyed socket, so the `close` handler below
+  // then answered nothing and dockerode got the bare `socket hang up` this whole path
+  // exists to eliminate. The 502 was only ever reachable on a *clean* unanswered close.
+  //
+  // Answer here rather than leaving it to `close`: under Node `close` follows `error`,
+  // but this file documents three Bun-only stream divergences and an unanswered request
+  // hanging is worse than a duplicate attempt — `respondBadGateway` is idempotent
+  // (`writableEnded` short-circuits it), so the `close` path staying as-is costs nothing.
+  upstream.on("error", () => {
+    if (!answered) respondBadGateway(client, handoff.unansweredReason());
+    upstream.destroy();
+  });
   client.once("close", () => upstream.destroy());
-  upstream.once("close", () => client.destroy());
+  upstream.once("close", () => {
+    // An upstream that closes without ever answering is a FAILED request, and the
+    // failure has a cause the upstream usually stated (see `dialStdioDiagnostics`).
+    // Say it, rather than destroying the socket and letting dockerode guess.
+    if (!answered) {
+      respondBadGateway(client, handoff.unansweredReason());
+      return;
+    }
+    // `end`, not `destroy`: the response may still be buffered client-ward, and
+    // destroy() discards it — a truncated `docker logs` / image pull reported as a
+    // reset instead of the bytes we already had.
+    if (!client.destroyed) client.end();
+  });
+  // Before the pipes: a second `data` listener alongside `pipe()` fires under both
+  // Node and Bun (verified), and attaching it first means no byte can slip past
+  // between the two statements.
+  upstream.on("data", () => {
+    answered = true;
+  });
   client.pipe(upstream);
-  upstream.pipe(client);
+  // `{ end: false }` because pipe's default ends the socket's WRITABLE side on upstream
+  // EOF, and `respondBadGateway` cannot write to an ended socket — EOF is exactly how an
+  // unanswered channel finishes, so the default swallowed the 502 that explains it. The
+  // success path still ends at EOF, below, where `answered` is already known.
+  upstream.pipe(client, { end: false });
+  upstream.once("end", () => {
+    if (answered && !client.writableEnded) client.end();
+  });
 }
 
 /**
- * Resolve with `upstream`'s first byte once it arrives, or `null` on
- * timeout/error/close. The proving chunk is RETURNED (not re-injected) so the
- * caller can write it straight to the client before attaching the pipe — the
- * pipe only carries what arrives after it attaches, and `unshift`-then-`pipe`
- * proved unreliable under the Bun runtime (the byte was silently dropped).
+ * What `upstream` did with the first response byte.
+ *
+ * Three arms, not two, because *closed* and *silent* are opposite evidence:
+ *   • `closed` — it ended or errored without answering. That is proof of failure, and the
+ *     cause is on the stream.
+ *   • `silent` — nothing yet, within our window. Proof of nothing: `/events`,
+ *     `/containers/{id}/wait` and a long `docker build` upload legitimately say nothing for
+ *     minutes. Collapsing this into the same `null` as `closed` is how a working long-poll
+ *     would get torn down as a dead channel.
+ *
+ * The proving chunk is RETURNED (not re-injected) so the caller can write it straight to the
+ * client before attaching the pipe — the pipe only carries what arrives after it attaches,
+ * and `unshift`-then-`pipe` proved unreliable under the Bun runtime (the byte was silently
+ * dropped).
  */
-function awaitFirstByte(upstream: Duplex, ms: number): Promise<Buffer | null> {
+type FirstByte =
+  | { kind: "data"; chunk: Buffer }
+  | { kind: "closed" }
+  | { kind: "silent" };
+
+function awaitFirstByte(upstream: Duplex, ms: number): Promise<FirstByte> {
   return new Promise((resolve) => {
-    const finish = (chunk: Buffer | null) => {
+    const finish = (outcome: FirstByte) => {
       clearTimeout(timer);
       upstream.removeListener("data", onData);
       upstream.removeListener("error", onFail);
       upstream.removeListener("close", onFail);
-      resolve(chunk);
+      resolve(outcome);
     };
-    const onData = (chunk: Buffer) => finish(chunk);
-    const onFail = () => finish(null);
-    const timer = setTimeout(() => finish(null), ms);
+    const onData = (chunk: Buffer) => finish({ kind: "data", chunk });
+    const onFail = () => finish({ kind: "closed" });
+    const timer = setTimeout(() => finish({ kind: "silent" }), ms);
     upstream.on("data", onData);
     upstream.once("error", onFail);
     upstream.once("close", onFail);
   });
+}
+
+/**
+ * Does this look like the start of an HTTP response, allowing for a chunk shorter than the
+ * marker? Anything else on a dial-stdio channel is a shell talking to us instead of the
+ * Docker daemon — an sshd ForceCommand banner (`Please login as the user "ec2-user"…`), a
+ * login MOTD, `docker: command not found`. Piped through, those become a body dockerode
+ * cannot parse; named here, they become the actual error.
+ *
+ * Not applied to streamlocal: sshd forwards that socket itself, so no shell can intercept
+ * it, and a non-HTTP answer there means the discovered socket isn't Docker's.
+ */
+function looksLikeHttpResponse(chunk: Buffer): boolean {
+  const marker = "HTTP/";
+  const head = chunk.subarray(0, marker.length).toString("latin1");
+  return marker.startsWith(head) || head.startsWith(marker);
+}
+
+/** Everything the operator can do about any of these, said once. */
+const BRIDGE_FAILURE_HINT =
+  "Check that Docker is installed and running on the server (`docker info`) and that the SSH user can reach its socket.";
+
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/** The message dockerode's caller ends up reading. `cause` is the part we actually know. */
+function bridgeFailureReason(opts: DockerConnectionOptions, cause: string): string {
+  const host = opts.host?.trim() || "the remote host";
+  return `Could not reach the Docker daemon on ${host} over SSH: ${sentence(cause)} ${BRIDGE_FAILURE_HINT}`;
+}
+
+/**
+ * Why an upstream that closed without answering closed — in its own words when it left any
+ * (dial-stdio writes the daemon's refusal to stderr), and otherwise as the plain fact.
+ */
+function upstreamClosedReason(
+  opts: DockerConnectionOptions,
+  upstream: Duplex,
+  transport: string,
+): string {
+  return bridgeFailureReason(
+    opts,
+    dialStdioDiagnostics(upstream) || `the ${transport} channel closed before answering the request`,
+  );
+}
+
+/** Methods with no side effect, so re-sending one to the daemon costs only a channel. */
+const REPLAY_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * May the request buffered in `chunks` be sent to a SECOND upstream?
+ *
+ * Downgrading transports replays the buffer, and the buffer has already been written to the
+ * first upstream — so a replay is a second EXECUTION, not a retry. Read-only methods are
+ * free; `POST /containers/{id}/restart` restarts the container twice. An empty buffer is
+ * free too: the client hasn't spoken yet, so nothing was dispatched. Anything unrecognised
+ * (including a request line split across chunks) is treated as unsafe — the cost of being
+ * wrong here is a duplicated mutation on someone's server.
+ */
+function requestIsReplaySafe(chunks: Buffer[]): boolean {
+  // The first chunk with bytes in it, not `chunks[0]`: nothing filters zero-length pushes
+  // on the way in, and an empty leading chunk would read as "hasn't spoken yet" and answer
+  // SAFE for a request whose method is sitting in the next one — permissive in the one
+  // function that exists to be conservative.
+  const head = chunks.find((c) => c.length > 0);
+  if (!head) return true;
+  const space = head.indexOf(0x20);
+  if (space <= 0) return false;
+  return REPLAY_SAFE_METHODS.has(head.subarray(0, space).toString("latin1"));
 }
 
 /**
@@ -440,9 +461,15 @@ function captureClient(client: net.Socket) {
     get overflowed() {
       return overflowed;
     },
+    /** Whether this request may be handed to a second upstream — see
+     *  `requestIsReplaySafe`. Read at the moment of the decision, not at capture time. */
+    get replaySafe() {
+      return requestIsReplaySafe(chunks);
+    },
     /** Replay everything buffered so far onto `upstream` and forward the rest
-     *  live. Safe to call again on a different upstream (the fallback): the full
-     *  buffer is retained until `commit`, so the replay is complete each time. */
+     *  live. Calling it again on a different upstream (the fallback) replays the
+     *  whole buffer — complete, because nothing is dropped until `commit`, but a
+     *  second dispatch to the daemon: gate that on `replaySafe`. */
     feed(upstream: Duplex): void {
       for (const chunk of chunks) upstream.write(chunk);
       live = upstream;
@@ -453,20 +480,30 @@ function captureClient(client: net.Socket) {
       live = null;
     },
     /** Terminal: detach and hand the socket to the (already-fed) `upstream` via a
-     *  bidi pipe, or destroy it if the client already went away. */
-    commit(upstream: Duplex): void {
+     *  bidi pipe, or destroy it if the client already went away. `handoff` tells the
+     *  pipe whether a response byte has already been forwarded, and what to say if
+     *  the upstream closes without ever producing one. */
+    commit(upstream: Duplex, handoff: Parameters<typeof pipeThrough>[2]): void {
       detach();
       chunks.length = 0;
       if (closed) {
         upstream.destroy();
         return;
       }
-      pipeThrough(client, upstream);
+      pipeThrough(client, upstream, handoff);
     },
-    /** Terminal: no usable upstream — surface the error to dockerode. */
-    fail(err: unknown): void {
+    /** Terminal: no usable upstream. Answer the request with `reason` (a real HTTP
+     *  502 — see `respondBadGateway`) instead of destroying the socket, which is
+     *  what turned every one of these into `socket hang up`.
+     *
+     *  Written BEFORE detach so the socket still has an error listener during the
+     *  write, and never with `destroy(err)`: a server-side socket cannot transmit a
+     *  JS Error to its peer, and destroy(err) emits a local 'error' event that —
+     *  once detach() has removed this socket's listener — would be unhandled and
+     *  take down the process over one dead Docker request. */
+    fail(reason: string): void {
+      respondBadGateway(client, reason);
       detach();
-      client.destroy(err instanceof Error ? err : new Error(String(err)));
     },
   };
 }
@@ -512,12 +549,10 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
    */
   const openDialStdioUpstream = async (forceEphemeral = false): Promise<Duplex> => {
     // Pooled executor path: same connection + env/PATH as the working build.
+    // `attachDialStdioDiagnostics` is idempotent — the pooled SshExecutor already
+    // attached it; any other executor implementation gets its error floor here.
     if (!forceEphemeral && opts.executor?.openDockerDialStdio) {
-      const stream = await opts.executor.openDockerDialStdio();
-      stream.once("error", (e) =>
-        console.warn(`[docker-ssh] dial-stdio channel error: ${safeErrorMessage(e)}`),
-      );
-      return stream;
+      return attachDialStdioDiagnostics(await opts.executor.openDockerDialStdio());
     }
     // Ephemeral path: one dedicated SSH client, channel-multiplexed. Reset the
     // handle if the connection drops so the next call reconnects.
@@ -528,7 +563,66 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
       });
       dialClient = client;
     }
-    return openSshExecChannel(dialClient, DOCKER_DIAL_STDIO_COMMAND);
+    return openDockerDialStdioChannel(dialClient);
+  };
+
+  /**
+   * Serve the captured request over a dial-stdio channel.
+   *
+   * The terminal transport — there is nothing left to fall back to — so unlike the
+   * streamlocal path this REPORTS instead of downgrading. Two things are worth catching
+   * before committing the socket to a pipe, because both are silent otherwise:
+   *
+   *   • the channel closes without answering — dockerd not running, socket permission,
+   *     `docker: command not found`. The daemon said which; `dialStdioDiagnostics` has it.
+   *   • the first bytes aren't HTTP — a forced command or login banner answered instead of
+   *     the daemon (the `Please login as the user "ec2-user"` AMI key).
+   *
+   * A merely *silent* channel is committed, not failed: `/events`, `/containers/{id}/wait`
+   * and a large build upload all answer nothing for minutes, and `pipeThrough` still reports
+   * an unanswered close whenever it eventually comes.
+   */
+  const serveDialStdio = async (
+    capture: ReturnType<typeof captureClient>,
+    client: net.Socket,
+    upstream: Duplex,
+  ): Promise<void> => {
+    capture.feed(upstream);
+    // overflow ⇒ a large upload is plainly being serviced; don't wait on a first byte
+    // that cannot arrive until the body is fully in (see VERIFY_BUFFER_CAP_BYTES).
+    const first: FirstByte = capture.overflowed
+      ? { kind: "silent" }
+      : await awaitFirstByte(upstream, DIAL_STDIO_ANSWER_TIMEOUT_MS);
+    // NOTHING may await from here to the commit/fail below: the first-byte listener is
+    // detached, so a chunk arriving before the pipe attaches would be dropped.
+
+    if (first.kind === "closed") {
+      capture.stop();
+      upstream.destroy();
+      capture.fail(upstreamClosedReason(opts, upstream, DOCKER_DIAL_STDIO_COMMAND));
+      return;
+    }
+
+    if (first.kind === "data" && !looksLikeHttpResponse(first.chunk)) {
+      capture.stop();
+      upstream.destroy();
+      const banner = first.chunk.toString("utf8").trim().replace(/\s+/g, " ").slice(0, 300);
+      capture.fail(
+        bridgeFailureReason(
+          opts,
+          `the SSH session answered ${JSON.stringify(banner)} instead of a Docker API response — ` +
+            `something on the remote account (an sshd forced command, or a login banner) is ` +
+            `intercepting \`${DOCKER_DIAL_STDIO_COMMAND}\``,
+        ),
+      );
+      return;
+    }
+
+    if (first.kind === "data") client.write(first.chunk);
+    capture.commit(upstream, {
+      answered: first.kind === "data",
+      unansweredReason: () => upstreamClosedReason(opts, upstream, DOCKER_DIAL_STDIO_COMMAND),
+    });
   };
 
   const decideMode = async (): Promise<"streamlocal" | "dialstdio"> => {
@@ -543,12 +637,12 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     try {
       probe = await withTimeout(
         openStreamlocalUpstream(opts),
-        STREAMLOCAL_PROBE_TIMEOUT_MS,
-        `streamlocal open timed out after ${STREAMLOCAL_PROBE_TIMEOUT_MS / 1000}s`,
+        STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS,
+        `streamlocal open timed out after ${STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS / 1000}s`,
       );
       const stream = probe;
       const flowed = await new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => resolve(false), STREAMLOCAL_PROBE_TIMEOUT_MS);
+        const timer = setTimeout(() => resolve(false), STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS);
         const settle = (ok: boolean) => {
           clearTimeout(timer);
           resolve(ok);
@@ -590,6 +684,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
    *  buffered request over a fresh dial-stdio channel. */
   const downgradeToDialStdio = async (
     capture: ReturnType<typeof captureClient>,
+    client: net.Socket,
     reason: string,
   ): Promise<void> => {
     console.warn(
@@ -598,9 +693,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     );
     upstreamMode = "dialstdio";
     pooledUnreliable = true;
-    const upstream = await openDialStdioUpstream(true);
-    capture.feed(upstream);
-    capture.commit(upstream);
+    await serveDialStdio(capture, client, await openDialStdioUpstream(true));
   };
 
   /**
@@ -611,8 +704,8 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
    * immediately). This then picks the transport and, for streamlocal, proves the
    * specific channel actually carries data before committing — falling back to
    * dial-stdio and replaying the buffered request if it doesn't (bug #2:
-   * open-but-dead channels on some sshd/ssh2 combos). dial-stdio is a plain exec
-   * channel (the transport `docker build` already uses), so it isn't re-verified.
+   * open-but-dead channels on some sshd/ssh2 combos). dial-stdio has no fallback left,
+   * so `serveDialStdio` turns the same evidence into a reported cause instead.
    */
   const bridgeClient = async (client: net.Socket): Promise<void> => {
     const capture = captureClient(client);
@@ -620,9 +713,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
       const mode = await ensureMode();
 
       if (mode === "dialstdio") {
-        const upstream = await openDialStdioUpstream(pooledUnreliable);
-        capture.feed(upstream);
-        capture.commit(upstream);
+        await serveDialStdio(capture, client, await openDialStdioUpstream(pooledUnreliable));
         return;
       }
 
@@ -636,38 +727,74 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
           `channel open timed out after ${STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS / 1000}s`,
         );
       } catch (err) {
-        await downgradeToDialStdio(capture, safeErrorMessage(err));
+        await downgradeToDialStdio(capture, client, safeErrorMessage(err));
         return;
       }
 
       capture.feed(channel);
       // overflow ⇒ a large upload is plainly being serviced → commit rather than
       // risk a truncated replay (see VERIFY_BUFFER_CAP_BYTES).
-      const firstByte = capture.overflowed
-        ? null
+      const firstByte: FirstByte = capture.overflowed
+        ? { kind: "silent" }
         : await awaitFirstByte(channel, STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS);
-      if (capture.overflowed || firstByte) {
+      if (capture.overflowed || firstByte.kind === "data") {
         // Forward the proving byte straight to the client — the pipe below only
         // carries bytes that arrive AFTER it attaches — then hand off the rest.
-        if (firstByte) client.write(firstByte);
-        capture.commit(channel);
+        if (firstByte.kind === "data") client.write(firstByte.chunk);
+        capture.commit(channel, {
+          answered: firstByte.kind === "data",
+          unansweredReason: () => upstreamClosedReason(opts, channel, "streamlocal"),
+        });
+        return;
+      }
+
+      // `silent` is not evidence of a dead channel, and the request is already ON this one:
+      // a downgrade replays the buffer, so a `POST /containers/{id}/restart` — silent for
+      // the whole stop timeout, well past this window — restarted the container TWICE.
+      // Only replay what is free to re-send. Otherwise stay: a slow real response still
+      // arrives, and `pipeThrough` reports the cause if the channel dies instead.
+      if (firstByte.kind === "silent" && !capture.replaySafe) {
+        capture.commit(channel, {
+          answered: false,
+          unansweredReason: () => upstreamClosedReason(opts, channel, "streamlocal"),
+        });
         return;
       }
 
       capture.stop(); // don't write late bytes to the channel we're about to tear down
       channel.destroy();
-      await downgradeToDialStdio(capture, "channel opened but no data flowed");
+      await downgradeToDialStdio(
+        capture,
+        client,
+        firstByte.kind === "closed"
+          ? "channel closed before answering"
+          : "channel opened but no data flowed",
+      );
     } catch (err) {
       console.warn(`[docker-ssh] bridge client failed (${opts.host ?? "?"}): ${safeErrorMessage(err)}`);
-      capture.fail(err);
+      capture.fail(bridgeFailureReason(opts, safeErrorMessage(err)));
     }
   };
 
   const server = net.createServer((client) => {
     clients.add(client);
     client.setNoDelay(true);
+    // Permanent error floor. captureClient attaches its own 'error' listener and
+    // then DETACHes it at the transport handoff (commit/fail), so there are
+    // moments with zero listeners on this socket. A peer reset — or a fail()-path
+    // destroy — in that gap would be an unhandled 'error' event that crashes the
+    // whole API process; one dead Docker request must never do that. Real
+    // teardown still flows through close/pipeThrough; this only stops the throw.
+    client.on("error", () => {});
     client.once("close", () => clients.delete(client));
     void bridgeClient(client);
+  });
+
+  // The listener outlives start()'s transient bind-time 'error' handler; without a
+  // permanent floor an accept-time error (EMFILE/ENFILE under fd pressure) would be
+  // an unhandled 'error' event and crash the process. Log and keep serving.
+  server.on("error", (err) => {
+    console.warn(`[docker-ssh] bridge listener error (${opts.host ?? "?"}): ${safeErrorMessage(err)}`);
   });
 
   return {

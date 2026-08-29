@@ -9,12 +9,16 @@
  */
 
 import type { Context } from "hono";
-import { AppError } from "@repo/core";
+import { AppError, type ComposeAdvanced } from "@repo/core";
 import { streamSSE } from "../../lib/sse";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
+import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
+import { parseOptionalEnvironmentScope } from "../../lib/environment-scope";
+import { audit, auditContextFrom } from "../../lib/audit";
 import { sshManager } from "../../lib/ssh-manager";
 import * as serviceService from "./service.service";
+import { ServiceConfigStaleError } from "../deployments/env-drift";
 import type {
   TCreateServiceBody,
   TUpdateServiceBody,
@@ -48,6 +52,43 @@ export async function getById(c: Context) {
     return c.json({ success: true, service: svc });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get service";
+    const status =
+      (err instanceof AppError && err.statusCode === 404) || message === "service-not-found" ? 404 : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+}
+
+// ─── Reveal real env (#336) — write-gated, backs the "show values" toggle ─────
+
+/**
+ * POST /projects/:id/services/:serviceId/env-reveal  { keys: string[] }
+ *
+ * Per-key: returns plaintext for the named keys ONLY, so pressing one row's eye
+ * discloses one secret. `keys` is required (see parseRevealKeys) — no request can
+ * ask for the whole map. The auto-emitted `project:service:write` audit row
+ * carries the disclosed key names via `auditAfter`.
+ */
+export async function revealEnv(c: Context) {
+  const ctx = getRequestContext(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+  // Outside the try: a 400 from key validation must not be reported as a
+  // reveal failure. Body may be absent on a malformed client call.
+  const body = await c.req
+    .json<{ keys?: unknown; environment?: unknown }>()
+    .catch(() => ({}) as { keys?: unknown; environment?: unknown });
+  const keys = parseRevealKeys(body.keys);
+  const revealEnvironment = parseOptionalEnvironmentScope(body.environment);
+
+  try {
+    const stored = revealEnvironment
+      ? await serviceService.revealServiceEnvVars(ctx, projectId, serviceId, revealEnvironment)
+      : await serviceService.revealServiceEnv(ctx, projectId, serviceId);
+    const environment = pickRevealed(stored, keys);
+    c.set("auditAfter", { revealedEnvKeys: Object.keys(environment) });
+    return c.json({ success: true, environment });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to reveal service env";
     const status =
       (err instanceof AppError && err.statusCode === 404) || message === "service-not-found" ? 404 : 400;
     return c.json({ success: false, error: message }, status);
@@ -207,12 +248,18 @@ export async function syncFromCompose(c: Context) {
       image?: string;
       build?: string;
       dockerfile?: string;
+      buildArgs?: Record<string, string | null>;
       ports?: string[];
       dependsOn?: string[];
       environment?: Record<string, string>;
       volumes?: string[];
       command?: string;
+      /** #332: exact argv — no `sh -c`. Wins over the lossy `command` string. */
+      commandArgv?: string[];
       restart?: string;
+      /** Raw Compose interpolation provenance and the remaining extended
+       * compose fields accepted by the sync schema. */
+      advanced?: ComposeAdvanced;
       exposed?: boolean;
       exposedPort?: string;
       domain?: string;
@@ -270,10 +317,33 @@ export async function restartContainer(c: Context) {
   const ctx = getRequestContext(c);
   const projectId = param(c, "id");
   const serviceId = param(c, "serviceId");
+  // Read raw off the query string rather than declaring a `query` schema on the
+  // route: `RouteSpec` has no such field (secureRouter only auto-wires `body`),
+  // and declaring a body on this previously body-less POST would 400 every
+  // caller that sends `Content-Type: application/json` with no body — which the
+  // CLI's api-client does unconditionally.
+  const force = ["true", "1"].includes(c.req.query("force") ?? "");
   try {
-    await serviceService.restartServiceContainer(ctx, projectId, serviceId);
-    return c.json({ success: true });
+    const result = await serviceService.restartServiceContainer(ctx, projectId, serviceId, {
+      force,
+    });
+    return c.json({ success: true, ...result });
   } catch (err) {
+    // A stale-config refusal is a 409 with structure, not a generic 400: the
+    // caller needs the code to branch on and the key names to see WHY a restart
+    // was refused. Everything else keeps the historical 400.
+    if (err instanceof ServiceConfigStaleError) {
+      return c.json(
+        {
+          success: false,
+          error: err.message,
+          code: err.code,
+          staleEnvKeys: err.staleEnvKeys,
+          serviceName: err.serviceName,
+        },
+        409,
+      );
+    }
     const message = err instanceof Error ? err.message : "Failed to restart container";
     return c.json({ success: false, error: message }, 400);
   }
@@ -290,6 +360,61 @@ export async function runtimeLogs(c: Context) {
     return c.json({ data: entries });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get logs";
+    return c.json({ error: message }, 400);
+  }
+}
+
+/**
+ * POST /api/projects/:id/services/:serviceId/exec — run a command inside the
+ * service's running container.
+ *
+ * Scoped by the route's `project:service:write` tag, so a project grant confines an
+ * agent to that project's services. See `execInServiceContainer` for why `write` is
+ * the right tier.
+ */
+export async function execInService(c: Context) {
+  const ctx = getRequestContext(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+
+  const body = await c.req.json<{
+    command?: string;
+    cwd?: string;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+  }>();
+  const command = body.command?.trim();
+  if (!command) return c.json({ error: "command required", code: "COMMAND_REQUIRED" }, 400);
+
+  try {
+    const result = await serviceService.execInServiceContainer(ctx, projectId, serviceId, {
+      command,
+      cwd: body.cwd,
+      timeoutMs: body.timeoutMs,
+      maxOutputBytes: body.maxOutputBytes,
+    });
+
+    // The command is recorded, the output is not: output is unbounded and may carry
+    // secrets the command read. Same rule as the host exec audit.
+    audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+      eventType: "service.exec",
+      resourceType: "service",
+      resourceId: serviceId,
+      after: {
+        projectId,
+        command,
+        cwd: body.cwd ?? null,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+        durationMs: result.durationMs,
+        outputBytes: result.output.length,
+      },
+    });
+
+    return c.json({ data: result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to run the command";
     return c.json({ error: message }, 400);
   }
 }

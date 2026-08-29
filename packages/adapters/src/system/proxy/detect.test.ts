@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type { CommandExecutor } from "../../types";
 import {
+  detectEdgeContainer,
   freeEdgeTargets,
   invalidateEdgeContainer,
   probeEdge,
@@ -18,6 +19,15 @@ function makeExecutor(rules: Array<[string, string]>): CommandExecutor {
     return "";
   };
   return { exec } as unknown as CommandExecutor;
+}
+
+/**
+ * One line of the `docker ps --no-trunc --format …` output the shared port-owner
+ * resolver reads: id, name, image, then the four `openship.*` label columns — empty
+ * here, because everything these fixtures put on 80/443 is somebody else's.
+ */
+function psLine(name: string, image: string): string {
+  return ["deadbeef".repeat(8), name, image, "", "", "", ""].join("\t");
 }
 
 describe("probeEdge classification", () => {
@@ -79,18 +89,52 @@ describe("probeEdge classification", () => {
     expect(status.canProceedClean).toBe(true);
   });
 
-  test("ours when the edge is our own OpenResty", async () => {
+  test("known when a DEPRECATED bare host OpenResty owns the ports (a migration source)", async () => {
+    // The edge is a CONTAINER. A bare host OpenResty — even one an older Openship
+    // apt-installed, with our Lua still on disk — is therefore a proxy to MIGRATE
+    // FROM, exactly like a distro nginx: `known` (recognized AND importable), never
+    // `ours`. Calling it ours is what returned canProceedClean, so the consent gate
+    // stopped nothing, the edge container lost :80 and crash-looped forever on
+    // `bind() … Address already in use` — while "Fix edge" reported success.
     const status = await probeEdge(
       makeExecutor([
-        ["site_logger.lua", "ok"],
+        ["site_logger.lua", "ok"], // our Lua on the HOST proves nothing about ownership
         ["sport = :80", "LISTEN 0 511 *:80 *:* users:((\"nginx\",pid=555,fd=6))"],
         ["sport = :443", "LISTEN 0 511 *:443 *:* users:((\"nginx\",pid=555,fd=8))"],
         ["-p 555 -o args=", "nginx: master process /usr/local/openresty/nginx/sbin/nginx"],
+        ["/proc/555/cgroup", "0::/system.slice/openresty.service"],
+        ["systemctl show openresty.service", "OpenResty"],
       ]),
     );
-    expect(status.classification).toBe("ours");
-    expect(status.occupants).toHaveLength(0);
-    expect(status.canProceedClean).toBe(true);
+    expect(status.classification).toBe("known");
+    expect(status.canProceedClean).toBe(false);
+    expect(status.occupants.every((o) => o.proxy === "openresty")).toBe(true);
+    expect(status.occupants.every((o) => o.managedByOpenship === false)).toBe(true);
+    // One proxy on both ports → ONE stop target, and it's the unit (durable).
+    const targets = stopTargetsForStatus(status);
+    expect(targets).toHaveLength(1);
+    expect(targets[0]?.unit).toBe("openresty.service");
+  });
+
+  test("REGRESSION: a CRASH-LOOPING edge container does not make the ports 'ours'", async () => {
+    // Docker calls a crash loop "running" (.State.Running == true, listed by plain
+    // `docker ps`), so the self-takeover lock has to ask `.State.Status`. Without
+    // that it claims whatever ACTUALLY holds :80 — the very proxy that caused the
+    // loop — as our edge, ensureEdgeClear returns clean, nothing is stopped, and
+    // every re-install reports success on a box serving nothing.
+    const status = await probeEdge(
+      makeExecutor([
+        ["{{.State.Status}}", "restarting"],
+        ["docker ps --filter name=openship-edge", "openship-edge"],
+        ["sport = :80", 'LISTEN 0 511 *:80 *:* users:(("nginx",pid=1234,fd=6))'],
+        ["sport = :443", 'LISTEN 0 511 *:443 *:* users:(("nginx",pid=1234,fd=8))'],
+        ["-p 1234 -o args=", "nginx: master process /usr/sbin/nginx -g daemon on;"],
+        ["/proc/1234/cgroup", "0::/system.slice/nginx.service"],
+      ]),
+    );
+    expect(status.classification).toBe("known");
+    expect(status.canProceedClean).toBe(false);
+    expect(status.occupants.every((o) => o.managedByOpenship === false)).toBe(true);
   });
 
   test("known when a foreign nginx (systemd) owns the ports", async () => {
@@ -193,8 +237,8 @@ describe("probeEdge classification", () => {
     const status = await probeEdge(
       makeExecutor([
         ["docker ps --filter name=openship-edge", "openship-edge"],
-        ["docker ps --filter publish=80", "traefik-1\ttraefik:v3.0"],
-        ["docker ps --filter publish=443", "traefik-1\ttraefik:v3.0"],
+        ["--filter publish=80", psLine("traefik-1", "traefik:v3.0")],
+        ["--filter publish=443", psLine("traefik-1", "traefik:v3.0")],
       ]),
     );
     expect(status.classification).toBe("known");
@@ -206,8 +250,8 @@ describe("probeEdge classification", () => {
     // publish` matches it. Recognized as ours by the openship-edge image name.
     const status = await probeEdge(
       makeExecutor([
-        ["docker ps --filter publish=80", "openship-edge\tghcr.io/oblien/openship-edge:latest"],
-        ["docker ps --filter publish=443", "openship-edge\tghcr.io/oblien/openship-edge:latest"],
+        ["--filter publish=80", psLine("openship-edge", "ghcr.io/oblien/openship-edge:latest")],
+        ["--filter publish=443", psLine("openship-edge", "ghcr.io/oblien/openship-edge:latest")],
       ]),
     );
     expect(status.classification).toBe("ours");
@@ -218,8 +262,8 @@ describe("probeEdge classification", () => {
   test("known when a dockerized traefik owns the ports", async () => {
     const status = await probeEdge(
       makeExecutor([
-        ["docker ps --filter publish=80", "traefik-1\ttraefik:v3.0"],
-        ["docker ps --filter publish=443", "traefik-1\ttraefik:v3.0"],
+        ["--filter publish=80", psLine("traefik-1", "traefik:v3.0")],
+        ["--filter publish=443", psLine("traefik-1", "traefik:v3.0")],
       ]),
     );
     expect(status.classification).toBe("known");
@@ -254,13 +298,14 @@ describe("probeEdge classification", () => {
     expect(targets[0]?.label).toBe("nginx (PID 2588100)");
   });
 
-  test("SELF-TAKEOVER LOCK: a WORKER of our own OpenResty is still 'ours'", async () => {
-    // The master hop must not turn our own edge into a foreign proxy. `ss` reports
-    // the OpenResty worker (which renders as plain `nginx: worker process`); the
-    // hop resolves its master, whose args carry the openresty prefix.
+  test("SELF-TAKEOVER LOCK: a WORKER of our own edge CONTAINER is still 'ours'", async () => {
+    // The master hop must not turn our own edge into a foreign proxy. Our edge is
+    // host-networked, so `ss` reports its worker as a plain host process (`nginx:
+    // worker process`); the hop resolves the master, and the RUNNING, healthy edge
+    // container is what proves the listener is ours.
     const status = await probeEdge(
       makeExecutor([
-        ["site_logger.lua", "ok"],
+        ["docker ps --filter name=openship-edge", "openship-edge"],
         ["sport = :80", 'LISTEN 0 511 *:80 *:* users:(("nginx",pid=910,fd=6))'],
         ["sport = :443", 'LISTEN 0 511 *:443 *:* users:(("nginx",pid=910,fd=8))'],
         ["-p 910 -o args=", "nginx: worker process"],
@@ -294,6 +339,92 @@ describe("probeEdge classification", () => {
     expect(status.classification).toBe("unknown");
     expect(status.canProceedClean).toBe(false);
     expect(status.occupants[0]?.proxy).toBeUndefined();
+  });
+});
+
+/**
+ * "I stopped its owner" and ":80 is bindable" are different facts, and only the
+ * second one lets the edge start. Every caller (consent gate, migrate, CLI preflight)
+ * decides whether to proceed from this verdict, so a wrong `freed:true` is what makes
+ * a crash-looping edge report as a successful install.
+ */
+describe("freeEdgeTargets", () => {
+  /** /proc/net/tcp LISTEN rows for the given ports (hex local port, state 0A). */
+  const procTable = (ports: number[]) =>
+    ["  sl  local_address rem_address   st"]
+      .concat(
+        ports.map(
+          (p, i) => `  ${i}: 00000000:${p.toString(16).toUpperCase().padStart(4, "0")} 00000000:0000 0A`,
+        ),
+      )
+      .join("\n");
+
+  const UNIT = [{ unit: "openresty.service", label: "OpenResty" }];
+
+  test("reports the ports that stayed bound instead of claiming success", async () => {
+    const cmds: string[] = [];
+    const executor = {
+      exec: async (cmd: string) => {
+        cmds.push(cmd);
+        return cmd.includes("/proc/net/tcp") ? procTable([80, 443]) : "";
+      },
+    } as unknown as CommandExecutor;
+
+    const res = await freeEdgeTargets(executor, UNIT, () => {}, { timeoutMs: 10 });
+
+    expect(res).toEqual({ freed: false, stillBound: [80, 443] });
+    // The unit is disabled, not just stopped, or it comes back on the next boot and
+    // steals the ports from an edge that was fine when we walked away.
+    expect(cmds.some((c) => c.includes("disable --now 'openresty.service'"))).toBe(true);
+  });
+
+  test("freed once the socket actually drains (a stop is not instant)", async () => {
+    let bound = true;
+    const executor = {
+      exec: async (cmd: string) => {
+        if (cmd.includes("disable --now")) {
+          bound = false;
+          return "";
+        }
+        return cmd.includes("/proc/net/tcp") ? procTable(bound ? [80, 443] : []) : "";
+      },
+    } as unknown as CommandExecutor;
+
+    expect(await freeEdgeTargets(executor, UNIT, () => {}, { timeoutMs: 10 })).toEqual({
+      freed: true,
+      stillBound: [],
+    });
+  });
+
+  test("an unreadable socket table is inconclusive — never reported as still bound", async () => {
+    // checked:false is "no signal". Treating it as "still bound" would block a
+    // takeover that in fact worked, on any box where reading procfs failed.
+    const executor = {
+      exec: async (cmd: string) => {
+        if (cmd.includes("/proc/net/tcp")) throw new Error("ssh channel closed");
+        return "";
+      },
+    } as unknown as CommandExecutor;
+
+    expect(await freeEdgeTargets(executor, UNIT, () => {}, { timeoutMs: 10 })).toEqual({
+      freed: true,
+      stillBound: [],
+    });
+  });
+
+  test("verifies only the port a target names", async () => {
+    const executor = {
+      exec: async (cmd: string) => (cmd.includes("/proc/net/tcp") ? procTable([443]) : ""),
+    } as unknown as CommandExecutor;
+
+    const res = await freeEdgeTargets(
+      executor,
+      [{ container: "traefik-1", port: 80 }],
+      () => {},
+      { timeoutMs: 10 },
+    );
+    // :443 is somebody else's business here (a target scoped to :80 was stopped).
+    expect(res).toEqual({ freed: true, stillBound: [] });
   });
 });
 
@@ -388,5 +519,64 @@ describe("resolveOurEdgeContainer memoization", () => {
     expect(await resolveOurEdgeContainer(executor)).toBe("openship-edge"); // still memoized
     invalidateEdgeContainer(executor);
     expect(await resolveOurEdgeContainer(executor)).toBeNull();
+  });
+});
+
+describe("detectEdgeContainer", () => {
+  // Unlike resolveOurEdgeContainer (running-only), this reads `docker ps -a` so a
+  // stopped edge is still tracked. One line per case: name<TAB>image<TAB>state.
+  const psa = (line: string) =>
+    makeExecutor([["docker ps -a", line]]);
+
+  test("finds a RUNNING edge by name and reports its image", async () => {
+    expect(
+      await detectEdgeContainer(psa("openship-edge\tghcr.io/oblien/openship-edge:0.5.0\trunning")),
+    ).toEqual({
+      name: "openship-edge",
+      image: "ghcr.io/oblien/openship-edge:0.5.0",
+      running: true,
+      exists: true,
+    });
+  });
+
+  test("finds a STOPPED edge — exists but not running (the track-if-installed case)", async () => {
+    expect(
+      await detectEdgeContainer(psa("openship-edge\tghcr.io/oblien/openship-edge:0.4.0\texited")),
+    ).toMatchObject({ name: "openship-edge", running: false, exists: true });
+  });
+
+  test("matches a container renamed off the default name but running our image", async () => {
+    expect(
+      await detectEdgeContainer(psa("my-proxy\tghcr.io/oblien/openship-edge:0.5.0\trunning")),
+    ).toMatchObject({ name: "my-proxy", running: true, exists: true });
+  });
+
+  test("reports absent when only foreign containers exist", async () => {
+    expect(await detectEdgeContainer(psa("some-app\tnginx:latest\trunning"))).toEqual({
+      name: null,
+      running: false,
+      image: null,
+      exists: false,
+    });
+  });
+
+  test("reports absent when docker returns nothing", async () => {
+    expect(await detectEdgeContainer(makeExecutor([]))).toEqual({
+      name: null,
+      running: false,
+      image: null,
+      exists: false,
+    });
+  });
+
+  test("returns null (inconclusive) when the docker probe itself errors — NOT absent", async () => {
+    // A `docker ps -a` that throws (daemon unreachable, SSH dropped) must not read
+    // as "no edge here": the drift cache keys off this to keep the last-known row.
+    const executor = {
+      exec: async () => {
+        throw new Error("ssh channel closed");
+      },
+    } as unknown as CommandExecutor;
+    expect(await detectEdgeContainer(executor)).toBeNull();
   });
 });

@@ -15,11 +15,14 @@ import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { IS_ALT_HOME, OS_DIR } from "./paths";
+import { readCliInstall } from "./cli-install";
+import { IS_ALT_HOME, LOG_DIR, OS_DIR } from "./paths";
 import { readStoredPorts } from "./ports";
+import { thisHost } from "./this-host";
 
 const HOME = homedir();
-const LOG_DIR = join(OS_DIR, "logs");
+/** Where the tarball install's stable launcher + PATH entry live. */
+const OPENSHIP_BIN = join(OS_DIR, "bin");
 
 // A from-source/dev install (OPENSHIP_HOME set → IS_ALT_HOME) gets its OWN boot
 // service, so `openship up` from source never clobbers or fights a production
@@ -47,10 +50,20 @@ export interface UpFlags {
   managedEdge?: boolean;
   /** ACME contact email for the managed edge. */
   acmeEmail?: string;
+  /** Openship Mail: default the dashboard to the mail control plane. */
+  mail?: boolean;
 }
 
 /** The CLI's own runtime + entry, so the service invokes THIS install. */
-function selfInvocation(): { runtime: string; args: string[] } {
+export function selfInvocation(): { runtime: string; args: string[] } {
+  // Tarball installs run through the stable launcher (~/.openship/bin/openship):
+  // it re-resolves node and cli/current on every boot, so `openship update` and
+  // Node bumps repoint symlinks with NO service-unit rewrite. The launcher
+  // `exec`s node, preserving the PID/process-group semantics up.ts supervises.
+  const cli = readCliInstall();
+  if (cli?.method === "tarball" && existsSync(cli.launcher)) {
+    return { runtime: cli.launcher, args: [] };
+  }
   const runtime = process.execPath; // node or bun that's running us
   const entry = resolve(process.argv[1] ?? ""); // dist/index.js (absolute)
   return { runtime, args: [entry] };
@@ -68,6 +81,10 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.host) a.push("--host", flags.host);
   if (flags.managedEdge) a.push("--managed-edge");
   if (flags.acmeEmail) a.push("--acme-email", flags.acmeEmail);
+  // Replayed, not carried in the unit's Environment=: the supervised process is
+  // `up --foreground`, which builds its own env from the flags. Without this the
+  // service would boot the platform shell on a box installed as Openship Mail.
+  if (flags.mail) a.push("--mail");
   return a;
 }
 
@@ -117,15 +134,15 @@ export type ServiceKind = "launchd" | "systemd-user" | "systemd-system" | "schta
 export function detectKind(): ServiceKind {
   if (process.platform === "darwin") return "launchd";
   if (process.platform === "linux") {
-    if (!hasSystemd()) return "unsupported";
+    // The resolver's systemd test, not a `command -v systemctl` of our own: systemctl is
+    // installed in plenty of containers where systemd is not the init, and this one asked
+    // only whether the binary existed — so a docker build reported `systemd-user` and then
+    // failed to install a unit. The resolver requires a live /run/systemd/system too.
+    if (thisHost().profile.serviceManager !== "systemd") return "unsupported";
     return isRoot() ? "systemd-system" : "systemd-user";
   }
   if (process.platform === "win32") return "schtasks";
   return "unsupported";
-}
-
-function hasSystemd(): boolean {
-  return spawnSync("sh", ["-c", "command -v systemctl"]).status === 0;
 }
 
 /* ── file builders ──────────────────────────────────────────────────────── */
@@ -151,7 +168,10 @@ function serviceEnv(): Record<string, string> {
 function plist(flags: UpFlags): string {
   const argv = runArgv(flags);
   const items = argv.map((a) => `      <string>${xmlEscape(a)}</string>`).join("\n");
-  const path = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", join(HOME, ".bun/bin")].join(":");
+  // Tarball installs need ~/.openship/bin on PATH (the launcher resolves system
+  // node from the standard dirs); npm/bun installs keep ~/.bun/bin.
+  const runtimeBin = readCliInstall()?.method === "tarball" ? OPENSHIP_BIN : join(HOME, ".bun/bin");
+  const path = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", runtimeBin].join(":");
   const extraEnv = Object.entries(serviceEnv())
     .map(([k, v]) => `<key>${xmlEscape(k)}</key><string>${xmlEscape(v)}</string>`)
     .join("");
@@ -181,6 +201,12 @@ function systemdUnit(flags: UpFlags): string {
   const extraEnv = Object.entries(serviceEnv())
     .map(([k, v]) => `Environment=${k}=${v}\n`)
     .join("");
+  // Tarball launcher resolves system node off PATH; systemd's default PATH is
+  // minimal, so pin one that covers the standard install dirs + ~/.openship/bin.
+  const pathEnv =
+    readCliInstall()?.method === "tarball"
+      ? `Environment=PATH=${["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin", OPENSHIP_BIN].join(":")}\n`
+      : "";
   return `[Unit]
 Description=Openship control plane
 After=network-online.target
@@ -192,7 +218,7 @@ ExecStart=${execStart}
 Restart=always
 RestartSec=2
 Environment=NODE_ENV=production
-${extraEnv}
+${pathEnv}${extraEnv}
 [Install]
 WantedBy=default.target
 `;
@@ -204,6 +230,27 @@ export interface ServiceResult {
   kind: ServiceKind;
   /** Human note about what happened / how to inspect it. */
   detail: string;
+}
+
+/**
+ * How `installAndStart` enables + starts the service on this manager, as one line
+ * for `up --dry-run`. Lives beside the code that runs it so the preview and the
+ * commands below can't drift.
+ */
+export function installStepFor(kind: ServiceKind): string {
+  switch (kind) {
+    case "launchd":
+      return "launchctl bootstrap  (starts it now and at login)";
+    case "systemd-user":
+      return "systemctl --user enable --now + loginctl enable-linger  (starts it now, on boot, without a login session)";
+    case "systemd-system":
+      return "systemctl enable --now  (starts it now and on boot)";
+    case "schtasks":
+      return "schtasks /Create /SC ONLOGON  (starts it at logon)";
+    default:
+      // detectKind found nothing to install into — installAndStart throws here.
+      return "nothing — no supported service manager on this box (needs systemd on Linux); `up --foreground` or `up --compose` instead";
+  }
 }
 
 /** Return (don't write) the service definition — for `--dry-run`/debugging. */

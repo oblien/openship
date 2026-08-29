@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import React from "react";
 import { useI18n } from "@/components/i18n-provider";
+import DnsRecordCard from "@/components/domains/DnsRecordCard";
+import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
+import { domainsApi } from "@/lib/api";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
   host: string;
+  /** FQDN fallback for providers that reject the zone-relative host. */
+  name?: string;
   value: string;
 }
 
@@ -16,6 +20,9 @@ interface DnsConfigurationProps {
   mode?: "cloud" | "selfhosted";
   /** Hide the internal header when the container already titles the section. */
   showHeader?: boolean;
+  /** A persisted domain's id. When set, the on-demand auto-configure panel is
+   *  shown above the manual records — pre-add previews (no id) stay manual. */
+  domainId?: string;
 }
 
 const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
@@ -23,27 +30,15 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
   records,
   mode,
   showHeader = true,
+  domainId,
 }) => {
   const { t } = useI18n();
   const d = t.deploy.dns;
-  const recordDescriptions: Record<string, string> = {
-    CNAME: d.descCname,
-    A: d.descA,
-    TXT: d.descTxt,
-  };
-  const [copied, setCopied] = useState<string | null>(null);
-
-  const copyToClipboard = (text: string, id: string) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
-  };
 
   const displayRecords = records ?? [];
-  if (!displayRecords.length) return null;
+  if (!displayRecords.length && !domainId) return null;
 
-  return (
+  const manual = displayRecords.length > 0 && (
     <div className="rounded-xl bg-muted/30">
       {showHeader && (
         <div className="px-4 pt-4">
@@ -55,30 +50,7 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
 
       <div className="space-y-2.5 p-4">
         {displayRecords.map((record, i) => (
-          <div key={i} className="rounded-lg bg-background p-3.5">
-            <div className="mb-2.5 flex items-center gap-2.5">
-              <span className="rounded-md bg-foreground px-2 py-0.5 text-[11px] font-bold text-background">
-                {record.type}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {recordDescriptions[record.type] ?? ""}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5">
-              <Field
-                label={d.nameHost}
-                value={record.host}
-                copied={copied === `${i}-host`}
-                onCopy={() => copyToClipboard(record.host, `${i}-host`)}
-              />
-              <Field
-                label={d.valueTarget}
-                value={record.value}
-                copied={copied === `${i}-value`}
-                onCopy={() => copyToClipboard(record.value, `${i}-value`)}
-              />
-            </div>
-          </div>
+          <DnsRecordCard key={`${record.type}-${record.host}-${i}`} record={record} />
         ))}
 
         <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
@@ -101,39 +73,19 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
       </div>
     </div>
   );
-};
 
-function Field({
-  label,
-  value,
-  copied,
-  onCopy,
-}: {
-  label: string;
-  value: string;
-  copied: boolean;
-  onCopy: () => void;
-}) {
   return (
-    <div className="min-w-0">
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
-        <code className="flex-1 truncate text-sm font-medium text-foreground">
-          {value || "—"}
-        </code>
-        <button
-          type="button"
-          onClick={onCopy}
-          disabled={!value}
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
-        >
-          {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-        </button>
-      </div>
+    <div className="space-y-3">
+      {domainId && (
+        <AutoDnsPanel
+          plan={() => domainsApi.dnsPlan(domainId).then((r) => r.data)}
+          apply={() => domainsApi.dnsApply(domainId).then((r) => r.data)}
+          reloadKey={domainId}
+        />
+      )}
+      {manual}
     </div>
   );
-}
+};
 
 export default DnsConfiguration;

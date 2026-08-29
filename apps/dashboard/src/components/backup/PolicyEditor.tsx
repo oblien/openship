@@ -1,7 +1,19 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Copy, RefreshCw, Globe, Clock, Calendar, Sparkles, HardDrive, Terminal, ChevronDown } from "lucide-react";
+import {
+  Copy,
+  RefreshCw,
+  Globe,
+  Clock,
+  Calendar,
+  Sparkles,
+  HardDrive,
+  Terminal,
+  ChevronDown,
+  Database,
+  FolderTree,
+} from "lucide-react";
 import {
   backupsApi,
   backupDestinationsApi,
@@ -11,7 +23,22 @@ import {
   type BackupPolicy,
 } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import {
+  PAYLOAD_COMPRESSION_CODECS,
+  PAYLOAD_KIND_AUTO,
+  detectDbImage,
+  isPolicyPayloadKind,
+  operatorSelectableKinds,
+  payloadSpec,
+  validatePolicyPayload,
+  type BackupPayloadSpec,
+  type PayloadCompression,
+  type PayloadConfigKey,
+  type PayloadKind,
+  type PolicyPayloadKind,
+} from "@repo/core";
 
 interface Props {
   projectId: string;
@@ -25,23 +52,117 @@ interface Props {
   onSaved: () => void;
 }
 
-type Method = "auto" | "volume" | "custom";
+/**
+ * The SAME image table the server's producers match on (`@repo/core`), not a copy.
+ *
+ * This used to be a hand-written mirror whose comment called drift "cosmetic". It
+ * was not: #611 is an operator reading "Detected PostgreSQL — Auto backs it up with
+ * pg_dump" here while the run silently used the volume fallback and captured
+ * nothing. One table means the two cannot disagree about which database an image is.
+ *
+ * The server still knows more than this can — whether the service has a live
+ * container, whether credentials are discoverable — so a match here is what Auto
+ * will TRY, and the run record remains the authority on what it did.
+ */
+const detectDb = detectDbImage;
 
-/** Display-only mirror of the server producer registry's image detection
- *  (packages/adapters/src/backup/producers/*). Only powers the hint + summary
- *  label; "auto" is always resolved server-side, so drift here is cosmetic. */
-function detectDb(image?: string | null): { label: string; method: string } | null {
-  const img = (image ?? "").trim().toLowerCase();
-  if (!img) return null;
-  if (/^(postgres|postgis\/postgis)([:/]|$)/.test(img)) return { label: "PostgreSQL", method: "pg_dump" };
-  if (/^(mysql|mariadb|percona\/percona-server)([:/]|$)/.test(img)) return { label: "MySQL/MariaDB", method: "mysqldump" };
-  if (/^redis([:/]|$)/.test(img)) return { label: "Redis", method: "RDB snapshot" };
-  if (/^(mongo|percona\/percona-server-mongodb)([:/]|$)/.test(img)) return { label: "MongoDB", method: "mongodump" };
-  return null;
+/**
+ * One card per thing the operator picks between, derived from the catalog.
+ *
+ * `auto`, plus one card per operator-selectable kind — except that the four database
+ * kinds collapse into a single `database` card holding an engine picker, because they
+ * differ only in which tool runs and Auto already chooses that from the image.
+ *
+ * Derived rather than listed because the listed version was wrong. `type Method =
+ * "auto" | "volume" | "custom"` predates the `path` kind, so files-and-folders backups
+ * existed on the server, were accepted by the API, ran correctly — and were
+ * unreachable from the only surface an operator uses. Worse, `methodFromKind` mapped
+ * everything it did not recognise to `auto`, so opening a `path` policy in this dialog
+ * and pressing Save silently rewrote it into a different kind of backup.
+ */
+type CardId = typeof PAYLOAD_KIND_AUTO | "database" | PayloadKind;
+
+/**
+ * Cards run database → filesystem → opaque.
+ *
+ * A `Record` over the shape union, so a new shape is a compile error here rather than
+ * a card that silently sorts first. Within a shape, catalog order wins (`sort` is
+ * stable), which is the same order that decides auto-detect priority on the server.
+ * Opaque last on purpose: "write the command yourself" is the escape hatch, and an
+ * escape hatch offered first reads as the recommended path.
+ */
+const SHAPE_ORDER: Record<BackupPayloadSpec["shape"], number> = {
+  database: 0,
+  filesystem: 1,
+  opaque: 2,
+};
+
+const SHAPE_ICONS: Record<BackupPayloadSpec["shape"], typeof Sparkles> = {
+  database: Database,
+  filesystem: HardDrive,
+  opaque: Terminal,
+};
+
+/** A nicer icon than the kind's shape implies. Opt-in; the shape default is fine. */
+const KIND_ICONS: Partial<Record<PayloadKind, typeof Sparkles>> = { path: FolderTree };
+
+/**
+ * Every `payloadConfig` option, and whether this dialog renders a control for it.
+ *
+ * A `Record` over the whole vocabulary, so adding a key to the catalog is a compile
+ * error here until someone decides which of the two it is. That is the property the
+ * dialog lacked: `quiesce`, `sourceIds`, `exclude` and `compression` had been readable
+ * and writable through the API for as long as they had existed, and no surface offered
+ * them, so the only way to reach them was to know they were there.
+ *
+ * The two `api-only` entries are deliberate, not deferred:
+ *   `command`       the legacy spelling of `produceCommand`. One control writes the
+ *                   canonical key and deletes this one; a second control would let an
+ *                   operator save two divergent copies of one instruction.
+ *   `artifactName`  names the object at the destination. No operational decision hangs
+ *                   on it, and a wrong value is cosmetic rather than unrestorable.
+ */
+const CONTROL_COVERAGE: Record<PayloadConfigKey, "control" | "api-only"> = {
+  paths: "control",
+  exclude: "control",
+  sourceIds: "control",
+  quiesce: "control",
+  compression: "control",
+  clearPath: "control",
+  produceCommand: "control",
+  restoreCommand: "control",
+  command: "api-only",
+  artifactName: "api-only",
+};
+
+/** The compression choices, with `""` standing for "let the service decide". */
+type CompressionChoice = "" | PayloadCompression;
+
+/** `payloadConfig` as this form reads it. Every field is untrusted jsonb. */
+interface StoredConfig {
+  produceCommand?: unknown;
+  command?: unknown;
+  restoreCommand?: unknown;
+  paths?: unknown;
+  exclude?: unknown;
+  sourceIds?: unknown;
+  quiesce?: unknown;
+  compression?: unknown;
+  clearPath?: unknown;
 }
 
-const methodFromKind = (kind?: string): Method =>
-  kind === "volume" ? "volume" : kind === "custom_command" ? "custom" : "auto";
+/** A textarea's lines as a list, trimmed, blanks dropped. */
+const toList = (text: string): string[] =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+/** A stored string list back into textarea text. Anything else reads as empty. */
+const toText = (value: unknown): string =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string").join("\n") : "";
+
+const toStr = (value: unknown): string => (typeof value === "string" ? value : "");
 
 export function PolicyEditor({
   projectId,
@@ -62,11 +183,40 @@ export function PolicyEditor({
     { label: w.presetManual, value: "" },
   ];
 
+  const selectable = operatorSelectableKinds();
+  const dbSpecs = selectable.filter((spec) => spec.shape === "database");
+  const cards: CardId[] = [
+    PAYLOAD_KIND_AUTO,
+    ...[...selectable]
+      .sort((a, b) => SHAPE_ORDER[a.shape] - SHAPE_ORDER[b.shape])
+      .map((spec): CardId => (spec.shape === "database" ? "database" : spec.kind))
+      .filter((id, at, all) => all.indexOf(id) === at),
+  ];
+
+  const stored = (existing?.payloadConfig ?? {}) as StoredConfig;
+
   const [destinations, setDestinations] = useState<BackupDestinationSummary[]>([]);
   const [destinationId, setDestinationId] = useState(existing?.destinationId ?? "");
-  const [method, setMethod] = useState<Method>(methodFromKind(existing?.payloadKind));
+  /**
+   * The kind itself, not a three-way summary of it. An existing policy therefore opens
+   * on what it actually is — including a `pg_dump` pinned by hand, which the old
+   * three-way mapping showed as "Auto" and rewrote to `auto` on save.
+   */
+  const [kind, setKind] = useState<PolicyPayloadKind>(
+    isPolicyPayloadKind(existing?.payloadKind) ? existing.payloadKind : PAYLOAD_KIND_AUTO,
+  );
+  /** Both key spellings: `command` is what this form used to write. */
   const [customCommand, setCustomCommand] = useState(
-    (existing?.payloadConfig as { command?: string } | undefined)?.command ?? "",
+    toStr(stored.produceCommand) || toStr(stored.command),
+  );
+  const [restoreCommand, setRestoreCommand] = useState(toStr(stored.restoreCommand));
+  const [pathsText, setPathsText] = useState(toText(stored.paths));
+  const [excludeText, setExcludeText] = useState(toText(stored.exclude));
+  const [sourceIdsText, setSourceIdsText] = useState(toText(stored.sourceIds));
+  const [quiesce, setQuiesce] = useState(stored.quiesce === true);
+  const [clearPath, setClearPath] = useState(stored.clearPath === true);
+  const [compression, setCompression] = useState<CompressionChoice>(
+    PAYLOAD_COMPRESSION_CODECS.find((codec) => codec === stored.compression) ?? "",
   );
   const [cronExpression, setCronExpression] = useState(existing?.cronExpression ?? "");
   const [triggerOnPreDeploy, setTriggerOnPreDeploy] = useState(existing?.triggerOnPreDeploy ?? false);
@@ -94,10 +244,45 @@ export function PolicyEditor({
     ? `${getApiBaseUrl()}webhooks/backup/${existing.webhookToken}`
     : null;
 
+  const activeSpec: BackupPayloadSpec | null = kind === PAYLOAD_KIND_AUTO ? null : payloadSpec(kind);
+  const activeCard: CardId =
+    activeSpec === null ? PAYLOAD_KIND_AUTO
+    : activeSpec.shape === "database" ? "database"
+    : activeSpec.kind;
+
+  /**
+   * Which options this kind actually has — the catalog's answer, not a per-card list.
+   *
+   * So `volume` offers volume subsets and quiesce, `path` offers folders and the
+   * replace-on-restore switch, and neither offers the other's. Before, the dialog
+   * offered whatever its three cards happened to hardcode, which for two of the three
+   * kinds was nothing at all.
+   */
+  const shows = (key: PayloadConfigKey): boolean =>
+    CONTROL_COVERAGE[key] === "control" && (activeSpec?.configKeys.includes(key) ?? false);
+
+  /** Which engine the database card lands on: what the image is, else the first. */
+  const defaultDbKind = (): PayloadKind => {
+    const match = detected?.payloadKind;
+    if (match && dbSpecs.some((spec) => spec.kind === match)) return match;
+    return dbSpecs[0]?.kind ?? "pg_dump";
+  };
+
+  const selectCard = (id: CardId) => {
+    setKind(id === "database" ? defaultDbKind() : id);
+  };
+
   const methodSummary =
-    method === "custom" ? w.summaryCustom
-    : method === "volume" ? w.summaryVolume
-    : detected ? interpolate(w.summaryLogical, { label: detected.label }) : w.summaryVolume;
+    activeSpec === null
+      ? detected
+        ? interpolate(w.summaryLogical, { label: detected.label })
+        : w.summaryVolume
+      : activeSpec.shape === "database"
+        ? interpolate(w.summaryLogical, { label: activeSpec.label })
+        : activeSpec.kind === "path" ? w.summaryPath
+        : activeSpec.kind === "volume" ? w.summaryVolume
+        : activeSpec.kind === "custom_command" ? w.summaryCustom
+        : activeSpec.label;
   const scheduleSummary =
     cronExpression === ""
       ? w.summaryScheduleManual
@@ -111,29 +296,147 @@ export function PolicyEditor({
       .filter(Boolean)
       .join(" · ") || w.retentionUnlimited;
 
+  const cardCopy = (id: CardId): { label: string; desc: string; icon: typeof Sparkles } => {
+    switch (id) {
+      case PAYLOAD_KIND_AUTO:
+        return { label: w.methodAuto, desc: w.methodAutoDesc, icon: Sparkles };
+      case "database":
+        return { label: w.methodDatabase, desc: w.methodDatabaseDesc, icon: Database };
+      case "path":
+        return { label: w.methodPath, desc: w.methodPathDesc, icon: FolderTree };
+      case "volume":
+        return { label: w.methodVolume, desc: w.methodVolumeDesc, icon: HardDrive };
+      case "custom_command":
+        return { label: w.methodCustom, desc: w.methodCustomDesc, icon: Terminal };
+      default: {
+        // A kind added to the catalog but not yet to this file's copy. It appears with
+        // its catalog label — untranslated, and better than the alternative: the `path`
+        // kind spent its whole existence absent from this dialog because the card list
+        // was hand-written, so a kind the server supports must never be unreachable
+        // merely for want of a locale key.
+        const spec = payloadSpec(id);
+        return {
+          label: spec.label,
+          desc: spec.method,
+          icon: KIND_ICONS[spec.kind] ?? SHAPE_ICONS[spec.shape],
+        };
+      }
+    }
+  };
+
+  /**
+   * The `payloadConfig` to send, or `undefined` to leave the stored one alone.
+   *
+   * `undefined` for a kind with no options of its own (`auto`, the databases), which is
+   * what keeps a value set through the API from being wiped by a dashboard save.
+   *
+   * Otherwise the stored object is the base and only THIS kind's declared keys are
+   * written over it. Two consequences, both wanted: an option belonging to another kind
+   * survives a switch and comes back if the operator switches back (the catalog's
+   * validator deliberately permits cross-kind keys for exactly this), and a key the
+   * operator emptied is DELETED rather than set to undefined — inside a replaced jsonb
+   * object, absent is what "unset, use the default" means. Note that this is the
+   * opposite of the top-level rule below, where a cleared field must be sent as null.
+   */
+  const buildPayloadConfig = (): Record<string, unknown> | undefined => {
+    if (!activeSpec || activeSpec.configKeys.length === 0) return undefined;
+    const next: Record<string, unknown> = { ...(existing?.payloadConfig ?? {}) };
+    const set = (key: PayloadConfigKey, value: unknown) => {
+      if (!shows(key)) return;
+      if (value === undefined) delete next[key];
+      else next[key] = value;
+    };
+    const list = (text: string): string[] | undefined => {
+      const items = toList(text);
+      return items.length > 0 ? items : undefined;
+    };
+    set("paths", list(pathsText));
+    set("exclude", list(excludeText));
+    set("sourceIds", list(sourceIdsText));
+    set("quiesce", quiesce ? true : undefined);
+    set("clearPath", clearPath ? true : undefined);
+    set("compression", compression || undefined);
+    set("produceCommand", customCommand.trim() || undefined);
+    set("restoreCommand", restoreCommand.trim() || undefined);
+    // The legacy spelling has to GO, not merely be shadowed: the producer prefers
+    // `produceCommand`, so a stale `command` left on the row is a second copy of the
+    // same instruction that nothing keeps in step with the one being edited here.
+    if (shows("produceCommand")) delete next.command;
+    return next;
+  };
+
   const submit = async () => {
     if (!destinationId) {
       window.alert(w.selectDestinationAlert);
       return;
     }
-    if (method === "custom" && !customCommand.trim()) {
+    // Field-specific and translated for the three empty-field mistakes, which are the
+    // ones an operator makes while filling this in.
+    if (shows("produceCommand") && !customCommand.trim()) {
       window.alert(w.customCommandRequired);
+      return;
+    }
+    // A custom backup with no restore command captures artifacts nothing can put
+    // back: the producer records `restoreCommand: null` and refuses forever, and the
+    // run still reports success. Refusing the save is the only point at which that
+    // is recoverable. Read off the catalog, so a future kind that also needs its
+    // inverse recorded is covered without touching this line.
+    if (activeSpec?.requiresRestoreCommand && !restoreCommand.trim()) {
+      window.alert(w.restoreCommandRequired);
+      return;
+    }
+    if (shows("paths") && toList(pathsText).length === 0) {
+      window.alert(w.pathsRequired);
+      return;
+    }
+    const config = buildPayloadConfig();
+    /**
+     * The API's own validator, run here.
+     *
+     * Not a second implementation of it — the same function the policy service refuses
+     * writes with, so this dialog cannot offer a save the server will reject, and the
+     * semantic failures it catches (a relative path, one folder listed twice, a request
+     * to clear `/etc`, a compression codec no pipeline can build) are stated once. Its
+     * messages are English; the three above are the ones worth translating.
+     */
+    const invalid = validatePolicyPayload(kind, config ?? existing?.payloadConfig ?? null);
+    if (invalid) {
+      window.alert(invalid);
       return;
     }
     setBusy(true);
     try {
+      /**
+       * What a CLEARED field has to send.
+       *
+       * `JSON.stringify` drops `undefined`, and the API reads an absent key as
+       * "leave this alone" (the `!== undefined` guards in updatePolicy). So sending
+       * `undefined` for a field the operator just emptied silently KEPT the old
+       * value: picking the "Manual" schedule left the cron firing on the old
+       * expression, and clearing the retention boxes left the stored count in place
+       * while this dialog's own summary line said "Unlimited" — retention then
+       * deleted backups the operator believed were retained.
+       *
+       * `null` on CREATE too, and deliberately: `retainCount: undefined` selects the
+       * instance default (7) while explicit null means "keep every run", and this
+       * form ships 7 as its default value — so an operator who empties the box has
+       * chosen unlimited, which is exactly what the summary line above already tells
+       * them they are getting.
+       */
+      const cleared = null;
       const payload = {
         serviceId: serviceId ?? null,
         destinationId,
-        cronExpression: cronExpression || undefined,
+        cronExpression: cronExpression || cleared,
         triggerOnPreDeploy,
         enableWebhook,
-        retainCount: retainCount === "" ? undefined : Number(retainCount),
-        retainDays: retainDays === "" ? undefined : Number(retainDays),
-        payloadKind: method === "auto" ? "auto" : method === "volume" ? "volume" : "custom_command",
-        payloadConfig: method === "custom" ? { command: customCommand.trim() } : undefined,
-        preHook: preHook.trim() || undefined,
-        postHook: postHook.trim() || undefined,
+        retainCount: retainCount === "" ? cleared : Number(retainCount),
+        retainDays: retainDays === "" ? cleared : Number(retainDays),
+        payloadKind: kind,
+        payloadConfig: config,
+        // Same rule: an emptied hook has to be sent as null to actually be removed.
+        preHook: preHook.trim() || cleared,
+        postHook: postHook.trim() || cleared,
         enabled,
       };
       if (existing) await backupsApi.updatePolicy(existing.id, payload);
@@ -159,14 +462,17 @@ export function PolicyEditor({
     }
   };
 
-  const METHODS: Array<{ id: Method; label: string; desc: string; icon: typeof Sparkles }> = [
-    { id: "auto", label: w.methodAuto, desc: w.methodAutoDesc, icon: Sparkles },
-    { id: "volume", label: w.methodVolume, desc: w.methodVolumeDesc, icon: HardDrive },
-    { id: "custom", label: w.methodCustom, desc: w.methodCustomDesc, icon: Terminal },
-  ];
-
   const inputClass =
     "w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all";
+  const commandClass =
+    "w-full rounded-lg border border-border/50 bg-background px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20";
+
+  const compressionOptions: Array<{ value: CompressionChoice; label: string }> = [
+    { value: "", label: w.compressionAuto },
+    { value: "zstd", label: w.compressionZstd },
+    { value: "gzip", label: w.compressionGzip },
+    { value: "none", label: w.compressionNone },
+  ];
 
   return (
     <Modal isOpen onClose={onClose} width="920px" maxWidth="95vw" maxHeight="88vh" overflow="hidden">
@@ -185,57 +491,157 @@ export function PolicyEditor({
           {/* Method — the hero */}
           <div>
             <label className="mb-2 block text-xs font-medium text-foreground/80">{w.methodLabel}</label>
-            <div className="grid grid-cols-3 gap-2">
-              {METHODS.map((mth) => {
-                const active = method === mth.id;
-                const Icon = mth.icon;
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {cards.map((id) => {
+                const active = activeCard === id;
+                const { label, desc, icon: Icon } = cardCopy(id);
                 return (
                   <button
-                    key={mth.id}
+                    key={id}
                     type="button"
-                    onClick={() => setMethod(mth.id)}
+                    onClick={() => selectCard(id)}
                     className={`flex flex-col items-start gap-1.5 rounded-xl border p-3 text-start transition-colors ${
                       active ? "border-primary/60 bg-primary/[0.08]" : "border-border/50 hover:bg-muted/40"
                     }`}
                   >
                     <Icon className={`size-4 ${active ? "text-primary" : "text-muted-foreground"}`} />
-                    <span className="text-[13px] font-medium text-foreground">{mth.label}</span>
-                    <span className="text-[11px] leading-tight text-muted-foreground">{mth.desc}</span>
+                    <span className="text-[13px] font-medium text-foreground">{label}</span>
+                    <span className="text-[11px] leading-tight text-muted-foreground">{desc}</span>
                   </button>
                 );
               })}
             </div>
-            {method === "custom" ? (
-              <div className="mt-3">
-                <textarea
-                  value={customCommand}
-                  onChange={(e) => setCustomCommand(e.target.value)}
-                  rows={2}
-                  placeholder="pg_dump -Fc -U $POSTGRES_USER $POSTGRES_DB"
-                  className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">{w.customCommandHint}</p>
-              </div>
-            ) : (
+
+            {/* The chosen kind's own hint, then its own options. */}
+            {activeCard === PAYLOAD_KIND_AUTO && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {method === "auto"
-                  ? detected
-                    ? interpolate(w.detected, { label: detected.label, method: detected.method })
-                    : w.autoNoDb
-                  : w.volumeHint}
+                {detected
+                  ? interpolate(w.detected, { label: detected.label, method: detected.method })
+                  : w.autoNoDb}
               </p>
             )}
+            {activeCard === "database" && activeSpec && (
+              <div className="mt-3 space-y-3">
+                <Field label={w.engineLabel} hint={w.engineHint}>
+                  <CustomSelect<PayloadKind>
+                    value={activeSpec.kind}
+                    onChange={setKind}
+                    options={dbSpecs.map((spec) => ({
+                      value: spec.kind,
+                      label: spec.label,
+                      description: spec.method,
+                    }))}
+                  />
+                </Field>
+                <p className="text-xs text-muted-foreground">
+                  {interpolate(w.databaseHint, { method: activeSpec.method })}
+                </p>
+              </div>
+            )}
+            {activeCard === "path" && <p className="mt-2 text-xs text-muted-foreground">{w.pathHint}</p>}
+            {activeCard === "volume" && <p className="mt-2 text-xs text-muted-foreground">{w.volumeHint}</p>}
+
+            <div className="mt-3 space-y-3">
+              {shows("paths") && (
+                <Field label={w.pathsLabel} hint={w.pathsHint}>
+                  <textarea
+                    value={pathsText}
+                    onChange={(e) => setPathsText(e.target.value)}
+                    rows={3}
+                    placeholder={"/var/www/html\n/data/uploads"}
+                    className={commandClass}
+                  />
+                </Field>
+              )}
+              {shows("sourceIds") && (
+                <Field label={w.sourceIdsLabel} hint={w.sourceIdsHint}>
+                  <textarea
+                    value={sourceIdsText}
+                    onChange={(e) => setSourceIdsText(e.target.value)}
+                    rows={2}
+                    className={commandClass}
+                  />
+                </Field>
+              )}
+              {shows("produceCommand") && (
+                <Field label={w.customCommandLabel} hint={w.customCommandHint}>
+                  <textarea
+                    value={customCommand}
+                    onChange={(e) => setCustomCommand(e.target.value)}
+                    rows={2}
+                    placeholder="pg_dump -Fc -U $POSTGRES_USER $POSTGRES_DB"
+                    className={commandClass}
+                  />
+                </Field>
+              )}
+              {shows("restoreCommand") && (
+                <Field label={w.restoreCommandLabel} hint={w.restoreCommandHint}>
+                  <textarea
+                    value={restoreCommand}
+                    onChange={(e) => setRestoreCommand(e.target.value)}
+                    rows={2}
+                    placeholder="pg_restore -c -U $POSTGRES_USER -d $POSTGRES_DB"
+                    className={commandClass}
+                  />
+                </Field>
+              )}
+              {shows("exclude") && (
+                <Field label={w.excludeLabel} hint={w.excludeHint}>
+                  <textarea
+                    value={excludeText}
+                    onChange={(e) => setExcludeText(e.target.value)}
+                    rows={2}
+                    className={commandClass}
+                  />
+                </Field>
+              )}
+              {shows("compression") && (
+                <Field label={w.compressionLabel} hint={w.compressionHint}>
+                  <CustomSelect<CompressionChoice>
+                    value={compression}
+                    onChange={setCompression}
+                    options={compressionOptions}
+                  />
+                </Field>
+              )}
+              {shows("quiesce") && (
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={quiesce}
+                    onChange={(e) => setQuiesce(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm text-foreground/80">
+                    <span className="font-medium">{w.quiesceLabel}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{w.quiesceHint}</span>
+                  </span>
+                </label>
+              )}
+              {shows("clearPath") && (
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={clearPath}
+                    onChange={(e) => setClearPath(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm text-foreground/80">
+                    <span className="font-medium">{w.clearPathLabel}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{w.clearPathHint}</span>
+                  </span>
+                </label>
+              )}
+            </div>
           </div>
 
           <Field label={w.destination}>
-            <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)} className={inputClass}>
-              <option value="">{w.selectOption}</option>
-              {destinations.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.kind})
-                </option>
-              ))}
-            </select>
+            <CustomSelect<string>
+              value={destinationId}
+              onChange={setDestinationId}
+              placeholder={w.selectOption}
+              options={destinations.map((d) => ({ value: d.id, label: d.name, description: d.kind }))}
+            />
           </Field>
 
           <Field label={w.schedule}>

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Cloud, ExternalLink, X, Rocket, Shield, Globe, Zap, Loader2 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
+import { defaultDomainType } from "@/lib/default-domain-type";
 import {
   getCloudConnectHandoffUrl,
   generatePkceVerifier,
@@ -78,6 +79,11 @@ export function useCloud() {
   const ctx = useContext(CloudContext);
   if (!ctx) throw new Error("useCloud must be used within CloudProvider");
   return ctx;
+}
+
+/** {@link defaultDomainType} for components — reads the live Cloud connection. */
+export function useDefaultDomainType(): "free" | "custom" {
+  return defaultDomainType(useCloud().connected);
 }
 
 /* ------------------------------------------------------------------ */

@@ -25,9 +25,10 @@ import { cacheStore } from "../../lib/cache-store";
 // gh-CLI (github.local-auth) is imported DYNAMICALLY at its two self-hosted
 // call sites (getUserStatus "cli" branch, getGitHubConnectionState gh probe)
 // so the gh module never loads in CLOUD_MODE (the SaaS). See those sites.
-import { ghFetch, ghFetchPublic } from "./github.http";
+import { ghFetch, ghFetchPublic, ghFetchSoft } from "./github.http";
 import { mapAccounts } from "./sources/mappers";
 import type { RequestContext } from "../../lib/request-context";
+import type { GitHubTokenSource } from "./github.token";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import type {
   GitHubConnectionState,
@@ -356,10 +357,31 @@ export async function getInstallationToken(
   ctx: RequestContext,
   owner: string,
   installationId?: number,
+  opts: {
+    /**
+     * Narrow the minted token to these repositories (bare names, as GitHub's
+     * `POST /app/installations/:id/access_tokens` expects — `charts`, not
+     * `hydralerne/charts`).
+     *
+     * Without this an installation token covers EVERY repo the installation
+     * reaches, so handing one to a caller granted a single repo would give them a
+     * credential far broader than their grant. Callers acting on one repo should
+     * always pass it.
+     */
+    repositories?: string[];
+  } = {},
 ): Promise<string | null> {
   const userId = ctx.userId;
   const organizationId = ctx.organizationId;
   const mode = await resolveGitHubAuthMode(ctx);
+
+  // Narrowed and broad tokens MUST NOT share a cache entry: a broad token served
+  // from the narrow key would silently over-grant, and a narrow token served from
+  // the broad key would break unrelated callers. Sorted + lowercased so the same
+  // repo set always produces the same key.
+  const repoScope = opts.repositories?.length
+    ? `:repos:${[...opts.repositories].map((r) => r.toLowerCase()).sort().join(",")}`
+    : "";
 
   if (mode === "cloud-app") {
     // Proxy through cloud. ctx.organizationId is the only source of
@@ -367,7 +389,7 @@ export async function getInstallationToken(
     // across the cache between users whose synthesized ids collide
     // with real org ids.
     const orgId = organizationId;
-    const cacheKey = `instToken:cloud:${orgId}:${owner}`;
+    const cacheKey = `instToken:cloud:${orgId}:${owner}${repoScope}`;
     const store = await cacheStore<string>(GH_TOKEN_NS, { maxSize: 5_000 });
     const cachedRaw = await store.get(cacheKey);
     if (cachedRaw) {
@@ -383,7 +405,12 @@ export async function getInstallationToken(
     // the installation from `owner`, and the unified client signature dropped
     // the parameter.
     void installationId;
-    const minted = await cloudClient({ organizationId: orgId }).github.installationToken(owner);
+    // The SaaS endpoint already accepts a repo list — forward it so a cloud-mode
+    // instance narrows exactly like a self-hosted one.
+    const minted = await cloudClient({ organizationId: orgId }).github.installationToken(
+      owner,
+      opts.repositories?.length ? opts.repositories : undefined,
+    );
     if (!minted?.token) return null;
     const envelope: CachedInstallationToken = {
       token: minted.token,
@@ -414,7 +441,7 @@ export async function getInstallationToken(
   // installationId (an org-wide GitHub resource), so every member of
   // the same org should share one cache entry. Key by org so teammates
   // hit the same mint result.
-  const cacheKey = `instToken:local:org:${organizationId}:${owner}:${installationId}`;
+  const cacheKey = `instToken:local:org:${organizationId}:${owner}:${installationId}${repoScope}`;
   const store = await cacheStore<string>(GH_TOKEN_NS, { maxSize: 5_000 });
   const cachedRaw = await store.get(cacheKey);
   if (cachedRaw) {
@@ -425,7 +452,10 @@ export async function getInstallationToken(
   try {
     const data = await appFetch<{ token: string; expires_at: string }>(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
-      { method: "POST" },
+      {
+        method: "POST",
+        ...(opts.repositories?.length ? { body: { repositories: opts.repositories } } : {}),
+      },
     );
     const envelope: CachedInstallationToken = {
       token: data.token,
@@ -515,6 +545,39 @@ export interface GitHubFetchOptions {
   url: string;
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   owner?: string;
+  /** Repo name. Threaded to `tokenFor` so the mint is gated PER-REPO — a grant
+   *  on repo A must not authorize an operation on repo B under the same owner.
+   *  Omitting it on a repo-specific call reopens the owner-wide half of
+   *  GHSA-hp2g-hw7g-f3vm, so pass it whenever the URL names a repo. */
+  repo?: string;
+  /**
+   * Narrow the mint gate's tier to "read". Defaults to the HTTP method: GET →
+   * "read", anything else → "write".
+   *
+   * The method is only a PROXY for the tier — the tier is a property of what the
+   * operation MEANS, and two mutating calls can sit on different sides of it.
+   * Registering a read-only deploy key or posting a check-run status is part of
+   * "deploy this repo", which a read grant authorizes; deleting the repo or
+   * managing its webhooks is repo ADMINISTRATION, which it must not.
+   *
+   * Deliberately typed `"read"` and not `GitHubAccessOp`: the only sound use is
+   * narrowing, so the type — not a comment someone has to obey — is what stops this
+   * from becoming a way to declare a management call harmless. Widening is what
+   * GHSA-hp2g-hw7g-f3vm did by accident.
+   */
+  authorizeAs?: "read";
+  /**
+   * Pin resolution to specific credential kinds, for an endpoint only ONE
+   * credential can satisfy. Orthogonal to `authorizeAs`: that is AUTHORITY
+   * ("may this caller?"), this is CAPABILITY ("can this credential at all?").
+   *
+   * Check-runs pass `["app-installation"]` because GitHub's Checks API rejects
+   * user tokens — and on self-hosted the chain hands back the operator's gh-CLI
+   * token FIRST, which silently 403s every check even when a working App
+   * installation sits one step later. Webhook writes deliberately DON'T pin: a
+   * PAT can administer hooks, and pinning would break self-hosts with no App.
+   */
+  credential?: GitHubTokenSource[];
   installationId?: number;
   params?: Record<string, unknown>;
   headers?: Record<string, string>;
@@ -532,8 +595,15 @@ export interface GitHubFetchOptions {
  *     bypass it here. getLocalGhToken self-guards to null in CLOUD_MODE, so on
  *     the SaaS this falls straight through to tokenFor (the App).
  *   - Everything else (writes: check-runs/webhooks, or no local gh) resolves
- *     via `tokenFor(ctx, "local", ...)` — PAT → App installation → OAuth.
- *     Check-runs MUST be the App, so writes never go gh-first.
+ *     via `tokenFor(ctx, "local", ...)`, whose ORDER IS PLATFORM-SPECIFIC —
+ *     saas: PAT → App → OAuth, but SELFHOSTED: gh-CLI → App → PAT → OAuth
+ *     (CHAINS in github.token.ts). So skipping the gh-first shortcut above does
+ *     NOT mean "not gh": on a self-hosted box gh-CLI is the chain's FIRST step,
+ *     and tokenFor returns the first token it resolves without ever retrying.
+ *     An endpoint only ONE credential can satisfy must therefore say so:
+ *     check-runs pass `credential: ["app-installation"]`, because GitHub's
+ *     Checks API rejects user tokens. Webhooks deliberately do not — a PAT can
+ *     administer hooks, and pinning them would break self-hosts with no App.
  *
  * Appends query params for GET requests, sends JSON body for others.
  */
@@ -557,7 +627,15 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
   const { tokenFor } = await import("./github.token");
   const result = await tokenFor(opts.ctx, "local", {
     owner: opts.owner,
+    repo: opts.repo,
     installationId: opts.installationId,
+    // A GET is a read; anything else mutates unless the caller declared its tier
+    // explicitly. Threading the op means a mutating GitHub call can only mint a
+    // token when the caller holds a WRITE grant on THIS repo — closing
+    // GHSA-hp2g-hw7g-f3vm at the single funnel every mint passes through,
+    // independent of whatever the route-level role check allowed.
+    op: opts.authorizeAs ?? (method === "GET" ? "read" : "write"),
+    only: opts.credential,
   });
   const token = result?.token ?? null;
 
@@ -665,22 +743,17 @@ export async function getUserStatus(userId: string) {
     return { connected: false as const, tokenSource: null };
   }
 
-  try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
-    if (!res.ok) {
-      return { connected: false as const, tokenSource: null };
-    }
-    const user = (await res.json()) as { login: string; id: number; avatar_url: string };
-    return { connected: true as const, tokenSource, oauthConnected: true as const, ...user };
-  } catch {
+  // Soft on purpose, and it always was: a revoked token, a 403 and github.com being down
+  // are one answer to the question this function asks. Via the shared primitive rather than
+  // a bare `fetch` so it is bounded — an unbounded call here hung the connection status
+  // panel on a stalled github.com, with nothing to show why.
+  const user = await ghFetchSoft<{ login: string; id: number; avatar_url: string }>(token, {
+    url: "https://api.github.com/user",
+  });
+  if (!user) {
     return { connected: false as const, tokenSource: null };
   }
+  return { connected: true as const, tokenSource, oauthConnected: true as const, ...user };
 }
 
 /**
@@ -803,18 +876,26 @@ export async function getGitHubConnectionState(
   let cliAvailable = false;
   let cliLogin: string | undefined;
   let cliAvatar: string | undefined;
+  // HOW it was connected, and — when a credential is stored but GitHub refused
+  // it — why. Both come from the single probe now; `method` used to need a
+  // second call here, which the other two callers of the probe simply didn't
+  // make, so the dashboard labelled every identity "gh CLI".
   let cliMethod: "host-cli" | "device" | "token" | undefined;
+  let cliProblem: "rejected" | "unreachable" | undefined;
+  let cliCheckedAt: string | undefined;
   if (onSelfHosted) {
     // Dynamic import: gh probed ONLY when self-hosted; never loaded on the SaaS.
-    const { getLocalGhStatus, getGitIdentityMethod } = await import("./github.local-auth");
+    const { getLocalGhStatus } = await import("./github.local-auth");
     const localStatus = await getLocalGhStatus();
+    cliCheckedAt = localStatus.checkedAt;
     if (localStatus.available) {
       cliAvailable = true;
       cliLogin = localStatus.login;
       cliAvatar = localStatus.avatar_url;
-      // HOW it was connected. The UI labelled every identity "gh CLI", so a
-      // pasted PAT or a browser sign-in was reported as a gh-CLI connection.
-      cliMethod = (await getGitIdentityMethod().catch(() => null)) ?? "host-cli";
+      cliMethod = localStatus.method;
+    } else {
+      cliMethod = localStatus.method ?? undefined;
+      cliProblem = localStatus.problem;
     }
   }
 
@@ -838,6 +919,8 @@ export async function getGitHubConnectionState(
         login: cliLogin,
         avatarUrl: cliAvatar,
         method: cliMethod,
+        problem: cliProblem,
+        checkedAt: cliCheckedAt,
       },
     },
     primary,

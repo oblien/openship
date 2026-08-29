@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { PLANS } from "@repo/core";
 import { api } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
@@ -10,10 +9,18 @@ import type { BillingState } from "@/lib/api/billing";
  * Billing page header — title/subtitle plus a live resource-stats strip.
  *
  * Client component because the surrounding BillingLayout is an async server
- * component and locale is a client-runtime concern. Everything is READ from
- * Oblien (billing/state + billing/usage) except capacity ceilings (the tier's
- * oblienLimits) and build time (openship-derived — Oblien has no build meter).
- * We never manage resource actions here; this is display only.
+ * component and locale is a client-runtime concern. Every figure here is
+ * MEASURED — read from Oblien (billing/state + billing/usage) or openship-derived
+ * for build time, which Oblien has no meter for. We never manage resource actions
+ * here; this is display only.
+ *
+ * There is no ceiling line. It used to print the tier's `oblienLimits`
+ * (workspaces / vCPU / RAM / disk), and three of those four are PER-WORKSPACE
+ * backstops derived from the BUILD machine — so they come out identical on every
+ * tier and reading them as "your plan's capacity" was actively wrong. The honest
+ * per-tier ceilings (running services, projects, per-service machine size) live in
+ * the Capacity panel, where each one sits next to its own consumption; restating
+ * them up here would duplicate a ceiling with no usage beside it.
  */
 
 interface UsageTotals {
@@ -93,7 +100,6 @@ export function BillingHeader({ state }: { state?: BillingState | null }) {
     };
   }, [state, periodStart]);
 
-  const limits = state ? (PLANS[state.tier]?.oblienLimits ?? null) : null;
   const dash = "—";
 
   return (
@@ -107,53 +113,44 @@ export function BillingHeader({ state }: { state?: BillingState | null }) {
       <p className="mt-1 text-sm text-muted-foreground/70">{t.billing.layout.subtitle}</p>
 
       {state && (
-        <>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <Stat
-              label={h.credits}
-              value={fmtCredits(state.balance.quotaRemaining)}
-              suffix={
-                state.overQuota
-                  ? h.overQuota
-                  : interpolate(h.creditsSuffix, {
-                      limit: fmtCredits(state.balance.quotaLimit),
-                    })
-              }
-              danger={state.overQuota}
-            />
-            <Stat
-              label={h.bandwidth}
-              value={totals ? `${fmtNum(totals.network_gb, 2)} GB` : dash}
-              suffix={h.bandwidthNote}
-            />
-            <Stat
-              label={res.cpu.label}
-              value={totals ? fmtNum(totals.vcpu_hours) : dash}
-              suffix={res.cpu.units}
-            />
-            <Stat
-              label={res.memory.label}
-              value={totals ? fmtNum(totals.gb_hours) : dash}
-              suffix={res.memory.units}
-            />
-            <Stat
-              label={res.disk.label}
-              value={totals ? `${fmtNum(totals.disk_io_gb, 2)} GB` : dash}
-            />
-            <Stat
-              label={h.build}
-              value={fmtNum(state.buildTimeMinutes, 0)}
-              suffix={h.min}
-            />
-          </div>
-          {limits && (
-            <p className="mt-2 text-[11px] text-muted-foreground/70">
-              {h.capacity}: {limits.max_workspaces} {h.workspaces} · {limits.max_vcpus}{" "}
-              {h.vcpus} · {Math.round(limits.max_ram_mb / 1024)} GB {h.ram} ·{" "}
-              {limits.max_disk_gb} GB {h.diskCap}
-            </p>
-          )}
-        </>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <Stat
+            label={h.credits}
+            value={fmtCredits(state.balance.quotaRemaining)}
+            suffix={
+              state.overQuota
+                ? h.overQuota
+                : interpolate(h.creditsSuffix, {
+                    limit: fmtCredits(state.balance.quotaLimit),
+                  })
+            }
+            danger={state.overQuota}
+          />
+          <Stat
+            label={h.bandwidth}
+            value={totals ? `${fmtNum(totals.network_gb, 2)} GB` : dash}
+            suffix={h.bandwidthNote}
+          />
+          <Stat
+            label={res.cpu.label}
+            value={totals ? fmtNum(totals.vcpu_hours) : dash}
+            suffix={res.cpu.units}
+          />
+          <Stat
+            label={res.memory.label}
+            value={totals ? fmtNum(totals.gb_hours) : dash}
+            suffix={res.memory.units}
+          />
+          <Stat
+            label={res.disk.label}
+            value={totals ? `${fmtNum(totals.disk_io_gb, 2)} GB` : dash}
+          />
+          <Stat
+            label={h.build}
+            value={fmtNum(state.buildTimeMinutes, 0)}
+            suffix={h.min}
+          />
+        </div>
       )}
     </div>
   );

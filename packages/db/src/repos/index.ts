@@ -20,7 +20,11 @@ export {
   type CreatePatInput,
 } from "./personal-access-token.repo";
 export { createOAuthRepo } from "./oauth.repo";
-export { createProjectGroupRepo, type ProjectGroup, type NewProjectGroup } from "./project-group.repo";
+export {
+  createProjectGroupRepo,
+  type ProjectGroup,
+  type NewProjectGroup,
+} from "./project-group.repo";
 export {
   createProjectRepo,
   type Project,
@@ -36,16 +40,55 @@ export {
   type NewBuildSession,
 } from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
+export {
+  createDnsCredentialRepo,
+  type DnsCredential,
+  type NewDnsCredential,
+} from "./dns-credential.repo";
+export { createCredentialRepo, type Credential, type NewCredential } from "./credential.repo";
 export { createRouteRuleRepo, type RouteRule, type NewRouteRule } from "./route-rule.repo";
-export { createWebhookSourceRepo, type WebhookSource, type NewWebhookSource } from "./webhook-source.repo";
-export { createIncomingWebhookRepo, type IncomingWebhook, type NewIncomingWebhook } from "./incoming-webhook.repo";
-export { createSystemNoticeRepo, type SystemNotice, type NewSystemNotice } from "./system-notice.repo";
-export { createUpdateStatusRepo, type UpdateStatus, type NewUpdateStatus } from "./update-status.repo";
+export {
+  createWebhookSourceRepo,
+  type WebhookSource,
+  type NewWebhookSource,
+} from "./webhook-source.repo";
+export {
+  createIncomingWebhookRepo,
+  type IncomingWebhook,
+  type NewIncomingWebhook,
+} from "./incoming-webhook.repo";
+export {
+  createSystemNoticeRepo,
+  type SystemNotice,
+  type NewSystemNotice,
+} from "./system-notice.repo";
+export {
+  createUpdateStatusRepo,
+  type UpdateStatus,
+  type NewUpdateStatus,
+} from "./update-status.repo";
 export {
   createServerModuleStatusRepo,
   type ServerModuleStatus,
   type NewServerModuleStatus,
 } from "./server-module-status.repo";
+export {
+  createServerContainerStatusRepo,
+  type ServerContainerStatus,
+  type NewServerContainerStatus,
+  type ServerContainerComponent,
+} from "./server-container-status.repo";
+export {
+  createEdgeTargetVerificationRepo,
+  type EdgeTargetVerification,
+  type NewEdgeTargetVerification,
+} from "./edge-target-verification.repo";
+export {
+  createServiceIncidentRepo,
+  incidentSeverity,
+  type ServiceIncident,
+  type NewServiceIncident,
+} from "./service-incident.repo";
 export {
   createCloudWebhookBindingRepo,
   type CloudWebhookBinding,
@@ -95,11 +138,13 @@ export {
   type ServerTunnel,
   type NewServerTunnel,
 } from "./server-tunnel.repo";
+export { createMailServerRepo, type MailServer, type NewMailServer } from "./mail-server.repo";
 export {
-  createMailServerRepo,
-  type MailServer,
-  type NewMailServer,
-} from "./mail-server.repo";
+  createMailInboundRepo,
+  type MailInboundRule,
+  type NewMailInboundRule,
+  type MailInboundScope,
+} from "./mail-inbound.repo";
 export {
   createAnalyticsRepo,
   type ServerAnalyticsRow,
@@ -107,6 +152,11 @@ export {
   type ServerAnalyticsGeoRow,
   type NewServerAnalyticsGeo,
 } from "./analytics.repo";
+export {
+  createResourceUsageRepo,
+  type ResourceUsageRow,
+  type NewResourceUsage,
+} from "./resource-usage.repo";
 export {
   createTerminalSessionRepo,
   type TerminalSession,
@@ -160,6 +210,12 @@ export {
 export { createMemberRepo, type Member, type MemberRole } from "./member.repo";
 export { createInvitationRepo, type Invitation } from "./invitation.repo";
 export { createAuditEventRepo, type AuditEvent, type NewAuditEvent } from "./audit-event.repo";
+export {
+  createAuditSettingsRepo,
+  AUDIT_SETTINGS_DEFAULTS,
+  type AuditSettings,
+  type AuditSettingsView,
+} from "./audit-settings.repo";
 export { createJobRunRepo, type JobRun, type NewJobRun } from "./job-run.repo";
 export { createJobRepo, type Job, type NewJob } from "./job.repo";
 export {
@@ -167,6 +223,17 @@ export {
   type OrphanedResource,
   type NewOrphanedResource,
 } from "./orphaned-resource.repo";
+export {
+  createHostPortClaimRepo,
+  HostPortClaimConflictError,
+  HOST_PORT_QUARANTINE_OWNER,
+  type HostPortClaim,
+  type NewHostPortClaim,
+  type HostPortTargetKey,
+  type HostPortClaimIdentity,
+  type HostPortClaimOwner,
+  type PruneHostPortClaimsInput,
+} from "./host-port-claim.repo";
 export {
   createResourceGrantRepo,
   type ResourceGrant,
@@ -218,12 +285,17 @@ import { createProjectGroupRepo } from "./project-group.repo";
 import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
 import { createDomainRepo } from "./domain.repo";
+import { createDnsCredentialRepo } from "./dns-credential.repo";
+import { createCredentialRepo } from "./credential.repo";
 import { createRouteRuleRepo } from "./route-rule.repo";
 import { createWebhookSourceRepo } from "./webhook-source.repo";
 import { createIncomingWebhookRepo } from "./incoming-webhook.repo";
 import { createSystemNoticeRepo } from "./system-notice.repo";
 import { createUpdateStatusRepo } from "./update-status.repo";
 import { createServerModuleStatusRepo } from "./server-module-status.repo";
+import { createServerContainerStatusRepo } from "./server-container-status.repo";
+import { createEdgeTargetVerificationRepo } from "./edge-target-verification.repo";
+import { createServiceIncidentRepo } from "./service-incident.repo";
 import { createCloudWebhookBindingRepo } from "./cloud-webhook-binding.repo";
 import { createProjectConnectionRepo } from "./project-connection.repo";
 import { createCustomAppTemplateRepo } from "./custom-app-template.repo";
@@ -237,7 +309,9 @@ import { createServerGithubAuthRepo } from "./server-github-auth.repo";
 import { createGithubDeployKeyRepo } from "./github-deploy-key.repo";
 import { createServerTunnelRepo } from "./server-tunnel.repo";
 import { createMailServerRepo } from "./mail-server.repo";
+import { createMailInboundRepo } from "./mail-inbound.repo";
 import { createAnalyticsRepo } from "./analytics.repo";
+import { createResourceUsageRepo } from "./resource-usage.repo";
 import { createTerminalSessionRepo } from "./terminal-session.repo";
 import { createServiceTerminalSessionRepo } from "./service-terminal-session.repo";
 import { createCloudHandoffCodeRepo } from "./cloud-handoff-code.repo";
@@ -256,9 +330,11 @@ import { createContainerRegistryRepo } from "./container-registry.repo";
 import { createMemberRepo } from "./member.repo";
 import { createInvitationRepo } from "./invitation.repo";
 import { createAuditEventRepo } from "./audit-event.repo";
+import { createAuditSettingsRepo } from "./audit-settings.repo";
 import { createJobRunRepo } from "./job-run.repo";
 import { createJobRepo } from "./job.repo";
 import { createOrphanedResourceRepo } from "./orphaned-resource.repo";
+import { createHostPortClaimRepo } from "./host-port-claim.repo";
 import { createResourceGrantRepo } from "./resource-grant.repo";
 import { createInvitationPendingGrantRepo } from "./invitation-pending-grant.repo";
 import { createOrganizationRepo } from "./organization.repo";
@@ -281,6 +357,10 @@ import { createBillingUsageSnapshotRepo } from "./billing-usage-snapshot.repo";
  *
  * For testing, create isolated repos with `createUserRepo(testDb)` etc.
  */
+// Built before `repos` because the audit-event repo consults the per-org
+// recording switch inside create(), and both must share one memo.
+const auditSettingsRepo = createAuditSettingsRepo(db);
+
 export const repos = {
   user: createUserRepo(db),
   session: createSessionRepo(db),
@@ -291,12 +371,17 @@ export const repos = {
   project: createProjectRepo(db),
   deployment: createDeploymentRepo(db),
   domain: createDomainRepo(db),
+  dnsCredential: createDnsCredentialRepo(db),
+  credential: createCredentialRepo(db),
   routeRule: createRouteRuleRepo(db),
   webhookSource: createWebhookSourceRepo(db),
   incomingWebhook: createIncomingWebhookRepo(db),
   notice: createSystemNoticeRepo(db),
   updateStatus: createUpdateStatusRepo(db),
   serverModuleStatus: createServerModuleStatusRepo(db),
+  serverContainerStatus: createServerContainerStatusRepo(db),
+  edgeTargetVerification: createEdgeTargetVerificationRepo(db),
+  serviceIncident: createServiceIncidentRepo(db),
   cloudWebhookBinding: createCloudWebhookBindingRepo(db),
   projectConnection: createProjectConnectionRepo(db),
   customAppTemplate: createCustomAppTemplateRepo(db),
@@ -310,7 +395,9 @@ export const repos = {
   githubDeployKey: createGithubDeployKeyRepo(db),
   serverTunnel: createServerTunnelRepo(db),
   mailServer: createMailServerRepo(db),
+  mailInbound: createMailInboundRepo(db),
   analytics: createAnalyticsRepo(db),
+  resourceUsage: createResourceUsageRepo(db),
   terminalSession: createTerminalSessionRepo(db),
   serviceTerminalSession: createServiceTerminalSessionRepo(db),
   cloudHandoffCode: createCloudHandoffCodeRepo(db),
@@ -326,10 +413,12 @@ export const repos = {
   containerRegistry: createContainerRegistryRepo(db),
   member: createMemberRepo(db),
   invitation: createInvitationRepo(db),
-  auditEvent: createAuditEventRepo(db),
+  auditSettings: auditSettingsRepo,
+  auditEvent: createAuditEventRepo(db, auditSettingsRepo),
   jobRun: createJobRunRepo(db),
   job: createJobRepo(db),
   orphanedResource: createOrphanedResourceRepo(db),
+  hostPortClaim: createHostPortClaimRepo(db),
   resourceGrant: createResourceGrantRepo(db),
   invitationPendingGrant: createInvitationPendingGrantRepo(db),
   organization: createOrganizationRepo(db),

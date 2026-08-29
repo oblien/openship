@@ -3,6 +3,8 @@
     "title": "容量与用量",
     "subtitle": "您套餐包含的容量以及已用量。实时数据从 Openship Cloud 同步。",
     "routes": "免费路由",
+    "runningServices": "运行中的服务",
+    "projects": "项目",
     "workspaces": "工作区",
     "unlimited": "无限制",
     "used": "已用",
@@ -11,7 +13,7 @@
   },
   "topupsComingSoon": "一次性积分充值即将推出——您将可以在此在每月额度之外添加积分。",
   "header": {
-    "credits": "Credits",
+    "credits": "计算",
     "creditsSuffix": "of {limit}",
     "overQuota": "Over quota",
     "bandwidth": "Bandwidth",
@@ -80,7 +82,7 @@
     "title": "充值额度",
     "description": "通过 Stripe 收费的一次性额度包。额度永不过期，并会叠加在您的每月额度之上。",
     "tryAgain": "重试",
-    "credits": "额度",
+    "credits": "计算分钟",
     "redirecting": "正在跳转…",
     "buy": "购买",
     "empty": "目前没有可用的充值包。",
@@ -92,25 +94,24 @@
     "portalError": "无法打开账单门户"
   },
   "overview": {
-    "creditsLeft": "剩余额度",
+    "creditsLeft": "剩余计算分钟",
     "planLabel": "{name} 套餐",
     "usedThisPeriod": "本周期已用",
     "resets": "重置",
     "resetsInDay": "{n} 天后",
     "resetsInDays": "{n} 天后",
     "none": "—",
-    "upgradeToPro": "升级到 Pro",
     "recentActivity": "近期活动",
     "last7Days": "过去 7 天",
     "viewFullUsage": "查看完整用量",
     "noUsageYet": "暂无用量",
     "usageError": "加载用量失败",
-    "needMoreCredits": "需要更多额度？",
+    "needMoreCredits": "需要更多计算分钟？",
     "oneTimeTopups": "一次性充值，不改变订阅",
     "seeAllPacks": "查看所有充值包",
     "packsError": "加载充值包失败",
     "noPacks": "没有可用的充值包。",
-    "creditsAmount": "{n} 额度",
+    "creditsAmount": "{n} 计算分钟",
     "oneTime": "{price} 一次性",
     "buy": "购买",
     "checkoutError": "无法开始结账"
@@ -121,7 +122,7 @@
       "balance": "余额",
       "balanceSuffix": "共 {limit} 额度",
       "consumed": "本周期消耗",
-      "credits": "额度",
+      "credits": "计算分钟",
       "burnRate": "消耗速率",
       "burnRateSuffix": "额度/天（过去 7 天）",
       "projected": "预计周期末",
@@ -140,16 +141,28 @@
       "subtitle": "按所选范围内的计量资源用量按比例分摊的额度。",
       "resource": "资源",
       "units": "单位",
-      "credits": "额度",
+      "credits": "计算分钟",
       "percentOfTotal": "占总量百分比",
       "loading": "加载中…",
       "empty": "所选范围内无用量。"
     },
     "resources": {
-      "cpu": { "label": "CPU 时间", "units": "vCPU-小时" },
-      "memory": { "label": "内存", "units": "GB-小时" },
-      "disk": { "label": "磁盘 IO", "units": "GB" },
-      "network": { "label": "网络", "units": "GB" }
+      "cpu": {
+        "label": "CPU 时间",
+        "units": "vCPU-小时"
+      },
+      "memory": {
+        "label": "内存",
+        "units": "GB-小时"
+      },
+      "disk": {
+        "label": "磁盘 IO",
+        "units": "GB"
+      },
+      "network": {
+        "label": "网络",
+        "units": "GB"
+      }
     },
     "toolbar": {
       "workspace": "工作区",
@@ -187,7 +200,8 @@
       "incomplete_expired": "已过期",
       "unpaid": "未付款",
       "paused": "已暂停"
-    }
+    },
+    "includedTitle": "包含内容"
   },
   "paymentPanel": {
     "title": "付款方式",

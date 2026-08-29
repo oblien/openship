@@ -1,0 +1,92 @@
+{
+  "title": "Sorunlar",
+  "subtitle": "Openship'in projelerinde, sunucularında ve alan adlarında bulduğu her sorun.",
+  "tabs": {
+    "open": "Açık",
+    "resolved": "Çözüldü"
+  },
+  "resolvedNote": "Geçmiş, konteyner ve sunucu olaylarını kapsar — diğer kontroller anlık durumu bildirir, bu yüzden düzelen bir sertifika ya da dağıtım burada görünmeyi bırakır.",
+  "rescan": "Yeniden tara",
+  "rescanning": "Taranıyor",
+  "filters": {
+    "searchPlaceholder": "Sorunlarda ara",
+    "all": "Tümü",
+    "outage": "Kesinti",
+    "action_required": "İşlem gerekli",
+    "advisory": "Bilgi",
+    "clear": "Filtreleri temizle"
+  },
+  "scopes": {
+    "platform": "Openship",
+    "server": "Sunucular",
+    "project": "Projeler",
+    "domain": "Alan adları"
+  },
+  "scopeSubtitles": {
+    "platform": "Bu kurulumun kendisi",
+    "server": "İş yüklerinin çalıştığı makineler",
+    "project": "Dağıtılmış projeler ve konteynerleri",
+    "domain": "Özel ana bilgisayar adları ve sertifikalar"
+  },
+  "kinds": {
+    "deploy_blocked": "Dağıtım engellendi",
+    "prompt": "Bir karar bekliyor",
+    "partial_decision": "Kısmi sürüm",
+    "routing_unsynced": "Yönlendirme eşitlenmedi",
+    "domain_unverified": "Alan adı doğrulanmadı",
+    "ssl_error": "Sertifika sorunu",
+    "port_advisory": "Port bilgisi",
+    "workload_unhealthy": "Sağlık kontrolleri başarısız",
+    "workload_crash_loop": "Sürekli çöküyor",
+    "workload_down": "Konteyner durdu",
+    "server_unreachable": "Sunucuya erişilemiyor",
+    "edge_down": "Edge durdu",
+    "edge_absent": "Edge kurulu değil",
+    "mail_down": "E-posta motoru durdu",
+    "update_available": "Güncelleme mevcut",
+    "component_behind": "Bileşen güncellemesi mevcut"
+  },
+  "since": "{when} başladı",
+  "resolvedWhen": "{when} çözüldü",
+  "expiresIn": "{n} dk içinde iptal edilecek",
+  "view": "Görüntüle",
+  "fix": "Onar",
+  "install": "Kur",
+  "update": "Güncelle",
+  "mailSetup": "E-posta kurulumu",
+  "selfUpdateNote": "Bu kurulum kendini komut satırından günceller.",
+  "empty": {
+    "openTitle": "İlgi bekleyen bir şey yok",
+    "openBody": "Engellenmiş veya bekleyen dağıtım yok, sertifika veya alan adı sorunu yok, geride kalan bir şey yok, yanlış portta çalışan bir şey yok. Kontroller arka planda çalışmaya devam ediyor.",
+    "resolvedTitle": "Çözülmüş olay yok",
+    "resolvedBody": "Konteyner ve sunucu olayları düzeldiklerinde burada görünür ve 30 gün saklanır.",
+    "filteredTitle": "Sonuç yok",
+    "filteredBody": "Açık sorunlar var — hiçbiri bu filtreye uymuyor."
+  },
+  "summary": {
+    "title": "Genel bakış",
+    "subtitle": "Duruma bir bakış",
+    "totalOpen": "açık",
+    "totalResolved": "çözüldü",
+    "bySeverity": "Önem derecesine göre",
+    "byArea": "Alana göre"
+  },
+  "home": {
+    "attentionTitle": "İlgi bekliyor",
+    "attentionSubtitle": "Bir şey bozuk ya da karar bekliyor",
+    "updatesTitle": "Güncellemeler mevcut",
+    "updatesSubtitle": "Uygulanmaya hazır yeni sürümler var",
+    "more": "{n} tane daha",
+    "hide": "Bir şey değişene kadar gizle"
+  },
+  "loadFailed": "Sorunlar yüklenemedi",
+  "toast": {
+    "title": "Sorunlar",
+    "rescanned": "Tarama tamamlandı",
+    "rescanPartial": "Tarama tamamlandı, {n} kontrol başarısız",
+    "rescanFailed": "Tarama başarısız",
+    "resolved": "Tamam",
+    "resolveFailed": "Bu düzeltme uygulanamadı",
+    "confirmDestructive": "Bunun geri alınamayan bir yan etkisi var. Devam edilsin mi?"
+  }
+}
