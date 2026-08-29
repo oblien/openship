@@ -26,7 +26,10 @@ const {
       findById: vi.fn(),
       getEnvMap: vi.fn(),
       listEnvVarChangeMeta: vi.fn(),
-      update: vi.fn(),
+      // Async in the real repo, and `requestBuildAccess` chains `.catch()` off it
+      // when it syncs a snapshot's orchestratorMode back onto the project row.
+      // `clearAllMocks` keeps this implementation, so the default survives.
+      update: vi.fn().mockResolvedValue(undefined),
     },
     deployment: {
       findById: vi.fn(),

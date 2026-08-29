@@ -451,6 +451,20 @@ const TABLES: ReadonlyArray<TableSpec> = [
     ],
     hasOrganizationId: false,
   },
+  // Operator-supplied config/secret inputs for a managed stack. Hangs off the
+  // PROJECT (not the stack row), so it scopes the same way service/domain do. Its
+  // `value_enc` is registered in ENCRYPTED_COLUMNS, so the ciphertext is stripped
+  // and re-sealed under the receiver's key rather than travelling undecryptable.
+  {
+    sqlName: "swarm_managed_input",
+    table: schema.swarmManagedInput,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "projectId" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+    hasOrganizationId: false,
+  },
   {
     sqlName: "incoming_webhook",
     table: schema.incomingWebhook,
@@ -960,6 +974,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "deployment", column: "envVars" },
   { table: "swarm_stack", column: "sourceYamlEnc" },
   { table: "swarm_stack_revision", column: "renderedYamlEnc" },
+  { table: "swarm_managed_input", column: "valueEnc" },
   { table: "container_registry", column: "credentialsEnc" },
   { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl"] },
 ];

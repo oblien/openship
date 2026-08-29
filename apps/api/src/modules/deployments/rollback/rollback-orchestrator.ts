@@ -173,7 +173,15 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
     throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
   }
 
-  const serviceImages = await resolveEffectiveServiceImages(target);
+  // A Swarm stack's artifact is its immutable revision row: there are no per-service
+  // images, no release directory and no host-local anything to probe. Skipping the
+  // whole container-artifact inspection also avoids `resolveDeploymentRuntime`, which
+  // refuses a swarm ref outright and would otherwise be logged as an unreachable host
+  // on every stack rollback and restore preview. `rollback` dispatches Swarm on its
+  // own path, so the empty plan produced here is never executed.
+  const isSwarmTarget = isSwarmStackRef(deploymentWorkloadRef(target));
+
+  const serviceImages = isSwarmTarget ? [] : await resolveEffectiveServiceImages(target);
 
   // Ask the host which of the candidate artifacts are actually still there, so a
   // reclaimed tag (or a removed release dir) degrades to a rebuild instead of
@@ -186,11 +194,6 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
   let unitRestore = false;
   const presence = new Map<string, boolean>();
   let staticDirPresent = false;
-  // A Swarm stack has no host-local image or release directory to inspect, and
-  // `resolveDeploymentRuntime` refuses a swarm ref — which the catch below would
-  // log as an unreachable host on every stack rollback. `rollback` dispatches
-  // Swarm on its own path, so the empty plan built here is never consulted.
-  const isSwarmTarget = isSwarmStackRef(deploymentWorkloadRef(target));
   try {
     if (isSwarmTarget) throw new SkipHostInspection();
     const { runtime } = await resolveDeploymentRuntime(target);

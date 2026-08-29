@@ -60,6 +60,7 @@ const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> =
   "notification_channel.config": { table: schema.notificationChannel, scheme: "notification-config" },
   "swarm_stack.sourceYamlEnc": { table: schema.swarmStack, scheme: "scalar" },
   "swarm_stack_revision.renderedYamlEnc": { table: schema.swarmStackRevision, scheme: "scalar" },
+  "swarm_managed_input.valueEnc": { table: schema.swarmManagedInput, scheme: "scalar" },
   "container_registry.credentialsEnc": { table: schema.containerRegistry, scheme: "scalar" },
 };
 
