@@ -8,15 +8,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * tried to correct them after the fact.
  */
 
-const { createProjectMock, createServiceMock, setEnvMock, requireCloudMock, draftMock } = vi.hoisted(
-  () => ({
+const { createProjectMock, createServiceMock, setEnvMock, requireCloudMock, draftMock } =
+  vi.hoisted(() => ({
     createProjectMock: vi.fn(),
     createServiceMock: vi.fn(),
     setEnvMock: vi.fn(),
     requireCloudMock: vi.fn(),
     draftMock: vi.fn(),
-  }),
-);
+  }));
 
 vi.mock("@repo/db", () => ({
   repos: {
@@ -54,11 +53,15 @@ vi.mock("../../../src/lib/cloud/require-cloud", () => ({
 
 import {
   installApp,
+  installServicePorts,
   planInstallRouting,
   serviceRoutingPatch,
   type InstallAppRoute,
 } from "../../../src/modules/apps/app-install.service";
-import { mergeServiceRoutingPatch, type StoredServiceRouting } from "../../../src/lib/public-endpoints";
+import {
+  mergeServiceRoutingPatch,
+  type StoredServiceRouting,
+} from "../../../src/lib/public-endpoints";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 const ctx = { organizationId: "org1", userId: "u1" } as RequestContext;
@@ -68,6 +71,7 @@ const payloadFor = (name: string) =>
   createServiceMock.mock.calls.find((c) => c[2]?.name === name)?.[2] as
     | {
         exposed: boolean;
+        ports: string[];
         domainType?: "free" | "custom";
         publicEndpoints: Array<{
           port: number;
@@ -106,11 +110,11 @@ describe("app install — routing comes from the operator's choice", () => {
       { port: 3210, domainType: "custom", customDomain: "api.example.com" },
     ]);
 
-    // Port-only: nothing public is persisted, so the deploy's free-domain gate
-    // has nothing to trip on.
+    // Port-only: no hostname is persisted, but the fixed public host mapping is.
     const dashboard = payloadFor("dashboard")!;
     expect(dashboard.exposed).toBe(false);
     expect(dashboard.publicEndpoints).toEqual([]);
+    expect(dashboard.ports).toContain("0.0.0.0:6791:6791");
   });
 
   it("invents nothing when the caller sends no routing", async () => {
@@ -176,6 +180,30 @@ describe("app install — routing comes from the operator's choice", () => {
       /doesn't serve port 9999/i,
     );
     expect(createProjectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("installServicePorts", () => {
+  it("publishes Supabase Kong on a fixed public port in port-only mode", () => {
+    expect(
+      installServicePorts("kong", [], [{ service: "kong", port: 8000, mode: "port" }]),
+    ).toEqual(["0.0.0.0:8000:8000"]);
+  });
+
+  it("makes an authored host remap public while preserving its port and protocol", () => {
+    expect(
+      installServicePorts("web", ["8203:80/tcp"], [{ service: "web", port: 80, mode: "port" }]),
+    ).toEqual(["0.0.0.0:8203:80/tcp"]);
+  });
+
+  it("does not publish a port selected for domain routing", () => {
+    expect(
+      installServicePorts(
+        "kong",
+        [],
+        [{ service: "kong", port: 8000, mode: "custom", customDomain: "db.example.com" }],
+      ),
+    ).toEqual([]);
   });
 });
 
