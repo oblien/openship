@@ -119,6 +119,6 @@ export function advisoryManifestUrl(tag: string): string {
 /** Human-facing changelog link — a specific tag's notes, or all releases. */
 export function changelogUrl(tag?: string): string {
   return tag
-    ? `https://github.com/${GITHUB_REPO}/releases/tag/${encodeURIComponent(tag)}`
+    ? `https://github.com/${GITHUB_REPO}/blob/main/CHANGELOG.md#${tag.replace(/^v/, "").replaceAll(".", "")}`
     : `https://github.com/${GITHUB_REPO}/releases`;
 }

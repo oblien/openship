@@ -13,6 +13,8 @@ import { useCallback, useEffect, useState } from "react";
 import {
   RELEASES_LATEST_API,
   advisoryManifestUrl,
+  changelogMarkdownUrl,
+  extractChangelogSection,
   parseManifest,
   resolveUpdateState,
   matchAdvisories,
@@ -102,16 +104,21 @@ async function fetchRemote(): Promise<{ latest: LatestRelease | null; manifest: 
         headers: { Accept: "application/vnd.github+json" },
       });
       if (res.ok) {
-        const data = (await res.json()) as { tag_name?: string; body?: string };
+        const data = (await res.json()) as { tag_name?: string };
         const tag = data.tag_name ?? "";
         if (tag) {
-          latest = { version: tag.replace(/^v/, ""), tag, notes: data.body ?? "" };
+          latest = { version: tag.replace(/^v/, ""), tag, notes: "" };
           // Advisories pinned to the release TAG — main commits never surface.
           try {
-            const m = await fetch(advisoryManifestUrl(tag), { headers: { Accept: "application/json" } });
+            const [changelog, m] = await Promise.all([
+              fetch(changelogMarkdownUrl(tag)),
+              fetch(advisoryManifestUrl(tag), { headers: { Accept: "application/json" } }),
+            ]);
+            if (changelog.ok)
+              latest.notes = extractChangelogSection(await changelog.text(), latest.version);
             if (m.ok) manifest = parseManifest(await m.json());
           } catch {
-            /* no manifest at this tag → no advisories */
+            /* no changelog/manifest at this tag → no release details */
           }
         }
       }

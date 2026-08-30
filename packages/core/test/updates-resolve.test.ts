@@ -8,6 +8,8 @@ import {
   type GithubReleasePayload,
 } from "../src/updates/resolve";
 import { parseManifest } from "../src/updates/advisories";
+import { changelogMarkdownUrl, extractChangelogSection } from "../src/updates/changelog";
+import { changelogUrl } from "../src/updates/types";
 
 // A realistic `releases/latest` payload — asset names match .github/workflows/release.yml.
 const RELEASE_0_2_0: GithubReleasePayload = {
@@ -20,6 +22,32 @@ const RELEASE_0_2_0: GithubReleasePayload = {
     { name: "Openship.AppImage", browser_download_url: "https://x/app.AppImage", size: 13 },
   ],
 };
+
+describe("changelog release details", () => {
+  const changelog = `# Changelog
+
+## 0.6.10
+
+- newer
+
+## 0.6.9
+
+- **Dashboard** — useful details
+
+## 0.6.8
+
+- older`;
+
+  it("extracts the exact version section and links its heading", () => {
+    expect(extractChangelogSection(changelog, "0.6.9")).toBe("- **Dashboard** — useful details");
+    expect(changelogMarkdownUrl("v0.6.9")).toBe(
+      "https://raw.githubusercontent.com/oblien/openship/v0.6.9/CHANGELOG.md",
+    );
+    expect(changelogUrl("v0.6.9")).toBe(
+      "https://github.com/oblien/openship/blob/main/CHANGELOG.md#069",
+    );
+  });
+});
 
 describe("desktopAssetName", () => {
   it("maps each platform/arch to the published asset (Windows = zip, NOT Setup.exe)", () => {
