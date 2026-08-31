@@ -3938,6 +3938,63 @@
               "requiresRedeploy": true
             }
           ]
+        },
+        {
+          "id": "ai",
+          "label": "AI assistance",
+          "description": "Optional MiniMax configuration for email composition and subject generation.",
+          "fields": [
+            {
+              "key": "MINIMAX_API_KEY",
+              "service": "webmail",
+              "label": "MiniMax API key",
+              "help": "Bearer token used only by the webmail server for AI generation requests.",
+              "type": "password",
+              "secret": true,
+              "installStep": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "MINIMAX_MODEL",
+              "service": "webmail",
+              "label": "MiniMax model",
+              "type": "select",
+              "options": [
+                {
+                  "value": "MiniMax-M3",
+                  "label": "MiniMax-M3"
+                },
+                {
+                  "value": "MiniMax-M2.7",
+                  "label": "MiniMax-M2.7"
+                }
+              ],
+              "default": "MiniMax-M3",
+              "advanced": true,
+              "installStep": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "MINIMAX_BASE_URL",
+              "service": "webmail",
+              "label": "MiniMax API region",
+              "type": "select",
+              "options": [
+                {
+                  "value": "https://api.minimax.io/v1",
+                  "label": "Global"
+                },
+                {
+                  "value": "https://api.minimaxi.com/v1",
+                  "label": "China"
+                }
+              ],
+              "default": "https://api.minimax.io/v1",
+              "advanced": true,
+              "installStep": true,
+              "requiresRedeploy": true
+            }
+          ]
         }
       ],
       "management": {
