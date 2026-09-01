@@ -28,6 +28,11 @@ import { failureStatusFor } from "./blocking-errors";
 import { sanitizeStorableStrings, sliceWithoutSplittingPair } from "./build-log-sanitize";
 import { detectAndStoreFavicon } from "../../lib/favicon-detector";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
+import {
+  collectDeploymentManifest,
+  executeCleanup,
+  type CleanupManifest,
+} from "../projects/project-cleanup.service";
 
 /**
  * The "your domains didn't route" line for a deploy that otherwise succeeded.
@@ -436,19 +441,17 @@ export async function onFailure(
     }
   }
 
-  if (runtime) {
-    const serviceDeps = await repos.service.listByDeployment(dep.id).catch(() => []);
-    for (const serviceDep of serviceDeps) {
-      if (!serviceDep.containerId) continue;
-      try {
-        await runtime.destroy(serviceDep.containerId);
-      } catch (destroyErr) {
-        console.error(
-          `[DEPLOY] Failed to destroy service container ${serviceDep.containerId} on failure:`,
-          destroyErr,
-        );
-      }
-    }
+  // protectRetained: a failed compose redeploy carries the LIVE release's
+  // containerId/imageRef onto its own service rows for every service it hadn't
+  // replaced yet — same seam as reject/delete/cancel. activeDeploymentId never
+  // advances on failure, so the keep set sees the live release without a hint.
+  const manifest = await collectDeploymentManifest(dep, project, {
+    protectRetained: true,
+  }).catch((): CleanupManifest => ({ projectId: dep.projectId, resources: [] }));
+  if (manifest.resources.length > 0) {
+    await executeCleanup(manifest).catch((err) => {
+      console.error(`[DEPLOY] Cleanup crashed for ${dep.id} on failure:`, err);
+    });
   }
 
   // INVARIANT: failure writes the DEPLOYMENT row only — NEVER the project row.
