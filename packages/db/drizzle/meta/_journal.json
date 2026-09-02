@@ -820,6 +820,55 @@
       "when": 1788992507325,
       "tag": "0116_domain_ssl_challenge",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1789078907325,
+      "tag": "0117_add_swarm_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1789165307325,
+      "tag": "0118_add_swarm_source_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1789251707325,
+      "tag": "0119_add_swarm_cluster_binding_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1789338107325,
+      "tag": "0120_add_swarm_source_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1789424507325,
+      "tag": "0121_add_swarm_managed_input",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1789510907325,
+      "tag": "0122_add_swarm_storage_acknowledgements",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1789597307325,
+      "tag": "0123_add_swarm_volume_replacement_acknowledgements",
+      "breakpoints": true
     }
   ]
 }

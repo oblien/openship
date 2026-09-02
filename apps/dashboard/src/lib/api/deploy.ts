@@ -3,6 +3,7 @@ import { endpoints } from "./endpoints";
 import type {
   StackId,
   ComposeAdvanced,
+  OrchestratorMode,
   RoutingConfig,
   OpenshipResourceTier,
   OpenshipReadiness,
@@ -133,6 +134,68 @@ export interface PrepareAppConfig {
   port: number;
   hasServer: boolean;
   hasBuild: boolean;
+}
+
+export type SwarmBuildPhaseStatus = "running" | "completed" | "failed" | "skipped";
+
+export interface SwarmBuildStatus {
+  success: true;
+  deployment_id: string;
+  project_id: string;
+  status: string;
+  deploymentStatus: string;
+  is_active: boolean;
+  failureMessage: string;
+  warningMessage: string;
+  phaseDurations: Record<string, number>;
+  phaseStatuses: Record<string, SwarmBuildPhaseStatus>;
+  config: {
+    projectName: string;
+    orchestratorMode?: "standalone" | "swarm";
+  };
+  swarm: null | {
+    stackName: string;
+    managerServerId: string | null;
+    clusterId: string;
+    managementMode: "observe" | "managed";
+    sourceDigest: string | null;
+    isActive: boolean;
+    revision: null | {
+      id: string;
+      revision: number;
+      sourceDigest: string | null;
+      renderedDigest: string;
+      applyStatus: string;
+      createdAt: string;
+      appliedAt: string | null;
+      convergedAt: string | null;
+      routingMode: "external" | "openship-edge";
+      serviceImages: Array<[string, string]>;
+      resourceIdentities: Array<{
+        kind: "volume" | "network";
+        logicalName: string;
+        effectiveName: string;
+        external: boolean;
+      }>;
+    };
+    revisionDiff: null | {
+      previousRevision: null | {
+        id: string;
+        revision: number;
+        sourceDigest: string | null;
+        renderedDigest: string;
+      };
+      changes: string[];
+    };
+    services: Array<{
+      serviceId: string;
+      serviceName: string | null;
+      status: string;
+      imageRef: string | null;
+      imageDigest: string | null;
+      errorMessage: string | null;
+    }>;
+  };
 }
 
 export type PrepareSingleAppCandidate = PrepareAppConfig;
@@ -339,6 +402,7 @@ export const deployApi = {
     /** Folder-upload deploy: adopt the uploaded source (workspace / staging dir). */
     uploadSessionId?: string;
     runtimeMode?: "bare" | "docker";
+    orchestratorMode?: OrchestratorMode;
     serviceDeploymentMode?: "services" | "single";
     services?: Array<{
       name: string;
@@ -370,6 +434,10 @@ export const deployApi = {
   /** Poll build status */
   getBuildStatus: (deploymentId: string) =>
     api.get<any>(endpoints.deploy.buildStatus(deploymentId)),
+
+  /** Persisted Swarm phase/revision projection for the stack-native detail view. */
+  getSwarmBuildStatus: (deploymentId: string) =>
+    api.get<SwarmBuildStatus>(endpoints.deploy.buildStatus(deploymentId)),
 
   /** Start a build by deployment ID */
   buildStart: (deployment_id: string) => api.post<any>(endpoints.deploy.buildStart(deployment_id)),

@@ -169,8 +169,10 @@ type ScopeResolver =
   | { in: "project"; via: "fk"; column: "projectId" }
   | { in: "project"; via: "fk"; column: "deploymentId" }
   | { in: "project"; via: "fk"; column: "serviceId" }
+  | { in: "project"; via: "fk"; column: "stackId" }
   | { in: "organization"; via: "fk"; column: "projectId" }
   | { in: "organization"; via: "fk"; column: "deploymentId" }
+  | { in: "organization"; via: "fk"; column: "stackId" }
   // Resolved by reading a column on the ROOT project row, then
   // selecting THIS table where id = that value. Used to bring along
   // FK-target rows the project depends on (e.g. project_app via
@@ -326,6 +328,15 @@ const TABLES: ReadonlyArray<TableSpec> = [
     scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: true,
   },
+  {
+    sqlName: "container_registry",
+    table: schema.containerRegistry,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "organizationId" },
+    ],
+    hasOrganizationId: true,
+  },
   // How each server authenticates to GitHub for clone-on-server, and the per-repo
   // deploy keys that back `ssh-deploy-key` mode. Both hang off `servers`, so both are
   // instance-only — and both carry secrets registered in ENCRYPTED_COLUMNS, so the
@@ -417,6 +428,40 @@ const TABLES: ReadonlyArray<TableSpec> = [
       { in: "instance", via: "all-rows" },
       { in: "organization", via: "fk", column: "deploymentId" },
       { in: "project", via: "fk", column: "deploymentId" },
+    ],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "swarm_stack",
+    table: schema.swarmStack,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "organizationId" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+    hasOrganizationId: true,
+  },
+  {
+    sqlName: "swarm_stack_revision",
+    table: schema.swarmStackRevision,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "stackId" },
+      { in: "project", via: "fk", column: "stackId" },
+    ],
+    hasOrganizationId: false,
+  },
+  // Operator-supplied config/secret inputs for a managed stack. Hangs off the
+  // PROJECT (not the stack row), so it scopes the same way service/domain do. Its
+  // `value_enc` is registered in ENCRYPTED_COLUMNS, so the ciphertext is stripped
+  // and re-sealed under the receiver's key rather than travelling undecryptable.
+  {
+    sqlName: "swarm_managed_input",
+    table: schema.swarmManagedInput,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "projectId" },
+      { in: "project", via: "fk", column: "projectId" },
     ],
     hasOrganizationId: false,
   },
@@ -927,6 +972,10 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },
+  { table: "swarm_stack", column: "sourceYamlEnc" },
+  { table: "swarm_stack_revision", column: "renderedYamlEnc" },
+  { table: "swarm_managed_input", column: "valueEnc" },
+  { table: "container_registry", column: "credentialsEnc" },
   { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl"] },
 ];
 
@@ -997,6 +1046,7 @@ export async function dumpSubgraph(
     projectId: new Set<string>(),
     deploymentId: new Set<string>(),
     serviceId: new Set<string>(),
+    stackId: new Set<string>(),
   };
 
   const collectIds = (rows: Array<Record<string, unknown>>, key: string) => {
@@ -1063,6 +1113,12 @@ export async function dumpSubgraph(
       rows = [];
     }
 
+    // SSH server credentials are intentionally instance-scoped. Preserve the
+    // stack record during an org/project transfer but detach its manager binding
+    // so a restore cannot point at an unrelated server row on the target.
+    if (spec.sqlName === "swarm_stack" && scope.kind !== "instance") {
+      rows = rows.map((row) => ({ ...row, managerServerId: null }));
+    }
     tables[spec.sqlName] = rows;
 
     // Collect ids for FK-resolved children. Order of TABLES guarantees
@@ -1070,6 +1126,7 @@ export async function dumpSubgraph(
     if (spec.sqlName === "project") collectIds(rows, "projectId");
     else if (spec.sqlName === "deployment") collectIds(rows, "deploymentId");
     else if (spec.sqlName === "service") collectIds(rows, "serviceId");
+    else if (spec.sqlName === "swarm_stack") collectIds(rows, "stackId");
   }
 
   const strippedEncryptedFields = opts.stripEncrypted ? stripEncryptedInPlace(tables) : undefined;

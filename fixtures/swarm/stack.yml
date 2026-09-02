@@ -1,0 +1,76 @@
+version: "3.9"
+
+services:
+  web:
+    image: nginx:1.27-alpine
+    deploy:
+      replicas: 2
+      labels:
+        com.openship.swarm.fixture: "true"
+    networks:
+      - app
+
+  agent:
+    image: alpine:3.21
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    deploy:
+      mode: global
+      labels:
+        com.openship.swarm.fixture: "true"
+    networks:
+      - app
+
+  stateful:
+    image: alpine:3.21
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    volumes:
+      - state:/var/lib/openship-fixture
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        com.openship.swarm.fixture: "true"
+    networks:
+      - app
+
+  externally-routed:
+    image: nginx:1.27-alpine
+    deploy:
+      replicas: 1
+      labels:
+        com.openship.swarm.fixture: "true"
+        traefik.enable: "true"
+        traefik.http.routers.openship-swarm-fixture.rule: "Host(`fixture.invalid`)"
+        traefik.http.services.openship-swarm-fixture.loadbalancer.server.port: "80"
+    networks:
+      - app
+
+  swarm-traefik:
+    image: traefik:v3.2
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.docker.exposedbydefault=false
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        com.openship.swarm.fixture: "true"
+    networks:
+      - app
+
+networks:
+  app:
+    driver: overlay
+
+volumes:
+  state:
+    driver: local

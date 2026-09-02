@@ -16,7 +16,7 @@
 import { repos, type Project, type Deployment, type NewDeployment } from "@repo/db";
 import { DockerRuntime, isEdgeDownMessage, type BuildLogger, type LogEntry } from "@repo/adapters";
 import type { RuntimeAdapter } from "@repo/adapters";
-import { SYSTEM, safeErrorMessage } from "@repo/core";
+import { SYSTEM, safeErrorMessage, type RuntimeWorkloadRef } from "@repo/core";
 import { env } from "../../config";
 import { isArtifactRef } from "../../lib/container-ref";
 import type { DeploymentMeta } from "../../lib/deployment-runtime";
@@ -322,12 +322,20 @@ export async function setDeploymentStatus(
  */
 export async function onReconciling(
   ctx: LifecycleContext,
-  result: { containerId?: string; warningMessage?: string; durationMs?: number },
+  result: {
+    containerId?: string;
+    runtimeRef?: RuntimeWorkloadRef;
+    warningMessage?: string;
+    durationMs?: number;
+  },
 ): Promise<void> {
   const { dep, buildSessionId } = ctx;
 
   if (result.containerId) {
     await repos.deployment.setContainerId(dep.id, result.containerId).catch(() => {});
+  }
+  if (result.runtimeRef) {
+    await repos.deployment.setRuntimeRef(dep.id, result.runtimeRef).catch(() => {});
   }
 
   const collapsed = collectLogs(ctx);
@@ -635,8 +643,16 @@ async function readReleaseVersion(
 
 export async function onSuccess(
   ctx: LifecycleContext,
-  result: {
-    containerId: string;
+  result: (
+    | {
+        containerId: string;
+        runtimeRef?: never;
+      }
+    | {
+        containerId?: never;
+        runtimeRef: RuntimeWorkloadRef;
+      }
+  ) & {
     url?: string;
     durationMs: number;
     warningMessage?: string;
@@ -651,13 +667,23 @@ export async function onSuccess(
   // build artifact and every service container that had just started. So each
   // step down to the settlement line is either the outcome write itself
   // (shed-and-retry, never throws) or explicitly best-effort.
-  await repos.deployment
-    .setContainerId(dep.id, result.containerId, result.url)
-    .catch((err) =>
-      console.error(
-        `[deployment-lifecycle] setContainerId failed deployment=${dep.id} container=${result.containerId}: ${safeErrorMessage(err)}`,
-      ),
-    );
+  if ("runtimeRef" in result) {
+    await repos.deployment
+      .setRuntimeRef(dep.id, result.runtimeRef)
+      .catch((err) =>
+        console.error(
+          `[deployment-lifecycle] setRuntimeRef failed deployment=${dep.id}: ${safeErrorMessage(err)}`,
+        ),
+      );
+  } else {
+    await repos.deployment
+      .setContainerId(dep.id, result.containerId, result.url)
+      .catch((err) =>
+        console.error(
+          `[deployment-lifecycle] setContainerId failed deployment=${dep.id} container=${result.containerId}: ${safeErrorMessage(err)}`,
+        ),
+      );
+  }
 
   // Sanitized: metaPatch carries service/routing warnings built from raw process
   // output, and `meta` is jsonb written BEFORE the outcome — one NUL in a warning
@@ -827,6 +853,7 @@ export async function onSuccess(
         branch: dep.branch,
         commitSha: dep.commitSha,
         url: result.url,
+        runtimeRef: "runtimeRef" in result ? result.runtimeRef : undefined,
         durationMs: result.durationMs,
       },
     },

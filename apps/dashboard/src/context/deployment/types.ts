@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
-import { getBuildImage, STACKS, resolveWorkload, type WorkloadType, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier } from "@repo/core";
+import { getBuildImage, STACKS, resolveWorkload, type WorkloadType, type ProjectType, type BuildStrategy, type DeployTarget, type OrchestratorMode, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import type { BuildSessionLoadResult } from "./load-session";
 import { randomUUID } from "@/lib/random-uuid";
@@ -241,7 +241,7 @@ export function composeServiceTally(services: readonly ServiceDeployStatus[]): {
 
 // ─── Build Strategy ──────────────────────────────────────────────────────────
 
-export type { BuildStrategy, RuntimeMode, DeployTarget } from "@repo/core";
+export type { BuildStrategy, OrchestratorMode, RuntimeMode, DeployTarget } from "@repo/core";
 
 /**
  * Where a server deploy clones the repo:
@@ -291,6 +291,8 @@ export interface DeploymentModeSnapshot {
   buildImage: string;
   buildStrategy: BuildStrategy;
   runtimeMode: RuntimeMode;
+  /** Defaults to standalone for legacy snapshots. */
+  orchestratorMode?: OrchestratorMode;
   publicEndpoints: PublicEndpoint[];
   options: DeploymentOptions;
 }
@@ -377,6 +379,8 @@ export interface DeploymentConfig {
   serverName?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode: RuntimeMode;
+  /** Docker workload orchestration; stack deployment UI will opt into Swarm. */
+  orchestratorMode?: OrchestratorMode;
   projectType: ProjectType;
   framework: FrameworkId;
   detectedFramework: FrameworkId | null;
@@ -460,6 +464,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   buildStrategy: "server",
   deployTarget: "cloud",
   runtimeMode: "docker",
+  orchestratorMode: "standalone",
   projectType: "app",
   framework: "nextjs",
   detectedFramework: null,

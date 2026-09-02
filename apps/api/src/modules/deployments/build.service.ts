@@ -14,7 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
-import { repos, type Project } from "@repo/db";
+import { repos, type Deployment, type Project } from "@repo/db";
 import {
   AppError,
   NotFoundError,
@@ -33,6 +33,9 @@ import {
   type StackId,
   type DeployTarget,
   type BuildStrategy,
+  assertSupportedExecutionMatrix,
+  resolveOrchestratorMode,
+  type OrchestratorMode,
   type StackDefinition,
   type ReleaseSource,
   type SourceKind,
@@ -88,7 +91,7 @@ import {
   resolveReleaseVersion,
   ReleaseVersionUnavailableError,
 } from "../../lib/release-resolver";
-import { env } from "../../config";
+import { env, swarmSupportEnabled } from "../../config";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -243,6 +246,19 @@ export interface DeploymentConfigSnapshot {
   serverId?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode?: "bare" | "docker";
+  /** Separate stack/service orchestration strategy. Legacy rows default standalone. */
+  orchestratorMode?: OrchestratorMode;
+  /**
+   * Internal immutable-revision restore intent for a Swarm rollback. The
+   * deployment pipeline validates the referenced revision before any manager
+   * mutation, then records a new applied revision rather than reusing a task
+   * or mutable image tag.
+   */
+  swarmRollback?: {
+    sourceDeploymentId: string;
+    sourceRevisionId: string;
+    environmentSnapshot: Record<string, string> | null;
+  };
   /**
    * Adopt an already-running process instead of building + starting one. Set
    * for the self-deployed control plane so it becomes a real deployment without
@@ -433,6 +449,9 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     // tab). So a redeploy/webhook deploy respects the saved choice instead of
     // re-defaulting. The wizard's per-deploy override still wins when passed.
     runtimeMode: toRuntimeMode(project.runtimeMode),
+    // Existing project rows predate this field and therefore resolve to the
+    // standalone lifecycle path without a rewrite.
+    orchestratorMode: resolveOrchestratorMode(project.orchestratorMode),
   };
 }
 
@@ -757,8 +776,18 @@ export async function resolveRollbackContext(
  */
 export async function resolveSnapshotTarget(
   project: Project,
-  override?: { deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" },
-): Promise<{ deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" }> {
+  override?: {
+    deployTarget?: DeployTarget;
+    serverId?: string;
+    runtimeMode?: "bare" | "docker";
+    orchestratorMode?: OrchestratorMode;
+  },
+): Promise<{
+  deployTarget?: DeployTarget;
+  serverId?: string;
+  runtimeMode?: "bare" | "docker";
+  orchestratorMode: OrchestratorMode;
+}> {
   const activeMeta = project.activeDeploymentId
     ? ((await repos.deployment.findById(project.activeDeploymentId).catch(() => null))
         ?.meta as DeploymentConfigSnapshot | null)
@@ -789,8 +818,11 @@ export async function resolveSnapshotTarget(
 
   const runtimeMode =
     override?.runtimeMode ?? toRuntimeMode(project.runtimeMode) ?? activeMeta?.runtimeMode;
+  const orchestratorMode = resolveOrchestratorMode(
+    override?.orchestratorMode ?? project.orchestratorMode ?? activeMeta?.orchestratorMode,
+  );
 
-  return { deployTarget, serverId, runtimeMode };
+  return { deployTarget, serverId, runtimeMode, orchestratorMode };
 }
 
 function resolveRuntimeImage(project: Project): string {
@@ -1073,6 +1105,7 @@ export async function requestBuildAccess(
     deployTarget,
     serverId,
     runtimeMode,
+    orchestratorMode,
     serviceDeploymentMode,
     services,
     serviceIds,
@@ -1292,10 +1325,12 @@ export async function requestBuildAccess(
     deployTarget,
     serverId,
     runtimeMode,
+    orchestratorMode,
   });
   snapshot.deployTarget = resolvedTarget.deployTarget;
   snapshot.serverId = resolvedTarget.serverId;
   snapshot.runtimeMode = resolvedTarget.runtimeMode;
+  snapshot.orchestratorMode = resolvedTarget.orchestratorMode;
 
   // Folder-upload: point this deploy at the source the browser uploaded.
   //   - cloud (oblien-direct): adopt the pre-provisioned workspace, skip clone.
@@ -1312,6 +1347,23 @@ export async function requestBuildAccess(
     }
   }
 
+  // Validate the complete target after upload handling, because an upload can
+  // intentionally switch the deploy target to cloud. This is before preflight,
+  // image build, or any runtime command.
+  assertSupportedExecutionMatrix({
+    runtimeMode: snapshot.runtimeMode ?? "docker",
+    orchestratorMode: snapshot.orchestratorMode,
+    deployTarget: snapshot.deployTarget,
+  });
+
+  if (snapshot.orchestratorMode === "swarm" && !swarmSupportEnabled()) {
+    throw new AppError(
+      "Docker Swarm support is disabled. Set OPENSHIP_EXPERIMENTAL_SWARM=true to enable the experimental stack flow.",
+      403,
+      "SWARM_FEATURE_DISABLED",
+    );
+  }
+
   // Persist an EXPLICIT runtime-isolation choice (the deploy "sandbox vs direct"
   // modal pick) onto the project so it STICKS. Without this the choice lives only
   // in this one deployment's snapshot: the modal re-asks every deploy, a later
@@ -1325,6 +1377,15 @@ export async function requestBuildAccess(
       .catch((err) =>
         console.warn(
           `[requestBuildAccess] failed to persist runtimeMode: ${safeErrorMessage(err)}`,
+        ),
+      );
+  }
+  if (snapshot.orchestratorMode !== project.orchestratorMode) {
+    await repos.project
+      .update(project.id, { orchestratorMode: snapshot.orchestratorMode })
+      .catch((err) =>
+        console.warn(
+          `[requestBuildAccess] failed to persist orchestratorMode: ${safeErrorMessage(err)}`,
         ),
       );
   }
@@ -1620,6 +1681,7 @@ export async function redeployBuildSession(
     meta.deployTarget = t.deployTarget;
     meta.serverId = t.serverId;
     meta.runtimeMode = t.runtimeMode;
+    meta.orchestratorMode = t.orchestratorMode;
   }
 
   // buildStrategy is re-resolved on EVERY redeploy, frozen snapshot or not — it is a
@@ -1798,6 +1860,108 @@ export async function startBuild(deploymentId: string) {
   };
 }
 
+/**
+ * A Swarm project has an authoritative stack document, not a Git checkout or
+ * ordinary local build context. It still creates the usual deployment + build
+ * session so history, SSE, immutable revisions, and reconciliation remain on
+ * the standard lifecycle; the pipeline branches to `swarmDeploy` before any
+ * clone/build/container work.
+ */
+type TriggerDeploymentResult = { deployment: Deployment; skipped?: true };
+
+async function triggerSwarmStackDeployment(
+  project: Project,
+  data: {
+    projectId: string;
+    branch?: string;
+    commitSha?: string;
+    commitMessage?: string;
+    environment?: string;
+    trigger?: string;
+    forceAll?: boolean;
+    swarmRollback?: DeploymentConfigSnapshot["swarmRollback"];
+  },
+): Promise<TriggerDeploymentResult> {
+  if (!swarmSupportEnabled()) {
+    throw new AppError(
+      "Docker Swarm support is disabled. Set OPENSHIP_EXPERIMENTAL_SWARM=true to enable the experimental stack flow.",
+      403,
+      "SWARM_FEATURE_DISABLED",
+    );
+  }
+  const stack = await repos.swarmStack.getForProjectInOrganization(
+    project.id,
+    project.organizationId,
+  );
+  if (!stack)
+    throw new AppError(
+      "This project has no Docker Swarm stack binding.",
+      409,
+      "SWARM_STACK_REQUIRED",
+    );
+  if (!stack.managerServerId)
+    throw new AppError(
+      "This stack no longer has a Swarm manager target.",
+      409,
+      "SWARM_MANAGER_UNAVAILABLE",
+    );
+  if (stack.managementMode !== "managed" && !stack.claimedAt) {
+    throw new AppError(
+      "This observed stack must be explicitly claimed before OpenShip can apply it.",
+      409,
+      "SWARM_STACK_CLAIM_REQUIRED",
+    );
+  }
+  if (!data.swarmRollback && (stack.sourceKind === "adopted" || stack.sourceStatus !== "valid")) {
+    throw new AppError(
+      "Link and validate authoritative stack source before deploying it.",
+      409,
+      "SWARM_SOURCE_REQUIRED",
+    );
+  }
+  await checkNoActiveBuild(project.id);
+  const branch = data.branch ?? stack.sourceBranch ?? "swarm";
+  const snapshot = buildConfigSnapshot(project, branch);
+  // The binding is authoritative for an observed/imported project. Do not let
+  // a missing active deployment make this first apply fall back to cloud/local.
+  snapshot.deployTarget = "server";
+  snapshot.serverId = stack.managerServerId;
+  snapshot.runtimeMode = "docker";
+  snapshot.orchestratorMode = "swarm";
+  snapshot.hasServer = true;
+  snapshot.hasBuild = false;
+  if (data.swarmRollback) snapshot.swarmRollback = data.swarmRollback;
+  assertSupportedExecutionMatrix({
+    runtimeMode: "docker",
+    orchestratorMode: "swarm",
+    deployTarget: "server",
+  });
+
+  const environment = data.environment ?? "production";
+  const rawEnvMap =
+    data.swarmRollback?.environmentSnapshot ??
+    (await repos.project.getEnvMap(project.id, environment));
+  const dep = await createQueuedDeployment({
+    projectId: project.id,
+    organizationId: project.organizationId,
+    branch,
+    commitSha: data.commitSha ?? stack.sourceCommitSha ?? undefined,
+    commitMessage: data.commitMessage ?? `Apply Swarm stack ${stack.stackName}`,
+    trigger: data.trigger ?? "manual",
+    environment,
+    framework: snapshot.framework,
+    meta: metaWithPrevious(snapshot, project),
+    envVars: Object.keys(rawEnvMap).length > 0 ? rawEnvMap : null,
+    // Generic Git rollback cannot reconstruct a stack source. The Swarm
+    // revision is retained separately for the dedicated stack rollback path.
+    rollbackStrategy: "snapshot",
+    forceAll: data.forceAll ?? true,
+  });
+  const buildSessionId = await kickoffBuild(project, dep);
+  if (!buildSessionId) throw new Error("Build session was not created");
+  return { deployment: dep };
+}
+
 export async function triggerDeployment(
   ctx: RequestContext,
   data: {
@@ -1833,6 +1997,8 @@ export async function triggerDeployment(
      * `[redeploy-all]`), and by config-touch detection.
      */
     forceAll?: boolean;
+    /** Internal Swarm-only restore intent, accepted only by the stack path. */
+    swarmRollback?: DeploymentConfigSnapshot["swarmRollback"];
     /**
      * Repo-root-relative paths changed in this push (webhook only). Passed to
      * the compose-drift reconciler so it can skip the repo scan when the compose
@@ -1875,7 +2041,7 @@ export async function triggerDeployment(
      */
     releaseVersion?: string;
   },
-) {
+): Promise<TriggerDeploymentResult> {
   const project = await repos.project.findById(data.projectId);
   if (!project) {
     throw new NotFoundError("Project", data.projectId);
@@ -1887,6 +2053,9 @@ export async function triggerDeployment(
     throw new ForbiddenError(
       "The Openship control plane updates itself — run `openship update` on the host, not a redeploy.",
     );
+  }
+  if (resolveOrchestratorMode(project.orchestratorMode) === "swarm") {
+    return triggerSwarmStackDeployment(project, data);
   }
   // Org-membership verified at the route boundary. No userId equality
   // check here — that would block team members.

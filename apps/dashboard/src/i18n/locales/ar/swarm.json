@@ -1,0 +1,35 @@
+{
+  "deployment": {
+    "phases": {
+      "source": "حل المصدر",
+      "validate": "تحقق",
+      "build": "إنشاء",
+      "push": "دفع الصورة",
+      "apply": "تطبيق المكدس",
+      "converge": "التحقق من التقارب",
+      "route": "التوجيه",
+      "reconcile": "المطابقة"
+    },
+    "rollbackConfirm": "هل تريد الرجوع إلى مراجعة Swarm {revision}؟ سيُوزّع OpenShip الإعداد المعروض غير القابل للتغيير ويتحقق من التقارب.",
+    "rollback": "الرجوع إلى هذه المراجعة",
+    "redeploy": "إعادة توزيع المصدر الحالي"
+  },
+  "connection": {
+    "title": "اتصال المجموعة",
+    "probe": "فحص المدير",
+    "rebind": "إعادة ربط المدير",
+    "rebindLabel": "إعادة ربط المدير",
+    "chooseServer": "اختر خادم OpenShip موجودًا",
+    "confirmRebind": "هل تريد إعادة ربط هذا المشروع بـ {target}؟ سيتحقق OpenShip من صلاحية المدير وتطابق معرّف المجموعة قبل الحفظ.",
+    "rebindSuccess": "تم تحديث ربط المدير إلى {endpoint}.",
+    "configuredEndpoint": "نقطة النهاية المهيأة",
+    "managerHealth": "حالة المدير",
+    "controlAvailability": "توفر التحكم",
+    "expectedCluster": "المجموعة المتوقعة",
+    "reportedCluster": "المجموعة المُبلّغ عنها",
+    "managerNode": "عقدة المدير",
+    "lastSuccessfulProbe": "آخر فحص ناجح",
+    "lastError": "آخر خطأ",
+    "nodeInventory": "جرد عقد للقراءة فقط"
+  }
+}

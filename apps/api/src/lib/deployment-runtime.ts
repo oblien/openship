@@ -14,12 +14,19 @@ import {
 import type { Deployment } from "@repo/db";
 import { repos } from "@repo/db";
 import {
+  AppError,
+  assertSupportedExecutionMatrix,
+  deploymentWorkloadRef,
   HOST_CHANNEL_UNAFFECTED,
   HostUnreachableError,
+  isSwarmStackRef,
+  resolveOrchestratorMode,
   resolveWorkload,
   safeErrorMessage,
   type DeployTarget,
+  type OrchestratorMode,
   type RuntimeMode,
+  type RuntimeWorkloadRef,
 } from "@repo/core";
 import { env } from "../config";
 import { isRealContainerRef } from "./container-ref";
@@ -50,6 +57,10 @@ import {
 export interface DeploymentMeta {
   deployTarget?: DeployTarget;
   runtimeMode?: RuntimeMode;
+  /** Stack/service orchestration, snapshotted separately from Docker-vs-bare. */
+  orchestratorMode?: OrchestratorMode;
+  /** Durable workload identity. New Swarm deployments use `swarm-stack`, never containerId. */
+  runtimeRef?: RuntimeWorkloadRef;
   serverId?: string;
   /**
    * Adopt an already-running, externally-supervised process instead of building
@@ -222,11 +233,33 @@ export interface ResolvedDeploymentPlatform {
   platform: Platform;
   effectiveTarget: DeployTarget;
   runtimeMode: RuntimeMode;
+  orchestratorMode: OrchestratorMode;
   usesManagedRouting: boolean;
   /** The server ID used for SSH targets (null for local/cloud). */
   serverId: string | null;
   /** Physical TCP bind namespace used by durable claims and allocation locks. */
   hostPortTarget: HostPortTargetIdentity | null;
+}
+
+/**
+ * The RuntimeAdapter is intentionally container/process oriented. Swarm stack
+ * records must resolve through Platform.stackRuntime instead; accepting one
+ * here would turn a durable stack ID into a Docker container operation.
+ */
+function assertContainerRuntimeAllowed(
+  dep: Pick<Deployment, "meta"> & Partial<Pick<Deployment, "runtimeRef" | "containerId">>,
+): void {
+  const ref = deploymentWorkloadRef(dep);
+  const mode = resolveOrchestratorMode(
+    (dep.meta as DeploymentMeta | null | undefined)?.orchestratorMode,
+  );
+  if (isSwarmStackRef(ref) || mode === "swarm") {
+    throw new AppError(
+      "This deployment is managed as a Docker Swarm stack. Container-level operations are unavailable; use the stack service operations instead.",
+      409,
+      "SWARM_CONTAINER_OPERATION_UNSUPPORTED",
+    );
+  }
 }
 
 type OrgServer = NonNullable<Awaited<ReturnType<typeof repos.server.getInOrganization>>>;
@@ -426,10 +459,17 @@ async function resolveSelfHostedDeploymentTarget(
   runtimeMode: RuntimeMode,
   serverId: string | undefined,
   organizationId: string | undefined,
+  orchestratorMode: OrchestratorMode = "standalone",
 ): Promise<Pick<ResolvedDeploymentPlatform, "platform" | "serverId" | "hostPortTarget">> {
   if (target === "local") {
     return {
-      platform: await resolveTargetPlatform("local", runtimeMode, undefined, organizationId),
+      platform: await resolveTargetPlatform(
+        "local",
+        runtimeMode,
+        undefined,
+        organizationId,
+        orchestratorMode,
+      ),
       serverId: null,
       hostPortTarget: LOCAL_HOST_PORT_TARGET,
     };
@@ -437,7 +477,12 @@ async function resolveSelfHostedDeploymentTarget(
 
   const resolvedServer = await resolveServerExecutor(serverId, organizationId);
   return {
-    platform: await createPlatformForResolvedServer(resolvedServer, runtimeMode, organizationId),
+    platform: await createPlatformForResolvedServer(
+      resolvedServer,
+      runtimeMode,
+      organizationId,
+      orchestratorMode,
+    ),
     serverId: resolvedServer.id,
     hostPortTarget: await resolveServerHostPortTarget(resolvedServer),
   };
@@ -451,6 +496,8 @@ export async function resolveDeploymentPlatform(
   const effectiveTarget = resolveEffectiveTarget(basePlatform.target, snapshot);
   const runtimeMode =
     snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare");
+  const orchestratorMode = resolveOrchestratorMode(snapshot.orchestratorMode);
+  assertSupportedExecutionMatrix({ runtimeMode, orchestratorMode, deployTarget: effectiveTarget });
 
   if (effectiveTarget === "local" || effectiveTarget === "server") {
     const resolvedTarget = await resolveSelfHostedDeploymentTarget(
@@ -458,11 +505,13 @@ export async function resolveDeploymentPlatform(
       runtimeMode,
       snapshot.serverId,
       opts?.organizationId,
+      orchestratorMode,
     );
     return {
       ...resolvedTarget,
       effectiveTarget,
       runtimeMode,
+      orchestratorMode,
       usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
     };
   }
@@ -487,6 +536,7 @@ export async function resolveDeploymentPlatform(
     platform: resolvedPlatform,
     effectiveTarget,
     runtimeMode,
+    orchestratorMode,
     usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
     serverId: null,
     hostPortTarget: null,
@@ -515,6 +565,7 @@ async function createPlatformForResolvedServer(
   resolved: ResolvedServerTarget,
   runtimeMode: RuntimeMode,
   organizationId?: string,
+  orchestratorMode: OrchestratorMode = "standalone",
 ): Promise<Platform> {
   const resolveRegistryAuth = organizationId ? registryAuthResolver(organizationId) : undefined;
   const { id, executor, isLocal, ssh } = resolved;
@@ -526,6 +577,7 @@ async function createPlatformForResolvedServer(
     return createPlatform({
       target: "selfhosted",
       runtime: runtimeMode,
+      orchestratorMode,
       executor,
       localHost: true,
       docker:
@@ -540,6 +592,7 @@ async function createPlatformForResolvedServer(
   return createPlatform({
     target: "selfhosted",
     runtime: runtimeMode,
+    orchestratorMode,
     executor,
     ssh: ssh!,
     docker:
@@ -558,6 +611,7 @@ export async function resolveTargetPlatform(
   runtimeMode: RuntimeMode = "bare",
   serverId?: string,
   organizationId?: string,
+  orchestratorMode: OrchestratorMode = "standalone",
 ): Promise<Platform> {
   // For SSH server targets, use the managed connection pool
   if (target === "server") {
@@ -565,7 +619,7 @@ export async function resolveTargetPlatform(
     // executor + socket docker; else → pooled SSH). Shared with
     // createServerDockerRuntime / createServerCommandExecutor — no drift.
     const resolved = await resolveServerExecutor(serverId, organizationId);
-    return createPlatformForResolvedServer(resolved, runtimeMode, organizationId);
+    return createPlatformForResolvedServer(resolved, runtimeMode, organizationId, orchestratorMode);
   }
 
   // Bind registry credential lookup to the deployment's organization at the
@@ -601,6 +655,7 @@ export async function resolveTargetPlatform(
   return createPlatform({
     target: "selfhosted",
     runtime: runtimeMode,
+    orchestratorMode,
     executor: await acquireLocalHostExecutor(localRow?.id),
     // Explicit, and load-bearing now that an executor is injected: `createPlatform`
     // infers "this machine" from `localHost ?? !executor`, so an injected executor
@@ -886,7 +941,8 @@ function toDockerSshTransport(ssh: SshConfig, executor: CommandExecutor): Docker
  * for long-lived operations (streaming).
  */
 export async function resolveDeploymentRuntime(
-  dep: Pick<Deployment, "meta" | "organizationId">,
+  dep: Pick<Deployment, "meta" | "organizationId"> &
+    Partial<Pick<Deployment, "runtimeRef" | "containerId">>,
 ): Promise<{
   runtime: RuntimeAdapter;
   /**
@@ -904,6 +960,7 @@ export async function resolveDeploymentRuntime(
   /** Executor that reaches the same host as `routing` (null on cloud). */
   executor: Platform["executor"];
 }> {
+  assertContainerRuntimeAllowed(dep);
   const snapshot = (dep.meta ?? {}) as DeploymentMeta;
   const resolved = await resolveDeploymentPlatform(snapshot, {
     organizationId: dep.organizationId,
@@ -1079,6 +1136,10 @@ const PLATFORM_DISPOSAL: Record<PlatformDisposableField, "release" | { keep: str
   // depend on surviving exactly this call. The runtime's Docker-over-SSH bridge is a
   // per-resolve loopback listener, which is why that one is ours to close.
   executor: { keep: "pooled per server by sshManager; shared with concurrent work" },
+  // Released. `SwarmRuntime.dispose()` is a documented no-op today — it borrows the
+  // platform executor and owns no transport — but releasing it is the decision that
+  // stays correct if it ever acquires one, which is the whole point of this table.
+  stackRuntime: "release",
 };
 
 /**
@@ -1172,12 +1233,14 @@ function asHostUnreachable(err: unknown): unknown {
 }
 
 export async function resolveDeploymentRuntimeForRead(
-  dep: Pick<Deployment, "meta" | "organizationId">,
+  dep: Pick<Deployment, "meta" | "organizationId"> &
+    Partial<Pick<Deployment, "runtimeRef" | "containerId">>,
 ): Promise<{
   runtime: RuntimeAdapter;
   serverId: string | null;
   hostPortTarget: HostPortTargetIdentity | null;
 }> {
+  assertContainerRuntimeAllowed(dep);
   // Services are containers even when the app itself deploys "bare" — pin docker
   // so a bare project's sidecars still resolve a docker runtime (matches
   // resolveServicePlatform's long-standing behaviour).

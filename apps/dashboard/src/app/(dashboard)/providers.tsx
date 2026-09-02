@@ -12,6 +12,7 @@ interface DashboardProvidersProps {
   selfHosted: boolean;
   deployMode: string;
   isServerHost?: boolean;
+  swarmSupportEnabled?: boolean;
   hostControlEnabled?: boolean;
   authMode: "cloud" | "local" | "none";
   /** What the instance declares it is. */
@@ -34,6 +35,7 @@ export function DashboardProviders({
   selfHosted,
   deployMode,
   isServerHost,
+  swarmSupportEnabled,
   hostControlEnabled,
   authMode,
   productMode,
@@ -49,6 +51,7 @@ export function DashboardProviders({
         selfHosted={selfHosted}
         deployMode={deployMode}
         isServerHost={isServerHost}
+        swarmSupportEnabled={swarmSupportEnabled}
         hostControlEnabled={hostControlEnabled}
         authMode={authMode}
         productMode={productMode}

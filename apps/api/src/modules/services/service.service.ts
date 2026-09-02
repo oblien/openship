@@ -12,7 +12,11 @@ import {
 } from "@repo/db";
 import {
   aliasConflictsWithSiblings,
+  AppError,
+  deploymentWorkloadRef,
   getProjectType,
+  isSwarmServiceRef,
+  isSwarmStackRef,
   isValidEnvKey,
   looksLikeSecretKey,
   mergeAdvanced,
@@ -20,6 +24,7 @@ import {
   normalizeAliasStrict,
   resolveCommandArgv,
   safeErrorMessage,
+  serviceWorkloadRef,
   type ComposeAdvanced,
   type ServiceContainerState,
   type StackId,
@@ -1111,6 +1116,9 @@ export async function updateService(
 }
 
 async function deleteLiveService(project: Project, svc: Service): Promise<void> {
+  // A Swarm service has no stable task-container identity, so the container-level
+  // teardown below would act on disposable scheduler output. Refuse under the lock.
+  assertContainerServiceOperation(svc);
   const serviceId = svc.id;
   if (project.activeDeploymentId) {
     const dep = await repos.deployment.findById(project.activeDeploymentId);
@@ -1742,6 +1750,8 @@ export async function getServiceVolumeSizes(
     const resolved = await resolveDeploymentRuntimeForRead({
       meta: dep.meta,
       organizationId: ctx.organizationId,
+      runtimeRef: dep.runtimeRef,
+      containerId: dep.containerId,
     });
     serverId = resolved.serverId;
     liveContainerId = await liveContainerIdWithRuntime(resolved.runtime, {
@@ -1864,6 +1874,7 @@ async function resolveServiceContainer(ctx: RequestContext, projectId: string, s
 
   const rows = await repos.service.listByDeployment(dep.id);
   const row = rows.find((r) => r.serviceId === serviceId);
+  assertContainerServiceOperation(svc, dep, row);
 
   // Runtime only: start/stop/restart/logs/terminal need `runtime` + the pooled
   // connection, never routing or the system manager — resolving a full platform
@@ -1872,6 +1883,8 @@ async function resolveServiceContainer(ctx: RequestContext, projectId: string, s
   const { runtime, serverId } = await resolveDeploymentRuntimeForRead({
     meta: dep.meta,
     organizationId: ctx.organizationId,
+    runtimeRef: dep.runtimeRef,
+    containerId: dep.containerId,
   });
 
   // Live query answered → trust it. No match = the container is genuinely gone,
@@ -1914,6 +1927,25 @@ function containerStatusToServiceState(status: ContainerStatus): ServiceContaine
   }
 }
 
+/** A Swarm service has no stable task-container identity. */
+function assertContainerServiceOperation(
+  service: Pick<Service, "kind">,
+  deployment?: { meta?: unknown; runtimeRef?: unknown; containerId?: string | null },
+  serviceDeployment?: { runtimeRef?: unknown; containerId?: string | null },
+): void {
+  if (
+    service.kind === "swarm" ||
+    isSwarmStackRef(deploymentWorkloadRef(deployment)) ||
+    isSwarmServiceRef(serviceWorkloadRef(serviceDeployment))
+  ) {
+    throw new AppError(
+      "This service is managed by Docker Swarm. Container-level lifecycle, shell, and network operations are unavailable.",
+      409,
+      "SWARM_CONTAINER_OPERATION_UNSUPPORTED",
+    );
+  }
+}
+
 /**
  * Provision + launch ONE service on its OWN container/workspace, DECOUPLED from
  * the project deploy pipeline: no build phase, no one-deploy-at-a-time lock, no
@@ -1944,6 +1976,7 @@ async function provisionServiceContainer(
 
   const service = (await repos.service.listByProject(projectId)).find((s) => s.id === serviceId);
   if (!service) throw new Error("Service not found");
+  assertContainerServiceOperation(service, dep);
   if (!service.image && !service.build) {
     throw new Error("Service has no image or build configured.");
   }
@@ -2021,7 +2054,12 @@ export async function startServiceContainer(
   await assertNotControlPlaneById(projectId);
   // Existing container → just start it. No container yet → provision it on its
   // own (image → container/workspace), decoupled from the project deploy.
-  const existing = await resolveServiceContainer(ctx, projectId, serviceId).catch(() => null);
+  const existing = await resolveServiceContainer(ctx, projectId, serviceId).catch((err) => {
+    if ((err as { code?: string } | null)?.code === "SWARM_CONTAINER_OPERATION_UNSUPPORTED") {
+      throw err;
+    }
+    return null;
+  });
   if (existing?.containerId) {
     try {
       await existing.runtime.start(existing.containerId);

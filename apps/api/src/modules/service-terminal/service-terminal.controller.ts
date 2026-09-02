@@ -175,6 +175,8 @@ async function resolveServiceForOrg(
       // the project's app itself deploys "bare".
       meta: { ...(dep.meta as Record<string, unknown> | null), runtimeMode: "docker" },
       organizationId: dep.organizationId,
+      runtimeRef: dep.runtimeRef,
+      containerId: dep.containerId,
     });
     runtime = resolved.runtime;
   } catch (err) {

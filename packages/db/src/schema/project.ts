@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type {
+  OrchestratorMode,
   RoutingConfig,
   ProjectCompositeRoute,
   ReleaseSource,
@@ -270,6 +271,11 @@ export const project = pgTable(
      * deploy time (the prior wizard-only behavior).
      */
     runtimeMode: text("runtime_mode"),
+    /** Docker workload strategy. Existing projects remain standalone. */
+    orchestratorMode: text("orchestrator_mode")
+      .$type<OrchestratorMode>()
+      .notNull()
+      .default("standalone"),
     /**
      * Deployment-class axes (see @repo/core deployment-class.ts). These
      * deconflate the legacy `hasServer`/`hasBuild` booleans, which each mixed

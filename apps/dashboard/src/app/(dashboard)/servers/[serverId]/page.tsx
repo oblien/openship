@@ -51,6 +51,7 @@ import {
 import { RateLimitSettings } from "./_components/rate-limit-settings";
 import { ExposedPortsCard } from "./_components/exposed-ports-card";
 import { PortForwardingCard } from "./_components/port-forwarding-card";
+import { SwarmTab } from "./_components/swarm-tab";
 import { ServerGitHubConnect } from "@/components/github/ServerGitHubConnect";
 import { MigrationsTab } from "@/components/migration/MigrationsTab";
 import { ServerConnectionCard } from "./_components/connection-card";
@@ -59,7 +60,7 @@ import { serverRemovalSummary, type ServerRemovalResult, type ServerRemovalWorkl
 import { usePlatform } from "@/context/PlatformContext";
 
 
-type Tab = "overview" | "migrations" | "components" | "github" | "security" | "ports" | "terminal";
+type Tab = "overview" | "migrations" | "components" | "github" | "security" | "ports" | "terminal" | "swarm";
 type ManualActionMode = "remove" | null;
 
 interface TabDef {
@@ -68,6 +69,8 @@ interface TabDef {
   icon: React.ComponentType<{ className?: string }>;
   /** Desktop-only tabs are filtered out in non-desktop deployments. */
   desktopOnly?: boolean;
+  /** Experimental capability tabs stay absent until the API explicitly enables them. */
+  swarmOnly?: boolean;
 }
 
 // Mail management lives in /emails - that page picks any server and reads
@@ -78,6 +81,7 @@ const TABS: TabDef[] = [
   { key: "components", icon: Blocks },
   { key: "github",     icon: GitBranch },
   { key: "security",   icon: Shield },
+  { key: "swarm",      icon: Server, swarmOnly: true },
   // Port forwarding is meaningful only in desktop mode (the orchestrator IS
   // the user's machine); hidden elsewhere.
   { key: "ports",      icon: Network, desktopOnly: true },
@@ -98,7 +102,7 @@ export default function ServerDetailPage({
   const { t } = useI18n();
   // Port forwarding is meaningful only in desktop mode (the orchestrator IS
   // the user's machine). Backend routes are independently gated by assertDesktop.
-  const { deployMode } = usePlatform();
+  const { deployMode, swarmSupportEnabled } = usePlatform();
   const isDesktop = deployMode === "desktop";
   const [serverId, setServerId] = useState<string>("");
   // Single source of truth for saved port-forwards: drives the "Ports" tab
@@ -126,8 +130,8 @@ export default function ServerDetailPage({
     if (tabParamApplied.current) return;
     tabParamApplied.current = true;
     const tab = searchParams.get("tab");
-    if (tab && TABS.some((td) => td.key === tab)) setActiveTab(tab as Tab);
-  }, [searchParams]);
+    if (tab && TABS.some((td) => td.key === tab && (!td.swarmOnly || swarmSupportEnabled))) setActiveTab(tab as Tab);
+  }, [searchParams, swarmSupportEnabled]);
   // Switch tab AND persist it in the URL (?tab=), so a reload / "service restart"
   // reopens the same tab. Shallow replace (no scroll) preserves other params.
   const changeTab = useCallback(
@@ -775,12 +779,12 @@ export default function ServerDetailPage({
           className="mb-6"
           value={activeTab}
           onChange={(key) => changeTab(key)}
-          tabs={TABS.map(({ key, icon, desktopOnly }) => ({
+          tabs={TABS.map(({ key, icon, desktopOnly, swarmOnly }) => ({
             key,
-            label: t.servers.detail.tabs[key],
+            label: key === "swarm" ? "Docker Swarm" : t.servers.detail.tabs[key],
             icon,
             href: tabHref(key),
-            hidden: desktopOnly && !isDesktop,
+            hidden: (desktopOnly && !isDesktop) || (swarmOnly && !swarmSupportEnabled),
             // Show how many forwards (running + stopped) are saved on this server.
             count: key === "ports" && isDesktop ? tunnels.length : undefined,
           }))}
@@ -843,6 +847,10 @@ export default function ServerDetailPage({
                 <ExposedPortsCard serverId={serverId} />
                 <RateLimitSettings serverId={serverId} />
               </div>
+            )}
+
+            {activeTab === "swarm" && swarmSupportEnabled && serverId && (
+              <SwarmTab serverId={serverId} />
             )}
 
             {activeTab === "ports" && isDesktop && serverId && (

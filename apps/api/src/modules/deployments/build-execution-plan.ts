@@ -54,10 +54,17 @@ export function resolveBuildRuntimeModes(input: {
   baseTarget: "desktop" | "selfhosted" | "cloud";
   effectiveTarget: "local" | "server" | "cloud";
   willRunServices: boolean;
+  /** Swarm always builds through Docker; it may never fall through to BareRuntime. */
+  orchestratorMode?: "standalone" | "swarm";
   /** A single-app OCI image is already built, but still needs a container
    * runtime to pull and run it. Bare mode cannot consume that artifact. */
   hasPrebuiltImage?: boolean;
 }): BuildRuntimeModes {
+  // Swarm is dispatched first: it always builds through Docker and may never fall
+  // through to the bare/prebuilt branches below.
+  if (input.orchestratorMode === "swarm") {
+    return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
+  }
   if (input.hasPrebuiltImage && input.effectiveTarget !== "cloud") {
     return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
   }

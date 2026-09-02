@@ -90,6 +90,19 @@ describe('"projects it creates" scope (create-verb grant)', () => {
       await checkPermission("u1", "org1", { resourceType: "project", resourceId: "P2", action: "admin" }, opts([createGrant])),
     ).toBe(false);
   });
+
+  it("keeps a read-only project grant read-only for secured Swarm inspection routes", async () => {
+    const readOnly = [{ resourceType: "project", resourceId: "P1", permissions: ["read"] }];
+    expect(
+      await checkPermission("u1", "org1", { resourceType: "project", resourceId: "P1", action: "read" }, opts(readOnly)),
+    ).toBe(true);
+    expect(
+      await checkPermission("u1", "org1", { resourceType: "project", resourceId: "P1", action: "write" }, opts(readOnly)),
+    ).toBe(false);
+    expect(
+      await checkPermission("u1", "org1", { resourceType: "project", resourceId: "P1", action: "admin" }, opts(readOnly)),
+    ).toBe(false);
+  });
 });
 
 // Mint-time hardening: a wildcard project grant is ONLY the create scope, so it

@@ -6,6 +6,7 @@ import {
   normalizeCustomHostname,
   resolveCommandArgv,
   type ComposeAdvanced,
+  type SwarmServiceProjection,
 } from "@repo/core";
 import type { Database } from "../client";
 import { project, service, serviceDeployment } from "../schema";
@@ -551,11 +552,83 @@ export function createServiceRepo(db: Database) {
     },
 
     /** List only the rows of one kind under a project. */
-    async listByProjectKind(projectId: string, kind: "compose" | "monorepo") {
+    async listByProjectKind(projectId: string, kind: "compose" | "monorepo" | "swarm") {
       return db.query.service.findMany({
         where: and(eq(service.projectId, projectId), eq(service.kind, kind)),
         orderBy: [asc(service.sortOrder), asc(service.name)],
       });
+    },
+
+    /**
+     * Upsert Swarm service projections by source service name. A recreated
+     * Swarm service receives a new observedServiceId but remains the same
+     * dashboard row. Source removals are retained as historical projections.
+     */
+    async syncSwarmProjections(projectId: string, projections: SwarmServiceProjection[]) {
+      const existing = await this.listByProjectKind(projectId, "swarm");
+      const bySourceName = new Map(
+        existing
+          .filter((row) => row.sourceServiceName)
+          .map((row) => [row.sourceServiceName as string, row]),
+      );
+      const incoming = new Set(projections.map((projection) => projection.sourceServiceName));
+      const results: Service[] = [];
+
+      for (let i = 0; i < projections.length; i++) {
+        const incomingProjection = projections[i]!;
+        const previous = bySourceName.get(incomingProjection.sourceServiceName);
+        // Read-only refreshes cannot know which rendered revision supplied a
+        // live service. Keep that safe provenance until a later apply replaces
+        // it; all current live fields still come from the manager snapshot.
+        const projection = {
+          ...(previous?.swarmProjection?.sourceDigest && !incomingProjection.sourceDigest
+            ? { sourceDigest: previous.swarmProjection.sourceDigest }
+            : {}),
+          ...incomingProjection,
+          sourceState: "present" as const,
+        };
+        if (previous) {
+          await this.update(previous.id, {
+            kind: "swarm",
+            name: projection.sourceServiceName,
+            sourceServiceName: projection.sourceServiceName,
+            swarmProjection: projection,
+            sortOrder: i,
+          });
+          results.push({
+            ...previous,
+            kind: "swarm",
+            name: projection.sourceServiceName,
+            sourceServiceName: projection.sourceServiceName,
+            swarmProjection: projection,
+            sortOrder: i,
+            updatedAt: new Date(),
+          });
+          continue;
+        }
+        results.push(
+          await this.create({
+            projectId,
+            kind: "swarm",
+            name: projection.sourceServiceName,
+            sourceServiceName: projection.sourceServiceName,
+            swarmProjection: projection,
+            enabled: true,
+            sortOrder: i,
+          }),
+        );
+      }
+
+      for (const row of existing) {
+        if (!row.sourceServiceName || incoming.has(row.sourceServiceName)) continue;
+        const projection: SwarmServiceProjection = {
+          sourceServiceName: row.sourceServiceName,
+          ...(row.swarmProjection ?? {}),
+          sourceState: "removed",
+        } as SwarmServiceProjection;
+        await this.update(row.id, { swarmProjection: projection });
+      }
+      return results;
     },
 
     /**
@@ -987,6 +1060,7 @@ export function createServiceRepo(db: Database) {
           set: {
             serviceName: data.serviceName,
             containerId: data.containerId ?? null,
+            runtimeRef: data.runtimeRef ?? null,
             status: data.status,
             imageRef: data.imageRef ?? null,
             imageDigest: data.imageDigest ?? null,
@@ -995,6 +1069,11 @@ export function createServiceRepo(db: Database) {
             ip: data.ip ?? null,
             reason: data.reason ?? null,
             reasonSkipped: data.reasonSkipped ?? null,
+            ...(data.startedAt !== undefined ? { startedAt: data.startedAt } : {}),
+            ...(data.finishedAt !== undefined ? { finishedAt: data.finishedAt } : {}),
+            ...(data.durationMs !== undefined ? { durationMs: data.durationMs } : {}),
+            ...(data.errorMessage !== undefined ? { errorMessage: data.errorMessage } : {}),
+            ...(data.error !== undefined ? { error: data.error } : {}),
             updatedAt: new Date(),
           },
         });
@@ -1112,6 +1191,14 @@ export function createServiceRepo(db: Database) {
       await db
         .update(serviceDeployment)
         .set({ ...data, updatedAt: new Date() })
+        .where(eq(serviceDeployment.id, id));
+    },
+
+    /** Durable service identity; Swarm service IDs must never enter containerId. */
+    async setServiceRuntimeRef(id: string, runtimeRef: NewServiceDeployment["runtimeRef"]) {
+      await db
+        .update(serviceDeployment)
+        .set({ runtimeRef, updatedAt: new Date() })
         .where(eq(serviceDeployment.id, id));
     },
   };

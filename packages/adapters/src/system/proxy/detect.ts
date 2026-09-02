@@ -25,6 +25,7 @@ import {
   stopContainerDurably,
 } from "../port-owner";
 import { tryExec } from "../probe-exec";
+import type { SwarmTaskOwnership } from "../../runtime/swarm/ownership";
 import type {
   SystemLog,
   EdgeOccupant,
@@ -388,14 +389,79 @@ async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string 
  * to have something to stop. The deploy path treats the same multi-owner answer as
  * ambiguous, because there it decides WHICH one to stop.
  */
+interface SwarmPortService {
+  name: string;
+  stackName?: string;
+}
+
+/** The service list prints published ports as e.g. `*:80->80/tcp` or a range.
+ * We only compare the published (left-hand) side; a target port of 80 does not
+ * mean that the service owns host port 80. */
+export function swarmServicePublishesPort(ports: string, port: number): boolean {
+  return ports.split(",").some((entry) => {
+    const published = entry.split("->", 1)[0]?.trim() ?? "";
+    const match = published.match(/(\d+)(?:-(\d+))?$/);
+    if (!match) return false;
+    const from = Number(match[1]);
+    const to = Number(match[2] ?? match[1]);
+    return Number.isInteger(from) && Number.isInteger(to) && from <= port && port <= to;
+  });
+}
+
 async function detectDockerOnPort(
   executor: CommandExecutor,
   port: number,
-): Promise<{ id: string; name: string; image: string } | null> {
+): Promise<{ id: string; name: string; image: string; swarmTask?: SwarmTaskOwnership } | null> {
   const onPort = await resolveContainerPublishingPort(executor, port);
   const container =
     onPort.kind === "one" ? onPort.container : onPort.kind === "ambiguous" ? onPort.containers[0] : null;
-  return container ? { id: container.id, name: container.name, image: container.image } : null;
+  if (!container) return null;
+  return {
+    id: container.id,
+    name: container.name,
+    image: container.image,
+    ...(container.swarmTask ? { swarmTask: container.swarmTask } : {}),
+  };
+}
+
+/**
+ * Swarm ingress ports are owned by a SERVICE, not a task container, so `docker
+ * ps --filter publish` can be empty even while the routing mesh owns :80/:443.
+ * Read the manager's service table as a second, read-only detection source.
+ */
+async function detectSwarmServiceOnPort(
+  executor: CommandExecutor,
+  port: number,
+): Promise<SwarmPortService | null> {
+  const out = await tryExec(executor, `docker service ls --format '{{json .}}' 2>/dev/null`);
+  if (!out) return null;
+
+  for (const line of out
+    .split("\n")
+    .map((value) => value.trim())
+    .filter(Boolean)) {
+    let row: { Name?: string; Ports?: string };
+    try {
+      row = JSON.parse(line) as { Name?: string; Ports?: string };
+    } catch {
+      continue;
+    }
+    if (!row.Name || !swarmServicePublishesPort(row.Ports ?? "", port)) continue;
+
+    const labelsRaw = await tryExec(
+      executor,
+      `docker service inspect --format '{{json .Spec.Labels}}' ${sq(row.Name)} 2>/dev/null`,
+    );
+    let labels: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(labelsRaw ?? "{}");
+      if (parsed && typeof parsed === "object") labels = parsed as Record<string, string>;
+    } catch {
+      // The service name is still useful even when its labels are unavailable.
+    }
+    return { name: row.Name, stackName: labels["com.docker.stack.namespace"] || undefined };
+  }
+  return null;
 }
 
 /** `nginx: worker process` / `openresty: worker process …` (the child that shows
@@ -443,7 +509,10 @@ async function probeEdgePort(
 ): Promise<EdgeOccupant | null> {
   const listener = await resolveProxyMaster(executor, await probeListeningPort(executor, port));
   const docker = await detectDockerOnPort(executor, port);
-  if (!listener && !docker) return null;
+  const swarm = docker?.swarmTask
+    ? { name: docker.swarmTask.serviceName ?? docker.name, stackName: docker.swarmTask.stackName }
+    : await detectSwarmServiceOnPort(executor, port);
+  if (!listener && !docker && !swarm) return null;
 
   // A HOST-NETWORKED container publishes nothing, so `detectDockerOnPort` never sees it
   // and the only handle is the container id in the listener's own cgroup. Resolve its
@@ -459,6 +528,7 @@ async function probeEdgePort(
     [
       docker?.image ?? cgroupContainer?.image,
       docker?.name ?? cgroupContainer?.name,
+      swarm?.name?.replace(/[_-]/g, " "),
       listener?.rawCommand,
       listener?.command,
       listener?.systemdUnit,
@@ -505,12 +575,18 @@ async function probeEdgePort(
     rawCommand: listener?.rawCommand,
     systemdUnit: listener?.systemdUnit,
     systemdDescription: listener?.systemdDescription,
-    isDocker: Boolean(docker) || Boolean(listener?.dockerPublished) || Boolean(listener?.containerId),
+    isDocker:
+      Boolean(docker) ||
+      Boolean(swarm) ||
+      Boolean(listener?.dockerPublished) ||
+      Boolean(listener?.containerId),
     containerName: docker?.name ?? cgroupContainer?.name,
     // Without a container the takeover falls through to `kill -9` on a process INSIDE
     // somebody's container, which frees nothing durably.
     containerId: docker?.id ?? listener?.containerId,
     dockerPublished: listener?.dockerPublished,
+    swarmServiceName: swarm?.name,
+    swarmStackName: swarm?.stackName,
     proxy,
     managedByOpenship,
   };
@@ -570,9 +646,14 @@ export function stopTargetsForStatus(status: EdgeStatus): EdgeStopTarget[] {
     // Container FIRST. Keying on the unit collapsed two different containers into one
     // target whenever both resolved to the same daemon unit — one foreign proxy on :80
     // and another on :443 both read `docker.service`, so the second was never stopped
-    // and the takeover half-freed the ports while reporting success.
+    // and the takeover half-freed the ports while reporting success. A Swarm service
+    // has no local container to key on, so it identifies itself.
     const identity =
-      o.containerName ?? o.containerId ?? o.systemdUnit ?? (o.pid ? `pid:${o.pid}` : `port:${o.port}`);
+      o.containerName ??
+      o.containerId ??
+      o.systemdUnit ??
+      o.swarmServiceName ??
+      (o.pid ? `pid:${o.pid}` : `port:${o.port}`);
     if (seen.has(identity)) continue;
     seen.add(identity);
     out.push({
@@ -584,6 +665,8 @@ export function stopTargetsForStatus(status: EdgeStatus): EdgeStopTarget[] {
       // rather than claiming a takeover that did not happen.
       pid: o.dockerPublished && !o.containerName && !o.containerId ? undefined : o.pid,
       container: o.containerName ?? o.containerId,
+      swarmServiceName: o.swarmServiceName,
+      swarmStackName: o.swarmStackName,
       // Prefer the proxy kind over the raw cmdline — `nginx (PID 123)` reads
       // better in "Stopping …" than `nginx: master process /usr/sbin/nginx …`.
       label: o.proxy && o.pid ? `${o.proxy} (PID ${o.pid})` : o.command,
@@ -624,6 +707,20 @@ export async function freeEdgeTargets(
   // on two ports it already expects to be free.
   opts: { timeoutMs?: number } = {},
 ): Promise<EdgeFreeResult> {
+  // A Swarm service owns its published port through the routing mesh, so stopping the
+  // task container frees nothing durably — the scheduler simply reschedules it.
+  const swarmTarget = targets.find((target) => target.swarmServiceName);
+  if (swarmTarget?.swarmServiceName) {
+    const owner = swarmTarget.swarmStackName
+      ? `${swarmTarget.swarmStackName}/${swarmTarget.swarmServiceName}`
+      : swarmTarget.swarmServiceName;
+    throw new AppError(
+      `Refusing container-level Edge takeover: port ${swarmTarget.port ?? "80/443"} is owned by Docker Swarm service ${owner}. ` +
+        `Manage the owning Swarm stack or service instead; OpenShip will not stop an individual task container.`,
+      409,
+      "SWARM_SERVICE_OWNED",
+    );
+  }
   for (const t of targets) {
     const where = t.port ? ` (port ${t.port})` : "";
     if (t.container) {

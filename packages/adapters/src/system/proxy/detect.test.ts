@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { CommandExecutor } from "../../types";
 import {
   detectEdgeContainer,
@@ -7,6 +7,7 @@ import {
   probeEdge,
   resolveOurEdgeContainer,
   stopTargetsForStatus,
+  swarmServicePublishesPort,
 } from "./detect";
 
 /** Fake executor: maps a command (by substring) to canned stdout. Unmatched → "". */
@@ -30,6 +31,57 @@ function psLine(name: string, image: string): string {
 }
 
 describe("probeEdge classification", () => {
+  test("recognizes exact and ranged Swarm published ports", () => {
+    expect(swarmServicePublishesPort("*:80->80/tcp", 80)).toBe(true);
+    expect(swarmServicePublishesPort("*:3001-3002->3001-3002/tcp", 3002)).toBe(true);
+    expect(swarmServicePublishesPort("*:8080->80/tcp", 80)).toBe(false);
+  });
+
+  test("refuses container-level Edge takeover when Swarm owns an ingress port", async () => {
+    const executor = {
+      exec: vi.fn(async () => ""),
+    } as unknown as CommandExecutor;
+    const status = await probeEdge(
+      makeExecutor([
+        ["docker service ls", JSON.stringify({ Name: "edge_traefik", Ports: "*:80->80/tcp" })],
+        ["docker service inspect", JSON.stringify({ "com.docker.stack.namespace": "edge" })],
+      ]),
+    );
+
+    expect(status.classification).toBe("known");
+    expect(status.occupants[0]).toMatchObject({
+      swarmStackName: "edge",
+      swarmServiceName: "edge_traefik",
+      proxy: "traefik",
+    });
+    const targets = stopTargetsForStatus(status);
+    expect(targets[0]).toMatchObject({
+      swarmStackName: "edge",
+      swarmServiceName: "edge_traefik",
+    });
+    await expect(freeEdgeTargets(executor, targets, () => {})).rejects.toThrow(
+      "edge/edge_traefik",
+    );
+    expect(executor.exec).not.toHaveBeenCalled();
+  });
+
+  test("keeps ordinary container takeover behavior unchanged", async () => {
+    const executor = {
+      exec: vi.fn(async () => ""),
+    } as unknown as CommandExecutor;
+
+    await freeEdgeTargets(executor, [{ port: 80, container: "traefik-1" }], () => {});
+
+    expect(executor.exec).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("docker update --restart=no 'traefik-1'"),
+    );
+    expect(executor.exec).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("docker stop 'traefik-1'"),
+    );
+  });
+
   test("free when nothing listens on 80/443", async () => {
     const status = await probeEdge(makeExecutor([]));
     expect(status.classification).toBe("free");

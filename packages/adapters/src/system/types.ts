@@ -176,6 +176,10 @@ export interface EdgeOccupant {
   systemdDescription?: string;
   isDocker?: boolean;
   containerName?: string;
+  /** When an ingress/host port belongs to a Docker Swarm service, normal
+   * container-level takeover is forbidden. */
+  swarmServiceName?: string;
+  swarmStackName?: string;
   /**
    * The container that actually holds the port, when one was resolved — including a
    * HOST-NETWORKED one, which publishes nothing and so has no `containerName` from the
@@ -216,6 +220,8 @@ export interface EdgeStopTarget {
   unit?: string;
   pid?: number;
   container?: string;
+  swarmServiceName?: string;
+  swarmStackName?: string;
   label?: string;
 }
 

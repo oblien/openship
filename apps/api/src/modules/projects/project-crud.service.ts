@@ -27,6 +27,8 @@ import {
   validateReleaseVersionUrl,
   isBehind,
   GITHUB_REPO,
+  assertSupportedExecutionMatrix,
+  resolveOrchestratorMode,
   normalizeRollbackWindow,
   normalizeAliasStrict,
   aliasConflictsWithSiblings,
@@ -133,6 +135,10 @@ type EnsureProjectBody = TEnsureProjectBody;
 
 /** One entry of the ensure body's `services` — the compose row shape on the wire. */
 type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[number];
+
+function executionRuntimeMode(value: unknown): "bare" | "docker" {
+  return value === "docker" ? "docker" : "bare";
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -648,8 +654,27 @@ function buildProductionProjectInput(
   organizationId: string,
 ): Omit<NewProject, "id"> {
   const source = resolveProjectSource(data);
+  const orchestratorMode = resolveOrchestratorMode(data.orchestratorMode);
   const isReleaseImage =
     source.releaseSource !== null && releaseArtifactKind(source.releaseSource) === "image";
+  const runtimeMode =
+    data.runtimeMode ??
+    (isReleaseImage ||
+    data.projectType === "services" ||
+    data.projectType === "docker" ||
+    orchestratorMode === "swarm"
+      ? "docker"
+      : null);
+
+  try {
+    assertSupportedExecutionMatrix({
+      runtimeMode: runtimeMode ?? "bare",
+      orchestratorMode,
+    });
+  } catch (err) {
+    throw new ValidationError(safeErrorMessage(err));
+  }
+
   // Workload triad, resolved once. Absent any axis signal a new project is a web
   // app (hasServer=true / host) — the historical create default.
   const workload = resolveWorkloadColumns({
@@ -722,10 +747,8 @@ function buildProductionProjectInput(
     // deploy resolves to "bare", and a compose deploy fails with "services are
     // not supported on the bare runtime". Git apps/monorepos stay null (chosen at
     // deploy time).
-    runtimeMode:
-      isReleaseImage || data.projectType === "services" || data.projectType === "docker"
-        ? "docker"
-        : null,
+    runtimeMode,
+    orchestratorMode,
   };
 }
 
@@ -1072,16 +1095,21 @@ export async function linkProjectRepo(
         autoDeploy: false,
       };
 
-      const strategy = await resolveWebhookStrategy(project!);
+      // A linked source for an observed Swarm stack is review material, never an
+      // implicit deploy trigger. Claim remains the sole transition to a first
+      // writer, so do not register/enable a repo webhook while binding its source.
+      const isSwarmProject = resolveOrchestratorMode(project!.orchestratorMode) === "swarm";
+      const strategy = isSwarmProject ? "manual" : await resolveWebhookStrategy(project!);
+      if (isSwarmProject) gitFields.autoDeploy = false;
 
-      if (strategy === "app") {
+      if (!isSwarmProject && strategy === "app") {
         const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
         if (!resolvedInstId) {
           return { ok: false, code: "app_not_installed", owner, installUrl: getInstallUrl() };
         }
         gitFields.installationId = resolvedInstId;
         gitFields.autoDeploy = true;
-      } else if (strategy === "domain" || strategy === "repo") {
+      } else if (!isSwarmProject && (strategy === "domain" || strategy === "repo")) {
         // Register/reuse the repo webhook via the SHARED reconciler (org+repo scoped,
         // deactivates a superseded hook, fans the webhookId across same-repo projects)
         // — the exact path setAutoDeploy uses, instead of a bespoke registerWebhook.
@@ -1467,6 +1495,28 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     if (data.cloudArchiveStrategy !== undefined) {
       update.cloudArchiveStrategy = data.cloudArchiveStrategy;
     }
+    if (data.orchestratorMode !== undefined || data.runtimeMode !== undefined) {
+      const nextOrchestratorMode = data.orchestratorMode ?? project.orchestratorMode;
+      const persistedRuntimeMode =
+        project.runtimeMode === "bare" || project.runtimeMode === "docker"
+          ? project.runtimeMode
+          : undefined;
+      const nextRuntimeMode =
+        data.runtimeMode ??
+        persistedRuntimeMode ??
+        (nextOrchestratorMode === "swarm" ? "docker" : "bare");
+      try {
+        assertSupportedExecutionMatrix({
+          runtimeMode: nextRuntimeMode,
+          orchestratorMode: nextOrchestratorMode,
+          deployTarget: project.cloudWorkspaceId ? "cloud" : undefined,
+        });
+      } catch (err) {
+        throw new ValidationError(safeErrorMessage(err));
+      }
+      if (data.orchestratorMode !== undefined) update.orchestratorMode = data.orchestratorMode;
+    }
+    if (data.runtimeMode !== undefined) update.runtimeMode = data.runtimeMode;
 
     if (Object.keys(update).length > 0) {
       await repos.project.update(project.id, update);
@@ -1676,6 +1726,35 @@ export async function updateProject(
     !["auto", "loopback-port", "container-ip"].includes(update.routeStrategy as string)
   ) {
     throw new ValidationError("routeStrategy must be 'auto', 'loopback-port', or 'container-ip'");
+  }
+
+  if (
+    update.runtimeMode !== undefined &&
+    update.runtimeMode !== "bare" &&
+    update.runtimeMode !== "docker"
+  ) {
+    throw new ValidationError("runtimeMode must be 'bare' or 'docker'");
+  }
+  if (
+    update.orchestratorMode !== undefined &&
+    update.orchestratorMode !== "standalone" &&
+    update.orchestratorMode !== "swarm"
+  ) {
+    throw new ValidationError("orchestratorMode must be 'standalone' or 'swarm'");
+  }
+  if (update.runtimeMode !== undefined || update.orchestratorMode !== undefined) {
+    try {
+      assertSupportedExecutionMatrix({
+        runtimeMode:
+          (update.runtimeMode as "bare" | "docker" | undefined) ??
+          executionRuntimeMode(p.runtimeMode),
+        orchestratorMode:
+          (update.orchestratorMode as "standalone" | "swarm" | undefined) ?? p.orchestratorMode,
+        deployTarget: p.cloudWorkspaceId ? "cloud" : undefined,
+      });
+    } catch (err) {
+      throw new ValidationError(safeErrorMessage(err));
+    }
   }
 
   // ── monorepoSharedPaths validation ──────────────────────────────────
@@ -2553,6 +2632,35 @@ export async function updateOptions(
   // we deliberately do NOT also write them here.)
   if (options.runtimeMode === "bare" || options.runtimeMode === "docker") {
     update.runtimeMode = options.runtimeMode;
+  }
+  if (
+    options.orchestratorMode !== undefined &&
+    options.orchestratorMode !== "standalone" &&
+    options.orchestratorMode !== "swarm"
+  ) {
+    throw new ValidationError("orchestratorMode must be 'standalone' or 'swarm'");
+  }
+  if (
+    options.runtimeMode !== undefined &&
+    options.runtimeMode !== "bare" &&
+    options.runtimeMode !== "docker"
+  ) {
+    throw new ValidationError("runtimeMode must be 'bare' or 'docker'");
+  }
+  if (options.runtimeMode !== undefined || options.orchestratorMode !== undefined) {
+    const runtimeMode =
+      (update.runtimeMode as "bare" | "docker" | undefined) ?? executionRuntimeMode(p.runtimeMode);
+    try {
+      assertSupportedExecutionMatrix({
+        runtimeMode,
+        orchestratorMode:
+          (options.orchestratorMode as "standalone" | "swarm" | undefined) ?? p.orchestratorMode,
+        deployTarget: p.cloudWorkspaceId ? "cloud" : undefined,
+      });
+    } catch (err) {
+      throw new ValidationError(safeErrorMessage(err));
+    }
+    if (options.orchestratorMode !== undefined) update.orchestratorMode = options.orchestratorMode;
   }
 
   // Persist the canonical config FIRST, then reconcile routes (best-effort) on a

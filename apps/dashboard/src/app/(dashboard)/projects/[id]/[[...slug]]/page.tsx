@@ -29,6 +29,7 @@ import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { ServicesTab } from "../components/ServicesTab";
 import { ProjectSidebar, ProjectMobileTabs } from "../components/ProjectSidebar";
 import { DraftProjectView } from "../components/DraftProjectView";
+import { SwarmObservedProject } from "../components/SwarmObservedProject";
 import { environmentErrorMessage, environmentWizardHref } from "../components/environment-next";
 import { getProjectStatus } from "@/utils/project-status";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -941,6 +942,13 @@ const ProjectSettingsContent = () => {
   // (404 / access errors are already handled via projectNotFound above.)
   if (projectInfoError && projectInfoError !== PROJECT_INFO_NOT_FOUND && !projectDataReady) {
     return <ErrorState type="load-failed" error={{ details: projectInfoError }} />;
+  }
+
+  // An observed Swarm binding is neither a draft nor a conventional OpenShip
+  // deployment. Render its dedicated read-only surface before the normal
+  // project shell can expose build, routing, service, or deletion controls.
+  if (projectData.orchestratorMode === "swarm") {
+    return <SwarmObservedProject projectId={projectData.id} projectName={projectData.name} />;
   }
 
   // Draft / never-successfully-deployed projects (no active deployment)

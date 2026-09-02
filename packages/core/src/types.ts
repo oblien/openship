@@ -74,6 +74,28 @@ export function deriveProjectDeployTarget(project: {
  */
 export type RuntimeMode = "bare" | "docker";
 
+/**
+ * How a Docker-capable project is orchestrated. This is deliberately separate
+ * from RuntimeMode: Docker is still the build/container engine for Swarm, while
+ * Swarm owns the durable workload lifecycle.
+ */
+export type OrchestratorMode = "standalone" | "swarm";
+
+/** Explicit ownership and routing controls for a source-backed Swarm stack. */
+export type SwarmManagementMode = "observe" | "managed";
+export type SwarmRoutingMode = "external" | "openship-edge";
+export type SwarmSourceKind = "repository" | "inline" | "adopted";
+export type SwarmSourceStatus = "missing" | "linked-unvalidated" | "valid" | "invalid";
+export type SwarmDriftStatus = "unknown" | "clean" | "drifted" | "unreachable";
+export type SwarmRevisionStatus =
+  | "previewed"
+  | "applying"
+  | "converging"
+  | "ready"
+  | "partial"
+  | "failed"
+  | "superseded";
+
 export type AdapterType = "docker" | "oblien";
 
 export type SleepMode = "auto_sleep" | "always_on";

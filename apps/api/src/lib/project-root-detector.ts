@@ -870,7 +870,6 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     segments.at(-1) ||
     rootDirectory ||
     "app";
-
   // A sub-app the Dockerfile owns carries no buildpack commands: the pipeline
   // takes the Dockerfile branch on `stack === "docker"` (see cloud.ts /
   // docker.ts) and ignores them, so a detected `npm i --force` — which

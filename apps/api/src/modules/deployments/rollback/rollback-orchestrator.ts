@@ -41,7 +41,7 @@
 
 import { repos, type Deployment, type Project } from "@repo/db";
 import { DockerRuntime, type DeploymentRef, type ResourceConfig } from "@repo/adapters";
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, deploymentWorkloadRef, isSwarmStackRef, safeErrorMessage } from "@repo/core";
 import { isArtifactRef } from "../../../lib/container-ref";
 import { resolveDeploymentRuntime } from "../../../lib/deployment-runtime";
 import { resolveRollbackWindow } from "../release-retention";
@@ -94,10 +94,14 @@ export async function onDeploymentReady(opts: {
 
   if (previousActive && previousActive.id !== newDeployment.id) {
     try {
+      // A Swarm stack revision is already its own rollback artifact, so it must
+      // never be routed through container primitives. The retention timestamp
+      // below still protects its revision and immutable config/secret refs.
+      const previousWorkload = deploymentWorkloadRef(previousActive);
       // Only a durable-unit runtime has something to stop-and-keep, and only
       // when the project wants artifacts held. Docker's artifact is the image
       // (retained by the keep set) and its container is already gone.
-      if (project && shouldRetainArtifact(project)) {
+      if (!isSwarmStackRef(previousWorkload) && project && shouldRetainArtifact(project)) {
         const { runtime } = await resolveDeploymentRuntime(previousActive);
         try {
           if (runtime.supports("unitRestore") && runtime.makeActive) {
@@ -132,6 +136,10 @@ export async function onDeploymentReady(opts: {
     );
   }
 
+  // Swarm service images live in a registry and are protected by immutable
+  // revisions, not the local Docker image cache handled below.
+  if (isSwarmStackRef(deploymentWorkloadRef(newDeployment))) return;
+
   // Reclaim this project's superseded BUILT IMAGES now (the immediate "remove the
   // old image on redeploy" cleanup), keeping the rollback-window keep-set so
   // restores still work, and re-measure the snapshot size / auto window while
@@ -148,6 +156,9 @@ export async function onDeploymentReady(opts: {
  * copy (instant, registry reacquisition, or source rebuild), the GitHub-access
  * gate and the executor can never disagree about the mode.
  */
+/** Internal signal: there is no host artifact worth inspecting for this target. */
+class SkipHostInspection extends Error {}
+
 export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
   target: Deployment;
   project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>;
@@ -162,7 +173,15 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
     throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
   }
 
-  const serviceImages = await resolveEffectiveServiceImages(target);
+  // A Swarm stack's artifact is its immutable revision row: there are no per-service
+  // images, no release directory and no host-local anything to probe. Skipping the
+  // whole container-artifact inspection also avoids `resolveDeploymentRuntime`, which
+  // refuses a swarm ref outright and would otherwise be logged as an unreachable host
+  // on every stack rollback and restore preview. `rollback` dispatches Swarm on its
+  // own path, so the empty plan produced here is never executed.
+  const isSwarmTarget = isSwarmStackRef(deploymentWorkloadRef(target));
+
+  const serviceImages = isSwarmTarget ? [] : await resolveEffectiveServiceImages(target);
 
   // Ask the host which of the candidate artifacts are actually still there, so a
   // reclaimed tag (or a removed release dir) degrades to a rebuild instead of
@@ -176,6 +195,7 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
   const presence = new Map<string, boolean>();
   let staticDirPresent = false;
   try {
+    if (isSwarmTarget) throw new SkipHostInspection();
     const { runtime } = await resolveDeploymentRuntime(target);
     try {
       unitRestore = runtime.supports("unitRestore") && !!runtime.makeActive;
@@ -191,9 +211,11 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
   } catch (err) {
     // Host unreachable / server row gone: we can't prove an artifact is there, so
     // plan a safe non-retained recovery rather than promising an instant restore.
-    console.warn(
-      `[rollback] Could not inspect the host for ${target.id}; planning artifact recovery: ${safeErrorMessage(err)}`,
-    );
+    if (!(err instanceof SkipHostInspection)) {
+      console.warn(
+        `[rollback] Could not inspect the host for ${target.id}; planning artifact recovery: ${safeErrorMessage(err)}`,
+      );
+    }
   }
 
   const plan = planRestore({
@@ -209,6 +231,51 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
 }
 
 /**
+ * Swarm has no task/container artifact to swap. A rollback is deliberately a
+ * new standard deployment whose pipeline reapplies the target's encrypted
+ * rendered revision. This keeps history, SSE, convergence, and audit state in
+ * the ordinary deployment lifecycle while avoiding any mutable tag/source read.
+ */
+async function rollbackSwarmRevision(
+  target: Deployment,
+  project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
+  workload: Extract<NonNullable<ReturnType<typeof deploymentWorkloadRef>>, { kind: "swarm-stack" }>,
+): Promise<Deployment> {
+  const revision = await repos.swarmStack.getRevisionInOrganization(
+    workload.revisionId,
+    target.organizationId,
+  );
+  if (!revision || revision.applyStatus !== "ready" || !revision.renderedYamlEnc) {
+    throw new AppError(
+      "The selected Swarm revision is no longer retained and cannot be rolled back before mutation.",
+      409,
+      ROLLBACK_ERROR_CODES.ARTIFACT_GONE,
+    );
+  }
+  const rollbackCtx = buildBackgroundContext({
+    userId: "",
+    organizationId: target.organizationId,
+    label: "swarm:rollback",
+  });
+  const triggered = await triggerDeployment(rollbackCtx, {
+    projectId: target.projectId,
+    branch: target.branch,
+    commitSha: revision.sourceCommitSha ?? target.commitSha ?? undefined,
+    commitMessage: `Rollback to Swarm revision ${revision.revision}`,
+    environment: target.environment,
+    trigger: "rollback",
+    forceAll: true,
+    swarmRollback: {
+      sourceDeploymentId: target.id,
+      sourceRevisionId: revision.id,
+      environmentSnapshot: (target.envVars as Record<string, string> | null) ?? null,
+    },
+  });
+  return triggered.deployment;
+}
+
+/**
+ * Snapshot strategy: swap the runtime to the archived artifact.
  * What image was each service actually RUNNING in this release?
  *
  * Not simply "this deployment's service rows": a deploy only rebuilds what
@@ -272,8 +339,22 @@ async function hostPathExists(target: Deployment, path: string): Promise<boolean
 /**
  * User-triggered rollback. Resolves the plan, then executes it.
  */
-export async function rollback(targetDeploymentId: string): Promise<void> {
+export async function rollback(targetDeploymentId: string): Promise<Deployment | void> {
   const { target, project, plan } = await resolveRestorePlan(targetDeploymentId);
+
+  // Dispatched before the plan is consulted: a Swarm stack has no container or
+  // unit artifact to swap, so none of the restore modes below apply to it.
+  const workload = deploymentWorkloadRef(target);
+  if (isSwarmStackRef(workload)) {
+    if (!target.artifactRetainedAt) {
+      throw new AppError(
+        "The selected Swarm revision is outside this project's retained rollback window.",
+        409,
+        ROLLBACK_ERROR_CODES.ARTIFACT_GONE,
+      );
+    }
+    return rollbackSwarmRevision(target, project, workload);
+  }
 
   if (plan.mode === "ineligible") {
     throw new AppError(plan.message, 409, plan.code);
@@ -567,48 +648,82 @@ export async function prune(projectId: string): Promise<{ purged: number }> {
 
   for (const dep of overflow) {
     try {
-      const { runtime } = await resolveDeploymentRuntime(dep);
-      try {
-        if (runtime.supports("rollback")) {
-          const ref = toRef(dep);
-          await runtime.purge({
-            ...ref,
-            imageRef: ref.imageRef && keep.has(ref.imageRef) ? null : ref.imageRef,
-          });
+      // A Swarm stack's rollback artifact IS its immutable revision row — there is
+      // no container or image on a host to reclaim. Dispatched before any runtime
+      // is resolved because `resolveDeploymentRuntime` refuses a swarm ref
+      // outright, which would otherwise make this purge permanently unreachable.
+      const workload = deploymentWorkloadRef(dep);
+      if (isSwarmStackRef(workload)) {
+        const removed = await repos.swarmStack.removeRevisionInOrganization(
+          workload.revisionId,
+          dep.organizationId,
+        );
+        if (!removed) {
+          throw new Error("The active or unavailable Swarm revision cannot be purged.");
         }
-        // `purge` works off the DEPLOYMENT ref, which for a compose release is the
-        // "compose" sentinel — so a compose static sub-app's release DIRECTORY is
-        // invisible to it and nothing beyond the rollback window ever reclaimed
-        // one. Per-service artifacts are reclaimed here, under the same keep set,
-        // so a directory a retained release still serves is never removed.
-        // (`--link-dest` means these releases mostly share inodes, but each one
-        // still holds every changed file.)
-        const serviceRows = await repos.service.listByDeployment(dep.id).catch(() => []);
-        // Collected, not swallowed: one service whose directory refuses to go must
-        // not stop the siblings from being reclaimed, but it must also not let this
-        // row record itself as reclaimed. `setArtifactRetainedAt(null)` below is the
-        // claim "nothing of this release is on disk any more", and for a compose
-        // static release these directories ARE the release.
-        let serviceFailure: unknown = null;
-        for (const row of serviceRows) {
-          if (!isArtifactRef(row.imageRef) || keep.has(row.imageRef!)) continue;
-          await runtime.destroy(row.imageRef!).catch((err: unknown) => {
-            console.error(
-              `[rollback-orchestrator] Failed to purge static output ${row.imageRef}:`,
-              err,
-            );
-            serviceFailure ??= err;
-          });
+      } else {
+        const { runtime } = await resolveDeploymentRuntime(dep);
+        try {
+          if (runtime.supports("rollback")) {
+            const ref = toRef(dep);
+            await runtime.purge({
+              ...ref,
+              imageRef: ref.imageRef && keep.has(ref.imageRef) ? null : ref.imageRef,
+            });
+          }
+          // `purge` works off the DEPLOYMENT ref, which for a compose release is the
+          // "compose" sentinel — so a compose static sub-app's release DIRECTORY is
+          // invisible to it and nothing beyond the rollback window ever reclaimed
+          // one. Per-service artifacts are reclaimed here, under the same keep set,
+          // so a directory a retained release still serves is never removed.
+          // (`--link-dest` means these releases mostly share inodes, but each one
+          // still holds every changed file.)
+          const serviceRows = await repos.service.listByDeployment(dep.id).catch(() => []);
+          // Collected, not swallowed: one service whose directory refuses to go must
+          // not stop the siblings from being reclaimed, but it must also not let this
+          // row record itself as reclaimed. `setArtifactRetainedAt(null)` below is the
+          // claim "nothing of this release is on disk any more", and for a compose
+          // static release these directories ARE the release.
+          let serviceFailure: unknown = null;
+          for (const row of serviceRows) {
+            if (!isArtifactRef(row.imageRef) || keep.has(row.imageRef!)) continue;
+            await runtime.destroy(row.imageRef!).catch((err: unknown) => {
+              console.error(
+                `[rollback-orchestrator] Failed to purge static output ${row.imageRef}:`,
+                err,
+              );
+              serviceFailure ??= err;
+            });
+          }
+          if (serviceFailure) throw serviceFailure;
+        } finally {
+          await runtime.dispose?.();
         }
-        if (serviceFailure) throw serviceFailure;
-      } finally {
-        await runtime.dispose?.();
       }
       await repos.deployment.setArtifactRetainedAt(dep.id, null);
       purged += 1;
     } catch (err) {
       console.error(`[rollback-orchestrator] Failed to purge ${dep.id}:`, err);
     }
+  }
+
+  // Run only after obsolete revision rows are gone, so every still-retained
+  // revision's refs remain a hard GC keep-set. Manager errors are advisory.
+  try {
+    const stack = await repos.swarmStack.getForProjectInOrganization(
+      project.id,
+      project.organizationId,
+    );
+    if (stack) {
+      const { reapExpiredSwarmManagedResources } =
+        await import("../swarm/resource-retention.service");
+      await reapExpiredSwarmManagedResources({ stack });
+    }
+  } catch (err) {
+    console.error(
+      `[rollback-orchestrator] Failed to reap expired Swarm managed resources for ${project.id}:`,
+      err,
+    );
   }
 
   return { purged };

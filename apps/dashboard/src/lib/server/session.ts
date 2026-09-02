@@ -111,6 +111,8 @@ export type DeploymentInfo = {
   /** True when OpenShip runs ON a server (self-hosted, non-desktop) — the host
    *  is itself a deployable target, auto-registered as an isLocal server. */
   isServerHost?: boolean;
+  /** Experimental Docker Swarm capability, resolved by the API. */
+  swarmSupportEnabled?: boolean;
   /** Whether the box is currently a deploy target for itself (host control on).
    *  Tracks the operator's runtime Settings toggle, so it can differ from
    *  isServerHost (which is fixed by DEPLOY_MODE). Optional: an older API omits

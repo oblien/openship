@@ -27,6 +27,7 @@ export * from "./service-status";
 export * from "./backup-catalog";
 export * from "./backup-image-detect";
 export * from "./runtime-config";
+export * from "./runtime-identity";
 export * from "./resources";
 export * from "./rollback-window";
 export * from "./secret-keys";

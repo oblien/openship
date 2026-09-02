@@ -64,6 +64,20 @@ import { resolveDockerBuildArgs } from "./docker-build-args";
  */
 const isDockerNotFoundError = isRuntimeNotFoundError;
 
+/** Retry only transport/rate-limit/server failures, never credential or policy errors. */
+function isTransientRegistryPushError(error: unknown): boolean {
+  const statusCode =
+    typeof error === "object" && error !== null && "statusCode" in error
+      ? Number((error as { statusCode?: unknown }).statusCode)
+      : NaN;
+  if (statusCode === 408 || statusCode === 429 || statusCode >= 500) return true;
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  return ["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN", "ENETUNREACH"].includes(code);
+}
+
 /**
  * Is this image tag one WE built, and therefore ours to delete?
  *
@@ -134,6 +148,21 @@ import {
   sq,
   assembleGitClone,
 } from "./build-pipeline";
+
+/** Ephemeral credentials for one OCI Registry API operation. Never persisted by the runtime. */
+export interface RegistryImageAuth {
+  serverAddress: string;
+  username: string;
+  password: string;
+}
+
+export interface PublishedImage {
+  /** Registry-qualified immutable reference (`repository@sha256:…`). */
+  digestRef: string;
+  /** The temporary tag that was pushed and then removed from the build host. */
+  pushedTag: string;
+}
+
 import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
@@ -161,6 +190,7 @@ import {
   staticBuilderOutputPath,
 } from "./docker-build-plan";
 import { transferLocalDirectory } from "./transfer";
+import { swarmTaskOwnership } from "./swarm/ownership";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
 import {
   ownsNetworkEndpoint,
@@ -3531,6 +3561,7 @@ export class DockerRuntime implements RuntimeAdapter {
         ...(ip ? { ip } : {}),
         composeProject: labels["com.docker.compose.project"] || undefined,
         composeService: labels["com.docker.compose.service"] || undefined,
+        swarmTask: swarmTaskOwnership(labels),
       };
     });
   }
@@ -3582,6 +3613,7 @@ export class DockerRuntime implements RuntimeAdapter {
             .filter(Boolean)
         : undefined,
       composeWorkingDir: labels["com.docker.compose.project.working_dir"] || undefined,
+      swarmTask: swarmTaskOwnership(labels),
     };
   }
 
@@ -3811,6 +3843,124 @@ export class DockerRuntime implements RuntimeAdapter {
       ? [target.slice(0, target.lastIndexOf(":")), target.slice(target.lastIndexOf(":") + 1)]
       : [target, undefined];
     await this.docker.getImage(source).tag({ repo, ...(tag ? { tag } : {}) });
+  }
+
+  /**
+   * Publish an image under a deterministic tag and return the registry's
+   * immutable digest. The login exists only for this push: SSH transports get
+   * a 0700 temporary `DOCKER_CONFIG`; local/TCP transports use dockerode's
+   * in-memory auth configuration. Neither path places a password in a command,
+   * build log, or returned error.
+   */
+  async publishImage(input: {
+    source: string;
+    target: string;
+    auth?: RegistryImageAuth;
+    /** Keep the pushed tag only when a caller explicitly needs a local cache. */
+    keepLocalTag?: boolean;
+    /** Safe high-level transport progress; registry responses are never forwarded. */
+    onProgress?: (message: string) => void;
+  }): Promise<PublishedImage> {
+    if (!input.source.trim() || !input.target.trim()) {
+      throw new Error("A source image and registry target are required for image publication.");
+    }
+    await this.tagImage(input.source, input.target);
+
+    let pushed = false;
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          input.onProgress?.(
+            `Pushing ${input.target}${attempt > 0 ? ` (retry ${attempt})` : ""}\n`,
+          );
+          await this.pushTaggedImage(input.target, input.auth, input.onProgress);
+          pushed = true;
+          break;
+        } catch (error) {
+          if (!isTransientRegistryPushError(error) || attempt === 2) {
+            throw new Error("Docker could not push the image to the configured registry.");
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        }
+      }
+      const digestRef = await this.resolveImageDigest(input.target);
+      if (!digestRef || !digestRef.includes("@sha256:")) {
+        throw new Error("Registry push completed without an immutable image digest.");
+      }
+      input.onProgress?.(`Registry accepted immutable digest ${digestRef}\n`);
+      return { digestRef, pushedTag: input.target };
+    } finally {
+      // Do not remove the caller's original source tag. `docker image rm` on a
+      // second tag only untags it while the source image remains referenced.
+      if (pushed && !input.keepLocalTag && input.source !== input.target) {
+        await this.removeImage(input.target).catch(() => {});
+      }
+    }
+  }
+
+  private async pushTaggedImage(
+    target: string,
+    auth?: RegistryImageAuth,
+    onProgress?: (message: string) => void,
+  ): Promise<void> {
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor) {
+      let stage: string | null = null;
+      try {
+        if (auth) {
+          const created = await executor.exec(
+            "umask 077 && mktemp -d /tmp/openship-registry-push.XXXXXX",
+          );
+          stage = created.trim();
+          if (!/^\/tmp\/openship-registry-push\.[A-Za-z0-9]+$/.test(stage)) {
+            throw new Error("Could not create a private registry credential directory.");
+          }
+          const encoded = Buffer.from(`${auth.username}:${auth.password}`).toString("base64");
+          await executor.writeFile(
+            `${stage}/config.json`,
+            JSON.stringify({ auths: { [auth.serverAddress]: { auth: encoded } } }),
+          );
+        }
+        await executor.exec(
+          `${stage ? `DOCKER_CONFIG=${sq(stage)} ` : ""}docker image push ${sq(target)}`,
+          { timeout: 10 * 60_000 },
+        );
+        return;
+      } finally {
+        if (stage) await executor.rm(stage).catch(() => {});
+      }
+    }
+
+    const stream = await this.docker
+      .getImage(target)
+      .push(
+        auth
+          ? {
+              authconfig: {
+                serveraddress: auth.serverAddress,
+                username: auth.username,
+                password: auth.password,
+              },
+            }
+          : undefined,
+      );
+    let lastStatus = "";
+    await new Promise<void>((resolve, reject) => {
+      this.docker.modem.followProgress(
+        stream,
+        (error, _result) => (error ? reject(error) : resolve()),
+        (event: { status?: unknown }) => {
+          const status = typeof event.status === "string" ? event.status.trim() : "";
+          // Registry events can be very chatty and daemon error strings may echo
+          // an upstream response. Report only a changing generic milestone, not
+          // layer IDs, response bodies, or credential-adjacent text.
+          if (status && status !== lastStatus) {
+            lastStatus = status;
+            onProgress?.("Registry upload is in progress\n");
+          }
+        },
+      );
+    });
   }
 
   /** Every named volume on the host. */
@@ -4971,8 +5121,20 @@ export class DockerRuntime implements RuntimeAdapter {
    * adopt paths need to read it for a container they did not create.
    */
   async resolveImageDigest(ref: string): Promise<string | undefined> {
-    const info = await this.docker.getImage(ref).inspect();
-    const repoDigests: string[] = (info as { RepoDigests?: string[] })?.RepoDigests ?? [];
+    // Over SSH the images live on the REMOTE daemon, which `this.docker` does not
+    // address; ask through the executor so a Swarm build host resolves its own digests.
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    const repoDigests: string[] = executor
+      ? (
+          await executor.exec(
+            `docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' ${sq(ref)}`,
+          )
+        )
+          .split("\n")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : (((await this.docker.getImage(ref).inspect()) as { RepoDigests?: string[] })?.RepoDigests ??
+        []);
     if (repoDigests.length === 0) return undefined;
     // repo = ref without tag/digest (a colon after the last slash is the tag).
     const noDigest = ref.split("@")[0];

@@ -205,9 +205,10 @@ export async function rollbackDeployment(deploymentId: string, organizationId: s
   // Existence + org-scope check (throws if deployment isn't in this org).
   const dep = await getDeployment(deploymentId, organizationId);
   await assertNotControlPlaneById(dep.projectId);
-  await rollback(deploymentId);
-  // Return the post-rollback deployment row (now with any updated container id).
-  return (await repos.deployment.findById(dep.id)) ?? dep;
+  const rollbackDeployment = await rollback(deploymentId);
+  // Swarm rollback schedules a new stack deployment; existing runtimes restore
+  // the selected row in place and keep the historical response shape.
+  return rollbackDeployment ?? (await repos.deployment.findById(dep.id)) ?? dep;
 }
 
 /**

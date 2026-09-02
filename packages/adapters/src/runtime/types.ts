@@ -28,6 +28,7 @@ import type {
 import type { ComposeAdvanced } from "@repo/core";
 import type { BuildLogger } from "./build-pipeline";
 import type { PortProbeExecutor } from "../system/port-listen";
+import type { SwarmTaskOwnership } from "./swarm/ownership";
 import type { ContainerStabilitySample } from "./stability";
 
 // ─── Capabilities ────────────────────────────────────────────────────────────
@@ -727,6 +728,9 @@ export interface DockerContainerSummary {
   composeProject?: string;
   /** com.docker.compose.service label, if the container is compose-managed. */
   composeService?: string;
+  /** Present only for a Docker Swarm task container. Never use this container as
+   * a standalone lifecycle identity; mutate its service/stack instead. */
+  swarmTask?: SwarmTaskOwnership;
 }
 
 /** Full `docker inspect` of one container, normalized to what adoption needs. */
@@ -765,6 +769,8 @@ export interface DockerContainerDetail {
   composeConfigFiles?: string[];
   /** com.docker.compose.project.working_dir — the compose project's cwd. */
   composeWorkingDir?: string;
+  /** Present only for a Docker Swarm task container. */
+  swarmTask?: SwarmTaskOwnership;
 }
 
 export interface DockerVolumeInfo {

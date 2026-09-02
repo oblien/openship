@@ -623,6 +623,9 @@ async function markDomainVerifiedActive(
  * mode shares the cert volume, so it's never "unreachable" there.
  */
 async function edgeHostUnreachable(ctx: RequestContext, project: Project): Promise<boolean> {
+  // Swarm Edge owns its certificates in an ingress-pinned service volume. It
+  // is deliberately not the host OpenResty path this guard diagnoses.
+  if (project.orchestratorMode === "swarm") return false;
   if (process.env.OPENSHIP_EDGE_MODE === "docker") return false;
   // Only the LOCAL host-server can be "unreachable from a container" (a
   // containerized API with no host channel). A REMOTE server is reached over SSH

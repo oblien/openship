@@ -27,6 +27,7 @@ import { shellQuote } from "@repo/core";
 
 import { MAIL_CONTAINER, MAIL_DB_CONTAINER } from "../infra/mail-container";
 import type { ExecOnly } from "../types";
+import { swarmTaskOwnership, type SwarmTaskOwnership } from "../runtime/swarm/ownership";
 import type { ProxyKind } from "./types";
 import { tryExec } from "./probe-exec";
 
@@ -50,6 +51,11 @@ export interface PortContainer {
   buildSessionId?: string;
   composeProject?: string;
   composeService?: string;
+  /**
+   * Set when the container is a Swarm TASK. A task is disposable scheduler output,
+   * so container-level takeover must refuse and defer to the owning service/stack.
+   */
+  swarmTask?: SwarmTaskOwnership;
 }
 
 /**
@@ -80,6 +86,10 @@ const PS_FIELDS = [
   `{{.Label "${OPENSHIP_LABEL.build}"}}`,
   '{{.Label "com.docker.compose.project"}}',
   '{{.Label "com.docker.compose.service"}}',
+  '{{.Label "com.docker.swarm.service.id"}}',
+  '{{.Label "com.docker.swarm.service.name"}}',
+  '{{.Label "com.docker.stack.namespace"}}',
+  '{{.Label "com.docker.swarm.task.id"}}',
 ];
 const PS_FORMAT = PS_FIELDS.join("\\t");
 
@@ -105,6 +115,15 @@ function parsePsLines(out: string): PortContainer[] {
       ...(f[6]?.trim() ? { buildSessionId: f[6].trim() } : {}),
       ...(f[7]?.trim() ? { composeProject: f[7].trim() } : {}),
       ...(f[8]?.trim() ? { composeService: f[8].trim() } : {}),
+      ...(() => {
+        const swarmTask = swarmTaskOwnership({
+          "com.docker.swarm.service.id": f[9]?.trim() ?? "",
+          "com.docker.swarm.service.name": f[10]?.trim() ?? "",
+          "com.docker.stack.namespace": f[11]?.trim() ?? "",
+          "com.docker.swarm.task.id": f[12]?.trim() ?? "",
+        });
+        return swarmTask ? { swarmTask } : {};
+      })(),
     });
   }
   return containers;

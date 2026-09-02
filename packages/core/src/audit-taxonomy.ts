@@ -975,6 +975,169 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     label: "Restore from backup",
     tone: "warning",
   },
+
+  /* ---------------- Container registries ---------------- */
+  "registry.created": {
+    category: "system",
+    action: "added the container registry",
+    label: "Registry added",
+    description: "A container registry Openship can push built stack images to.",
+  },
+  "registry.updated": {
+    category: "system",
+    action: "updated the container registry",
+    label: "Registry updated",
+  },
+  "registry.tested": {
+    category: "system",
+    action: "tested the container registry",
+    label: "Registry tested",
+    tone: "info",
+    description: "A credential check against the registry. No image was pushed.",
+  },
+  "registry.deleted": {
+    category: "system",
+    action: "deleted the container registry",
+    label: "Registry deleted",
+    tone: "warning",
+  },
+
+  /* ---------------- Docker Swarm ---------------- */
+  "swarm.manager.probed": {
+    category: "servers",
+    action: "probed the Swarm manager for",
+    label: "Swarm manager probed",
+    tone: "info",
+    description: "A read-only check that the manager is reachable and in swarm mode.",
+  },
+  "swarm.manager.rebound": {
+    category: "servers",
+    action: "repointed the Swarm manager of",
+    label: "Swarm manager rebound",
+    tone: "warning",
+    description: "The stack now talks to a different manager host.",
+  },
+  "swarm.stack.observe": {
+    category: "apps",
+    action: "imported the observed Swarm stack",
+    label: "Swarm stack observed",
+    tone: "info",
+    description: "Imported read-only. Openship cannot write to the stack until it is claimed.",
+  },
+  "swarm.stack.bound": {
+    category: "apps",
+    action: "bound the Swarm stack",
+    label: "Swarm stack bound",
+    description: "A project was linked to a stack name on a manager.",
+  },
+  "swarm.stack.claim.requested": {
+    category: "apps",
+    action: "claimed management of the Swarm stack",
+    label: "Swarm stack claimed",
+    tone: "warning",
+    description:
+      "Openship became the writer for this stack, checked against the digest and source version it reviewed.",
+  },
+  "swarm.stack.management.released": {
+    category: "apps",
+    action: "released management of the Swarm stack",
+    label: "Swarm management released",
+    tone: "warning",
+    description: "The stack went back to observe mode. Openship stopped writing to it.",
+  },
+  "swarm.stack.source.replaced": {
+    category: "apps",
+    action: "replaced the reviewed stack source of",
+    label: "Swarm source replaced",
+    description: "A new stack document was reviewed and stored as the authoritative source.",
+  },
+  "swarm.stack.registry.set": {
+    category: "apps",
+    action: "set the image registry of the Swarm stack",
+    label: "Swarm registry set",
+  },
+  "swarm.stack.routing-mode.set": {
+    category: "domains",
+    action: "changed the routing mode of the Swarm stack",
+    label: "Swarm routing mode set",
+    tone: "warning",
+    description: "Chooses between external routing and OpenShip Edge for the stack's services.",
+  },
+  "swarm.stack.storage-acknowledgements.set": {
+    category: "apps",
+    action: "acknowledged the node-local storage risk of",
+    label: "Swarm storage risk acknowledged",
+    tone: "warning",
+    description:
+      "An operator accepted that named volumes on a specific node are not portable across the cluster.",
+  },
+  "swarm.stack.volume-replacement-acknowledgements.set": {
+    category: "apps",
+    action: "acknowledged a volume replacement in",
+    label: "Swarm volume replacement acknowledged",
+    tone: "warning",
+    description: "An operator accepted that applying this revision replaces a stateful volume.",
+  },
+  "swarm.stack.removed": {
+    category: "apps",
+    action: "removed the Swarm stack",
+    label: "Swarm stack removed",
+    tone: "danger",
+    description: "The stack was torn down on the manager.",
+  },
+  "swarm.stack.handoff.exported": {
+    category: "apps",
+    action: "exported the Swarm handoff for",
+    label: "Swarm handoff exported",
+    tone: "info",
+    description: "A redacted description of the stack, for review outside Openship.",
+  },
+  "swarm.managed-input.saved": {
+    category: "apps",
+    action: "saved a managed stack input for",
+    label: "Swarm input saved",
+    description: "An encrypted config or secret value supplied to the stack's services.",
+  },
+  "swarm.managed-input.removed": {
+    category: "apps",
+    action: "removed a managed stack input from",
+    label: "Swarm input removed",
+    tone: "warning",
+  },
+  "swarm.service.scaled": {
+    category: "apps",
+    action: "scaled the Swarm service in",
+    label: "Swarm service scaled",
+    description: "The replica count of one service was changed on the manager.",
+  },
+  "swarm.service.restarted": {
+    category: "apps",
+    action: "restarted the Swarm service in",
+    label: "Swarm service restarted",
+    tone: "warning",
+    description: "The scheduler replaced the service's tasks. No task container was acted on.",
+  },
+  "swarm.edge.enabled": {
+    category: "domains",
+    action: "enabled OpenShip Edge for",
+    label: "Swarm Edge enabled",
+    tone: "warning",
+    description: "The managed ingress singleton was created on the labelled ingress node.",
+  },
+  "swarm.edge.cutover.completed": {
+    category: "domains",
+    action: "cut traffic over to OpenShip Edge for",
+    label: "Swarm Edge cutover completed",
+    tone: "warning",
+    description: "The stack's public ports moved to the managed edge. Reversible.",
+  },
+  "swarm.edge.cutover.recovered": {
+    category: "domains",
+    action: "rolled back the OpenShip Edge cutover for",
+    label: "Swarm Edge cutover recovered",
+    tone: "danger",
+    description: "A cutover was reverted and the previous router took the ports back.",
+  },
 };
 
 /**

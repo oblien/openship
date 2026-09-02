@@ -66,6 +66,8 @@ afterEach(async () => {
   // clearAuthModeCache() callers in modules/system/setup.controller.ts.
   const { clearAuthModeCache } = await import("../../src/lib/auth-mode");
   clearAuthModeCache();
+  const { env } = await import("../../src/config/env");
+  env.OPENSHIP_EXPERIMENTAL_SWARM = false;
 });
 
 describe("GET /health/env authMode", () => {
@@ -104,5 +106,14 @@ describe("GET /health/env authMode", () => {
     expect(body.teamMode).toBe("multi_user");
     expect(body.migrationInProgress).toBe(false);
     expect(body.migrationTargetUrl).toBeNull();
+  });
+
+  it("publishes the centrally resolved Swarm feature capability", async () => {
+    const { env } = await import("../../src/config/env");
+
+    expect((await getEnv()).body.swarmSupportEnabled).toBe(false);
+
+    env.OPENSHIP_EXPERIMENTAL_SWARM = true;
+    expect((await getEnv()).body.swarmSupportEnabled).toBe(true);
   });
 });

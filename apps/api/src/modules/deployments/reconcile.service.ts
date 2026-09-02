@@ -21,15 +21,17 @@
  */
 
 import { repos, type Deployment } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { deploymentWorkloadRef, isSwarmStackRef, safeErrorMessage } from "@repo/core";
 import { disposeRuntime, resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { isRealContainerRef } from "../../lib/container-ref";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { isConnectionLoss } from "../../lib/remote-state";
+import { swarmDeploymentReconciler } from "./swarm/reconcile.service";
 
 export type ReconcileOutcome =
   | "finalized" // resolved to ready / partial_failure / failed
   | "unreachable" // couldn't reach the host — left reconciling, retry later
+  | "pending" // manager is reachable but Swarm is still scheduling the accepted apply
   | "unsupported" // runtime can't be inspected (bare) — left reconciling
   | "skipped"; // not a reconciling deployment
 
@@ -51,6 +53,14 @@ async function isSuperseded(activeDeploymentId: string | null, dep: Deployment):
 export async function reconcileDeployment(deploymentId: string): Promise<ReconcileOutcome> {
   const dep = await repos.deployment.findById(deploymentId);
   if (!dep || dep.status !== "reconciling") return "skipped";
+
+  // A Swarm stack is a scheduler-owned workload, never a container. Dispatch
+  // before the generic reachability/container path so restart recovery only
+  // observes the original manager state and can never reissue the stack apply.
+  const runtimeRef = deploymentWorkloadRef(dep);
+  if (isSwarmStackRef(runtimeRef)) {
+    return swarmDeploymentReconciler.reconcile({ deployment: dep, runtimeRef });
+  }
 
   const meta = (dep.meta ?? {}) as Record<string, unknown> & {
     serverId?: string;
@@ -203,6 +213,8 @@ export function triggerReconcile(deploymentId: string): void {
   if (inFlight.has(deploymentId)) return;
   inFlight.add(deploymentId);
   void reconcileDeployment(deploymentId)
-    .catch((err) => console.error(`[reconcile] on-demand ${deploymentId} failed:`, safeErrorMessage(err)))
+    .catch((err) =>
+      console.error(`[reconcile] on-demand ${deploymentId} failed:`, safeErrorMessage(err)),
+    )
     .finally(() => inFlight.delete(deploymentId));
 }

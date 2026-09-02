@@ -8,7 +8,8 @@ const onDeploymentReady = vi.fn();
 const rollupDeploymentStatus = vi.fn();
 const setDeploymentStatus = vi.fn();
 
-vi.mock("@repo/db", () => ({
+vi.mock("@repo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/db")>()),
   repos: {
     deployment: { findById: (...args: unknown[]) => findById(...args) },
     serviceDeployment: {

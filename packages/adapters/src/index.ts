@@ -91,6 +91,59 @@ export {
   DEFAULT_DOCKER_SOCKET_PATH,
 } from "./runtime/docker-transport";
 export {
+  describeSwarmTaskOwnership,
+  isSwarmTaskContainer,
+  swarmTaskOwnership,
+  type SwarmTaskOwnership,
+} from "./runtime/swarm/ownership";
+export type { StackRuntimeAdapter } from "./runtime/swarm/types";
+export { SwarmRuntime, SwarmRenderError, SwarmDeployError } from "./runtime/swarm/runtime";
+export {
+  SwarmEdgeManager,
+  SwarmEdgeError,
+  SWARM_EDGE_SERVICE_NAME,
+  SWARM_EDGE_NETWORK_NAME,
+  SWARM_EDGE_INGRESS_LABEL,
+  type SwarmEdgeStatus,
+  type EnsureSwarmEdgeInput,
+} from "./runtime/swarm/edge";
+export {
+  SwarmEdgeRouteManager,
+  SwarmEdgeRouteError,
+  renderSwarmEdgeRoute,
+  swarmEdgeRouteConfigTarget,
+  type SwarmEdgeRouteInput,
+  type SwarmEdgeCertificateStatus,
+} from "./runtime/swarm/edge-routes";
+export {
+  SwarmEdgeCutoverManager,
+  SwarmEdgeCutoverError,
+  type SwarmEdgeCutoverPlan,
+} from "./runtime/swarm/cutover";
+export { SwarmProbeError, normalizeSwarmManagerInfo } from "./runtime/swarm/normalize";
+export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./runtime/swarm/health";
+export type {
+  SwarmDiscoverySnapshot,
+  SwarmManagerInfo,
+  SwarmProbeFailureCode,
+  SwarmServiceState,
+  SwarmServiceHealth,
+  SwarmStackHealth,
+  RenderStackInput,
+  RenderedStack,
+  SwarmRenderIssue,
+  DeployStackInput,
+  DeployedStack,
+  ScaleSwarmServiceInput,
+  RestartSwarmServiceInput,
+  SwarmServiceLogsInput,
+  SwarmServiceLogEntry,
+  SwarmServiceLogResult,
+  SwarmServiceLogStream,
+  RemoveSwarmStackInput,
+  SwarmServiceOperation,
+} from "./runtime/swarm/types";
+export {
   transferImage,
   type ImageTransferOptions,
   type ImageTransferResult,

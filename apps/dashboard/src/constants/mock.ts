@@ -70,6 +70,7 @@ export interface Project {
   serverName?: string | null;
   /** Runtime isolation mode (bare | docker) — editable in the Runtime tab. */
   runtimeMode?: "bare" | "docker" | null;
+  orchestratorMode?: "standalone" | "swarm" | null;
   /**
    * Resource config as returned by /info (enrichProject → encodeResources):
    * production/build hold the actual { cpuCores, memoryMb }.

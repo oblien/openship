@@ -1,0 +1,41 @@
+services:
+  manager:
+    image: docker:29.5.3-dind
+    container_name: openship-swarm-lab-manager
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command:
+      - dockerd
+      - --host=tcp://0.0.0.0:2375
+      - --host=unix:///var/run/docker.sock
+      # Disposable lab only: permits the nested registry proof below. The
+      # production path uses HTTPS or a manager-configured trusted registry.
+      - --insecure-registry=0.0.0.0/0
+    ports:
+      - 127.0.0.1:23750:2375
+    labels:
+      com.openship.swarm.lab: "true"
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+
+  worker:
+    image: docker:29.5.3-dind
+    container_name: openship-swarm-lab-worker
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command:
+      - dockerd
+      - --host=unix:///var/run/docker.sock
+      - --insecure-registry=0.0.0.0/0
+    labels:
+      com.openship.swarm.lab: "true"
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 2s
+      timeout: 2s
+      retries: 45

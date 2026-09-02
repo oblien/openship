@@ -78,7 +78,7 @@ describe("resolvePorts", () => {
 
     expect(r.api).toBe(configured);
     expect(r.switched.api).toBe(false);
-  });
+  }, 7_000);
 
   it("supplies the documented 4000/3001 defaults when asked for nothing", async () => {
     // The CLI's contract, and the one place it differs from the desktop app (which

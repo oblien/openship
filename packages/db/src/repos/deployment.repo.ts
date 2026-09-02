@@ -540,6 +540,17 @@ export function createDeploymentRepo(db: Database) {
     },
 
     /**
+     * Persist a durable workload identity without overloading containerId.
+     * Swarm callers write a `swarm-stack` ref here and leave containerId null.
+     */
+    async setRuntimeRef(id: string, runtimeRef: NewDeployment["runtimeRef"]) {
+      await db
+        .update(deployment)
+        .set({ runtimeRef, updatedAt: new Date() })
+        .where(eq(deployment.id, id));
+    },
+
+    /**
      * Persist the smart-deploy changed-files snapshot onto an existing
      * deployment row. Called by the GitHub webhook after the deployment
      * is created — the path set + truncation flag are forensic data,

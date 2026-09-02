@@ -184,7 +184,9 @@ export class DockerEdgeExecutor implements CommandExecutor {
   async streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
+    if (opts?.signal?.aborted) return { code: 0, output: "" };
     // Edge commands (reload/certbot) are short; capture then emit once. Keeps
     // the interface satisfied without a second live-attach path.
     const { code, stdout, stderr } = await this.run(command);

@@ -803,6 +803,9 @@ export function useDeploymentConfig() {
                   preparedContext.projectType !== "docker"
                 ? response.runtimeMode
                 : normalizeRuntimeMode(preparedContext.projectType),
+        // This is intentionally independent of runtimeMode: a Swarm stack is
+        // built with Docker but its lifecycle belongs to the stack runtime.
+        orchestratorMode: project?.orchestratorMode === "swarm" ? "swarm" : "standalone",
         packageManager: runtimeConfig.packageManager,
         buildImage: runtimeConfig.buildImage,
         branch,

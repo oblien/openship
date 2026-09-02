@@ -37,6 +37,17 @@ describe("UpdateProjectBody — mass-assignment allow-list", () => {
   });
 });
 
+describe("CreateProjectBody — explicit private routing", () => {
+  it("accepts an empty endpoint list without changing the omitted-route default", () => {
+    expect(
+      Value.Check(CreateProjectBody, {
+        name: "private-swarm-stack",
+        publicEndpoints: [],
+      }),
+    ).toBe(true);
+  });
+});
+
 /**
  * `publicEndpoints: []` is the wire value for "no public route": `updateProject`
  * gates route reconciliation on `data.publicEndpoints !== undefined`, so an

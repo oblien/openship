@@ -1,0 +1,10 @@
+services:
+  traefik:
+    image: traefik:v3.2
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.docker.exposedbydefault=false
+    ports:
+      - 18080:80
+    labels:
+      com.openship.swarm.fixture: "true"

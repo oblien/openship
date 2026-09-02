@@ -34,7 +34,11 @@ const mocks = vi.hoisted(() => ({
   withHostPortTargetLock: vi.fn((_target, fn: () => unknown) => fn()),
 }));
 
-vi.mock("@repo/db", () => ({
+// Partial, not a replacement: with the Swarm deploy service in the graph this test
+// now reaches `lib/auth`, which reads `schema` and `getDriver()` at module scope.
+// Same pattern as build.service.test.ts — only `repos`/`schema` are under test.
+vi.mock("@repo/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   schema: {},
   repos: {
     deployment: {

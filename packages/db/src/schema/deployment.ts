@@ -11,6 +11,7 @@ import {
 import { sql } from "drizzle-orm";
 import { project } from "./project";
 import { organization } from "./organization";
+import type { RuntimeWorkloadRef } from "@repo/core";
 
 // ─── Deployments ─────────────────────────────────────────────────────────────
 
@@ -115,6 +116,8 @@ export const deployment = pgTable(
     /* ── Container details ──────────────────────────────────────────────── */
     /** Adapter container ID (for stop/start/destroy) */
     containerId: text("container_id"),
+    /** Typed durable runtime identity. Legacy rows continue to use containerId. */
+    runtimeRef: jsonb("runtime_ref").$type<RuntimeWorkloadRef | null>(),
     /** External URL where deployment is reachable */
     url: text("url"),
 

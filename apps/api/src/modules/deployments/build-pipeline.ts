@@ -4,6 +4,7 @@ import { posix as pathPosix } from "node:path";
 import { repos, type Project, type Deployment, type Domain } from "@repo/db";
 import {
   BUILD_ENV_VARS,
+  AppError,
   safeErrorMessage,
   sanitizeProxySettings,
   normalizeServiceLabel,
@@ -91,6 +92,7 @@ import * as sessionManager from "./session-manager";
 import {
   onFailure,
   onSuccess,
+  onReconciling,
   onCancelled,
   reportPipelineError,
   setDeploymentStatus,
@@ -142,6 +144,7 @@ import {
 import { serviceKind, type DeployableService } from "../../lib/deployable-service";
 import { resolveProjectRouteState } from "../domains/project-route.service";
 import { type DeploymentConfigSnapshot } from "./build.service";
+import { swarmDeploy } from "./swarm/deploy.service";
 import * as settingsService from "../settings/settings.service";
 
 // Build env = CI/telemetry defaults (BUILD_ENV_VARS) + the customer's own env
@@ -629,6 +632,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       baseTarget: plat.target,
       effectiveTarget: resolveEffectiveTarget(plat.target, snapshot),
       willRunServices,
+      orchestratorMode: snapshot.orchestratorMode,
       hasPrebuiltImage: Boolean(snapshot.releaseImageRef),
     });
     if (runtimeModes.buildRuntimeMode === "docker") {
@@ -705,6 +709,64 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       status: "building",
     });
     await setDeploymentStatus(dep.id, "building");
+
+    if (resolved.orchestratorMode === "swarm") {
+      // A Swarm deployment is a stack-level operation. It has no build image,
+      // container ID, compose fan-out, or routing mutation in this pipeline.
+      // Keep it before those container-specific stages so a failure can never
+      // accidentally clean up scheduler-owned tasks.
+      const failedEnvKeys: string[] = [];
+      const envMap = decryptEnvMap((dep.envVars ?? {}) as Record<string, string>, (key, error) => {
+        failedEnvKeys.push(key);
+        console.warn(`[swarm-deploy] failed to decrypt env var ${key}: ${safeErrorMessage(error)}`);
+      });
+      if (failedEnvKeys.length > 0) {
+        logger.log(
+          `⚠ ${failedEnvKeys.length} environment variable(s) could not be decrypted and were skipped: ${failedEnvKeys.join(", ")}.`,
+          "warn",
+        );
+      }
+      logger.log(
+        `→ Swarm target: manager ${resolved.serverId?.slice(0, 8) ?? "local"}; stack lifecycle is reconciled from manager state.\n`,
+      );
+      const outcome = await swarmDeploy.deploy({
+        project,
+        deployment: dep,
+        environment: envMap,
+        logger: {
+          log: (message, level) => logger.log(message, level),
+          // Preserve stack-native phase names in the durable build log. The
+          // ordinary stepper still ignores these IDs, while the Swarm detail
+          // view can reconstruct source/validate/build/apply/converge/route
+          // after an SSE reconnect or API restart.
+          step: (phase, state, message) =>
+            logger.step(phase, state === "started" ? "running" : state, message),
+        },
+      });
+      const durationMs = Date.now() - (dep.createdAt?.getTime?.() ?? Date.now());
+      if (outcome.state === "reconciling") {
+        await onReconciling(ctx, {
+          runtimeRef: outcome.runtimeRef,
+          warningMessage: outcome.warningMessage,
+          durationMs,
+        });
+      } else {
+        const routingWarning = outcome.warningMessage;
+        await onSuccess(ctx, {
+          runtimeRef: outcome.runtimeRef,
+          durationMs,
+          ...(routingWarning ? { warningMessage: routingWarning } : {}),
+          metaPatch: {
+            swarmStackRevisionId: outcome.revisionId,
+            ...(routingWarning ? { edgeUnsynced: true, deployWarning: routingWarning } : {}),
+          },
+        });
+        // A Swarm artifact is the immutable revision, not a container. Feed it
+        // into the same active/pinned/rollback-window policy after success.
+        await archivePreviousDeployment(dep, project, logger);
+      }
+      return;
+    }
 
     // Pre-create service_deployment rows so the dashboard sees a
     // complete fan-out even before any service starts building. Rows

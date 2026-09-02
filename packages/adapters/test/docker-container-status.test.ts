@@ -129,7 +129,12 @@ describe("DockerRuntime container status normalization", () => {
         ImageID: "sha256:1",
         State: "Restarting",
         Status: "Restarting (1) 44 seconds ago",
-        Labels: { "openship.project": "proj_1", "openship.service": "api" },
+        Labels: {
+          "openship.project": "proj_1",
+          "openship.service": "api",
+          "com.docker.swarm.service.name": "blog_api",
+          "com.docker.stack.namespace": "blog",
+        },
         Ports: [{ PrivatePort: 4000, PublicPort: 4000, Type: "tcp" }],
         Mounts: [],
         NetworkSettings: { Networks: { "openship-openship": { IPAddress: "172.18.0.7" } } },
@@ -143,6 +148,7 @@ describe("DockerRuntime container status normalization", () => {
       state: "restarting",
       status: "Restarting (1) 44 seconds ago",
       ip: "172.18.0.7",
+      swarmTask: { serviceName: "blog_api", stackName: "blog" },
     });
     expect(c.ports[0]).toMatchObject({ privatePort: 4000, publicPort: 4000 });
   });

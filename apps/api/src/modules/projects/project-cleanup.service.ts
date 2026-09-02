@@ -20,7 +20,12 @@ import {
   type RoutingProvider,
   type RuntimeAdapter,
 } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import {
+  deploymentWorkloadRef,
+  isSwarmStackRef,
+  resolveOrchestratorMode,
+  safeErrorMessage,
+} from "@repo/core";
 import { platform } from "../../lib/controller-helpers";
 import {
   disposeRuntime,
@@ -60,6 +65,8 @@ export interface CleanupResource {
     | "volume"
     | "network"
     | "cloud_workspace"
+    /** Record-only marker: deletion never implicitly removes a live Swarm stack. */
+    | "swarm_stack"
     /**
      * A resource we KNOW exists but can't reach right now (cloud down, or a
      * server that still exists but is transiently unreachable). Its destroy
@@ -182,6 +189,23 @@ export async function collectProjectManifest(
   project: Project,
   options: CollectManifestOptions = {},
 ): Promise<CleanupManifest> {
+  if (resolveOrchestratorMode(project.orchestratorMode) === "swarm") {
+    const stack = await repos.swarmStack
+      .getForProjectInOrganization(project.id, project.organizationId)
+      .catch(() => undefined);
+    return {
+      projectId: project.id,
+      resources: [
+        {
+          type: "swarm_stack",
+          ref: stack?.id ?? project.id,
+          label: `Swarm stack ${stack?.stackName ?? project.name} (left running; explicit stack removal required)`,
+          runtime: null,
+        },
+      ],
+    };
+  }
+
   const wipeVolumes = options.wipeVolumes ?? false;
   const resources: CleanupResource[] = [];
   const services = await repos.service.listByProject(project.id);
@@ -816,6 +840,7 @@ export async function collectProjectManifest(
     container: 0,
     artifact: 0,
     cloud_workspace: 0,
+    swarm_stack: 0,
     unreachable: 0,
     image: 1,
     route: 2,
@@ -844,6 +869,23 @@ export async function collectProjectManifest(
  */
 export async function previewProjectDeletion(project: Project): Promise<DeletionPreview> {
   const services = await repos.service.listByProject(project.id).catch(() => []);
+  if (resolveOrchestratorMode(project.orchestratorMode) === "swarm") {
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      selfHosted: true,
+      services: services.map((svc) => ({
+        id: svc.id,
+        name: svc.name,
+        image: svc.image ?? null,
+        volumes: [],
+        hasContainer: false,
+      })),
+      deploymentVolumes: [],
+      networks: [],
+      totalVolumes: 0,
+    };
+  }
   const { rows: allDeps } = await repos.deployment.listByProject(project.id, { perPage: 1000 });
 
   const previewServices: DeletionPreviewService[] = [];
@@ -994,6 +1036,20 @@ export async function collectDeploymentManifest(
   opts: DeploymentCleanupOpts,
 ): Promise<CleanupManifest> {
   const resources: CleanupResource[] = [];
+  const workloadRef = deploymentWorkloadRef(dep);
+  if (isSwarmStackRef(workloadRef)) {
+    return {
+      projectId: dep.projectId,
+      resources: [
+        {
+          type: "swarm_stack",
+          ref: workloadRef.stackName,
+          label: `Swarm stack ${workloadRef.stackName} (left running; explicit stack removal required)`,
+          runtime: null,
+        },
+      ],
+    };
+  }
   const serviceRows = await repos.service.listByDeployment(dep.id).catch(() => []);
   const serviceContainerIds = serviceRows
     .map((r) => r.containerId)
@@ -1301,6 +1357,12 @@ async function destroyResourceOnce(
     case "cloud_workspace": {
       if (!resource.runtime) return;
       await resource.runtime.destroy(resource.ref);
+      return;
+    }
+    case "swarm_stack": {
+      // Removing a deployment/project record is not authority to remove a live
+      // Swarm stack. The future managed-stack remove flow is an explicit,
+      // separately authorized stackRuntime operation.
       return;
     }
     case "unreachable": {

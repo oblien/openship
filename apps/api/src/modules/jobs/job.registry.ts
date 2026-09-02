@@ -16,13 +16,16 @@
 
 import { repos } from "@repo/db";
 import { platform } from "../../lib/controller-helpers";
+import { swarmSupportEnabled } from "../../config";
 import { renewExpiringCerts } from "../../lib/ssl-scheduler";
 import { runOrphanSweep } from "../projects/orphan-gc-schedule";
 import { runRetentionSweep } from "../backups/retention-prune";
 import { runBackupStaleSweep } from "../backups/backup-stale-sweep";
 import { pruneAuditEvents } from "../audit/audit-prune";
 import { runReconcileSweep } from "../deployments/reconcile-schedule";
+import { swarmObservation } from "../swarm/swarm-observation.service";
 import { runImageGcSweep } from "../deployments/image-gc";
+import { runSwarmManagedResourceGcSweep } from "../deployments/swarm/resource-retention.service";
 import { verifyPendingDomains } from "../domains/domain.service";
 import { runEdgeVerifySweep } from "../domains/edge-verify-schedule";
 import { scanInstanceUpdates } from "../updates/updates.service";
@@ -97,6 +100,21 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
         bytesReclaimed: r.bytesReclaimed,
         skipped: r.skippedInUse,
         failed: r.errors,
+      };
+    },
+  },
+  {
+    key: "swarm:resource-gc",
+    label: "Swarm managed resource cleanup",
+    defaultCron: "41 4 * * *",
+    available: swarmSupportEnabled,
+    run: async () => {
+      const result = await runSwarmManagedResourceGcSweep();
+      return {
+        scanned: result.stacksScanned,
+        configsRemoved: result.configsRemoved,
+        secretsRemoved: result.secretsRemoved,
+        failed: result.errors,
       };
     },
   },
@@ -213,6 +231,15 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     label: "Deployment reconcile",
     defaultCron: "*/10 * * * *",
     run: async () => runReconcileSweep(),
+  },
+  {
+    key: "swarm:refresh",
+    label: "Swarm managed-stack refresh",
+    // The refresh service batches every bound stack behind one manager
+    // discovery, so this cadence remains bounded even for a busy cluster.
+    defaultCron: "*/5 * * * *",
+    available: swarmSupportEnabled,
+    run: async () => swarmObservation.refreshManaged(),
   },
   {
     key: "domains:verify-pending",

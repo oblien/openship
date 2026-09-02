@@ -498,6 +498,12 @@ export async function buildStatus(c: Context) {
   await permission.assert(getRequestContext(c), { resourceType: "deployment", resourceId: id, action: "read" });
 
   try {
+    // The build page polls this endpoint after reconnects. Keep its
+    // reconciliation behavior aligned with GET /deployments/:id so a Swarm
+    // apply that lost manager contact can settle from current manager state
+    // without requiring the operator to visit a different screen.
+    const deployment = await deploymentService.getDeployment(id, ctx.organizationId);
+    if (deployment.status === "reconciling") triggerReconcile(id);
     const result = await buildStatusService.getBuildSessionStatus(id);
     return c.json(result);
   } catch (err) {

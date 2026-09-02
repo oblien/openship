@@ -19,6 +19,8 @@ interface PlatformContextValue {
   /** OpenShip runs ON a server (self-hosted, non-desktop): the host is itself a
    *  deployable target, auto-registered as the isLocal "This Server". */
   isServerHost: boolean;
+  /** True only when the API has explicitly enabled experimental Swarm support. */
+  swarmSupportEnabled: boolean;
   /** Whether the box is a deploy target for ITSELF right now (#527 runtime
    *  toggle). isServerHost is fixed by DEPLOY_MODE; this tracks the operator's
    *  Settings choice, so the "Add this machine" affordance reflects the live
@@ -70,6 +72,7 @@ interface PlatformProviderProps {
   selfHosted?: boolean;
   deployMode?: string;
   isServerHost?: boolean;
+  swarmSupportEnabled?: boolean;
   hostControlEnabled?: boolean;
   authMode?: "cloud" | "local" | "none";
   productMode?: ProductView;
@@ -93,6 +96,7 @@ export function PlatformProvider({
   selfHosted: initialSelfHosted = true,
   deployMode = "docker",
   isServerHost = false,
+  swarmSupportEnabled = false,
   hostControlEnabled = false,
   authMode = "local",
   productMode = "platform",
@@ -132,6 +136,7 @@ export function PlatformProvider({
         selfHosted,
         deployMode,
         isServerHost,
+        swarmSupportEnabled,
         hostControlEnabled,
         authMode,
         productMode,

@@ -18,6 +18,7 @@ import {
   type DeploymentMeta,
 } from "./deployment-runtime";
 import { resolveDnsManager, type MatchedDnsManager } from "../modules/dns/dns-credential.service";
+import { resolveSwarmEdgeSslProvider } from "../modules/swarm/swarm-edge-ssl";
 
 /**
  * The per-domain issuance lock key. EVERY path that can open an ACME order
@@ -417,7 +418,10 @@ async function resolveSslOnly(meta: DeploymentMeta, organizationId: string): Pro
  * Falls back to the global platform when the project has no active deployment
  * yet (single-box installs resolve to the same local provider either way).
  */
-async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider> {
+async function resolveSslProvider(
+  owner: SslOwner,
+  domainRecord?: Domain,
+): Promise<ResolvedSslProvider> {
   // A mail server IS the box — no deployment to resolve through, and no
   // local-host fallback to want: the cert lives on that server's edge or nowhere.
   // `lockScope` is the server id so mail issuance takes the same per-box ACME lock
@@ -431,6 +435,18 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
   }
 
   const project = owner.project;
+
+  // A managed Swarm stack terminates TLS on the cluster Edge service rather than a
+  // host OpenResty, and the provider is bound to one validated service/domain pair.
+  // Scope the ACME lock to the manager box the challenge actually lands on.
+  if (project.orchestratorMode === "swarm" && domainRecord) {
+    const ssl = await resolveSwarmEdgeSslProvider(project, domainRecord);
+    const stack = await repos.swarmStack.getForProjectInOrganization(
+      project.id,
+      project.organizationId,
+    );
+    return { ssl, lockScope: stack?.managerServerId ?? LOCAL_ACME_SCOPE };
+  }
   const depId = project.activeDeploymentId;
   if (depId) {
     const dep = await repos.deployment.findById(depId);
@@ -664,7 +680,7 @@ async function manageAuthorizedDomainSsl(
     return notLocalResult(domainRecord.hostname);
   }
 
-  const { ssl, lockScope } = await resolveSslProvider(owner);
+  const { ssl, lockScope } = await resolveSslProvider(owner, domainRecord);
   // `verify` is a read-only cert inspection (no ACME) → no lock. `provision`/
   // `renew` can open an ACME order, so serialize them per-hostname on the shared
   // issue lock — this is what stops the ssl:renew scheduler (which calls us with
@@ -755,7 +771,7 @@ async function provisionAuthorizedDomainCert(
     dnsCleanupHook?: string;
   },
 ): Promise<SslResult> {
-  const { ssl, lockScope } = await resolveSslProvider(owner);
+  const { ssl, lockScope } = await resolveSslProvider(owner, domainRecord);
 
   const isDns =
     opts.challenge === "dns-01" ||
@@ -843,7 +859,7 @@ export async function installDomainCert(
     allowUnverified: opts.allowUnverified,
   };
   return withAuthorizedDomainRuntime(hostname, authorization, async ({ domainRecord, owner }) => {
-    const { ssl } = await resolveSslProvider(owner);
+    const { ssl } = await resolveSslProvider(owner, domainRecord);
     return ssl.installCert(domainRecord.hostname, cert);
   });
 }
@@ -865,7 +881,7 @@ export async function verifyExistingCert(
     projectId: opts.projectId,
     allowUnverified: true,
   });
-  const { ssl } = await resolveSslProvider(owner);
+  const { ssl } = await resolveSslProvider(owner, domainRecord);
   const result = await ssl.verifyCert(domainRecord.hostname);
   await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
   return result;

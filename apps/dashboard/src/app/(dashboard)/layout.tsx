@@ -155,6 +155,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       selfHosted={deploymentInfo.selfHosted}
       deployMode={deploymentInfo.deployMode}
       isServerHost={deploymentInfo.isServerHost}
+      swarmSupportEnabled={deploymentInfo.swarmSupportEnabled}
       hostControlEnabled={deploymentInfo.hostControlEnabled}
       authMode={deploymentInfo.authMode}
       productMode={deploymentInfo.productMode ?? "platform"}

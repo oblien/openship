@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { DockerContainerDetail, DockerNetworkInfo, DockerVolumeInfo } from "@repo/adapters";
+import type {
+  DockerContainerDetail,
+  DockerContainerSummary,
+  DockerNetworkInfo,
+  DockerVolumeInfo,
+} from "@repo/adapters";
+import { partitionDiscoveredContainers } from "../../../src/modules/migration/docker-inspect.service";
 import { declaredKey, reconcileStack } from "../../../src/modules/migration/docker-reconcile";
 import { parseComposeFile, type ComposeService } from "../../../src/lib/compose-parser";
 
@@ -303,5 +309,44 @@ services:
   it("reports the Coolify variables Docker cannot expose", () => {
     const app = coolify.services.find((s) => s.name === "app-kso4gc8")!;
     expect(app.warnings.some((w) => w.includes("build-time"))).toBe(true);
+  });
+});
+
+describe("partitionDiscoveredContainers", () => {
+  it("keeps Swarm task containers out of standalone adoption candidates", () => {
+    const containers: DockerContainerSummary[] = [
+      {
+        id: "standalone",
+        names: ["redis"],
+        image: "redis:7",
+        imageId: "sha256:redis",
+        state: "running",
+        status: "Up",
+        labels: {},
+        ports: [],
+        mounts: [],
+      },
+      {
+        id: "task",
+        names: ["blog_web.1.task"],
+        image: "nginx:alpine",
+        imageId: "sha256:nginx",
+        state: "running",
+        status: "Up",
+        labels: { "com.docker.swarm.service.name": "blog_web" },
+        ports: [],
+        mounts: [],
+        swarmTask: { serviceName: "blog_web", stackName: "blog", taskId: "task-id" },
+      },
+    ];
+
+    const result = partitionDiscoveredContainers(containers);
+    expect(result.candidates.map((container) => container.id)).toEqual(["standalone"]);
+    expect(result.swarmTasks).toEqual([
+      expect.objectContaining({
+        containerId: "task",
+        ownership: expect.objectContaining({ serviceName: "blog_web", stackName: "blog" }),
+      }),
+    ]);
   });
 });

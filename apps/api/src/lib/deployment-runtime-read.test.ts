@@ -113,6 +113,12 @@ beforeEach(() => {
 });
 
 describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without the platform", () => {
+  it("refuses a Swarm stack before it can resolve a container runtime", async () => {
+    await expect(read({ orchestratorMode: "swarm", runtimeMode: "docker" })).rejects.toMatchObject({
+      code: "SWARM_CONTAINER_OPERATION_UNSUPPORTED",
+    });
+  });
+
   it("plans the concrete transport and server id for an implicit single-server target", async () => {
     await expect(mod.resolvePlannedTargetTopology("server", undefined, "org1")).resolves.toEqual({
       serverId: "only-server",
