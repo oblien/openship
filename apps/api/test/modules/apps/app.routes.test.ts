@@ -20,4 +20,23 @@ describe("apps routes are permission-scoped correctly", () => {
 
     expect(spec.collection).toBe(true);
   });
+
+  // `:appId` is a custom-app id, not a project id — without `collection` the
+  // permission middleware demands a `:id` param this route doesn't have and
+  // 400s every delete (#735).
+  it("DELETE /api/apps/custom/:appId is a collection-scoped write route (#735)", () => {
+    const route = getRouteRegistry().find(
+      (r) => r.method === "DELETE" && r.path === "/api/apps/custom/:appId",
+    );
+
+    expect(route, "DELETE /api/apps/custom/:appId must be registered").toBeDefined();
+
+    const spec = route!.spec;
+    expect(isPublicSpec(spec)).toBe(false);
+    if (isPublicSpec(spec)) {
+      throw new Error("DELETE /api/apps/custom/:appId must be a permission route");
+    }
+
+    expect(spec.collection).toBe(true);
+  });
 });

@@ -53,7 +53,15 @@ r.post(
 );
 r.delete(
   "/custom/:appId",
-  { tag: "project:write", mcp: { description: "Remove a custom app from this org's catalog." } },
+  {
+    tag: "project:write",
+    // `:appId` names a per-org catalog entry, not a project row, so there is no
+    // resource id for the permission layer to check — without `collection` the
+    // middleware demands a `:id` this route doesn't have and 400s every call.
+    // Org scoping happens in the handler, exactly like the POST above.
+    collection: true,
+    mcp: { description: "Remove a custom app from this org's catalog." },
+  },
   ctrl.removeCustom,
 );
 r.post(
