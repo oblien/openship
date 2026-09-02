@@ -807,7 +807,7 @@ export async function getResources(c: Context) {
   // org AFTER assert (cross-org rebind safety — see enable/disable).
   const { organizationId } = getRequestContext(c);
   const resources = await projectService.getResources(id, organizationId);
-  return c.json({ data: resources });
+  return c.json({ success: true, data: resources });
 }
 
 /** GET /projects/:id/rollback-capacity — the retention window in force, the
@@ -869,7 +869,7 @@ export async function updateResources(c: Context) {
       port: body.port ?? null,
     },
   });
-  return c.json({ data: resources });
+  return c.json({ success: true, data: resources });
 }
 
 // ─── Clone token (per-project override) ──────────────────────────────────────

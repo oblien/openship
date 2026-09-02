@@ -117,9 +117,15 @@ export const ResourceSettings: React.FC = () => {
   }, []);
 
   const load = useCallback(async () => {
-    const res = await projectsApi.getResources(id);
-    if (res.success && res.data) applyView(res.data as ResourcesView);
-    setLoading(false);
+    try {
+      const res = await projectsApi.getResources(id);
+      const data = (res?.data ?? res) as ResourcesView;
+      if (data && typeof data === "object") applyView(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
   }, [id, applyView]);
 
   useEffect(() => {
@@ -136,17 +142,19 @@ export const ResourceSettings: React.FC = () => {
   const save = async (tier: ResourceTier, values?: { cpuCores: number; memoryMb: number }) => {
     if (saving) return;
     setSaving(tier);
-    const res = await projectsApi.updateResources(id, {
-      production: tier === "custom" ? { tier, ...values } : { tier },
-    });
-    if (res.success) {
-      applyView(res.data as ResourcesView, tier);
+    try {
+      const res = await projectsApi.updateResources(id, {
+        production: tier === "custom" ? { tier, ...values } : { tier },
+      });
+      const data = (res?.data ?? res) as ResourcesView;
+      applyView(data, tier);
       setShowCustom(false);
       showToast(r.toast.updated, "success");
-    } else {
-      showToast(getApiErrorMessage(res) || r.toast.updateFailed, "error");
+    } catch (err) {
+      showToast(getApiErrorMessage(err) || r.toast.updateFailed, "error");
+    } finally {
+      setSaving(null);
     }
-    setSaving(null);
   };
 
   const saveCustom = () => {
