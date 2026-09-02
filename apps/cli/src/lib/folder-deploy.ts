@@ -97,6 +97,7 @@ export async function deployFolder(opts: {
   name?: string;
   /** Reuse/update an existing project instead of creating one. */
   projectId?: string;
+  serverId?: string;
   environment?: string;
   /** Scope a folder REDEPLOY to a subset of services; others carry forward
    *  untouched (no needless stateful recreate). Ignored on a first deploy. */
@@ -210,6 +211,8 @@ export async function deployFolder(opts: {
     body: JSON.stringify({
       projectId: ensured.project_id,
       uploadSessionId: session.sessionId,
+      deployTarget: opts.serverId ? "server" : undefined,
+      serverId: opts.serverId,
       ...(opts.environment ? { environment: opts.environment } : {}),
       // Carry the scanned compose services so a multi-service folder deploys as
       // a services project (persisted rows + services-mode preflight). Absent for

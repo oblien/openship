@@ -51,6 +51,8 @@ function printProject(project: Record<string, unknown>): void {
       project.gitOwner && project.gitRepo ? `${project.gitOwner}/${project.gitRepo}` : null,
     ],
     ["gitBranch", project.gitBranch],
+    ["deployTarget", project.deployTarget],
+    ["serverId", project.serverId],
     ["autoDeploy", project.autoDeploy],
     ["status", project.status],
   ];

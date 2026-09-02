@@ -40,6 +40,7 @@ export const deployCommand = new Command("deploy")
   .option("--project <id>", "Project ID (defaults to the linked project in .openship/project.json)")
   .option("--branch <name>", "Git branch to deploy (defaults to the current branch)")
   .option("--commit <sha>", "Specific commit SHA (defaults to the latest commit on the branch)")
+  .option("--server <id>", "Remote server ID to deploy to")
   .option("--env <environment>", "Target environment: production | preview", "production")
   .option("--force-all", "Rebuild every enabled service (skip smart per-service routing)")
   .option("--service-ids <ids>", "Comma-separated service IDs to deploy (smart routing)")
@@ -78,6 +79,7 @@ export const deployCommand = new Command("deploy")
           cwd: process.cwd(),
           name: opts.name,
           projectId: opts.project || link?.projectId,
+          serverId: opts.server,
           environment: env,
           serviceIds,
           onStep: (m) => {
@@ -120,6 +122,7 @@ export const deployCommand = new Command("deploy")
         projectId,
         branch,
         commitSha: opts.commit || undefined,
+        serverId: opts.server,
         environment: env,
         forceAll: opts.forceAll || undefined,
         serviceIds,

@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { deployFolder } = vi.hoisted(() => ({ deployFolder: vi.fn() }));
+
+vi.mock("node:child_process", () => ({ execFileSync: vi.fn(() => Buffer.from("false")) }));
+vi.mock("../../src/lib/folder-deploy", () => ({ deployFolder }));
+
 vi.mock("../../src/lib/config", () => ({
   getApiUrl: () => "http://api.test",
   getToken: () => "tok",
 }));
 
 import { deploymentCommand } from "../../src/commands/deployment";
+import { deployCommand } from "../../src/commands/deploy";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
 
 let fetchStub: FetchStub;
@@ -41,5 +47,35 @@ describe("openship deployment rollback", () => {
     expect(code).toBe(0);
     expect(fetchStub.calls[0].method).toBe("POST");
     expect(fetchStub.calls[0].url).toBe("http://api.test/api/deployments/dep1/rollback");
+  });
+});
+
+describe("openship deploy", () => {
+  it("targets a remote server", async () => {
+    fetchStub = stubFetch(() => ({
+      json: { data: { deployment_id: "dep1", project_id: "p1" } },
+    }));
+    const { code } = await runCommand(deployCommand, [
+      "--project",
+      "p1",
+      "--branch",
+      "main",
+      "--commit",
+      "abc123",
+      "--server",
+      "srv1",
+    ]);
+    expect(code).toBe(0);
+    expect(fetchStub.calls[0].body).toMatchObject({
+      projectId: "p1",
+      serverId: "srv1",
+    });
+  });
+
+  it("forwards the server to folder deployments", async () => {
+    deployFolder.mockResolvedValue({ deploymentId: "dep1", projectId: "p1" });
+    const { code } = await runCommand(deployCommand, ["--project", "p1", "--server", "srv1"]);
+    expect(code).toBe(0);
+    expect(deployFolder).toHaveBeenCalledWith(expect.objectContaining({ serverId: "srv1" }));
   });
 });

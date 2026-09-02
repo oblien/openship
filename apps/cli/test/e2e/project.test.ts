@@ -30,11 +30,15 @@ describe("openship project list", () => {
 
 describe("openship project get", () => {
   it("GETs /projects/:id", async () => {
-    fetchStub = stubFetch(() => ({ json: { data: { id: "p1", name: "shop" } } }));
+    fetchStub = stubFetch(() => ({
+      json: { data: { id: "p1", name: "shop", deployTarget: "server", serverId: "srv1" } },
+    }));
     const { out, code } = await runCommand(projectCommand, ["get", "p1"]);
     expect(code).toBe(0);
     expect(fetchStub.calls[0].url).toContain("/api/projects/p1");
     expect(out).toContain("shop");
+    expect(out).toContain("deployTarget server");
+    expect(out).toContain("serverId     srv1");
   });
 });
 

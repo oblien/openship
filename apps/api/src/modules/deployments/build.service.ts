@@ -1804,6 +1804,7 @@ export async function triggerDeployment(
     projectId: string;
     branch?: string;
     commitSha?: string;
+    serverId?: string;
     commitMessage?: string;
     environment?: string;
     trigger?: string;
@@ -1989,7 +1990,10 @@ export async function triggerDeployment(
   // gates serverId on target==="server" so a non-server deploy can't carry a stale
   // serverId. (reuse/rollback already carries the frozen target — leave it.)
   if (!reuse) {
-    const resolvedTarget = await resolveSnapshotTarget(project);
+    const resolvedTarget = await resolveSnapshotTarget(
+      project,
+      data.serverId ? { deployTarget: "server", serverId: data.serverId } : undefined,
+    );
     snapshot.deployTarget = resolvedTarget.deployTarget;
     snapshot.serverId = resolvedTarget.serverId;
     snapshot.runtimeMode = resolvedTarget.runtimeMode;

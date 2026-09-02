@@ -494,6 +494,20 @@ describe("triggerDeployment", () => {
     );
   });
 
+  it("targets the server selected by a manual deploy", async () => {
+    await triggerDeployment(ctx, {
+      projectId: "project-1",
+      branch: "main",
+      commitSha: "abc123",
+      serverId: "srv_cli",
+    });
+
+    expect(runPreflightChecks).toHaveBeenCalledWith(
+      expect.objectContaining({ deployTarget: "server", serverId: "srv_cli" }),
+      expect.any(Object),
+    );
+  });
+
   it("bootstraps a declared composePath even when the first webhook changed another file (#689)", async () => {
     const commitSha = "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5";
     let storedRows: Record<string, unknown>[] = [];

@@ -18,6 +18,7 @@ import { maskEnv, maskScanService } from "../../lib/secret-env";
 import { maybeProxyCloudProject, proxyToSaaS } from "../../lib/cloud/project-router";
 import { promoteProjectToCloud, TransferConflictError } from "../projects/transfer.service";
 import { env } from "../../config";
+import type { TTriggerDeployBody } from "./deployment.schema";
 
 export async function list(c: Context) {
   const ctx = getRequestContext(c);
@@ -44,11 +45,7 @@ export async function list(c: Context) {
 
 export async function create(c: Context) {
   const ctx = getRequestContext(c);
-  const body = await c.req.json<{
-    projectId: string;
-    branch?: string;
-    commitSha?: string;
-    environment?: string;
+  const body = await c.req.json<TTriggerDeployBody & {
     /** Force-rebuild every enabled service. Skips smart per-service routing. */
     forceAll?: boolean;
     /** Smart per-service target list. Mutually exclusive with forceAll. */
@@ -81,6 +78,7 @@ export async function create(c: Context) {
     projectId: body.projectId,
     branch: body.branch,
     commitSha: body.commitSha,
+    serverId: body.serverId,
     environment: body.environment,
     forceAll: body.forceAll,
     serviceIds: body.serviceIds,

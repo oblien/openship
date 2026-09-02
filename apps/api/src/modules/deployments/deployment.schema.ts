@@ -26,6 +26,7 @@ export const TriggerDeployBody = Type.Object({
   projectId: Type.String({ minLength: 1 }),
   branch: Type.Optional(Type.String({ default: "main" })),
   commitSha: Type.Optional(Type.String()),
+  serverId: Type.Optional(Type.String()),
   environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")])),
 });
 
