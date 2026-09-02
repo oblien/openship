@@ -114,6 +114,8 @@ data transfer. Migration is covered in depth in
 | `migration switch-back` | Reverse a migration back to single-user. |
 | `data-transfer export` | Export the entire instance to a JSON file. |
 | `data-transfer import` | Import an instance export file. |
+| `image-gc` | Inspect (`--dry-run`) or run the built-image garbage collector. |
+| `runtime-images` | List, and with `--prune` remove, previous Openship control-plane images on this host. |
 
 ### `settings set`
 
@@ -214,6 +216,49 @@ openship system data-transfer import --file instance.json --passphrase "correct 
 Importing in the default `wipe` mode deletes the current instance data before restoring the file. It asks
 for confirmation unless you pass `-y`. Use `--mode merge` to layer the file on top instead.
 </Callout>
+
+### `image-gc`
+
+The operator-facing side of the built-in `images:gc` job, which prunes each project's superseded
+build images on its deploy host outside the rollback window. `--dry-run` answers "did cleanup run,
+what would it remove, and why is the rest still here" without touching Docker; without it the
+command shows the same report, asks for confirmation, and runs the sweep, recorded as a manual
+`images:gc` run in job history.
+
+| Flag | Purpose |
+|---|---|
+| `--dry-run` | Report only. Lists every image with its decision and reason: `active`, `pinned`, `rollback-window`, `in-use`, `foreign-tag`, `min-age`, or `superseded` / `dangling` for removal candidates. |
+| `--older-than <age>` | Only remove superseded images at least this old (`30d`, `12h`, `2w`). Age never overrides the keep-set — it can only make a run more conservative. |
+| `-y, --yes` | Skip the confirmation prompt. |
+
+```bash
+openship system image-gc --dry-run
+openship system image-gc --older-than 30d
+openship --json system image-gc --dry-run
+```
+
+Sizes are Docker's per-image figures; shared layers mean the space actually freed can be lower.
+Volumes, third-party images (`postgres`, `redis`, …) and anything without an `openship.project`
+label are never candidates.
+
+### `runtime-images`
+
+`openship update` pulls the new `openship-api`, `openship-dashboard` and `openship-edge` images but
+leaves the previous ones on the host, and the project-scoped image GC can't touch them. This lists
+them on the machine the CLI runs on and, with `--prune`, removes every version beyond the one a
+container references plus `--keep` previous ones. Images referenced by any container, running or
+stopped, are never removed, and neither is a tag that isn't a version (`latest`).
+
+| Flag | Purpose |
+|---|---|
+| `--prune` | Remove the superseded versions (asks first). |
+| `--keep <n>` | Previous versions to keep for a quick downgrade. Default `1`. |
+| `-y, --yes` | Skip the confirmation prompt. |
+
+```bash
+openship system runtime-images
+openship system runtime-images --prune --keep 2
+```
 
 ## `openship mail`
 

@@ -22,7 +22,7 @@ import { runRetentionSweep } from "../backups/retention-prune";
 import { runBackupStaleSweep } from "../backups/backup-stale-sweep";
 import { pruneAuditEvents } from "../audit/audit-prune";
 import { runReconcileSweep } from "../deployments/reconcile-schedule";
-import { runImageGcSweep } from "../deployments/image-gc";
+import { imageGcJobSummary, runImageGcSweep } from "../deployments/image-gc";
 import { verifyPendingDomains } from "../domains/domain.service";
 import { runEdgeVerifySweep } from "../domains/edge-verify-schedule";
 import { scanInstanceUpdates } from "../updates/updates.service";
@@ -89,16 +89,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // not local Docker, so there's nothing to sweep there.
     defaultCron: "23 4 * * *",
     available: () => platform().target !== "cloud",
-    run: async () => {
-      const r = await runImageGcSweep();
-      return {
-        scanned: r.projectsScanned,
-        removed: r.imagesRemoved,
-        bytesReclaimed: r.bytesReclaimed,
-        skipped: r.skippedInUse,
-        failed: r.errors,
-      };
-    },
+    run: async () => imageGcJobSummary(await runImageGcSweep()),
   },
   {
     key: "permissions:pending-grant-prune",

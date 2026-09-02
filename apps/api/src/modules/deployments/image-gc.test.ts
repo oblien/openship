@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { Deployment } from "@repo/db";
-import { computeKeepSet, selectImageRemovalRefs } from "./image-gc";
+import {
+  classifyImage,
+  computeKeepSet,
+  computeKeepSetDetail,
+  parseMinAge,
+  selectImageRemovalRefs,
+  type KeepReason,
+} from "./image-gc";
 
 // Minimal deployment shape for the pure keep-set logic (loaders are injected, so
 // no DB). Casts keep the fixtures terse — computeKeepSet only reads id/imageRef/pinned.
@@ -97,5 +104,110 @@ describe("selectImageRemovalRefs (never ruin an operator's image)", () => {
 
   it("removes a truly dangling (untagged) labeled leftover by id", () => {
     expect(selectImageRemovalRefs({ id: "sha6", repoTags: [] }, keep)).toEqual(["sha6"]);
+  });
+});
+
+describe("computeKeepSetDetail (why each ref is kept)", () => {
+  it("names the strongest protection when one image is referenced by several kept deployments", async () => {
+    // d3 (active) and d2 (inside the window) both run the same compose service image.
+    const project = { id: "p4", activeDeploymentId: "d3", rollbackWindow: 2 };
+    const ready = asDeps([
+      { id: "d3", imageRef: "compose", pinned: false },
+      { id: "d2", imageRef: "compose", pinned: true },
+      { id: "d1", imageRef: "compose", pinned: false },
+    ]);
+    const keep = await computeKeepSetDetail(project, {
+      listReadyOrderedDesc: async () => ready,
+      findById: async (id) => ready.find((d) => d.id === id),
+      listByDeployment: async (id) =>
+        id === "d3"
+          ? [{ imageRef: "svc-shared" }]
+          : id === "d2"
+            ? [{ imageRef: "svc-shared" }, { imageRef: "svc-2" }]
+            : [{ imageRef: "svc-1" }],
+    });
+    expect(keep.get("svc-shared")).toBe("active"); // not "pinned" — active outranks it
+    expect(keep.get("svc-2")).toBe("pinned");
+    expect(keep.get("svc-1")).toBe("rollback-window");
+  });
+});
+
+describe("classifyImage (the plan says exactly what the sweep does)", () => {
+  const DAY = 86_400_000;
+  const now = 100 * DAY;
+  const keep = new Map<string, KeepReason>([["openship/app-web:keep", "rollback-window"]]);
+
+  it("reports the keep-set reason for a protected tag", () => {
+    expect(classifyImage({ id: "sha1", repoTags: ["openship/app-web:keep"] }, keep)).toEqual({
+      action: "keep",
+      reason: "rollback-window",
+      refs: [],
+    });
+  });
+
+  it("names an image a container still references as in-use instead of a removal candidate", () => {
+    const img = { id: "sha2", repoTags: ["openship/app-web:bld_old"] };
+    expect(classifyImage(img, keep, { usedImageIds: new Set(["sha2"]) })).toEqual({
+      action: "keep",
+      reason: "in-use",
+      refs: [],
+    });
+    // Without the container listing it is what the sweep would try to remove.
+    expect(classifyImage(img, keep)).toEqual({
+      action: "remove",
+      reason: "superseded",
+      refs: ["openship/app-web:bld_old"],
+    });
+  });
+
+  it("removes only own tags, keeps a re-purposed image, and removes a dangling leftover by id", () => {
+    expect(
+      classifyImage(
+        { id: "sha3", repoTags: ["openship/app-web:bld_old", "myteam/custom:latest"] },
+        keep,
+      ).refs,
+    ).toEqual(["openship/app-web:bld_old"]);
+    expect(classifyImage({ id: "sha4", repoTags: ["postgres:16-alpine"] }, keep)).toEqual({
+      action: "keep",
+      reason: "foreign-tag",
+      refs: [],
+    });
+    expect(classifyImage({ id: "sha5", repoTags: [] }, keep)).toEqual({
+      action: "remove",
+      reason: "dangling",
+      refs: ["sha5"],
+    });
+  });
+
+  it("age filter: keeps a young or age-unknown candidate, still removes an old one, never overrides the keep-set", () => {
+    const opts = { minAgeMs: 30 * DAY, now };
+    const young = { id: "y", repoTags: ["openship/app-web:bld_y"], createdAt: now - 2 * DAY };
+    const old = { id: "o", repoTags: ["openship/app-web:bld_o"], createdAt: now - 45 * DAY };
+    const unknown = { id: "u", repoTags: ["openship/app-web:bld_u"], createdAt: null };
+    expect(classifyImage(young, keep, opts)).toMatchObject({ action: "keep", reason: "min-age" });
+    expect(classifyImage(unknown, keep, opts)).toMatchObject({ action: "keep", reason: "min-age" });
+    expect(classifyImage(old, keep, opts)).toMatchObject({
+      action: "remove",
+      reason: "superseded",
+    });
+    // An ancient image inside the rollback window stays, age or not.
+    expect(
+      classifyImage({ id: "k", repoTags: ["openship/app-web:keep"], createdAt: 0 }, keep, opts),
+    ).toMatchObject({ action: "keep", reason: "rollback-window" });
+  });
+});
+
+describe("parseMinAge", () => {
+  it("accepts d/h/w/m units and bare days", () => {
+    expect(parseMinAge("30d")).toBe(30 * 86_400_000);
+    expect(parseMinAge("12h")).toBe(12 * 3_600_000);
+    expect(parseMinAge("2w")).toBe(14 * 86_400_000);
+    expect(parseMinAge("90m")).toBe(90 * 60_000);
+    expect(parseMinAge("7")).toBe(7 * 86_400_000);
+  });
+
+  it("rejects zero and junk rather than silently running an unfiltered sweep", () => {
+    for (const bad of ["0d", "", "soon", "30 days", "-5d"])
+      expect(() => parseMinAge(bad)).toThrow();
   });
 });

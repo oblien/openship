@@ -33,6 +33,7 @@ import * as migration from "./migration/migration.controller";
 import * as dataTransfer from "./data-transfer/data-transfer.controller";
 import * as systemHealth from "./system-health.controller";
 import * as edgeOrphans from "./edge-orphans.controller";
+import * as imageGc from "./image-gc.controller";
 
 const r = secureRouter(new Hono(), {
   module: "system",
@@ -94,6 +95,19 @@ r.post(
   { tag: "settings:admin" },
   requireInstanceAdmin(),
   edgeOrphans.removeUntrackedEdgeSite,
+);
+
+/* ── Built-image GC (the `images:gc` job, operator-facing) ──────────
+ * `plan` is a read-only dry run naming what a sweep would remove and why the
+ * rest stays; `run` is the sweep itself, recorded as a manual job run. Both
+ * walk EVERY org's projects and hosts, so — like /edge/untracked above — the
+ * org-singleton `job:*` tag alone is not a boundary; instance admin is. */
+r.get("/image-gc/plan", { tag: "job:read" }, requireInstanceAdmin(), imageGc.plan);
+r.post(
+  "/image-gc/run",
+  { tag: "job:write", body: imageGc.ImageGcRunBody },
+  requireInstanceAdmin(),
+  imageGc.run,
 );
 
 /* ── Authenticated routes (dashboard settings page) ─────────────── */

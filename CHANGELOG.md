@@ -5,6 +5,22 @@ the in-app updater surfaces critical advisories from `release-advisories.json`.
 
 ## Unreleased
 
+### Maintenance
+
+- **The built-image garbage collector is inspectable and runnable by hand** —
+  `openship system image-gc --dry-run` lists every project's build images on its
+  deploy host with the decision the `images:gc` sweep would take and why (active,
+  pinned, inside the rollback window, in use, operator-retagged, or superseded),
+  the rollback window that decided it, the job's schedule and last run, and the
+  space a run would reclaim. Without `--dry-run` it confirms and runs the sweep,
+  recorded as a manual `images:gc` job run. `--older-than 30d` narrows a run to
+  superseded images at least that old; age never overrides the keep-set. Backed
+  by `GET /api/system/image-gc/plan` and `POST /api/system/image-gc/run`
+  (instance admin). `openship system runtime-images` lists the previous
+  `openship-api` / `openship-dashboard` / `openship-edge` images an update leaves
+  on the host and, with `--prune`, removes all but the referenced version and
+  `--keep` previous ones (#779).
+
 ## 0.6.10
 
 This release hardens the full deployment lifecycle, makes Compose reconciliation

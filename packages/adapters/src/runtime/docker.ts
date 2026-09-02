@@ -3352,10 +3352,16 @@ export class DockerRuntime implements RuntimeAdapter {
    * reconciles this on-host set against the DB keep-set. Includes untagged
    * (dangling) superseded finals: labels persist after the tag is removed.
    */
-  async listProjectImages(
-    projectId: string,
-  ): Promise<
-    Array<{ id: string; repoTags: string[]; buildId?: string; deploymentId?: string; size: number }>
+  async listProjectImages(projectId: string): Promise<
+    Array<{
+      id: string;
+      repoTags: string[];
+      buildId?: string;
+      deploymentId?: string;
+      size: number;
+      /** Image creation time (epoch ms); null when the daemon didn't report one. */
+      createdAt: number | null;
+    }>
   > {
     const images = await this.docker.listImages({
       filters: { label: [`openship.project=${projectId}`] },
@@ -3366,6 +3372,8 @@ export class DockerRuntime implements RuntimeAdapter {
       buildId: img.Labels?.[OPENSHIP_LABEL.build],
       deploymentId: img.Labels?.[OPENSHIP_LABEL.deployment],
       size: img.Size ?? 0,
+      // Docker reports seconds; every other timestamp in this codebase is ms.
+      createdAt: typeof img.Created === "number" && img.Created > 0 ? img.Created * 1000 : null,
     }));
   }
 

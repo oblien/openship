@@ -9,11 +9,18 @@
 import { Command } from "commander";
 import ora, { type Ora } from "ora";
 import { readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { apiRequest, ApiError } from "../lib/api-client";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { printJson, printTable, isJsonMode, ok, info, err } from "../lib/output";
+import {
+  DOCKER_IMAGES_FORMAT,
+  parseContainerImageRefs,
+  parseDockerImages,
+  planRuntimeImagePrune,
+} from "../lib/runtime-images";
 
 /** Domain target for the "own server" migration path (preflight + start). */
 type DomainChoice =
@@ -527,12 +534,324 @@ dataTransferCommand
     });
   });
 
+/* ── image-gc ────────────────────────────────────────────────────────
+ * GET  /api/system/image-gc/plan → imageGc.plan (read-only dry run)
+ * POST /api/system/image-gc/run  → imageGc.run  (the sweep, recorded as a
+ *                                  manual `images:gc` job run)
+ * The operator-facing side of the built-image garbage collector (#779): what is
+ * on each deploy host, what a sweep would remove, and WHY the rest stays.
+ */
+interface ImageGcPlanImage {
+  repoTags: string[];
+  size: number;
+  createdAt: number | null;
+  action: "keep" | "remove";
+  reason: string;
+}
+
+interface ImageGcPlanProject {
+  slug: string;
+  serverId: string | null;
+  rollbackWindow: { window: number; source: string } | null;
+  images: ImageGcPlanImage[];
+  reclaimableBytes: number;
+  skipped: string | null;
+  error: string | null;
+}
+
+interface ImageGcPlan {
+  generatedAt: string;
+  minAgeMs: number | null;
+  job: {
+    enabled: boolean;
+    cron: string | null;
+    lastRun: {
+      status: string;
+      trigger: string;
+      startedAt: string;
+      summary: Record<string, unknown> | null;
+      error: string | null;
+    } | null;
+  } | null;
+  projects: ImageGcPlanProject[];
+  totals: {
+    projects: number;
+    scanned: number;
+    images: number;
+    candidates: number;
+    reclaimableBytes: number;
+    kept: Record<string, number>;
+    errors: number;
+  };
+}
+
+interface ImageGcRunResult {
+  key: string;
+  minAgeMs: number | null;
+  summary: {
+    scanned: number;
+    removed: number;
+    bytesReclaimed: number;
+    skipped: number;
+    failed: number;
+  };
+}
+
+function fmtBytes(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(0)} MB`;
+  return `${(n / 1e3).toFixed(0)} kB`;
+}
+
+function fmtAge(createdAt: number | null, now: number): string {
+  if (createdAt === null) return "?";
+  const days = Math.floor((now - createdAt) / 86_400_000);
+  if (days >= 1) return `${days}d`;
+  return `${Math.max(0, Math.floor((now - createdAt) / 3_600_000))}h`;
+}
+
+function describeLastRun(run: NonNullable<ImageGcPlan["job"]>["lastRun"]): string {
+  if (!run) return "never";
+  const when = new Date(run.startedAt).toISOString().replace("T", " ").slice(0, 16);
+  const s = run.summary ?? {};
+  const detail =
+    run.status === "failed"
+      ? (run.error ?? "failed")
+      : `removed ${s.removed ?? 0}, ${fmtBytes(Number(s.bytesReclaimed ?? 0))} reclaimed, ` +
+        `${s.skipped ?? 0} in use, ${s.failed ?? 0} host error(s)`;
+  return `${when} · ${run.status} (${run.trigger}) · ${detail}`;
+}
+
+function renderImageGcPlan(plan: ImageGcPlan): void {
+  const now = Date.parse(plan.generatedAt);
+  const job = plan.job;
+  printTable(
+    [
+      { setting: "job", value: "images:gc" },
+      { setting: "enabled", value: job ? (job.enabled ? "yes" : "no") : "not seeded" },
+      { setting: "schedule", value: job?.cron ?? "" },
+      { setting: "last run", value: describeLastRun(job?.lastRun ?? null) },
+      {
+        setting: "age filter",
+        value:
+          plan.minAgeMs === null
+            ? "none"
+            : `only images older than ${fmtAge(now - plan.minAgeMs, now)}`,
+      },
+    ],
+    ["setting", "value"],
+  );
+  process.stdout.write("\n");
+
+  const rows: Record<string, unknown>[] = [];
+  for (const p of plan.projects) {
+    const rollback = p.rollbackWindow
+      ? `${p.rollbackWindow.window} (${p.rollbackWindow.source})`
+      : "";
+    if (p.skipped || p.error) {
+      rows.push({
+        project: p.slug,
+        image: p.error ? `error: ${p.error}` : `skipped: ${p.skipped}`,
+        size: "",
+        age: "",
+        rollback,
+        decision: "",
+        reason: "",
+      });
+      continue;
+    }
+    for (const img of p.images) {
+      rows.push({
+        project: p.slug,
+        image: img.repoTags[0] ?? "<untagged>",
+        size: fmtBytes(img.size),
+        age: fmtAge(img.createdAt, now),
+        rollback,
+        decision: img.action,
+        reason: img.reason,
+      });
+    }
+  }
+  printTable(rows, ["project", "image", "size", "age", "rollback", "decision", "reason"]);
+
+  const t = plan.totals;
+  const kept = Object.entries(t.kept)
+    .map(([reason, n]) => `${reason} ${n}`)
+    .join(", ");
+  info(
+    `\n  ${t.images} image(s) across ${t.scanned}/${t.projects} inspected project(s) · ` +
+      `${t.candidates} removable (~${fmtBytes(t.reclaimableBytes)})` +
+      (kept ? ` · kept: ${kept}` : "") +
+      (t.errors ? ` · ${t.errors} host error(s)` : ""),
+  );
+  info(
+    "  Sizes are Docker's per-image figures; shared layers mean the space actually freed can be lower.\n",
+  );
+}
+
+const imageGcCommand = new Command("image-gc")
+  .description("Inspect or run the built-image garbage collector (the images:gc job)")
+  .option(
+    "--dry-run",
+    "Show what a sweep would remove and why the rest stays, without touching Docker",
+  )
+  .option(
+    "--older-than <age>",
+    "Only remove superseded images at least this old (e.g. 30d, 12h, 2w)",
+  )
+  .option("-y, --yes", "Skip the confirmation prompt")
+  .action(async (opts: { dryRun?: boolean; olderThan?: string; yes?: boolean }) => {
+    await guarded(async () => {
+      const qs = opts.olderThan ? `?olderThan=${encodeURIComponent(opts.olderThan)}` : "";
+      const spin = spinner("Inspecting built images on every deploy host…");
+      let plan: ImageGcPlan;
+      try {
+        plan = await apiRequest<ImageGcPlan>(`/system/image-gc/plan${qs}`);
+        spin?.stop();
+      } catch (e) {
+        spin?.fail("Inspection failed.");
+        throw e;
+      }
+
+      if (opts.dryRun) {
+        report(plan, () => renderImageGcPlan(plan));
+        return;
+      }
+
+      if (!isJsonMode()) renderImageGcPlan(plan);
+      if (plan.totals.candidates === 0) {
+        report({ plan, run: null }, () => ok("  Nothing to remove.\n"));
+        return;
+      }
+      const question =
+        `Remove ${plan.totals.candidates} image(s), ~${fmtBytes(plan.totals.reclaimableBytes)}?` +
+        (opts.olderThan ? ` (only those older than ${opts.olderThan})` : "");
+      if (!(await confirm(question, opts.yes === true))) {
+        err("\n  Aborted. Re-run with --yes to skip the prompt, or --dry-run to only inspect.\n");
+        process.exit(1);
+      }
+
+      const sweep = spinner("Removing superseded images…");
+      try {
+        const run = await apiRequest<ImageGcRunResult>("/system/image-gc/run", {
+          method: "POST",
+          body: JSON.stringify(opts.olderThan ? { olderThan: opts.olderThan } : {}),
+        });
+        sweep?.succeed("Sweep finished (recorded as a manual images:gc run).");
+        report({ plan, run }, () => {
+          const s = run.summary;
+          ok(
+            `\n  Removed ${s.removed} image(s), ${fmtBytes(s.bytesReclaimed)} reclaimed · ` +
+              `${s.skipped} kept (in use) · ${s.failed} host error(s) · ${s.scanned} project(s) scanned.\n`,
+          );
+        });
+      } catch (e) {
+        sweep?.fail("Sweep failed.");
+        throw e;
+      }
+    });
+  });
+
+/* ── runtime-images ──────────────────────────────────────────────────
+ * Host-local, no API: the previous openship-api / -dashboard / -edge images
+ * `openship update` leaves on THIS machine (#779). The built-image GC above is
+ * label-scoped to project builds and can never touch these, so they are listed
+ * and — only on --prune — untagged here, keeping the version a container
+ * references plus --keep previous ones for a quick downgrade.
+ */
+const runtimeImagesCommand = new Command("runtime-images")
+  .description("List previous Openship control-plane images left on this host by updates")
+  .option("--prune", "Remove versions beyond the referenced one and --keep previous")
+  .option("--keep <n>", "Previous versions to keep for a quick downgrade", "1")
+  .option("-y, --yes", "Skip the confirmation prompt")
+  .action(async (opts: { prune?: boolean; keep: string; yes?: boolean }) => {
+    const keepPrevious = Number.parseInt(opts.keep, 10);
+    if (!Number.isInteger(keepPrevious) || keepPrevious < 0) {
+      err("\n  --keep must be a whole number of previous versions (0 or more).\n");
+      process.exit(1);
+    }
+    const docker = (args: string[]) => spawnSync("docker", args, { encoding: "utf8" });
+    const images = docker(["images", "--format", DOCKER_IMAGES_FORMAT]);
+    if (images.status !== 0) {
+      err(
+        `\n  Could not list Docker images: ${(images.stderr || images.error?.message || "").trim()}\n`,
+      );
+      process.exit(1);
+    }
+    // Stopped containers count too: a `docker start` of an old container must
+    // never find its image gone.
+    const ps = docker(["ps", "-a", "--format", "{{.Image}}"]);
+    if (ps.status !== 0) {
+      err(`\n  Could not list Docker containers: ${(ps.stderr || "").trim()}\n`);
+      process.exit(1);
+    }
+    const plan = planRuntimeImagePrune(parseDockerImages(images.stdout), {
+      inUse: parseContainerImageRefs(ps.stdout),
+      keepPrevious,
+    });
+    const doomed = plan.filter((v) => v.action === "remove");
+
+    if (!opts.prune) {
+      report(plan, () => {
+        printTable(
+          plan.map((v) => ({
+            image: v.ref,
+            size: v.size,
+            created: v.createdAt,
+            decision: v.action,
+            reason: v.reason,
+          })),
+          ["image", "size", "created", "decision", "reason"],
+        );
+        if (doomed.length > 0) {
+          info(
+            `\n  ${doomed.length} image(s) would be removed by --prune (keeping ${keepPrevious} previous version(s)).\n`,
+          );
+        } else if (plan.length > 0) {
+          info("\n  Nothing beyond the referenced version and the kept previous ones.\n");
+        }
+      });
+      return;
+    }
+
+    if (doomed.length === 0) {
+      report({ plan, removed: [], failed: [] }, () => ok("\n  Nothing to remove.\n"));
+      return;
+    }
+    if (!isJsonMode()) {
+      printTable(
+        doomed.map((v) => ({ image: v.ref, size: v.size, created: v.createdAt })),
+        ["image", "size", "created"],
+      );
+    }
+    if (!(await confirm(`Remove these ${doomed.length} image(s)?`, opts.yes === true))) {
+      err("\n  Aborted. Re-run with --yes to skip the prompt.\n");
+      process.exit(1);
+    }
+    const removed: string[] = [];
+    const failed: { ref: string; error: string }[] = [];
+    for (const v of doomed) {
+      // No --force: if the daemon disagrees about a reference, it wins.
+      const rm = docker(["rmi", v.ref]);
+      if (rm.status === 0) removed.push(v.ref);
+      else failed.push({ ref: v.ref, error: (rm.stderr || "").trim() });
+    }
+    report({ plan, removed, failed }, () => {
+      ok(`\n  Removed ${removed.length} image(s).`);
+      for (const f of failed) err(`  ✗ ${f.ref}: ${f.error}`);
+      process.stderr.write("\n");
+    });
+    if (failed.length > 0) process.exit(1);
+  });
+
 /* ── parent ──────────────────────────────────────────────────────────── */
 export const systemCommand = new Command("system")
-  .description("Instance settings, onboarding, migration, and data transfer")
+  .description("Instance settings, onboarding, migration, data transfer, and image maintenance")
   .addCommand(settingsCommand)
   .addCommand(onboardingCommand)
   .addCommand(upgradeToAuthCommand)
   .addCommand(browseCommand)
   .addCommand(migrationCommand)
-  .addCommand(dataTransferCommand);
+  .addCommand(dataTransferCommand)
+  .addCommand(imageGcCommand)
+  .addCommand(runtimeImagesCommand);

@@ -62,6 +62,8 @@ user or session exists), and the two `/setup` routes are public to the user sess
 | `GET /api/system/install/session` | `server:read` | Get the active (or a specific) install session's state. |
 | `GET /api/system/monitor/stream` | `server:read` | Stream live CPU / memory / disk stats over SSE. |
 | `GET /api/system/browse` | `settings:read` | List child directories of a path (folder picker). |
+| `GET /api/system/image-gc/plan` | `job:read` · instance admin | Dry run of the built-image GC: every project's images with the decision a sweep would take and why. |
+| `POST /api/system/image-gc/run` | `job:write` · instance admin | Run the built-image GC now, recorded as a manual `images:gc` job run. |
 | `POST /api/system/migration/preflight` | `settings:admin` | Team-migration readiness check (read-only). |
 | `POST /api/system/migration/start` | `settings:admin` | Migrate single-user → your own remote server. |
 | `POST /api/system/migration/start-cloud` | `settings:admin` | Migrate → Openship Cloud. |
@@ -325,6 +327,55 @@ openship system browse /srv/apps
 
 Returns `{ path, directories: [{ name, path, isProject }] }` — projects first, then alphabetical. Non-directory
 paths return **400**, missing paths **404**.
+
+## Built-image garbage collection
+
+The `images:gc` system job prunes each project's superseded build images on its deploy host,
+keeping the active deployment, pinned deployments and the newest `rollbackWindow` releases. These
+two endpoints make it inspectable and runnable by hand. Both are instance-admin only: they walk
+every organization's projects and hosts.
+
+`GET /api/system/image-gc/plan` changes nothing. It returns the job's schedule row and last run,
+then one entry per project with the images found on its host:
+
+```json
+{
+  "data": {
+    "generatedAt": "2026-09-02T04:23:00.000Z",
+    "minAgeMs": null,
+    "job": { "enabled": true, "cron": "23 4 * * *", "lastRun": { "status": "success", "trigger": "schedule", "summary": { "removed": 3, "bytesReclaimed": 1200000000 } } },
+    "projects": [
+      {
+        "slug": "rentabo-test",
+        "serverId": "srv_123",
+        "rollbackWindow": { "window": 3, "source": "auto" },
+        "images": [
+          { "repoTags": ["openship/rentabo-test:bld_n15VK9Lb5rpBcFVp"], "size": 812000000, "createdAt": 1756700000000, "action": "keep", "reason": "active", "refs": [] },
+          { "repoTags": ["openship/rentabo-test:bld_BckMwPbMeXtUeuzO"], "size": 810000000, "createdAt": 1756500000000, "action": "keep", "reason": "rollback-window", "refs": [] },
+          { "repoTags": ["openship/rentabo-test:bld_-IcPtKRJN3OA0pZN"], "size": 805000000, "createdAt": 1750000000000, "action": "remove", "reason": "superseded", "refs": ["openship/rentabo-test:bld_-IcPtKRJN3OA0pZN"] }
+        ],
+        "reclaimableBytes": 805000000,
+        "skipped": null,
+        "error": null
+      }
+    ],
+    "totals": { "projects": 1, "scanned": 1, "images": 3, "candidates": 1, "reclaimableBytes": 805000000, "kept": { "active": 1, "rollback-window": 1 }, "errors": 0 }
+  }
+}
+```
+
+Keep reasons are `active`, `pinned`, `rollback-window`, `in-use` (a container on the host still
+references it), `foreign-tag` (only operator-added tags remain) and `min-age` (younger than the
+requested age, or age unknown). Removal reasons are `superseded` (our own tags) and `dangling`
+(an untagged leftover). `skipped` is `no-active-deployment` or `not-docker` when there is no host
+to inspect; `error` carries a host that should have been inspected but couldn't be.
+
+`?olderThan=30d` (also `12h`, `2w`, `90m`) restricts removal candidates to images at least that
+old. Age never overrides a keep reason.
+
+`POST /api/system/image-gc/run` with an optional `{ "olderThan": "30d" }` body runs the sweep and
+returns `{ key, minAgeMs, summary: { scanned, removed, bytesReclaimed, skipped, failed } }` — the
+same summary the scheduled tick records.
 
 ## Team-mode migration
 
