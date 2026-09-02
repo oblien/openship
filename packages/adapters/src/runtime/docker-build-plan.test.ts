@@ -113,6 +113,20 @@ describe("generateDockerfile — PHP with a JS asset pipeline", () => {
     expect(builderStage).not.toContain("npm run build");
   });
 
+  it("copies the installed vendor/ into the asset stage before the build so package CSS resolves", () => {
+    // A Laravel + Flux/Filament app @imports and Tailwind-@sources CSS from
+    // vendor/, so the asset build needs the Composer tree that only the builder
+    // has — the asset stage's `COPY . /workspace` doesn't bring git-ignored
+    // vendor/. Without this the build fails: Can't resolve ../../vendor/…/flux.css.
+    const assetsStage = df.slice(df.indexOf("AS assets"), df.indexOf("AS runtime"));
+    expect(assetsStage).toContain("COPY --from=builder /workspace/vendor /workspace/vendor");
+    // vendor/ has to land BEFORE the asset build runs, not after it.
+    const vendorIdx = assetsStage.indexOf("COPY --from=builder /workspace/vendor");
+    const buildIdx = assetsStage.indexOf("npm run build");
+    expect(vendorIdx).toBeGreaterThan(-1);
+    expect(vendorIdx).toBeLessThan(buildIdx);
+  });
+
   it("preludes corepack for a non-npm package manager in the asset stage", () => {
     const pnpm = generateDockerfile(phpConfig({ buildCommand: "pnpm install && pnpm build" }));
     // The project PM is `composer`, so the prelude has to come from the command.
