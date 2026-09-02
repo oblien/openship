@@ -60,6 +60,7 @@ import {
   setupPromptState,
 } from "./setup-session";
 import type { PromptUserFn } from "@repo/adapters";
+import { resolveRequiredComponents } from "./server-check.requirements";
 
 // ─── Allowlisted components ──────────────────────────────────────────────────
 
@@ -97,16 +98,9 @@ async function withCapabilities<T extends { name: string; installed?: boolean }>
 }
 
 /**
- * Core components required for the current deployment mode.
+ * Core components required on every remote deployment server.
  * These are always shown in System Health regardless of install state.
  */
-function resolveRequiredComponents(): string[] {
-  const mode = env.DEPLOY_MODE;
-  if (mode === "docker") return ["docker", "git"];
-  if (mode === "bare") return ["git"];
-  return ["git"];
-}
-
 /**
  * Infrastructure components - optional but important for app deployment.
  * Shown in System Health only when detected (installed) on the server.
