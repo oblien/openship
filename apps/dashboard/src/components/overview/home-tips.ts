@@ -24,7 +24,7 @@ export const PRODUCT_TIPS: ProductTip[] = [
   { id: "customDomain", href: "/projects" },
   { id: "autoDeploy", href: "/settings" },
   { id: "rollback", href: "/deployments" },
-  { id: "apps", href: "/apps" },
+  { id: "apps", href: "/library" },
   { id: "servers", href: "/servers", selfHostedOnly: true },
   { id: "jobs", href: "/jobs", selfHostedOnly: true },
   { id: "backups", href: "/backups" },

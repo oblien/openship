@@ -82,7 +82,6 @@ export interface NavSection {
 const MAIN_ITEMS: NavItem[] = [
   { key: "home", href: "/", icon: LayoutDashboard },
   { key: "projects", href: "/projects", icon: FolderKanban },
-  { key: "apps", href: "/apps", icon: Building2 },
   { key: "deployments", href: "/deployments", icon: Rocket },
   // MAIN, not infrastructure: `/api/issues` reports project, domain and update items on
   // the SaaS too (only the server/container sources resolve empty there), and the

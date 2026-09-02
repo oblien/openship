@@ -123,12 +123,11 @@ export function Sidebar() {
   const brand = useBrandName();
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [navCounts, setNavCounts] = useState<{ projects: number; apps: number } | null>(null);
+  const [navCounts, setNavCounts] = useState<number | null>(null);
   const [navCountsRevision, setNavCountsRevision] = useState(getSidebarNavCountsRevision);
   const countFor = (key: string): number | null => {
     if (!navCounts) return null;
-    if (key === "projects") return navCounts.projects;
-    if (key === "apps") return navCounts.apps;
+    if (key === "projects") return navCounts;
     return null;
   };
 
@@ -197,10 +196,9 @@ export function Sidebar() {
     };
   }, [user?.id]);
 
-  // Nav counts — Projects & Apps only, from the same `projects/home` payload
-  // both pages load. Apps are projects with `isApp` (catalog installs); the
-  // Projects nav counts the REST (real projects), exactly mirroring what each
-  // page renders — apps live only under Apps, never double-counted.
+  // Nav counts — total projects from the same `projects/home` payload
+  // both pages load. Apps are included in this count (they're projects with
+  // `isApp`), so the Projects nav count shows the real total.
   //
   // Gated on `orgsLoaded`: the count fetch must run under the resolved active
   // org (the org effect above sets `setActiveOrganizationId` a round-trip
@@ -216,16 +214,14 @@ export function Sidebar() {
         // Distinct by id — the payload merges local + cloud, which can list the
         // same project twice; a dupe must not inflate the tally.
         const seen = new Set<string>();
-        let projects = 0;
-        let apps = 0;
+        let count = 0;
         for (const p of res.projects) {
           const id = p?.id;
           if (id && seen.has(id)) continue;
           if (id) seen.add(id);
-          if (p?.isApp) apps += 1;
-          else projects += 1;
+          count += 1;
         }
-        setNavCounts({ projects, apps });
+        setNavCounts(count);
       })
       .catch(() => {
         /* counts are optional chrome — silent on failure */
