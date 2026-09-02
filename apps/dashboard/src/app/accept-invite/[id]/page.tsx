@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Check, X } from "lucide-react";
@@ -22,7 +22,6 @@ type InviteState =
  */
 const orgClient = (authClient as unknown as {
   organization: {
-    getInvitation: (opts: { id: string }) => Promise<{ data?: { invitation: { email: string; role: string; status: string }; organization: { id: string; name: string } }; error?: { message?: string } }>;
     acceptInvitation: (opts: { invitationId: string }) => Promise<{ data?: { invitation: { organizationId: string }; member?: unknown }; error?: { message?: string } }>;
     rejectInvitation: (opts: { invitationId: string }) => Promise<{ error?: { message?: string } }>;
   };
@@ -46,37 +45,64 @@ export default function AcceptInvitePage() {
 
   const inviteId = String(params.id);
 
+  // Once the invitation has been accepted, the effect must not re-run and
+  // clobber the success screen: signing in (right after invite-signup) flips
+  // `session`, which retriggers this effect, and a get-invitation for an
+  // already-accepted invite now fails with "Invitation not found" — which
+  // would paint an error over the success state.
+  const settledRef = useRef(false);
+
   useEffect(() => {
-    if (sessionLoading) return;
+    if (sessionLoading || settledRef.current) return;
+    // Don't probe the invitation again mid-accept / after success — signing in
+    // (invite-signup path) flips `session`, which retriggers this effect while
+    // an accept is already in flight.
+    if (state.kind === "accepting" || state.kind === "accepted") return;
+
+    // A first-time invitee has no session yet, and better-auth's get-invitation
+    // requires one — calling it here dead-ends every new invitee with an error
+    // instead of the signup form. The invitation id in the URL is itself the
+    // credential: /api/system/invite-signup re-validates it server-side
+    // (pending, unexpired, admin inviter) and derives the email from it, so the
+    // logged-out path goes straight to sign-in / create-account. Signed-in
+    // users still get the full get-invitation details (org, role,
+    // wrong-account detection).
+    if (!session?.user) {
+      setState({ kind: "needs-login" });
+      return;
+    }
 
     (async () => {
       try {
-        const res = await orgClient.getInvitation({ id: inviteId });
-        if (res.error) {
-          setState({ kind: "error", message: res.error.message ?? m.invalidInvitation });
+        // NOTE: better-auth's org client emits POST for this route while the
+        // server registers it as GET-only — a guaranteed 404 (observed on
+        // better-auth 1.5.4). Hit the endpoint directly with GET; the session
+        // cookie rides along same-origin.
+        const inv = await api.get<{
+          email: string;
+          role: string;
+          status: string;
+          organizationName?: string;
+        }>(`auth/organization/get-invitation?id=${encodeURIComponent(inviteId)}`);
+        // The accept may have completed while this request was in flight —
+        // never paint a stale error over the success screen.
+        if (settledRef.current) return;
+        if (!inv?.email) {
+          setState({ kind: "error", message: m.invalidInvitation });
           return;
         }
-        const { invitation, organization } = res.data!;
-        if (invitation.status !== "pending") {
+        if (inv.status !== "pending") {
           setState({
             kind: "error",
-            message: interpolate(m.invitationStatus, { status: invitation.status }),
+            message: interpolate(m.invitationStatus, { status: inv.status }),
           });
           return;
         }
-        if (!session?.user) {
-          setState({
-            kind: "needs-login",
-            email: invitation.email,
-            organizationName: organization.name,
-          });
-          return;
-        }
-        if (session.user.email !== invitation.email) {
+        if (session.user.email !== inv.email) {
           setState({
             kind: "error",
             message: interpolate(m.wrongAccount, {
-              email: invitation.email,
+              email: inv.email,
               currentEmail: session.user.email,
             }),
           });
@@ -84,9 +110,9 @@ export default function AcceptInvitePage() {
         }
         setState({
           kind: "ready",
-          email: invitation.email,
-          organizationName: organization.name,
-          role: invitation.role,
+          email: inv.email,
+          organizationName: inv.organizationName ?? "",
+          role: inv.role,
         });
       } catch (err) {
         setState({
@@ -123,6 +149,7 @@ export default function AcceptInvitePage() {
       console.warn("[accept-invite] materialize failed (continuing):", err);
     }
 
+    settledRef.current = true;
     setState({
       kind: "accepted",
       organizationId: res.data.invitation.organizationId,
@@ -151,23 +178,32 @@ export default function AcceptInvitePage() {
     setSignupBusy(true);
     setSignupError(null);
     try {
-      await api.post("system/invite-signup", {
-        invitationId: inviteId,
-        name: signupName.trim(),
+      // The server derives the account email from the invitation token — the
+      // response's email is authoritative, so sign in with it rather than any
+      // client-side value.
+      const created = await api.post<{ ok?: boolean; email?: string }>(
+        "system/invite-signup",
+        {
+          invitationId: inviteId,
+          name: signupName.trim(),
+          password: signupPassword,
+        },
+      );
+      const si = await authClient.signIn.email({
+        email: created?.email || email,
         password: signupPassword,
       });
+      if (si.error) {
+        setSignupBusy(false);
+        setSignupError(si.error.message ?? (m.acceptFailed ?? "Sign-in failed"));
+        return;
+      }
+      await handleAccept();
     } catch (err) {
       setSignupBusy(false);
       setSignupError(getApiErrorMessage(err, m.acceptFailed ?? "Sign-up failed"));
       return;
     }
-    const si = await authClient.signIn.email({ email, password: signupPassword });
-    if (si.error) {
-      setSignupBusy(false);
-      setSignupError(si.error.message ?? (m.acceptFailed ?? "Sign-in failed"));
-      return;
-    }
-    await handleAccept();
   };
 
   return (
@@ -181,13 +217,19 @@ export default function AcceptInvitePage() {
           <>
             <div>
               <h1 className="text-xl font-semibold text-foreground">{m.invitedTitle}</h1>
-              <p className="text-sm text-muted-foreground mt-2">
-                {m.needsLoginPre}
-                <strong>{state.organizationName}</strong>
-                {m.needsLoginMid}
-                <strong>{state.email}</strong>
-                {m.needsLoginPost}
-              </p>
+              {state.organizationName && state.email ? (
+                <p className="text-sm text-muted-foreground mt-2">
+                  {m.needsLoginPre}
+                  <strong>{state.organizationName}</strong>
+                  {m.needsLoginMid}
+                  <strong>{state.email}</strong>
+                  {m.needsLoginPost}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground mt-2">
+                  {interpolate(m.joinTitle, { org: m.theOrganization })}
+                </p>
+              )}
             </div>
             {showSignup ? (
               <form
