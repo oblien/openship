@@ -55,7 +55,9 @@ import {
   listBranches as listGitHubBranches,
   getLatestCommit,
   resolveWebhookStrategy,
+  compareCommits,
 } from "../github/github.service";
+import { rootScopeAffected } from "../github/webhook-changed-files";
 import { getInstallationIdByOrg, getInstallUrl } from "../github/github.auth";
 import { domainWebhookUrl } from "../../lib/public-url";
 import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
@@ -2291,7 +2293,11 @@ export async function resolveDeployedDrift(
  * private registry) or a project with no successful deploy reports
  * `behind:false`, so we never show an "outdated" nudge we can't substantiate.
  */
-export async function evaluateDrift(p: Project, upstream: UpstreamDrift) {
+export async function evaluateDrift(
+  p: Project,
+  upstream: UpstreamDrift,
+  ctx?: RequestContext | null,
+) {
   if (!upstream.supported) return { supported: false as const };
   // A cached upstream describes the source it was polled from. If the project has
   // since been repointed (different repo, branch, release source), it answers a
@@ -2307,7 +2313,45 @@ export async function evaluateDrift(p: Project, upstream: UpstreamDrift) {
     // supplied (an abbreviated `--commit`, a tag), so only a PROVABLE difference is
     // drift — otherwise a project deployed at `1eeaf76` is told a new commit
     // `1eeaf76` is available, forever. See compareCommitSha.
-    const behind = compareCommitSha(latestSha, deployedSha) === "different";
+    let behind = compareCommitSha(latestSha, deployedSha) === "different";
+
+    // Monorepo scoping (#637): a branch HEAD that moved without touching this
+    // project's rootDirectory (or a shared/root-config path) must not offer a
+    // redeploy. Uses the SAME leaf matching as the webhook and smart-route
+    // deploys so the update badge and deploy routing always agree on
+    // "affects this project".
+    //
+    // Three fail-soft cases that keep `behind` true: missing ctx (background
+    // caller that can't reach GitHub), compare API failure/network error, and
+    // a possibly-truncated compare response (GitHub caps at 300 files) — the
+    // badge must never miss a real update because the network blinked.
+    const scope = p.rootDirectory?.trim();
+    if (
+      behind &&
+      scope &&
+      scope !== "." &&
+      ctx &&
+      p.gitOwner &&
+      p.gitRepo &&
+      deployedSha &&
+      latestSha
+    ) {
+      const compare = await compareCommits(ctx, p.gitOwner, p.gitRepo, deployedSha, latestSha).catch(
+        () => null,
+      );
+      // 0 files means the diff between two different SHAs is empty (rare —
+      // GitHub's compare response can have a non-empty status but no file
+      // list). Both that and a non-truncated file list let us decide by
+      // scoping; a missing response or a hit on the 300-file cap leave
+      // `behind` as-is so the badge keeps the conservative answer.
+      if (compare && compare.files.length < 300) {
+        behind = rootScopeAffected(compare.files, {
+          rootDirectory: p.rootDirectory,
+          isMonorepo: p.framework === "monorepo",
+          monorepoSharedPaths: p.monorepoSharedPaths,
+        });
+      }
+    }
     // Is the latest commit already deploying? Then there's nothing to redeploy —
     // it's in flight, so the nudge is suppressed. Computed live, which is why
     // pressing Update quiets every surface immediately.

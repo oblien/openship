@@ -397,7 +397,7 @@ async function driftItem(
 ) {
   const resolved = await upstreamFor(actor, project, row);
   if (!resolved) return null;
-  const status: DriftStatus = await evaluateDrift(project, resolved.upstream).catch(
+  const status: DriftStatus = await evaluateDrift(project, resolved.upstream, actor).catch(
     () => ({ supported: false }) as DriftStatus,
   );
   const view = presentation(status);
@@ -464,7 +464,7 @@ export async function getProjectDrift(
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!hasDeployedSide(project)) return { supported: false };
-  return evaluateDrift(project, await pollUpstream(ctx, project));
+  return evaluateDrift(project, await pollUpstream(ctx, project), ctx);
 }
 
 // ─── Applying ────────────────────────────────────────────────────────────────

@@ -202,6 +202,33 @@ export function routeServicesByChanges(
   return { mode: "services", serviceIds: matched };
 }
 
+/**
+ * Decide whether a changed-files set affects a project scoped to a root
+ * directory — the update scanner's counterpart to `routeServicesByChanges`
+ * (#637). A root-config or configured monorepo-shared-path change affects
+ * every project in the repo, and any file under the project's own
+ * rootDirectory affects it; a diff confined to other directories does not.
+ *
+ * The matching rule is identical to `routeServicesByChanges`/`serviceMatchesChanges`
+ * so the update badge and the smart-route deploy agree on "affects this
+ * project" by construction.
+ */
+export function rootScopeAffected(
+  files: Iterable<string>,
+  opts: {
+    rootDirectory?: string | null;
+    isMonorepo?: boolean;
+    monorepoSharedPaths?: string[] | null;
+  } = {},
+): boolean {
+  const root = (opts.rootDirectory ?? "").trim();
+  // No scoping root ("" or ".") → the project IS the repo: any change counts.
+  if (!root || root === ".") return true;
+  const set = files instanceof Set ? files : new Set(files);
+  if (classifyChangedFiles(set, opts).forceAll) return true;
+  return serviceMatchesChanges(root, set);
+}
+
 function unionCommitFiles(commits: GitHubPushPayload["commits"] = []): Set<string> {
   const out = new Set<string>();
   for (const c of commits ?? []) {
