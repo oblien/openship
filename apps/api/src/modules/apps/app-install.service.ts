@@ -84,47 +84,49 @@ function signHs256Jwt(secret: string, role: string): string {
  */
 export async function getAppCatalog(ctx: RequestContext) {
   const custom = await listOrgCustomApps(ctx.organizationId);
-  return [...getRuntimeCatalog(), ...custom].filter((t) => !t.unlisted).map((t) => ({
-    id: t.id,
-    name: t.name,
-    description: t.description,
-    kind: t.kind,
-    logo: t.logo,
-    category: t.category,
-    tags: t.tags ?? [],
-    flowHref: t.flowHref,
-    // How the installed app is managed (schema settings / custom href / none).
-    management: getAppManagement(t),
-    // Verified trust mark (official open-source image + reviewed pipeline).
-    verified: !!t.verified,
-    // Hosting model for the catalog badge + wizard notice (self-hosted default).
-    hosting: t.hosting ?? "self-hosted",
-    // What the app needs from the machine — the wizard shows it against the
-    // chosen destination's real capacity, and deploy preflight enforces it.
-    minResources: t.minResources,
-    // A per-org user-uploaded app — always unverified; dashboard shows the warning.
-    custom: !!t.custom,
-    // Not installable this version → dashboard dims it + blocks the click.
-    comingSoon: !t.available,
-    // Needs a newer Openship than this instance → dashboard shows a guided
-    // "Requires Openship ≥ X" state; install is refused server-side too.
-    requiresUpdate: t.requiresUpdate,
-    updateAvailable: t.updateAvailable,
-    // Exposable endpoints (http/tcp) — parity with the in-package template the
-    // wizard reads directly; lets API consumers see what an install exposes.
-    endpoints: getAppEndpoints(t),
-    configFields: (t.configFields ?? [])
-      .filter((f) => !f.generate)
-      .map((f) => ({
-        key: f.key,
-        service: f.service,
-        label: f.label,
-        help: f.help,
-        type: f.type ?? "text",
-        default: f.default,
-        required: f.required ?? false,
-      })),
-  }));
+  return [...getRuntimeCatalog(), ...custom]
+    .filter((t) => !t.unlisted)
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      kind: t.kind,
+      logo: t.logo,
+      category: t.category,
+      tags: t.tags ?? [],
+      flowHref: t.flowHref,
+      // How the installed app is managed (schema settings / custom href / none).
+      management: getAppManagement(t),
+      // Verified trust mark (official open-source image + reviewed pipeline).
+      verified: !!t.verified,
+      // Hosting model for the catalog badge + wizard notice (self-hosted default).
+      hosting: t.hosting ?? "self-hosted",
+      // What the app needs from the machine — the wizard shows it against the
+      // chosen destination's real capacity, and deploy preflight enforces it.
+      minResources: t.minResources,
+      // A per-org user-uploaded app — always unverified; dashboard shows the warning.
+      custom: !!t.custom,
+      // Not installable this version → dashboard dims it + blocks the click.
+      comingSoon: !t.available,
+      // Needs a newer Openship than this instance → dashboard shows a guided
+      // "Requires Openship ≥ X" state; install is refused server-side too.
+      requiresUpdate: t.requiresUpdate,
+      updateAvailable: t.updateAvailable,
+      // Exposable endpoints (http/tcp) — parity with the in-package template the
+      // wizard reads directly; lets API consumers see what an install exposes.
+      endpoints: getAppEndpoints(t),
+      configFields: (t.configFields ?? [])
+        .filter((f) => !f.generate)
+        .map((f) => ({
+          key: f.key,
+          service: f.service,
+          label: f.label,
+          help: f.help,
+          type: f.type ?? "text",
+          default: f.default,
+          required: f.required ?? false,
+        })),
+    }));
 }
 
 /** One app's declared minimum vs. what a chosen destination actually has. */
@@ -229,6 +231,52 @@ export interface InstallAppInput {
   /** Per-endpoint routing the operator CHOSE. A service with no entry gets no
    *  public route — see planInstallRouting. */
   routes?: InstallAppRoute[];
+}
+
+/**
+ * Compose port specs for one installed service after applying the operator's
+ * explicit port-only choices.
+ *
+ * A catalog route/exposedPort declares what the container SERVES; it does not
+ * publish that port. Domain mode needs no public Docker binding because the
+ * edge owns ingress, but port-only mode promises `http://<server>:<port>` and
+ * must therefore persist a fixed all-interface mapping. Existing authored host
+ * remaps are retained (`8203:80` -> `0.0.0.0:8203:80`); an explicit interface is
+ * already a complete author decision and is left alone.
+ */
+export function installServicePorts(
+  serviceName: string,
+  ports: readonly string[] | undefined,
+  routes: readonly InstallAppRoute[] | undefined,
+): string[] {
+  const selected = new Set(
+    (routes ?? [])
+      .filter((route) => route.service === serviceName && route.mode === "port")
+      .map((route) => route.port),
+  );
+  if (selected.size === 0) return [...(ports ?? [])];
+
+  const covered = new Set<number>();
+  const next = (ports ?? []).map((spec) => {
+    const containerPort = parseServicePort(spec);
+    if (containerPort == null || !selected.has(containerPort)) return spec;
+    covered.add(containerPort);
+
+    const protocolMatch = spec.match(/\/(tcp|udp|sctp)$/i);
+    const protocol = protocolMatch?.[0] ?? "";
+    const mapping = protocol ? spec.slice(0, -protocol.length) : spec;
+    const parts = mapping.split(":");
+    // Three-or-more components already name an interface (including IPv6), so
+    // preserve the template author's deliberate bind address.
+    if (parts.length >= 3) return spec;
+    const hostPort = parts.length === 2 ? parts[0] : String(containerPort);
+    return `0.0.0.0:${hostPort}:${containerPort}${protocol}`;
+  });
+
+  for (const port of selected) {
+    if (!covered.has(port)) next.push(`0.0.0.0:${port}:${port}`);
+  }
+  return next;
 }
 
 interface PlannedEndpoint {
@@ -499,7 +547,11 @@ export async function installApp(
   // Pre-generate every grouped secret so generate:"jwt" fields can sign with
   // them regardless of field order (the JWT secret must exist before the keys).
   for (const field of template.configFields ?? []) {
-    if (field.generate === "secret" && field.generateGroup && !groupSecret.has(field.generateGroup)) {
+    if (
+      field.generate === "secret" &&
+      field.generateGroup &&
+      !groupSecret.has(field.generateGroup)
+    ) {
       groupSecret.set(field.generateGroup, generateSecret());
     }
   }
@@ -590,7 +642,14 @@ export async function installApp(
       // No `routes` in the request = no decision expressed; leave the draft's
       // stored routing alone rather than silently unrouting it.
       if ((input.routes ?? []).length > 0) {
-        await updateService(ctx, project.id, existingRow.id, serviceRoutingPatch(routing));
+        await updateService(ctx, project.id, existingRow.id, {
+          ...serviceRoutingPatch(routing),
+          ports: installServicePorts(
+            svc.name,
+            (existingRow.ports as string[] | null) ?? svc.ports,
+            input.routes,
+          ),
+        });
       }
       continue;
     }
@@ -613,7 +672,7 @@ export async function installApp(
     await createService(ctx, project.id, {
       name: svc.name,
       image: svc.image,
-      ports: svc.ports ? [...svc.ports] : [],
+      ports: installServicePorts(svc.name, svc.ports, input.routes),
       dependsOn: svc.dependsOn ? [...svc.dependsOn] : [],
       environment: plainEnv,
       volumes: svc.volumes ? [...svc.volumes] : [],
@@ -624,9 +683,7 @@ export async function installApp(
       restart: svc.restart,
       advanced: {
         ...(svc.healthcheck ? { healthcheck: svc.healthcheck } : {}),
-        ...(filesByService.get(svc.name)?.length
-          ? { files: filesByService.get(svc.name) }
-          : {}),
+        ...(filesByService.get(svc.name)?.length ? { files: filesByService.get(svc.name) } : {}),
         ...(svc.build ? { build: resolveBuild(svc.build) } : {}),
         ...(svc.stopGracePeriod ? { stopGracePeriod: svc.stopGracePeriod } : {}),
       },
