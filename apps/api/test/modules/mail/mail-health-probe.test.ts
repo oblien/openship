@@ -100,6 +100,28 @@ describe("parseMailUnitProbe — container flavor", () => {
       expect(state.status).toBe("unknown");
       expect(state.detail).toContain("permission denied");
     });
+
+    // `2>&1` folds the CLI's stderr in ahead of the verdict, so warnings used to
+    // become the "first line" and a healthy sidecar read as unknown — which is
+    // required-severity, so mail setup halted on it (#783).
+    it("finds the verdict past docker's stderr warnings (#783)", () => {
+      expect(
+        pg(
+          "WARNING: Error loading config file: /root/.docker/config.json: permission denied\ntrue",
+        ).status,
+      ).toBe("active");
+      expect(
+        pg('time="2026-09-02T06:00:00Z" level=warning msg="failed to fetch metadata"\nfalse')
+          .status,
+      ).toBe("inactive");
+    });
+
+    it("still reports missing when warnings precede docker's answer", () => {
+      expect(
+        pg("WARNING: some notice\nError response from daemon: No such object: openship-mail-db")
+          .status,
+      ).toBe("missing");
+    });
   });
 });
 

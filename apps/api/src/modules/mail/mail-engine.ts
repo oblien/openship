@@ -591,13 +591,22 @@ export function parseMailUnitProbe(
 ): MailUnitState {
   if (flavor === "container") {
     if (key === "postgresql") {
-      const value = firstOutputLine(raw);
-      if (value === "true") return { status: "active" };
-      if (value === "false") return { status: "inactive" };
+      // The verdict may not be the FIRST line: `2>&1` (deliberate — see
+      // mailUnitProbeCommand) folds the CLI's stderr into the stream, and docker
+      // prints its warnings ("WARNING: Error loading config file: …",
+      // `level=warning` notices) ahead of the inspect result. Judging line one
+      // turned a healthy sidecar into a required-component failure that halted
+      // mail setup (#783). The template prints exactly `true` or `false`, so an
+      // exact line match anywhere in the output is the daemon's answer and
+      // nothing else's — the same past-the-noise reading the supervisorctl and
+      // systemd branches below already do.
+      const lines = raw.split("\n").map((l) => l.trim());
+      if (lines.includes("true")) return { status: "active" };
+      if (lines.includes("false")) return { status: "inactive" };
       // Only docker saying the container isn't there means missing. A refused
       // daemon or a permission error is a probe we can't conclude from.
-      if (/no such object|no such container/i.test(value)) return { status: "missing" };
-      return { status: "unknown", detail: value || "probe returned no output" };
+      if (/no such object|no such container/i.test(raw)) return { status: "missing" };
+      return { status: "unknown", detail: firstOutputLine(raw) || "probe returned no output" };
     }
     // supervisord always names the program it reports on — "postfix RUNNING pid 12,
     // uptime 0:03:11", or "postfix: ERROR (no such process)". No such line means
