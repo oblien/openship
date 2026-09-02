@@ -28,7 +28,8 @@ const h = vi.hoisted(() => ({
   orgOwner: { userId: "owner_1" } as { userId: string } | null,
 }));
 
-vi.mock("@repo/db", () => ({
+vi.mock("@repo/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   repos: {
     serviceDeployment: {
       findById: async () => h.row,
@@ -54,7 +55,8 @@ vi.mock("../../lib/request-context", () => ({
   buildBackgroundContext: (o: unknown) => o,
 }));
 vi.mock("../../config", () => ({ runtimeTarget: { dashboard: "https://openship.test/" } }));
-vi.mock("@repo/core", () => ({
+vi.mock("@repo/core", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   isServiceSuccessStatus: (s: string) => s === "success" || s === "running",
   isServiceFailureStatus: (s: string) => s === "failure" || s === "cancelled",
 }));

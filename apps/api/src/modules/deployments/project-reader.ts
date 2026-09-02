@@ -1,4 +1,4 @@
-import * as githubService from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import type { RequestContext } from "../../lib/request-context";
 import type { RepoFile } from "../../lib/stack-detector";
 import type { RepoTreeEntry } from "../../lib/project-root-detector";
@@ -13,17 +13,19 @@ export interface ProjectReader {
   listTree: () => Promise<RepoTreeEntry[]>;
 }
 
-export function createGitHubReader(
+export function createVcsReader(
+  provider: string,
   ctx: RequestContext,
   owner: string,
   repo: string,
   branch: string,
 ): ProjectReader {
   let treePromise: Promise<RepoTreeEntry[]> | null = null;
+  const vcs = VcsStrategyFactory.getStrategy(provider);
 
   const readText = async (path: string) => {
     try {
-      const file = await githubService.getFileContent(ctx, owner, repo, path, { branch });
+      const file = await vcs.getFileContent(ctx, owner, repo, path, { branch });
       return file?.content;
     } catch {
       return undefined;
@@ -33,17 +35,25 @@ export function createGitHubReader(
   return {
     listDirectory: async (path: string) => {
       try {
-        const contents = await githubService.listFiles(ctx, owner, repo, {
-          branch,
-          ...(path ? { path } : {}),
+        if (!treePromise) {
+          treePromise = vcs
+            .getTree(ctx, owner, repo, branch)
+            .then((r) => r.tree as RepoTreeEntry[]);
+        }
+        const tree = await treePromise;
+        const prefix = path ? (path.endsWith("/") ? path : path + "/") : "";
+        const files = tree.filter((t) => {
+          if (!prefix && !t.path.includes("/")) return true;
+          if (prefix && t.path.startsWith(prefix)) {
+            const rest = t.path.slice(prefix.length);
+            return !rest.includes("/");
+          }
+          return false;
         });
-
-        return Array.isArray(contents)
-          ? contents.map((file) => ({
-              name: file.name,
-              type: file.type === "dir" ? "dir" : "file",
-            }))
-          : [];
+        return files.map((f) => ({
+          name: f.path.split("/").pop()!,
+          type: f.type === "tree" || f.type === "dir" ? "dir" : "file",
+        }));
       } catch {
         return [];
       }
@@ -60,7 +70,7 @@ export function createGitHubReader(
     },
     listTree: async () => {
       if (!treePromise) {
-        treePromise = githubService.listRepositoryTree(ctx, owner, repo, { branch });
+        treePromise = vcs.getTree(ctx, owner, repo, branch).then((r) => r.tree as RepoTreeEntry[]);
       }
       return treePromise;
     },

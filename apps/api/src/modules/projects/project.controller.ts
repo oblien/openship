@@ -64,16 +64,7 @@ import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { getAdminOblienClient } from "../../lib/oblien-user-client";
 import { cloudClient } from "../../lib/cloud/client";
 import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
-import {
-  updateWebhook,
-  deleteWebhook,
-  getWebhookStrategy,
-  resolveWebhookStrategy,
-  getAvailableStrategies,
-  getRecentCommits,
-  resolveDefaultBranch,
-  listBranches as listGitHubBranches,
-} from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { getInstallUrl } from "../github/github.auth";
 import { ensureSharedWebhook } from "./project-git-webhook";
 import { parseProjectDeleteOptions } from "./project-delete-options";
@@ -1435,7 +1426,9 @@ export async function getGitInfo(c: Context) {
     await projectService.resolveProjectWebhookState(organizationId, info);
 
   // Get available strategies for the UI
-  const strategies = await getAvailableStrategies(ctx, info);
+  const strategies = info.gitOwner && info.gitRepo
+    ? await VcsStrategyFactory.getStrategy(info.gitProvider).getAvailableStrategies(ctx, info)
+    : { current: "none" as const, available: [] };
 
   // Get project domains for webhook domain picker
   const domains = await repos.domain.listByProject(id);
@@ -1445,10 +1438,16 @@ export async function getGitInfo(c: Context) {
 
   let branch = info.gitBranch ?? "";
   if (!branch && info.gitOwner && info.gitRepo) {
-    branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
+    branch = (await VcsStrategyFactory.getStrategy(info.gitProvider).getRepository(ctx, info.gitOwner, info.gitRepo)).default_branch;
   }
-  const commits = branch
-    ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
+  const commits = branch && info.gitOwner && info.gitRepo
+    ? await VcsStrategyFactory.getStrategy(info.gitProvider).getRecentCommits(
+        ctx,
+        info.gitOwner,
+        info.gitRepo,
+        branch,
+        10,
+      )
     : [];
 
   return c.json({
@@ -1492,12 +1491,12 @@ export async function listBranches(c: Context) {
     return c.json({ success: false, error: "No repository connected" }, 400);
   }
 
-  const branches = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo);
+  const branches = await VcsStrategyFactory.getStrategy(info.gitProvider).getBranches(ctx, info.gitOwner, info.gitRepo);
   return c.json({
     success: true,
     data: branches.map((branch) => ({
       name: branch.name,
-      sha: branch.commit.sha,
+      sha: branch.commit?.sha,
       protected: branch.protected,
     })),
   });
@@ -1592,6 +1591,7 @@ export async function setReleaseImageSource(c: Context) {
       before.gitOwner,
       before.gitRepo,
       before.webhookId,
+      before.gitProvider ?? "github",
     ).catch(() => {});
   }
 
@@ -1620,6 +1620,7 @@ async function disableSharedWebhookIfUnused(
   owner: string,
   repo: string,
   webhookId: number | null,
+  provider: string,
 ) {
   const repoProjects = await repos.project.findByGitRepo(owner, repo);
   if (repoProjects.some((p) => p.autoDeploy)) return;
@@ -1627,7 +1628,7 @@ async function disableSharedWebhookIfUnused(
   const projects = repoProjects.filter((p) => p.organizationId === organizationId);
   const hookId = webhookId ?? projects.find((p) => typeof p.webhookId === "number")?.webhookId;
   if (hookId) {
-    await updateWebhook(ctx, owner, repo, hookId, {
+    await VcsStrategyFactory.getStrategy(provider).updateWebhook(ctx, owner, repo, hookId, {
       active: false,
     });
   }
@@ -1658,7 +1659,9 @@ export async function setAutoDeploy(c: Context) {
       return c.json({ success: false, error: "No repository linked" }, 400);
     }
 
-    const strategy = await resolveWebhookStrategy(project);
+    const strategy = await VcsStrategyFactory.getStrategy(
+      project.gitProvider,
+    ).resolveWebhookStrategy(project);
 
     // In "none" mode, auto-deploy can't work - suggest options
     if (strategy === "none" && enabled) {
@@ -1702,6 +1705,7 @@ export async function setAutoDeploy(c: Context) {
             owner,
             repo,
             project.webhookId,
+            project.gitProvider ?? "github",
           );
         }
       } else if (enabled) {
@@ -1726,6 +1730,7 @@ export async function setAutoDeploy(c: Context) {
           owner,
           repo,
           project.webhookId,
+          project.gitProvider ?? "github",
         );
       }
     } catch (err) {

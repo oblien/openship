@@ -5,10 +5,7 @@
 import { repos, type Project } from "@repo/db";
 import { env } from "../../config/env";
 import { triggerDeployment } from "../deployments/build.service";
-import {
-  compareCommits,
-  getRepository,
-} from "./github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
 import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
 import { safeErrorMessage } from "@repo/core";
@@ -20,7 +17,7 @@ import { webhookActorCtx } from "./webhook-shared";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { notification } from "../../lib/notification-dispatcher";
 import type { WebhookHandlerResult } from "../webhooks/webhook.types";
-import type { GitHubPushPayload } from "./github.types";
+import type { VcsPushPayload } from "../vcs/vcs.types";
 
 // ─── Branch deployment events ────────────────────────────────────────────────
 
@@ -53,7 +50,7 @@ function recordPushDelivery(
     .record({
       organizationId: p?.organizationId ?? opts?.organizationId ?? undefined,
       projectId: p?.id ?? undefined,
-      source: "github",
+      source: input.provider,
       event: input.event,
       authResult: "ok",
       outcome,
@@ -68,7 +65,7 @@ function recordPushDelivery(
     .catch(() => {});
 }
 
-export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHandlerResult> {
+export async function handlePush(provider: string, payload: VcsPushPayload): Promise<WebhookHandlerResult> {
   const owner = payload.repository?.owner?.login;
   const repo = payload.repository?.name;
   const ref = payload.ref;
@@ -90,6 +87,7 @@ export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHan
   const branch = ref.replace("refs/heads/", "");
 
   return triggerBranchDeployments({
+    provider,
     event: "push",
     owner,
     repo,
@@ -104,6 +102,7 @@ export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHan
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 interface BranchDeploymentTrigger {
+  provider: string;
   event: "push";
   owner: string;
   repo: string;
@@ -112,7 +111,7 @@ interface BranchDeploymentTrigger {
   commitSha?: string;
   commitMessage?: string;
   /** Raw push payload — needed for smart per-service routing. */
-  payload?: GitHubPushPayload;
+  payload?: VcsPushPayload;
 }
 
 async function deployProjectFromPush(
@@ -157,8 +156,8 @@ async function deployProjectFromPush(
         p.framework === "monorepo" || routableServices.length > 0,
       monorepoSharedPaths: p.monorepoSharedPaths,
       compareCommits: async (owner, repo, base, head) =>
-        compareCommits(
-          webhookActorCtx(actorUserId, p.organizationId ?? "", "webhook:compare-commits"),
+        VcsStrategyFactory.getStrategy(input.provider).compareCommits(
+          webhookActorCtx(actorUserId, p.organizationId ?? "", `webhook:${input.provider}-compare-commits`),
           owner,
           repo,
           base,
@@ -229,7 +228,7 @@ async function deployProjectFromPush(
   // triggerDeployment via the shared resolveRollbackContext helper — no need to
   // recompute it here.
   const triggered = await triggerDeployment(
-    webhookActorCtx(actorUserId, p.organizationId, "webhook:github-push"),
+    webhookActorCtx(actorUserId, p.organizationId, `webhook:${input.provider}-push`),
     {
       projectId: p.id,
       branch: input.branch,
@@ -488,8 +487,8 @@ async function resolveDefaultBranch(
   try {
     const owner = await resolveOrgOwner(unbranchedProject.organizationId).catch(() => null);
     if (!owner) return null;
-    const repository = await getRepository(
-      webhookActorCtx(owner.userId, unbranchedProject.organizationId, "webhook:github-resolve-default-branch"),
+    const repository = await VcsStrategyFactory.getStrategy(input.provider).getRepository(
+      webhookActorCtx(owner.userId, unbranchedProject.organizationId, `webhook:${input.provider}-resolve-default-branch`),
       input.owner,
       input.repo,
     );

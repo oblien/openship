@@ -37,7 +37,8 @@ const h = vi.hoisted(() => ({
   project: null as Record<string, unknown> | null,
 }));
 
-vi.mock("@repo/db", () => ({
+vi.mock("@repo/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   repos: {
     project: {
       findById: vi.fn(async () => h.project),

@@ -15,7 +15,7 @@ import { getWebhookProvider } from "./webhook.service";
 import type { WebhookProviderName } from "./webhook.types";
 
 /** Allowed provider names - rejects anything else at the route level. */
-const ALLOWED_PROVIDERS = new Set<string>(["github"]);
+const ALLOWED_PROVIDERS = new Set<string>(["github", "gitlab", "self-hosted", "bitbucket"]);
 
 /**
  * Generic webhook handler - looks up the provider by route param
@@ -29,6 +29,14 @@ export async function handleWebhook(c: Context) {
   }
 
   return dispatchProvider(c, providerName as WebhookProviderName);
+}
+
+/**
+ * Legacy webhook handler for /api/webhooks/github.
+ * Forwards to the generic dispatch provider using "github" as the provider name.
+ */
+export async function handleLegacyWebhook(c: Context) {
+  return dispatchProvider(c, "github");
 }
 
 // ─── Internal ────────────────────────────────────────────────────────────────

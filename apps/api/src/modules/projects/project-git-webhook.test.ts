@@ -9,9 +9,13 @@ const { findByGitRepo, projectUpdate, registerWebhook, updateWebhook } = vi.hois
   updateWebhook: vi.fn(),
 }));
 
-vi.mock("@repo/db", () => ({
-  repos: { project: { findByGitRepo, update: projectUpdate } },
-}));
+vi.mock("@repo/db", async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    repos: { project: { findByGitRepo, update: projectUpdate } },
+  };
+});
 vi.mock("../github/github.service", () => ({ registerWebhook, updateWebhook }));
 
 import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
