@@ -10,6 +10,7 @@
 
 import type { Context } from "hono";
 import { AppError, type ComposeAdvanced } from "@repo/core";
+import { repos } from "@repo/db";
 import { streamSSE } from "../../lib/sse";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
@@ -148,6 +149,18 @@ export async function remove(c: Context) {
   const ctx = getRequestContext(c);
   const projectId = param(c, "id");
   const serviceId = param(c, "serviceId");
+
+  const proj = await repos.project.findById(projectId).catch(() => undefined);
+  if (proj?.appTemplateId === "openship") {
+    return c.json(
+      {
+        success: false,
+        code: "PROJECT_IS_CONTROL_PLANE",
+        error: "This service belongs to the OpenShip control plane — it cannot be deleted from the dashboard.",
+      },
+      403,
+    );
+  }
 
   try {
     await serviceService.deleteService(ctx, projectId, serviceId);
@@ -305,6 +318,19 @@ export async function stopContainer(c: Context) {
   const ctx = getRequestContext(c);
   const projectId = param(c, "id");
   const serviceId = param(c, "serviceId");
+
+  const proj = await repos.project.findById(projectId).catch(() => undefined);
+  if (proj?.appTemplateId === "openship") {
+    return c.json(
+      {
+        success: false,
+        code: "PROJECT_IS_CONTROL_PLANE",
+        error: "This service belongs to the OpenShip control plane — it cannot be stopped from the dashboard.",
+      },
+      403,
+    );
+  }
+
   try {
     await serviceService.stopServiceContainer(ctx, projectId, serviceId);
     return c.json({ success: true });
@@ -318,6 +344,19 @@ export async function restartContainer(c: Context) {
   const ctx = getRequestContext(c);
   const projectId = param(c, "id");
   const serviceId = param(c, "serviceId");
+
+  const proj = await repos.project.findById(projectId).catch(() => undefined);
+  if (proj?.appTemplateId === "openship") {
+    return c.json(
+      {
+        success: false,
+        code: "PROJECT_IS_CONTROL_PLANE",
+        error: "This service belongs to the OpenShip control plane — restart it via the CLI or host supervisor.",
+      },
+      403,
+    );
+  }
+
   // Read raw off the query string rather than declaring a `query` schema on the
   // route: `RouteSpec` has no such field (secureRouter only auto-wires `body`),
   // and declaring a body on this previously body-less POST would 400 every

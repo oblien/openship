@@ -55,6 +55,8 @@ import { provisionUser } from "../../lib/provision-user";
 import { COOKIE_PREFIX } from "../../lib/auth";
 import { mintSession } from "../../lib/cloud-auth-proxy";
 import { invalidatePlatformTransport } from "../../lib/mail";
+import * as dnsCredentialService from "../dns/dns-credential.service";
+import { cloudflareDnsProvider } from "../dns/providers/cloudflare.provider";
 
 /** The canonical mode set lives with the resolver, so the env parser, this
  *  validator and getAuthMode() can't disagree about what a valid mode is. */
@@ -980,4 +982,160 @@ export async function onboardingSetup(c: Context) {
 
   // Delegate to the shared setup logic
   return setup(c);
+}
+
+/**
+ * GET /system/telemetry - live control plane metrics and health for Settings.
+ */
+export async function getControlPlaneTelemetry(c: Context) {
+  const os = await import("node:os");
+  const mem = process.memoryUsage();
+  const cpus = os.cpus();
+  const load = os.loadavg();
+  const uptime = process.uptime();
+  const hostUptime = os.uptime();
+
+  return c.json({
+    ok: true,
+    telemetry: {
+      uptimeSeconds: Math.round(uptime),
+      hostUptimeSeconds: Math.round(hostUptime),
+      memory: {
+        rssMb: Math.round(mem.rss / 1024 / 1024),
+        heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+        systemTotalMb: Math.round(os.totalmem() / 1024 / 1024),
+        systemFreeMb: Math.round(os.freemem() / 1024 / 1024),
+      },
+      cpu: {
+        cores: cpus.length,
+        model: cpus[0]?.model ?? "Unknown",
+        loadAvg: load,
+      },
+      process: {
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        pid: process.pid,
+      },
+    },
+  });
+}
+
+/** GET /system/dashboard-domain - read configured dashboard root domain */
+export async function getDashboardDomain(c: Context) {
+  const settings = await repos.instanceSettings.get();
+  return c.json({
+    data: {
+      dashboardDomain: settings?.dashboardDomain ?? null,
+      dashboardSslStatus: settings?.dashboardSslStatus ?? "none",
+      dashboardDnsZoneId: settings?.dashboardDnsZoneId ?? null,
+      dashboardDnsRecordId: settings?.dashboardDnsRecordId ?? null,
+    },
+  });
+}
+
+/** POST /system/dashboard-domain - configure custom dashboard root domain */
+export async function setDashboardDomain(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    domain: string;
+    autoDns?: boolean;
+    dnsCredentialId?: string;
+  }>();
+
+  const domain = body.domain?.trim().toLowerCase();
+  if (!domain) {
+    return c.json({ error: "Domain is required" }, 400);
+  }
+
+  let dnsZoneId: string | undefined;
+  let dnsRecordId: string | undefined;
+
+  if (body.autoDns) {
+    const creds = await dnsCredentialService.listCredentials(ctx.organizationId);
+    const targetCred = body.dnsCredentialId
+      ? creds.find((cred) => cred.id === body.dnsCredentialId)
+      : creds.find((cred) => cred.provider === "cloudflare");
+
+    if (targetCred) {
+      const serverIp = env.SERVER_IP || "127.0.0.1";
+      const decrypted = await dnsCredentialService.resolveDecryptedCredential(
+        ctx.organizationId,
+        targetCred.id,
+      );
+
+      if (decrypted) {
+        try {
+          const zone = await cloudflareDnsProvider.findZone(decrypted, domain);
+          if (zone) {
+            dnsZoneId = zone.id;
+            const record = await cloudflareDnsProvider.upsertRecord(decrypted, zone.id, {
+              type: "A",
+              name: domain,
+              content: serverIp,
+              proxied: false,
+              ttl: 1,
+            });
+            dnsRecordId = record.id;
+          }
+        } catch (err) {
+          console.warn("[DashboardDomain] Failed to auto-provision DNS record:", err);
+        }
+      }
+    }
+  }
+
+  const updated = await repos.instanceSettings.upsert({
+    dashboardDomain: domain,
+    dashboardDnsZoneId: dnsZoneId,
+    dashboardDnsRecordId: dnsRecordId,
+    dashboardSslStatus: "pending",
+  });
+
+  return c.json({
+    data: {
+      dashboardDomain: updated.dashboardDomain,
+      dashboardSslStatus: updated.dashboardSslStatus,
+      dashboardDnsZoneId: updated.dashboardDnsZoneId,
+      dashboardDnsRecordId: updated.dashboardDnsRecordId,
+    },
+  });
+}
+
+/** DELETE /system/dashboard-domain - remove custom dashboard root domain */
+export async function deleteDashboardDomain(c: Context) {
+  const ctx = getRequestContext(c);
+  const settings = await repos.instanceSettings.get();
+
+  if (settings?.dashboardDnsZoneId && settings?.dashboardDnsRecordId) {
+    try {
+      const creds = await dnsCredentialService.listCredentials(ctx.organizationId);
+      const cfCred = creds.find((cred) => cred.provider === "cloudflare");
+      if (cfCred) {
+        const decrypted = await dnsCredentialService.resolveDecryptedCredential(
+          ctx.organizationId,
+          cfCred.id,
+        );
+        if (decrypted) {
+          await cloudflareDnsProvider.deleteRecord(
+            decrypted,
+            settings.dashboardDnsZoneId,
+            settings.dashboardDnsRecordId,
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("[DashboardDomain] Failed to delete DNS record:", err);
+    }
+  }
+
+  const updated = await repos.instanceSettings.upsert({
+    dashboardDomain: null,
+    dashboardDnsZoneId: null,
+    dashboardDnsRecordId: null,
+    dashboardSslStatus: "none",
+  });
+
+  return c.json({ data: updated });
 }

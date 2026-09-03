@@ -45,6 +45,7 @@ import { TeamTab } from "./_components/TeamTab";
 import { NotificationsTab } from "./_components/NotificationsTab";
 import { EmailSettings } from "./_components/EmailSettings";
 import { Credentials } from "./_components/Credentials";
+import { DomainsSettingsTab } from "./_components/DomainsSettingsTab";
 import { DataTransferTab } from "./_components/DataTransferTab";
 import {
   SettingsSidebar,
@@ -168,6 +169,8 @@ function SettingsPageInner() {
           )}
 
           {activeTab === "credentials" && <Credentials />}
+
+          {activeTab === "domains" && <DomainsSettingsTab />}
 
           {activeTab === "cloud" && selfHosted && <CloudConnection />}
 

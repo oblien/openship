@@ -1011,4 +1011,32 @@ export const systemApi = {
   /** Delete a forward config (stops it first if live) */
   deleteTunnel: (serverId: string, tunnelId: string) =>
     api.delete<{ ok: boolean }>(endpoints.system.tunnel(serverId, tunnelId)),
+
+  /** Live control-plane telemetry for Settings */
+  getTelemetry: () =>
+    api.get<{
+      ok: boolean;
+      telemetry: {
+        uptimeSeconds: number;
+        hostUptimeSeconds: number;
+        memory: {
+          rssMb: number;
+          heapUsedMb: number;
+          heapTotalMb: number;
+          systemTotalMb: number;
+          systemFreeMb: number;
+        };
+        cpu: {
+          cores: number;
+          model: string;
+          loadAvg: number[];
+        };
+        process: {
+          nodeVersion: string;
+          platform: string;
+          arch: string;
+          pid: number;
+        };
+      };
+    }>(endpoints.system.telemetry),
 };

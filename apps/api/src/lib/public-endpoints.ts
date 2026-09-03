@@ -1,5 +1,6 @@
 import type { Domain, Project, Service, ServicePublicEndpoint } from "@repo/db";
 import {
+  DEFAULT_PORT,
   SYSTEM,
   ValidationError,
   isLoopbackHost as isCoreLoopbackHost,
@@ -15,6 +16,8 @@ import { env } from "../config/env";
 // Hardcoded here so this leaf module doesn't pull the adapters barrel or the
 // env module (whose boot guards throw at import time under test).
 const OPENRESTY_MGMT_PORT = 9145;
+const LEGACY_API_PORT = 4000;
+const LEGACY_DASHBOARD_PORT = 3001;
 
 /**
  * Ports a tenant route must NEVER proxy at over the host loopback: the
@@ -23,18 +26,28 @@ const OPENRESTY_MGMT_PORT = 9145;
  * 127.0.0.1, so a public route pointed at 127.0.0.1:<one of these> would expose
  * an internal service (admin API / edge rules-mgmt) to the internet. Only ever
  * applied to a LOOPBACK upstream — a container's own IP:9145 is the app's port,
- * not ours. See resolveTargetUrl in project-route.service.ts. Ports read from
- * process.env directly (raw, no validated `env` import) to keep this leaf light.
+ * not ours. See resolveTargetUrl in project-route.service.ts.
  */
-export function isReservedLoopbackPort(port: number): boolean {
-  const apiPort = env.PORT;
-  const dashboardPort = env.OPENSHIP_DASHBOARD_PORT;
-  return port === apiPort || port === dashboardPort || port === OPENRESTY_MGMT_PORT;
+export function isReservedLoopbackPort(port: number | string): boolean {
+  const numericPort = Number(port);
+  if (!Number.isFinite(numericPort)) return false;
+
+  const apiPort = Number(process.env.OPENSHIP_API_PORT || process.env.PORT || env.PORT || DEFAULT_PORT.api);
+  const dashboardPort = Number(process.env.OPENSHIP_DASHBOARD_PORT || DEFAULT_PORT.dashboard);
+  return (
+    numericPort === apiPort ||
+    numericPort === dashboardPort ||
+    numericPort === LEGACY_API_PORT ||
+    numericPort === LEGACY_DASHBOARD_PORT ||
+    numericPort === OPENRESTY_MGMT_PORT
+  );
 }
 
 /** True for a loopback host (the only place isReservedLoopbackPort applies). */
-export function isLoopbackHost(host: string): boolean {
-  return isCoreLoopbackHost(host);
+export function isLoopbackHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || isCoreLoopbackHost(h);
 }
 
 export interface StoredPublicEndpoint {

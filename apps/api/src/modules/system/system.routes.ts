@@ -74,6 +74,11 @@ r.public("get", "/self-register/stream", { reason: "CLI setup — SSE progress f
 r.public("post", "/self-edge/preflight", { reason: "CLI setup — detect what owns ports 80/443 before installing OpenResty; internal-token gated" }, internalAuth, selfApp.selfEdgePreflight);
 r.public("post", "/edge/import-sites", { reason: "CLI `openship up` (compose) — register sites migrated from a foreign proxy into the container edge (host stops the proxy pre-up; api re-serves via DockerEdgeExecutor); internal-token gated" }, internalAuth, selfApp.edgeImportSites);
 
+/* ── Dashboard Root Domain ────────────────────────────────────────── */
+r.get("/dashboard-domain", { tag: "settings:read" }, setup.getDashboardDomain);
+r.post("/dashboard-domain", { tag: "settings:write" }, requireInstanceAdmin(), setup.setDashboardDomain);
+r.delete("/dashboard-domain", { tag: "settings:admin" }, requireInstanceAdmin(), setup.deleteDashboardDomain);
+
 /* ── Untracked edge vhosts ──────────────────────────────────────────
  * Edge config lives on the host and outlives its DB rows by design (record-only
  * delete keeps the workload AND its route running). A leftover PROXY vhost 502s
@@ -259,8 +264,9 @@ r.get("/install/session", { tag: "server:read", collection: true }, serverCheck.
 /* ── Server monitoring (live stats via SSE) ─────────────────────── */
 r.get("/monitor/stream", { tag: "server:read", collection: true }, serverCheck.monitorStream);
 
-/* ── Filesystem browse ──────────────────────────────────────────── */
+/* ── Filesystem browse & control-plane telemetry ──────────────── */
 r.get("/browse", { tag: "settings:read" }, fs.browse);
+r.get("/telemetry", { tag: "settings:read" }, setup.getControlPlaneTelemetry);
 
 /* ── Team-mode migration ─────────────────────────────────────────
  * Path A (single_user → self_hosted_remote): preflight + start

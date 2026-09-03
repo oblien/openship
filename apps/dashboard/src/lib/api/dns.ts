@@ -120,4 +120,8 @@ export const dnsApi = {
   /** Check whether a connected provider manages a hostname's zone. */
   verifyZone: (hostname: string) =>
     api.post<VerifyZoneResult>(endpoints.dns.verifyZone, { hostname }),
+
+  /** List available DNS zones for a connected credential. */
+  listZones: (id: string) =>
+    api.get<{ data: Array<{ id: string; name: string; status: string }> }>(`/api/dns/credentials/${id}/zones`),
 };

@@ -229,6 +229,13 @@ export async function getHome(c: Context) {
     result.total = result.rows.length;
   }
 
+  // Control-plane isolation: exclude internal control plane from the general
+  // workspace project list unless explicitly requested (?includeControlPlane=true).
+  if (c.req.query("includeControlPlane") !== "true") {
+    result.rows = result.rows.filter((p) => p.appTemplateId !== "openship");
+    result.total = result.rows.length;
+  }
+
   // Enrich every project in ONE round trip — batched queries
   // instead of (4 × N) per-project. With 50 projects the old loop
   // fired 200+ SQL statements; this version fires a constant ≤6
@@ -372,7 +379,11 @@ export async function list(c: Context) {
     scopedIds ? { page: 1, perPage: 1000 } : { page, perPage },
   );
   // Scoped-token isolation: keep only the projects this token may see.
-  const rows = scopedIds ? result.rows.filter((p) => scopedIds.has(p.id)) : result.rows;
+  let rows = scopedIds ? result.rows.filter((p) => scopedIds.has(p.id)) : result.rows;
+  // Control-plane isolation: exclude internal control plane unless explicitly requested.
+  if (c.req.query("includeControlPlane") !== "true") {
+    rows = rows.filter((p) => p.appTemplateId !== "openship");
+  }
   rows.forEach((project) => {
     refreshProjectFaviconIfStale(project);
   });
@@ -381,7 +392,7 @@ export async function list(c: Context) {
   // tag keeps the field shape uniform for clients that read /projects.
   return c.json({
     data: rows.map((p) => ({ ...p, source: "local" as const })),
-    total: scopedIds ? rows.length : result.total,
+    total: scopedIds || c.req.query("includeControlPlane") !== "true" ? rows.length : result.total,
     page: scopedIds ? 1 : result.page,
     perPage: scopedIds ? rows.length : result.perPage,
   });

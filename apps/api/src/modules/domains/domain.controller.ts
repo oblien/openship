@@ -11,6 +11,7 @@ import { audit, auditContextFrom } from "../../lib/audit";
 import { notification } from "../../lib/notification-dispatcher";
 import { streamSSE } from "../../lib/sse";
 import * as domainService from "./domain.service";
+import * as wildcardService from "./wildcard-domain.service";
 import { maybeProxyCloudProject } from "../../lib/cloud/project-router";
 import type { TAddDomainBody, TUploadCertBody } from "./domain.schema";
 
@@ -339,3 +340,38 @@ export async function verifyPending(c: Context) {
   });
   return c.json({ data: result });
 }
+
+/** GET /domains/wildcards - list configured wildcard domains */
+export async function listWildcards(c: Context) {
+  const wildcards = await wildcardService.listWildcardDomains();
+  return c.json({ data: wildcards });
+}
+
+/** POST /domains/wildcards - add a new wildcard domain */
+export async function addWildcard(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{
+    domain: string;
+    isDefault?: boolean;
+    autoDns?: boolean;
+    dnsCredentialId?: string;
+  }>();
+  const wildcard = await wildcardService.addWildcardDomain(ctx, body);
+  return c.json({ data: wildcard }, 201);
+}
+
+/** POST /domains/wildcards/:id/default - mark a wildcard as default */
+export async function setDefaultWildcard(c: Context) {
+  const id = param(c, "id");
+  const wildcard = await wildcardService.setDefaultWildcardDomain(id);
+  return c.json({ data: wildcard });
+}
+
+/** DELETE /domains/wildcards/:id - delete a wildcard domain */
+export async function removeWildcard(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  await wildcardService.deleteWildcardDomain(ctx, id);
+  return c.json({ success: true });
+}
+

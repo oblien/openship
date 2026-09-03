@@ -46,6 +46,11 @@ export {
   type DnsCredential,
   type NewDnsCredential,
 } from "./dns-credential.repo";
+export {
+  createWildcardDomainRepo,
+  type WildcardDomain,
+  type NewWildcardDomain,
+} from "./wildcard-domain.repo";
 export { createCredentialRepo, type Credential, type NewCredential } from "./credential.repo";
 export { createRouteRuleRepo, type RouteRule, type NewRouteRule } from "./route-rule.repo";
 export {
@@ -295,6 +300,7 @@ import { createServiceRepo } from "./service.repo";
 import { createServiceDeploymentRepo } from "./service-deployment.repo";
 import { createSettingsRepo } from "./settings.repo";
 import { createInstanceSettingsRepo } from "./instance-settings.repo";
+import { createWildcardDomainRepo } from "./wildcard-domain.repo";
 import { createServerRepo } from "./server.repo";
 import { createServerGithubAuthRepo } from "./server-github-auth.repo";
 import { createGithubDeployKeyRepo } from "./github-deploy-key.repo";
@@ -380,6 +386,7 @@ export const repos = {
   serviceDeployment: createServiceDeploymentRepo(db),
   settings: createSettingsRepo(db),
   instanceSettings: createInstanceSettingsRepo(db),
+  wildcardDomain: createWildcardDomainRepo(db),
   server: createServerRepo(db),
   serverGithubAuth: createServerGithubAuthRepo(db),
   githubDeployKey: createGithubDeployKeyRepo(db),

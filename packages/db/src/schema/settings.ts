@@ -233,6 +233,13 @@ export const instanceSettings = pgTable("instance_settings", {
    */
   hostControlEnabled: boolean("host_control_enabled"),
 
+  // ── Dashboard Root Domain ──────────────────────────────────────────────────
+  /** Custom root domain configured for the OpenShip Dashboard control plane */
+  dashboardDomain: text("dashboard_domain"),
+  dashboardDnsZoneId: text("dashboard_dns_zone_id"),
+  dashboardDnsRecordId: text("dashboard_dns_record_id"),
+  dashboardSslStatus: text("dashboard_ssl_status").notNull().default("none"),
+
   // ── Timestamps ─────────────────────────────────────────────────────────────
 
   createdAt: timestamp("created_at").notNull().defaultNow(),

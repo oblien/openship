@@ -80,13 +80,13 @@ describe("resolvePorts", () => {
     expect(r.switched.api).toBe(false);
   });
 
-  it("supplies the documented 4000/3001 defaults when asked for nothing", async () => {
+  it("supplies the documented 7100/7000 defaults when asked for nothing", async () => {
     // The CLI's contract, and the one place it differs from the desktop app (which
     // passes no defaults so it never collides with a dev server). Asserted on the
-    // PREFERENCE, since 4000/3001 may legitimately be busy on this machine.
+    // PREFERENCE, since 7100/7000 may legitimately be busy on this machine.
     const r = await resolvePorts({});
 
-    expect(r.preferred).toEqual({ api: 4000, dashboard: 3001 });
+    expect(r.preferred).toEqual({ api: 7100, dashboard: 7000 });
   });
 
   it("persists the result so doctor / reset-admin find the instance", async () => {

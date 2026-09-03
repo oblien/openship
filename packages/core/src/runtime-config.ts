@@ -1,9 +1,14 @@
+const envPort = (key: string, fallback: number): number => {
+  const v = typeof process !== "undefined" ? Number(process.env?.[key]) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+};
+
 export const DEFAULT_PORT = {
-  web: 3000,
-  dashboard: 3001,
-  api: 4000,
-  saasDashboard: 3002,
-  saasApi: 4100,
+  dashboard: envPort("OPENSHIP_DASHBOARD_PORT", 7000),
+  api: envPort("OPENSHIP_API_PORT", 7100),
+  web: envPort("OPENSHIP_WEB_PORT", 7200),
+  saasDashboard: envPort("OPENSHIP_SAAS_DASHBOARD_PORT", 7300),
+  saasApi: envPort("OPENSHIP_SAAS_API_PORT", 7400),
 } as const;
 
 const localhost = (port: number) => `http://localhost:${port}`;

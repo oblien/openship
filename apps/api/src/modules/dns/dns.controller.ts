@@ -36,6 +36,14 @@ export async function getCredential(c: Context) {
   return c.json({ data: cred });
 }
 
+/** GET /dns/credentials/:id/zones — list zones for this credential. */
+export async function listZones(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  const zones = await dnsService.listCredentialZones(ctx.organizationId, id);
+  return c.json({ data: zones });
+}
+
 /** POST /dns/credentials — connect a provider credential. */
 export async function addCredential(c: Context) {
   const ctx = getRequestContext(c);

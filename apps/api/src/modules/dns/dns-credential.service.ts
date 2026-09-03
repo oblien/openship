@@ -204,6 +204,36 @@ export async function resolveDnsManager(
   return { status: "none" };
 }
 
+/** Resolves decrypted provider credentials (e.g. Cloudflare API token) for backend DNS provisioning. */
+export async function resolveDecryptedCredential(
+  organizationId: string,
+  credentialId?: string,
+): Promise<{ apiToken: string; provider: "cloudflare" } | null> {
+  const credentials = await listProviderCredentials(organizationId, "cloudflare");
+  const target = credentialId ? credentials.find((c) => c.id === credentialId) : credentials[0];
+  if (!target || !target.readable || !target.secrets.apiToken) {
+    return null;
+  }
+  return { apiToken: target.secrets.apiToken, provider: "cloudflare" };
+}
+
+/** List all active DNS zones for a connected credential (used by interactive pickers). */
+export async function listCredentialZones(
+  organizationId: string,
+  credentialId: string,
+): Promise<DnsZone[]> {
+  const decrypted = await resolveDecryptedCredential(organizationId, credentialId);
+  if (!decrypted) {
+    throw new NotFoundError("DNS credential", credentialId);
+  }
+  const provider = resolveDnsProvider(decrypted.provider);
+  if (provider.listZones) {
+    return provider.listZones(decrypted);
+  }
+  return [];
+}
+
+
 /** Flag a credential the provider rejected so the UI can show it needs attention. */
 export async function markCredentialInvalid(
   organizationId: string,
