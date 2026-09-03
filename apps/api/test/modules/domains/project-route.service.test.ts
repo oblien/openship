@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_PORT } from "@repo/core";
 import type { Domain } from "@repo/db";
 
 const {
@@ -113,15 +114,18 @@ beforeEach(() => {
 
 describe("shouldRefuseLoopbackRoute", () => {
   it("refuses a tenant project's public route to the dashboard port on loopback", () => {
-    expect(shouldRefuseLoopbackRoute("127.0.0.1", 3001, { isSelfApp: false })).toBe(true);
+    expect(shouldRefuseLoopbackRoute("127.0.0.1", DEFAULT_PORT.dashboard, { isSelfApp: false })).toBe(true);
+    expect(shouldRefuseLoopbackRoute("localhost", DEFAULT_PORT.dashboard, { isSelfApp: false })).toBe(true);
+    expect(shouldRefuseLoopbackRoute("::1", DEFAULT_PORT.dashboard, { isSelfApp: false })).toBe(true);
   });
 
   it("refuses a tenant project's public route to the admin API port on loopback", () => {
-    expect(shouldRefuseLoopbackRoute("127.0.0.1", 4000, { isSelfApp: false })).toBe(true);
+    expect(shouldRefuseLoopbackRoute("127.0.0.1", DEFAULT_PORT.api, { isSelfApp: false })).toBe(true);
+    expect(shouldRefuseLoopbackRoute("localhost", DEFAULT_PORT.api, { isSelfApp: false })).toBe(true);
   });
 
   it("allows the self-app's own public route to the dashboard port on loopback", () => {
-    expect(shouldRefuseLoopbackRoute("127.0.0.1", 3001, { isSelfApp: true })).toBe(false);
+    expect(shouldRefuseLoopbackRoute("127.0.0.1", DEFAULT_PORT.dashboard, { isSelfApp: true })).toBe(false);
   });
 
   it("allows a non-reserved port on loopback regardless of self-app status", () => {
@@ -129,7 +133,7 @@ describe("shouldRefuseLoopbackRoute", () => {
   });
 
   it("allows any port on a non-loopback host (container IP)", () => {
-    expect(shouldRefuseLoopbackRoute("172.17.0.5", 3001, { isSelfApp: false })).toBe(false);
+    expect(shouldRefuseLoopbackRoute("172.17.0.5", DEFAULT_PORT.dashboard, { isSelfApp: false })).toBe(false);
   });
 });
 

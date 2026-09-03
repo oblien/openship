@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal } from "lucide-react";
+import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal, Globe } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useSession, authClient } from "@/lib/auth-client";
 import { useI18n } from "@/components/i18n-provider";
@@ -48,7 +48,7 @@ function useInfraIssuesCount(): number {
   return enabled ? count : 0;
 }
 
-export type SettingsTabId = "general" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
+export type SettingsTabId = "general" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "domains" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -81,6 +81,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     // (GitLab, Bitbucket) land here rather than widening anything else. Hidden in the
     // mail-only shell, which deploys nothing from source.
     { id: "git", label: t.settings.sidebar.tabs.git, icon: GitBranch, visible: productView !== "mail" },
+    { id: "domains", label: "Domains & Wildcard", icon: Globe, visible: true, requiresRole: "admin" },
     { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: KeyRound, visible: true, requiresRole: "admin" },
     { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: Terminal, visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },

@@ -292,6 +292,12 @@ const TABLES: ReadonlyArray<TableSpec> = [
     scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
+  {
+    sqlName: "wildcard_domain",
+    table: schema.wildcardDomain,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: false,
+  },
 
   // Infra — instance-only.
   {

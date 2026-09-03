@@ -293,6 +293,7 @@ export const endpoints = {
   /* ---------------------------------------------------------------- */
   system: {
     browse: "system/browse",
+    telemetry: "system/telemetry",
     settings: "system/settings",
     /** Vhosts the local edge serves that Openship no longer tracks. */
     edgeUntracked: "system/edge/untracked",

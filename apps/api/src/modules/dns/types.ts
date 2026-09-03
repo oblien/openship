@@ -120,6 +120,11 @@ export interface DnsProvider {
     hostname: string,
   ): Promise<DnsZone | null>;
 
+  /** Optional zone enumeration for interactive pickers */
+  listZones?(
+    credentials: DnsProviderCredentials,
+  ): Promise<DnsZone[]>;
+
   /** List records in a zone, optionally filtered by name or type. Paginated. */
   listRecords(
     credentials: DnsProviderCredentials,

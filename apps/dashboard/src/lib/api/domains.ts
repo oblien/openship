@@ -125,4 +125,36 @@ export const domainsApi = {
     api.post<{ data: { id: string; hostname: string; isPrimary: boolean } }>(
       endpoints.domains.primary(domainId),
     ),
+
+  /* ─── Wildcard & Dashboard Root Domains ────────────────────────────────── */
+  listWildcards: () => api.get<{ data: WildcardDomainItem[] }>("/api/domains/wildcards"),
+  addWildcard: (body: { domain: string; isDefault?: boolean; autoDns?: boolean; dnsCredentialId?: string }) =>
+    api.post<{ data: WildcardDomainItem }>("/api/domains/wildcards", body),
+  setDefaultWildcard: (id: string) => api.post<{ data: WildcardDomainItem }>(`/api/domains/wildcards/${id}/default`),
+  deleteWildcard: (id: string) => api.delete<{ success: boolean }>(`/api/domains/wildcards/${id}`),
+
+  getDashboardDomain: () => api.get<{ data: DashboardDomainInfo }>("/api/system/dashboard-domain"),
+  setDashboardDomain: (body: { domain: string; autoDns?: boolean; dnsCredentialId?: string }) =>
+    api.post<{ data: DashboardDomainInfo }>("/api/system/dashboard-domain", body),
+  deleteDashboardDomain: () => api.delete<{ data: unknown }>("/api/system/dashboard-domain"),
 };
+
+export interface WildcardDomainItem {
+  id: string;
+  domain: string;
+  apex: string;
+  isDefault: boolean;
+  dnsProvider: string;
+  dnsZoneId?: string | null;
+  dnsRecordId?: string | null;
+  sslStatus: string;
+  createdAt: string;
+}
+
+export interface DashboardDomainInfo {
+  dashboardDomain: string | null;
+  dashboardSslStatus: string;
+  dashboardDnsZoneId: string | null;
+  dashboardDnsRecordId: string | null;
+}
+

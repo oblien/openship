@@ -108,6 +108,8 @@ export {
   type PublicPersonalAccessToken,
   type NewPersonalAccessToken,
   type CreatePatInput,
+  type WildcardDomain,
+  type NewWildcardDomain,
   type UserSettings,
   type NewUserSettings,
   type Server,

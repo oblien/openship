@@ -239,6 +239,15 @@ export const cloudflareDnsProvider: DnsProvider = {
     return null;
   },
 
+  async listZones(credentials: DnsProviderCredentials): Promise<DnsZone[]> {
+    const zones = await cfFetch<CfZoneItem[]>(
+      credentials.apiToken,
+      `/zones?status=active&per_page=50`,
+      { method: "GET" },
+    );
+    return (zones || []).map((z) => ({ id: z.id, name: z.name, status: z.status }));
+  },
+
   async listRecords(
     credentials: DnsProviderCredentials,
     zoneId: string,

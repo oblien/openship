@@ -71,6 +71,7 @@ import {
   type ProjectRouteState,
 } from "../domains/project-route.service";
 import { applyProjectRouting } from "../domains/routing-apply.service";
+import { generateCollisionProofSubdomain } from "../domains/wildcard-domain.service";
 import { syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
@@ -901,6 +902,19 @@ async function createProductionProject(
   // written on a disconnected instance (no dead "Pending" route persisted). The
   // auto-derived default (data.publicEndpoints undefined) is deliberately NOT
   // gated — that path must keep working on a self-hosted instance.
+  if (data.publicEndpoints === undefined) {
+    const autoSubdomain = await generateCollisionProofSubdomain(slug).catch(() => null);
+    if (autoSubdomain) {
+      data.publicEndpoints = [
+        {
+          domainType: "custom",
+          customDomain: autoSubdomain,
+          port: data.port ?? 3000,
+        },
+      ];
+    }
+  }
+
   if (data.publicEndpoints !== undefined) {
     await assertFreeEndpointsAllowed(
       organizationId,

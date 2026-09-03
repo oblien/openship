@@ -310,8 +310,8 @@ describe("resolveEnvConfig", () => {
   it("falls back to defaults on a first install", async () => {
     const cfg = resolveEnvConfig({}, {});
     expect(cfg.publicUrl).toBeUndefined();
-    expect(cfg.apiPort).toBe("4000");
-    expect(cfg.dashPort).toBe("3001");
+    expect(cfg.apiPort).toBe("7100");
+    expect(cfg.dashPort).toBe("7000");
     expect(cfg.trustProxy).toBe(false);
     expect(cfg.hostControl).toBe(true);
   });

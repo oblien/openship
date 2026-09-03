@@ -21,8 +21,8 @@ import { createServer } from "node:net";
 
 /** Documented defaults for the self-hosted CLI. The desktop app passes NO
  *  defaults — a packaged app must not fight a dev server on 4000/3001. */
-export const DEFAULT_API_PORT = 4000;
-export const DEFAULT_DASHBOARD_PORT = 3001;
+export const DEFAULT_API_PORT = 7100;
+export const DEFAULT_DASHBOARD_PORT = 7000;
 
 const LOOPBACK = "127.0.0.1";
 /** How far past a busy preference to look for a NEIGHBOURING port before falling

@@ -42,6 +42,11 @@ r.get(
   { tag: "settings:read", mcp: { description: "Get one connected DNS provider credential." } },
   ctrl.getCredential,
 );
+r.get(
+  "/credentials/:id/zones",
+  { tag: "settings:read", mcp: { description: "List DNS zones available for this credential." } },
+  ctrl.listZones,
+);
 r.post(
   "/credentials",
   {

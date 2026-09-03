@@ -34,6 +34,13 @@ r.post(
 // Side-effect-free DNS probe — POST is used to carry hostname in body.
 // readOnly opts out of the scanner's "POST must be write/admin" rule.
 r.post("/preview", { tag: "domain:read", readOnly: true, body: PreviewDomainBody, mcp: { description: "Preview the DNS records a domain will need, before adding it." } }, ctrl.preview);
+
+/* ─── Wildcard Domains ─────────────────────────────────────────────────── */
+r.get("/wildcards", { tag: "domain:list", mcp: { description: "List configured wildcard domains." } }, ctrl.listWildcards);
+r.post("/wildcards", { tag: "domain:write", mcp: { description: "Add a wildcard domain." } }, ctrl.addWildcard);
+r.post("/wildcards/:id/default", { tag: "domain:write", mcp: { description: "Set a wildcard domain as default." } }, ctrl.setDefaultWildcard);
+r.delete("/wildcards/:id", { tag: "domain:admin", mcp: { description: "Delete a wildcard domain." } }, ctrl.removeWildcard);
+
 // Per-domain routes carry cloudDomainProxy (after the permission middleware):
 // a domain belonging to a cloud project is proxied to the SaaS; a local domain
 // falls through to the local handler.
