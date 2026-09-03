@@ -14,9 +14,13 @@ export interface RepoData {
 }
 
 export interface EnvironmentVariable {
+  /** Persisted project-env row id. Absent for a variable added in the wizard. */
+  sourceId?: string;
   key: string;
   value: string;
   visible: boolean;
+  /** Preserve the server-side secret classification while editing an existing project. */
+  isSecret?: boolean;
 }
 
 export type StartCommand = string;

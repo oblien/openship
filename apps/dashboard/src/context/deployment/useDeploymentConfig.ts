@@ -10,7 +10,7 @@ import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
 import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
-import { STACKS, getBuildImage, toWorkloadType, type DeployTarget, type StackDefinition, type StackId, type WorkloadType } from "@repo/core";
+import { ENV_MASK, STACKS, getBuildImage, toWorkloadType, type DeployTarget, type StackDefinition, type StackId, type WorkloadType } from "@repo/core";
 import type { BuildStrategy, DeploymentConfig, DeploymentModeSnapshot, MonorepoAppConfig, MonorepoWorkspaceConfig, PublicEndpoint } from "./types";
 import {
   DEFAULT_CONFIG,
@@ -1155,12 +1155,25 @@ export function useDeploymentConfig() {
         const svcRes = await servicesApi.list(projectId).catch(() => null);
         const serviceRows: Service[] = svcRes?.services ?? [];
 
-        // Production env → config.envVars (secret VALUES come back masked; blank
-        // them — the env editor owns secret edits — rather than seeding the mask).
+        // Production env → editable rows plus an immutable baseline. Secret
+        // values stay masked: the save/deploy path diffs these rows and omits an
+        // untouched mask instead of overwriting the stored value (#800).
         const envRes = await projectsApi.getEnv(projectId).catch(() => null);
-        const envVars: DeploymentConfig["envVars"] = (envRes?.data ?? [])
+        const persistedEnvVars: DeploymentConfig["persistedEnvVars"] = (envRes?.data ?? [])
           .filter((v) => v.environment === "production")
-          .map((v) => ({ key: v.key, value: v.isSecret ? "" : v.value, visible: true }));
+          .map((v) => ({
+            id: v.id,
+            key: v.key,
+            value: v.isSecret ? ENV_MASK : v.value,
+            isSecret: v.isSecret,
+          }));
+        const envVars: DeploymentConfig["envVars"] = persistedEnvVars.map((v) => ({
+          sourceId: v.id,
+          key: v.key,
+          value: v.value,
+          visible: !v.isSecret,
+          isSecret: v.isSecret,
+        }));
 
         const response = buildSavedProjectResponse(project, serviceRows);
         const repoName = project.gitRepo || project.name || "project";
@@ -1199,6 +1212,7 @@ export function useDeploymentConfig() {
               ...prev,
               projectId,
               envVars: envVars.length ? envVars : prev.envVars,
+              persistedEnvVars: envVars.length ? persistedEnvVars : prev.persistedEnvVars,
               ...(savedTarget
                 ? {
                     deployTarget: savedTarget,
@@ -1226,6 +1240,7 @@ export function useDeploymentConfig() {
             // buildPreparedConfig (shared with detection) doesn't load production
             // env — overlay the saved values we fetched above.
             envVars,
+            persistedEnvVars,
             // Repo-less catalog app: deploys from its saved service rows with no
             // git source (the deploy guards treat this like local/upload).
             isApp: Boolean((project as { isApp?: boolean }).isApp),

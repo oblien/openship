@@ -386,6 +386,13 @@ export interface DeploymentConfig {
   buildImage: string;
   publicEndpoints: PublicEndpoint[];
   envVars: EnvironmentVariable[];
+  /** Snapshot used to diff project env edits without ever re-sending masked secrets. */
+  persistedEnvVars: Array<{
+    id: string;
+    key: string;
+    value: string;
+    isSecret: boolean;
+  }>;
   /** Root .env values detected during prepare; user must import before they apply. */
   rootEnvVars: EnvironmentVariable[];
   branch: string;
@@ -489,6 +496,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
     workloadType: "web",
   },
   envVars: [],
+  persistedEnvVars: [],
   rootEnvVars: [],
 };
 

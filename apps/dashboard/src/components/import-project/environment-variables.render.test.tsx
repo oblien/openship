@@ -84,7 +84,12 @@ describe("EnvironmentVariables reveal affordance", () => {
 
   it("omits it when nothing can resolve the sentinel", () => {
     // Deliberate: the toggle could only ever display the dots themselves as text.
-    expect(eyeCount(render({ envVars: MASKED }))).toBe(0);
+    const html = render({ envVars: MASKED });
+    expect(eyeCount(html)).toBe(0);
+    // Keep the sentinel in state for safe diffing, but render it as a placeholder
+    // so typing starts a replacement value instead of appending to the dots.
+    expect(html).toContain('value=""');
+    expect(html).toContain('placeholder="••••••••"');
   });
 
   it("gives a plaintext row an eye with or without a source", () => {

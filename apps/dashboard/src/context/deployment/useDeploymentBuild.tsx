@@ -39,6 +39,7 @@ import {
   deployErrorCloudCapability,
   shouldPromptCloudConnect,
 } from "@/lib/deploy-error-routing";
+import { planProjectEnvPersistence } from "./project-env";
 
 const ERROR_DEBOUNCE_MS = 1000;
 const MAX_RENDERED_BUILD_LOGS = 2000;
@@ -657,6 +658,16 @@ export function useDeploymentBuild(
       return null;
     }
 
+    const envPlan = planProjectEnvPersistence(
+      config.envVars,
+      config.persistedEnvVars ?? [],
+      Boolean(config.projectId),
+    );
+    if (!envPlan.ok) {
+      showToast(envPlan.error, "error", "Error");
+      return null;
+    }
+
     lastErrorRef.current = null;
 
     const localBuildStartedAt = new Date().toISOString();
@@ -705,8 +716,9 @@ export function useDeploymentBuild(
       // so persist build + runtime config in ONE atomic call (POST /:id/options)
       // and STOP. Deliberately does NOT call `ensure` (which would resend git +
       // publicEndpoints + a re-detected framework and clobber live config/routes)
-      // and does NOT touch env (env has its own per-variable editor — a blind
-      // replace here would wipe/corrupt masked secrets). No deploy. ────────────
+      // and persists env through the same partial-merge contract as the
+      // dedicated editor. Untouched masked secrets are absent from the diff.
+      // No deploy. ────────────────────────────────────────────────────────────
       if (saveConfigOnly) {
         const projectId = config.projectId;
         if (!projectId) {
@@ -738,6 +750,12 @@ export function useDeploymentBuild(
               ? { runtimeMode: config.runtimeMode }
               : {}),
           });
+          if (envPlan.merge && (envPlan.merge.upserts.length || envPlan.merge.deletes.length)) {
+            await projectsApi.mergeEnv(projectId, {
+              environment: "production",
+              ...envPlan.merge,
+            });
+          }
           showToast("Configuration saved", "success", "Saved");
           return projectId;
         } catch (err) {
@@ -840,22 +858,22 @@ export function useDeploymentBuild(
       // errors but the project row already exists at this point.
       ensuredProjectId = projectData.project_id;
 
-      // Step 2: Create deployment with config snapshot + env vars
-      const envVarsMap: Record<string, string> = {};
-      if (config.envVars && config.envVars.length > 0) {
-        for (const ev of config.envVars) {
-          if (ev.key.trim()) {
-            envVarsMap[ev.key] = ev.value;
-          }
-        }
+      // Existing projects keep their stored env as the source of truth. Apply
+      // only the user's diff, then let build/access read that saved state.
+      if (envPlan.merge && (envPlan.merge.upserts.length || envPlan.merge.deletes.length)) {
+        await projectsApi.mergeEnv(projectData.project_id, {
+          environment: "production",
+          ...envPlan.merge,
+        });
       }
 
+      // Step 2: Create deployment with config snapshot + env vars
       const data = await deployApi.buildAccess({
         projectId: projectData.project_id,
         branch: config.branch || undefined,
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
-        envVars: Object.keys(envVarsMap).length > 0 ? envVarsMap : undefined,
+        envVars: envPlan.deployEnvVars,
         // "None" routing → explicit [] (no public URL). Must be [], not
         // undefined: undefined makes the backend auto-derive a free subdomain.
         publicEndpoints: !isServiceDeployment

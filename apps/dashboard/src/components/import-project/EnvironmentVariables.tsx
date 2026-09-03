@@ -818,7 +818,9 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
           const displayValue =
             masked && Object.hasOwn(revealedValues, env.key)
               ? revealedValues[env.key]
-              : env.value;
+              : masked && !onReveal
+                ? ""
+                : env.value;
           const canToggleValue = !masked || Boolean(onReveal);
           return (
             <div key={index} data-env-index={index} className="space-y-1.5">
@@ -844,7 +846,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                     type={showAsText ? "text" : "password"}
                     value={displayValue}
                     onChange={(e) => handleValueChange(index, e.target.value)}
-                    placeholder={ev.valuePlaceholder}
+                    placeholder={masked && !onReveal ? ENV_MASK : ev.valuePlaceholder}
                     readOnly={!isEditingMode}
                     className={`w-full px-3.5 py-2.5 pe-9 border border-border/50 rounded-lg text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${
                       !isEditingMode ? 'cursor-default bg-muted/20' : 'bg-muted/30'
