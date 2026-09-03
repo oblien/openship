@@ -2,6 +2,7 @@ import { useUndoSend } from '@/hooks/use-undo-send';
 import { constructReplyBody, constructForwardBody } from '@/lib/utils';
 import { useActiveConnection } from '@/hooks/use-connections';
 import { useEmailAliases } from '@/hooks/use-email-aliases';
+import { getReplyDefaults, type ReplyMode } from '@/lib/reply-defaults';
 import { EmailComposer } from '../create/email-composer';
 import { useHotkeysContext } from 'react-hotkeys-hook';
 import { useTRPC } from '@/providers/query-provider';
@@ -14,7 +15,7 @@ import { useDraft } from '@/hooks/use-drafts';
 import { m } from '@/paraglide/messages';
 import type { Sender } from '@/types';
 import { useQueryState } from 'nuqs';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import posthog from 'posthog-js';
 import { toast } from 'sonner';
 
@@ -43,60 +44,16 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
   const replyToMessage =
     (messageId && emailData?.messages.find((msg) => msg.id === messageId)) || emailData?.latest;
 
-  // Initialize recipients and subject when mode changes
-  useEffect(() => {
-    if (!replyToMessage || !mode || !activeConnection?.email) return;
-
-    const userEmail = activeConnection.email.toLowerCase();
-    const senderEmail = replyToMessage.sender.email.toLowerCase();
-
-    // Set subject based on mode
-
-    if (mode === 'reply') {
-      // Reply to sender
-      const to: string[] = [];
-
-      // If the sender is not the current user, add them to the recipients
-      if (senderEmail !== userEmail) {
-        to.push(replyToMessage.sender.email);
-      } else if (replyToMessage.to && replyToMessage.to.length > 0 && replyToMessage.to[0]?.email) {
-        // If we're replying to our own email, reply to the first recipient
-        to.push(replyToMessage.to[0].email);
-      }
-
-      // Initialize email composer with these recipients
-      // Note: The actual initialization happens in the EmailComposer component
-    } else if (mode === 'replyAll') {
-      const to: string[] = [];
-      const cc: string[] = [];
-
-      // Add original sender if not current user
-      if (senderEmail !== userEmail) {
-        to.push(replyToMessage.sender.email);
-      }
-
-      // Add original recipients from To field
-      replyToMessage.to?.forEach((recipient) => {
-        const recipientEmail = recipient.email.toLowerCase();
-        if (recipientEmail !== userEmail && recipientEmail !== senderEmail) {
-          to.push(recipient.email);
-        }
-      });
-
-      // Add CC recipients
-      replyToMessage.cc?.forEach((recipient) => {
-        const recipientEmail = recipient.email.toLowerCase();
-        if (recipientEmail !== userEmail && !to.includes(recipient.email)) {
-          cc.push(recipient.email);
-        }
-      });
-
-      // Initialize email composer with these recipients
-    } else if (mode === 'forward') {
-      // For forward, we start with empty recipients
-      // Just set the subject and include the original message
+  const replyDefaults = useMemo(() => {
+    if (!replyToMessage || !mode || !activeConnection?.email) {
+      return { to: [], cc: [], subject: '' };
     }
-  }, [mode, replyToMessage, activeConnection?.email]);
+
+    return getReplyDefaults(replyToMessage, mode as ReplyMode, [
+      activeConnection.email,
+      ...(aliases ?? []).map((alias) => alias.email),
+    ]);
+  }, [activeConnection?.email, aliases, mode, replyToMessage]);
 
   const handleSendEmail = async (data: {
     to: string[];
@@ -270,10 +227,10 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
           setActiveReplyId(null);
         }}
         initialMessage={draft?.content ?? latestDraft?.decodedBody}
-        initialTo={ensureEmailArray(draft?.to)}
-        initialCc={ensureEmailArray(draft?.cc)}
+        initialTo={draft?.to ? ensureEmailArray(draft.to) : replyDefaults.to}
+        initialCc={draft?.cc ? ensureEmailArray(draft.cc) : replyDefaults.cc}
         initialBcc={ensureEmailArray(draft?.bcc)}
-        initialSubject={draft?.subject}
+        initialSubject={draft?.subject || replyDefaults.subject}
         autofocus={true}
         settingsLoading={settingsLoading}
         replyingTo={replyToMessage?.sender.email}
