@@ -979,39 +979,57 @@ export async function attachInstallStream(c: Context) {
 
 /**
  * Shell one-liner that gathers CPU, memory, disk, uptime, and load average.
- * Outputs a single JSON line. Designed for Linux servers.
+ * Outputs a single JSON line. Supports both Linux and macOS (Darwin) hosts.
  *
  * Fields:
- *   cpu      - usage % (100 - idle from /proc/stat snapshot)
- *   memTotal - total RAM bytes
- *   memUsed  - used RAM bytes (total - available)
- *   memAvail - available RAM bytes
+ *   cpu       - usage % (0-100)
+ *   memTotal  - total RAM bytes
+ *   memUsed   - used RAM bytes (total - available)
+ *   memAvail  - available RAM bytes
  *   diskTotal - root partition total bytes
  *   diskUsed  - root partition used bytes
  *   diskAvail - root partition available bytes
- *   uptime   - seconds since boot
- *   load1    - 1-min load average
- *   load5    - 5-min load average
- *   load15   - 15-min load average
+ *   uptime    - seconds since boot
+ *   load1     - 1-min load average
+ *   load5     - 5-min load average
+ *   load15    - 15-min load average
  */
-const STATS_COMMAND = [
-  // CPU: sample /proc/stat twice (200ms apart) for accurate usage
-  'read cpu0_u cpu0_n cpu0_s cpu0_i cpu0_rest <<< $(head -1 /proc/stat | awk \'{print $2,$3,$4,$5}\');',
+export const STATS_COMMAND = [
+  'if [ "$(uname -s)" = "Darwin" ]; then',
+  // Darwin / macOS
+  'read cpu_pct l1 l5 l15 <<< $(iostat -c 2 2>/dev/null | awk \'END{id=$(NF-3); cpu=(100-id<0?0:(100-id>100?100:100-id)); print int(cpu), $(NF-2), $(NF-1), $NF}\');',
+  '[ -z "$l1" ] && read l1 l5 l15 <<< $(sysctl -n vm.loadavg 2>/dev/null | awk \'{print $2, $3, $4}\');',
+  'cpu_pct=${cpu_pct:-0};',
+  'l1=${l1:-0.00};',
+  'l5=${l5:-0.00};',
+  'l15=${l15:-0.00};',
+  'mem_t=$(sysctl -n hw.memsize 2>/dev/null || echo 0);',
+  'mem_a=$(vm_stat 2>/dev/null | awk \'BEGIN{p=4096} /page size of/{gsub(/[^0-9]/,"",$8); if($8>0) p=$8} /Pages free:/{gsub(/[^0-9]/,"",$3); free=$3} /Pages inactive:/{gsub(/[^0-9]/,"",$3); inact=$3} /Pages speculative:/{gsub(/[^0-9]/,"",$3); spec=$3} END{print int((free+inact+spec)*p)}\');',
+  'mem_a=${mem_a:-0};',
+  'mem_u=$((mem_t - mem_a));',
+  '[ "$mem_u" -lt 0 ] && mem_u=0;',
+  'read disk_t disk_u disk_a <<< $(df -Pk / 2>/dev/null | awk \'NR==2{print $2*1024, $3*1024, $4*1024}\');',
+  'boot_sec=$(sysctl -n kern.boottime 2>/dev/null | sed -n \'s/.*{ sec = \\([0-9]*\\).*/\\1/p\');',
+  'now_sec=$(date +%s);',
+  '[ -n "$boot_sec" ] && up_s=$((now_sec - boot_sec)) || up_s=0;',
+  'printf \'{"cpu":%d,"memTotal":%s,"memUsed":%s,"memAvail":%s,"diskTotal":%s,"diskUsed":%s,"diskAvail":%s,"uptime":"%s","load1":"%s","load5":"%s","load15":"%s"}\\n\' "$cpu_pct" "$mem_t" "$mem_u" "$mem_a" "${disk_t:-0}" "${disk_u:-0}" "${disk_a:-0}" "$up_s" "$l1" "$l5" "$l15";',
+  'else',
+  // Linux
+  'read cpu0_u cpu0_n cpu0_s cpu0_i cpu0_rest <<< $(head -1 /proc/stat 2>/dev/null | awk \'{print $2,$3,$4,$5}\');',
   'sleep 0.2;',
-  'read cpu1_u cpu1_n cpu1_s cpu1_i cpu1_rest <<< $(head -1 /proc/stat | awk \'{print $2,$3,$4,$5}\');',
+  'read cpu1_u cpu1_n cpu1_s cpu1_i cpu1_rest <<< $(head -1 /proc/stat 2>/dev/null | awk \'{print $2,$3,$4,$5}\');',
   'cpu_d=$(( (cpu1_u-cpu0_u)+(cpu1_n-cpu0_n)+(cpu1_s-cpu0_s)+(cpu1_i-cpu0_i) ));',
   'cpu_idle=$(( cpu1_i - cpu0_i ));',
   '[ "$cpu_d" -gt 0 ] && cpu_pct=$(( 100 - (cpu_idle * 100 / cpu_d) )) || cpu_pct=0;',
-  // Memory
-  'read mem_t mem_a <<< $(awk \'/MemTotal/{t=$2} /MemAvailable/{a=$2} END{print t*1024, a*1024}\' /proc/meminfo);',
+  'read mem_t mem_a <<< $(awk \'/MemTotal/{t=$2} /MemAvailable/{a=$2} END{print t*1024, a*1024}\' /proc/meminfo 2>/dev/null);',
+  'mem_t=${mem_t:-0};',
+  'mem_a=${mem_a:-0};',
   'mem_u=$((mem_t - mem_a));',
-  // Disk
-  'read disk_t disk_u disk_a <<< $(df -B1 / | awk \'NR==2{print $2,$3,$4}\');',
-  // Uptime + load
-  'read up_s _ <<< $(cat /proc/uptime);',
-  'read l1 l5 l15 _ _ <<< $(cat /proc/loadavg);',
-  // Output JSON
-  'printf \'{"cpu":%d,"memTotal":%s,"memUsed":%s,"memAvail":%s,"diskTotal":%s,"diskUsed":%s,"diskAvail":%s,"uptime":"%s","load1":"%s","load5":"%s","load15":"%s"}\\n\' "$cpu_pct" "$mem_t" "$mem_u" "$mem_a" "$disk_t" "$disk_u" "$disk_a" "$up_s" "$l1" "$l5" "$l15"',
+  'read disk_t disk_u disk_a <<< $(df -Pk / 2>/dev/null | awk \'NR==2{print $2*1024, $3*1024, $4*1024}\');',
+  'read up_s _ <<< $(cat /proc/uptime 2>/dev/null);',
+  'read l1 l5 l15 _ _ <<< $(cat /proc/loadavg 2>/dev/null);',
+  'printf \'{"cpu":%d,"memTotal":%s,"memUsed":%s,"memAvail":%s,"diskTotal":%s,"diskUsed":%s,"diskAvail":%s,"uptime":"%s","load1":"%s","load5":"%s","load15":"%s"}\\n\' "$cpu_pct" "$mem_t" "$mem_u" "$mem_a" "${disk_t:-0}" "${disk_u:-0}" "${disk_a:-0}" "${up_s:-0}" "${l1:-0.00}" "${l5:-0.00}" "${l15:-0.00}";',
+  'fi',
 ].join(" ");
 
 /**
