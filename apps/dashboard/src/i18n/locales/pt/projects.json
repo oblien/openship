@@ -238,6 +238,9 @@
     "waitingRequests": "À espera de pedidos",
     "noTransfer": "Ainda não há transferência"
   },
+  "analytics": {
+    "loadFailed": "Não foi possível carregar as análises de tráfego"
+  },
   "monitoring": {
     "noDataTitle": "Ainda não há dados de monitorização",
     "noDataDescription": "As análises aparecerão aqui depois de a aplicação implementada começar a receber tráfego.",

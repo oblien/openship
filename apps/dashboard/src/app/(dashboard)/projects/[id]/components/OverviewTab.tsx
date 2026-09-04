@@ -7,7 +7,11 @@ import { workloadOf } from "@/context/deployment/types";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
-import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
+import {
+  useProjectInfo,
+  useAnalyticsData,
+  invalidateProjectCaches,
+} from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import {
@@ -22,6 +26,8 @@ import {
   Layers,
   ChevronRight,
   Container,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
 export const OverviewTab = () => {
@@ -40,8 +46,7 @@ export const OverviewTab = () => {
   // Analytics are traffic-to-a-domain — with no assigned domain the whole
   // section stays empty (a port-only app / DB has no hostname to log). Hide it
   // until a domain exists rather than show empty charts.
-  const hasDomain =
-    !!(selectedDomain || domain) || (domainsData?.domains?.length ?? 0) > 0;
+  const hasDomain = !!(selectedDomain || domain) || (domainsData?.domains?.length ?? 0) > 0;
 
   // ATOMIC PER-ENDPOINT HOOKS — each one owns its own skeleton state.
   // No context coupling, no useMemo soup. Module-level caches dedup
@@ -50,6 +55,8 @@ export const OverviewTab = () => {
   const projectInfoQuery = useProjectInfo(id);
   const analytics = useAnalyticsData(id, selectedDomain);
   const analyticsData = analytics.data;
+  const analyticsError = analytics.error;
+  const showAnalyticsError = !!analyticsError && !analytics.isLoading;
   const services = servicesData.services;
   const serviceCount = servicesData.isLoading
     ? (projectData.serviceCount ?? services.length)
@@ -302,125 +309,156 @@ export const OverviewTab = () => {
       {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
       {hasDomain && (
         <>
-      {/* Compact stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {stats.map((s) => (
-          <div key={s.label} className="bg-card rounded-xl border border-border/50 px-3.5 py-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-primary [&>svg]:size-3.5">{s.icon}</span>
-              <span className="text-[11px] text-muted-foreground font-medium">{s.label}</span>
+          {showAnalyticsError ? (
+            <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
+              <AlertCircle className="size-8 text-danger mx-auto mb-3" />
+              <p className="text-sm font-medium text-foreground mb-1">
+                {t.projects.analytics.loadFailed}
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">{analyticsError}</p>
+              <button
+                type="button"
+                onClick={() => id && invalidateProjectCaches(id)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
+              >
+                <RefreshCw className="size-3.5" />
+                {t.projects.services.retry}
+              </button>
             </div>
-            {s.loading ? (
-              <>
-                {/* Skeleton bars roughly matching the value (large) and
+          ) : (
+            <>
+              {/* Compact stats row */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {stats.map((s) => (
+                  <div
+                    key={s.label}
+                    className="bg-card rounded-xl border border-border/50 px-3.5 py-3"
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-primary [&>svg]:size-3.5">{s.icon}</span>
+                      <span className="text-[11px] text-muted-foreground font-medium">
+                        {s.label}
+                      </span>
+                    </div>
+                    {s.loading ? (
+                      <>
+                        {/* Skeleton bars roughly matching the value (large) and
                     subtext (small) line heights so the card doesn't
                     visibly jump when the data lands. Tuned to
                     `bg-muted-foreground/*` instead of `bg-muted/*` -
                     the latter is nearly identical to the card surface
                     in this theme and renders almost invisible. */}
-                <div className="h-[18px] w-12 rounded bg-muted-foreground/25 animate-pulse" />
-                <div className="h-[10px] w-20 mt-1.5 rounded bg-muted-foreground/15 animate-pulse" />
-              </>
-            ) : (
-              <>
-                <p className="text-[18px] font-semibold text-foreground leading-tight">{s.value}</p>
-                {s.subtext && (
-                  <p className="text-[10px] text-muted-foreground/60 mt-0.5">{s.subtext}</p>
-                )}
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Compact traffic chart */}
-      <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="size-3.5 text-primary" />
-            <span className="text-[13px] font-semibold text-foreground">
-              {t.projects.overview.traffic}
-            </span>
-          </div>
-          {dateRange && <span className="text-[11px] text-muted-foreground">{dateRange}</span>}
-        </div>
-        {showChartSkeleton ? (
-          // Chart-shaped skeleton - animated bars at varied heights so
-          // the placeholder reads as "a chart is coming" instead of a
-          // bare text line. Gated on `showChartSkeleton` (periods
-          // hydration) only — the stat cards above use their own
-          // `showStatsSkeleton`, so a fast `summary` endpoint can flip
-          // those even while `periods` is still in flight.
-          <div className="flex items-end gap-[3px] h-[120px] px-1 pb-1">
-            {Array.from({ length: 32 }).map((_, i) => {
-              // Deterministic varied heights - sine-based so the bars
-              // form a wave rather than a uniform block, and the
-              // sequence stays stable across re-renders.
-              const h = 18 + Math.abs(Math.sin(i * 0.7)) * 70;
-              return (
-                <div
-                  key={i}
-                  className="flex-1 rounded-sm bg-muted-foreground/15 animate-pulse"
-                  style={{ height: `${h}%`, animationDelay: `${i * 40}ms` }}
-                />
-              );
-            })}
-          </div>
-        ) : !hasAnalytics ? (
-          <div className="flex items-center justify-center h-[120px] rounded-xl border border-dashed border-border/50 bg-muted/10">
-            <span className="text-[12px] text-muted-foreground">
-              {t.projects.overview.noTrafficData}
-            </span>
-          </div>
-        ) : (
-          <div>
-            <div className="relative h-[120px]">
-              <svg
-                className="absolute inset-0 w-full h-full text-primary"
-                viewBox="0 0 1000 200"
-                preserveAspectRatio="none"
-                style={{ color: "var(--primary)" }}
-              >
-                <defs>
-                  <linearGradient id="overviewAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="20%" stopColor="currentColor" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="currentColor" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d={`M 0 200 ${areaData
-                    .map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `L ${x} ${y}`;
-                    })
-                    .join(" ")} L 1000 200 Z`}
-                  fill="url(#overviewAreaGrad)"
-                />
-                <path
-                  d={areaData
-                    .map((d, i) => {
-                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
-                      const y = 200 - (d.requests / maxRequests) * 180;
-                      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
-                    })
-                    .join(" ")}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-            <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground">
-              {displayData
-                .filter((_, i) => i % 6 === 0)
-                .map((d, i) => (
-                  <span key={i}>{d.hour}:00</span>
+                        <div className="h-[18px] w-12 rounded bg-muted-foreground/25 animate-pulse" />
+                        <div className="h-[10px] w-20 mt-1.5 rounded bg-muted-foreground/15 animate-pulse" />
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[18px] font-semibold text-foreground leading-tight">
+                          {s.value}
+                        </p>
+                        {s.subtext && (
+                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">{s.subtext}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
                 ))}
-            </div>
-          </div>
-        )}
-      </div>
+              </div>
+
+              {/* Compact traffic chart */}
+              <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="size-3.5 text-primary" />
+                    <span className="text-[13px] font-semibold text-foreground">
+                      {t.projects.overview.traffic}
+                    </span>
+                  </div>
+                  {dateRange && (
+                    <span className="text-[11px] text-muted-foreground">{dateRange}</span>
+                  )}
+                </div>
+                {showChartSkeleton ? (
+                  // Chart-shaped skeleton - animated bars at varied heights so
+                  // the placeholder reads as "a chart is coming" instead of a
+                  // bare text line. Gated on `showChartSkeleton` (periods
+                  // hydration) only — the stat cards above use their own
+                  // `showStatsSkeleton`, so a fast `summary` endpoint can flip
+                  // those even while `periods` is still in flight.
+                  <div className="flex items-end gap-[3px] h-[120px] px-1 pb-1">
+                    {Array.from({ length: 32 }).map((_, i) => {
+                      // Deterministic varied heights - sine-based so the bars
+                      // form a wave rather than a uniform block, and the
+                      // sequence stays stable across re-renders.
+                      const h = 18 + Math.abs(Math.sin(i * 0.7)) * 70;
+                      return (
+                        <div
+                          key={i}
+                          className="flex-1 rounded-sm bg-muted-foreground/15 animate-pulse"
+                          style={{ height: `${h}%`, animationDelay: `${i * 40}ms` }}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : !hasAnalytics ? (
+                  <div className="flex items-center justify-center h-[120px] rounded-xl border border-dashed border-border/50 bg-muted/10">
+                    <span className="text-[12px] text-muted-foreground">
+                      {t.projects.overview.noTrafficData}
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="relative h-[120px]">
+                      <svg
+                        className="absolute inset-0 w-full h-full text-primary"
+                        viewBox="0 0 1000 200"
+                        preserveAspectRatio="none"
+                        style={{ color: "var(--primary)" }}
+                      >
+                        <defs>
+                          <linearGradient id="overviewAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="20%" stopColor="currentColor" stopOpacity="0.3" />
+                            <stop offset="100%" stopColor="currentColor" stopOpacity="0.02" />
+                          </linearGradient>
+                        </defs>
+                        <path
+                          d={`M 0 200 ${areaData
+                            .map((d, i) => {
+                              const x =
+                                areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
+                              const y = 200 - (d.requests / maxRequests) * 180;
+                              return `L ${x} ${y}`;
+                            })
+                            .join(" ")} L 1000 200 Z`}
+                          fill="url(#overviewAreaGrad)"
+                        />
+                        <path
+                          d={areaData
+                            .map((d, i) => {
+                              const x =
+                                areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
+                              const y = 200 - (d.requests / maxRequests) * 180;
+                              return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+                            })
+                            .join(" ")}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground">
+                      {displayData
+                        .filter((_, i) => i % 6 === 0)
+                        .map((d, i) => (
+                          <span key={i}>{d.hour}:00</span>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
 

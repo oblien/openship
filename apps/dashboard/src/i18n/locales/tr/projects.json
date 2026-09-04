@@ -238,6 +238,9 @@
     "waitingRequests": "İstekler bekleniyor",
     "noTransfer": "Henüz veri transferi yok"
   },
+  "analytics": {
+    "loadFailed": "Trafik analitiği yüklenemedi"
+  },
   "monitoring": {
     "noDataTitle": "Henüz izleme verisi yok",
     "noDataDescription": "Analiz verileri, dağıtılan uygulama trafik almaya başladıktan sonra burada görünecektir.",

@@ -238,6 +238,9 @@
     "waitingRequests": "等待请求中",
     "noTransfer": "暂无传输"
   },
+  "analytics": {
+    "loadFailed": "无法加载流量分析数据"
+  },
   "monitoring": {
     "noDataTitle": "暂无监控数据",
     "noDataDescription": "部署的应用开始接收流量后，分析数据将显示在此处。",
