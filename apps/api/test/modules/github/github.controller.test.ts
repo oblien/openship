@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { linkSocialAccount, getGitHubAuthMode } = vi.hoisted(() => ({
+const {
+  linkSocialAccount,
+  getGitHubAuthMode,
+  resolveGitHubAuthMode,
+  getUserStatus,
+  resolveInstallUrl,
+  resolveApiPublicUrl,
+} = vi.hoisted(() => ({
   linkSocialAccount: vi.fn(),
   getGitHubAuthMode: vi.fn(),
+  resolveGitHubAuthMode: vi.fn(),
+  getUserStatus: vi.fn(),
+  resolveInstallUrl: vi.fn(),
+  resolveApiPublicUrl: vi.fn(),
 }));
 
 vi.mock("../../../src/lib/auth", () => ({
@@ -15,12 +26,18 @@ vi.mock("../../../src/lib/auth", () => ({
 
 vi.mock("../../../src/modules/github/github.auth", () => ({
   getGitHubAuthMode,
+  resolveGitHubAuthMode,
+  getUserStatus,
+  resolveInstallUrl,
 }));
 
 vi.mock("../../../src/modules/github/github.local-auth", () => ({}));
 vi.mock("../../../src/modules/github/github.service", () => ({}));
+vi.mock("../../../src/lib/public-url", () => ({
+  resolveApiPublicUrl,
+}));
 
-import { connectRedirect } from "../../../src/modules/github/github.controller";
+import { connect, connectRedirect } from "../../../src/modules/github/github.controller";
 
 function createContext(headers: Headers, query: Record<string, string> = {}) {
   return {
@@ -45,6 +62,37 @@ describe("connectRedirect", () => {
   beforeEach(() => {
     getGitHubAuthMode.mockReset();
     linkSocialAccount.mockReset();
+    resolveGitHubAuthMode.mockReset();
+    getUserStatus.mockReset();
+    resolveInstallUrl.mockReset();
+    resolveApiPublicUrl.mockReset();
+    resolveApiPublicUrl.mockReturnValue("https://api.example.com");
+  });
+
+  it("returns an absolute API URL for the OAuth handoff", async () => {
+    resolveGitHubAuthMode.mockResolvedValue("app");
+    getUserStatus.mockResolvedValue({ connected: false });
+    resolveInstallUrl.mockResolvedValue({ state: "workspace nonce" });
+
+    const response = await connect({
+      get: (key: string) =>
+        key === "ctx"
+          ? {
+              userId: "user-1",
+              organizationId: "org-1",
+            }
+          : undefined,
+      req: {
+        json: async () => ({}),
+      },
+      json: (body: unknown) => Response.json(body),
+    } as any);
+
+    expect(await response.json()).toMatchObject({
+      connected: false,
+      flow: "redirect",
+      url: "https://api.example.com/api/github/connect/redirect?install_state=workspace%20nonce",
+    });
   });
 
   it("starts a GitHub link flow and forwards the OAuth state cookie", async () => {
@@ -52,12 +100,15 @@ describe("connectRedirect", () => {
     const headers = new Headers({ cookie: "openship.session_token=test" });
 
     linkSocialAccount.mockResolvedValue(
-      new Response(JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }), {
-        headers: {
-          "content-type": "application/json",
-          "set-cookie": "oauth_state=test-state; Path=/; HttpOnly",
+      new Response(
+        JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }),
+        {
+          headers: {
+            "content-type": "application/json",
+            "set-cookie": "oauth_state=test-state; Path=/; HttpOnly",
+          },
         },
-      }),
+      ),
     );
 
     const response = await connectRedirect(createContext(headers));
@@ -83,11 +134,14 @@ describe("connectRedirect", () => {
     getGitHubAuthMode.mockReturnValue("app");
 
     linkSocialAccount.mockResolvedValue(
-      new Response(JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }), {
-        headers: {
-          "content-type": "application/json",
+      new Response(
+        JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
         },
-      }),
+      ),
     );
 
     await connectRedirect(createContext(new Headers()));
