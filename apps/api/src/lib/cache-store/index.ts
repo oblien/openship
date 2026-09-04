@@ -112,6 +112,37 @@ export function describeCacheStore(): Backend | null {
   return backendDecision;
 }
 
+/**
+ * Invalidate every live cache namespace without disposing the stores.
+ *
+ * A whole-instance database restore can replace every credential, server and
+ * organization row in one commit. Keeping values derived from the previous
+ * snapshot after that commit is both incorrect and, for token caches, unsafe.
+ * This deliberately differs from shutdownCacheStores(): callers keep using the
+ * same Redis connection / memory stores after invalidation.
+ */
+export async function clearAllCacheStores(): Promise<void> {
+  // Include stores whose backend selection is still resolving. A store requested
+  // before the restore must not escape because its promise settled concurrently.
+  const resolved = await Promise.allSettled([...storesByNamespace.values()]);
+  const stores = new Set<CacheStore<unknown>>(trackedStores);
+  const failures: unknown[] = [];
+  for (const result of resolved) {
+    if (result.status === "fulfilled") stores.add(result.value);
+    else failures.push(result.reason);
+  }
+
+  const invalidated = await Promise.allSettled(
+    [...stores].map((store) => store.invalidateByPrefix("")),
+  );
+  for (const result of invalidated) {
+    if (result.status === "rejected") failures.push(result.reason);
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "One or more runtime cache stores could not be cleared");
+  }
+}
+
 /** Graceful shutdown — disposes every tracked store and closes the
  *  shared Redis connection. Idempotent. */
 export async function shutdownCacheStores(): Promise<void> {

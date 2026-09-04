@@ -35,6 +35,7 @@ function envHostControlDisabled(): boolean {
 /** Cached because /health/env is unauthenticated and polled by every dashboard
  *  load. Cleared by every instance-settings write. */
 let cached: boolean | null = null;
+let cacheGeneration = 0;
 
 /**
  * Effective "host control is ENABLED" for THIS instance right now. This is the
@@ -47,19 +48,22 @@ export async function resolveHostControlEnabled(): Promise<boolean> {
   if (resolvePlatformConfig().target !== "selfhosted") return false;
 
   if (cached !== null) return cached;
+  const generation = cacheGeneration;
 
   // Unreadable settings fall back to the env default rather than failing closed —
   // refusing to honour a stored enable because one query blipped would silently
   // strand a box that the operator turned back on.
+  let resolved: boolean;
   try {
     const { repos } = await import("@repo/db");
     const stored = (await repos.instanceSettings.get())?.hostControlEnabled;
-    cached = stored ?? !envHostControlDisabled();
+    resolved = stored ?? !envHostControlDisabled();
   } catch {
-    cached = !envHostControlDisabled();
+    resolved = !envHostControlDisabled();
   }
 
-  return cached;
+  if (generation === cacheGeneration) cached = resolved;
+  return resolved;
 }
 
 /**
@@ -87,5 +91,6 @@ export async function syncHostControlOverride(): Promise<void> {
 
 /** Clear the cached effective value — called after setup.controller writes. */
 export function clearHostControlCache() {
+  cacheGeneration += 1;
   cached = null;
 }

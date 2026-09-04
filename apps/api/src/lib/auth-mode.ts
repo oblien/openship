@@ -57,6 +57,7 @@ export function isAuthModePinned(): boolean {
 /** Cached ONLY for the unpinned (DB-backed) path — avoids a query per request
  *  through authMiddleware. Cleared by every authMode write. */
 let cached: AuthMode | null = null;
+let cacheGeneration = 0;
 
 export async function getAuthMode(): Promise<AuthMode> {
   // Declared → done. Nothing else is consulted, so there is no ordering, no
@@ -65,22 +66,26 @@ export async function getAuthMode(): Promise<AuthMode> {
   if (pinned) return pinned;
 
   if (cached !== null) return cached;
+  const generation = cacheGeneration;
 
   // Undeclared: the persisted value is the source. Fail CLOSED — an unreadable
   // settings table means "require a login", never "let everyone in".
+  let resolved: AuthMode;
   try {
     const { repos } = await import("@repo/db");
     const settings = await repos.instanceSettings.get();
     const stored = settings?.authMode;
-    cached = AUTH_MODES.includes(stored as AuthMode) ? (stored as AuthMode) : "local";
+    resolved = AUTH_MODES.includes(stored as AuthMode) ? (stored as AuthMode) : "local";
   } catch {
-    cached = "local";
+    resolved = "local";
   }
 
-  return cached;
+  if (generation === cacheGeneration) cached = resolved;
+  return resolved;
 }
 
 /** Clear the cached value - called after setup.controller writes. */
 export function clearAuthModeCache() {
+  cacheGeneration += 1;
   cached = null;
 }

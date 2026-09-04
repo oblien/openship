@@ -1722,6 +1722,11 @@ const VOL_SIZE_TTL_MS = 60_000;
 // the exact container, so re-opening the tab doesn't re-`du` every time.
 const volSizeCache = new Map<string, { at: number; value: ServiceVolumeSizes }>();
 
+/** Drop measurements keyed by project/service rows replaced by an import. */
+export function clearServiceVolumeSizeCache(): void {
+  volSizeCache.clear();
+}
+
 /** Resolve a named volume's real on-host name (it may be namespaced at deploy
  *  time as `openship-<slug>-<name>`) and `du` its mountpoint. Only used as a
  *  fallback when the container isn't running to report authoritative mounts. */

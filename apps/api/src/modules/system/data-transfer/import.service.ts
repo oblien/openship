@@ -13,7 +13,8 @@
 import { db, eq, inArray, restoreSubgraphInTransaction, type DatabaseTransaction } from "@repo/db";
 
 import { env } from "../../../config/env";
-import { withMigrationLock } from "../migration/migration-lock";
+import { reconcileRuntimeStateAfterImport } from "../../../lib/database-runtime-state";
+import { reassertMigrationLockAfterRestore, withMigrationLock } from "../migration/migration-lock";
 import { CloudInstanceNotTransferableError } from "./errors";
 import { openTransferSecrets } from "./passphrase-crypto";
 import { sealForInstance } from "./secret-codec";
@@ -264,7 +265,18 @@ export async function importPreparedInstance(opts: {
         secretsSkipped,
         localPathProjects,
       });
+
+      // A wipe replaces instance_settings, including the row carrying the lock
+      // acquired above. Reassert it as the final transactional write so no new
+      // mutation can enter between commit and runtime-state reconciliation.
+      await reassertMigrationLockAfterRestore(tx);
     });
+
+    // The database commit is the atomic boundary. Everything cached above it
+    // must now forget the previous instance before the quiesce lock is released.
+    // This hook owns its own error handling: a committed destructive import must
+    // never be reported as failed/retryable.
+    await reconcileRuntimeStateAfterImport();
   });
 
   return { mode, rowsRestored, secretsRehydrated, secretsSkipped, localPathProjects };

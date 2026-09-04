@@ -81,6 +81,7 @@ interface CachedPlatformTransport {
 
 const PLATFORM_TRANSPORT_TTL_MS = 60_000;
 const platformTransportCache = new Map<string, CachedPlatformTransport>();
+let platformTransportGeneration = 0;
 
 /**
  * Resolving the platform mailbox SSHes into the mail server, so a server that is
@@ -143,6 +144,7 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
   transport: Transporter;
   from: string;
 } | null> {
+  const generation = platformTransportGeneration;
   // `@repo/db` is universal (every controller / service / repo consumer
   // already loads it eagerly at boot via `db = await createDb()`), so
   // a dynamic import buys nothing — kept static for clarity. The ONLY
@@ -180,9 +182,8 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
   }
 
   try {
-    const { ensureOpenshipPlatformMailbox } = await import(
-      "../modules/mail/admin/platform-mailbox.service"
-    );
+    const { ensureOpenshipPlatformMailbox } =
+      await import("../modules/mail/admin/platform-mailbox.service");
     const creds = await withTimeout(
       ensureOpenshipPlatformMailbox(installed.serverId, {
         rotate: options?.rotate === true,
@@ -212,13 +213,17 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
       from: creds.from,
       fetchedAt: Date.now(),
     };
-    platformTransportCache.set(cacheKey, entry);
-    platformTransportFailures.delete(cacheKey);
+    if (generation === platformTransportGeneration) {
+      platformTransportCache.set(cacheKey, entry);
+      platformTransportFailures.delete(cacheKey);
+    }
     return { transport, from: creds.from };
   } catch (err) {
     // Logged once per failure window (see the negative cache above) instead of
     // on every request.
-    platformTransportFailures.set(cacheKey, Date.now());
+    if (generation === platformTransportGeneration) {
+      platformTransportFailures.set(cacheKey, Date.now());
+    }
     console.warn(
       `[mail] platform mailbox unavailable on ${installed.serverId}; using the next transport ` +
         `(retrying in ${PLATFORM_TRANSPORT_FAILURE_TTL_MS / 1000}s): ${safeErrorMessage(err)}`,
@@ -231,6 +236,7 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
  *  next send/read re-probes immediately instead of waiting out the window. Call
  *  after an install/repair finishes. */
 export function invalidatePlatformTransport(serverId?: string): void {
+  platformTransportGeneration += 1;
   if (!serverId) {
     platformTransportCache.clear();
     platformTransportFailures.clear();
@@ -245,6 +251,7 @@ export function invalidatePlatformTransport(serverId?: string): void {
 const INSTANCE_TRANSPORT_TTL_MS = 60_000;
 let instanceTransportCache: { transport: Transporter; from: string | undefined } | null = null;
 let instanceTransportCheckedAt = 0;
+let instanceTransportGeneration = 0;
 
 /**
  * Operator-configured SMTP from `instance_settings` (Settings → Email). The
@@ -264,6 +271,7 @@ async function getInstanceTransport(): Promise<{
   // Self-hosted only. On the SaaS (CLOUD_MODE) a stray instance_settings SMTP
   // row must never override the platform's own multi-tenant transport.
   if (env.CLOUD_MODE) return null;
+  const generation = instanceTransportGeneration;
 
   const now = Date.now();
   if (now - instanceTransportCheckedAt < INSTANCE_TRANSPORT_TTL_MS) {
@@ -303,8 +311,9 @@ async function getInstanceTransport(): Promise<{
     secure: port === 465,
     auth: { user, pass },
   });
-  instanceTransportCache = { transport, from: settings?.smtpFrom?.trim() || user };
-  return instanceTransportCache;
+  const resolved = { transport, from: settings?.smtpFrom?.trim() || user };
+  if (generation === instanceTransportGeneration) instanceTransportCache = resolved;
+  return resolved;
 }
 
 /**
@@ -312,6 +321,7 @@ async function getInstanceTransport(): Promise<{
  * `instance_settings`. Call after saving the SMTP config.
  */
 export function invalidateInstanceTransportCache(): void {
+  instanceTransportGeneration += 1;
   instanceTransportCache = null;
   instanceTransportCheckedAt = 0;
 }
@@ -398,9 +408,11 @@ async function getTransportChain(
 ): Promise<ActiveTransport[]> {
   const chain: ActiveTransport[] = [];
   const instance = await getInstanceTransport();
-  if (instance) chain.push({ transport: instance.transport, from: instance.from, source: "instance" });
+  if (instance)
+    chain.push({ transport: instance.transport, from: instance.from, source: "instance" });
   const platform = await getPlatformTransport();
-  if (platform) chain.push({ transport: platform.transport, from: platform.from, source: "platform" });
+  if (platform)
+    chain.push({ transport: platform.transport, from: platform.from, source: "platform" });
   if (preferSource !== "platform" && envTransport) {
     chain.push({ transport: envTransport, from: envFrom, source: "env" });
   }

@@ -27,7 +27,7 @@
  * over before any worker would actually do anything.
  */
 
-import { db, sql } from "@repo/db";
+import { db, sql, type DatabaseTransaction } from "@repo/db";
 import { getJobRunner } from "../../../lib/job-runner";
 
 export class MigrationAlreadyInProgressError extends Error {
@@ -87,6 +87,27 @@ async function releaseLock(): Promise<void> {
 }
 
 /**
+ * Keep the quiesce flag alive when a destructive restore replaces the
+ * instance_settings row that originally held it. Call this as the final write
+ * in the restore transaction: once that transaction commits, mutation requests
+ * must remain blocked until post-commit process state has been reconciled.
+ */
+export async function reassertMigrationLockAfterRestore(tx: DatabaseTransaction): Promise<void> {
+  const result = await tx.execute(sql`
+    UPDATE instance_settings
+    SET migration_in_progress = true,
+        migration_started_at = NOW(),
+        updated_at = NOW()
+    WHERE id = 'default'
+    RETURNING id
+  `);
+  const rows = (result as unknown as { rows?: unknown[] }).rows ?? (result as unknown as unknown[]);
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    throw new Error("The restored instance settings row is missing; the migration lock was lost.");
+  }
+}
+
+/**
  * Wrap a migration body in the quiesce protocol.
  *
  * Order of operations:
@@ -118,9 +139,7 @@ export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
     // The compare-and-swap UPDATE never committed, so no lock leak.
     // Wrap the raw drizzle/pg error in a typed error so the controller
     // surfaces a clean 503 instead of a raw 500 with a stack trace.
-    throw new MigrationLockAcquireError(
-      err instanceof Error ? err.message : String(err),
-    );
+    throw new MigrationLockAcquireError(err instanceof Error ? err.message : String(err));
   }
   if (!acquired) {
     throw new MigrationAlreadyInProgressError();
@@ -151,7 +170,9 @@ export async function withMigrationLock<T>(fn: () => Promise<T>): Promise<T> {
       try {
         if (typeof (pausedRunner as { resumeAll?: () => Promise<void> }).resumeAll === "function") {
           await (pausedRunner as unknown as { resumeAll: () => Promise<void> }).resumeAll();
-        } else if (typeof (pausedRunner as { resume?: () => Promise<void> }).resume === "function") {
+        } else if (
+          typeof (pausedRunner as { resume?: () => Promise<void> }).resume === "function"
+        ) {
           await (pausedRunner as unknown as { resume: () => Promise<void> }).resume();
         }
       } catch (err) {
@@ -176,8 +197,9 @@ export async function isMigrationInProgress(): Promise<boolean> {
     FROM instance_settings
     WHERE id = 'default'
   `);
-  const rows = (row as unknown as { rows?: Array<{ in_progress?: boolean }> }).rows
-    ?? (row as unknown as Array<{ in_progress?: boolean }>);
+  const rows =
+    (row as unknown as { rows?: Array<{ in_progress?: boolean }> }).rows ??
+    (row as unknown as Array<{ in_progress?: boolean }>);
   if (!Array.isArray(rows) || rows.length === 0) return false;
   return rows[0]?.in_progress === true;
 }

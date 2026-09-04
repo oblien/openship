@@ -39,6 +39,7 @@ const SELF_APP_SLUG = "openship";
  * auth-mode / zero-auth / cookie / trustedOrigins gates — those stay env-only.
  */
 let cachedSelfAppUrl: string | null = null;
+let cacheGeneration = 0;
 
 /** Normalized public URL (no trailing slash): env seed wins, else the self-app's
  *  verified primary domain, else null (callers fall back to the runtime target). */
@@ -79,23 +80,27 @@ async function locateSelfAppProjectId(): Promise<string | null> {
  * Best-effort — keeps the prior value on error. Returns the resolved URL / null.
  */
 export async function refreshSelfAppPublicUrl(): Promise<string | null> {
+  const generation = cacheGeneration;
   try {
     const projectId = await locateSelfAppProjectId();
     if (!projectId) {
-      cachedSelfAppUrl = null;
+      if (generation === cacheGeneration) cachedSelfAppUrl = null;
       return null;
     }
     const project = await repos.project.findById(projectId);
     if (!project?.activeDeploymentId) {
-      cachedSelfAppUrl = null;
+      if (generation === cacheGeneration) cachedSelfAppUrl = null;
       return null;
     }
     const primary = await repos.domain.getPrimaryByProject(projectId);
-    cachedSelfAppUrl =
-      primary && primary.verified && (primary.sslStatus === "active" || primary.sslStatus === "external")
+    const resolved =
+      primary &&
+      primary.verified &&
+      (primary.sslStatus === "active" || primary.sslStatus === "external")
         ? `https://${primary.hostname}`
         : null;
-    return cachedSelfAppUrl;
+    if (generation === cacheGeneration) cachedSelfAppUrl = resolved;
+    return resolved;
   } catch {
     return cachedSelfAppUrl;
   }
@@ -103,6 +108,7 @@ export async function refreshSelfAppPublicUrl(): Promise<string | null> {
 
 /** Drop the cached self-app URL (call after a self-app domain change). */
 export function invalidateSelfAppPublicUrl(): void {
+  cacheGeneration += 1;
   cachedSelfAppUrl = null;
 }
 
@@ -158,7 +164,9 @@ export async function getInstanceReachability(): Promise<InstanceReachability> {
   }
   const primary = await repos.domain.getPrimaryByProject(selfAppProjectId).catch(() => null);
   const hasVerifiedDomain =
-    !!primary && primary.verified && (primary.sslStatus === "active" || primary.sslStatus === "external");
+    !!primary &&
+    primary.verified &&
+    (primary.sslStatus === "active" || primary.sslStatus === "external");
   await refreshSelfAppPublicUrl().catch(() => {});
   const url = publicUrl();
   return {

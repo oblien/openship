@@ -41,6 +41,7 @@ export function isProductMode(value: unknown): value is ProductMode {
 /** Cached because /health/env is unauthenticated and polled by every dashboard
  *  load. Cleared by every instance-settings write. */
 let cached: ProductMode | null = null;
+let cacheGeneration = 0;
 
 export async function resolveProductMode(): Promise<ProductMode> {
   // Multi-tenant SaaS: mail is self-hosted-only infrastructure. Checked first so
@@ -48,23 +49,27 @@ export async function resolveProductMode(): Promise<ProductMode> {
   if (env.CLOUD_MODE) return "platform";
 
   if (cached !== null) return cached;
+  const generation = cacheGeneration;
 
   // Unreadable settings fall back to the env default rather than failing closed.
   // This value picks which nav to draw; there is nothing to fail closed ABOUT,
   // and refusing to honour a declared OPENSHIP_PRODUCT=mail because one query
   // failed would show a mail-only operator a platform UI they can't use.
+  let resolved: ProductMode;
   try {
     const { repos } = await import("@repo/db");
     const stored = (await repos.instanceSettings.get())?.productMode;
-    cached = isProductMode(stored) ? stored : env.OPENSHIP_PRODUCT;
+    resolved = isProductMode(stored) ? stored : env.OPENSHIP_PRODUCT;
   } catch {
-    cached = env.OPENSHIP_PRODUCT;
+    resolved = env.OPENSHIP_PRODUCT;
   }
 
-  return cached;
+  if (generation === cacheGeneration) cached = resolved;
+  return resolved;
 }
 
 /** Clear the cached value — called after setup.controller writes. */
 export function clearProductModeCache() {
+  cacheGeneration += 1;
   cached = null;
 }

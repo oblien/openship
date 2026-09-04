@@ -3,6 +3,13 @@ import { repos } from "@repo/db";
 import { resolvesToLocalHost } from "./self-host";
 
 let cachedBoxOrgId: string | null = null;
+let cacheGeneration = 0;
+
+/** Drop the founding-org memo after a whole-instance restore. */
+export function clearBoxOwningOrgCache(): void {
+  cacheGeneration += 1;
+  cachedBoxOrgId = null;
+}
 
 /**
  * The organization that OWNS this control-plane box: the founding admin's
@@ -21,10 +28,12 @@ let cachedBoxOrgId: string | null = null;
  */
 export async function boxOwningOrgId(): Promise<string | null> {
   if (cachedBoxOrgId) return cachedBoxOrgId;
+  const generation = cacheGeneration;
   const admin = await repos.user.findFoundingAdmin();
   if (!admin?.id) return null;
-  cachedBoxOrgId = `org_${admin.id}`;
-  return cachedBoxOrgId;
+  const resolved = `org_${admin.id}`;
+  if (generation === cacheGeneration) cachedBoxOrgId = resolved;
+  return resolved;
 }
 
 type LocalServerRow = {

@@ -19,6 +19,7 @@ export const LOCAL_EMAIL = "local@openship.local";
 /** Reset the in-process cache. Use after mutating the local user row
  *  (e.g. the zero-auth → local-auth upgrade flow renames the user). */
 export function invalidateLocalUserCache(): void {
+  cacheGeneration += 1;
   cached = null;
 }
 
@@ -32,9 +33,11 @@ export interface LocalUser {
 }
 
 let cached: LocalUser | null = null;
+let cacheGeneration = 0;
 
 export async function ensureLocalUser(): Promise<LocalUser> {
   if (cached) return cached;
+  const generation = cacheGeneration;
 
   const existing = await repos.user.findByEmail(LOCAL_EMAIL);
   const id = existing?.id ?? randomUUID();
@@ -56,7 +59,7 @@ export async function ensureLocalUser(): Promise<LocalUser> {
   const row = await repos.user.findById(id);
   if (!row) throw new Error("Failed to provision local user");
 
-  cached = {
+  const resolved = {
     id: row.id,
     name: row.name,
     email: row.email,
@@ -65,5 +68,9 @@ export async function ensureLocalUser(): Promise<LocalUser> {
     autoProvisioned: row.autoProvisioned,
   };
 
-  return cached;
+  // A restore can commit while this request is awaiting the DB. Do not allow
+  // that older request to put the pre-restore identity back into the cache.
+  if (generation === cacheGeneration) cached = resolved;
+
+  return resolved;
 }

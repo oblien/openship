@@ -41,6 +41,14 @@ export interface McpSigningKey {
 
 let cached: McpSigningKey | null = null;
 let inflight: Promise<McpSigningKey> | null = null;
+let cacheGeneration = 0;
+
+/** Drop key material derived from the verification table after a DB restore. */
+export function invalidateMcpSigningKeyCache(): void {
+  cacheGeneration += 1;
+  cached = null;
+  inflight = null;
+}
 
 /** RFC 7638 JWK thumbprint of an RSA public JWK — the standard, stable kid. */
 function thumbprint(jwk: { e: string; kty: string; n: string }): string {
@@ -90,20 +98,32 @@ async function loadOrCreate(): Promise<McpSigningKey> {
 /** The instance signing key — generated on first use, cached for the process. */
 export async function getMcpSigningKey(): Promise<McpSigningKey> {
   if (cached) return cached;
-  inflight ??= loadOrCreate().then((key) => {
-    cached = key;
-    inflight = null;
-    return key;
-  });
+  if (inflight) return inflight;
+  const generation = cacheGeneration;
+  let pending: Promise<McpSigningKey>;
+  pending = loadOrCreate().then(
+    (key) => {
+      // An import may commit while loadOrCreate is awaiting the DB. Return the
+      // value to that request, but do not poison the post-import cache with it.
+      if (generation === cacheGeneration) cached = key;
+      if (inflight === pending) inflight = null;
+      return key;
+    },
+    (error) => {
+      if (inflight === pending) inflight = null;
+      throw error;
+    },
+  );
+  inflight = pending;
   return inflight;
 }
 
 /** Sign an RS256 JWT with the instance key. */
 export async function signRs256Jwt(claims: Record<string, unknown>): Promise<string> {
   const key = await getMcpSigningKey();
-  const header = Buffer.from(
-    JSON.stringify({ alg: "RS256", typ: "JWT", kid: key.kid }),
-  ).toString("base64url");
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT", kid: key.kid })).toString(
+    "base64url",
+  );
   const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
   const signature = cryptoSign("sha256", Buffer.from(`${header}.${payload}`), key.privateKey);
   return `${header}.${payload}.${signature.toString("base64url")}`;
