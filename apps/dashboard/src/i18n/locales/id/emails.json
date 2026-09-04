@@ -1,0 +1,200 @@
+{
+  "page": {
+    "title": "Server Email",
+    "subtitle": "Siapkan server mail self-hosted hanya dengan beberapa klik",
+    "backToServers": "Kembali ke server mail",
+    "backToAdmin": "Kembali ke admin mail",
+    "addServer": "Tambah server mail",
+    "removeModal": {
+      "title": "Hapus server mail ini?",
+      "description": "Hapus {label} dari daftar mail saja. Stack mail tetap berjalan dan tidak ada yang di-uninstall — tambahkan kembali kapan saja dengan \"Adopt\" untuk instalasi yang sudah ada.",
+      "submit": "Hapus dari daftar",
+      "submitting": "Menghapus…",
+      "body": "Karena instalasi di server dibiarkan utuh, mengadopsi ulang nanti akan memulihkan manajemen penuh tanpa reinstalasi."
+    },
+    "errors": {
+      "resetFailed": "Reset gagal",
+      "ackDns": "Tidak dapat mengonfirmasi DNS",
+      "ackPtr": "Tidak dapat mengonfirmasi PTR",
+      "selectServer": "Pilih server terlebih dahulu",
+      "resolutionFailed": "Resolusi gagal"
+    }
+  },
+  "adopt": {
+    "title": "Adopsi server mail yang sudah ada",
+    "intro": "Sudah menyiapkan server mail dengan Openship di salah satu server Anda? Pilih dan pindai — jika stack mail ditemukan, stack akan diadopsi ulang ke dashboard tanpa reinstalasi atau mengubah data Anda.",
+    "scanning": "Memindai…",
+    "scan": "Pindai server",
+    "detected": "Server mail terdeteksi",
+    "domainLabel": "Domain:",
+    "unknown": "tidak diketahui",
+    "stats": "iRedMail berjalan: {iredmail} · Instalasi: {install} · Webmail: {webmail}",
+    "yes": "ya",
+    "no": "tidak",
+    "complete": "lengkap",
+    "inProgress": "sedang berlangsung",
+    "present": "ada",
+    "notDeployed": "belum di-deploy",
+    "cancel": "Batal",
+    "adopt": "Adopt",
+    "noInstall": "Tidak ditemukan instalasi server mail di server ini.",
+    "scanFailed": "Pindai gagal — apakah server dapat dijangkau?",
+    "adoptFailed": "Adopt gagal"
+  },
+  "dns": {
+    "heading": "Publikasikan record DNS sebelum melanjutkan",
+    "bodyBefore": "Pengiriman mail akan terganggu tanpa record ini. Tambahkan di penyedia DNS Anda, lalu klik ",
+    "action": "Saya sudah mengatur record - lanjutkan",
+    "bodyAfterResume": " di bawah. Instalasi dilanjutkan dari langkah {resumeStep} (sertifikat SSL).",
+    "bodyAfter": " di bawah.",
+    "autoConfigure": "Konfigurasi otomatis DNS",
+    "autoConfigureDesc": "Pilih penyedia yang menghosting DNS domain Anda. Kami akan mendorong record untuk Anda menggunakan API mereka.",
+    "otherManual": "Lainnya / atur secara manual",
+    "otherManualDesc": "Salin setiap record dari banner dan tempel ke UI penyedia Anda",
+    "pickAnother": "Pilih penyedia lain",
+    "comingSoon": "Integrasi {provider} - segera hadir",
+    "comingSoonBefore": "Integrasi API langsung dengan penyedia ini belum tersedia. Untuk saat ini, salin setiap record dari banner dan tempel ke UI penyedia DNS Anda. Setelah selesai, klik ",
+    "comingSoonAfter": ".",
+    "gotIt": "Mengerti",
+    "providers": {
+      "cloudflare": "DNS gratis, propagasi cepat. Pilihan paling umum.",
+      "hostinger": "Jika Anda membeli domain melalui Hostinger.",
+      "route53": "Zona DNS yang di-host AWS.",
+      "digitalocean": "Zona yang dikelola DigitalOcean.",
+      "namecheap": "DNS default Namecheap.",
+      "google": "Zona yang dikelola Google."
+    }
+  },
+  "recordCard": {
+    "priority": "Prioritas: {priority}",
+    "copyValue": "Salin nilai"
+  },
+  "progress": {
+    "liveLogs": "Log langsung",
+    "lineOne": "{count} baris",
+    "lineOther": "{count} baris",
+    "cancel": "Batal",
+    "resetTitle": "Hapus status instalasi di server dan mulai dari awal",
+    "confirmReset": "Klik lagi untuk mengonfirmasi",
+    "reset": "Reset",
+    "waiting": "Menunggu output…",
+    "noBuffered": "Tidak ada output yang di-buffer untuk menjalankan ini.",
+    "willStream": "Log akan ditampilkan di sini setelah pengaturan dimulai.",
+    "jumpToLatest": "Lompat ke yang terbaru",
+    "setupFailed": "Pengaturan gagal",
+    "retryFromStep": "Coba ulang dari langkah {resumeStep}",
+    "resumePausedTitle": "Pengaturan dijeda",
+    "stepLabel": "Langkah {step}",
+    "continueFromStep": "Lanjutkan dari langkah {step}"
+  },
+  "serverList": {
+    "title": "Server mail",
+    "addServer": "Tambah server mail",
+    "removeFromList": "Hapus dari daftar",
+    "removeAria": "Hapus {name} dari daftar mail",
+    "installing": "Menginstal",
+    "running": "Berjalan",
+    "incomplete": "Tidak Lengkap",
+    "stoppedAt": "Berhenti · langkah {step}",
+    "open": "Buka",
+    "openAria": "Buka {name}",
+    "actionsAria": "Tindakan untuk {name}",
+    "overviewTitle": "Ringkasan mail",
+    "hint": "Menghapus server hanya melepaskannya dari daftar ini — instalasi tetap berjalan dan dapat diadopsi ulang."
+  },
+  "setup": {
+    "title": "Pengaturan Server Mail",
+    "subtitle": "Deploy stack mail self-hosted yang lengkap di server ini",
+    "domainLabel": "Domain",
+    "domainPlaceholder": "example.com",
+    "willBeAtBefore": "Server mail Anda akan berada di ",
+    "adminPasswordLabel": "Kata Sandi Admin",
+    "passwordPlaceholder": "Kata sandi kuat - atau klik Generate",
+    "passwordHint": "Minimal 12 karakter. Digunakan untuk masuk ke mailbox setelah pengaturan — ubah nanti dari panel admin di bawah.",
+    "relay": {
+      "toggle": "Relay outbound melalui penyedia email",
+      "hint": "Direkomendasikan. Kirim melalui IP tepercaya penyedia — IP server baru sering masuk daftar blokir, dan banyak host memblokir port 25 outbound. Penerimaan tetap di server ini.",
+      "region": "Wilayah",
+      "username": "Nama pengguna SMTP",
+      "password": "Kata sandi SMTP",
+      "perDomainNote": "Berlaku untuk semua domain. Routing per domain dan record DKIM / MAIL FROM per domain dikonfigurasi setelah instalasi di tab Mengirim."
+    },
+    "startSetup": "Mulai Pengaturan",
+    "startFailed": "Pengaturan tidak dapat dimulai",
+    "startFailedFallback": "Pengaturan tidak dapat dimulai, dan server tidak memberikan alasan. Periksa log API.",
+    "adoptCta": "Sudah memiliki server mail? Adopsi",
+    "whatInstalled": "Apa yang diinstal",
+    "features": {
+      "stackLabel": "Stack server mail",
+      "stackDesc": "Postfix, Dovecot, anti-spam",
+      "sslLabel": "Sertifikat SSL",
+      "sslDesc": "Let's Encrypt auto-SSL",
+      "dnsLabel": "Konfigurasi DNS",
+      "dnsDesc": "Record DKIM, SPF, DMARC",
+      "adminLabel": "Panel Admin",
+      "adminDesc": "Kelola mailbox, domain, dan alias"
+    },
+    "prerequisites": "Prasyarat",
+    "prereq1": "Domain dengan akses DNS",
+    "prereq2": "Port 25 tidak diblokir oleh penyedia Anda",
+    "prereq2Relay": "Port 25 terbuka untuk mail masuk (outbound melewati relay Anda)",
+    "prereq3": "Server Ubuntu/Debian bersih (direkomendasikan)",
+    "hide": "Sembunyikan",
+    "reveal": "Tampilkan",
+    "generateTitle": "Buat kata sandi acak yang kuat",
+    "generate": "Buat"
+  },
+  "sidebar": {
+    "portConflict": {
+      "title": "Konflik Port Terdeteksi",
+      "subtitle": "Port 80/443 dibutuhkan untuk server mail",
+      "managed": "Managed",
+      "known": "Layanan yang Diketahui",
+      "unknown": "Tidak Diketahui",
+      "container": "Container: {name}",
+      "killWarning": "Pastikan proses ini tidak diperlukan sebelum menghentikannya. Tindakan ini tidak dapat dibatalkan.",
+      "allResolved": "Semua konflik terselesaikan",
+      "rerun": "Jalankan ulang pemeriksaan port dan lanjutkan pengaturan.",
+      "resumeStep3": "Lanjutkan dari Langkah 3"
+    },
+    "completion": {
+      "ready": "Server Mail Siap!",
+      "webmail": "Webmail",
+      "adminPanel": "Panel Admin"
+    },
+    "dnsRef": {
+      "title": "Record DNS yang Diperlukan",
+      "subtitle": "Referensi - ketuk untuk melihat record yang Anda publikasikan"
+    },
+    "steps": {
+      "title": "Semua langkah",
+      "interrupted": "Instalasi terganggu sebelum langkah {step}. Lanjutkan untuk melanjutkan dari tempat terakhir.",
+      "resume": "Lanjutkan",
+      "retry": "Coba Ulang"
+    },
+    "details": {
+      "title": "Detail Pengaturan",
+      "domain": "Domain",
+      "mailServer": "Server Mail",
+      "started": "Dimulai"
+    }
+  },
+  "ptr": {
+    "heading": "Atur reverse DNS (PTR) sebelum melanjutkan",
+    "bodyBefore": "PTR dikonfigurasi di panel ",
+    "bodyStrongPanel": "penyedia VPS Anda",
+    "bodyMid": " (Hostinger, DigitalOcean, AWS, dll.), ",
+    "bodyStrongNot": "bukan",
+    "bodyAfter": " di penyedia DNS Anda. Tanpa rDNS yang cocok, Gmail dan Outlook akan menolak mail outbound Anda. Instalasi dilanjutkan dari langkah {resumeStep} (SSL).",
+    "recommended": "direkomendasikan",
+    "ipLabel": "IP",
+    "setTo": "Atur ke",
+    "copy": "Salin",
+    "howTo": "Cara mengaturnya:",
+    "howToBody": " masuk ke panel penyedia VPS Anda, temukan pengaturan jaringan / DNS / rDNS server, dan atur record PTR untuk setiap IP ke ",
+    "howToAfter": ". Propagasi biasanya memakan waktu 5–15 menit.",
+    "verifyWith": "Verifikasi dengan:",
+    "shouldReturn": " seharusnya mengembalikan ",
+    "action": "Saya sudah mengatur PTR - lanjutkan"
+  }
+}

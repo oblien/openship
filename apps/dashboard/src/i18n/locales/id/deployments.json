@@ -1,0 +1,195 @@
+{
+  "time": {
+    "secondsAgo": "{n}d lalu",
+    "minutesAgo": "{n}m lalu",
+    "hoursAgo": "{n}j lalu",
+    "daysAgo": "{n}h lalu",
+    "monthsAgo": "{n}bl lalu",
+    "yearsAgo": "{n}th lalu"
+  },
+  "header": {
+    "title": "Deployment",
+    "loading": "Memuat…",
+    "countProjectOne": "{count} deployment",
+    "countProjectOther": "{count} deployment",
+    "countAllOne": "{deployments} total di {projects} proyek",
+    "countAllOther": "{deployments} total di {projects} proyek"
+  },
+  "filters": {
+    "searchPlaceholder": "Cari deployment...",
+    "all": "Semua",
+    "success": "Berhasil",
+    "failed": "Gagal",
+    "building": "Sedang Dibangun",
+    "canceled": "Dibatalkan"
+  },
+  "projectFilter": {
+    "allProjects": "Semua Proyek"
+  },
+  "sidebar": {
+    "overview": {
+      "title": "Ringkasan",
+      "total": "Total",
+      "successful": "Berhasil",
+      "failed": "Gagal",
+      "inProgress": "Sedang Berlangsung"
+    },
+    "autoDeploy": {
+      "title": "Auto-Deploy",
+      "description": "Aktifkan auto-deploy untuk memicu deployment secara otomatis setiap push ke branch utama Anda.",
+      "cta": "Buka pengaturan proyek"
+    },
+    "getStarted": {
+      "title": "Mulai",
+      "description": "Impor repository Git atau gunakan template untuk membuat deployment pertama Anda.",
+      "cta": "Deploy proyek"
+    },
+    "recent": {
+      "title": "Terbaru",
+      "empty": "Deployment Anda akan muncul di sini",
+      "unknown": "Tidak diketahui"
+    }
+  },
+  "stats": {
+    "total": "Total",
+    "projectCountOne": "{count} proyek",
+    "projectCountOther": "{count} proyek",
+    "success": "Berhasil",
+    "failed": "Gagal",
+    "inProgress": "Sedang Berlangsung",
+    "buildingNow": "sedang dibangun"
+  },
+  "status": {
+    "deployed": "Sudah Di-deploy",
+    "failed": "Gagal",
+    "canceled": "Dibatalkan",
+    "building": "Sedang Dibangun",
+    "deploying": "Sedang Di-deploy",
+    "partial": "Sebagian",
+    "actionRequired": "Tindakan diperlukan",
+    "rejected": "Ditolak",
+    "verifying": "Memverifikasi",
+    "noChanges": "Tidak ada perubahan",
+    "pending": "Tertunda"
+  },
+  "serviceStatus": {
+    "deployed": "Sudah Di-deploy",
+    "failed": "Gagal",
+    "cancelled": "Dibatalkan",
+    "skipped": "Dilewati",
+    "building": "Sedang Dibangun",
+    "deploying": "Sedang Di-deploy",
+    "running": "Berjalan",
+    "removedOnHost": "Dihapus di host",
+    "verifying": "Memverifikasi",
+    "pending": "Tertunda"
+  },
+  "card": {
+    "unknownProject": "Proyek Tidak Diketahui",
+    "versionTitle": "Versi {version}",
+    "active": "Aktif",
+    "activeTitle": "Ini adalah deployment yang sedang melayani proyek saat ini",
+    "pinned": "Disematkan",
+    "pinnedTitle": "Disematkan — dikecualikan dari pruning retensi. Tetap dapat dipulihkan secara rollback tanpa batas.",
+    "snapshotted": "Di-snapshot",
+    "snapshottedTitle": "Artifact diarsipkan — versi ini tersedia untuk rollback",
+    "manualDeploy": "Deploy manual",
+    "serviceTitle": "{name}: {label}",
+    "serviceTitleReason": "{name}: {label} ({reason})"
+  },
+  "empty": {
+    "filtered": {
+      "title": "Tidak ada deployment ditemukan",
+      "description": "Coba sesuaikan filter atau bersihkan pencarian Anda."
+    },
+    "none": {
+      "title": "Belum ada deployment",
+      "description": "Deploy proyek pertama Anda dan proyek akan muncul di sini dengan status build, detail commit, dan metrik performa.",
+      "deployButton": "Deploy Proyek",
+      "browseButton": "Jelajahi Template"
+    }
+  },
+  "modal": {
+    "title": "Detail Commit",
+    "project": "Proyek",
+    "unknownProject": "Proyek Tidak Diketahui",
+    "domain": "Domain",
+    "noDomain": "Tidak ada domain",
+    "status": "Status",
+    "environment": "Lingkungan",
+    "statusName": {
+      "success": "Berhasil",
+      "failed": "Gagal",
+      "building": "Sedang Dibangun",
+      "deploying": "Sedang Di-deploy",
+      "canceled": "Dibatalkan",
+      "pending": "Tertunda"
+    },
+    "changedFiles": "File yang Diubah ({count})",
+    "fileTypes": {
+      "added": "+ Ditambahkan",
+      "modified": "~ Diubah",
+      "removed": "- Dihapus"
+    },
+    "viewOnGithub": "Lihat di GitHub",
+    "visitSite": "Kunjungi Situs",
+    "manual": {
+      "title": "Deployment Manual",
+      "description": "Deployment ini dipicu secara manual dan tidak memiliki informasi commit.",
+      "deploymentId": "ID Deployment",
+      "created": "Dibuat",
+      "type": "Tipe",
+      "typeManual": "Manual"
+    }
+  },
+  "menu": {
+    "openDeployment": "Buka Deployment",
+    "viewRepository": "Lihat Repository",
+    "copyDomainUrl": "Salin URL Domain",
+    "copyBuildId": "Salin ID Build",
+    "cancelDeployment": "Batalkan Deployment",
+    "rollback": "Rollback ke versi ini",
+    "rollbackTitle": {
+      "enabled": "Pulihkan proyek ke versi ini (hanya kode — data tidak berubah)",
+      "active": "Ini sudah menjadi versi aktif",
+      "pruned": "Deployment ini tidak memiliki gambar yang tersimpan dan tidak ada commit untuk rebuild",
+      "notReady": "Hanya deployment yang sudah siap yang dapat di-rollback",
+      "rebuildOnly": "Pulihkan versi ini dengan rebuild commit-nya (gambarnya sudah di-prune)"
+    },
+    "pin": "Sematkan",
+    "unpin": "Lepas Sematan",
+    "pinTitle": {
+      "pin": "Pertahankan deployment ini agar tetap dapat di-rollback tanpa batas (kapasitas: 10 disematkan per proyek)",
+      "unpin": "Izinkan deployment ini di-prune ketika retensi meluap",
+      "pruned": "Tidak dapat disematkan — artifact sudah di-prune"
+    },
+    "deleteDeployment": "Hapus Deployment",
+    "rollbackFailed": "Rollback gagal",
+    "pinFailed": "Gagal menyematkan deployment",
+    "unpinFailed": "Gagal melepas sematan deployment",
+    "rollbackModeInstant": "Pulihkan instan — menggunakan kembali gambar versi ini yang tersimpan, tanpa rebuild.",
+    "rollbackModeRebuild": "Rebuild — gambar versi ini tidak lagi ada di host, sehingga commit-nya dibangun ulang.",
+    "rollbackModeReacquireImage": "Pulihkan dari registry — mengambil referensi gambar yang tercatat untuk rilis ini; tanpa rebuild sumber.",
+    "rollbackModeMixed": "Sebagian besar instan — {count} layanan kehilangan gambarnya dan akan di-rebuild."
+  },
+  "rollbackConfirm": {
+    "title": "Rollback ke versi ini?",
+    "dataUnchanged": "Ini hanya memulihkan kode aplikasi. Data database dan volume tidak berubah.",
+    "envHeading": "Variabel lingkungan",
+    "envSummaryOverlay": "{count} variabel berubah — nilai rilis ini ditimpa di atas yang saat ini.",
+    "envSummaryReplace": "{count} variabel berubah — lingkungan rilis ini digunakan persis seperti yang ditangkap.",
+    "envNoChanges": "Tidak ada variabel lingkungan yang berubah.",
+    "envUnchanged": "Container yang ada di-restart alih-alih dibuat ulang, sehingga lingkungannya tidak tersentuh.",
+    "envNoValues": "Nilai tidak pernah ditampilkan di sini.",
+    "envTruncated": "Menampilkan {shown} dari {total}.",
+    "dirFrozenWins": "kembali ke nilai rilis ini",
+    "dirRemovedSince": "kembali — dihapus sejak rilis ini",
+    "dirAddedSinceKept": "dipertahankan apa adanya — ditambahkan sejak rilis ini",
+    "dirAddedSinceDropped": "dihapus — ditambahkan sejak rilis ini",
+    "scopeAmbiguous": "ditangkap tanpa cakupan layanan, sehingga satu nilai berlaku untuk setiap layanan",
+    "untouchedHeading": "Layanan yang ditambahkan sejak rilis ini",
+    "untouchedNote": "Layanan ini tetap berjalan dan tidak tersentuh: {names}",
+    "confirm": "Rollback",
+    "cancel": "Batal"
+  }
+}

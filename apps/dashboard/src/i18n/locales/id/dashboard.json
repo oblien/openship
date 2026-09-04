@@ -1,0 +1,221 @@
+{
+  "home": {
+    "goodMorning": "Selamat pagi",
+    "goodAfternoon": "Selamat siang",
+    "goodEvening": "Selamat malam",
+    "subtitle": "Berikut yang terjadi di proyek Anda",
+    "statsProjects": "Proyek",
+    "statsDeployments": "Deployment",
+    "statsSuccessful": "Berhasil",
+    "statsFailed": "Gagal",
+    "recentProjects": "Proyek Terbaru",
+    "yourLatestActivity": "Aktivitas terbaru Anda",
+    "viewAll": "Lihat semua",
+    "noProjectsYet": "Belum ada proyek",
+    "createFirstProject": "Buat proyek pertama Anda",
+    "justNow": "baru saja",
+    "minutesAgo": "{n}m lalu",
+    "hoursAgo": "{n}j lalu",
+    "daysAgo": "{n}h lalu",
+    "monthsAgo": "{n}bln lalu",
+    "statusLive": "Aktif",
+    "statusPaused": "Dijeda",
+    "yourProjects": "Proyek Anda",
+    "loading": "Memuat…",
+    "projectCountOne": "{count} proyek",
+    "projectCountOther": "{count} proyek",
+    "viewAllProjects": "Lihat semua {count} proyek →",
+    "viewAllApps": "Lihat semua {count} aplikasi →",
+    "greetingName": "{greeting}, {name}",
+    "importGit": "Impor Git",
+    "importGitDesc": "Dari repository",
+    "mcpDeploy": "MCP Deploy",
+    "mcpDeployDesc": "Hubungkan AI agent",
+    "settingsCard": "Pengaturan",
+    "settingsCardDesc": "Akun & tim",
+    "docs": "Dokumentasi",
+    "docsDesc": "Pelajari lebih lanjut",
+    "activityTitle": "Aktivitas",
+    "systemStatus": "Status sistem",
+    "operational": "Operasional",
+    "oneIssue": "1 masalah",
+    "manyIssues": "{n} masalah",
+    "recentTitle": "Terbaru",
+    "activityEmpty": "Aktivitas Anda akan muncul di sini",
+    "appsEmptyTitle": "Belum ada aplikasi",
+    "appsEmptyDesc": "Satu klik, self-hosted penuh — database, otomatisasi, analitik, vault password, dan lainnya, berjalan di server Anda sendiri.",
+    "allSystemsOperational": "Semua sistem operasional",
+    "runningSmoothly": "Proyek Anda berjalan dengan lancar",
+    "time": {
+      "justNow": "baru saja",
+      "minutes": "{n}m lalu",
+      "hours": "{n}j lalu",
+      "days": "{n}h lalu",
+      "months": "{n}bln lalu"
+    }
+  },
+  "nav": {
+    "home": "Beranda",
+    "new-project": "Proyek Baru",
+    "projects": "Proyek",
+    "apps": "Aplikasi",
+    "deployments": "Deployment",
+    "issues": "Masalah",
+    "backups": "Backup",
+    "domains": "Domain",
+    "monitoring": "Monitoring",
+    "servers": "Server",
+    "emails": "Email",
+    "jobs": "Job",
+    "settings": "Pengaturan",
+    "billing": "Tagihan & Penggunaan",
+    "audit": "Log audit",
+    "mailSetup": "Atur email",
+    "mailSetupProgress": "Proses pengaturan",
+    "addMailbox": "Tambah mailbox",
+    "webmail": "Webmail",
+    "sections": {
+      "main": "Utama",
+      "settings": "Pengaturan",
+      "infrastructure": "Infrastruktur",
+      "mail": "Email",
+      "delivery": "Pengiriman",
+      "system": "Sistem",
+      "account": "Akun"
+    }
+  },
+  "sidebar": {
+    "expand": "Perluas sidebar",
+    "collapse": "Ciutkan sidebar"
+  },
+  "user": {
+    "logout": "Keluar",
+    "loggingOut": "Keluar…",
+    "profile": "Profil",
+    "preferences": "Preferensi"
+  },
+  "pages": {
+    "apps": {
+      "title": "Aplikasi",
+      "description": "Layanan terkelola satu klik — instal dan jalankan Convex, WordPress, email, dan lainnya.",
+      "createButton": "Instal Aplikasi",
+      "loading": "Memuat aplikasi…",
+      "countOne": "{count} aplikasi terinstal",
+      "countOther": "{count} aplikasi terinstal",
+      "emptyTitle": "Instal aplikasi pertama Anda",
+      "emptyDescription": "Jalankan Convex, n8n, Ghost, dan lainnya — satu klik, self-hosted penuh. Pilih satu untuk memulai.",
+      "popular": "Aplikasi populer",
+      "alsoDeploy": "Anda juga bisa deploy",
+      "browseAll": "Jelajahi semua aplikasi",
+      "moreApps": "+{count} lagi",
+      "catalogTitle": "Instal aplikasi",
+      "catalogDescription": "Layanan terkelola satu klik. Pilih satu untuk menginstalnya sebagai aplikasi.",
+      "catalogSearchPlaceholder": "Cari aplikasi…",
+      "catalogNoResults": "Tidak ada aplikasi yang cocok dengan pencarian Anda.",
+      "categories": {
+        "all": "Semua",
+        "backend": "Backend",
+        "database": "Database",
+        "cms": "CMS",
+        "analytics": "Analitik",
+        "automation": "Otomatisasi",
+        "mail": "Email",
+        "other": "Alat"
+      },
+      "installing": "Menginstal…",
+      "install": "Instal",
+      "cancel": "Batal",
+      "nameLabel": "Nama",
+      "configTitle": "Konfigurasi {app}",
+      "comingSoon": "Segera hadir"
+    },
+    "projects": {
+      "title": "Proyek",
+      "description": "Deploy dan kelola aplikasi Anda dengan mudah",
+      "createButton": "Buat Proyek",
+      "stats": {
+        "totalProjects": "Total Proyek",
+        "liveNow": "Aktif Sekarang",
+        "avgPerDay": "Rata-rata per Hari",
+        "successRate": "Tingkat Keberhasilan"
+      },
+      "searchPlaceholder": "Cari proyek…",
+      "pinnedProjects": "Proyek yang Disematkan",
+      "otherProjects": "Proyek Lainnya",
+      "noResultsFound": "Tidak ada proyek yang cocok dengan \"{query}\"",
+      "emptyState": {
+        "title": "Mulai proyek pertama Anda",
+        "description": "Impor repository Git, gunakan template, atau deploy dari CLI. Proyek Anda akan muncul di sini.",
+        "createProject": "Buat Proyek",
+        "browseTemplates": "Jelajahi Template",
+        "zeroConfig": "Deployment zero-config",
+        "instant": "Instan",
+        "instantDesc": "Deploy dalam hitungan detik",
+        "global": "Global",
+        "globalDesc": "100+ region edge",
+        "previews": "Pratinjau",
+        "previewsDesc": "URL per branch",
+        "rollbacks": "Rollback",
+        "rollbacksDesc": "Kembalikan satu klik",
+        "commandPalette": "Atau tekan {key} untuk membuka command palette"
+      },
+      "view": {
+        "label": "Tampilan",
+        "list": "Daftar",
+        "grid": "Grid"
+      }
+    },
+    "deployments": {
+      "title": "Deployment",
+      "description": "Lihat dan kelola riwayat deployment Anda."
+    },
+    "domains": {
+      "title": "Domain",
+      "description": "Kelola domain kustom dan record DNS."
+    },
+    "monitoring": {
+      "title": "Monitoring",
+      "description": "Log, metrik, dan health check untuk layanan Anda."
+    },
+    "servers": {
+      "title": "Server",
+      "description": "Kelola server deployment dan infrastruktur Anda."
+    },
+    "settings": {
+      "title": "Pengaturan",
+      "description": "Pengaturan akun, tim, dan platform."
+    },
+    "billing": {
+      "title": "Tagihan & Penggunaan",
+      "description": "Kelola langganan, penggunaan, dan metode pembayaran Anda."
+    }
+  },
+  "quickLinks": {
+    "title": "Aksi Cepat",
+    "subtitle": "Langsung ke tugas umum",
+    "deployProject": {
+      "title": "Deploy Proyek",
+      "description": "Impor dari Git"
+    },
+    "projects": {
+      "title": "Proyek",
+      "description": "Semua proyek"
+    },
+    "deployments": {
+      "title": "Deployment",
+      "description": "Riwayat build"
+    },
+    "settings": {
+      "title": "Pengaturan",
+      "description": "Kelola akses"
+    },
+    "domains": {
+      "title": "Domain",
+      "description": "Domain kustom"
+    },
+    "billing": {
+      "title": "Tagihan & Penggunaan",
+      "description": "Penggunaan & paket"
+    }
+  }
+}
