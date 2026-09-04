@@ -59,8 +59,10 @@ vi.mock("../../lib/controller-helpers", () => ({
 vi.mock("../github/github.service", () => ({
   resolveDefaultBranch: async () => "main",
   listBranches: async () => [],
+  listTags: async () => [],
   getLatestCommit: async () => null,
   getWebhookStrategy: () => h.strategy,
+  resolveLatestMatchingTagCommit: async () => null,
   // The seam the state depends on: which delivery mechanism this instance can use.
   resolveWebhookStrategy: async () => h.strategy,
 }));

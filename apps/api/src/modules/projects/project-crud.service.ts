@@ -57,6 +57,8 @@ import {
   compareCommits,
   getLatestCommit,
   getWebhookStrategy,
+  listTags as listGitHubTags,
+  resolveLatestMatchingTagCommit,
   resolveWebhookStrategy,
 } from "../github/github.service";
 import { projectMatchesChanges } from "../github/webhook-changed-files";
@@ -1960,13 +1962,25 @@ export async function createProjectEnvironment(
     data.gitBranch?.trim() ||
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
-  if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
+  if (
+    (data.sourceMode ?? "branch") === "branch" &&
+    base.gitOwner &&
+    base.gitRepo &&
+    gitBranch &&
+    !gitBranch.includes("*") &&
+    !gitBranch.startsWith("refs/tags/") &&
+    !gitBranch.startsWith("tags/")
+  ) {
     const branches = await listGitHubBranches(ctx, base.gitOwner, base.gitRepo);
     const exists = branches.some((branch) => branch.name === gitBranch);
     if (!exists) {
-      throw new ValidationError(
-        `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
-      );
+      const tags = await listGitHubTags(ctx, base.gitOwner, base.gitRepo).catch(() => []);
+      const inTags = tags.some((tag) => tag.name === gitBranch);
+      if (!inTags) {
+        throw new ValidationError(
+          `Branch or tag "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
+        );
+      }
     }
   }
 
@@ -2247,9 +2261,20 @@ export async function resolveUpstreamDrift(
     return { supported: true, mode: "image", digestByRef };
   }
 
-  const head = ctx
-    ? await getLatestCommit(ctx, p.gitOwner!, p.gitRepo!, projectBranch(p)).catch(() => null)
-    : null;
+  const branch = projectBranch(p);
+  let head: { sha: string; message: string } | null = null;
+  if (ctx && p.gitOwner && p.gitRepo) {
+    if (
+      branch.startsWith("refs/tags/") ||
+      branch.startsWith("tags/") ||
+      (branch.includes("*") && !branch.startsWith("refs/heads/") && !branch.startsWith("heads/"))
+    ) {
+      head = await resolveLatestMatchingTagCommit(ctx, p.gitOwner, p.gitRepo, branch).catch(() => null);
+    }
+    if (!head) {
+      head = await getLatestCommit(ctx, p.gitOwner, p.gitRepo, branch).catch(() => null);
+    }
+  }
   return {
     supported: true,
     mode: "commit",

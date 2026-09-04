@@ -153,6 +153,20 @@ export function isWildcardHostname(host: string): boolean {
 }
 
 /**
+ * Test whether `text` matches `pattern` with `*` wildcards.
+ * Case-insensitive by default.
+ */
+export function matchesWildcard(pattern: string, text: string, caseSensitive = false): boolean {
+  if (!pattern || !text) return pattern === text;
+  const p = caseSensitive ? pattern.trim() : pattern.trim().toLowerCase();
+  const t = caseSensitive ? text.trim() : text.trim().toLowerCase();
+  if (p === "*") return true;
+  if (!p.includes("*")) return p === t;
+  const escaped = p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`).test(t);
+}
+
+/**
  * Public suffixes whose registrable domain is THREE labels (`example.co.uk`),
  * not two. Deliberately NOT the full Public Suffix List — that needs a
  * dependency we don't carry — just the handful common enough that mis-classifying

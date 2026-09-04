@@ -120,8 +120,10 @@ vi.mock("../../lib/controller-helpers", () => ({
 vi.mock("../github/github.service", () => ({
   resolveDefaultBranch: async () => "main",
   listBranches: async () => h.branches,
+  listTags: async () => [],
   getLatestCommit: async () => null,
   getWebhookStrategy: () => "per-project",
+  resolveLatestMatchingTagCommit: async () => null,
   resolveWebhookStrategy: async () => ({}),
 }));
 vi.mock("../github/github.auth", () => ({

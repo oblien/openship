@@ -46,7 +46,7 @@ import { resolveEnvDirtyServiceIds } from "./env-drift";
 import type { TBuildAccessBody } from "./deployment.schema";
 import { platform } from "../../lib/controller-helpers";
 import { decryptEnvMap, encrypt } from "../../lib/encryption";
-import { getCommitByRef, getLatestCommit, getRepository } from "../github/github.service";
+import { getCommitByRef, getLatestCommit, getRepository, resolveLatestMatchingTagCommit } from "../github/github.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { resolveSmartRoute } from "./smart-route";
 import { snapshotNeedsGitSource, withoutPinnedArtifacts } from "./pinned-artifacts";
@@ -544,7 +544,17 @@ async function resolveLatestCommitInfo(ctx: RequestContext, project: Project, br
     return {};
   }
 
-  const head = await getLatestCommit(ctx, project.gitOwner, project.gitRepo, branch);
+  let head: { sha: string; message: string } | null = null;
+  if (
+    branch.startsWith("refs/tags/") ||
+    branch.startsWith("tags/") ||
+    (branch.includes("*") && !branch.startsWith("refs/heads/") && !branch.startsWith("heads/"))
+  ) {
+    head = await resolveLatestMatchingTagCommit(ctx, project.gitOwner, project.gitRepo, branch).catch(() => null);
+  }
+  if (!head) {
+    head = await getLatestCommit(ctx, project.gitOwner, project.gitRepo, branch);
+  }
   if (head?.sha && branch === projectBranch(project)) {
     try {
       await repos.updateStatus.upsert({
@@ -598,7 +608,19 @@ async function canonicalizeCommitRef(
 
 async function resolveProjectBranch(ctx: RequestContext, project: Project, branch?: string) {
   const configuredBranch = branch?.trim() || project.gitBranch?.trim();
-  if (configuredBranch) return configuredBranch;
+  if (configuredBranch) {
+    if (
+      project.gitOwner &&
+      project.gitRepo &&
+      (configuredBranch.startsWith("refs/tags/") ||
+        configuredBranch.startsWith("tags/") ||
+        (configuredBranch.includes("*") && !configuredBranch.startsWith("refs/heads/") && !configuredBranch.startsWith("heads/")))
+    ) {
+      const match = await resolveLatestMatchingTagCommit(ctx, project.gitOwner, project.gitRepo, configuredBranch).catch(() => null);
+      if (match?.tag) return match.tag;
+    }
+    return configuredBranch;
+  }
 
   if (project.gitOwner && project.gitRepo) {
     const repository = await getRepository(ctx, project.gitOwner, project.gitRepo);

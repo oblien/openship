@@ -15,12 +15,13 @@ import type { RequestContext } from "../../lib/request-context";
 import { buildBackgroundContext } from "../../lib/request-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { assertGitHubRepoAccess, canUseGitHubRepo } from "./github-access";
-import { AppError, isFullCommitSha, safeErrorMessage } from "@repo/core";
+import { AppError, isFullCommitSha, safeErrorMessage, compareSemver, matchesWildcard } from "@repo/core";
 import { repos as dbRepos } from "@repo/db";
 import { encrypt, decrypt } from "../../lib/encryption";
 import type {
   GitHubRepository,
   GitHubBranch,
+  GitHubTag,
   GitHubFileContent,
   GitHubTreeResponse,
   GitHubWebhook,
@@ -444,6 +445,58 @@ export async function listBranches(
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
     params: { per_page: 100 },
   });
+}
+
+// ─── Tags ────────────────────────────────────────────────────────────────────
+
+/**
+ * List tags for a repository.
+ */
+export async function listTags(
+  ctx: RequestContext,
+  owner: string,
+  repo: string,
+): Promise<GitHubTag[]> {
+  return githubFetch<GitHubTag[]>({
+    ctx,
+    owner,
+    repo,
+    url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tags`,
+    params: { per_page: 100 },
+  });
+}
+
+/**
+ * Resolve the latest commit for a tag matching a pattern (e.g. "refs/tags/*", "tags/*", "v*").
+ */
+export async function resolveLatestMatchingTagCommit(
+  ctx: RequestContext,
+  owner: string,
+  repo: string,
+  pattern: string,
+): Promise<{ sha: string; message: string; tag: string } | null> {
+  const cleanPattern = pattern.replace(/^refs\/tags\//, "").replace(/^tags\//, "").trim();
+  const tags = await listTags(ctx, owner, repo).catch(() => []);
+  if (tags.length === 0) return null;
+
+  const matched = tags.filter((t) => matchesWildcard(cleanPattern, t.name));
+  if (matched.length === 0) return null;
+
+  matched.sort((a, b) => {
+    try {
+      return compareSemver(b.name, a.name);
+    } catch {
+      return 0;
+    }
+  });
+
+  const topTag = matched[0];
+  if (!topTag) return null;
+
+  const commit = await getCommitByRef(ctx, owner, repo, topTag.commit.sha || topTag.name);
+  if (!commit) return null;
+
+  return { sha: commit.sha, message: commit.message, tag: topTag.name };
 }
 
 /**

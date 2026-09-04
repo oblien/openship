@@ -43,6 +43,14 @@ export interface GitHubBranch {
   protected: boolean;
 }
 
+export interface GitHubTag {
+  name: string;
+  commit: { sha: string; url: string };
+  node_id?: string;
+  tarball_url?: string;
+  zipball_url?: string;
+}
+
 export interface GitHubInstallation {
   id: number;
   account: {

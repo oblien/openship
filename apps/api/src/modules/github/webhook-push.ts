@@ -11,7 +11,7 @@ import {
 } from "./github.service";
 import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
 import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, matchesWildcard } from "@repo/core";
 import {
   extractChangedFiles,
   routeServicesByChanges,
@@ -72,7 +72,11 @@ export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHan
   const owner = payload.repository?.owner?.login;
   const repo = payload.repository?.name;
   const ref = payload.ref;
-  const commitSha = payload.head_commit?.id;
+  const commitSha =
+    payload.head_commit?.id ??
+    (payload.after && payload.after !== "0000000000000000000000000000000000000000"
+      ? payload.after
+      : undefined);
   const defaultBranch = payload.repository?.default_branch;
 
   if (!owner || !repo) {
@@ -80,20 +84,23 @@ export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHan
   }
 
   if (payload.deleted) {
-    return { success: true, event: "push", message: "Ignoring deleted branch push" };
+    return { success: true, event: "push", message: "Ignoring deleted branch/tag push" };
   }
 
-  if (!ref?.startsWith("refs/heads/")) {
-    return { success: true, event: "push", message: `Ignoring non-branch ref: ${ref ?? "unknown"}` };
+  if (!ref?.startsWith("refs/heads/") && !ref?.startsWith("refs/tags/")) {
+    return { success: true, event: "push", message: `Ignoring non-branch/tag ref: ${ref ?? "unknown"}` };
   }
 
-  const branch = ref.replace("refs/heads/", "");
+  const isTag = ref.startsWith("refs/tags/");
+  const branch = isTag ? ref.replace("refs/tags/", "") : ref.replace("refs/heads/", "");
 
   return triggerBranchDeployments({
     event: "push",
     owner,
     repo,
     branch,
+    ref,
+    isTag,
     defaultBranch,
     commitSha,
     commitMessage: payload.head_commit?.message,
@@ -103,11 +110,13 @@ export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHan
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-interface BranchDeploymentTrigger {
+export interface BranchDeploymentTrigger {
   event: "push";
   owner: string;
   repo: string;
   branch: string;
+  ref?: string;
+  isTag?: boolean;
   defaultBranch?: string | null;
   commitSha?: string;
   commitMessage?: string;
@@ -166,9 +175,8 @@ async function deployProjectFromPush(
         ),
     });
 
-    forceAll = extracted.forceAll;
-    routingReason = extracted.reason;
-    changedPathsTruncated = extracted.truncated ?? false;
+    forceAll = input.isTag ? true : extracted.forceAll;
+    routingReason = input.isTag ? "tag-push" : extracted.reason;
     changedPaths = Array.from(extracted.files);
     if (changedPathsTruncated) {
       // Full changed set unknown → deploy everything; under-deploy would ship stale code.
@@ -272,7 +280,7 @@ async function triggerBranchDeployments(
   const projects = await repos.project.findByGitRepo(input.owner, input.repo);
   const defaultBranch = await resolveDefaultBranch(input, projects);
   const branchProjects = projects.filter(
-    (p) => p.autoDeploy && projectWebhookBranch(p, defaultBranch) === input.branch,
+    (p) => projectWebhookMatches(p, input, defaultBranch),
   );
 
   // Tenant binding (multi-tenant safety): a GitHub App push is signed with the
@@ -467,6 +475,47 @@ async function forwardPushToCloud(
   }).catch(() => null);
 
   return { forwarded: !!res && res.ok, cloudProjectId, organizationId };
+}
+
+export function projectWebhookMatches(
+  project: Project,
+  input: BranchDeploymentTrigger,
+  defaultBranch?: string | null,
+): boolean {
+  if (!project.autoDeploy) return false;
+  const configured = project.gitBranch?.trim();
+
+  if (input.isTag) {
+    if (!configured) return false;
+    if (configured === input.branch) return true;
+    if (input.ref && configured === input.ref) return true;
+    if (configured === `tags/${input.branch}`) return true;
+    if (configured.startsWith("refs/tags/")) {
+      return matchesWildcard(configured.replace("refs/tags/", ""), input.branch);
+    }
+    if (configured.startsWith("tags/")) {
+      return matchesWildcard(configured.replace("tags/", ""), input.branch);
+    }
+    if (configured.includes("*")) {
+      return matchesWildcard(configured, input.branch);
+    }
+    return false;
+  }
+
+  const target = configured || defaultBranch?.trim() || "main";
+  if (target === input.branch) return true;
+  if (input.ref && target === input.ref) return true;
+  if (target === `heads/${input.branch}`) return true;
+  if (target.startsWith("refs/heads/")) {
+    return matchesWildcard(target.replace("refs/heads/", ""), input.branch);
+  }
+  if (target.startsWith("heads/")) {
+    return matchesWildcard(target.replace("heads/", ""), input.branch);
+  }
+  if (target.includes("*")) {
+    return matchesWildcard(target, input.branch);
+  }
+  return false;
 }
 
 function projectWebhookBranch(project: Project, defaultBranch?: string | null): string | null {
