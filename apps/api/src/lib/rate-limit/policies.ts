@@ -26,6 +26,7 @@ export type PolicyId =
   | "default-authed"
   | "auth-tight"
   | "auth-loose"
+  | "transfer-chunk"
   | "mcp"
   | "read-authed"
   | "write-authed"
@@ -71,6 +72,16 @@ export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
     windowMs: MINUTE_MS,
     subject: "user",
     description: "Authed session ops (logout, refresh) — per-user.",
+  },
+
+  /** Public direct-transfer chunks are cryptographically capability-gated but
+   *  arrive in bursts. Bound abuse per IP without throttling a valid 500 MB move. */
+  "transfer-chunk": {
+    id: "transfer-chunk",
+    limit: 240,
+    windowMs: MINUTE_MS,
+    subject: "ip",
+    description: "Encrypted direct-transfer chunks — per-IP burst allowance.",
   },
 
   /** MCP JSON-RPC endpoint (/api/mcp). Per-IP because the endpoint

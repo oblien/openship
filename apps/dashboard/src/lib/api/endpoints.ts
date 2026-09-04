@@ -367,8 +367,14 @@ export const endpoints = {
       preview: "system/data-transfer/preview",
       directSession: "system/data-transfer/direct/session",
       directSend: "system/data-transfer/direct/send",
+      directSendStream: "system/data-transfer/direct/send/stream",
       export: "system/data-transfer/export",
       import: "system/data-transfer/import",
+      importSession: "system/data-transfer/import/session",
+      importChunk: (sessionId: string, index: number) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/chunk/${index}`,
+      importFinalizeStream: (sessionId: string) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/finalize/stream`,
     },
   },
 

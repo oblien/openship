@@ -47,11 +47,16 @@ function deriveKey(): Buffer {
  * Returns base64( iv:16 || authTag:16 || ciphertext ).
  */
 export function encryptWithKey(key: Buffer, plaintext: string): string {
+  return encryptBytesWithKey(key, Buffer.from(plaintext, "utf8")).toString("base64");
+}
+
+/** Binary twin used by bounded transfer chunks; keeps bytes binary on the wire. */
+export function encryptBytesWithKey(key: Buffer, plaintext: Uint8Array): Buffer {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const authTag = cipher.getAuthTag();
-  return Buffer.concat([iv, authTag, encrypted]).toString("base64");
+  return Buffer.concat([iv, authTag, encrypted]);
 }
 
 /**
@@ -59,7 +64,12 @@ export function encryptWithKey(key: Buffer, plaintext: string): string {
  * explicit key. Throws if the data is tampered with or the key is wrong.
  */
 export function decryptWithKey(key: Buffer, sealed: string): string {
-  const packed = Buffer.from(sealed, "base64");
+  return decryptBytesWithKey(key, Buffer.from(sealed, "base64")).toString("utf8");
+}
+
+/** Open one binary AES-GCM chunk without converting its payload through UTF-8. */
+export function decryptBytesWithKey(key: Buffer, sealed: Uint8Array): Buffer {
+  const packed = Buffer.from(sealed);
   if (packed.length < IV_LENGTH + AUTH_TAG_LENGTH) {
     throw new Error("Invalid encrypted data: too short");
   }
@@ -69,7 +79,7 @@ export function decryptWithKey(key: Buffer, sealed: string): string {
 
   const decipher = createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }
 
 /**

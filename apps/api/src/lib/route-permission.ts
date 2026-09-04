@@ -35,6 +35,7 @@ import {
   checkSourceTier,
   type SourceTier,
 } from "../modules/github/github-access";
+import type { PolicyId } from "./rate-limit/policies";
 
 /* ------------------------------------------------------------------ */
 /*  Tag types                                                          */
@@ -255,16 +256,7 @@ async function assertParentChain(
  * tagged routes). Override when a route warrants tighter or looser
  * limits than the default.
  */
-export type RateLimitPolicyId =
-  | "default-anon"
-  | "default-authed"
-  | "auth-tight"
-  | "auth-loose"
-  | "mcp"
-  | "read-authed"
-  | "write-authed"
-  | "webhook-ingress"
-  | "billing-portal";
+export type RateLimitPolicyId = PolicyId;
 
 /**
  * MCP exposure for a route. Presence of this block is the MCP allowlist:

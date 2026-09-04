@@ -8,18 +8,28 @@
  * user sets on export and re-enters on import; the API re-encrypts them under
  * the destination install's own key.
  *
- * Owner gating is enforced by the API (requireRole("owner")); this component
- * renders nothing for non-owners so the Instance tab stays clean.
+ * Instance-admin gating is enforced by the API; this component renders nothing
+ * for non-owners so the Instance tab stays clean.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, Clipboard, DatabaseBackup, Download, Upload, Loader2, Send, TriangleAlert } from "lucide-react";
+import {
+  ArrowRightLeft,
+  Clipboard,
+  DatabaseBackup,
+  Download,
+  Upload,
+  Loader2,
+  Send,
+  TriangleAlert,
+} from "lucide-react";
 
 import { SettingsSection } from "./SettingsSection";
 import { Modal } from "@/components/ui/Modal";
 import { useSession, authClient } from "@/lib/auth-client";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { formatBytes } from "@/lib/formatBytes";
 import {
   dataTransferApi,
   getApiErrorMessage,
@@ -33,11 +43,13 @@ import {
 
 // Resolve the org client once (stable ref) — same guard TeamTab uses to avoid
 // an effect-recreation loop.
-const orgClient = (authClient as unknown as {
-  organization: {
-    listMembers: () => Promise<{ data?: { members?: Array<{ userId: string; role: string }> } }>;
-  };
-}).organization;
+const orgClient = (
+  authClient as unknown as {
+    organization: {
+      listMembers: () => Promise<{ data?: { members?: Array<{ userId: string; role: string }> } }>;
+    };
+  }
+).organization;
 
 export function DataTransferTab() {
   const { data: session } = useSession();
@@ -69,6 +81,11 @@ export function DataTransferTab() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2.5 text-xs leading-relaxed text-warning">
+        These tools move the Openship database and credentials. Persistent Docker volume contents
+        are not included; move service data with project/server migration or restore it from a
+        backup.
+      </div>
       <DirectTransferCard onToast={showToast} />
       <ExportCard onToast={showToast} />
       <ImportCard onToast={showToast} />
@@ -92,10 +109,15 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
 
   useEffect(() => {
     let cancelled = false;
-    dataTransferApi.preview()
-      .then((result) => { if (!cancelled) setPreview(result); })
+    dataTransferApi
+      .preview()
+      .then((result) => {
+        if (!cancelled) setPreview(result);
+      })
       .catch(() => undefined);
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const createCode = async () => {
@@ -106,7 +128,11 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
       setExpiresAt(result.expiresAt);
       onToast("Receive code created.", "success", "Direct transfer");
     } catch (err) {
-      onToast(getApiErrorMessage(err, "Could not create a receive code."), "error", "Direct transfer");
+      onToast(
+        getApiErrorMessage(err, "Could not create a receive code."),
+        "error",
+        "Direct transfer",
+      );
     } finally {
       setCreating(false);
     }
@@ -118,14 +144,20 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
       await navigator.clipboard.writeText(receiveCode);
       onToast("Receive code copied.", "success", "Direct transfer");
     } catch (err) {
-      onToast(getApiErrorMessage(err, "Could not copy the receive code."), "error", "Direct transfer");
+      onToast(
+        getApiErrorMessage(err, "Could not copy the receive code."),
+        "error",
+        "Direct transfer",
+      );
     }
   };
 
   const sendNow = async () => {
     const code = sendCode.trim();
     if (!code) return;
-    const rowText = preview ? ` ${preview.total.toLocaleString()} rows and all credentials will be sent.` : " All data and credentials will be sent.";
+    const rowText = preview
+      ? ` ${preview.total.toLocaleString()} rows and all credentials will be sent.`
+      : " All data and credentials will be sent.";
     const destinationText = destinationInfo
       ? `${destinationInfo.destination} (${destinationInfo.mode === "wipe" ? "replace everything" : "merge"})`
       : "the destination in the receive code";
@@ -156,31 +188,40 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
     <SettingsSection
       icon={ArrowRightLeft}
       title="Move directly to another instance"
-      description="Transfer everything securely without downloading a file or managing an encryption password."
+      description="Transfer the Openship database and credentials securely without downloading a file or managing an encryption password."
       iconBg="bg-primary/10"
       iconColor="text-primary"
     >
       <div className="space-y-4">
         <div className="rounded-lg border border-primary/25 bg-primary/[0.04] px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-          Start on the destination and generate a one-time receive code. Paste that code on the source instance. The code expires after 10 minutes, works once, and credentials are re-encrypted automatically for the destination.
+          Start on the destination and generate a one-time receive code. Paste that code on the
+          source instance. The code expires after 10 minutes, works once, and credentials are
+          re-encrypted automatically for the destination.
         </div>
-
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-3 rounded-xl border border-border/60 p-4">
             <div>
               <p className="text-sm font-semibold text-foreground">1. Receive on this instance</p>
-              <p className="mt-1 text-xs text-muted-foreground">Choose how incoming data should be restored, then copy the generated code.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Choose how incoming data should be restored, then copy the generated code.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <ModeOption
                 selected={receiveMode === "wipe"}
-                onSelect={() => { setReceiveMode("wipe"); setReceiveCode(""); }}
+                onSelect={() => {
+                  setReceiveMode("wipe");
+                  setReceiveCode("");
+                }}
                 title="Replace everything"
                 description="Best for a new destination."
               />
               <ModeOption
                 selected={receiveMode === "merge"}
-                onSelect={() => { setReceiveMode("merge"); setReceiveCode(""); }}
+                onSelect={() => {
+                  setReceiveMode("merge");
+                  setReceiveCode("");
+                }}
                 title="Merge"
                 description="Keep existing destination data."
               />
@@ -204,7 +245,8 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11px] text-muted-foreground">
-                    Expires {new Date(expiresAt).toLocaleTimeString()}. Do not share it with anyone except the source instance.
+                    Expires {new Date(expiresAt).toLocaleTimeString()}. Do not share it with anyone
+                    except the source instance.
                   </span>
                   <button
                     type="button"
@@ -222,7 +264,10 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
             <div>
               <p className="text-sm font-semibold text-foreground">2. Send from this instance</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Paste the destination code. {preview ? `${preview.total.toLocaleString()} rows plus all credentials will move.` : "All rows and credentials will move."}
+                Paste the destination code.{" "}
+                {preview
+                  ? `${preview.total.toLocaleString()} rows plus all credentials will move.`
+                  : "All rows and credentials will move."}
               </p>
             </div>
             <textarea
@@ -233,17 +278,20 @@ export function DirectTransferCard({ onToast }: { onToast: Toast }) {
               aria-label="Destination receive code"
               className="h-32 w-full resize-none rounded-lg border border-border/60 bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground outline-none focus:border-primary/60"
             />
-            {sendCode.trim() && (
-              destinationInfo ? (
+            {sendCode.trim() &&
+              (destinationInfo ? (
                 <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                  Destination: <span className="font-medium text-foreground">{destinationInfo.destination}</span>
-                  {" · "}{destinationInfo.mode === "wipe" ? "Replace everything" : "Merge with existing data"}
+                  Destination:{" "}
+                  <span className="font-medium text-foreground">{destinationInfo.destination}</span>
+                  {" · "}
+                  {destinationInfo.mode === "wipe"
+                    ? "Replace everything"
+                    : "Merge with existing data"}
                   {" · "}expires {new Date(destinationInfo.expiresAt).toLocaleTimeString()}
                 </div>
               ) : (
                 <p className="text-xs text-danger">This does not look like a valid receive code.</p>
-              )
-            )}
+              ))}
             <button
               type="button"
               onClick={() => void sendNow()}
@@ -271,10 +319,7 @@ function ExportCard({ onToast }: { onToast: Toast }) {
   const [previewFailed, setPreviewFailed] = useState(false);
   // Preserve restorable backup records and open-incident memory by default.
   // High-volume analytics/activity and completed migration logs are opt-in.
-  const [history, setHistory] = useState<ExportHistoryCategory[]>([
-    "backups",
-    "incidents",
-  ]);
+  const [history, setHistory] = useState<ExportHistoryCategory[]>(["backups", "incidents"]);
 
   // A non-empty passphrase must be confirmed; otherwise a typo (or a blank
   // confirmation) can create a secret bundle the operator can never reopen.
@@ -282,14 +327,17 @@ function ExportCard({ onToast }: { onToast: Toast }) {
 
   useEffect(() => {
     let cancelled = false;
-    dataTransferApi.preview()
+    dataTransferApi
+      .preview()
       .then((result) => {
         if (!cancelled) setPreview(result);
       })
       .catch(() => {
         if (!cancelled) setPreviewFailed(true);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const selectedRows = preview
@@ -300,7 +348,10 @@ function ExportCard({ onToast }: { onToast: Toast }) {
     if (passphraseMismatch) return;
     setBusy(true);
     try {
-      const file = (await dataTransferApi.export(passphrase || undefined, history)) as DataTransferFile;
+      const file = (await dataTransferApi.export(
+        passphrase || undefined,
+        history,
+      )) as DataTransferFile;
       const blob = new Blob([JSON.stringify(file)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -316,7 +367,11 @@ function ExportCard({ onToast }: { onToast: Toast }) {
         t.settings.common.toast.export,
       );
     } catch (err) {
-      onToast(getApiErrorMessage(err, t.settings.dataTransfer.export.toastFailed), "error", t.settings.common.toast.export);
+      onToast(
+        getApiErrorMessage(err, t.settings.dataTransfer.export.toastFailed),
+        "error",
+        t.settings.common.toast.export,
+      );
     } finally {
       setBusy(false);
     }
@@ -342,9 +397,17 @@ function ExportCard({ onToast }: { onToast: Toast }) {
     if (!passphrase) return;
     try {
       await navigator.clipboard.writeText(passphrase);
-      onToast(t.settings.dataTransfer.export.copiedTransferSecret, "success", t.settings.common.toast.export);
+      onToast(
+        t.settings.dataTransfer.export.copiedTransferSecret,
+        "success",
+        t.settings.common.toast.export,
+      );
     } catch (err) {
-      onToast(getApiErrorMessage(err, t.settings.dataTransfer.export.toastFailed), "error", t.settings.common.toast.export);
+      onToast(
+        getApiErrorMessage(err, t.settings.dataTransfer.export.toastFailed),
+        "error",
+        t.settings.common.toast.export,
+      );
     }
   };
 
@@ -363,25 +426,41 @@ function ExportCard({ onToast }: { onToast: Toast }) {
 
         <div>
           <div className="mb-2">
-            <p className="text-xs font-medium text-foreground">{t.settings.dataTransfer.export.filterTitle}</p>
-            <p className="text-xs text-muted-foreground">{t.settings.dataTransfer.export.filterDescription}</p>
+            <p className="text-xs font-medium text-foreground">
+              {t.settings.dataTransfer.export.filterTitle}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t.settings.dataTransfer.export.filterDescription}
+            </p>
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/30 px-3 py-2 text-xs">
             <span className="text-muted-foreground">
-              {t.settings.dataTransfer.export.coreRows}: {preview ? preview.core.toLocaleString() : previewFailed ? t.settings.dataTransfer.export.countUnavailable : "…"}
+              {t.settings.dataTransfer.export.coreRows}:{" "}
+              {preview
+                ? preview.core.toLocaleString()
+                : previewFailed
+                  ? t.settings.dataTransfer.export.countUnavailable
+                  : "…"}
             </span>
             <span className="font-medium text-foreground">
-              {t.settings.dataTransfer.export.selectedRows}: {selectedRows === null ? previewFailed ? t.settings.dataTransfer.export.countUnavailable : "…" : selectedRows.toLocaleString()}
+              {t.settings.dataTransfer.export.selectedRows}:{" "}
+              {selectedRows === null
+                ? previewFailed
+                  ? t.settings.dataTransfer.export.countUnavailable
+                  : "…"
+                : selectedRows.toLocaleString()}
             </span>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {([
-              ["analytics", t.settings.dataTransfer.export.filterAnalytics],
-              ["activity", t.settings.dataTransfer.export.filterActivity],
-              ["backups", t.settings.dataTransfer.export.filterBackups],
-              ["incidents", t.settings.dataTransfer.export.filterIncidents],
-              ["migrations", t.settings.dataTransfer.export.filterMigrations],
-            ] as const).map(([category, label]) => (
+            {(
+              [
+                ["analytics", t.settings.dataTransfer.export.filterAnalytics],
+                ["activity", t.settings.dataTransfer.export.filterActivity],
+                ["backups", t.settings.dataTransfer.export.filterBackups],
+                ["incidents", t.settings.dataTransfer.export.filterIncidents],
+                ["migrations", t.settings.dataTransfer.export.filterMigrations],
+              ] as const
+            ).map(([category, label]) => (
               <label
                 key={category}
                 className="flex cursor-pointer items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-foreground"
@@ -465,7 +544,9 @@ function ExportCard({ onToast }: { onToast: Toast }) {
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-          {busy ? t.settings.dataTransfer.export.exporting : t.settings.dataTransfer.export.exportDownload}
+          {busy
+            ? t.settings.dataTransfer.export.exporting
+            : t.settings.dataTransfer.export.exportDownload}
         </button>
       </div>
     </SettingsSection>
@@ -515,9 +596,10 @@ function ImportModal({
   onToast: Toast;
 }) {
   const { t } = useI18n();
-  const [file, setFile] = useState<DataTransferFile | null>(null);
-  const [fileName, setFileName] = useState("");
-  const [fileHasSecrets, setFileHasSecrets] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const [passphrase, setPassphrase] = useState("");
   const [mode, setMode] = useState<ImportMode>("wipe");
   const [busy, setBusy] = useState(false);
@@ -528,32 +610,19 @@ function ImportModal({
 
   const reset = () => {
     setFile(null);
-    setFileName("");
-    setFileHasSecrets(false);
+    setUploadProgress(null);
     setPassphrase("");
     setMode("wipe");
     setError(null);
     setNotice(null);
   };
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setError(null);
-    try {
-      const parsed = JSON.parse(await f.text()) as DataTransferFile;
-      if (parsed?.kind !== "openship-instance-export") {
-        setError(t.settings.dataTransfer.import.notExport);
-        setFile(null);
-        return;
-      }
-      setFile(parsed);
-      setFileName(f.name);
-      setFileHasSecrets(!!parsed.secrets);
-    } catch {
-      setError(t.settings.dataTransfer.import.cantRead);
-      setFile(null);
-    }
+    setUploadProgress(null);
+    setFile(f);
   };
 
   const handleImport = async () => {
@@ -564,16 +633,27 @@ function ImportModal({
     }
     setBusy(true);
     setError(null);
+    setUploadProgress(null);
     try {
-      const result = (await dataTransferApi.import(
+      const result = (await dataTransferApi.importFile(
         file,
         passphrase || undefined,
         mode,
+        (done, total) => setUploadProgress({ done, total }),
       )) as ImportResult;
 
-      const parts = [interpolate(t.settings.dataTransfer.import.rowsRestored, { count: String(result.rowsRestored) })];
-      if (result.secretsRehydrated > 0) parts.push(interpolate(t.settings.dataTransfer.import.secretsRestored, { count: String(result.secretsRehydrated) }));
-      if (result.secretsSkipped && fileHasSecrets) {
+      const parts = [
+        interpolate(t.settings.dataTransfer.import.rowsRestored, {
+          count: String(result.rowsRestored),
+        }),
+      ];
+      if (result.secretsRehydrated > 0)
+        parts.push(
+          interpolate(t.settings.dataTransfer.import.secretsRestored, {
+            count: String(result.secretsRehydrated),
+          }),
+        );
+      if (result.secretsSkipped) {
         parts.push(t.settings.dataTransfer.import.secretsNotRestored);
       }
       onToast(parts.join(" · "), "success", t.settings.common.toast.importComplete);
@@ -625,8 +705,12 @@ function ImportModal({
             <DatabaseBackup className="size-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-foreground">{t.settings.dataTransfer.import.modalTitle}</h2>
-            <p className="text-xs text-muted-foreground">{t.settings.dataTransfer.import.modalSubtitle}</p>
+            <h2 className="text-base font-semibold text-foreground">
+              {t.settings.dataTransfer.import.modalTitle}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {t.settings.dataTransfer.import.modalSubtitle}
+            </p>
           </div>
         </div>
 
@@ -663,36 +747,51 @@ function ImportModal({
             </label>
             <input
               type="file"
-              accept="application/json,.json"
+              accept="application/json,.json,.osx"
               onChange={handleFile}
               className="block w-full text-sm text-muted-foreground file:me-3 file:rounded-lg file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground hover:file:bg-muted/70"
             />
-            {fileName && (
+            {file && (
               <p className="mt-1 text-xs text-muted-foreground">
-                {fileName}
-                {fileHasSecrets ? t.settings.dataTransfer.import.fileContainsSecrets : t.settings.dataTransfer.import.fileNoSecrets}
+                {file.name} · {formatBytes(file.size)}
               </p>
+            )}
+            {uploadProgress && (
+              <div className="mt-2" aria-live="polite">
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width]"
+                    style={{
+                      width: `${Math.round((uploadProgress.done / uploadProgress.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t.settings.dataTransfer.import.importing} {uploadProgress.done}/
+                  {uploadProgress.total}
+                </p>
+              </div>
             )}
           </div>
 
-          {fileHasSecrets && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                {t.settings.dataTransfer.import.passphrase}
-              </label>
-              <input
-                type="password"
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-                autoComplete="off"
-                placeholder={t.settings.dataTransfer.import.passphrasePlaceholder}
-                className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary/60"
-              />
-            </div>
-          )}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {t.settings.dataTransfer.import.passphrase}
+            </label>
+            <input
+              type="password"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              autoComplete="off"
+              placeholder={t.settings.dataTransfer.import.passphrasePlaceholder}
+              className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary/60"
+            />
+          </div>
 
           <div>
-            <label className="mb-2 block text-xs font-medium text-muted-foreground">{t.settings.dataTransfer.import.mode}</label>
+            <label className="mb-2 block text-xs font-medium text-muted-foreground">
+              {t.settings.dataTransfer.import.mode}
+            </label>
             <div className="space-y-2">
               <ModeOption
                 selected={mode === "wipe"}
@@ -712,9 +811,7 @@ function ImportModal({
           {mode === "wipe" && (
             <div className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-bg p-3">
               <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-              <p className="text-xs text-warning">
-                {t.settings.dataTransfer.import.wipeWarn}
-              </p>
+              <p className="text-xs text-warning">{t.settings.dataTransfer.import.wipeWarn}</p>
             </div>
           )}
 
@@ -736,11 +833,13 @@ function ImportModal({
             <button
               type="button"
               onClick={handleImport}
-              disabled={busy || !file || (fileHasSecrets && !passphrase)}
+              disabled={busy || !file}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {busy && <Loader2 className="size-4 animate-spin" />}
-              {busy ? t.settings.dataTransfer.import.importing : t.settings.dataTransfer.import.import}
+              {busy
+                ? t.settings.dataTransfer.import.importing
+                : t.settings.dataTransfer.import.import}
             </button>
           </div>
         </div>
@@ -765,7 +864,9 @@ function ModeOption({
       type="button"
       onClick={onSelect}
       className={`w-full rounded-xl border p-3 text-start transition-colors ${
-        selected ? "border-primary/60 bg-primary/[0.05]" : "border-border/50 hover:bg-foreground/[0.03]"
+        selected
+          ? "border-primary/60 bg-primary/[0.05]"
+          : "border-border/50 hover:bg-foreground/[0.03]"
       }`}
     >
       <div className="flex items-center gap-2">

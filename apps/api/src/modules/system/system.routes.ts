@@ -31,6 +31,10 @@ import * as serverModules from "./server-modules.controller";
 import * as serverContainers from "./server-containers.controller";
 import * as migration from "./migration/migration.controller";
 import * as dataTransfer from "./data-transfer/data-transfer.controller";
+import {
+  TRANSFER_CHUNK_BYTES,
+  TRANSFER_CONTROL_BODY_BYTES,
+} from "./data-transfer/chunk-store";
 import * as systemHealth from "./system-health.controller";
 import * as edgeOrphans from "./edge-orphans.controller";
 
@@ -38,6 +42,15 @@ const r = secureRouter(new Hono(), {
   module: "system",
   basePath: "/api/system",
   localOnly: true,
+});
+
+const transferControlBodyLimit = bodyLimit({
+  maxSize: TRANSFER_CONTROL_BODY_BYTES,
+  onError: (c) =>
+    c.json(
+      { error: "Transfer control request exceeds the size limit.", code: "PAYLOAD_TOO_LARGE" },
+      413,
+    ),
 });
 
 
@@ -288,8 +301,53 @@ r.post("/migration/switch-back", { tag: "settings:admin" }, requireInstanceAdmin
  * own personal org (GHSA-rwq6-r63g-3c8h). Do not "restore" it here.
  */
 r.get("/data-transfer/preview", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.previewInstanceExportHandler);
-r.post("/data-transfer/direct/session", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.createDirectReceiveSessionHandler);
-r.post("/data-transfer/direct/send", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.sendDirectTransferHandler);
+r.post("/data-transfer/direct/session", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.createDirectReceiveSessionHandler);
+r.post("/data-transfer/direct/send", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.sendDirectTransferHandler);
+r.post("/data-transfer/direct/send/stream", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.sendDirectTransferStreamHandler);
+r.public(
+  "post",
+  "/data-transfer/direct/chunk/init",
+  {
+    reason: "Initializes an encrypted upload using the one-time receive capability.",
+    rateLimit: "auth-tight",
+  },
+  transferControlBodyLimit,
+  dataTransfer.initializeDirectChunkUploadHandler,
+);
+r.public(
+  "post",
+  "/data-transfer/direct/chunk/:sessionId/heartbeat",
+  {
+    reason: "Extends an authenticated in-progress direct-transfer lease.",
+    rateLimit: "transfer-chunk",
+  },
+  transferControlBodyLimit,
+  dataTransfer.heartbeatDirectChunkUploadHandler,
+);
+r.public(
+  "put",
+  "/data-transfer/direct/chunk/:sessionId/:index",
+  {
+    reason: "Accepts one bounded, encrypted, signed direct-transfer chunk.",
+    rateLimit: "transfer-chunk",
+  },
+  bodyLimit({
+    maxSize: TRANSFER_CHUNK_BYTES + 64,
+    onError: (c) =>
+      c.json({ error: "Transfer chunk exceeds the size limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  dataTransfer.receiveDirectChunkHandler,
+);
+r.public(
+  "post",
+  "/data-transfer/direct/chunk/:sessionId/finalize/stream",
+  {
+    reason: "Keeps an authenticated direct-transfer restore alive through proxy timeouts.",
+    rateLimit: "auth-tight",
+  },
+  transferControlBodyLimit,
+  dataTransfer.finalizeDirectChunkUploadStreamHandler,
+);
 r.public(
   "post",
   "/data-transfer/direct/receive",
@@ -303,7 +361,26 @@ r.public(
   }),
   dataTransfer.receiveDirectTransferHandler,
 );
-r.post("/data-transfer/export", { tag: "settings:admin" }, requireInstanceAdmin(), dataTransfer.exportInstanceHandler);
+r.post("/data-transfer/export", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.exportInstanceHandler);
+r.post("/data-transfer/import/session", { tag: "settings:admin" }, requireInstanceAdmin(), transferControlBodyLimit, dataTransfer.createFileUploadHandler);
+r.put(
+  "/data-transfer/import/session/:sessionId/chunk/:index",
+  { tag: "settings:admin" },
+  requireInstanceAdmin(),
+  bodyLimit({
+    maxSize: TRANSFER_CHUNK_BYTES,
+    onError: (c) =>
+      c.json({ error: "Import chunk exceeds the size limit.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  dataTransfer.uploadFileChunkHandler,
+);
+r.post(
+  "/data-transfer/import/session/:sessionId/finalize/stream",
+  { tag: "settings:admin" },
+  requireInstanceAdmin(),
+  transferControlBodyLimit,
+  dataTransfer.finalizeFileUploadStreamHandler,
+);
 r.use(
   "/data-transfer/import",
   bodyLimit({

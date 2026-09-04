@@ -68,3 +68,4 @@ export * from "./host-profile";
 export * from "./host-firewall";
 export * from "./host-channel";
 export * from "./network";
+export * from "./sse-terminal";

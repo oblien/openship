@@ -272,8 +272,13 @@ async function doFetch<T>(
 
   /* --- Headers ---------------------------------------------------- */
   const headers = new Headers(init.headers);
+  const rawBody =
+    body instanceof FormData ||
+    (typeof Blob !== "undefined" && body instanceof Blob) ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body);
 
-  if (body && typeof body === "object" && !(body instanceof FormData)) {
+  if (body && typeof body === "object" && !rawBody) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -291,12 +296,7 @@ async function doFetch<T>(
       headers,
       credentials: "include",
       signal: controller.signal,
-      body:
-        body instanceof FormData
-          ? body
-          : body !== undefined
-            ? JSON.stringify(body)
-            : undefined,
+      body: rawBody ? (body as BodyInit) : body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     if (!res.ok) {

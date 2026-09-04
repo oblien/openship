@@ -15,6 +15,8 @@ import { acquirePgliteLock, releasePgliteLock } from "./pglite-lock";
  * Every repo and service receives this; they never know which driver runs beneath.
  */
 export type Database = NodePgDatabase<typeof schema> | PgliteDatabase<typeof schema>;
+/** Transaction handle shared by the Postgres and PGlite drivers. */
+export type DatabaseTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /** Which driver is active - useful for conditional logic in adapters */
 export type Driver = "pg" | "pglite";

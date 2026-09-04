@@ -43,6 +43,7 @@ export { resourceUsage, RESOURCE_BUCKET_MINUTES, SINGLE_APP_SERVICE_KEY } from "
 export { terminalSessions } from "./terminal-sessions";
 export { serviceTerminalSessions } from "./service-terminal-sessions";
 export { cloudHandoffCode } from "./cloud-handoff-code";
+export { dataTransferSession, dataTransferChunk } from "./data-transfer";
 export { personalAccessToken } from "./personal-access-token";
 export { personalAccessTokenGrant } from "./personal-access-token-grant";
 export { oauthApplication, oauthAccessToken, oauthConsent } from "./oauth";
