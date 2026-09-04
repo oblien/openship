@@ -22,6 +22,7 @@ import { resolveProjectInfo, projectInfoToScanResponse } from "../deployments/pr
 import { paginateRepoList, type RepoListParams } from "./repo-list";
 import { getRequestContext } from "../../lib/request-context";
 import { hasConfiguredGitHubSource } from "./github-source.service";
+import { resolveApiPublicUrl } from "../../lib/public-url";
 
 /** Map a MappedRepository to the owner/repo key the access filter needs.
  *  `full_name` is canonically "owner/repo"; fall back to the discrete
@@ -318,7 +319,7 @@ export async function connect(c: Context) {
       // degrades to a stateless GitHub installation URL.
       const install = mode === "app" ? await githubAuth.resolveInstallUrl(ctx) : { state: "" };
       const redirectUrl = install.state
-        ? `/api/github/connect/redirect?install_state=${encodeURIComponent(install.state)}`
+        ? `${resolveApiPublicUrl()}/api/github/connect/redirect?install_state=${encodeURIComponent(install.state)}`
         : undefined;
       return c.json({
         connected: false,
@@ -429,7 +430,7 @@ export async function connect(c: Context) {
   // install state.
   const install = mode === "app" ? await githubAuth.resolveInstallUrl(ctx) : { state: "" };
   const redirectUrl = install.state
-    ? `/api/github/connect/redirect?install_state=${encodeURIComponent(install.state)}`
+    ? `${resolveApiPublicUrl()}/api/github/connect/redirect?install_state=${encodeURIComponent(install.state)}`
     : undefined;
   return c.json({
     connected: false,
