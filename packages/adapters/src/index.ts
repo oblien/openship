@@ -24,6 +24,7 @@ export type {
   BuildStep,
   LogEntry,
   LogCallback,
+  RuntimeLogStreamOptions,
   ContainerInfo,
   ResourceUsage,
   RouteConfig,

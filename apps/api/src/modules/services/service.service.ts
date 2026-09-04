@@ -32,6 +32,7 @@ import {
   type LogEntry,
   type ContainerStatus,
   type RuntimeAdapter,
+  type RuntimeLogStreamOptions,
 } from "@repo/adapters";
 import { scopedVolumeName, type CommandExecutor } from "@repo/adapters";
 import { isArtifactRef } from "../../lib/container-ref";
@@ -2260,7 +2261,7 @@ export async function streamServiceRuntimeLogs(
   projectId: string,
   serviceId: string,
   onLog: (entry: LogEntry) => void,
-  opts?: { tail?: number },
+  opts?: RuntimeLogStreamOptions,
 ) {
   const { runtime, containerId, serverId } = await resolveServiceContainer(
     ctx,
