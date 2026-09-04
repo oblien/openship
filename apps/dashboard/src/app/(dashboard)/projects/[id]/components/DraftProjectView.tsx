@@ -48,6 +48,7 @@ import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { encodeLocalSlug, encodeRepoSlug, encodeProjectSlug } from "@/utils/repoSlug";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
+import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 
 interface DraftProjectViewProps {
   /** Deletes this environment. Page passes its handleDeleteProject (defaults:
@@ -75,6 +76,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
 
   const [attemptCount, setAttemptCount] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const status = getProjectStatus(projectData);
 
@@ -179,7 +181,8 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
           : null;
   const hasServiceFanout = info.hasMultipleServices || (info.serviceCount ?? 0) > 1;
 
-  const confirmDelete = async () => {
+  const handleConfirmDelete = async () => {
+    setShowDeleteDialog(false);
     setDeleting(true);
     try {
       await onDeleteProject();
@@ -368,7 +371,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
                 {hasSource ? t.projects.draft.deployNow : t.projects.draft.connectSource}
               </button>
               <button
-                onClick={confirmDelete}
+                onClick={() => setShowDeleteDialog(true)}
                 disabled={deleting}
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-danger-solid px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
               >
@@ -383,6 +386,12 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
           </div>
         </SectionCard>
       </div>
+      <DeleteConfirmationDialog
+        isOpen={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleConfirmDelete}
+        projectName={projectData?.name || ""}
+      />
     </div>
   );
 }
