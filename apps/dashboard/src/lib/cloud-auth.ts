@@ -130,7 +130,7 @@ export function getCloudDesktopHandoffUrl(options: {
 }
 
 export function buildAuthPageHref(
-  route: "/login" | "/register" | "/authorize",
+  route: "/login" | "/register" | "/authorize" | "/two-factor",
   searchParams: SearchParamsLike,
 ) {
   const params = new URLSearchParams();

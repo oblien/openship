@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal } from "lucide-react";
+import { Settings as SettingsIcon, Users, Cloud, Server, Bell, KeyRound, Boxes, Mail, GitBranch, Terminal, ShieldCheck } from "lucide-react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useSession, authClient } from "@/lib/auth-client";
 import { useI18n } from "@/components/i18n-provider";
@@ -48,7 +48,7 @@ function useInfraIssuesCount(): number {
   return enabled ? count : 0;
 }
 
-export type SettingsTabId = "general" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
+export type SettingsTabId = "general" | "git" | "security" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -68,7 +68,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   // `dns` is still accepted, though the DNS tab is gone: AutoDnsPanel deep-links to
   // `/settings?tab=dns` in two places (and a render test pins that string), and a value
   // missing from this list silently falls back to "general".
-  const allowedTabs: SettingsTabId[] = ["general", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
+  const allowedTabs: SettingsTabId[] = ["general", "git", "security", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
   const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
   // DNS credentials moved into Credentials — one screen for every third-party secret
   // instead of three. The old link lands on the screen that now owns them.
@@ -82,6 +82,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
     // mail-only shell, which deploys nothing from source.
     { id: "git", label: t.settings.sidebar.tabs.git, icon: GitBranch, visible: productView !== "mail" },
     { id: "credentials", label: t.settings.sidebar.tabs.credentials, icon: KeyRound, visible: true, requiresRole: "admin" },
+    { id: "security", label: t.settings.sidebar.tabs.security, icon: ShieldCheck, visible: true },
     { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: Terminal, visible: true },
     { id: "mcp", label: t.settings.sidebar.tabs.mcp, icon: Boxes, visible: true },
     { id: "team", label: t.settings.sidebar.tabs.team, icon: Users, visible: true },

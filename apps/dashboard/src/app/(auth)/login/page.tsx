@@ -30,6 +30,7 @@ import {
   preparePkceFlow,
   startDesktopCloudAuth,
 } from "@/lib/cloud-auth";
+import { loginNext } from "./login-next";
 
 export default function LoginPage() {
   return (
@@ -90,27 +91,22 @@ function LoginPageInner() {
     setLoading(true);
     try {
       const result = await signIn.email({ email, password });
-      if (result.error) {
-        // Sign-in is blocked until the email is verified (SaaS requires it).
-        // Route to the verify page (resend + status) instead of a dead-end toast.
-        const err = result.error;
-        if (err.code === "EMAIL_NOT_VERIFIED" || err.message?.toLowerCase().includes("verify")) {
-          router.push(`/verify-email?email=${encodeURIComponent(email)}`);
-          return; // navigating away — keep the spinner until this page unmounts
-        }
-        // Stayed on the login page → stop the spinner so they can retry.
-        toast("error", err.message ?? t.auth.errors.invalidCredentials);
+      const next = loginNext(result, {
+        email,
+        twoFactorHref: buildAuthPageHref("/two-factor", searchParams),
+        postLoginUrl,
+      });
+
+      if (next.kind === "error") {
+        toast("error", next.message ?? t.auth.errors.invalidCredentials);
         setLoading(false);
         return;
       }
-      // Success → navigate. Deliberately DO NOT clear loading: router.push only
-      // *starts* the client transition, and the dashboard takes a moment to
-      // render. Keeping the button in its loading state until this page unmounts
-      // avoids the dead "idle button, no navigation yet" gap.
-      if (postLoginUrl) {
-        window.location.href = postLoginUrl;
+
+      if (next.kind === "session" && next.href !== "/") {
+        window.location.href = next.href;
       } else {
-        router.push("/");
+        router.push(next.href);
       }
     } catch (err) {
       toast("error", isNetworkError(err)

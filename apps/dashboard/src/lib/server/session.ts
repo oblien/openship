@@ -30,6 +30,7 @@ export type User = {
   name: string;
   email: string;
   emailVerified: boolean;
+  twoFactorEnabled: boolean;
   image?: string | null;
   createdAt: string;
   updatedAt: string;

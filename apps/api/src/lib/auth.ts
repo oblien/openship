@@ -1,7 +1,7 @@
 import { betterAuth, type User } from "better-auth";
 import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { bearer, mcp, emailOTP } from "better-auth/plugins";
+import { bearer, mcp, emailOTP, twoFactor } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import {
   defaultStatements,
@@ -147,6 +147,7 @@ export const auth = betterAuth({
       session: schema.session,
       account: schema.account,
       verification: schema.verification,
+      twoFactor: schema.twoFactor,
       organization: schema.organization,
       member: schema.member,
       invitation: schema.invitation,
@@ -407,6 +408,17 @@ export const auth = betterAuth({
      * want since the local DB stores the raw session.token.
      */
     bearer(),
+    twoFactor({
+      issuer: "Openship",
+      twoFactorCookieMaxAge: 600,
+      trustDeviceMaxAge: 60 * 60 * 24 * 30,
+      backupCodeOptions: {
+        amount: 10,
+        length: 10,
+        storeBackupCodes: "encrypted",
+      },
+    }),
+
 
     /**
      * Email verification via a short numeric CODE (OTP), not a magic link.
