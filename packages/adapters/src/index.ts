@@ -171,6 +171,9 @@ export {
 // ─── Infrastructure layer ────────────────────────────────────────────────────
 export type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./infra/types";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
+// For the upstream-down e2e in apps/api: it asserts on the real marker rather than a copy of
+// the string, which could drift from the page it is checking for.
+export { EDGE_UPSTREAM_DOWN_SENTINEL } from "./infra/edge-upstream-down";
 export {
   compileVercelRouting,
   sourceToLocation,

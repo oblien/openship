@@ -68,6 +68,7 @@ import {
   type ProxySettings,
 } from "@repo/core";
 import { cloudEdgeRealIpConf, isCloudFrontedHost } from "./edge-real-ip";
+import { EDGE_UPSTREAM_DOWN_HANDLER } from "./edge-upstream-down";
 import { sq } from "../system/local-shell";
 import type { RootChecked } from "../system/privilege";
 import { edgeDownExplanation } from "../system/edge-exec-error";
@@ -196,8 +197,11 @@ const FORWARD_VARS = `    set $openship_fwd_proto $scheme;
  * 2 — `proxy_pass_header X-Accel-Buffering`, so an upstream's no-buffering instruction
  *     survives the second proxy hop. Vhosts written before it stall SSE behind Cloud's
  *     edge (GH-570).
+ * 3 — the upstream-down `error_page` handler ({@link EDGE_UPSTREAM_DOWN_HANDLER}). Vhosts
+ *     written before it serve OpenResty's stock 502 — which, behind Openship Cloud's
+ *     edge, is a page branded for a third party on the operator's own domain (#556).
  */
-export const VHOST_GENERATION = 2;
+export const VHOST_GENERATION = 3;
 
 /** Marker line carrying {@link VHOST_GENERATION}, matched by {@link readVhostGeneration}. */
 const GENERATION_MARKER = `# openship-vhost-gen: ${VHOST_GENERATION}`;
@@ -1885,10 +1889,22 @@ export class NginxProvider implements RoutingProvider, SslProvider {
         ? `\n\n${renderSlashFallback(route.staticRoot)}`
         : "";
 
+    // The upstream-down page (#556), appended to every block that serves — same reason as
+    // `slashFallback` above: it is a named location, so it has to exist in whichever server
+    // block the `error_page` fired in.
+    //
+    // Only where something can actually 502. A host redirect has no upstream at all, and a
+    // static route serves from disk — EXCEPT when a compiled `vercel.json` gave it proxy
+    // locations, which is why this tests for an upstream rather than for `!staticRoot`.
+    const proxiesUpstream =
+      !hostRedirect &&
+      (!("staticRoot" in route && route.staticRoot) || (route.proxyLocations?.length ?? 0) > 0);
+    const upstreamDown = proxiesUpstream ? `\n\n${EDGE_UPSTREAM_DOWN_HANDLER}` : "";
+
     // `location /` for a block that serves the app.
     const serveLocation = `    location / {
         ${redirectRules}${urlShape}${locationBody}
-    }${slashFallback}`;
+    }${slashFallback}${upstreamDown}`;
 
     // `location /` for the :80 block of a route that has a real cert: send the
     // visitor to https — unless a CDN already terminated TLS and reached us on
@@ -1904,7 +1920,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       ? serveLocation
       : `    location / {
         ${HTTPS_UPGRADE}${redirectRules}${urlShape}${locationBody}
-    }${slashFallback}`;
+    }${slashFallback}${upstreamDown}`;
 
     // Everything both server blocks share, after the per-block preamble.
     const sharedBody = `${serverHeaders}${proxyOpts}
