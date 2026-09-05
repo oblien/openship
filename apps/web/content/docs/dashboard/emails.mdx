@@ -106,8 +106,13 @@ Twice during the install, the wizard pauses and needs you to act — first for D
 
 The final **Verify Public Mail Ports** step is deliberately off-box: Openship first confirms the daemons are
 listening on the server, then connects from the control plane to the public DNS address on TCP 25, 465, 587,
-and 993. A real failure stops setup instead of producing a false green completion. If the daemons listen but
-the public connection times out, open the ports in the cloud provider's firewall as well as the host firewall.
+and 993. A real failure on mail-client ports (465, 587, 993) or a daemon that is not listening stops setup
+instead of producing a false green completion. If those ports listen but the public connection times out, open
+them in the cloud provider's firewall as well as the host firewall.
+
+A timeout on **TCP 25 only** is a warning, not a wall, when 465/587/993 succeed. On AWS the control plane is
+often the same instance, so the probe is outbound port 25 — which AWS filters — even when inbound MX would
+work. Finish setup and use the **Sending** tab if you deliver through Amazon SES or another SMTP relay.
 
 ### DNS hold — publish your records
 

@@ -41,6 +41,56 @@ function reading(status: "ok" | "fail" | "unknown") {
   };
 }
 
+function awsSmtp25SoftBlock() {
+  return {
+    hostname: "mail.example.com",
+    address: "203.0.113.10",
+    checkedAt: 0,
+    status: "ok" as const,
+    detail:
+      "Inbound TCP 25 could not be verified from the control plane. Route sending through an SMTP provider on the Sending tab if outbound port 25 is blocked.",
+    ports: [
+      {
+        key: "smtp" as const,
+        port: 25,
+        label: "SMTP inbound",
+        status: "blocked" as const,
+        listening: true,
+        exposed: true,
+        reachable: false,
+        failure: "timeout" as const,
+      },
+      {
+        key: "smtps" as const,
+        port: 465,
+        label: "SMTP submission (TLS)",
+        status: "reachable" as const,
+        listening: true,
+        exposed: true,
+        reachable: true,
+      },
+      {
+        key: "submission" as const,
+        port: 587,
+        label: "SMTP submission (STARTTLS)",
+        status: "reachable" as const,
+        listening: true,
+        exposed: true,
+        reachable: true,
+      },
+      {
+        key: "imaps" as const,
+        port: 993,
+        label: "IMAP (TLS)",
+        status: "reachable" as const,
+        listening: true,
+        exposed: true,
+        reachable: true,
+      },
+    ],
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -71,5 +121,15 @@ describe("mail setup public reachability gate", () => {
 
     expect(result.success).toBe(true);
     expect(result.warning).toMatch(/Public DNS/i);
+  });
+
+  it("completes with a warning when only inbound TCP 25 is filtered from the control plane", async () => {
+    h.check.mockResolvedValue(awsSmtp25SoftBlock());
+
+    const result = await stepVerifyMailReachability(executor, "example.com", vi.fn());
+
+    expect(result.success).toBe(true);
+    expect(result.warning).toMatch(/control plane|Sending tab/i);
+    expect(result.message).toMatch(/TCP 25/i);
   });
 });

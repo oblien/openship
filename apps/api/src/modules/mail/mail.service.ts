@@ -24,7 +24,9 @@ import type { CommandExecutor, SystemLogCallback, SystemLog } from "@repo/adapte
 import { checkMailHealth, requiresMailComponent } from "./mail-health.service";
 import {
   checkMailPortReachability,
+  isControlPlaneSmtpInboundSoftBlock,
   mailReachabilityFailureMessage,
+  SMTP_INBOUND_SOFT_BLOCK_DETAIL,
 } from "./mail-port-reachability.service";
 import { safeErrorMessage, mailHostname } from "@repo/core";
 import {
@@ -1178,6 +1180,19 @@ export async function stepVerifyMailReachability(
       stepId,
       success: true,
       message: "Mail is listening, but public reachability could not be verified",
+      warning,
+      data: { reachability },
+    };
+  }
+
+  if (isControlPlaneSmtpInboundSoftBlock(reachability.ports)) {
+    const warning = reachability.detail ?? SMTP_INBOUND_SOFT_BLOCK_DETAIL;
+    log(stepId, "warn", warning);
+    return {
+      stepId,
+      success: true,
+      message:
+        "Public submission and IMAP are reachable; inbound TCP 25 could not be verified from the control plane",
       warning,
       data: { reachability },
     };

@@ -91,6 +91,56 @@ describe("mail public-port reachability", () => {
     expect(mailReachabilityFailureMessage(result)).toMatch(/provider firewall|security group/i);
   });
 
+  it("does not fail overall when only inbound TCP 25 times out from the control plane", async () => {
+    const result = await checkMailPortReachability(executor, "mail.example.com", {
+      dependencies: {
+        scan: vi.fn(async () => scan(allListeners)),
+        resolvePublicAddress: vi.fn(async () => "203.0.113.10"),
+        probe: vi.fn(async (_host, ports) =>
+          ports.map((port) => ({
+            port,
+            result:
+              port === 25
+                ? {
+                    ok: false as const,
+                    reason: "timeout" as const,
+                    message: "no response within 1500ms",
+                  }
+                : { ok: true as const },
+          })),
+        ),
+      },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.ports.find((port) => port.port === 25)).toMatchObject({
+      status: "blocked",
+      listening: true,
+      exposed: true,
+      reachable: false,
+      failure: "timeout",
+    });
+    expect(
+      result.ports.filter((port) => port.port !== 25).every((port) => port.status === "reachable"),
+    ).toBe(true);
+    expect(result.detail).toMatch(/control plane|Amazon SES|Sending tab/i);
+  });
+
+  it("still fails when inbound TCP 25 is not listening on the host", async () => {
+    const result = await checkMailPortReachability(executor, "mail.example.com", {
+      dependencies: {
+        scan: vi.fn(async () => scan(allListeners.filter((row) => row.port !== 25))),
+        resolvePublicAddress: vi.fn(async () => "203.0.113.10"),
+        probe: vi.fn(async (_host, ports) =>
+          ports.map((port) => ({ port, result: { ok: true as const } })),
+        ),
+      },
+    });
+
+    expect(result.status).toBe("fail");
+    expect(result.ports.find((port) => port.port === 25)?.status).toBe("not_listening");
+  });
+
   it("does not waste an external probe on a port with no listener", async () => {
     const probe = vi.fn(async (_host: string, ports: readonly number[]) =>
       ports.map((port) => ({ port, result: { ok: true as const } })),

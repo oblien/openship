@@ -22,6 +22,26 @@ export const REQUIRED_PUBLIC_MAIL_PORTS = [
   { key: "imaps", port: 993, label: "IMAP (TLS)" },
 ] as const;
 
+/** Mail-client ports. Unlike inbound SMTP, these are not filtered by cloud outbound-25 throttles. */
+export const CLIENT_PUBLIC_MAIL_PORTS = [465, 587, 993] as const;
+
+export const SMTP_INBOUND_PORT = 25;
+
+/**
+ * Why a public :25 timeout is often not a setup wall: AWS (and some other
+ * clouds) filter TCP 25 originating FROM the instance. The wizard probe runs
+ * on the Openship control plane, which on a single-box self-host is that same
+ * instance, so the "public" dial of `mail.example.com:25` is actually outbound
+ * port 25 from the box. That times out even when inbound MX from the internet
+ * would succeed, and even when operators send through SES / another relay.
+ */
+export const SMTP_INBOUND_SOFT_BLOCK_DETAIL =
+  "Inbound TCP 25 could not be verified from the control plane. Many clouds " +
+  "(especially AWS) filter instance-originated port 25, so this probe can time " +
+  "out even when inbound MX delivery works. SMTP submission (465/587) and IMAP " +
+  "(993) are reachable. Route sending through an SMTP provider on the Sending " +
+  "tab if outbound port 25 is blocked.";
+
 export type MailPortReachabilityStatus =
   | "reachable"
   | "blocked"
@@ -49,6 +69,23 @@ export interface MailPortReachability {
   status: "ok" | "fail" | "unknown";
   ports: MailPortReachabilityCheck[];
   detail?: string;
+}
+
+/**
+ * True when :25 is listening on a public bind, the control-plane probe timed
+ * out, and every mail-client port completed a TCP handshake. Local bind
+ * failures (not listening / loopback-only) stay hard failures.
+ */
+export function isControlPlaneSmtpInboundSoftBlock(
+  ports: readonly MailPortReachabilityCheck[],
+): boolean {
+  const smtp = ports.find((port) => port.port === SMTP_INBOUND_PORT);
+  if (!smtp || smtp.status !== "blocked" || !smtp.listening || !smtp.exposed) {
+    return false;
+  }
+  return CLIENT_PUBLIC_MAIL_PORTS.every(
+    (port) => ports.find((row) => row.port === port)?.status === "reachable",
+  );
 }
 
 interface ReachabilityDependencies {
@@ -226,18 +263,29 @@ async function runMailPortReachability(
     };
   });
 
-  const hardFailure = ports.some(
-    (port) =>
-      port.status === "blocked" || port.status === "not_listening" || port.status === "not_exposed",
-  );
+  const smtpInboundSoftBlock = isControlPlaneSmtpInboundSoftBlock(ports);
+  const hardFailure = ports.some((port) => {
+    if (smtpInboundSoftBlock && port.port === SMTP_INBOUND_PORT && port.status === "blocked") {
+      return false;
+    }
+    return (
+      port.status === "blocked" || port.status === "not_listening" || port.status === "not_exposed"
+    );
+  });
   const unknown = ports.some((port) => port.status === "unknown");
+  const detail = [
+    resolutionDetail,
+    smtpInboundSoftBlock ? SMTP_INBOUND_SOFT_BLOCK_DETAIL : undefined,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" ");
   return {
     hostname,
     address,
     checkedAt,
     status: hardFailure ? "fail" : unknown ? "unknown" : "ok",
     ports,
-    ...(resolutionDetail ? { detail: resolutionDetail } : {}),
+    ...(detail ? { detail } : {}),
   };
 }
 

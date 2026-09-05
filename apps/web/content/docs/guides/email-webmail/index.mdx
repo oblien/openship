@@ -269,10 +269,17 @@ plan it's hidden on purpose.
 </Callout>
 
 <Callout title="The “Check Port 25” step warns that port 25 is blocked" type="warn">
-This step is a check, not a wall — the install keeps going even when it warns. But outbound mail won't actually
-send until port 25 is open. Many hosting providers block it by default (some need a support request to open it).
-Ask your provider to open it, then use **Sending → Send test email** to confirm mail flows once setup has
-finished.
+This step is a check, not a wall — the install keeps going even when it warns. Direct-to-MX sending needs
+outbound port 25. Many hosting providers block it by default (AWS throttles it from the instance). You can
+finish setup and route sending through an SMTP provider from the **Sending** tab (Amazon SES, and similar),
+then use **Sending → Send test email** to confirm mail flows.
+</Callout>
+
+<Callout title="“Verify Public Mail Ports” warns about TCP 25 but 465/587/993 are open" type="warn">
+On a single-box install the probe runs from the same machine it is testing. Cloud outbound-25 filters (AWS in
+particular) make `mail.example.com:25` time out from that box even when the daemon is listening and a security
+group allows inbound 25. If submission and IMAP handshake, setup continues with a warning. Receiving from other
+mail servers can still work; sending can use the **Sending** tab relay.
 </Callout>
 
 <Callout title="Mail sends but lands in spam" type="warn">
