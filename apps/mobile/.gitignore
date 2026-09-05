@@ -1,0 +1,26 @@
+*.iml
+.kotlin
+.gradle
+**/build/
+local.properties
+.idea
+.DS_Store
+captures
+.externalNativeBuild
+.cxx
+*.hprof
+node_modules/
+
+# Signing & secrets
+*.pem
+*.key
+*.jks
+*.keystore
+**/signing.properties
+**/keystore.properties
+google-services.json
+GoogleService-Info.plist
+
+# Logs
+*.log
+Thumbs.db
