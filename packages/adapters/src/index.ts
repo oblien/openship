@@ -214,6 +214,11 @@ export {
   MAIL_DB_USER,
   MAIL_DB_HOST_BIND,
   MAIL_DB_PORT,
+  MAIL_DB_DEFAULT_PORT,
+  MAIL_DB_FALLBACK_PORT,
+  MAIL_DB_PORT_RANGE_MAX,
+  MAIL_DB_INTERNAL_PORT,
+  resolveMailDbPort,
   type MailMount,
 } from "./infra/mail-container";
 
@@ -284,6 +289,9 @@ export {
   detectMailContainer,
   verifyMailEngine,
   buildMailRunCommand,
+  buildDbRunCommand,
+  retainedDbPort,
+  findAvailableMailDbPort,
   MAIL_DB_IMAGE,
   type ContainerMailOptions,
   type ContainerMailResult,

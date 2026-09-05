@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildMailRunCommand,
+  buildDbRunCommand,
+  findAvailableMailDbPort,
+  retainedDbPort,
   ensureContainerMail,
   resolveMailImage,
   setDefaultMailImage,
@@ -36,6 +39,84 @@ describe("buildMailRunCommand", () => {
     expect(cmd).toContain("/etc/letsencrypt:ro,z");
     // Image is the final, shell-quoted token.
     expect(cmd.endsWith("'ghcr.io/x/openship-mail:1'")).toBe(true);
+  });
+});
+
+describe("buildDbRunCommand", () => {
+  it("defaults to binding host loopback port 5432 to container port 5432", () => {
+    const cmd = buildDbRunCommand("openship-mail-db");
+    expect(cmd).toContain("-p '127.0.0.1:5432:5432'");
+    expect(cmd).toContain("--name 'openship-mail-db'");
+    expect(cmd).toContain("--restart unless-stopped");
+  });
+
+  it("binds a custom host port mapped to internal 5432 container port", () => {
+    const cmd = buildDbRunCommand("openship-mail-db", 5433);
+    expect(cmd).toContain("-p '127.0.0.1:5433:5432'");
+  });
+});
+
+describe("findAvailableMailDbPort", () => {
+  it("returns preferred port when it is not listening", async () => {
+    const exec = vi.fn(async () => "");
+    const port = await findAvailableMailDbPort({ exec } as never, 5432, false, () => {});
+    expect(port).toBe(5432);
+  });
+
+  it("does not auto-switch when the user explicitly configured the port", async () => {
+    // Return tcp table showing 5432 listening (0x1538)
+    const exec = vi.fn(async (cmd: string) => {
+      if (cmd.includes("/proc/net/tcp")) return "  sl  local_address ...\n  0: 00000000:1538 00000000:0000 0A";
+      return "";
+    });
+    const port = await findAvailableMailDbPort({ exec } as never, 5432, true, () => {});
+    expect(port).toBe(5432);
+  });
+
+  it("auto-discovers next available port (e.g. 5433) when default 5432 is occupied", async () => {
+    const logs: string[] = [];
+    const exec = vi.fn(async (cmd: string) => {
+      // 5432 (0x1538) is listening, 5433 (0x1539) is free
+      if (cmd.includes("/proc/net/tcp")) return "  sl  local_address ...\n  0: 00000000:1538 00000000:0000 0A";
+      return "";
+    });
+    const port = await findAvailableMailDbPort({ exec } as never, 5432, false, (l) => logs.push(l.message));
+    expect(port).toBe(5433);
+    expect(logs.some((m) => m.includes("Automatically selected available port 5433"))).toBe(true);
+  });
+
+  it("skips multiple occupied ports until a free one is found", async () => {
+    const exec = vi.fn(async (cmd: string) => {
+      // 5432 (0x1538) and 5433 (0x1539) are both listening; 5434 (0x153A) is free
+      if (cmd.includes("/proc/net/tcp")) {
+        return (
+          "  sl  local_address ...\n" +
+          "  0: 00000000:1538 00000000:0000 0A\n" +
+          "  1: 00000000:1539 00000000:0000 0A"
+        );
+      }
+      return "";
+    });
+    const port = await findAvailableMailDbPort({ exec } as never, 5432, false, () => {});
+    expect(port).toBe(5434);
+  });
+});
+
+describe("retainedDbPort", () => {
+  it("returns null when the database cluster is not initialised on disk", async () => {
+    const exec = vi.fn(async () => "");
+    const port = await retainedDbPort({ exec } as never);
+    expect(port).toBeNull();
+  });
+
+  it("reads the retained port from engine.env when cluster is initialised", async () => {
+    const exec = vi.fn(async (cmd: string) => {
+      if (cmd.includes("PG_VERSION")) return "yes\n";
+      if (cmd.includes("engine.env")) return 'OPENSHIP_MAIL_DB_PORT="5435"\n';
+      return "";
+    });
+    const port = await retainedDbPort({ exec } as never);
+    expect(port).toBe(5435);
   });
 });
 
@@ -86,7 +167,11 @@ const PROC_LISTENING = [
  * `streamExec` and the writes succeed so the bring-up runs end to end.
  */
 function firstBootExecutor(opts: { imagePresent: boolean }) {
-  const streamExec = vi.fn(async (_cmd: string) => ({ code: 0, output: "" }));
+  let dbStarted = false;
+  const streamExec = vi.fn(async (cmd: string) => {
+    if (cmd.includes("docker run") && cmd.includes("postgres")) dbStarted = true;
+    return { code: 0, output: "" };
+  });
   const exec = vi.fn(async (cmd: string) => {
     // No engine on the box yet — the state probe finds nothing.
     if (cmd.includes(STATE_PROBE)) return "";
@@ -95,7 +180,7 @@ function firstBootExecutor(opts: { imagePresent: boolean }) {
     // Image presence probe (docker image inspect -f '{{.Id}}').
     if (cmd.includes("docker image inspect")) return opts.imagePresent ? "sha256:abc\n" : "";
     // Port-listening probe reads /proc/net/tcp.
-    if (cmd.includes("/proc/net/tcp")) return PROC_LISTENING;
+    if (cmd.includes("/proc/net/tcp")) return dbStarted ? PROC_LISTENING : "";
     return "";
   });
   const writeFile = vi.fn(async () => {});
@@ -210,12 +295,16 @@ describe("ensureContainerMail swap", () => {
  * host (null = the file is gone, the unrecoverable case).
  */
 function retainedDbExecutor(opts: { initialised: boolean; retainedEnv: string | null }) {
-  const streamExec = vi.fn(async (_cmd: string) => ({ code: 0, output: "" }));
+  let dbStarted = false;
+  const streamExec = vi.fn(async (cmd: string) => {
+    if (cmd.includes("docker run") && cmd.includes("postgres")) dbStarted = true;
+    return { code: 0, output: "" };
+  });
   const exec = vi.fn(async (cmd: string) => {
     if (cmd.includes(STATE_PROBE)) return "";
     if (cmd.includes("docker version")) return "27.0.0\n";
     if (cmd.includes("docker image inspect")) return "sha256:abc\n";
-    if (cmd.includes("/proc/net/tcp")) return PROC_LISTENING;
+    if (cmd.includes("/proc/net/tcp")) return dbStarted ? PROC_LISTENING : "";
     if (cmd.includes("PG_VERSION")) return opts.initialised ? "yes\n" : "";
     return "";
   });
@@ -228,12 +317,16 @@ function retainedDbExecutor(opts: { initialised: boolean; retainedEnv: string | 
 }
 
 function envWriteExecutor() {
-  const streamExec = vi.fn(async (_cmd: string) => ({ code: 0, output: "" }));
+  let dbStarted = false;
+  const streamExec = vi.fn(async (cmd: string) => {
+    if (cmd.includes("docker run") && cmd.includes("postgres")) dbStarted = true;
+    return { code: 0, output: "" };
+  });
   const exec = vi.fn(async (cmd: string) => {
     if (cmd.includes(STATE_PROBE)) return "";
     if (cmd.includes("docker version")) return "27.0.0\n";
     if (cmd.includes("docker image inspect")) return "sha256:abc\n";
-    if (cmd.includes("/proc/net/tcp")) return PROC_LISTENING;
+    if (cmd.includes("/proc/net/tcp")) return dbStarted ? PROC_LISTENING : "";
     return "";
   });
   const writeFile = vi.fn(async (_path: string, _content: string) => {});
@@ -489,7 +582,14 @@ function nonRootSudoBox(
     }
     if (command.includes("docker version")) return "27.0.0\n";
     if (command.includes("docker image inspect")) return opts.imagePresent ? "sha256:abc\n" : "";
-    if (command.includes("/proc/net/tcp")) return PROC_LISTENING;
+    if (command.includes("/proc/net/tcp")) {
+      const dbStarted =
+        Boolean(opts.runningImage) ||
+        [...streamExec.mock.calls, ...exec.mock.calls].some(([c]) =>
+          String(c).includes("postgres:16-alpine"),
+        );
+      return dbStarted ? PROC_LISTENING : "";
+    }
     // `elevatedExecutor.writeFile` publishes by staging unelevated, then `chown 0:0` + `mv`
     // as root — which is where a file becomes root-owned and unreadable to the launcher.
     const mv = /mv -f '([^']+)' '([^']+)'/.exec(command);
@@ -667,5 +767,99 @@ describe("mail bring-up on a non-root sudo box (GH-630)", () => {
       .map(([c]) => String(c))
       .filter((c) => /chown|chmod a\+x|chmod 400/.test(c));
     expect(touched).toEqual([]);
+  });
+
+  it("publishes the configured dbPort for the postgres sidecar and in engine env", async () => {
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    const box = nonRootSudoBox({ imagePresent: true });
+
+    const originalExec = box.exec;
+    box.executor.exec = box.exec = vi.fn(async (cmd: string) => {
+      if (cmd.includes("/proc/net/tcp")) {
+        return (
+          "  sl  local_address rem_address   st ...\n" +
+          "  0: 00000000:1539 00000000:0000 0A 00000000:00000000\n" +
+          "  1: 00000000:0019 00000000:0000 0A 00000000:00000000\n" +
+          "  2: 00000000:03E1 00000000:0000 0A 00000000:00000000"
+        );
+      }
+      return originalExec(cmd);
+    });
+
+    await ensureContainerMail(box.executor, {
+      domain: "example.com",
+      secrets: { PGSQL_ROOT_PASSWD: "pw" },
+      dbPort: 5433,
+      onLog: () => {},
+    });
+
+    const dbRun = box.dockerCommands().find((c) => c.includes("docker run") && c.includes("postgres:16-alpine"));
+    expect(dbRun).toBeDefined();
+    expect(dbRun).toContain("-p '127.0.0.1:5433:5432'");
+  });
+
+  it("auto-discovers next available port when default 5432 is occupied during ensureContainerMail", async () => {
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    const box = nonRootSudoBox({ imagePresent: true });
+
+    const originalExec = box.exec;
+    box.executor.exec = box.exec = vi.fn(async (cmd: string) => {
+      if (cmd.includes("/proc/net/tcp")) {
+        const dbStarted = box.dockerCommands().some((c) => c.includes("127.0.0.1:5433:5432"));
+        // Before sidecar start: 5432 is occupied (1538), 5433 is free
+        // After sidecar start: 5433 is listening (1539)
+        const portHex = dbStarted ? "1539" : "1538";
+        return (
+          "  sl  local_address rem_address   st ...\n" +
+          `  0: 00000000:${portHex} 00000000:0000 0A 00000000:00000000\n` +
+          "  1: 00000000:0019 00000000:0000 0A 00000000:00000000\n" +
+          "  2: 00000000:03E1 00000000:0000 0A 00000000:00000000"
+        );
+      }
+      return originalExec(cmd);
+    });
+
+    await ensureContainerMail(box.executor, {
+      domain: "example.com",
+      secrets: { PGSQL_ROOT_PASSWD: "pw" },
+      onLog: () => {},
+    });
+
+    const dbRun = box.dockerCommands().find((c) => c.includes("docker run") && c.includes("postgres:16-alpine"));
+    expect(dbRun).toBeDefined();
+    // Automatically selects 5433
+    expect(dbRun).toContain("-p '127.0.0.1:5433:5432'");
+  });
+
+  it("retains the previously assigned dbPort from engine.env on an existing cluster", async () => {
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    const box = nonRootSudoBox({ imagePresent: true });
+
+    const originalExec = box.exec;
+    box.executor.exec = box.exec = vi.fn(async (cmd: string) => {
+      if (cmd.includes("PG_VERSION")) return "yes\n";
+      if (cmd.includes("engine.env")) return 'OPENSHIP_MAIL_DB_PORT="5436"\n';
+      if (cmd.includes("db.env")) return 'POSTGRES_PASSWORD="pw"\n';
+      if (cmd.includes("/proc/net/tcp")) {
+        return (
+          "  sl  local_address rem_address   st ...\n" +
+          "  0: 00000000:153C 00000000:0000 0A 00000000:00000000\n" +
+          "  1: 00000000:0019 00000000:0000 0A 00000000:00000000\n" +
+          "  2: 00000000:03E1 00000000:0000 0A 00000000:00000000"
+        );
+      }
+      return originalExec(cmd);
+    });
+
+    await ensureContainerMail(box.executor, {
+      domain: "example.com",
+      secrets: { PGSQL_ROOT_PASSWD: "pw" },
+      onLog: () => {},
+    });
+
+    const dbRun = box.dockerCommands().find((c) => c.includes("docker run") && c.includes("postgres:16-alpine"));
+    expect(dbRun).toBeDefined();
+    // Retains 5436 from engine.env
+    expect(dbRun).toContain("-p '127.0.0.1:5436:5432'");
   });
 });

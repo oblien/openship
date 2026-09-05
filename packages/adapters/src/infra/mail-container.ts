@@ -91,9 +91,28 @@ export const MAIL_DB_CONTAINER_DATA_DIR = "/var/lib/postgresql/data";
 export const MAIL_DB_PGDATA = `${MAIL_DB_CONTAINER_DATA_DIR}/pgdata`;
 export const MAIL_DB_NAME = "vmail";
 export const MAIL_DB_USER = "vmail";
-/** Loopback only — the host-networked engine reaches it at 127.0.0.1:5432. */
+/** Loopback only — the host-networked engine reaches it at 127.0.0.1. */
 export const MAIL_DB_HOST_BIND = "127.0.0.1";
-export const MAIL_DB_PORT = 5432;
+export const MAIL_DB_DEFAULT_PORT = 5432;
+export const MAIL_DB_FALLBACK_PORT = 5433;
+export const MAIL_DB_PORT_RANGE_MAX = 5460;
+export const MAIL_DB_INTERNAL_PORT = 5432;
+
+/**
+ * Resolve the host port the mail database listens on.
+ * Reads `OPENSHIP_MAIL_DB_PORT` from the environment if present and valid (1-65535),
+ * falling back to {@link MAIL_DB_DEFAULT_PORT}.
+ */
+export function resolveMailDbPort(
+  raw: string | number | undefined = process.env.OPENSHIP_MAIL_DB_PORT,
+): number {
+  if (raw === undefined || raw === null || raw === "") return MAIL_DB_DEFAULT_PORT;
+  const n = typeof raw === "number" ? raw : Number(String(raw).trim());
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return MAIL_DB_DEFAULT_PORT;
+  return n;
+}
+
+export const MAIL_DB_PORT = resolveMailDbPort();
 
 /**
  * Host-side paths for the files the admin layer writes with `exec.writeFile`

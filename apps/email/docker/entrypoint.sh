@@ -35,9 +35,9 @@ set -euo pipefail
 
 log() { echo "[openship-mail] $*"; }
 
-# No DB_HOST/DB_PORT here on purpose: db-bootstrap.sh reads the same two env vars and
-# owns every conversation with the sidecar, so duplicating them invites the two files
-# to disagree about where the database is.
+# db-bootstrap.sh reads OPENSHIP_MAIL_DB_HOST and OPENSHIP_MAIL_DB_PORT to wait for
+# and bootstrap the schema; step 3c below reconciles OPENSHIP_MAIL_DB_PORT into daemon
+# configs when a non-default port is configured.
 FIRST_DOMAIN="${FIRST_DOMAIN:-}"
 SEED_DIR="/opt/openship-mail/seed"
 
@@ -139,6 +139,35 @@ if [ -n "$FIRST_DOMAIN" ]; then
         printf '127.0.0.1 mail.%s mail\n' "$FIRST_DOMAIN" >> /etc/hosts \
           || log "WARN: could not append FQDN to /etc/hosts"
       fi
+      ;;
+  esac
+fi
+
+# 3c. reconcile baked DB port (5432) -> OPENSHIP_MAIL_DB_PORT if non-default.
+DB_PORT="${OPENSHIP_MAIL_DB_PORT:-5432}"
+if [ "$DB_PORT" != "5432" ]; then
+  case "$DB_PORT" in
+    ''|*[!0-9]*)
+      log "WARN: OPENSHIP_MAIL_DB_PORT '$DB_PORT' outside [0-9] — skipping port reconcile" ;;
+    *)
+      export _OPENSHIP_MAIL_DB_PORT="$DB_PORT"
+      # Reconcile daemon SQL connection configs (postfix, dovecot, amavis, iredapd)
+      # so that daemons reach the PostgreSQL sidecar on the configured host port.
+      if grep -rl --exclude='*.pyc' -E '\b5432\b|vmail_db_port|hosts\s*=\s*127\.0\.0\.1:' \
+           /etc/postfix /etc/dovecot /etc/amavis /opt/iredapd /etc/fail2ban 2>/dev/null \
+           | xargs -r perl -pi -e '
+             s/(hosts\s*=\s*(?:127\.0\.0\.1|localhost):)\d+/${1}$ENV{_OPENSHIP_MAIL_DB_PORT}/g;
+             s/(\bport\s*=\s*)\d+/${1}$ENV{_OPENSHIP_MAIL_DB_PORT}/g;
+             s/(;\s*port=)\d+/${1}$ENV{_OPENSHIP_MAIL_DB_PORT}/g;
+             s/(\bvmail_db_port\s*=\s*"?)\d+("?)/${1}$ENV{_OPENSHIP_MAIL_DB_PORT}${2}/g;
+             s/\b5432\b/$ENV{_OPENSHIP_MAIL_DB_PORT}/g;
+           '; then
+        log "reconciled DB port -> ${DB_PORT} in daemon configs"
+      else
+        log "no DB port placeholders to reconcile"
+      fi
+      rm -f /opt/iredapd/__pycache__/*.pyc 2>/dev/null || true
+      unset _OPENSHIP_MAIL_DB_PORT
       ;;
   esac
 fi
