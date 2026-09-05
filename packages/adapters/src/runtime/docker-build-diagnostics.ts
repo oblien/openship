@@ -68,7 +68,7 @@ export function extractDockerBuildFailureHint(
   if (code === 143) {
     return `${line} — The build process received SIGTERM (exit code 143), usually because it was cancelled or stopped by another supervisor.`;
   }
-  if (code !== null) return line;
+  if (code !== null) return code === 0 ? null : line;
 
   if (
     /JavaScript heap out of memory|Fatal process out of memory|Ineffective mark-compacts near heap limit|Reached heap limit Allocation failed|fatal error:\s*(?:runtime:\s*)?out of memory/i.test(

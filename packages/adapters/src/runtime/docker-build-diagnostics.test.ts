@@ -29,6 +29,14 @@ describe("Docker build diagnostics", () => {
     }
   });
 
+  it.each([
+    "@beacon/web build: Exited with code 0",
+    "Process exited with exit code: 0",
+    "process completed: exit code 0",
+  ])("does not treat a successful exit as failure evidence: %s", (line) => {
+    expect(extractDockerBuildFailureHint(line)).toBeNull();
+  });
+
   it("describes exit 137 accurately without claiming that SIGKILL proves OOM", () => {
     const hint = extractDockerBuildFailureHint(
       "The command '/bin/sh -c bun run build' returned a non-zero code: 137",
@@ -154,6 +162,40 @@ describe("DockerRuntime build failure paths", () => {
     if (previousTimeout === undefined) delete process.env.OPENSHIP_BUILD_IDLE_TIMEOUT_MS;
     else process.env.OPENSHIP_BUILD_IDLE_TIMEOUT_MS = previousTimeout;
   });
+
+  it.each([null, "The command returned a non-zero code: 1"])(
+    "does not let a successful Bun step override the Docker result: %s",
+    async (dockerError) => {
+      const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
+      Object.assign(runtime, {
+        _docker: {
+          modem: {
+            followProgress: (
+              _stream: unknown,
+              finished: (error: Error | null) => void,
+              progress: (event: { stream?: string; error?: string }) => void,
+            ) => {
+              progress({ stream: "@beacon/web build: Exited with code 0\n" });
+              if (dockerError) {
+                progress({ error: dockerError });
+              } else {
+                progress({ stream: "Successfully built abc123\n" });
+                progress({ stream: "Successfully tagged openship/test:build\n" });
+              }
+              finished(null);
+            },
+          },
+        },
+      });
+
+      const result = (runtime as any).streamDockerodeBuild(new PassThrough(), new BuildLogger());
+      if (dockerError) {
+        await expect(result).rejects.toThrow(dockerError);
+      } else {
+        await expect(result).resolves.toBeUndefined();
+      }
+    },
+  );
 
   it("times out a daemon stream without discovering or killing host containers", async () => {
     const stream = new PassThrough();
