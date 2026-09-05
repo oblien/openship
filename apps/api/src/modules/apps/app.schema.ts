@@ -49,6 +49,17 @@ export const InstallAppBody = Type.Object({
       },
     ),
   ),
+  applyBackupDefaults: Type.Optional(
+    Type.Boolean({
+      description:
+        "Set up this app's backup defaults during install (default true). A no-op when the org has no backup destination; false attaches no schedules.",
+    }),
+  ),
+  backupDestinationId: Type.Optional(
+    Type.String({
+      description: "Destination the derived backup policies write to. Omit to use the org's default destination.",
+    }),
+  ),
 });
 
 /** POST /apps/custom — add a custom app from an uploaded JSON app definition. */
