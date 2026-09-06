@@ -18,6 +18,7 @@ import type {
   DeploymentResult,
   LogEntry,
   LogCallback,
+  RuntimeLogStreamOptions,
   ContainerInfo,
   ContainerStatus,
   ResourceUsage,
@@ -305,7 +306,7 @@ export interface RuntimeAdapter {
   streamRuntimeLogs(
     containerId: string,
     onLog: LogCallback,
-    opts?: { tail?: number },
+    opts?: RuntimeLogStreamOptions,
   ): Promise<() => void>;
 
   /** Get current resource usage metrics */

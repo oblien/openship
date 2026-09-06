@@ -16,7 +16,8 @@ import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/components/theme-provider";
 import { deployApi } from "@/lib/api";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
-import { composeServiceTally } from "@/context/deployment/types";
+import { composeServiceTally, serviceLogSource } from "@/context/deployment/types";
+import { LiveServiceLogsTerminal } from "./LiveServiceLogsTerminal";
 import type { DeploymentStatus, ServiceDeployStatus } from "@/context/deployment/types";
 import { encodeRepoSlug, encodeLocalSlug } from "@/utils/repoSlug";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
@@ -408,6 +409,8 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
             activeTab={activeLogTab}
             onTabChange={handleTabChange}
             deploymentStatus={deploymentStatus}
+            decisionPending={showDecision}
+            projectId={state.projectId || config.projectId}
             running={running}
             built={built}
             building={building}
@@ -652,6 +655,8 @@ function ComposeServiceLogsPanel({
   activeTab,
   onTabChange,
   deploymentStatus,
+  decisionPending,
+  projectId,
   running,
   built,
   building,
@@ -667,6 +672,10 @@ function ComposeServiceLogsPanel({
   activeTab: string;
   onTabChange: (tab: string) => void;
   deploymentStatus: DeploymentStatus;
+  /** Held keep/reject decision — suppresses the runtime-stream swap (#667). */
+  decisionPending?: boolean;
+  /** Needed to dial each service's live runtime log stream after success. */
+  projectId?: string;
   running: number;
   /** Image built, container not up yet — see the ComposeSidebar tally. */
   built: number;
@@ -685,6 +694,13 @@ function ComposeServiceLogsPanel({
     const map = new Map<string, string>();
     services.forEach((service) => {
       if (service.serviceId && service.serviceName) map.set(service.serviceId, service.serviceName);
+    });
+    return map;
+  }, [services]);
+  const serviceIdByName = useMemo(() => {
+    const map = new Map<string, string>();
+    services.forEach((service) => {
+      if (service.serviceId && service.serviceName) map.set(service.serviceName, service.serviceId);
     });
     return map;
   }, [services]);
@@ -821,15 +837,36 @@ function ComposeServiceLogsPanel({
             follows: borderless depends on fill contrast, and light has none here. */}
         <div className="relative h-[420px] overflow-hidden rounded-xl border border-border/50 bg-white dark:border-transparent dark:bg-black dim:border-transparent dim:bg-black">
           {terminalTabs.length > 0 ? (
-            terminalTabs.map((tab) => (
-              <ComposeLogTerminal
-                key={tab.id}
-                logs={tab.logs}
-                active={activeTab === tab.id}
-                emptyMessage={tab.emptyMessage}
-                theme={terminalTheme}
-              />
-            ))
+            terminalTabs.map((tab) => {
+              const isPrepare = tab.id === PREPARE_TAB;
+              const serviceId = isPrepare ? undefined : serviceIdByName.get(tab.id);
+              const live =
+                !isPrepare &&
+                !!projectId &&
+                !!serviceId &&
+                serviceLogSource({
+                  deploymentStatus,
+                  decisionPending,
+                  serviceStatus: serviceStatusByName.get(tab.id),
+                }) === "runtime";
+              return live ? (
+                <LiveServiceLogsTerminal
+                  key={tab.id}
+                  projectId={projectId}
+                  serviceId={serviceId}
+                  active={activeTab === tab.id}
+                  theme={terminalTheme}
+                />
+              ) : (
+                <ComposeLogTerminal
+                  key={tab.id}
+                  logs={tab.logs}
+                  active={activeTab === tab.id}
+                  emptyMessage={tab.emptyMessage}
+                  theme={terminalTheme}
+                />
+              );
+            })
           ) : (
             <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
               <p className="text-sm text-muted-foreground">{cd.preparingServiceLogs}</p>

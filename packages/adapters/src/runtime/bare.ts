@@ -25,6 +25,7 @@ import type {
   DeploymentResult,
   LogEntry,
   LogCallback,
+  RuntimeLogStreamOptions,
   ContainerInfo,
   ResourceUsage,
 } from "../types";
@@ -1058,7 +1059,7 @@ export class BareRuntime implements RuntimeAdapter {
   async streamRuntimeLogs(
     containerId: string,
     onLog: LogCallback,
-    opts?: { tail?: number },
+    opts?: RuntimeLogStreamOptions,
   ): Promise<() => void> {
     const sv = await this.supervisor();
     return sv.streamLogs(containerId, onLog, opts);
