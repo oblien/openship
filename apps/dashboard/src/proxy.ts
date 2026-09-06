@@ -8,6 +8,7 @@ import { PRODUCT_VIEW_COOKIE, PRODUCT_VIEW_HEADER } from "@/lib/product-view";
 
 const PUBLIC_ROUTES = [
   "/login",
+  "/two-factor",
   "/register",
   "/forgot-password",
   "/reset-password",

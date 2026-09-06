@@ -35,7 +35,7 @@ export async function prepareInstanceExport(
     for (const row of rows) {
       const id = row.id;
       if (typeof id !== "string") continue;
-      const entry = extractPlaintext(spec, id, row[spec.column]);
+      const entry = await extractPlaintext(spec, id, row[spec.column]);
       if (entry) entries.push(entry);
     }
   }

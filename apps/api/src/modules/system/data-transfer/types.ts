@@ -30,7 +30,7 @@ export interface ExportPreview {
 }
 
 /** How a given column is encrypted at rest — drives decrypt/re-encrypt dispatch. */
-export type SecretScheme = "scalar" | "enc1" | "map" | "notification-config" | "plaintext";
+export type SecretScheme = "scalar" | "enc1" | "better-auth" | "map" | "notification-config" | "plaintext";
 
 /** One secret cell's plaintext, keyed to its row. Only one payload field is set. */
 export interface SecretEntry {

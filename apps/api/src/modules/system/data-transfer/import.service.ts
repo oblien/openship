@@ -10,7 +10,7 @@
  *           row's own secrets are never clobbered.
  */
 
-import { db, eq, inArray, restoreSubgraphInTransaction, type DatabaseTransaction } from "@repo/db";
+import { db, eq, inArray, restoreSubgraphInTransaction, schema, type DatabaseTransaction } from "@repo/db";
 
 import { env } from "../../../config/env";
 import { reconcileRuntimeStateAfterImport } from "../../../lib/database-runtime-state";
@@ -44,6 +44,7 @@ const SINGLETON_AND_AUTH = [
   "instance_settings",
   "user",
   "account",
+  "two_factor",
   "session",
   "organization",
   "member",
@@ -86,7 +87,7 @@ function assertValidSecretBundle(bundle: SecretBundle | null): void {
   if (bundle.version !== 1 || !Array.isArray(bundle.entries)) {
     throw new InvalidTransferFileError("The credential bundle is invalid.");
   }
-  const schemes = new Set(["scalar", "enc1", "map", "notification-config", "plaintext"]);
+  const schemes = new Set(["scalar", "enc1", "better-auth", "map", "notification-config", "plaintext"]);
   for (const entry of bundle.entries) {
     if (
       !entry ||
@@ -102,6 +103,28 @@ function assertValidSecretBundle(bundle: SecretBundle | null): void {
       throw new InvalidTransferFileError(
         "The credential bundle does not match the destination schema.",
       );
+    }
+    if (entry.scheme === "better-auth" && (!entry.value || typeof entry.value !== "string")) {
+      throw new InvalidTransferFileError("The credential bundle contains an invalid Better Auth value.");
+    }
+    if (
+      entry.scheme === "better-auth" &&
+      entry.table === "two_factor" &&
+      entry.column === "backupCodes"
+    ) {
+      let codes: unknown;
+      try {
+        codes = JSON.parse(entry.value!);
+      } catch {
+        throw new InvalidTransferFileError("The credential bundle contains invalid backup codes.");
+      }
+      if (
+        !Array.isArray(codes) ||
+        codes.length === 0 ||
+        codes.some((code) => typeof code !== "string" || code === "")
+      ) {
+        throw new InvalidTransferFileError("The credential bundle contains invalid backup codes.");
+      }
     }
     const validValue =
       entry.scheme === "map"
@@ -133,9 +156,10 @@ async function computeNewIds(
 ): Promise<Map<string, Set<string>>> {
   const result = new Map<string, Set<string>>();
   for (const [sqlName, { table, pk }] of secretTables()) {
-    const dumpIds = (file.dump.tables[sqlName] ?? [])
-      .map((r) => r.id)
-      .filter((v): v is string => typeof v === "string");
+    const dumpRows = file.dump.tables[sqlName] ?? [];
+    const dumpIds = dumpRows
+      .map((row) => row.id)
+      .filter((value): value is string => typeof value === "string");
     if (dumpIds.length === 0) {
       result.set(sqlName, new Set());
       continue;
@@ -153,7 +177,27 @@ async function computeNewIds(
       >;
       for (const row of existing) existingSet.add(row.id as string);
     }
-    result.set(sqlName, new Set(dumpIds.filter((id) => !existingSet.has(id))));
+    let newIds = dumpIds.filter((id) => !existingSet.has(id));
+
+    if (sqlName === "two_factor") {
+      const userByFactorId = new Map<string, string>();
+      for (const row of dumpRows) {
+        if (typeof row.id === "string" && typeof row.userId === "string") {
+          userByFactorId.set(row.id, row.userId);
+        }
+      }
+      const incomingUserIds = [...new Set(userByFactorId.values())];
+      if (incomingUserIds.length > 0) {
+        const existingFactors = await tx
+          .select({ userId: schema.twoFactor.userId })
+          .from(schema.twoFactor)
+          .where(inArray(schema.twoFactor.userId, incomingUserIds));
+        const existingUserIds = new Set(existingFactors.map((factor) => factor.userId));
+        newIds = newIds.filter((id) => !existingUserIds.has(userByFactorId.get(id)!));
+      }
+    }
+
+    result.set(sqlName, new Set(newIds));
   }
   return result;
 }
@@ -205,11 +249,25 @@ export async function importPreparedInstance(opts: {
     await db.transaction(async (rawTx) => {
       const tx = rawTx as DatabaseTransaction;
       const newIds = mode === "merge" ? await computeNewIds(file, tx) : null;
+      const factorIdsToRestore = newIds?.get("two_factor");
+      const restoreDump = factorIdsToRestore
+        ? {
+            ...file.dump,
+            tables: {
+              ...file.dump.tables,
+              two_factor: (file.dump.tables["two_factor"] ?? []).filter(
+                (row) => typeof row.id !== "string" || factorIdsToRestore.has(row.id),
+              ),
+            },
+          }
+        : file.dump;
 
-      await restoreSubgraphInTransaction(tx, file.dump, {
+      await restoreSubgraphInTransaction(tx, restoreDump, {
         mode,
         mergeConflictSkip: mode === "merge" ? SINGLETON_AND_AUTH : undefined,
       });
+
+      const rehydratedFactorFields = new Map<string, Set<string>>();
 
       if (bundle) {
         // Group secret entries by row so a row with several secret columns
@@ -247,7 +305,18 @@ export async function importPreparedInstance(opts: {
 
           const set: Record<string, unknown> = {};
           for (const { spec, entry } of entries) {
-            set[spec.column] = sealForInstance(spec, entry, currentCell);
+            const sealed = await sealForInstance(spec, entry, currentCell);
+            set[spec.column] = sealed;
+            if (
+              spec.sqlName === "two_factor" &&
+              (spec.column === "secret" || spec.column === "backupCodes") &&
+              typeof sealed === "string" &&
+              sealed !== ""
+            ) {
+              const fields = rehydratedFactorFields.get(id) ?? new Set<string>();
+              fields.add(spec.column);
+              rehydratedFactorFields.set(id, fields);
+            }
           }
           const updated = await tx
             .update(rowSpec.table)
@@ -255,6 +324,46 @@ export async function importPreparedInstance(opts: {
             .where(eq(rowSpec.pk, id))
             .returning();
           if (updated.length > 0) secretsRehydrated += 1;
+        }
+      }
+
+      // A restored enabled flag without both portable factor secrets would lock
+      // the account behind an authenticator the destination cannot verify. Only
+      // inspect rows restored by this operation; merge imports must leave every
+      // pre-existing destination factor untouched.
+      const restoredFactorIds = (file.dump.tables["two_factor"] ?? [])
+        .map((row) => row.id)
+        .filter((id): id is string => typeof id === "string");
+      const candidateFactorIds = mode === "merge"
+        ? [...(newIds?.get("two_factor") ?? [])]
+        : restoredFactorIds;
+      const incompleteFactorIds = candidateFactorIds.filter((id) => {
+        const fields = rehydratedFactorFields.get(id);
+        return !fields?.has("secret") || !fields.has("backupCodes");
+      });
+
+      if (incompleteFactorIds.length > 0) {
+        const factors = await tx
+          .select({ id: schema.twoFactor.id, userId: schema.twoFactor.userId })
+          .from(schema.twoFactor)
+          .where(inArray(schema.twoFactor.id, incompleteFactorIds));
+        if (factors.length > 0) {
+          await tx
+            .delete(schema.twoFactor)
+            .where(inArray(schema.twoFactor.id, factors.map((factor) => factor.id)));
+          const affectedUserIds = [...new Set(factors.map((factor) => factor.userId))];
+          const remainingFactors = await tx
+            .select({ userId: schema.twoFactor.userId })
+            .from(schema.twoFactor)
+            .where(inArray(schema.twoFactor.userId, affectedUserIds));
+          const usersWithFactors = new Set(remainingFactors.map((factor) => factor.userId));
+          const usersToDisable = affectedUserIds.filter((userId) => !usersWithFactors.has(userId));
+          if (usersToDisable.length > 0) {
+            await tx
+              .update(schema.user)
+              .set({ twoFactorEnabled: false })
+              .where(inArray(schema.user.id, usersToDisable));
+          }
         }
       }
 

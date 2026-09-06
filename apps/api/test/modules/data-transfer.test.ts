@@ -601,54 +601,54 @@ describe("one-time direct instance transfer", () => {
 });
 
 describe("secret-codec round-trips (extract → seal → decrypt)", () => {
-  it("scalar", () => {
+  it("scalar", async () => {
     const stored = encrypt("db-url");
-    const entry = extractPlaintext(spec("scalar", "value"), "id1", stored);
+    const entry = await extractPlaintext(spec("scalar", "value"), "id1", stored);
     expect(entry?.value).toBe("db-url");
-    const sealedCell = sealForInstance(spec("scalar", "value"), entry!) as string;
+    const sealedCell = await sealForInstance(spec("scalar", "value"), entry!) as string;
     expect(decrypt(sealedCell)).toBe("db-url");
   });
 
-  it("enc1 (ssh credential envelope)", () => {
+  it("enc1 (ssh credential envelope)", async () => {
     const stored = encryptSecretField("hunter2");
-    const entry = extractPlaintext(spec("enc1", "sshPassword"), "id1", stored);
+    const entry = await extractPlaintext(spec("enc1", "sshPassword"), "id1", stored);
     expect(entry?.value).toBe("hunter2");
-    const sealedCell = sealForInstance(spec("enc1", "sshPassword"), entry!) as string;
+    const sealedCell = await sealForInstance(spec("enc1", "sshPassword"), entry!) as string;
     expect(decryptSecretField(sealedCell)).toBe("hunter2");
   });
 
-  it("plaintext (tunnelToken)", () => {
-    const entry = extractPlaintext(spec("plaintext", "tunnelToken"), "id1", "raw-token");
+  it("plaintext (tunnelToken)", async () => {
+    const entry = await extractPlaintext(spec("plaintext", "tunnelToken"), "id1", "raw-token");
     expect(entry?.value).toBe("raw-token");
-    expect(sealForInstance(spec("plaintext", "tunnelToken"), entry!)).toBe("raw-token");
+    await expect(sealForInstance(spec("plaintext", "tunnelToken"), entry!)).resolves.toBe("raw-token");
   });
 
-  it("map (deployment.envVars)", () => {
+  it("map (deployment.envVars)", async () => {
     const stored = { A: encrypt("1"), B: encrypt("2") };
-    const entry = extractPlaintext(spec("map", "envVars"), "id1", stored);
+    const entry = await extractPlaintext(spec("map", "envVars"), "id1", stored);
     expect(entry?.map).toEqual({ A: "1", B: "2" });
-    const sealedCell = sealForInstance(spec("map", "envVars"), entry!) as Record<string, string>;
+    const sealedCell = await sealForInstance(spec("map", "envVars"), entry!) as Record<string, string>;
     expect(decrypt(sealedCell.A)).toBe("1");
     expect(decrypt(sealedCell.B)).toBe("2");
   });
 
-  it("notification-config: secret sub-fields travel, plaintext fields preserved", () => {
+  it("notification-config: secret sub-fields travel, plaintext fields preserved", async () => {
     const s = spec("notification-config", "config", ["hmacSecret", "webhookUrl"]);
     const stored = { url: "https://hook", channelName: "ops", hmacSecret: encrypt("sig") };
-    const entry = extractPlaintext(s, "id1", stored);
+    const entry = await extractPlaintext(s, "id1", stored);
     expect(entry?.config).toEqual({ hmacSecret: "sig" });
 
     // Re-hydration merges the secret back into the restored (scrubbed) config.
     const restored = { url: "https://hook", channelName: "ops" };
-    const sealedCell = sealForInstance(s, entry!, restored) as Record<string, unknown>;
+    const sealedCell = await sealForInstance(s, entry!, restored) as Record<string, unknown>;
     expect(sealedCell.url).toBe("https://hook");
     expect(sealedCell.channelName).toBe("ops");
     expect(decrypt(sealedCell.hmacSecret as string)).toBe("sig");
   });
 
-  it("returns null for empty/absent cells", () => {
-    expect(extractPlaintext(spec("scalar", "value"), "id1", null)).toBeNull();
-    expect(extractPlaintext(spec("scalar", "value"), "id1", "")).toBeNull();
+  it("returns null for empty/absent cells", async () => {
+    await expect(extractPlaintext(spec("scalar", "value"), "id1", null)).resolves.toBeNull();
+    await expect(extractPlaintext(spec("scalar", "value"), "id1", "")).resolves.toBeNull();
   });
 });
 

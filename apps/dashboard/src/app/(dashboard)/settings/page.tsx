@@ -46,6 +46,7 @@ import { NotificationsTab } from "./_components/NotificationsTab";
 import { EmailSettings } from "./_components/EmailSettings";
 import { Credentials } from "./_components/Credentials";
 import { DataTransferTab } from "./_components/DataTransferTab";
+import { AccountSecurity } from "./_components/AccountSecurity";
 import {
   SettingsSidebar,
   SettingsMobileTabs,
@@ -142,6 +143,8 @@ function SettingsPageInner() {
               <PreferencesSetting />
             </>
           )}
+
+          {activeTab === "security" && <AccountSecurity />}
 
           {/* Tokens is INBOUND only — somebody authenticating TO Openship. The clone PAT
               moved to Credentials, which is everything pointing the other way. */}

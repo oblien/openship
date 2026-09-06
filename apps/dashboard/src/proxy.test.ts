@@ -14,7 +14,12 @@ describe("dashboard proxy middleware", () => {
       "http://localhost:3001/auth/error?error=invalid_client&error_description=Unknown+client",
     );
     const res = proxy(req);
+    expect(res.headers.get("location")).toBeNull();
+  });
 
+  it("allows an unauthenticated pending two-factor challenge", () => {
+    const req = new NextRequest("http://localhost:3001/two-factor?returnTo=%2Fsettings");
+    const res = proxy(req);
     expect(res.headers.get("location")).toBeNull();
   });
 

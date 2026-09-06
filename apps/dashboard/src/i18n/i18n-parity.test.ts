@@ -119,7 +119,17 @@ const MISSING_BASELINE: Record<string, number> = {
   // blocks), the connection's Activity link into its own audit feed, and the audit
   // tab's agent filter + the "Agent" detail row that names WHICH assistant a row
   // came from. English-first via deepMerge like the access-editor block above.
-  settings: 1456,
+  // +320: account security settings — 40 English-first leaves × 8 locales:
+  // the role-independent Security tab label plus the complete password-confirmed
+  // authenticator enrollment, backup-code regeneration, and disablement flow.
+  // Security instructions remain exact through English fallback rather than
+  // receiving unreviewed machine translations.
+  settings: 1776,
+  // +144: auth.twoFactor — 18 English-first challenge leaves × 8 locales for
+  // authenticator/backup-code entry, optional 30-day trust, factor-specific
+  // failures, and expired-challenge recovery. Deep merge supplies this reviewed
+  // English copy until each locale receives a security-reviewed translation.
+  auth: 144,
   // +164: the Sending tab's rebuild — 21 net-new English keys (the direct-vs-relay
   // path picker and its switch-back action, the "which senders relay?" card with the
   // individual-sender editor, the manual SPF include for providers whose token is
