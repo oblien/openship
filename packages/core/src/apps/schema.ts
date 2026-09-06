@@ -271,6 +271,71 @@ const management = z.union([
   z.object({ kind: z.literal("custom"), href: z.string() }),
 ]);
 
+/**
+ * Every payload kind the producer registry has an implementation for, plus the
+ * literal "auto" that asks it to detect one (`resolveProducerForService` in
+ * packages/adapters/src/backup/registry.ts walks `detect()` in registration
+ * order and falls back to "volume").
+ *
+ * Enumerated rather than left as a free string because a payload kind decides
+ * what actually gets dumped — a typo in a catalog entry should be rejected at
+ * the ingest gate, not discovered at 03:17 when the producer lookup throws with
+ * nothing backed up. The cost is a real coupling: registering a NEW producer in
+ * packages/adapters means adding its kind here too, or the catalog can't name it.
+ * `payload_kind` in the DB stays a plain string, so nothing here needs a migration.
+ */
+const backupPayloadKind = z.enum([
+  "auto",
+  "volume",
+  "pg_dump",
+  "mysql_dump",
+  "redis_rdb",
+  "mongo_dump",
+  "custom_command",
+]);
+
+/**
+ * One service's authored backup default. Every field is optional because the
+ * point of this block is to CORRECT a derived default, not to restate it — a
+ * service that wants the derived behaviour needs no entry at all (see
+ * `planAppBackupDefaults` in ./backup-defaults.ts).
+ */
+const backupServiceRule = z.object({
+  service: z.string(),
+  /** Derived defaults cover this service, but it shouldn't be backed up — a
+   *  rebuildable cache, a scratch volume. Wins over every other field here. */
+  skip: z.boolean().optional(),
+  /**
+   * Why this rule exists, for whoever reads the entry next.
+   *
+   * Declared rather than smuggled in as a `_comment` key because a `skip` with
+   * no stated reason is indistinguishable from an oversight, and the next
+   * contributor "fixes" it by deleting it. Authoring-facing today — no response
+   * or view renders it yet.
+   */
+  reason: z.string().optional(),
+  /** Omitted ⇒ "auto" (let the registry detect the producer). */
+  payloadKind: backupPayloadKind.optional(),
+  /** Producer-specific options, forwarded whole ({ command, exclude, ... }). */
+  payloadConfig: z.record(z.string(), z.unknown()).optional(),
+  /** 5-field cron. Omitted ⇒ the staggered default schedule. */
+  cronExpression: z.string().optional(),
+  /** Successful runs to keep. Omitted ⇒ `DEFAULT_RETAIN_COUNT`; explicit null ⇒
+   *  unlimited, the same distinction `createPolicy` draws. */
+  retainCount: z.number().int().positive().nullable().optional(),
+  /** Age cap in days. Omitted/null ⇒ none. */
+  retainDays: z.number().int().positive().nullable().optional(),
+});
+
+/**
+ * What this app wants backed up, by service. Optional and additive: an app that
+ * declares nothing still gets derived defaults from the volumes its services
+ * already declare, so this block exists for the cases derivation gets wrong.
+ */
+const backup = z.object({
+  services: z.array(backupServiceRule),
+});
+
 export const appTemplateSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -291,6 +356,7 @@ export const appTemplateSchema = z.object({
   files: z.array(file).optional(),
   provides: z.array(provides).optional(),
   requires: z.array(requires).optional(),
+  backup: backup.optional(),
   available: z.boolean().optional(),
   // What the app needs from the machine, matched against the host's real capacity
   // before it installs (see `fitsCapacity`). Only what a host can be PROBED for —
@@ -348,6 +414,9 @@ export const appTemplateSchema = z.object({
   (data.files ?? []).forEach((f, i) => refSvc(f.service, ["files", i, "service"], "file"));
   (data.settings ?? []).forEach((g, gi) =>
     g.fields.forEach((f, fi) => refSvc(f.service, ["settings", gi, "fields", fi, "service"], "setting")),
+  );
+  (data.backup?.services ?? []).forEach((b, i) =>
+    refSvc(b.service, ["backup", "services", i, "service"], "backup rule"),
   );
 
   const SOURCE_RE = /^(env:[^:]+:[^:]+|publicUrl:[^:]+(:\d+)?|template:.*)$/;

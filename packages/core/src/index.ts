@@ -48,6 +48,7 @@ export {
   type AppTemplateRejection,
 } from "./apps/schema";
 export * from "./apps/install-phases";
+export * from "./apps/backup-defaults";
 export * from "./pricing";
 export {
   pricingCatalogSchema,

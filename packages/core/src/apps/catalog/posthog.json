@@ -692,6 +692,25 @@
       "restart": "unless-stopped"
     }
   ],
+  "backup": {
+    "services": [
+      {
+        "service": "redis7",
+        "skip": true,
+        "reason":"Broker and cache, not a source of truth — PostHog rebuilds it. Backing up an RDB of in-flight queue state restores a snapshot of work already done or already lost."
+      },
+      {
+        "service": "kafka",
+        "skip": true,
+        "reason":"An event log mid-flight. A point-in-time copy of broker data restores partially-consumed offsets, and the events that matter are already in ClickHouse."
+      },
+      {
+        "service": "zookeeper",
+        "skip": true,
+        "reason":"Coordination metadata for the broker. Meaningless without a matching broker snapshot, and recreated on boot."
+      }
+    ]
+  },
   "configFields": [
     {
       "key": "POSTGRES_PASSWORD",
