@@ -66,6 +66,8 @@
     "advanced": "خيارات متقدمة",
     "sshPortLabel": "منفذ SSH",
     "jumpHostLabel": "المضيف الوسيط",
+    "proxyCommandLabel": "ProxyCommand",
+    "proxyCommandPlaceholder": "cloudflared access ssh --hostname %h",
     "extraArgsLabel": "وسائط SSH إضافية",
     "submit": "حفظ ومتابعة",
     "tutorial": "دليل الإعداد خطوة بخطوة"

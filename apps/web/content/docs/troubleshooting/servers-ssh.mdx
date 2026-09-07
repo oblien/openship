@@ -132,23 +132,24 @@ on every check. This is expected — fix the underlying reachability problem, wa
 A single success clears it.
 </Callout>
 
-### A jump host or extra SSH args seem ignored
+### A ProxyCommand, jump host, or extra SSH args seem ignored
 
 <Callout type="error">
-You set a **Jump Host** (bastion) or **Extra SSH Arguments** under **Advanced**, but the connection behaves as
-if they weren't there.
+You set a **ProxyCommand**, **Jump Host** (bastion), or **Extra SSH Arguments** under **Advanced**, but the
+connection behaves as if they weren't there.
 </Callout>
 
-**What it means.** The **Jump Host** (`-J`) and **Extra SSH Arguments** fields are only applied on the
-**Agent** auth path, which drives your operating system's real `ssh` client. Password and SSH-Key auth connect
-through an in-process SSH library that does not use those two fields.
+**What it means.** These options are applied by the system OpenSSH client. A **ProxyCommand** always selects
+that client, even when the server uses pasted or host-path key auth. Password auth cannot be supplied to this
+non-interactive path; an encrypted key passphrase cannot be prompted either.
 
 **How to fix.**
 
 <Steps>
 
 <Step>
-Switch the server's **Authentication** to **Agent** so the jump host and extra args take effect.
+Switch the server's **Authentication** to **Agent**, or use a key without a passphrase, so the ProxyCommand,
+jump host, and extra args take effect without an interactive prompt.
 </Step>
 
 <Step>
@@ -157,8 +158,10 @@ Make sure the key that reaches the final host is loaded in your `ssh-agent` (see
 </Step>
 
 <Step>
-Prefer configuring the bastion once in your `~/.ssh/config` and pointing Openship at the target host — the
-Agent path reads your SSH config the same way your terminal does.
+For Cloudflare Access, put only the command body in **ProxyCommand**, such as
+`cloudflared access ssh --hostname %h` or `"C:\\Program Files (x86)\\cloudflared\\cloudflared.exe" access ssh --hostname %h`.
+Do not include the `ProxyCommand=` prefix. Alternatively, configure the bastion/proxy once in your `~/.ssh/config`
+and use **Agent**; that path reads your SSH config the same way your terminal does.
 </Step>
 
 </Steps>

@@ -46,6 +46,7 @@ export function buildSetupPayload(settings: {
     if (s.sshKeyPath) payload.sshKeyPath = s.sshKeyPath;
     if (s.sshKeyPassphrase) payload.sshKeyPassphrase = s.sshKeyPassphrase;
     if (s.sshJumpHost) payload.sshJumpHost = s.sshJumpHost;
+    if (s.sshProxyCommand) payload.sshProxyCommand = s.sshProxyCommand;
     if (s.sshArgs) payload.sshArgs = s.sshArgs;
   }
 

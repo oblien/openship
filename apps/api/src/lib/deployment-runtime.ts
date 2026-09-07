@@ -790,6 +790,7 @@ export async function resolveServerExecutor(
     sshHost: server.sshHost,
     sshPort: server.sshPort,
     sshJumpHost: server.sshJumpHost,
+    sshProxyCommand: server.sshProxyCommand,
     sshArgs: server.sshArgs,
   };
   // isLocal "This Server" OR a row that actually points at THIS host (a plain SSH
@@ -855,6 +856,9 @@ function toDockerSshTransport(ssh: SshConfig, executor: CommandExecutor): Docker
     privateKey: ssh.privateKey,
     privateKeyPassphrase: ssh.privateKeyPassphrase,
     sshAgent: ssh.sshAgent,
+    sshJumpHost: ssh.sshJumpHost,
+    sshProxyCommand: ssh.sshProxyCommand,
+    sshArgs: ssh.sshArgs,
   };
 }
 

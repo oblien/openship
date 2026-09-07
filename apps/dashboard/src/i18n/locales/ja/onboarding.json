@@ -66,6 +66,8 @@
     "advanced": "詳細設定",
     "sshPortLabel": "SSH ポート",
     "jumpHostLabel": "踏み台ホスト",
+    "proxyCommandLabel": "ProxyCommand",
+    "proxyCommandPlaceholder": "cloudflared access ssh --hostname %h",
     "extraArgsLabel": "追加の SSH 引数",
     "submit": "保存して続ける",
     "tutorial": "ステップバイステップのセットアップチュートリアル"

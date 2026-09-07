@@ -51,8 +51,11 @@ This is the "who am I connecting to, and how" screen. The fields:
   - **SSH Key** — give the path to your private key file (like `~/.ssh/id_ed25519`) and, if the key has one, a passphrase.
   - **Agent** — use the SSH agent already running on the machine that hosts Openship (like VSCode does). No password or key needed here, but that host must already be allowed to log in to the server.
 
-There's an **Advanced** section too, for a **Jump Host** (a bastion server you must hop through first)
-and **Extra SSH Arguments** — you can ignore both unless you know you need them.
+There's an **Advanced** section too, for a **Jump Host** (a bastion server you must hop through first), a
+**ProxyCommand**, and **Extra SSH Arguments**. For a Cloudflare Access server, enter the command body only,
+for example `"C:\\Program Files (x86)\\cloudflared\\cloudflared.exe" access ssh --hostname %h` — omit
+`ProxyCommand=`. ProxyCommand uses the system OpenSSH client; use **Agent** or an unencrypted key because the
+connection is non-interactive.
 
 <Callout title="Test before you save" type="info">
 Press **Test Connection** first. Openship tries to log in and reports back without saving anything. A

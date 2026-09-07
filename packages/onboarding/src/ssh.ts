@@ -16,6 +16,7 @@ export function buildSshSettings(payload: SshPayload): SystemSettings {
   if (payload.keyPath) settings.sshKeyPath = payload.keyPath;
   if (payload.passphrase) settings.sshKeyPassphrase = payload.passphrase;
   if (payload.jumpHost) settings.sshJumpHost = payload.jumpHost;
+  if (payload.sshProxyCommand) settings.sshProxyCommand = payload.sshProxyCommand;
   if (payload.sshArgs) settings.sshArgs = payload.sshArgs;
   return settings;
 }

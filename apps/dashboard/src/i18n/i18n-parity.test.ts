@@ -206,7 +206,9 @@ const MISSING_BASELINE: Record<string, number> = {
   // translating only these three would render a banner whose title was localized above
   // an English impact paragraph. They fall back via deepMerge, so the card is correct
   // and internally consistent in every locale.
-  servers: 305,
+  // +22: Cloudflare SSH preset, bundled-key copy, and the web-terminal action;
+  // English-first in locales that do not define the newer server-form/detail keys.
+  servers: 327,
   importProject: 81,
   onboarding: 60,
   // +16: setup.startFailed / startFailedFallback — the mail wizard had no way to

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm as fsRm, stat, unlink } from "node:fs/promises";
+import { chmod, mkdtemp, rm as fsRm, stat, unlink, writeFile } from "node:fs/promises";
 import { connect as netConnect } from "node:net";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
@@ -37,6 +37,11 @@ const execFileAsync = promisify(execFile);
  *  staging paths under tmpdir. See SshExecutor for what a leaked backslash costs. */
 const remoteDirname = posix.dirname;
 
+function formatPrivateKeyForOpenSsh(privateKey: string): string {
+  const normalized = privateKey.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  return normalized.endsWith("\n") ? normalized : `${normalized}\n`;
+}
+
 function abortError(operation: string, signal: AbortSignal): Error {
   const reason = signal.reason;
   const suffix = reason instanceof Error && reason.message ? `: ${reason.message}` : "";
@@ -71,13 +76,20 @@ function describeSshFailure(stderr: string, fallback: string): Error {
  * the agent / `~/.ssh/config` / default keys / macOS keychain (the same thing
  * that makes `ssh root@host` work). Everything — exec, file ops, transfer,
  * port-forward, Docker socket-forward, the interactive shell — rides ONE
- * authenticated OpenSSH ControlMaster connection. Password/key auth keep using
- * the in-process `ssh2` SshExecutor.
+ * authenticated OpenSSH ControlMaster connection. Password auth is supplied
+ * non-interactively through a temporary SSH_ASKPASS helper.
  */
 export class SystemSshExecutor implements CommandExecutor {
   private readonly config: SshConfig;
   private readonly abortScope = new AsyncLocalStorage<AbortSignal>();
   private readonly controlPath = makeControlPath();
+  /** Short-lived identity file used because OpenSSH accepts a path, not key text. */
+  private identityFile: string | null = null;
+  private identityDir: string | null = null;
+  private identityPromise: Promise<void> | null = null;
+  /** Short-lived SSH_ASKPASS wrapper used for non-interactive password auth. */
+  private askpassDir: string | null = null;
+  private askpassPromise: Promise<void> | null = null;
   /** Resolves once the ControlMaster connection is established. */
   private masterPromise: Promise<void> | null = null;
   /** Remote-socket → local-forward-socket, one StreamLocal forward per target. */
@@ -120,8 +132,85 @@ export class SystemSshExecutor implements CommandExecutor {
     if (signal?.aborted) throw abortError(operation, signal);
   }
 
+  private async ensureAskpassHelper(): Promise<void> {
+    if (!this.config.password || this.config.sshAskpassPath) return;
+    if (this.askpassPromise) return this.askpassPromise;
+
+    this.askpassPromise = (async () => {
+      const dir = await mkdtemp(join(tmpdir(), "openship-ssh-askpass-"));
+      const script = join(dir, "askpass.js");
+      const launcher = join(dir, process.platform === "win32" ? "askpass.cmd" : "askpass");
+      try {
+        await writeFile(
+          script,
+          "process.stdout.write(process.env.OPENSHIP_SSH_ASKPASS_PASSWORD ?? \"\");\n",
+          { mode: 0o600 },
+        );
+        if (process.platform === "win32") {
+          await writeFile(
+            launcher,
+            [
+              "@echo off",
+              "if defined OPENSHIP_SSH_ASKPASS_NODE (",
+              "  set \"ELECTRON_RUN_AS_NODE=1\"",
+              "  \"%OPENSHIP_SSH_ASKPASS_NODE%\" \"%~dp0askpass.js\"",
+              ") else (",
+              "  node \"%~dp0askpass.js\"",
+              ")",
+              "",
+            ].join("\r\n"),
+          );
+        } else {
+          await writeFile(
+            launcher,
+            "#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec \"${OPENSHIP_SSH_ASKPASS_NODE:-node}\" \"$(dirname \"$0\")/askpass.js\"\n",
+            { mode: 0o700 },
+          );
+          await chmod(launcher, 0o700);
+        }
+        this.config.sshAskpassPath = launcher;
+        this.config.sshAskpassNodePath = process.execPath;
+        this.askpassDir = dir;
+      } catch (err) {
+        await fsRm(dir, { recursive: true, force: true }).catch(() => {});
+        throw err;
+      }
+    })();
+
+    try {
+      await this.askpassPromise;
+    } finally {
+      this.askpassPromise = null;
+    }
+  }
+
+  private async ensureIdentityFile(): Promise<void> {
+    if (!this.config.privateKey || this.config.sshAgent || this.identityFile) return;
+    if (this.identityPromise) return this.identityPromise;
+
+    this.identityPromise = (async () => {
+      const dir = await mkdtemp(join(tmpdir(), "openship-ssh-key-"));
+      const path = join(dir, "id_key");
+      try {
+        await writeFile(path, formatPrivateKeyForOpenSsh(this.config.privateKey!), { mode: 0o600 });
+        await chmod(path, 0o600);
+        this.identityDir = dir;
+        this.identityFile = path;
+      } catch (err) {
+        await fsRm(dir, { recursive: true, force: true }).catch(() => {});
+        throw err;
+      }
+    })();
+
+    try {
+      await this.identityPromise;
+    } finally {
+      this.identityPromise = null;
+    }
+  }
+
   private baseArgs(): string[] {
-    return buildBaseSshArgs(this.config, this.controlPath);
+    return buildBaseSshArgs(this.config, this.controlPath, this.identityFile ?? undefined);
   }
 
   onDisconnect(cb: (err: Error) => void): () => void {
@@ -168,7 +257,18 @@ export class SystemSshExecutor implements CommandExecutor {
 
   /** Open (once) the multiplexed master connection. Authenticates here. */
   private async ensureMaster(): Promise<void> {
+    // Windows OpenSSH does not reliably support the Unix-domain ControlPath
+    // used by the pooled path. buildBaseSshArgs omits ControlMaster there, so
+    // each operation must use a direct SSH process instead of starting a
+    // background master that cannot be reused.
+    if (process.platform === "win32") {
+      await this.ensureAskpassHelper();
+      await this.ensureIdentityFile();
+      return;
+    }
     if (this.masterPromise) return this.masterPromise;
+    await this.ensureAskpassHelper();
+    await this.ensureIdentityFile();
     this.masterPromise = (async () => {
       try {
         // -f backgrounds after auth, -N runs no command: the foreground
@@ -506,6 +606,37 @@ export class SystemSshExecutor implements CommandExecutor {
     }
   }
 
+  async openDockerDialStdio(): Promise<Duplex> {
+    await this.ensureMaster();
+
+    // Do not use ENV_PREFIX here: Docker's dial-stdio protocol is a raw
+    // byte-stream, so even a harmless shell export before the daemon response
+    // corrupts the Docker HTTP connection. The command is executed by the OS
+    // ssh client, which means ProxyCommand (including Cloudflare's quoted
+    // Windows executable path) is applied to this channel as well.
+    const child = spawn(
+      "ssh",
+      [...this.baseArgs(), sshTarget(this.config), "docker system dial-stdio"],
+      { env: sshChildEnv(this.config), stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const duplex = Duplex.from({ writable: child.stdin, readable: child.stdout }) as Duplex & {
+      stderr: typeof child.stderr;
+    };
+    // The bridge uses stderr for diagnostics when the remote Docker command
+    // cannot start. Keep it attached to the returned stream rather than
+    // discarding the only useful explanation for a failed Docker connection.
+    duplex.stderr = child.stderr;
+    duplex.on("close", () => {
+      try { child.kill(); } catch { /* already gone */ }
+    });
+    child.on("exit", () => duplex.destroy());
+    child.on("error", (error) => duplex.destroy(error));
+    child.stdin.on("error", () => {});
+    child.stdout.on("error", () => {});
+    child.stderr.on("error", () => {});
+    return duplex;
+  }
+
   async forwardPort(remoteHost: string, remotePort: number): Promise<Duplex> {
     await this.ensureMaster();
     // -W wires this ssh process's stdio straight to remoteHost:remotePort
@@ -524,11 +655,17 @@ export class SystemSshExecutor implements CommandExecutor {
 
   /** Ensure a StreamLocal forward (local unix socket → remote socket) on the master. */
   private async ensureSocketForward(remoteSocket: string): Promise<string> {
+    if (process.platform === "win32") {
+      throw new Error("Windows OpenSSH does not support the Unix control-socket forwarding path");
+    }
     let pending = this.socketForwards.get(remoteSocket);
     if (!pending) {
       pending = (async () => {
         await this.ensureMaster();
-        const localSocket = `/tmp/openship-fwd-${process.pid}-${randomBytes(6).toString("hex")}.sock`;
+        const localSocket =
+          process.platform === "win32"
+            ? join(tmpdir(), `openship-fwd-${process.pid}-${randomBytes(6).toString("hex")}.sock`)
+            : `/tmp/openship-fwd-${process.pid}-${randomBytes(6).toString("hex")}.sock`;
         await execFileAsync(
           "ssh",
           [...this.baseArgs(), "-O", "forward", "-L", `${localSocket}:${remoteSocket}`, sshTarget(this.config)],
@@ -681,5 +818,16 @@ export class SystemSshExecutor implements CommandExecutor {
       await unlink(socket).catch(() => {});
     }
     this.localSockets.clear();
+    if (this.identityDir) {
+      await fsRm(this.identityDir, { recursive: true, force: true }).catch(() => {});
+      this.identityDir = null;
+      this.identityFile = null;
+    }
+    if (this.askpassDir) {
+      await fsRm(this.askpassDir, { recursive: true, force: true }).catch(() => {});
+      this.askpassDir = null;
+      this.config.sshAskpassPath = undefined;
+      this.config.sshAskpassNodePath = undefined;
+    }
   }
 }

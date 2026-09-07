@@ -66,6 +66,8 @@
     "advanced": "Avançado",
     "sshPortLabel": "Porta SSH",
     "jumpHostLabel": "Jump Host",
+    "proxyCommandLabel": "ProxyCommand",
+    "proxyCommandPlaceholder": "cloudflared access ssh --hostname %h",
     "extraArgsLabel": "Argumentos SSH Adicionais",
     "submit": "Salvar e Continuar",
     "tutorial": "Tutorial de configuração passo a passo"

@@ -50,6 +50,8 @@ export const servers = pgTable("servers", {
   sshPrivateKey: text("ssh_private_key"),
   sshKeyPassphrase: text("ssh_key_passphrase"),
   sshJumpHost: text("ssh_jump_host"),
+  /** OpenSSH ProxyCommand for Cloudflare Access and other custom transports. */
+  sshProxyCommand: text("ssh_proxy_command"),
   sshArgs: text("ssh_args"),
 
   // ── Timestamps ─────────────────────────────────────────────────────────────

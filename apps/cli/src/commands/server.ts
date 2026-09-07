@@ -54,6 +54,7 @@ interface ServerRow {
   sshAuthMethod: string | null;
   sshKeyPath: string | null;
   sshJumpHost: string | null;
+  sshProxyCommand: string | null;
   sshArgs: string | null;
   createdAt: string;
 }
@@ -68,6 +69,7 @@ interface ConnOpts {
   keyPath?: string;
   keyPassphrase?: string;
   jumpHost?: string;
+  proxyCommand?: string;
   sshArgs?: string;
 }
 
@@ -83,6 +85,7 @@ function connBody(o: ConnOpts): Record<string, unknown> {
     sshKeyPath: o.keyPath,
     sshKeyPassphrase: o.keyPassphrase,
     sshJumpHost: o.jumpHost,
+    sshProxyCommand: o.proxyCommand,
     sshArgs: o.sshArgs,
   };
 }
@@ -128,6 +131,7 @@ server
   .option("--key-path <path>", "Path to private key (key auth)")
   .option("--key-passphrase <passphrase>", "Private key passphrase")
   .option("--jump-host <host>", "SSH jump / bastion host")
+  .option("--proxy-command <command>", "OpenSSH ProxyCommand (for example cloudflared access ssh)")
   .option("--ssh-args <args>", "Extra raw ssh args")
   .action(
     guard(async (o: ConnOpts) => {
@@ -167,6 +171,7 @@ server
   .option("--key-path <path>", "Path to private key")
   .option("--key-passphrase <passphrase>", "Private key passphrase")
   .option("--jump-host <host>", "SSH jump / bastion host")
+  .option("--proxy-command <command>", "OpenSSH ProxyCommand (for example cloudflared access ssh)")
   .option("--ssh-args <args>", "Extra raw ssh args")
   .action(
     guard(async (o: ConnOpts) => {

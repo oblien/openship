@@ -35,6 +35,7 @@ describe("packaged API runtime", () => {
 
     expect(extraResources).toContain('path.join(RESOURCES, "server")');
     expect(extraResources).toContain('path.join(RESOURCES, "node_modules")');
+    expect(extraResources).toContain('path.join(RESOURCES, "cloudflared")');
   });
 
   it("launches the API with Electron's Node, including the fallback path", () => {
@@ -44,6 +45,8 @@ describe("packaged API runtime", () => {
       )?.[0] ?? "";
 
     expect(services).toContain('apiEntry: join(root, "server", "index.js")');
+    expect(services).toContain('cloudflaredPath: join(root, "cloudflared", "cloudflared.exe")');
+    expect(services).toContain("OPENSHIP_CLOUDFLARED_PATH");
     expect(startApi).toMatch(/utilityProcess\.fork\(apiEntry,/);
     expect(startApi).toMatch(/spawn\(process\.execPath,\s*\[apiEntry\]/);
     expect(startApi).toMatch(/ELECTRON_RUN_AS_NODE:\s*["']1["']/);

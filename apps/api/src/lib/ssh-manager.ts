@@ -112,6 +112,7 @@ export interface SshSettingsInput {
   sshPrivateKey?: string | null;
   sshKeyPassphrase?: string | null;
   sshJumpHost?: string | null;
+  sshProxyCommand?: string | null;
   sshArgs?: string | null;
 }
 
@@ -132,9 +133,22 @@ export async function buildSshConfig(
     username: settings.sshUser ?? "root",
   };
 
-  // Jump host / extra args are honored by the system-ssh path (agent auth).
-  if (settings.sshJumpHost?.trim()) config.sshJumpHost = settings.sshJumpHost.trim();
-  if (settings.sshArgs?.trim()) config.sshArgs = settings.sshArgs.trim();
+  // Jump host / ProxyCommand / extra args are OpenSSH features, so use the real
+  // ssh client even when the server authenticates with a pasted key or password.
+  // ssh2 cannot honor these options, and silently ignoring them would make the
+  // saved configuration differ from the tested connection.
+  if (settings.sshJumpHost?.trim()) {
+    config.sshJumpHost = settings.sshJumpHost.trim();
+    config.useSystemSsh = true;
+  }
+  if (settings.sshProxyCommand?.trim()) {
+    config.sshProxyCommand = settings.sshProxyCommand.trim();
+    config.useSystemSsh = true;
+  }
+  if (settings.sshArgs?.trim()) {
+    config.sshArgs = settings.sshArgs.trim();
+    config.useSystemSsh = true;
+  }
 
   if (settings.sshAuthMethod === "password" && settings.sshPassword) {
     // Stored encrypted on insert; decrypted only here at the moment we

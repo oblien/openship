@@ -3,14 +3,10 @@ import type { Duplex } from "node:stream";
 
 import {
   attachDialStdioDiagnostics,
-  connectSshClient,
   dialStdioDiagnostics,
-  execSshCommand,
-  openSshUnixSocket,
-  openDockerDialStdioChannel,
   DOCKER_DIAL_STDIO_COMMAND,
-  type StreamLocalCapableClient,
 } from "../system/ssh-client";
+import { createExecutor } from "../system/executor";
 import type { SshConfig, CommandExecutor } from "../types";
 import type { DockerConnectionOptions } from "./docker-transport";
 import { safeErrorMessage, withTimeout } from "@repo/core";
@@ -51,6 +47,10 @@ function toSshConfig(opts: DockerConnectionOptions): SshConfig {
     privateKey: opts.privateKey,
     privateKeyPassphrase: opts.privateKeyPassphrase,
     sshAgent: opts.sshAgent,
+    sshJumpHost: opts.sshJumpHost,
+    sshProxyCommand: opts.sshProxyCommand,
+    sshArgs: opts.sshArgs,
+    useSystemSsh: Boolean(opts.sshProxyCommand || opts.sshJumpHost || opts.sshArgs),
   };
 }
 
@@ -90,21 +90,8 @@ const DOCKER_SOCKET_DISCOVERY_SCRIPT = [
   "done",
 ].join("\n");
 
-async function discoverRemoteDockerSocketPathsWithClient(
-  client: StreamLocalCapableClient,
-): Promise<string[]> {
-  const result = await execSshCommand(client, DOCKER_SOCKET_DISCOVERY_SCRIPT);
-  const lines = [result.stdout, result.stderr]
-    .filter(Boolean)
-    .flatMap((text) => text.split(/\r?\n/))
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  return normalizeSocketPathLines(lines);
-}
-
 /** Throws rather than answering `[]`: see {@link resolveRemoteDockerSocketPath} for why a
- *  refused probe must not read as "this box has no docker socket". */
+ * refused probe must not read as "this box has no docker socket". */
 async function discoverRemoteDockerSocketPathsWithExecutor(
   executor: CommandExecutor,
 ): Promise<string[]> {
@@ -113,18 +100,14 @@ async function discoverRemoteDockerSocketPathsWithExecutor(
 }
 
 async function discoverRemoteDockerSocketPaths(opts: DockerConnectionOptions): Promise<string[]> {
-  // Use pooled executor when available - no extra SSH connection needed
-  if (opts.executor) {
-    return discoverRemoteDockerSocketPathsWithExecutor(opts.executor);
-  }
-
-  let conn: StreamLocalCapableClient | null = null;
-
+  // Use pooled executor when available. Otherwise create the same executor selected
+  // for the configured SSH options; this is important for standalone callers because
+  // a ProxyCommand/jump host must not silently fall back to an ssh2 connection.
+  const executor = opts.executor ?? createExecutor(toSshConfig(opts));
   try {
-    conn = await connectSshClient(toSshConfig(opts));
-    return await discoverRemoteDockerSocketPathsWithClient(conn);
+    return await discoverRemoteDockerSocketPathsWithExecutor(executor);
   } finally {
-    conn?.end();
+    if (!opts.executor) await executor.dispose();
   }
 }
 
@@ -181,21 +164,23 @@ export interface DockerSshBridge {
  * (dev/Node). The bridge falls through to dial-stdio when this can't open (the
  * Bun-compiled desktop runtime, or an sshd with streamlocal forwarding off).
  */
-async function openStreamlocalUpstream(opts: DockerConnectionOptions): Promise<Duplex> {
+async function openStreamlocalUpstream(
+  opts: DockerConnectionOptions,
+  retainedExecutor?: CommandExecutor,
+): Promise<Duplex> {
   const socketPath = await resolveRemoteDockerSocketPath(opts);
 
-  if (opts.executor?.forwardUnixSocket) {
-    return opts.executor.forwardUnixSocket(socketPath);
+  const ownsExecutor = !retainedExecutor && !opts.executor;
+  const executor = retainedExecutor ?? opts.executor ?? createExecutor(toSshConfig(opts));
+  if (!executor.forwardUnixSocket) {
+    if (ownsExecutor) await executor.dispose();
+    throw new Error("SSH executor does not support Unix socket forwarding");
   }
 
-  const client: StreamLocalCapableClient = await connectSshClient(toSshConfig(opts));
   try {
-    const channel = await openSshUnixSocket(client, socketPath);
-    channel.once("close", () => client.end());
-    channel.on("error", () => client.end());
-    return channel;
+    return await executor.forwardUnixSocket(socketPath);
   } catch (error) {
-    client.end();
+    if (ownsExecutor) await executor.dispose();
     throw error;
   }
 }
@@ -535,9 +520,25 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
   //     remote `docker build` already uses successfully.
   let upstreamMode: "streamlocal" | "dialstdio" | null = null;
   let modeDecision: Promise<"streamlocal" | "dialstdio"> | null = null;
-  // Dedicated SSH client for the ephemeral dial-stdio path (no pooled executor).
-  // Reused across channels for the bridge's lifetime; closed in close().
-  let dialClient: StreamLocalCapableClient | null = null;
+  // Executor for the standalone SSH path (no pooled executor). Reused across
+  // channels for the bridge's lifetime; disposed in close(). This preserves the
+  // configured OpenSSH ProxyCommand/jump host instead of opening an ssh2 client.
+  let ephemeralExecutor: CommandExecutor | null = null;
+
+  const getEphemeralExecutor = (forceNew = false): CommandExecutor => {
+    if (forceNew && ephemeralExecutor) {
+      const previous = ephemeralExecutor;
+      ephemeralExecutor = null;
+      // The failed streamlocal channel has already been destroyed by the caller.
+      // Close its master before creating the fallback so the fallback really is
+      // the first channel of a fresh SSH connection, not another channel on the
+      // same unreliable master. Disposal is best-effort here; opening the new
+      // executor must not wait on a dead control socket.
+      void previous.dispose().catch(() => {});
+    }
+    if (!ephemeralExecutor) ephemeralExecutor = createExecutor(toSshConfig(opts));
+    return ephemeralExecutor;
+  };
   // Set once a streamlocal channel opens but proves dead (see `bridgeClient`):
   // some sshd/ssh2 combinations only reliably service the FIRST channel on a
   // connection, so once the pooled one has shown that, every dial-stdio channel
@@ -558,16 +559,14 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     if (!forceEphemeral && opts.executor?.openDockerDialStdio) {
       return attachDialStdioDiagnostics(await opts.executor.openDockerDialStdio());
     }
-    // Ephemeral path: one dedicated SSH client, channel-multiplexed. Reset the
-    // handle if the connection drops so the next call reconnects.
-    if (!dialClient) {
-      const client = await connectSshClient(toSshConfig(opts));
-      client.once("close", () => {
-        if (dialClient === client) dialClient = null;
-      });
-      dialClient = client;
+    // Standalone path: use the same executor selected from the complete SSH
+    // configuration. In particular, ProxyCommand selects SystemSshExecutor;
+    // opening an ssh2 client here would bypass Cloudflare Access entirely.
+    const executor = getEphemeralExecutor(forceEphemeral);
+    if (!executor.openDockerDialStdio) {
+      throw new Error("SSH executor does not support Docker dial-stdio");
     }
-    return openDockerDialStdioChannel(dialClient);
+    return attachDialStdioDiagnostics(await executor.openDockerDialStdio());
   };
 
   /**
@@ -640,7 +639,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     let probe: Duplex | null = null;
     try {
       probe = await withTimeout(
-        openStreamlocalUpstream(opts),
+        openStreamlocalUpstream(opts, opts.executor ?? getEphemeralExecutor()),
         STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS,
         `streamlocal open timed out after ${STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS / 1000}s`,
       );
@@ -726,7 +725,7 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
       let channel: Duplex;
       try {
         channel = await withTimeout(
-          openStreamlocalUpstream(opts),
+          openStreamlocalUpstream(opts, opts.executor ?? getEphemeralExecutor()),
           STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS,
           `channel open timed out after ${STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS / 1000}s`,
         );
@@ -829,8 +828,10 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
         client.destroy();
       }
       clients.clear();
-      dialClient?.end();
-      dialClient = null;
+      if (ephemeralExecutor) {
+        void ephemeralExecutor.dispose().catch(() => {});
+        ephemeralExecutor = null;
+      }
       server.close();
     },
   };

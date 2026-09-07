@@ -80,7 +80,7 @@ describe("host-port target identity", () => {
 
   it("normalizes a credential-free connection locator only as a last resort", async () => {
     expect(normalizeHostPortConnectionLocator(connection)).toBe(
-      "ssh://deploy.example.com:22?jump=jump.example.com&args=-o%20ProxyCommand%3Dnone",
+      "ssh://deploy.example.com:22?jump=jump.example.com&proxy=&args=-o%20ProxyCommand%3Dnone",
     );
     const first = await resolveHostPortTargetIdentity({
       localHost: false,

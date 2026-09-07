@@ -418,6 +418,7 @@ export async function collectProjectManifest(
                 sshHost: server.sshHost,
                 sshPort: server.sshPort,
                 sshJumpHost: server.sshJumpHost,
+                sshProxyCommand: server.sshProxyCommand,
                 sshArgs: server.sshArgs,
               });
           unreachableRouteTargets.set(targetKey, {
@@ -480,6 +481,7 @@ export async function collectProjectManifest(
               sshHost: server.sshHost,
               sshPort: server.sshPort,
               sshJumpHost: server.sshJumpHost,
+              sshProxyCommand: server.sshProxyCommand,
               sshArgs: server.sshArgs,
             });
         unreachableRouteTargets.set(targetKey, {

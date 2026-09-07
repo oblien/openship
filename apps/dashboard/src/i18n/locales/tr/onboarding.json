@@ -71,6 +71,8 @@
     "advanced": "Gelişmiş",
     "sshPortLabel": "SSH Portu",
     "jumpHostLabel": "Ara sunucu (Jump Host)",
+    "proxyCommandLabel": "ProxyCommand",
+    "proxyCommandPlaceholder": "cloudflared access ssh --hostname %h",
     "extraArgsLabel": "Ek SSH Parametreleri",
     "submit": "Kaydet ve Devam Et",
     "tutorial": "Adım adım kurulum öğreticisi",

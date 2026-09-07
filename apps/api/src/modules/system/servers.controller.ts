@@ -42,6 +42,7 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
     // the password field, which is simply absent from this shape).
     hasStoredKeyMaterial: !!s.sshPrivateKey,
     sshJumpHost: s.sshJumpHost,
+    sshProxyCommand: s.sshProxyCommand,
     sshArgs: s.sshArgs,
     createdAt: s.createdAt,
     // ISO country for the row's flag; null for hostnames/private IPs or until
@@ -171,7 +172,12 @@ export async function createServer(c: Context) {
   // server-host) must NOT create a plain SSH row — deploys/probes would dial the
   // API's own loopback (the container's, when compose-deployed) where there is no
   // sshd → the "Can't reach 127.0.0.1" failure.
-  if (resolvesToLocalHost({ sshHost: host, sshPort: body.sshPort, sshJumpHost: body.sshJumpHost })) {
+  if (resolvesToLocalHost({
+    sshHost: host,
+    sshPort: body.sshPort,
+    sshJumpHost: body.sshJumpHost,
+    sshProxyCommand: body.sshProxyCommand,
+  })) {
     // Only the box-owning org may register the local host — running on it is
     // code execution on the control plane (host executor + mounted docker socket,
     // DooD ≈ root). A teammate's org (any member can POST /servers) is refused so
@@ -213,6 +219,7 @@ export async function createServer(c: Context) {
     sshPrivateKey: encryptSecretField(body.sshPrivateKey),
     sshKeyPassphrase: encryptSecretField(body.sshKeyPassphrase),
     sshJumpHost: body.sshJumpHost?.trim() || null,
+    sshProxyCommand: body.sshProxyCommand?.trim() || null,
     sshArgs: body.sshArgs?.trim() || null,
   });
 
@@ -237,6 +244,7 @@ export async function createServer(c: Context) {
       sshUser: server.sshUser,
       sshAuthMethod: server.sshAuthMethod,
       sshJumpHost: server.sshJumpHost,
+      sshProxyCommand: server.sshProxyCommand,
     },
   });
 
@@ -259,6 +267,7 @@ const LOCAL_ROW_READONLY_FIELDS = [
   "sshPrivateKey",
   "sshKeyPassphrase",
   "sshJumpHost",
+  "sshProxyCommand",
   "sshArgs",
 ] as const;
 
@@ -314,6 +323,7 @@ export async function updateServer(c: Context) {
   if (body.sshPrivateKey !== undefined) patch.sshPrivateKey = encryptSecretField(body.sshPrivateKey);
   if (body.sshKeyPassphrase !== undefined) patch.sshKeyPassphrase = encryptSecretField(body.sshKeyPassphrase);
   if (body.sshJumpHost !== undefined) patch.sshJumpHost = body.sshJumpHost?.trim() || null;
+  if (body.sshProxyCommand !== undefined) patch.sshProxyCommand = body.sshProxyCommand?.trim() || null;
   if (body.sshArgs !== undefined) patch.sshArgs = body.sshArgs?.trim() || null;
 
   if (Object.keys(patch).length === 0) {
@@ -338,6 +348,7 @@ export async function updateServer(c: Context) {
   if (body.sshAuthMethod !== undefined) auditAfter.sshAuthMethod = updated?.sshAuthMethod ?? null;
   if (body.sshKeyPath !== undefined) auditAfter.sshKeyPath = updated?.sshKeyPath ?? null;
   if (body.sshJumpHost !== undefined) auditAfter.sshJumpHost = updated?.sshJumpHost ?? null;
+  if (body.sshProxyCommand !== undefined) auditAfter.sshProxyCommand = updated?.sshProxyCommand ?? null;
   if (body.sshArgs !== undefined) auditAfter.sshArgs = updated?.sshArgs ?? null;
   // Sentinels for credential rotation (no values).
   if (body.sshPassword !== undefined) auditAfter.sshPasswordChanged = true;

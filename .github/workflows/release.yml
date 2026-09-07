@@ -315,6 +315,24 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Download pinned Cloudflare SSH client (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "2026.8.3"
+          $url = "https://github.com/cloudflare/cloudflared/releases/download/$version/cloudflared-windows-amd64.exe"
+          $licenseUrl = "https://raw.githubusercontent.com/cloudflare/cloudflared/$version/LICENSE"
+          $dir = "apps/desktop/assets/cloudflared"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "$dir/cloudflared.exe"
+          Invoke-WebRequest -Uri $licenseUrl -OutFile "$dir/LICENSE"
+          $actual = (Get-FileHash "$dir/cloudflared.exe" -Algorithm SHA256).Hash.ToLower()
+          $expected = "83e726ed18ea78c5ad5213c4c3a3a27051393950d2bc8ed4de69bec12d14eaae"
+          if ($actual -ne $expected) {
+            throw "cloudflared SHA-256 mismatch: expected $expected, got $actual"
+          }
+
       - name: Install AppImage build deps (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse2

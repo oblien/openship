@@ -94,6 +94,19 @@ describe("buildSshConfig — pasted/uploaded key material", () => {
     expect(readFileSync).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves a ProxyCommand and selects the system SSH client", async () => {
+    const config = await buildSshConfig({
+      ...base,
+      sshPrivateKey: encryptSecretField("STORED-PRIVATE-KEY"),
+      sshProxyCommand:
+        '"C:\\\\Program Files (x86)\\\\cloudflared\\\\cloudflared.exe" access ssh --hostname %h',
+    });
+    expect(config?.sshProxyCommand).toBe(
+      '"C:\\\\Program Files (x86)\\\\cloudflared\\\\cloudflared.exe" access ssh --hostname %h',
+    );
+    expect(config?.useSystemSsh).toBe(true);
+  });
+
   it("returns null for key auth with neither content nor path", async () => {
     expect(await buildSshConfig({ ...base })).toBeNull();
   });

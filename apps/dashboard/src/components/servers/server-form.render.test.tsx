@@ -209,6 +209,7 @@ describe("ServerForm variants", () => {
   it("gives the page variant the setup-flow header and label", () => {
     const out = text(render());
     expect(out).toContain("SSH Connection");
+    expect(out).toContain("Use Cloudflare SSH");
     expect(out).toContain("Save & Continue to Setup");
   });
 
@@ -218,6 +219,7 @@ describe("ServerForm variants", () => {
     // "& Continue to Setup" is a lie in a modal: it closes and hands the row back.
     expect(out).not.toContain("Save & Continue to Setup");
     expect(out).toContain("Save server");
+    expect(out).toContain("Use Cloudflare SSH");
   });
 
   it("only the modal variant is dismissable in place", () => {

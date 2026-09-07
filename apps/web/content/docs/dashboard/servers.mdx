@@ -63,8 +63,11 @@ The **Authentication** control is a three-way toggle:
 - **Agent** — connects using the host machine's `ssh-agent` (like VS Code); no password or key is entered
   here. The machine running Openship must already have access to the server.
 
-Under **Advanced** you can add a **Jump Host** (e.g. `user@bastion.example.com`) and **Extra SSH Arguments**
-(e.g. `-o StrictHostKeyChecking=no`).
+Under **Advanced** you can add a **Jump Host** (e.g. `user@bastion.example.com`), a **ProxyCommand**, and
+**Extra SSH Arguments** (e.g. `-o StrictHostKeyChecking=no`). For Cloudflare Access, enter only the command body,
+for example `"C:\\Program Files (x86)\\cloudflared\\cloudflared.exe" access ssh --hostname %h` — do not include
+`ProxyCommand=`. ProxyCommand connections use the system OpenSSH client, so choose **Agent** or provide an
+unencrypted key; OpenSSH runs non-interactively and cannot prompt for a password or key passphrase.
 
 Two buttons finish the form:
 

@@ -112,6 +112,7 @@ function resourcePaths() {
     // ssh2 + dockerode live here (external to the API bundle); the API resolves
     // them via NODE_PATH — see startApi below.
     nodeModulesDir: join(root, "node_modules"),
+    cloudflaredPath: join(root, "cloudflared", "cloudflared.exe"),
   };
 }
 
@@ -278,7 +279,7 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   if (started) return;
   started = true;
 
-  const { apiEntry, migrationsDir, pgliteDir, geoipDb, engineDir, dashboardDir, nodeModulesDir } =
+  const { apiEntry, migrationsDir, pgliteDir, geoipDb, engineDir, dashboardDir, nodeModulesDir, cloudflaredPath } =
     resourcePaths();
   const userData = app.getPath("userData");
   const dataDir = join(userData, "data");
@@ -397,6 +398,7 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       // same as `bun dev` and self-hosted `node dist/index.js`, where Docker
       // over SSH works.
       NODE_PATH: nodeModulesDir,
+      ...(existsSync(cloudflaredPath) ? { OPENSHIP_CLOUDFLARED_PATH: cloudflaredPath } : {}),
     });
 
     // API + dashboard start in parallel. Each handles its own readiness +

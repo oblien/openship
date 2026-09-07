@@ -49,6 +49,7 @@ const DB_DRIZZLE_DIR = join(REPO_ROOT, "packages/db/drizzle");
 const EMAIL_ENGINE_DIR = join(REPO_ROOT, "apps/email/engine");
 
 const GEOIP_DB = "GeoLite2-Country.mmdb";
+const CLOUDFLARED_DIR = join(DESKTOP_DIR, "assets/cloudflared");
 
 // Build arch — used only for the banner now. The API ships as a plain JS bundle
 // run under Electron's Node, so it is arch-INDEPENDENT (no `bun --compile
@@ -278,6 +279,31 @@ async function main(): Promise<void> {
     mkdirSync(dest, { recursive: true });
     cpSync(join(src, GEOIP_DB), join(dest, GEOIP_DB));
     process.stdout.write(`  ${GEOIP_DB}: ${sizeOf(join(dest, GEOIP_DB))}\n`);
+  });
+
+  // 5b. Optional Cloudflare SSH client. The Windows release workflow downloads
+  // the pinned official binary into apps/desktop/assets/cloudflared before this
+  // script runs. Development builds without that asset remain fully functional:
+  // users can still provide an installed cloudflared path in ProxyCommand.
+  await step("copying bundled cloudflared (when supplied) → resources/cloudflared/", () => {
+    const binary = join(CLOUDFLARED_DIR, "cloudflared.exe");
+    const dest = join(RESOURCES, "cloudflared");
+    // Keep the directory present so forge's explicit extraResource entry is
+    // valid for local builds too; the official binary is release-workflow input.
+    mkdirSync(dest, { recursive: true });
+    if (!existsSync(binary)) {
+      process.stdout.write("  cloudflared.exe: not supplied (skipping)\\n");
+      return;
+    }
+    cpSync(binary, join(dest, "cloudflared.exe"));
+    // The release workflow supplies Cloudflare's actual license alongside the
+    // pinned binary. Never label Openship's license as a third-party notice.
+    const license = join(CLOUDFLARED_DIR, "LICENSE");
+    if (!existsSync(license)) {
+      throw new Error(`cloudflared license missing: ${license}`);
+    }
+    cpSync(license, join(dest, "LICENSE.txt"));
+    process.stdout.write(`  cloudflared.exe: ${sizeOf(join(dest, "cloudflared.exe"))}\\n`);
   });
 
   // 6. iRedMail engine — the mail-server install source (apps/email/engine, the

@@ -41,6 +41,7 @@ type LocalServerRow = {
   sshHost?: string | null;
   sshPort?: number | null;
   sshJumpHost?: string | null;
+  sshProxyCommand?: string | null;
   organizationId?: string | null;
 };
 

@@ -43,6 +43,7 @@ export function SshStep({ state, onUpdate, onNext, onBack }: StepProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [port, setPort] = useState(String(state.ssh?.port ?? ""));
   const [jumpHost, setJumpHost] = useState(state.ssh?.jumpHost ?? "");
+  const [proxyCommand, setProxyCommand] = useState(state.ssh?.sshProxyCommand ?? "");
   const [sshArgs, setSshArgs] = useState(state.ssh?.sshArgs ?? "");
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -89,6 +90,7 @@ export function SshStep({ state, onUpdate, onNext, onBack }: StepProps) {
         if (passphrase) payload.sshKeyPassphrase = passphrase;
       }
       if (jumpHost.trim()) payload.sshJumpHost = jumpHost.trim();
+      if (proxyCommand.trim()) payload.sshProxyCommand = proxyCommand.trim();
       if (sshArgs.trim()) payload.sshArgs = sshArgs.trim();
 
       const res = await systemApi.onboardingTestConnection(payload);
@@ -119,6 +121,7 @@ export function SshStep({ state, onUpdate, onNext, onBack }: StepProps) {
     const p = parseInt(port, 10);
     if (p && p !== 22) payload.port = p;
     if (jumpHost.trim()) payload.jumpHost = jumpHost.trim();
+    if (proxyCommand.trim()) payload.sshProxyCommand = proxyCommand.trim();
     if (sshArgs.trim()) payload.sshArgs = sshArgs.trim();
 
     const validationErr = validateSshPayload(payload);
@@ -319,6 +322,20 @@ export function SshStep({ state, onUpdate, onNext, onBack }: StepProps) {
                 autoComplete="off"
               />
             </div>
+          </div>
+          <div className="ob-form-group">
+            <label htmlFor="ob-proxy-command">
+              {t.onboarding.ssh.proxyCommandLabel} <span className="ob-label-hint">{t.onboarding.common.optional}</span>
+            </label>
+            <input
+              id="ob-proxy-command"
+              type="text"
+              value={proxyCommand}
+              onChange={(e) => setProxyCommand(e.target.value)}
+              placeholder={t.onboarding.ssh.proxyCommandPlaceholder}
+              spellCheck={false}
+              autoComplete="off"
+            />
           </div>
           <div className="ob-form-group">
             <label htmlFor="ob-ssh-args">

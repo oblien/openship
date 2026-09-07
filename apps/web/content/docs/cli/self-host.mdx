@@ -52,6 +52,7 @@ Both commands take the same SSH connection flags. `--host` is the only required 
 | `--key-path <path>` | Path to a private key (key auth). | — |
 | `--key-passphrase <passphrase>` | Private key passphrase. | — |
 | `--jump-host <host>` | SSH jump / bastion host. | — |
+| `--proxy-command <command>` | OpenSSH ProxyCommand command body, e.g. `cloudflared access ssh --hostname %h`. Do not include `ProxyCommand=`. | — |
 | `--ssh-args <args>` | Extra raw `ssh` arguments. | — |
 
 ```bash
@@ -166,6 +167,7 @@ same instance settings as `settings set` (`--auth-mode`, `--tunnel-provider`, `-
 | `--ssh-key-path <path>` | SSH private key path. | — |
 | `--ssh-key-passphrase <pass>` | SSH key passphrase. | — |
 | `--ssh-jump-host <host>` | SSH jump host. | — |
+| `--ssh-proxy-command <command>` | OpenSSH ProxyCommand command body. Do not include `ProxyCommand=`. | — |
 | `--ssh-args <args>` | Extra SSH args. | — |
 | `--server-name <name>` | Display name for the server. | — |
 

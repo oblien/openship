@@ -4,7 +4,7 @@ import { chmod, mkdtemp, rm as fsRm, writeFile as fsWriteFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { formatBytes } from "@repo/core";
+import { formatBytes, shellSplitWords } from "@repo/core";
 import { getTarCreateEnv } from "../archive";
 import type { LogEntry, SshConfig } from "../types";
 import {
@@ -188,6 +188,18 @@ function buildRsyncSshCommand(config: SshConfig, keyPath?: string): string {
 
   if (config.sshAgent) {
     args.push("-A");
+  }
+
+  if (config.sshJumpHost?.trim()) {
+    args.push("-J", config.sshJumpHost.trim());
+  }
+
+  if (config.sshProxyCommand?.trim()) {
+    args.push("-o", `ProxyCommand=${config.sshProxyCommand.trim()}`);
+  }
+
+  if (config.sshArgs?.trim()) {
+    args.push(...shellSplitWords(config.sshArgs));
   }
 
   if (keyPath) {

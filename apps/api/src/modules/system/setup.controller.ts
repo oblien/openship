@@ -187,6 +187,7 @@ export async function setup(c: Context) {
     // Encrypt SSH secrets at rest. Decrypted only inside `buildSshConfig`
     // when the ssh2 client needs them. See lib/credential-encryption.
     const encryptedPassword = encryptSecretField(body.sshPassword);
+    const encryptedPrivateKey = encryptSecretField(body.sshPrivateKey);
     const encryptedKeyPassphrase = encryptSecretField(body.sshKeyPassphrase);
 
     if (existing) {
@@ -198,8 +199,10 @@ export async function setup(c: Context) {
         sshAuthMethod: body.sshAuthMethod || null,
         sshPassword: encryptedPassword,
         sshKeyPath: body.sshKeyPath || null,
+        sshPrivateKey: encryptedPrivateKey,
         sshKeyPassphrase: encryptedKeyPassphrase,
         sshJumpHost: body.sshJumpHost || null,
+        sshProxyCommand: body.sshProxyCommand || null,
         sshArgs: body.sshArgs || null,
       });
       serverId = existing.id;
@@ -219,8 +222,10 @@ export async function setup(c: Context) {
         sshAuthMethod: body.sshAuthMethod || null,
         sshPassword: encryptedPassword,
         sshKeyPath: body.sshKeyPath || null,
+        sshPrivateKey: encryptedPrivateKey,
         sshKeyPassphrase: encryptedKeyPassphrase,
         sshJumpHost: body.sshJumpHost || null,
+        sshProxyCommand: body.sshProxyCommand || null,
         sshArgs: body.sshArgs || null,
       });
       serverId = created.id;

@@ -159,6 +159,7 @@ onboardingCommand
   .option("--ssh-key-path <path>", "SSH private key path")
   .option("--ssh-key-passphrase <pass>", "SSH key passphrase")
   .option("--ssh-jump-host <host>", "SSH jump host")
+  .option("--ssh-proxy-command <command>", "OpenSSH ProxyCommand")
   .option("--ssh-args <args>", "Extra SSH args")
   .option("--server-name <name>", "Display name for the server")
   .option("--auth-mode <mode>", "Initial auth mode: none | local | cloud")
@@ -183,6 +184,7 @@ onboardingCommand
         sshKeyPath: opts.sshKeyPath,
         sshKeyPassphrase: opts.sshKeyPassphrase,
         sshJumpHost: opts.sshJumpHost,
+        sshProxyCommand: opts.sshProxyCommand,
         sshArgs: opts.sshArgs,
       };
 

@@ -41,13 +41,14 @@ export function resolvesToLocalHost(server: {
   sshHost?: string | null;
   sshPort?: number | null;
   sshJumpHost?: string | null;
+  sshProxyCommand?: string | null;
 }): boolean {
   if (env.CLOUD_MODE) return false;
   if (env.DEPLOY_MODE !== "docker" && env.DEPLOY_MODE !== "bare") return false;
 
   // A jump/bastion host means the row deliberately tunnels to a DIFFERENT machine
   // — never "this host", even if the entry point is loopback.
-  if (server.sshJumpHost?.trim()) return false;
+  if (server.sshJumpHost?.trim() || server.sshProxyCommand?.trim()) return false;
 
   const h = (server.sshHost ?? "").trim().toLowerCase();
   const port = server.sshPort ?? 22;

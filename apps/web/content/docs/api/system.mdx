@@ -96,6 +96,7 @@ POST /api/system/onboarding
     sshKeyPath: { type: 'string', description: 'Path to a private key on the host.' },
     sshKeyPassphrase: { type: 'string', description: 'Private-key passphrase (encrypted at rest).' },
     sshJumpHost: { type: 'string', description: 'SSH jump / bastion host.' },
+    sshProxyCommand: { type: 'string', description: 'OpenSSH ProxyCommand command body, for example cloudflared access ssh --hostname %h.' },
     sshArgs: { type: 'string', description: 'Extra raw ssh args.' },
     authMode: { type: '"none" | "local" | "cloud"', description: 'Instance auth mode.', default: 'none' },
     tunnelProvider: { type: 'string', description: 'Tunnel provider.' },
@@ -197,6 +198,7 @@ POST /api/system/servers
     sshKeyPath: { type: 'string', description: 'Path to a private key on the host.' },
     sshKeyPassphrase: { type: 'string', description: 'Private-key passphrase (encrypted at rest).' },
     sshJumpHost: { type: 'string', description: 'SSH jump / bastion host.' },
+    sshProxyCommand: { type: 'string', description: 'OpenSSH ProxyCommand command body, for example cloudflared access ssh --hostname %h.' },
     sshArgs: { type: 'string', description: 'Extra raw ssh args.' },
   }}
 />

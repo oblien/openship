@@ -39,6 +39,7 @@ declare global {
       onError: (cb: (message: string) => void) => () => void;
     };
     onboarding: {
+      openExternal: (url: string) => Promise<unknown>;
       cloudAuth: () => Promise<DesktopCloudAuthResult>;
       cloudAuthPoll: (nonce: string) => Promise<DesktopCloudPollResult>;
     };

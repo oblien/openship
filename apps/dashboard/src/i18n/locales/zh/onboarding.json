@@ -66,6 +66,8 @@
     "advanced": "高级",
     "sshPortLabel": "SSH 端口",
     "jumpHostLabel": "跳板主机",
+    "proxyCommandLabel": "ProxyCommand",
+    "proxyCommandPlaceholder": "cloudflared access ssh --hostname %h",
     "extraArgsLabel": "额外 SSH 参数",
     "submit": "保存并继续",
     "tutorial": "分步配置教程"

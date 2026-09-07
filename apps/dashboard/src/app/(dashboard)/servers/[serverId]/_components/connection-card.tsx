@@ -1,6 +1,6 @@
 "use client";
 
-import { Server, Globe, Network, User, KeyRound } from "lucide-react";
+import { Server, Globe, Network, User, KeyRound, Cloud, ExternalLink } from "lucide-react";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 import { useI18n } from "@/components/i18n-provider";
 import { BlurIp } from "@/components/BlurIp";
@@ -15,6 +15,7 @@ interface ConnectionServer {
   sshAuthMethod?: string | null;
   /** ISO country for the host IP; null for hostnames/private IPs. */
   country?: string | null;
+  sshProxyCommand?: string | null;
 }
 
 /** The server's SSH connection summary. Shared by the server-detail right sidebar
@@ -22,6 +23,17 @@ interface ConnectionServer {
 export function ServerConnectionCard({ server }: { server: ConnectionServer }) {
   const { t } = useI18n();
   const d = t.servers.detail;
+  const webTerminalUrl = getCloudflareWebTerminalUrl(server);
+
+  function openWebTerminal() {
+    if (!webTerminalUrl) return;
+    if (window.desktop?.isDesktop) {
+      void window.desktop.onboarding.openExternal(webTerminalUrl);
+    } else {
+      window.open(webTerminalUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center gap-2 mb-4">
@@ -61,9 +73,37 @@ export function ServerConnectionCard({ server }: { server: ConnectionServer }) {
             {server.sshAuthMethod === "key" ? d.authSshKey : d.authPassword}
           </span>
         </Row>
+
+        {webTerminalUrl && (
+          <>
+            <div className="h-px bg-border/60 my-2" />
+            <button
+              type="button"
+              onClick={openWebTerminal}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/60"
+            >
+              <Cloud className="size-4 text-info" />
+              {d.openWebTerminal}
+              <ExternalLink className="size-3.5 text-muted-foreground" />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
+}
+
+export function getCloudflareWebTerminalUrl(server: ConnectionServer): string | null {
+  if (!/(?:^|[\s/])cloudflared(?:\.exe)?\s+access\s+ssh\b/i.test(server.sshProxyCommand?.trim() ?? "")) {
+    return null;
+  }
+  const host = server.sshHost.trim();
+  // Cloudflare browser-rendered SSH takes a public hostname. Reject path,
+  // credentials, ports, IPs, and control characters before opening a URL.
+  if (!/^(?=.{1,253}$)(?=.+\..+)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(host)) {
+    return null;
+  }
+  return `https://${host}/`;
 }
 
 function Row({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {

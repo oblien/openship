@@ -117,10 +117,10 @@ function resolveInfraComponents(): string[] {
  * form to validate before saving.
  *
  * Body: { sshHost, sshPort?, sshUser?, sshAuthMethod, sshPassword?, sshKeyPath?,
- *         sshPrivateKey?, sshKeyPassphrase?, sshJumpHost?, sshArgs? }
+ *         sshPrivateKey?, sshKeyPassphrase?, sshJumpHost?, sshProxyCommand?, sshArgs? }
  * Returns: { ok: boolean, message: string, code?: ConnectivityCode }
  *
- * `sshJumpHost`/`sshArgs` are not optional decoration: a host only reachable
+ * `sshJumpHost`/`sshProxyCommand`/`sshArgs` are not optional decoration: a host only reachable
  * through a bastion must be PROBED through it, or the test contradicts the save.
  * The dashboard's `SshProbeInput` is this list.
  */
@@ -267,6 +267,7 @@ async function buildEphemeralSshConfig(c: Context) {
       sshPrivateKey: body.sshPrivateKey as string ?? null,
       sshKeyPassphrase: body.sshKeyPassphrase as string ?? null,
       sshJumpHost: body.sshJumpHost as string ?? null,
+      sshProxyCommand: body.sshProxyCommand as string ?? null,
       sshArgs: body.sshArgs as string ?? null,
     });
   } catch (err) {

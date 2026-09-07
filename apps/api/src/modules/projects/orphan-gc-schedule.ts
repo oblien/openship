@@ -206,6 +206,7 @@ async function assertOrphanTargetStillMatches(
               sshHost: server.sshHost,
               sshPort: server.sshPort,
               sshJumpHost: server.sshJumpHost,
+              sshProxyCommand: server.sshProxyCommand,
               sshArgs: server.sshArgs,
             }),
       );

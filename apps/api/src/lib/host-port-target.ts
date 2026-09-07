@@ -21,6 +21,7 @@ export interface HostPortConnectionLocator {
   sshHost: string;
   sshPort?: number | null;
   sshJumpHost?: string | null;
+  sshProxyCommand?: string | null;
   sshArgs?: string | null;
 }
 
@@ -68,8 +69,9 @@ export function normalizeHostPortConnectionLocator(locator: HostPortConnectionLo
   const jumpHost = locator.sshJumpHost ? normalizeSshHost(locator.sshJumpHost) : "";
   // Extra connection options can carry a ProxyJump that is not represented by
   // sshJumpHost. Collapse whitespace for stability, but do not lowercase paths.
+  const proxyCommand = locator.sshProxyCommand?.trim() ?? "";
   const sshArgs = locator.sshArgs?.trim().replace(/\s+/g, " ") ?? "";
-  return `ssh://${host}:${port}?jump=${encodeURIComponent(jumpHost)}&args=${encodeURIComponent(sshArgs)}`;
+  return `ssh://${host}:${port}?jump=${encodeURIComponent(jumpHost)}&proxy=${encodeURIComponent(proxyCommand)}&args=${encodeURIComponent(sshArgs)}`;
 }
 
 function fingerprint(

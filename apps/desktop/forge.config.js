@@ -74,6 +74,9 @@ module.exports = {
       // ssh2 + dockerode (external to the API bundle) — resolved at runtime via
       // NODE_PATH=<Resources>/node_modules in services.ts.
       path.join(RESOURCES, "node_modules"),
+      // Optional bundled Cloudflare SSH client, staged by build/stage.ts when
+      // the private Windows release workflow downloads the pinned binary.
+      path.join(RESOURCES, "cloudflared"),
     ],
     ...osxSigning,
   },
