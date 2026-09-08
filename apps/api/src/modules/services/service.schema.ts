@@ -171,6 +171,31 @@ const AdvancedSchema = Type.Object(
     entrypoint: Type.Optional(
       Type.Union([Type.Array(Type.String({ maxLength: 2000 }), { maxItems: 100 }), Type.Null()]),
     ),
+    /**
+     * Container hardening (#749): the five OWASP controls a compose file can ask
+     * for. Same round-trip-only reasoning as `networkMode` / `pidMode` /
+     * `entrypoint` above, and the same reason for existing at all: the compose
+     * file owns them, so these are here so a client PATCHing a whole read-back
+     * `advanced` blob isn't 400'd by the strict object.
+     *
+     * Bounds only, deliberately. What each value may actually contain is decided
+     * once in `parseComposeHardening` (@repo/core), which every import door runs
+     * and which a hand-set value cannot shorten, exactly as `networkMode` is
+     * re-validated by `parseComposeNamespace` wherever it is read. Spelling the
+     * rules a second time in TypeBox is how the two drift apart. `null` clears a
+     * key.
+     */
+    readOnly: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+    capDrop: Type.Optional(
+      Type.Union([Type.Array(Type.String({ maxLength: 100 }), { maxItems: 100 }), Type.Null()]),
+    ),
+    securityOpt: Type.Optional(
+      Type.Union([Type.Array(Type.String({ maxLength: 500 }), { maxItems: 100 }), Type.Null()]),
+    ),
+    tmpfs: Type.Optional(
+      Type.Union([Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 }), Type.Null()]),
+    ),
+    user: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
     /** Names-only provenance for raw Compose build-arg expressions. It must
      * round-trip with a service so a read/edit/write cannot turn an escaped
      * literal `$` into a second interpolation at deploy time. */

@@ -274,6 +274,17 @@ const COMPOSE_OWNED_ADVANCED_KEYS = [
   "networkMode",
   "pidMode",
   "entrypoint",
+  // The five hardening controls (#749) are owned for the same reason, and it is
+  // the only way they can be turned OFF: nothing but the compose file sets them,
+  // so dropping `read_only:` from the file has to hand back a writable root
+  // rather than keep pinning last week's request. It is also why the parser never
+  // stores `read_only: false` or `cap_drop: []` (see compose-hardening.ts):
+  // absence IS the clear, and a stored false would be a second way to say it.
+  "readOnly",
+  "capDrop",
+  "securityOpt",
+  "tmpfs",
+  "user",
   "imageTemplate",
   "environmentTemplateKeys",
   "buildArgTemplateKeys",
