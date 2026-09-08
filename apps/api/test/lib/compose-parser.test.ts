@@ -1418,3 +1418,88 @@ services:
     expect(resolved.env.PATH).toBe("/usr/bin:/app/bin");
   });
 });
+
+/**
+ * Container hardening at the YAML import door (#749).
+ *
+ * The unit rules for each field live with the authority module
+ * (packages/core/src/compose-hardening.test.ts). What is only provable HERE is
+ * that the raw-file door reaches it at all, that the five stopped being reported
+ * as unsupported at the same moment they started being stored, and that a value
+ * openship cannot honor refuses the import instead of deploying a weaker
+ * container than the file describes.
+ */
+describe("parseComposeFile — container hardening (#749)", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("stores the OWASP set instead of reporting it unsupported", () => {
+    const parsed = parseComposeFile(
+      svc(
+        [
+          "    user: 1000:1000",
+          "    read_only: true",
+          "    cap_drop:",
+          "      - ALL",
+          "    security_opt:",
+          "      - no-new-privileges:true",
+          "    tmpfs:",
+          "      - /run:size=64m,mode=1777",
+          "",
+        ].join("\n"),
+      ),
+    );
+    expect(parsed.unsupported).toEqual([]);
+    expect(parsed.services[0]?.advanced).toMatchObject({
+      user: "1000:1000",
+      readOnly: true,
+      capDrop: ["ALL"],
+      securityOpt: ["no-new-privileges:true"],
+      tmpfs: ["/run:size=64m,mode=1777"],
+    });
+  });
+
+  it("resolves an interpolated hardening value rather than storing the expression", () => {
+    const parsed = parseComposeFile(svc("    user: ${APP_UID}\n"), {
+      env: { APP_UID: "1000:1000" },
+    });
+    expect(parsed.services[0]?.advanced?.user).toBe("1000:1000");
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  /**
+   * A scalar `tmpfs:` is what `docker compose config` normalizes into a list, so
+   * both import doors have to land on the same stored shape or every sync would
+   * show drift the operator cannot resolve.
+   */
+  it("normalizes a scalar tmpfs into the list shape the CLI door produces", () => {
+    const parsed = parseComposeFile(svc("    tmpfs: /run\n"));
+    expect(parsed.services[0]?.advanced?.tmpfs).toEqual(["/run"]);
+  });
+
+  /**
+   * Blocking, not a warning, and this is the case the whole feature turns on: a
+   * `read_only:` openship cannot read is a file asking for a read-only root, and
+   * continuing would deploy a writable one while reporting success.
+   */
+  it("refuses a malformed hardening value instead of deploying without it", () => {
+    const parsed = parseComposeFile(svc('    read_only: "yes"\n'));
+    expect(parsed.services[0]?.advanced?.readOnly).toBeUndefined();
+    expect(blockingComposeFields(parsed.unsupported)).toHaveLength(1);
+    expect(parsed.unsupported[0]).toMatchObject({
+      service: "app",
+      field: "read_only",
+      blocking: true,
+    });
+  });
+
+  it("still reports the neighbours that stayed unmodeled", () => {
+    const parsed = parseComposeFile(
+      svc("    privileged: true\n    cap_add:\n      - SYS_ADMIN\n    sysctls:\n      a: b\n"),
+    );
+    expect(parsed.unsupported.map((u) => u.field).sort()).toEqual([
+      "cap_add",
+      "privileged",
+      "sysctls",
+    ]);
+  });
+});

@@ -247,9 +247,10 @@ export function composeMountIssues(mount: Record<string, unknown>): ComposeMount
       {
         field: "volumes[].type=tmpfs",
         reason:
-          `the tmpfs mount at ${target} is not modeled. Openship mounts volumes and ` +
-          `host paths only, so this would be created as a persistent volume on disk ` +
-          `rather than in memory — remove it or make it a named volume deliberately.`,
+          `the tmpfs mount at ${target} is not modeled in long form. Openship mounts ` +
+          `volumes and host paths only, so this would be created as a persistent ` +
+          `volume on disk rather than in memory. Use the top-level \`tmpfs:\` key ` +
+          `instead (#749), which is honored, or make it a named volume deliberately.`,
         blocking: true,
       },
     ];

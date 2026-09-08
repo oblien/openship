@@ -12,6 +12,7 @@ import {
   composeMountIssues,
   composeMountToSpec,
   composePortToSpec,
+  parseComposeHardening,
   parseComposeNamespace,
 } from "@repo/core";
 import type { ComposeAdvanced, ComposeHealthcheck, ComposeNamespaceField } from "@repo/core";
@@ -632,6 +633,30 @@ function parseAdvanced(
         : undefined;
   if (grace) advanced.stopGracePeriod = grace;
 
+  // Hardening (#749): read_only / cap_drop / security_opt / tmpfs / user, through
+  // the one @repo/core authority the CLI sync mapper and the Docker runtime also
+  // import. Interpolation is handed in rather than pre-applied so a `${APP_UID}`
+  // is validated as the value it resolves to, not as the expression.
+  //
+  // A refusal here is BLOCKING for the same reason a namespace one is, and it is
+  // the whole point of the field being modeled at all: every other unsupported
+  // key leaves the service running with LESS than it asked for, while a hardening
+  // control we quietly drop leaves it running with MORE. A service the file
+  // confined to uid 1000 on a read-only root, deployed as root on a writable one,
+  // looks healthy and reports success.
+  const { hardening, issues } = parseComposeHardening(svc, (value) =>
+    interpolateComposeString(value, env),
+  );
+  Object.assign(advanced, hardening);
+  for (const issue of issues) {
+    unsupported.push({
+      service: serviceName,
+      field: issue.field,
+      reason: issue.reason,
+      blocking: true,
+    });
+  }
+
   return Object.keys(advanced).length > 0 ? advanced : undefined;
 }
 
@@ -675,10 +700,12 @@ const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
   // ── Host privilege + namespaces ──
   privileged: "privileged is not modeled — the container runs unprivileged.",
   cap_add: "cap_add is not modeled — no extra capabilities are granted.",
-  cap_drop: "cap_drop is not modeled — the default capability set is kept.",
+  // `cap_drop` and `security_opt` are modeled (#749), see parseAdvanced. They
+  // sit on the other side of the line from their neighbours here: dropping
+  // `cap_add` / `devices` / `sysctls` leaves a container MORE restricted than
+  // its file asked for, so silence is safe. Dropping those two leaves it weaker.
   devices: "devices is not modeled — no host devices are passed through.",
   device_cgroup_rules: "device_cgroup_rules is not modeled.",
-  security_opt: "security_opt is not modeled — default seccomp/AppArmor apply.",
   sysctls: "sysctls is not modeled — kernel parameters stay at their defaults.",
   ulimits: "ulimits is not modeled — daemon defaults apply.",
   shm_size: "shm_size is not modeled — /dev/shm stays at Docker's 64MB default.",
@@ -697,15 +724,16 @@ const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
   blkio_config: "blkio_config is not modeled.",
   // ── Container shape ──
   // `entrypoint` is modeled (#575) — see parseAdvanced.
-  user: "user is not modeled — the container runs as the image's user.",
+  // `user`, `read_only` and `tmpfs` are modeled (#749), with `entrypoint`,
+  // in parseAdvanced. The long-form `volumes: [{type: tmpfs}]` stays blocked
+  // in compose-spec.ts: it is a mount whose KIND would change, which is a
+  // different question from the top-level `tmpfs:` key.
   working_dir: "working_dir is not modeled — the image's WORKDIR is used.",
   hostname: "hostname is not modeled — Openship sets the hostname to the service name.",
   domainname: "domainname is not modeled.",
   mac_address: "mac_address is not modeled.",
   platform: "platform is not modeled — the image is pulled for the host's architecture.",
   init: "init is not modeled — no init process is injected.",
-  read_only: "read_only (root filesystem) is not modeled — the root filesystem stays writable.",
-  tmpfs: "tmpfs is not modeled — no in-memory filesystem is mounted.",
   // ── Networking ──
   dns: "dns is not modeled — the container uses the Docker network's resolver.",
   dns_search: "dns_search is not modeled.",
