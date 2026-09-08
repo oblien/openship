@@ -19,6 +19,7 @@ import {
   composeMountIssues,
   composeMountToSpec,
   composePortToSpec,
+  parseComposeHardening,
   parseComposeNamespace,
   type ComposeAdvanced,
 } from "@repo/core";
@@ -425,6 +426,16 @@ export function mapComposeService(
   // namespaces the same way it lost read-only mounts.
   const { advanced, errors: namespaceErrors } = mapNamespaces(name, d);
   errors.push(...namespaceErrors);
+  // Hardening (#749), through the same @repo/core authority the API's YAML parser
+  // uses, so both doors store one representation of the same file. No interpolate
+  // callback: `docker compose config` has already expanded every `${VAR}`.
+  //
+  // It also already dropped `read_only: false` and `cap_drop: []` from its output
+  // (measured), which is precisely why the authority stores neither: a door that
+  // cannot see a key must not be the only one to omit it.
+  const hardening = parseComposeHardening(d);
+  Object.assign(advanced, hardening.hardening);
+  for (const issue of hardening.issues) errors.push(`  ${name}: ${issue.reason}`);
   // `docker compose config` has already expanded args, including turning `$$`
   // into a literal `$`. An explicit empty marker prevents the API from ever
   // treating that normalized literal as a raw template on a later deploy.

@@ -223,3 +223,76 @@ describe("service sync — compose config JSON mapping", () => {
     expect(errors).toEqual([]);
   });
 });
+
+/**
+ * Container hardening through the CLI door (#749).
+ *
+ * The fixtures below are what `docker compose config --format json` really emits,
+ * captured from Compose v2 rather than hand-imagined, because the two things that
+ * make this door differ from the API's YAML parser are both invisible from the
+ * source file:
+ *
+ *   - a scalar `tmpfs: /run` arrives already normalized to `["/run"]`;
+ *   - `read_only: false` and `cap_drop: []` arrive NOT AT ALL, erased by compose.
+ *
+ * That second one is why the shared authority stores neither: if the API's parser
+ * kept them, the same compose file would produce a different `advanced` through
+ * each door and every `openship service sync` would report drift the operator
+ * could not resolve.
+ */
+describe("service sync — container hardening (#749)", () => {
+  it("carries the OWASP set onto advanced", () => {
+    const errors: string[] = [];
+    const svc = mapComposeService(
+      "web",
+      {
+        image: "nginx:alpine",
+        user: "1000:1000",
+        read_only: true,
+        cap_drop: ["ALL"],
+        security_opt: ["no-new-privileges:true"],
+        tmpfs: ["/run:size=64m,mode=1777"],
+      },
+      "/repo",
+      errors,
+    );
+    expect(errors).toEqual([]);
+    expect(svc.advanced).toMatchObject({
+      user: "1000:1000",
+      readOnly: true,
+      capDrop: ["ALL"],
+      securityOpt: ["no-new-privileges:true"],
+      tmpfs: ["/run:size=64m,mode=1777"],
+    });
+  });
+
+  it("agrees with the API's parser on a file that only writes down the defaults", () => {
+    // Compose has already erased `read_only: false` / `cap_drop: []` by here, so
+    // this is the shape the mapper actually receives for such a file.
+    const errors: string[] = [];
+    const svc = mapComposeService("web", { image: "nginx:alpine" }, "/repo", errors);
+    expect(errors).toEqual([]);
+    expect((svc.advanced as Record<string, unknown> | undefined)?.readOnly).toBeUndefined();
+    expect((svc.advanced as Record<string, unknown> | undefined)?.capDrop).toBeUndefined();
+  });
+
+  /**
+   * `sync` exits non-zero on any mapper error rather than uploading a service list
+   * that quietly omits what the file asked for. A tmpfs the daemon would refuse
+   * has to stop the sync here, not at create time after the serving container has
+   * already been removed.
+   */
+  it("errors out instead of uploading a service whose hardening cannot be honored", () => {
+    const errors: string[] = [];
+    const svc = mapComposeService(
+      "web",
+      { image: "nginx:alpine", tmpfs: ["/run:size=1m", "/run:size=64m"] },
+      "/repo",
+      errors,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("web:");
+    expect(errors[0]).toContain("/run is mounted twice");
+    expect((svc.advanced as Record<string, unknown> | undefined)?.tmpfs).toEqual(["/run:size=1m"]);
+  });
+});
