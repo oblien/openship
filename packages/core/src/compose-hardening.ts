@@ -61,12 +61,7 @@
  */
 
 /** The five compose keys this module owns, spelled as the file spells them. */
-export type ComposeHardeningField =
-  | "read_only"
-  | "cap_drop"
-  | "security_opt"
-  | "tmpfs"
-  | "user";
+export type ComposeHardeningField = "read_only" | "cap_drop" | "security_opt" | "tmpfs" | "user";
 
 /** The normalized form of all five, as stored on `advanced`. */
 export type ComposeHardening = {

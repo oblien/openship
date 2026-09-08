@@ -516,9 +516,7 @@ export function toDiscoveredService(
   // wins: a file that no longer says `read_only:` describes something the running
   // container is not, and adopting on the file's word would drop the confinement
   // at the first redeploy.
-  const declaredHardening = declared?.advanced
-    ? pickHardening(declared.advanced)
-    : undefined;
+  const declaredHardening = declared?.advanced ? pickHardening(declared.advanced) : undefined;
   const hardening = declaredHardening ?? detail.hardening;
 
   const name = discoveredServiceName(detail, declared);
