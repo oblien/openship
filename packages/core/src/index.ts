@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./stacks";
 export * from "./volumes";
 export * from "./compose-namespace";
+export * from "./compose-hardening";
 export * from "./compose-spec";
 export * from "./object-storage";
 export * from "./constants";

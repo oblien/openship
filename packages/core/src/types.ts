@@ -15,6 +15,7 @@ export type DeploymentStatus =
 export type Environment = "production" | "preview" | "development";
 
 import type { StackId, Language } from "./stacks";
+import type { ComposeHardening } from "./compose-hardening";
 
 /** Framework / stack identifier - derived from STACKS registry */
 export type Framework = StackId;
@@ -375,7 +376,20 @@ export type ComposeAdvanced = {
    * flush or checkpoint on shutdown and need longer than the default.
    */
   stopGracePeriod?: string;
-};
+} & /**
+ * Container hardening (#749): `readOnly`, `capDrop`, `securityOpt`, `tmpfs`,
+ * `user`, spread in flat beside the keys above so they store, diff and
+ * round-trip exactly like `networkMode`.
+ *
+ * Their shape, what each accepts, why these five and not `cap_add` /
+ * `privileged` / `devices` / `sysctls`, and why `read_only: false` is never
+ * stored all live in ./compose-hardening.ts, which is the one authority the
+ * parser, the CLI sync mapper and the Docker runtime each import. Declared
+ * there rather than inline here for the same reason `compose-namespace.ts`
+ * exists: a second spelling of the rules is how a stored control stops matching
+ * the container that gets created.
+ */
+ComposeHardening;
 
 /**
  * Merge an incoming `advanced` patch onto what's stored, so a caller that mentions
