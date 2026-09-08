@@ -82,6 +82,7 @@ import { checkGit } from "../system/checks";
 import { installGit } from "../system/installer";
 import { isRuntimeNotFoundError } from "../system/errors";
 import {
+  COMPOSE_HARDENING_KEYS,
   STACKS,
   TRANSFER_EXCLUDES,
   buildOutputTransferExcludes,
@@ -525,6 +526,16 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     // here. Declared so the deploy says so once per service and continues, rather
     // than the image's own launcher running with nothing having mentioned it (#575).
     "entrypoint",
+    // Container hardening (#749). A workspace is not a container, so there is no
+    // rootfs to mount read-only, no capability set to drop from, no seccomp or
+    // AppArmor profile to select, no tmpfs to mount and no uid to switch to.
+    //
+    // Declared rather than left silent because for THESE five silence is the
+    // failure: the deploy would otherwise report success on a service whose file
+    // asked to run confined, and hand back a workspace that is not. Listing them
+    // makes the deploy say so once per service and continue, which is the same
+    // contract networkMode and entrypoint have above.
+    ...COMPOSE_HARDENING_KEYS,
   ]);
 
   private readonly client: Oblien;

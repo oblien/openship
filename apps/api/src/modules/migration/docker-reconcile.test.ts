@@ -437,3 +437,64 @@ describe("isExternalHostPublish — was a publish reachable off-box? (#388)", ()
     expect(isExternalHostPublish("192.168.1.10")).toBe(true);
   });
 });
+
+/**
+ * Adopting a container keeps the confinement it is actually running with (#749).
+ *
+ * The same rule `resources` already follows, and it exists for the same reason:
+ * a container started by hand has no compose declaration to read, and a file that
+ * has drifted describes something the running container is not. The adopted row
+ * is what the NEXT deploy recreates the container from, so reading a hardened
+ * container as unhardened does not just lose a label, it hands back the
+ * privileges the operator had dropped, once, at the first redeploy.
+ */
+describe("toDiscoveredService: container hardening (#749)", () => {
+  const LIVE = {
+    user: "1000:1000",
+    readOnly: true,
+    capDrop: ["ALL"],
+    securityOpt: ["no-new-privileges:true"],
+    tmpfs: ["/run:size=64m"],
+  };
+
+  it("carries the live container's hardening onto the discovered service", () => {
+    const svc = toDiscoveredService(container({ labels: {}, hardening: LIVE }), undefined);
+    expect(svc.hardening).toEqual(LIVE);
+  });
+
+  it("adds no key for a container that is not confined", () => {
+    const svc = toDiscoveredService(container({ labels: {} }), undefined);
+    expect(svc.hardening).toBeUndefined();
+  });
+
+  it("prefers what the compose file declares when it declares any of the five", () => {
+    const declared: ComposeService = {
+      name: "web",
+      environment: {},
+      ports: [],
+      dependsOn: [],
+      volumes: [],
+      advanced: { readOnly: true, capDrop: ["NET_RAW"] },
+    };
+    const svc = toDiscoveredService(container({ labels: {}, hardening: LIVE }), declared);
+    expect(svc.hardening).toEqual({ readOnly: true, capDrop: ["NET_RAW"] });
+  });
+
+  /**
+   * A declaration that mentions OTHER advanced keys but none of the five is not a
+   * statement about hardening, so the live container still answers. Reading it as
+   * "the file says unconfined" is the silent downgrade.
+   */
+  it("falls back to the live container when the declaration says nothing about hardening", () => {
+    const declared: ComposeService = {
+      name: "web",
+      environment: {},
+      ports: [],
+      dependsOn: [],
+      volumes: [],
+      advanced: { alias: "db" },
+    };
+    const svc = toDiscoveredService(container({ labels: {}, hardening: LIVE }), declared);
+    expect(svc.hardening).toEqual(LIVE);
+  });
+});

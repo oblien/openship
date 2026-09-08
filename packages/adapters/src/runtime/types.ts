@@ -25,7 +25,7 @@ import type {
   ShellOptions,
   ShellSession,
 } from "../types";
-import type { ComposeAdvanced } from "@repo/core";
+import type { ComposeAdvanced, ComposeHardening } from "@repo/core";
 import type { BuildLogger } from "./build-pipeline";
 import type { PortProbeExecutor } from "../system/port-listen";
 import type { ContainerStabilitySample } from "./stability";
@@ -763,6 +763,17 @@ export interface DockerContainerDetail {
    *  limits it was actually running with — including one set by hand with
    *  `docker update --memory`. Omitted fields mean the container had no cap. */
   resources?: { cpuCores?: number; memoryMb?: number };
+  /**
+   * Live container hardening (#749), read back off `Config.User` and `HostConfig`
+   * in the shape `advanced` stores it, so adopting a container keeps the
+   * confinement it was actually running with.
+   *
+   * Here for the same reason `resources` is, rather than being left to the
+   * compose declaration: a container started by hand, or one whose file drifted
+   * from what is running, has no declaration to read. Requested keys only, so an
+   * absent one means the container had none and the file's answer stands.
+   */
+  hardening?: ComposeHardening;
   composeProject?: string;
   composeService?: string;
   /** com.docker.compose.project.config_files — absolute compose paths on the host. */

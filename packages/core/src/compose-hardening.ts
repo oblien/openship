@@ -82,6 +82,35 @@ export type ComposeHardening = {
   user?: string;
 };
 
+/**
+ * The five keys, as `advanced` spells them.
+ *
+ * One list, so "which keys are the hardening keys" is answered in exactly one
+ * place: a runtime declaring it cannot honor them, the clearing sweep in
+ * @repo/db, and {@link pickHardening} all read from here rather than each
+ * repeating five strings that can fall out of step one at a time.
+ */
+export const COMPOSE_HARDENING_KEYS = [
+  "readOnly",
+  "capDrop",
+  "securityOpt",
+  "tmpfs",
+  "user",
+] as const satisfies readonly (keyof ComposeHardening)[];
+
+/** Just the hardening keys off a wider `advanced` blob, or undefined if none. */
+export function pickHardening(
+  advanced: ComposeHardening | null | undefined,
+): ComposeHardening | undefined {
+  if (!advanced) return undefined;
+  const out: ComposeHardening = {};
+  for (const key of COMPOSE_HARDENING_KEYS) {
+    const value = advanced[key];
+    if (value !== undefined) (out as Record<string, unknown>)[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Why one value was refused. Operator-facing: it names the field and the value. */
 export type ComposeHardeningIssue = {
   field: ComposeHardeningField;
@@ -362,4 +391,47 @@ export function dockerHardening(hardening: ComposeHardening | undefined | null):
   }
 
   return { config, hostConfig };
+}
+
+/**
+ * The inverse of {@link dockerHardening}: what a LIVE container is actually
+ * confined by, read off an inspect and expressed in the same stored shape.
+ *
+ * Here rather than in the runtime so the two directions cannot drift, which is
+ * the whole reason this module exists. Adoption needs it for the same reason it
+ * needs `inspectResourceLimits`: a container started by hand has no compose
+ * declaration to read, so the running container is the only source of truth about
+ * how confined it is, and reading it as unconfined is the silent downgrade.
+ *
+ * Returns `undefined` when the container asked for none of the five, so an
+ * unhardened container adds no key and the compose file's answer stands.
+ * `Tmpfs`'s map is turned back into the `path` / `path:options` specs the file
+ * writes, sorted by path because a JSON object's key order is not meaningful and
+ * an unstable one would read as drift on every inspect.
+ */
+export function inspectHardening(data: {
+  Config?: { User?: string | null } | null;
+  HostConfig?: {
+    ReadonlyRootfs?: boolean | null;
+    CapDrop?: string[] | null;
+    SecurityOpt?: string[] | null;
+    Tmpfs?: Record<string, string> | null;
+  } | null;
+}): ComposeHardening | undefined {
+  const out: ComposeHardening = {};
+  const user = data.Config?.User?.trim();
+  if (user) out.user = user;
+
+  const host = data.HostConfig;
+  if (host?.ReadonlyRootfs) out.readOnly = true;
+  if (host?.CapDrop?.length) out.capDrop = [...host.CapDrop];
+  if (host?.SecurityOpt?.length) out.securityOpt = [...host.SecurityOpt];
+  const mounts = host?.Tmpfs;
+  if (mounts && Object.keys(mounts).length > 0) {
+    out.tmpfs = Object.keys(mounts)
+      .sort()
+      .map((path) => (mounts[path] ? `${path}:${mounts[path]}` : path));
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
 }

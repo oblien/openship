@@ -1429,7 +1429,7 @@ services:
  * openship cannot honor refuses the import instead of deploying a weaker
  * container than the file describes.
  */
-describe("parseComposeFile — container hardening (#749)", () => {
+describe("parseComposeFile: container hardening (#749)", () => {
   const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
 
   it("stores the OWASP set instead of reporting it unsupported", () => {

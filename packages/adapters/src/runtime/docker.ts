@@ -170,6 +170,8 @@ import {
 import { transferLocalDirectory } from "./transfer";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
 import {
+  dockerHardening,
+  inspectHardening,
   ownsNetworkEndpoint,
   safeErrorMessage,
   type ComposeAdvanced,
@@ -4005,6 +4007,9 @@ export class DockerRuntime implements RuntimeAdapter {
           }
         : undefined,
       resources: inspectResourceLimits(data.HostConfig),
+      // The container's live confinement (#749), through the same @repo/core
+      // authority that WROTE it at create, so the two directions cannot drift.
+      hardening: inspectHardening(data),
       composeProject: labels["com.docker.compose.project"] || undefined,
       composeService: labels["com.docker.compose.service"] || undefined,
       composeConfigFiles: configFiles
@@ -5191,6 +5196,11 @@ export class DockerRuntime implements RuntimeAdapter {
     const restartPolicy = resolveRestartPolicy(config.restart);
     const healthcheck = toDockerHealthcheck(config.advanced?.healthcheck);
     const stopConfig = toStopConfig(config.advanced);
+    // Container hardening (#749). Resolved up here with the rest of the payload,
+    // BEFORE the currently-serving container is removed below, for the reason
+    // this whole block is ordered that way: a control the daemon would refuse
+    // must not be discovered after there is nothing left serving.
+    const hardening = dockerHardening(config.advanced);
 
     // Acquire an external image BEFORE touching the running container. This is
     // especially important for incoming-webhook redeploys of mutable tags: a
@@ -5296,6 +5306,10 @@ export class DockerRuntime implements RuntimeAdapter {
       },
       ...(healthcheck && { Healthcheck: healthcheck }),
       ...stopConfig,
+      // Hardening: `User` only (#749). Spread rather than assigned for the same
+      // reason `Entrypoint` is: an unrequested control has to leave no key behind,
+      // because `User: undefined` is still a key the Engine reads.
+      ...hardening.config,
       ...(ownsProjectEndpoint ? { ExposedPorts: exposedPorts } : {}),
       HostConfig: {
         RestartPolicy: restartPolicy,
@@ -5305,6 +5319,10 @@ export class DockerRuntime implements RuntimeAdapter {
         // The project network is the default; a compose `network_mode` replaces it.
         NetworkMode: sharedNetwork ?? group.id,
         ...(sharedPid ? { PidMode: sharedPid } : {}),
+        // The other four hardening controls: ReadonlyRootfs, CapDrop, SecurityOpt
+        // and Tmpfs. Last in the block deliberately, so a future edit above cannot
+        // quietly overwrite one of them with a default.
+        ...hardening.hostConfig,
       },
       // A declared network mode means there is no endpoint to name — omit the
       // block entirely rather than send an empty one (and never contradict

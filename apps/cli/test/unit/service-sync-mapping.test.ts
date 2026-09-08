@@ -240,7 +240,7 @@ describe("service sync — compose config JSON mapping", () => {
  * each door and every `openship service sync` would report drift the operator
  * could not resolve.
  */
-describe("service sync — container hardening (#749)", () => {
+describe("service sync: container hardening (#749)", () => {
   it("carries the OWASP set onto advanced", () => {
     const errors: string[] = [];
     const svc = mapComposeService(

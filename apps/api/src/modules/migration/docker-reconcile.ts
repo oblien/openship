@@ -20,7 +20,8 @@ import type {
   ProxyKind,
 } from "@repo/adapters";
 import { classifyProxy, isBuildHelperMarkers, OPENSHIP_LABEL } from "@repo/adapters";
-import type { ComposeHealthcheck, ProxySettings } from "@repo/core";
+import { pickHardening } from "@repo/core";
+import type { ComposeHardening, ComposeHealthcheck, ProxySettings } from "@repo/core";
 import type { ComposeService } from "../../lib/compose-parser";
 import type { ManifestProjectEntry } from "../../lib/openship-manifest";
 import type { ExistingRoute } from "./proxy-route-scan";
@@ -84,6 +85,14 @@ export interface DiscoveredService {
   /** Live cpu/memory caps the container is running with, so adoption preserves
    *  them instead of resetting to the project default. Undefined = uncapped. */
   resources?: { cpuCores?: number; memoryMb?: number };
+  /**
+   * Live container hardening (#749): read_only / cap_drop / security_opt / tmpfs
+   * / user, so adopting a container that was confined stays confined. Same
+   * live-wins-over-the-file rule as `resources` above, and the same reason:
+   * a container started by hand has no declaration to read, and reading it as
+   * unconfined would quietly hand back the privileges it had dropped.
+   */
+  hardening?: ComposeHardening;
   /** Reverse-proxy kind when this container IS the edge proxy (image/command
    *  matches AND it binds a host edge port). Openship's OpenResty replaces it,
    *  so it's dropped from import — importing it is the 80/443 conflict. */
@@ -503,6 +512,15 @@ export function toDiscoveredService(
   // HostConfig, which also captures a hand-applied `docker update --memory`.
   const resources = declared?.advanced?.resources ?? detail.resources;
 
+  // Hardening (#749) the same way round, and it must be the live container that
+  // wins: a file that no longer says `read_only:` describes something the running
+  // container is not, and adopting on the file's word would drop the confinement
+  // at the first redeploy.
+  const declaredHardening = declared?.advanced
+    ? pickHardening(declared.advanced)
+    : undefined;
+  const hardening = declaredHardening ?? detail.hardening;
+
   const name = discoveredServiceName(detail, declared);
   const image = detail.image || declared?.image;
   const ports = portsToComposeStrings(detail.ports);
@@ -584,6 +602,7 @@ export function toDiscoveredService(
     restart: detail.restart?.name || declared?.restart,
     healthcheck,
     resources,
+    ...(hardening ? { hardening } : {}),
     proxyKind,
     edgePorts: edgePorts.length > 0 ? edgePorts : undefined,
     existingRoute,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dockerHardening, parseComposeHardening } from "./compose-hardening";
+import { dockerHardening, inspectHardening, parseComposeHardening } from "./compose-hardening";
 
 /**
  * The five hardening controls at the parse boundary and at the Docker payload
@@ -209,5 +209,43 @@ describe("dockerHardening", () => {
     const { hostConfig } = dockerHardening(stored);
     hostConfig.CapDrop?.push("CHOWN");
     expect(stored.capDrop).toEqual(["ALL"]);
+  });
+});
+
+describe("inspectHardening", () => {
+  /**
+   * The two directions have to round-trip, because adoption writes what the
+   * inspect said straight back onto `advanced` and the next deploy recreates the
+   * container from it. If they disagreed, adopting a hardened container would
+   * redeploy it differently hardened, once, quietly.
+   */
+  it("round-trips a container this module created", () => {
+    const stored = {
+      user: "1000:1000",
+      readOnly: true,
+      capDrop: ["ALL"],
+      securityOpt: ["no-new-privileges:true"],
+      tmpfs: ["/run:size=64m,mode=1777", "/tmp"],
+    };
+    const { config, hostConfig } = dockerHardening(stored);
+    expect(inspectHardening({ Config: config, HostConfig: hostConfig })).toEqual(stored);
+  });
+
+  it("says nothing about a container that is not confined", () => {
+    expect(inspectHardening({ Config: { User: "" }, HostConfig: { ReadonlyRootfs: false } })).toBe(
+      undefined,
+    );
+    expect(inspectHardening({})).toBe(undefined);
+  });
+
+  /**
+   * A JSON object's key order is not meaningful, and an unstable one would read
+   * as a changed hardening request on every single inspect.
+   */
+  it("orders the tmpfs specs by path so an inspect is not phantom drift", () => {
+    const a = inspectHardening({ HostConfig: { Tmpfs: { "/tmp": "", "/run": "size=1m" } } });
+    const b = inspectHardening({ HostConfig: { Tmpfs: { "/run": "size=1m", "/tmp": "" } } });
+    expect(a?.tmpfs).toEqual(["/run:size=1m", "/tmp"]);
+    expect(a).toEqual(b);
   });
 });

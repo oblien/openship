@@ -443,6 +443,10 @@ export function buildAdoptedServiceRows(
         const merged = mergeAdvanced(repo?.advanced, {
           ...(s.healthcheck ? { healthcheck: s.healthcheck } : {}),
           ...(s.resources ? { resources: s.resources } : {}),
+          // Hardening (#749) joins the live-wins group for the same reason: the
+          // running container is what the operator is actually adopting, and the
+          // row is what the next deploy recreates it from.
+          ...(s.hardening ?? {}),
         });
         return Object.keys(merged).length > 0 ? merged : undefined;
       })(),
