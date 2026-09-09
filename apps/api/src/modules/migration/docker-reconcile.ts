@@ -512,10 +512,17 @@ export function toDiscoveredService(
   // HostConfig, which also captures a hand-applied `docker update --memory`.
   const resources = declared?.advanced?.resources ?? detail.resources;
 
-  // Hardening (#749) the same way round, and it must be the live container that
-  // wins: a file that no longer says `read_only:` describes something the running
-  // container is not, and adopting on the file's word would drop the confinement
-  // at the first redeploy.
+  // Hardening (#749) the same way round, and for the same reason: a compose file
+  // that declares ANY of the five is the statement about how this service is
+  // confined, and it wins wholesale; a file that declares none of them says
+  // nothing about hardening, so the live container answers, which is what keeps a
+  // hand-hardened container from being adopted as unconfined and handed back its
+  // privileges at the first redeploy.
+  //
+  // Wholesale, not per key, exactly like `resources` above. A file naming one of
+  // the five therefore drops the live container's other four. A per-key merge
+  // would be the better answer for both fields and is deliberately left out of
+  // this change rather than applied to one field and not the other.
   const declaredHardening = declared?.advanced ? pickHardening(declared.advanced) : undefined;
   const hardening = declaredHardening ?? detail.hardening;
 

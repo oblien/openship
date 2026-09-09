@@ -439,14 +439,15 @@ describe("isExternalHostPublish — was a publish reachable off-box? (#388)", ()
 });
 
 /**
- * Adopting a container keeps the confinement it is actually running with (#749).
+ * Adopting a container that no compose file describes keeps the confinement it is
+ * actually running with (#749).
  *
  * The same rule `resources` already follows, and it exists for the same reason:
- * a container started by hand has no compose declaration to read, and a file that
- * has drifted describes something the running container is not. The adopted row
- * is what the NEXT deploy recreates the container from, so reading a hardened
+ * a container started by hand has no compose declaration to read, and the adopted
+ * row is what the NEXT deploy recreates the container from, so reading a hardened
  * container as unhardened does not just lose a label, it hands back the
- * privileges the operator had dropped, once, at the first redeploy.
+ * privileges the operator had dropped, once, at the first redeploy. Where a file
+ * DOES declare hardening it wins wholesale, which is the pair of cases below.
  */
 describe("toDiscoveredService: container hardening (#749)", () => {
   const LIVE = {
