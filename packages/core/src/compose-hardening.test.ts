@@ -59,20 +59,60 @@ describe("parseComposeHardening", () => {
   });
 
   /**
-   * `read_only: "true"` is a STRING in YAML. Treating it as falsy would leave the
-   * root filesystem writable on a file that asked for the opposite, which is the
-   * exact silent downgrade this feature exists to end.
+   * `read_only: "true"` is a STRING in YAML, and compose CASTS it. Measured
+   * against Compose 2.40.3: `read_only: "true"` normalizes to the boolean `true`,
+   * so the CLI door stores it. A raw-YAML door reading only a literal boolean
+   * refuses a file the other door imports.
    */
-  it("refuses a non-boolean read_only instead of reading it as false", () => {
-    const { hardening, issues } = parseComposeHardening({ read_only: "true" });
+  it("accepts every string compose casts to true", () => {
+    for (const value of ["true", "True", "TRUE", "yes", "on", "y"]) {
+      const { hardening, issues } = parseComposeHardening({ read_only: value });
+      expect(issues).toEqual([]);
+      expect(hardening.readOnly).toBe(true);
+    }
+  });
+
+  /** The false spellings ask for the default, so they store nothing, like `false`. */
+  it("stores nothing for every string compose casts to false", () => {
+    for (const value of ["false", "False", "no", "off", "n"]) {
+      const { hardening, issues } = parseComposeHardening({ read_only: value });
+      expect(issues).toEqual([]);
+      expect(hardening.readOnly).toBeUndefined();
+    }
+  });
+
+  /**
+   * `1`, `0` and anything else are what compose itself refuses ("invalid
+   * boolean"), so such a file never reaches a deploy either way. Naming the typo
+   * here beats leaving a writable root on a file that asked for the opposite,
+   * which is the silent downgrade this feature exists to end.
+   */
+  it("blocks a read_only that is neither of compose's boolean spellings", () => {
+    const { hardening, issues } = parseComposeHardening({ read_only: "1" });
     expect(hardening.readOnly).toBeUndefined();
     expect(issues).toEqual([
       {
         field: "read_only",
-        reason: 'read_only must be true or false, got "true".',
+        reason:
+          'read_only: "1" is not a boolean. Compose accepts true or false (and the ' +
+          "YAML 1.1 spellings yes/no, on/off, y/n).",
         blocking: true,
       },
     ]);
+  });
+
+  /**
+   * The door-divergence case, and the reason interpolation moved ahead of the
+   * check: `read_only: ${RO}` is legal compose. The CLI door sees it already
+   * resolved and imports the file; this door saw the expression, failed a
+   * literal-boolean test and refused the whole import.
+   */
+  it("expands an interpolated read_only before judging it", () => {
+    const { hardening, issues } = parseComposeHardening({ read_only: "${RO}" }, (value) =>
+      value.replace("${RO}", "true"),
+    );
+    expect(issues).toEqual([]);
+    expect(hardening.readOnly).toBe(true);
   });
 
   /**

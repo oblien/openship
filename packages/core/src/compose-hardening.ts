@@ -148,6 +148,19 @@ const USER_SPEC = /^[^\s:\u0000-\u001F\u007F]+(:[^\s:\u0000-\u001F\u007F]+)?$/;
 /** Anything that would make a tmpfs target or its options unparseable. */
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 
+/**
+ * Compose's own boolean spellings, so both import doors read one file the same
+ * way.
+ *
+ * compose-go `loader/interpolate.go`, `toBoolean`, lines 103 to 118: `true` and
+ * `false` case-insensitively, plus the YAML 1.1 forms `y`/`yes`/`on` and
+ * `n`/`no`/`off`, which it still accepts while logging that they are not YAML
+ * 1.2. Anything else, `1` and `0` included, makes compose refuse the file
+ * outright. Measured against Compose 2.40.3, every form in both sets.
+ */
+const COMPOSE_TRUE = new Set(["true", "y", "yes", "on"]);
+const COMPOSE_FALSE = new Set(["false", "n", "no", "off"]);
+
 /** The bare `security_opt` forms the daemon takes whole, before any separator. */
 const SECURITY_OPT_BARE = new Set(["no-new-privileges", "writable-cgroups", "disable"]);
 
@@ -246,17 +259,28 @@ export function parseComposeHardening(
   const expand = (value: string) => interpolate(value);
 
   // read_only ----------------------------------------------------------------
-  // Only `true` is stored. A non-boolean is a typo worth naming: `read_only:
-  // "true"` is a STRING in YAML, and silently treating it as false would leave
-  // the root filesystem writable on a file that asked for the opposite.
+  // Only `true` is stored. Interpolated BEFORE the check, and read through
+  // compose's own boolean spellings, because both are what the CLI door already
+  // gets for free: `docker compose config` resolves `read_only: ${RO}` and casts
+  // `"true"` to a real boolean, so a raw-YAML door testing for a literal boolean
+  // refused files the other door imported, in a module whose whole purpose is
+  // that the two agree. A value neither door can read is a typo worth naming:
+  // treating it as false would leave the root filesystem writable on a file that
+  // asked for the opposite.
   const rawReadOnly = svc.read_only;
   if (rawReadOnly !== undefined && rawReadOnly !== null) {
-    if (typeof rawReadOnly === "boolean") {
-      if (rawReadOnly) hardening.readOnly = true;
+    const scalar = typeof rawReadOnly === "string" ? expand(rawReadOnly).trim() : rawReadOnly;
+    const spelling = typeof scalar === "string" ? scalar.toLowerCase() : undefined;
+    if (scalar === true || (spelling !== undefined && COMPOSE_TRUE.has(spelling))) {
+      hardening.readOnly = true;
+    } else if (scalar === false || (spelling !== undefined && COMPOSE_FALSE.has(spelling))) {
+      // Asks for exactly the default, so nothing is stored. See the header.
     } else {
       issues.push({
         field: "read_only",
-        reason: `read_only must be true or false, got ${JSON.stringify(rawReadOnly)}.`,
+        reason:
+          `read_only: ${JSON.stringify(scalar)} is not a boolean. Compose accepts true or ` +
+          `false (and the YAML 1.1 spellings yes/no, on/off, y/n).`,
         blocking: true,
       });
     }

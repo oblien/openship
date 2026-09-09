@@ -1479,10 +1479,11 @@ describe("parseComposeFile: container hardening (#749)", () => {
   /**
    * Blocking, not a warning, and this is the case the whole feature turns on: a
    * `read_only:` openship cannot read is a file asking for a read-only root, and
-   * continuing would deploy a writable one while reporting success.
+   * continuing would deploy a writable one while reporting success. `"sometimes"`
+   * rather than `"yes"`, because compose itself casts `yes` to true (measured).
    */
   it("refuses a malformed hardening value instead of deploying without it", () => {
-    const parsed = parseComposeFile(svc('    read_only: "yes"\n'));
+    const parsed = parseComposeFile(svc('    read_only: "sometimes"\n'));
     expect(parsed.services[0]?.advanced?.readOnly).toBeUndefined();
     expect(blockingComposeFields(parsed.unsupported)).toHaveLength(1);
     expect(parsed.unsupported[0]).toMatchObject({
@@ -1490,6 +1491,18 @@ describe("parseComposeFile: container hardening (#749)", () => {
       field: "read_only",
       blocking: true,
     });
+  });
+
+  /**
+   * `read_only: ${RO}` is legal compose, and the CLI door has always imported it
+   * because `docker compose config` resolves it first. This door used to see the
+   * expression, fail a literal-boolean test and refuse the whole file. Only
+   * provable here: the raw door reaches its own env before it judges the value.
+   */
+  it("imports a read_only that only becomes a boolean after interpolation", () => {
+    const parsed = parseComposeFile(svc("    read_only: ${RO}\n"), { env: { RO: "true" } });
+    expect(parsed.unsupported).toEqual([]);
+    expect(parsed.services[0]?.advanced?.readOnly).toBe(true);
   });
 
   /**
