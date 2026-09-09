@@ -433,9 +433,17 @@ export function mapComposeService(
   // It also already dropped `read_only: false` and `cap_drop: []` from its output
   // (measured), which is precisely why the authority stores neither: a door that
   // cannot see a key must not be the only one to omit it.
+  //
+  // Only a BLOCKING issue fails the sync, the same filter `composeBuildIssues`
+  // gets above. A non-blocking one is a value openship read and declined to
+  // apply, and this mapper has no channel but `errors`, which exits non-zero, so
+  // the entry is dropped here and reported at the API's import door. That is
+  // already how a synced service loses `cap_add`.
   const hardening = parseComposeHardening(d);
   Object.assign(advanced, hardening.hardening);
-  for (const issue of hardening.issues) errors.push(`  ${name}: ${issue.reason}`);
+  for (const issue of hardening.issues) {
+    if (issue.blocking) errors.push(`  ${name}: ${issue.reason}`);
+  }
   // `docker compose config` has already expanded args, including turning `$$`
   // into a literal `$`. An explicit empty marker prevents the API from ever
   // treating that normalized literal as a raw template on a later deploy.

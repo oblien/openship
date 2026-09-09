@@ -1492,6 +1492,32 @@ describe("parseComposeFile: container hardening (#749)", () => {
     });
   });
 
+  /**
+   * A privilege-INCREASING security_opt is reported and not applied, and that
+   * report must not block the import: the file still lands, keeping the controls
+   * that do reduce privilege. Same direction openship already treats `cap_add`.
+   */
+  it("reports an unconfined security_opt without blocking the import", () => {
+    const parsed = parseComposeFile(
+      svc(
+        [
+          "    read_only: true",
+          "    security_opt:",
+          "      - seccomp=unconfined",
+          "      - no-new-privileges=true",
+          "",
+        ].join("\n"),
+      ),
+    );
+    expect(blockingComposeFields(parsed.unsupported)).toEqual([]);
+    expect(parsed.unsupported).toHaveLength(1);
+    expect(parsed.unsupported[0]).toMatchObject({ field: "security_opt", blocking: false });
+    expect(parsed.services[0]?.advanced).toMatchObject({
+      readOnly: true,
+      securityOpt: ["no-new-privileges=true"],
+    });
+  });
+
   it("still reports the neighbours that stayed unmodeled", () => {
     const parsed = parseComposeFile(
       svc("    privileged: true\n    cap_add:\n      - SYS_ADMIN\n    sysctls:\n      a: b\n"),

@@ -277,6 +277,53 @@ describe("service sync: container hardening (#749)", () => {
   });
 
   /**
+   * The two doors have to store ONE representation of the same list, and the
+   * mixed `=` / `:` / bare shapes are where they would most easily diverge.
+   */
+  it("stores the same security_opt list the YAML door stores", () => {
+    const errors: string[] = [];
+    const svc = mapComposeService(
+      "web",
+      {
+        image: "nginx:alpine",
+        security_opt: ["no-new-privileges=true", "label:user:USER", "disable"],
+      },
+      "/repo",
+      errors,
+    );
+    expect(errors).toEqual([]);
+    expect((svc.advanced as Record<string, unknown> | undefined)?.securityOpt).toEqual([
+      "no-new-privileges=true",
+      "label:user:USER",
+      "disable",
+    ]);
+  });
+
+  /**
+   * A non-blocking issue must not fail the sync. The mapper has only an error
+   * channel, so it drops the entry silently, which is how it already treats
+   * `cap_add`; the operator sees the report at the API import door.
+   */
+  it("syncs a service whose security_opt asks for unconfined, without the unconfined entry", () => {
+    const errors: string[] = [];
+    const svc = mapComposeService(
+      "web",
+      {
+        image: "nginx:alpine",
+        read_only: true,
+        security_opt: ["seccomp=unconfined", "no-new-privileges=true"],
+      },
+      "/repo",
+      errors,
+    );
+    expect(errors).toEqual([]);
+    expect(svc.advanced).toMatchObject({
+      readOnly: true,
+      securityOpt: ["no-new-privileges=true"],
+    });
+  });
+
+  /**
    * `sync` exits non-zero on any mapper error rather than uploading a service list
    * that quietly omits what the file asked for. A tmpfs the daemon would refuse
    * has to stop the sync here, not at create time after the serving container has

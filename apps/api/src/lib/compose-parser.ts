@@ -638,12 +638,15 @@ function parseAdvanced(
   // import. Interpolation is handed in rather than pre-applied so a `${APP_UID}`
   // is validated as the value it resolves to, not as the expression.
   //
-  // A refusal here is BLOCKING for the same reason a namespace one is, and it is
-  // the whole point of the field being modeled at all: every other unsupported
+  // The authority decides which of its own issues block, and this door carries
+  // that answer through rather than deciding again. A value openship cannot READ
+  // is blocking for the same reason a namespace one is: every other unsupported
   // key leaves the service running with LESS than it asked for, while a hardening
-  // control we quietly drop leaves it running with MORE. A service the file
+  // control we quietly drop leaves it running with MORE, and a service the file
   // confined to uid 1000 on a read-only root, deployed as root on a writable one,
-  // looks healthy and reports success.
+  // looks healthy and reports success. A value it reads and declines to apply
+  // (`security_opt: seccomp=unconfined`) is reported and not blocking, which is
+  // how the privilege-GRANTING keys below are already treated.
   const { hardening, issues } = parseComposeHardening(svc, (value) =>
     interpolateComposeString(value, env),
   );
@@ -653,7 +656,7 @@ function parseAdvanced(
       service: serviceName,
       field: issue.field,
       reason: issue.reason,
-      blocking: true,
+      blocking: issue.blocking,
     });
   }
 

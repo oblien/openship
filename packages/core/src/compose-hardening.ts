@@ -41,11 +41,13 @@
  * bit in the container's effective set. Normalizing would only make the inspect
  * readback disagree with the operator's file for no behavioural gain.
  *
- * `security_opt` values are passed through as authored, `unconfined` forms
- * included. Rewriting or filtering an operator's list is the same silent
- * modification this module exists to end, and half-honoring one is worse than
- * either extreme: the file says `security_opt` is supported and the container gets
- * a different list than it wrote.
+ * `security_opt` values are stored as authored, in the file's own spelling and
+ * order, with one exception: an entry asking for `unconfined`. Those ask for LESS
+ * confinement than Docker's default, which is the direction openship already
+ * declines to take a file's word for (`cap_add`, `privileged`, `devices` and
+ * `sysctls` are all reported and not applied). So they are reported and not
+ * applied either, the container keeps Docker's default profile, and the import is
+ * NOT blocked: the rest of the list still lands.
  *
  * THE FALSE / EMPTY FORM IS NOT STORED, AND THAT IS FORCED
  * -------------------------------------------------------
@@ -106,16 +108,26 @@ export function pickHardening(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Why one value was refused. Operator-facing: it names the field and the value. */
+/** Why one value was not stored. Operator-facing: it names the field and the value. */
 export type ComposeHardeningIssue = {
   field: ComposeHardeningField;
   reason: string;
+  /**
+   * Whether the import must refuse the file.
+   *
+   * True for a value openship cannot read, because continuing would deploy a
+   * container the file did not describe. False for a value it read and declined
+   * to apply, where the file is understood, the rest of its hardening stands and
+   * the operator only needs telling. Set explicitly on every issue: a consumer
+   * reading an absent flag as false would drop a real refusal on the floor.
+   */
+  blocking: boolean;
 };
 
 export type ComposeHardeningParse = {
   /** Only the keys the file actually asked for. Empty when it asked for none. */
   hardening: ComposeHardening;
-  /** Values that could not be honored. Non-empty means the importer must refuse. */
+  /** Values that were not stored. The importer must refuse on any BLOCKING one. */
   issues: ComposeHardeningIssue[];
 };
 
@@ -135,6 +147,42 @@ const USER_SPEC = /^[^\s:\u0000-\u001F\u007F]+(:[^\s:\u0000-\u001F\u007F]+)?$/;
 
 /** Anything that would make a tmpfs target or its options unparseable. */
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+
+/** The bare `security_opt` forms the daemon takes whole, before any separator. */
+const SECURITY_OPT_BARE = new Set(["no-new-privileges", "writable-cgroups", "disable"]);
+
+/**
+ * Split one `security_opt` entry the way the daemon splits it.
+ *
+ * moby `daemon/daemon_unix.go`, `parseSecurityOpt`, lines 203 to 261 at tag
+ * `docker-v29.1.3`. The bare forms above are taken whole (lines 210 to 222).
+ * Otherwise the entry is cut at the FIRST `=` when it contains one, and only
+ * failing that at the first `:`, the older separator the daemon still honors
+ * while warning "Security options with `:` as a separator are deprecated" (lines
+ * 224 to 230). Cutting at `=` first is what makes `label=user:USER` and
+ * `label:user:USER` both parse to the same key and value. An entry with neither
+ * separator and no bare form is the one shape the daemon itself errors on.
+ *
+ * This is shape only. Which KEYS exist is Docker's to decide and changes between
+ * releases, so an unknown key is stored and left to the daemon rather than
+ * refused here against a list that would go stale.
+ */
+function splitSecurityOpt(opt: string): { key: string; value: string } | undefined {
+  if (SECURITY_OPT_BARE.has(opt)) return { key: opt, value: "" };
+  const eq = opt.indexOf("=");
+  if (eq !== -1) return { key: opt.slice(0, eq), value: opt.slice(eq + 1) };
+  const colon = opt.indexOf(":");
+  if (colon !== -1) return { key: opt.slice(0, colon), value: opt.slice(colon + 1) };
+  return undefined;
+}
+
+/** What the container keeps when an `unconfined` entry is not applied. */
+function defaultConfinement(key: string): string {
+  if (key === "seccomp") return "Docker's default seccomp profile";
+  if (key === "apparmor") return "Docker's default AppArmor profile";
+  if (key === "systempaths") return "Docker's default masked and read-only system paths";
+  return "Docker's default confinement";
+}
 
 /** Whitespace-only or absent means the key wasn't really set. */
 function text(raw: unknown): string | undefined {
@@ -209,6 +257,7 @@ export function parseComposeHardening(
       issues.push({
         field: "read_only",
         reason: `read_only must be true or false, got ${JSON.stringify(rawReadOnly)}.`,
+        blocking: true,
       });
     }
   }
@@ -230,6 +279,7 @@ export function parseComposeHardening(
           reason:
             `cap_drop: "${name}" is not a capability name. Openship accepts ALL or a ` +
             `capability with or without its CAP_ prefix (e.g. NET_RAW, CAP_NET_RAW).`,
+          blocking: true,
         });
         continue;
       }
@@ -253,20 +303,35 @@ export function parseComposeHardening(
         issues.push({
           field: "security_opt",
           reason: `security_opt: ${JSON.stringify(opt)} contains a control character.`,
+          blocking: true,
         });
         continue;
       }
-      // Every form Docker takes is `key:value` (`no-new-privileges:true`,
-      // `apparmor:profile`, `seccomp:unconfined`, `label:user:USER`) or the bare
-      // `no-new-privileges`. Anything else is a typo Docker would refuse at
-      // create, after the currently-serving container was already removed.
-      if (!opt.includes(":") && opt !== "no-new-privileges") {
+      // An entry the daemon cannot split is a typo it would refuse at create,
+      // after the currently-serving container was already removed.
+      const split = splitSecurityOpt(opt);
+      if (!split) {
         issues.push({
           field: "security_opt",
           reason:
-            `security_opt: "${opt}" is not a recognized option. Docker expects ` +
-            `key:value (e.g. no-new-privileges:true, seccomp:unconfined, ` +
-            `apparmor:<profile>, label:<key>:<value>).`,
+            `security_opt: "${opt}" is not a recognized option. Docker takes key=value, ` +
+            `or the older key:value (e.g. no-new-privileges=true, apparmor=<profile>, ` +
+            `label=user:USER), or a bare no-new-privileges.`,
+          blocking: true,
+        });
+        continue;
+      }
+      // `seccomp=unconfined` and its neighbours ask for LESS confinement than the
+      // daemon's default, which is the one direction this module does not take
+      // the file's word for. Reported and not applied, exactly as `cap_add` is,
+      // and NOT blocking: the file is understood and the rest of its list stands.
+      if (split.value === "unconfined") {
+        issues.push({
+          field: "security_opt",
+          reason:
+            `security_opt: "${opt}" is not applied; the container keeps ` +
+            `${defaultConfinement(split.key)}.`,
+          blocking: false,
         });
         continue;
       }
@@ -289,6 +354,7 @@ export function parseComposeHardening(
         issues.push({
           field: "tmpfs",
           reason: `tmpfs: ${JSON.stringify(spec)} contains a control character.`,
+          blocking: true,
         });
         continue;
       }
@@ -297,6 +363,7 @@ export function parseComposeHardening(
         issues.push({
           field: "tmpfs",
           reason: `tmpfs: "${spec}" must mount an absolute path (e.g. /run, /tmp:size=64m).`,
+          blocking: true,
         });
         continue;
       }
@@ -311,6 +378,7 @@ export function parseComposeHardening(
             `tmpfs: ${target} is mounted twice ("${spec}" and an earlier entry). ` +
             `Docker keys tmpfs mounts by path, so only one set of options can apply. ` +
             `Merge them into a single entry.`,
+          blocking: true,
         });
         continue;
       }
@@ -333,6 +401,7 @@ export function parseComposeHardening(
           reason:
             `user: "${user}" is not a valid user spec. Openship accepts <user> or ` +
             `<user>:<group>, each a name or a numeric id.`,
+          blocking: true,
         });
       }
     }

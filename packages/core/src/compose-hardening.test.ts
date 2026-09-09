@@ -67,7 +67,11 @@ describe("parseComposeHardening", () => {
     const { hardening, issues } = parseComposeHardening({ read_only: "true" });
     expect(hardening.readOnly).toBeUndefined();
     expect(issues).toEqual([
-      { field: "read_only", reason: 'read_only must be true or false, got "true".' },
+      {
+        field: "read_only",
+        reason: 'read_only must be true or false, got "true".',
+        blocking: true,
+      },
     ]);
   });
 
@@ -105,17 +109,79 @@ describe("parseComposeHardening", () => {
   });
 
   /**
+   * The `=` form is what `docker run --security-opt` documents and what the
+   * daemon prefers, and refusing it turned files that import today into files
+   * openship rejects. moby cuts at the first `=` when there is one and only then
+   * falls back to `:` (daemon/daemon_unix.go, tag docker-v29.1.3), so BOTH of
+   * these have to parse, and `label=user:USER` has to keep its whole value.
+   */
+  it("accepts the = form the daemon prefers, for every key", () => {
+    const { hardening, issues } = parseComposeHardening({
+      security_opt: [
+        "no-new-privileges=true",
+        "apparmor=MyProfile",
+        "label=user:USER",
+        "seccomp=/etc/seccomp/profile.json",
+      ],
+    });
+    expect(issues).toEqual([]);
+    expect(hardening.securityOpt).toEqual([
+      "no-new-privileges=true",
+      "apparmor=MyProfile",
+      "label=user:USER",
+      "seccomp=/etc/seccomp/profile.json",
+    ]);
+  });
+
+  /** The bare forms the daemon takes whole, before it looks for any separator. */
+  it("accepts the bare forms the daemon takes whole", () => {
+    const { hardening, issues } = parseComposeHardening({
+      security_opt: ["no-new-privileges", "writable-cgroups", "disable"],
+    });
+    expect(issues).toEqual([]);
+    expect(hardening.securityOpt).toEqual(["no-new-privileges", "writable-cgroups", "disable"]);
+  });
+
+  /**
+   * `seccomp=unconfined` and its neighbours ask for LESS confinement than
+   * Docker's default. openship reports them and does not apply them, so the
+   * container keeps the default profile, exactly how `cap_add` is treated. It is
+   * NOT blocking: the file still imports, and the rest of its hardening is kept.
+   */
+  it("reports an unconfined security_opt without applying it or blocking the import", () => {
+    for (const opt of ["seccomp=unconfined", "seccomp:unconfined", "apparmor=unconfined"]) {
+      const { hardening, issues } = parseComposeHardening({ security_opt: [opt] });
+      expect(hardening.securityOpt).toBeUndefined();
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.field).toBe("security_opt");
+      expect(issues[0]?.blocking).toBe(false);
+      expect(issues[0]?.reason).toContain("is not applied");
+    }
+  });
+
+  it("keeps the safe entries of a list that also asks for unconfined", () => {
+    const { hardening, issues } = parseComposeHardening({
+      security_opt: ["no-new-privileges:true", "seccomp=unconfined", "label=user:USER"],
+    });
+    expect(hardening.securityOpt).toEqual(["no-new-privileges:true", "label=user:USER"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.blocking).toBe(false);
+  });
+
+  /**
    * A value Docker would refuse has to be caught at import. At deploy it is found
    * only by `createContainer` failing, and by then the previously-serving
-   * container has already been removed.
+   * container has already been removed. An entry with no separator at all is the
+   * one shape the daemon itself errors on.
    */
-  it("refuses a security_opt that is neither key:value nor bare no-new-privileges", () => {
+  it("blocks a security_opt with no separator and no bare form", () => {
     const { hardening, issues } = parseComposeHardening({
       security_opt: ["no-new-privileges", "nonsense"],
     });
     expect(hardening.securityOpt).toEqual(["no-new-privileges"]);
     expect(issues[0]?.field).toBe("security_opt");
     expect(issues[0]?.reason).toContain("nonsense");
+    expect(issues[0]?.blocking).toBe(true);
   });
 
   /** `docker compose config` normalizes a scalar into a list; the raw door must too. */
@@ -153,6 +219,23 @@ describe("parseComposeHardening", () => {
     const { hardening, issues } = parseComposeHardening({ user: "root:wheel:extra" });
     expect(hardening.user).toBeUndefined();
     expect(issues[0]?.field).toBe("user");
+  });
+
+  /**
+   * Every consumer branches on this, so an issue that forgot to say would be read
+   * as non-blocking by the CLI door and drop a real refusal on the floor.
+   */
+  it("says of every issue it raises whether it blocks the import", () => {
+    const { issues } = parseComposeHardening({
+      read_only: "sometimes",
+      cap_drop: ["NET RAW"],
+      security_opt: ["nonsense", "seccomp=unconfined"],
+      tmpfs: ["run", "/x", "/x:size=1m"],
+      user: "root:wheel:extra",
+    });
+    expect(issues).toHaveLength(7);
+    for (const issue of issues) expect(typeof issue.blocking).toBe("boolean");
+    expect(issues.filter((i) => !i.blocking).map((i) => i.field)).toEqual(["security_opt"]);
   });
 
   it("expands interpolations before validating, so a ${VAR} user is not refused as malformed", () => {
