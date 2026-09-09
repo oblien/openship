@@ -1,6 +1,7 @@
 import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import {
   commandToArgv,
+  COMPOSE_HARDENING_KEYS,
   generateId,
   mergeAdvanced,
   normalizeCustomHostname,
@@ -280,11 +281,10 @@ const COMPOSE_OWNED_ADVANCED_KEYS = [
   // rather than keep pinning last week's request. It is also why the parser never
   // stores `read_only: false` or `cap_drop: []` (see compose-hardening.ts):
   // absence IS the clear, and a stored false would be a second way to say it.
-  "readOnly",
-  "capDrop",
-  "securityOpt",
-  "tmpfs",
-  "user",
+  //
+  // Spread from the authority rather than respelled, because that module names
+  // this sweep as one of the three readers it exists to keep in step.
+  ...COMPOSE_HARDENING_KEYS,
   "imageTemplate",
   "environmentTemplateKeys",
   "buildArgTemplateKeys",
