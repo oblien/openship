@@ -138,6 +138,7 @@
 			"tabs": {
 				"overview": "概要",
 				"terminal": "ターミナル",
+				"files": "ファイル",
 				"logs": "ログ",
 				"env": "環境",
 				"settings": "設定",
@@ -209,7 +210,20 @@
 				"backupRunFailed": "バックアップの実行に失敗しました"
 			},
 			"duplicateContainers": "このサービスに一致する別のコンテナがあります: {names}",
-			"editInSettings": "設定で編集"
+			"editInSettings": "設定で編集",
+			"files": {
+				"loading": "読み込み中…",
+				"empty": "このフォルダーは空です",
+				"selectPrompt": "プレビューするファイルを選択してください",
+				"download": "ダウンロード",
+				"binary": "バイナリファイル（{size}）— 表示するにはダウンロードしてください",
+				"loadFailed": "このフォルダーを開けませんでした",
+				"readFailed": "このファイルを開けませんでした",
+				"refresh": "更新",
+				"back": "戻る",
+				"downloadFailed": "ダウンロードに失敗しました",
+				"truncated": "最初の {limit} 件を表示しています。このフォルダーにはさらに項目があります。"
+			}
 		},
 		"settingsForm": {
 			"name": "名前",

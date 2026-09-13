@@ -138,6 +138,7 @@
 			"tabs": {
 				"overview": "概览",
 				"terminal": "终端",
+				"files": "文件",
 				"logs": "日志",
 				"env": "环境",
 				"settings": "设置",
@@ -209,7 +210,20 @@
 				"backupRunFailed": "备份运行失败"
 			},
 			"duplicateContainers": "另一个容器也匹配此服务：{names}",
-			"editInSettings": "在设置中编辑"
+			"editInSettings": "在设置中编辑",
+			"files": {
+				"loading": "加载中…",
+				"empty": "此文件夹为空",
+				"selectPrompt": "选择一个文件进行预览",
+				"download": "下载",
+				"binary": "二进制文件（{size}）— 请下载后查看",
+				"loadFailed": "无法打开此文件夹",
+				"readFailed": "无法打开此文件",
+				"refresh": "刷新",
+				"back": "返回",
+				"downloadFailed": "下载失败",
+				"truncated": "仅显示前 {limit} 项 — 此文件夹中还有更多。"
+			}
 		},
 		"settingsForm": {
 			"name": "名称",

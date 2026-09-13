@@ -141,6 +141,7 @@
 			"tabs": {
 				"overview": "Aperçu",
 				"terminal": "Terminal",
+				"files": "Fichiers",
 				"logs": "Journaux",
 				"env": "Environnement",
 				"settings": "Paramètres",
@@ -216,7 +217,20 @@
 			"currentIp": "IP actuelle",
 			"currentIpHint": "Change au redémarrage — utilisez plutôt l'adresse interne ci-dessus.",
 			"duplicateContainers": "Un autre conteneur correspond aussi à ce service : {names}",
-			"editInSettings": "Modifier dans les paramètres"
+			"editInSettings": "Modifier dans les paramètres",
+			"files": {
+				"loading": "Chargement…",
+				"empty": "Ce dossier est vide",
+				"selectPrompt": "Sélectionnez un fichier à prévisualiser",
+				"download": "Télécharger",
+				"binary": "Fichier binaire ({size}) — téléchargez-le pour le consulter",
+				"loadFailed": "Impossible d’ouvrir ce dossier",
+				"readFailed": "Impossible d’ouvrir ce fichier",
+				"refresh": "Actualiser",
+				"back": "Retour",
+				"downloadFailed": "Échec du téléchargement",
+				"truncated": "Affichage des {limit} premières entrées — ce dossier en contient plus."
+			}
 		},
 		"settingsForm": {
 			"name": "Nom",

@@ -141,6 +141,7 @@
 			"tabs": {
 				"overview": "Overview",
 				"terminal": "Terminal",
+				"files": "Files",
 				"logs": "Logs",
 				"env": "Environment",
 				"settings": "Settings",
@@ -216,7 +217,20 @@
 				"backupRunFailed": "Backup run failed"
 			},
 			"duplicateContainers": "Another container also matches this service: {names}",
-			"editInSettings": "Edit in settings"
+			"editInSettings": "Edit in settings",
+			"files": {
+				"loading": "Loading…",
+				"empty": "This folder is empty",
+				"selectPrompt": "Select a file to preview",
+				"download": "Download",
+				"binary": "Binary file ({size}) — download it to view",
+				"loadFailed": "Could not open this folder",
+				"readFailed": "Could not open this file",
+				"refresh": "Refresh",
+				"back": "Back",
+				"downloadFailed": "Download failed",
+				"truncated": "Showing the first {limit} entries — this folder has more."
+			}
 		},
 		"settingsForm": {
 			"name": "Name",

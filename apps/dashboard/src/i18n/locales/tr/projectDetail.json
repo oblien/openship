@@ -141,6 +141,7 @@
 			"tabs": {
 				"overview": "Genel Bakış",
 				"terminal": "Terminal",
+				"files": "Dosyalar",
 				"logs": "Günlükler",
 				"env": "Ortam",
 				"settings": "Ayarlar",
@@ -216,7 +217,20 @@
 				"backupRunFailed": "Yedekleme işlemi başarısız oldu"
 			},
 			"duplicateContainers": "Bu servisle eşleşen başka bir konteyner var: {names}",
-			"editInSettings": "Ayarlarda düzenle"
+			"editInSettings": "Ayarlarda düzenle",
+			"files": {
+				"loading": "Yükleniyor…",
+				"empty": "Bu klasör boş",
+				"selectPrompt": "Önizlemek için bir dosya seçin",
+				"download": "İndir",
+				"binary": "İkili dosya ({size}) — görüntülemek için indirin",
+				"loadFailed": "Bu klasör açılamadı",
+				"readFailed": "Bu dosya açılamadı",
+				"refresh": "Yenile",
+				"back": "Geri",
+				"downloadFailed": "İndirme başarısız",
+				"truncated": "İlk {limit} öğe gösteriliyor — bu klasörde daha fazlası var."
+			}
 		},
 		"settingsForm": {
 			"name": "Ad",
