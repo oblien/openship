@@ -489,6 +489,10 @@ export const mailAdminApi = {
       api.post<BulkRestartResult>(
         endpoints.mail.admin.componentsRestartAll(serverId),
       ),
+    migrateToContainer: (serverId: string) =>
+      api.post<{ migrated: boolean; message: string }>(
+        endpoints.mail.admin.migrateToContainer(serverId),
+      ),
   },
 };
 
