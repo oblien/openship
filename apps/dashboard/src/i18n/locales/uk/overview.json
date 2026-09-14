@@ -1,0 +1,144 @@
+{
+  "activity": {
+    "title": "Активність",
+    "thisWeek": "цього тижня",
+    "deploymentSingular": "{count} розгортання",
+    "deploymentPlural": "{count} розгортань"
+  },
+  "apiRequests": {
+    "title": "Запити API",
+    "last7Days": "Останні 7 днів",
+    "totalRequests": "Усього запитів",
+    "requestsTooltip": "{count} запитів"
+  },
+  "credits": {
+    "title": "Баланс кредитів",
+    "availableToUse": "Доступно для використання",
+    "spentThisMonth": "Витрачено цього місяця",
+    "add": "Додати"
+  },
+  "deployments": {
+    "title": "Розгортання",
+    "lastNDays": "за останні {period} днів",
+    "deploymentSingular": "{count} розгортання",
+    "deploymentPlural": "{count} розгортань"
+  },
+  "homeTip": {
+    "quickTip": "Швидка порада",
+    "connectText": "Підключіть репозиторій GitHub для автоматичного розгортання при кожному пуші.",
+    "connectLabel": "Підключити GitHub",
+    "createText": "Створіть свій перший проєкт, щоб почати розгортання.",
+    "createLabel": "Новий проєкт",
+    "settingsText": "Налаштуйте змінні середовища та власні домени в налаштуваннях проєкту.",
+    "settingsLabel": "Налаштування проєкту",
+    "connected": "Підключено",
+    "tips": {
+      "envVars": {
+        "text": "Додайте зашифровані змінні середовища та секрети до будь-якого проєкту.",
+        "label": "Відкрити проєкти"
+      },
+      "customDomain": {
+        "text": "Прив'яжіть власний домен до проєкту — HTTPS налаштовується автоматично.",
+        "label": "Відкрити проєкти"
+      },
+      "autoDeploy": {
+        "text": "Підключіть GitHub для автоматичного розгортання при кожному пуші — без налаштування CI.",
+        "label": "Відкрити налаштування Git"
+      },
+      "rollback": {
+        "text": "Відкотіться до будь-якого попереднього розгортання одним кліком.",
+        "label": "Переглянути розгортання"
+      },
+      "apps": {
+        "text": "Встановлюйте self-hosted застосунки, як-от Gitea, n8n і Metabase, одним кліком.",
+        "label": "Переглянути застосунки"
+      },
+      "servers": {
+        "text": "Підключіть власні сервери через SSH і розгортайте на них звідси.",
+        "label": "Керувати серверами"
+      },
+      "jobs": {
+        "text": "Плануйте команди за допомогою cron-задач — з повторними спробами, логами в реальному часі та історією.",
+        "label": "Відкрити задачі"
+      },
+      "backups": {
+        "text": "Налаштуйте автоматичне резервне копіювання для баз даних і томів.",
+        "label": "Налаштувати резервні копії"
+      },
+      "mail": {
+        "text": "Запустіть власний поштовий сервер і вебпошту, повністю self-hosted.",
+        "label": "Налаштувати пошту"
+      },
+      "team": {
+        "text": "Запрошуйте колег і визначайте їхній доступ по кожному проєкту.",
+        "label": "Керувати командою"
+      }
+    }
+  },
+  "welcome": {
+    "title": "Запустіть свій перший проєкт",
+    "subtitle": "Підключіть репозиторій або почніть із шаблону — Openship збере, розгорне й надасть вам активну URL-адресу за кілька хвилин.",
+    "createProject": "Створити проєкт",
+    "importGithub": "Імпортувати з GitHub",
+    "tipPrefix": "Порада: натисніть",
+    "tipSuffix": "щоб перейти будь-куди"
+  },
+  "header": {
+    "goodMorning": "Доброго ранку",
+    "goodAfternoon": "Доброго дня",
+    "goodEvening": "Доброго вечора",
+    "greetingWithName": "{greeting}, {name}",
+    "overview": "Огляд",
+    "subtitle": "Стежте за використанням платформи та керуйте ресурсами",
+    "creditsBalance": "Баланс кредитів",
+    "topUp": "Поповнити"
+  },
+  "hero": {
+    "title": "Активність платформи",
+    "subtitle": "Використання токенів і запити API",
+    "tokens": "Токени",
+    "requests": "Запити",
+    "lastNDays": "Останні {period} днів",
+    "agents": "Агенти",
+    "environments": "Середовища",
+    "total": "Усього",
+    "production": "Продакшн",
+    "testing": "Тестування",
+    "prodCount": "{count} прод.",
+    "testCount": "{count} тест."
+  },
+  "projects": {
+    "title": "Проєкти",
+    "activeDeployments": "Активні розгортання",
+    "total": "Усього",
+    "live": "Активні",
+    "building": "Збірка",
+    "needAttentionSingular": "{count} проєкт потребує уваги",
+    "needAttentionPlural": "{count} проєктів потребують уваги"
+  },
+  "sandboxes": {
+    "title": "Пісочниці",
+    "developmentEnvironments": "Середовища розробки",
+    "totalSandboxes": "Усього пісочниць",
+    "active": "Активні",
+    "runningCount": "{count} працює",
+    "stoppedCount": "{count} зупинено"
+  },
+  "stats": {
+    "creditsBalance": "Баланс кредитів",
+    "tokenUsage": "Використання токенів",
+    "thisMonth": "Цього місяця",
+    "apiRequests": "Запити API",
+    "last7Days": "Останні 7 днів",
+    "deployments": "Розгортання",
+    "successfulCount": "{count} успішних",
+    "activeProjects": "Активні проєкти",
+    "sandboxes": "Пісочниці",
+    "activeCount": "{count} активних"
+  },
+  "tokenUsage": {
+    "title": "Використання токенів",
+    "lastNDays": "за останні {period} днів",
+    "tokensTooltip": "{count} токенів"
+  }
+}
