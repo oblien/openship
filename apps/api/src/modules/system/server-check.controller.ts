@@ -65,9 +65,7 @@ import type { PromptUserFn } from "@repo/adapters";
 // ─── Allowlisted components ──────────────────────────────────────────────────
 
 const ALLOWED_COMPONENTS = new Set(
-  SYSTEM_COMPONENTS.filter((component) => component.installable).map(
-    (component) => component.name,
-  ),
+  SYSTEM_COMPONENTS.filter((component) => component.installable).map((component) => component.name),
 );
 
 const REMOVABLE_COMPONENTS = new Set(Object.keys(COMPONENT_UNINSTALLERS));
@@ -75,7 +73,9 @@ const REMOVABLE_COMPONENTS = new Set(Object.keys(COMPONENT_UNINSTALLERS));
 async function withCapabilities<T extends { name: string; installed?: boolean }>(
   executor: CommandExecutor,
   components: T[],
-): Promise<Array<T & { removable: boolean; removeSupported?: boolean; removeBlockedReason?: string }>> {
+): Promise<
+  Array<T & { removable: boolean; removeSupported?: boolean; removeBlockedReason?: string }>
+> {
   return Promise.all(
     components.map(async (component) => {
       const removable = REMOVABLE_COMPONENTS.has(component.name);
@@ -102,9 +102,7 @@ async function withCapabilities<T extends { name: string; installed?: boolean }>
  * Shown in System Health only when detected (installed) on the server.
  */
 function resolveInfraComponents(): string[] {
-  return SYSTEM_COMPONENTS
-    .filter((c) => c.category === "infrastructure")
-    .map((c) => c.name);
+  return SYSTEM_COMPONENTS.filter((c) => c.category === "infrastructure").map((c) => c.name);
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -262,12 +260,12 @@ async function buildEphemeralSshConfig(c: Context) {
       sshPort: body.sshPort ? Number(body.sshPort) : null,
       sshUser: (body.sshUser as string) || null,
       sshAuthMethod: body.sshAuthMethod as string,
-      sshPassword: body.sshPassword as string ?? null,
-      sshKeyPath: body.sshKeyPath as string ?? null,
-      sshPrivateKey: body.sshPrivateKey as string ?? null,
-      sshKeyPassphrase: body.sshKeyPassphrase as string ?? null,
-      sshJumpHost: body.sshJumpHost as string ?? null,
-      sshArgs: body.sshArgs as string ?? null,
+      sshPassword: (body.sshPassword as string) ?? null,
+      sshKeyPath: (body.sshKeyPath as string) ?? null,
+      sshPrivateKey: (body.sshPrivateKey as string) ?? null,
+      sshKeyPassphrase: (body.sshKeyPassphrase as string) ?? null,
+      sshJumpHost: (body.sshJumpHost as string) ?? null,
+      sshArgs: (body.sshArgs as string) ?? null,
     });
   } catch (err) {
     return c.json({ ok: false, message: safeErrorMessage(err) }, 400);
@@ -324,7 +322,8 @@ export async function checkServer(c: Context) {
   }
 
   try {
-    systemDebug("system-check",
+    systemDebug(
+      "system-check",
       `check:start server=${serverId} ${valid?.length ? valid.join(",") : "all"}`,
     );
 
@@ -356,11 +355,10 @@ export async function checkServer(c: Context) {
     }
 
     // "missing" and "ready" only consider required (non-optional) components
-    const missing = components
-      .filter((c) => !c.healthy && !c.optional)
-      .map((c) => c.name);
+    const missing = components.filter((c) => !c.healthy && !c.optional).map((c) => c.name);
 
-    systemDebug("system-check", 
+    systemDebug(
+      "system-check",
       `check:done ready=${missing.length === 0} missing=${missing.join(",") || "none"} (${formatDuration(startedAt)})`,
     );
     return c.json({
@@ -369,13 +367,9 @@ export async function checkServer(c: Context) {
       missing,
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to connect to server";
+    const message = err instanceof Error ? err.message : "Failed to connect to server";
     systemDebug("system-check", `check:failed ${message} (${formatDuration(startedAt)})`);
-    if (
-      message === "No server configured" ||
-      message === "Invalid SSH auth configuration"
-    ) {
+    if (message === "No server configured" || message === "Invalid SSH auth configuration") {
       return c.json({ error: "no_server", message }, 400);
     }
     // A connect failure on THIS box is almost never "the server is down" — it's the
@@ -450,7 +444,11 @@ export async function installRespond(c: Context) {
   const session = getSetupSession(sessionId);
   if (!session) return c.json({ error: "no_active_session" }, 404);
 
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: session.serverId, action: "admin" });
+  await permission.assert(getRequestContext(c), {
+    resourceType: "server",
+    resourceId: session.serverId,
+    action: "admin",
+  });
 
   const resolved = respondToSetupPrompt(sessionId, action);
   if (!resolved) return c.json({ error: "no_pending_prompt" }, 409);
@@ -525,8 +523,7 @@ export async function installComponent(c: Context) {
     return c.json({ error: "Invalid or missing component name" }, 400);
   }
 
-  const installerFn =
-    COMPONENT_INSTALLERS[componentName as keyof typeof COMPONENT_INSTALLERS];
+  const installerFn = COMPONENT_INSTALLERS[componentName as keyof typeof COMPONENT_INSTALLERS];
   if (!installerFn) {
     return c.json({ error: `No installer for ${componentName}` }, 400);
   }
@@ -571,12 +568,8 @@ export async function installComponent(c: Context) {
       logs,
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Installation failed";
-    if (
-      message === "No server configured" ||
-      message === "Invalid SSH auth configuration"
-    ) {
+    const message = err instanceof Error ? err.message : "Installation failed";
+    if (message === "No server configured" || message === "Invalid SSH auth configuration") {
       return c.json({ error: "no_server", message, logs }, 400);
     }
     if (isSshAuthError(err)) {
@@ -602,14 +595,19 @@ export async function removeComponent(c: Context) {
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
   getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "admin" });
+  await permission.assert(getRequestContext(c), {
+    resourceType: "server",
+    resourceId: serverId,
+    action: "admin",
+  });
 
   const componentName = body.component as string;
   if (!componentName || !REMOVABLE_COMPONENTS.has(componentName)) {
     return c.json({ error: "Invalid or unsupported component name" }, 400);
   }
 
-  const uninstallerFn = COMPONENT_UNINSTALLERS[componentName as keyof typeof COMPONENT_UNINSTALLERS];
+  const uninstallerFn =
+    COMPONENT_UNINSTALLERS[componentName as keyof typeof COMPONENT_UNINSTALLERS];
   if (!uninstallerFn) {
     return c.json({ error: `No remover for ${componentName}` }, 400);
   }
@@ -630,10 +628,7 @@ export async function removeComponent(c: Context) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Removal failed";
-    if (
-      message === "No server configured" ||
-      message === "Invalid SSH auth configuration"
-    ) {
+    if (message === "No server configured" || message === "Invalid SSH auth configuration") {
       return c.json({ error: "no_server", message }, 400);
     }
     if (isSshAuthError(err)) {
@@ -810,7 +805,11 @@ export async function installStream(c: Context) {
           });
 
           if (result.success) {
-            appendSetupLog(session.id, name, `${name} installed successfully${result.version ? ` (${result.version})` : ""}`);
+            appendSetupLog(
+              session.id,
+              name,
+              `${name} installed successfully${result.version ? ` (${result.version})` : ""}`,
+            );
             updateComponentProgress(session.id, name, "installed");
           } else {
             const msg = result.error ?? `${name} installation failed`;
@@ -885,9 +884,7 @@ export async function getInstallSession(c: Context) {
 
   const sessionId = c.req.query("id");
 
-  const session = sessionId
-    ? getSetupSession(sessionId)
-    : getActiveSetupSession();
+  const session = sessionId ? getSetupSession(sessionId) : getActiveSetupSession();
 
   if (!session) {
     return c.json({ active: false }, 200);
@@ -897,7 +894,11 @@ export async function getInstallSession(c: Context) {
   // Sessions are server-scoped, so existence-leak protection applies via the
   // server resource (404-shape).
   getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: session.serverId, action: "admin" });
+  await permission.assert(getRequestContext(c), {
+    resourceType: "server",
+    resourceId: session.serverId,
+    action: "admin",
+  });
 
   return c.json({
     active: true,
@@ -920,9 +921,7 @@ export async function attachInstallStream(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
   const sessionId = c.req.query("id");
-  const session = sessionId
-    ? getSetupSession(sessionId)
-    : getActiveSetupSession();
+  const session = sessionId ? getSetupSession(sessionId) : getActiveSetupSession();
 
   if (!session) {
     return c.json({ error: "No active session" }, 404);
@@ -930,7 +929,11 @@ export async function attachInstallStream(c: Context) {
 
   // Gate by the session's underlying server before opening the SSE stream.
   getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: session.serverId, action: "admin" });
+  await permission.assert(getRequestContext(c), {
+    resourceType: "server",
+    resourceId: session.serverId,
+    action: "admin",
+  });
 
   return streamSSE(c, async (sseStream) => {
     let closed = false;
@@ -948,7 +951,10 @@ export async function attachInstallStream(c: Context) {
     const { success, unsubscribe } = subscribeSetupSession(session.id, writer);
 
     if (!success) {
-      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Session not found" }) });
+      await sseStream.writeSSE({
+        event: "error",
+        data: JSON.stringify({ error: "Session not found" }),
+      });
       return;
     }
 
@@ -978,11 +984,11 @@ export async function attachInstallStream(c: Context) {
 // ─── Monitoring ──────────────────────────────────────────────────────────────
 
 /**
- * Shell one-liner that gathers CPU, memory, disk, uptime, and load average.
- * Outputs a single JSON line. Designed for Linux servers.
+ * Shell one-liners that gather CPU, memory, disk, uptime, and load average,
+ * one per platform, both emitting the same single JSON line.
  *
  * Fields:
- *   cpu      - usage % (100 - idle from /proc/stat snapshot)
+ *   cpu      - usage % (100 - idle, sampled twice 200ms apart)
  *   memTotal - total RAM bytes
  *   memUsed  - used RAM bytes (total - available)
  *   memAvail - available RAM bytes
@@ -994,25 +1000,83 @@ export async function attachInstallStream(c: Context) {
  *   load5    - 5-min load average
  *   load15   - 15-min load average
  */
-const STATS_COMMAND = [
+export const LINUX_STATS_COMMAND = [
   // CPU: sample /proc/stat twice (200ms apart) for accurate usage
-  'read cpu0_u cpu0_n cpu0_s cpu0_i cpu0_rest <<< $(head -1 /proc/stat | awk \'{print $2,$3,$4,$5}\');',
-  'sleep 0.2;',
-  'read cpu1_u cpu1_n cpu1_s cpu1_i cpu1_rest <<< $(head -1 /proc/stat | awk \'{print $2,$3,$4,$5}\');',
-  'cpu_d=$(( (cpu1_u-cpu0_u)+(cpu1_n-cpu0_n)+(cpu1_s-cpu0_s)+(cpu1_i-cpu0_i) ));',
-  'cpu_idle=$(( cpu1_i - cpu0_i ));',
+  "read cpu0_u cpu0_n cpu0_s cpu0_i cpu0_rest <<< $(head -1 /proc/stat | awk '{print $2,$3,$4,$5}');",
+  "sleep 0.2;",
+  "read cpu1_u cpu1_n cpu1_s cpu1_i cpu1_rest <<< $(head -1 /proc/stat | awk '{print $2,$3,$4,$5}');",
+  "cpu_d=$(( (cpu1_u-cpu0_u)+(cpu1_n-cpu0_n)+(cpu1_s-cpu0_s)+(cpu1_i-cpu0_i) ));",
+  "cpu_idle=$(( cpu1_i - cpu0_i ));",
   '[ "$cpu_d" -gt 0 ] && cpu_pct=$(( 100 - (cpu_idle * 100 / cpu_d) )) || cpu_pct=0;',
   // Memory
-  'read mem_t mem_a <<< $(awk \'/MemTotal/{t=$2} /MemAvailable/{a=$2} END{print t*1024, a*1024}\' /proc/meminfo);',
-  'mem_u=$((mem_t - mem_a));',
+  "read mem_t mem_a <<< $(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{print t*1024, a*1024}' /proc/meminfo);",
+  "mem_u=$((mem_t - mem_a));",
   // Disk
-  'read disk_t disk_u disk_a <<< $(df -B1 / | awk \'NR==2{print $2,$3,$4}\');',
+  "read disk_t disk_u disk_a <<< $(df -B1 / | awk 'NR==2{print $2,$3,$4}');",
   // Uptime + load
-  'read up_s _ <<< $(cat /proc/uptime);',
-  'read l1 l5 l15 _ _ <<< $(cat /proc/loadavg);',
+  "read up_s _ <<< $(cat /proc/uptime);",
+  "read l1 l5 l15 _ _ <<< $(cat /proc/loadavg);",
   // Output JSON
   'printf \'{"cpu":%d,"memTotal":%s,"memUsed":%s,"memAvail":%s,"diskTotal":%s,"diskUsed":%s,"diskAvail":%s,"uptime":"%s","load1":"%s","load5":"%s","load15":"%s"}\\n\' "$cpu_pct" "$mem_t" "$mem_u" "$mem_a" "$disk_t" "$disk_u" "$disk_a" "$up_s" "$l1" "$l5" "$l15"',
 ].join(" ");
+
+/**
+ * macOS has no /proc — CPU comes from `top`'s summary line, memory from
+ * `vm_stat` page counts (active + wired + compressor, the same "used" `top`
+ * reports; free pages alone undercounts what the OS could still reclaim),
+ * disk from `df -k` (macOS `df` has no GNU `-B1`), uptime from
+ * `kern.boottime`, and load average from `vm.loadavg` — all standard on any
+ * Mac, no Xcode tools or Homebrew required.
+ *
+ * Deliberately `set -- $(...); x=$1` instead of `read x <<< $(...)`: zsh (the
+ * default login shell on macOS, and what an interactive `ssh host cmd`
+ * actually runs) implements `<<<` by spilling to a real temp file, not a pipe
+ * — harmless on a normal box, but it makes this stats probe itself fail with
+ * "no space left on device" on a nearly-full disk, which is exactly the box
+ * an operator most wants a disk-usage reading from (GH-in-review). `set --`
+ * only ever uses argv, on every POSIX shell.
+ */
+export const DARWIN_STATS_COMMAND = [
+  // CPU: `top`'s one-shot summary line already reports idle %
+  "cpu_idle=$(top -l 1 -n 0 | awk '/CPU usage/{gsub(/%/,\"\",$7); print $7}');",
+  'cpu_pct=$(awk -v i="$cpu_idle" \'BEGIN{printf "%d", 100 - i}\');',
+  // Memory: page size + active/wired/compressed pages = "used", matching Activity Monitor
+  "mem_t=$(sysctl -n hw.memsize);",
+  "pagesize=$(sysctl -n hw.pagesize);",
+  "vmstat=$(vm_stat);",
+  'pages_free=$(echo "$vmstat" | awk \'/Pages free/{gsub(/\\./,"",$3); print $3}\');',
+  'pages_active=$(echo "$vmstat" | awk \'/Pages active/{gsub(/\\./,"",$3); print $3}\');',
+  'pages_wired=$(echo "$vmstat" | awk \'/Pages wired down/{gsub(/\\./,"",$4); print $4}\');',
+  'pages_compressed=$(echo "$vmstat" | awk \'/Pages occupied by compressor/{gsub(/\\./,"",$5); print $5}\');',
+  "mem_u=$(( (pages_active + pages_wired + pages_compressed) * pagesize ));",
+  "mem_a=$(( pages_free * pagesize ));",
+  // Disk: `df -k` blocks are already 1024 bytes, unlike GNU df's default 1K-but-configurable
+  "set -- $(df -k / | awk 'NR==2{print $2*1024,$3*1024,$4*1024}');",
+  "disk_t=$1; disk_u=$2; disk_a=$3;",
+  // Uptime: kern.boottime prints `{ sec = 1699999999, usec = 0 } Mon ...` — take the epoch seconds
+  "boot_epoch=$(sysctl -n kern.boottime | awk -F'[ ,]+' '{print $4}');",
+  "up_s=$(( $(date +%s) - boot_epoch ));",
+  // Load average: vm.loadavg prints `{ 1.23 1.45 1.67 }`
+  "set -- $(sysctl -n vm.loadavg | tr -d '{}');",
+  "l1=$1; l5=$2; l15=$3;",
+  // Output JSON — same shape as the Linux command
+  'printf \'{"cpu":%d,"memTotal":%s,"memUsed":%s,"memAvail":%s,"diskTotal":%s,"diskUsed":%s,"diskAvail":%s,"uptime":"%s","load1":"%s","load5":"%s","load15":"%s"}\\n\' "$cpu_pct" "$mem_t" "$mem_u" "$mem_a" "$disk_t" "$disk_u" "$disk_a" "$up_s" "$l1" "$l5" "$l15"',
+].join(" ");
+
+/**
+ * Self-detecting: branches on `uname -s` so the caller never has to know or
+ * track a server's OS ahead of time, and a single exec still gets the stats
+ * (one SSH round-trip, matching every other one-liner here).
+ *
+ * Each branch's OWN trailing `;` is deliberately omitted (see the `printf`
+ * lines above) because it used to double as the whole command's final
+ * statement. Now that `else`/`fi` follow directly, that same missing `;` reads
+ * as one more argument to `printf` instead of a keyword — `else`/`fi` are
+ * consumed as text, the `if` never closes, and bash reports it as an
+ * unterminated here-nothing at EOF. Terminate each branch explicitly instead
+ * of trusting the join to supply one.
+ */
+export const STATS_COMMAND = `if [ "$(uname -s)" = "Darwin" ]; then ${DARWIN_STATS_COMMAND}; else ${LINUX_STATS_COMMAND}; fi`;
 
 /**
  * GET /system/monitor/stream
@@ -1030,7 +1094,11 @@ export async function monitorStream(c: Context) {
   if (!serverId) return c.json({ error: "serverId query param is required" }, 400);
 
   getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "read" });
+  await permission.assert(getRequestContext(c), {
+    resourceType: "server",
+    resourceId: serverId,
+    action: "read",
+  });
 
   const POLL_INTERVAL = 3_000;
   // Generous per-sample timeout: on the system-ssh (agent) path each exec is a
@@ -1067,7 +1135,14 @@ export async function monitorStream(c: Context) {
         await new Promise<void>((resolve) => {
           if (ac.signal.aborted) return resolve();
           const timer = setTimeout(resolve, POLL_INTERVAL);
-          ac.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+          ac.signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
         });
       }
     } finally {
@@ -1093,14 +1168,21 @@ export async function scanExposedPorts(c: Context) {
 
   const organizationId = getRequestContext(c).organizationId;
   const serverId = c.req.param("id")!;
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "read" });
+  await permission.assert(getRequestContext(c), {
+    resourceType: "server",
+    resourceId: serverId,
+    action: "read",
+  });
 
   const server = await repos.server.getInOrganization(serverId, organizationId);
   if (!server) return c.json({ error: "Server not found" }, 404);
 
   const reachable = await sshManager.probeReachable(serverId).catch(() => false);
   if (!reachable) {
-    return c.json({ error: "unreachable", message: "Server is not reachable over SSH right now." }, 502);
+    return c.json(
+      { error: "unreachable", message: "Server is not reachable over SSH right now." },
+      502,
+    );
   }
 
   try {
