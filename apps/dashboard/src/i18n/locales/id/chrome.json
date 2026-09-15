@@ -1,0 +1,86 @@
+{
+  "accountSwitcher": {
+    "workspacesCount": "{count} workspace",
+    "newWorkspace": "Workspace baru",
+    "createTitle": "Buat workspace",
+    "createDescription": "Organisasi terpisah untuk proyek, deployment, server, dan anggota.",
+    "nameLabel": "Nama",
+    "namePlaceholder": "Acme Corp",
+    "cancel": "Batal",
+    "create": "Buat",
+    "toastTitle": "Organisasi",
+    "switchFailed": "Gagal beralih",
+    "createFailed": "Gagal membuat"
+  },
+  "sidebar": {
+    "workspaceFallback": "Workspace",
+    "workspacesCount": "{count} workspace",
+    "switchOrganization": "Beralih organisasi",
+    "current": "Saat ini",
+    "cloudLabel": "Cloud: {email}",
+    "linkedToCloud": "Tersambung ke OpenShip Cloud sebagai {email}",
+    "backToSetup": "Kembali ke pengaturan",
+    "personal": "Pribadi"
+  },
+  "mailRail": {
+    "selectServer": "Pilih server email",
+    "switchServer": "Beralih server email",
+    "setupIncomplete": "Pengaturan belum lengkap"
+  },
+  "migration": {
+    "inProgressTitle": "Migrasi sedang berlangsung",
+    "inProgressBody": "Data Anda sedang dipindahkan. Halaman ini akan menyegarkan setelah pemotongan selesai — biasanya 30-90 detik.",
+    "inProgressHint": "Jangan tutup tab ini. Kami memeriksa status migrasi setiap beberapa detik dan akan memuat ulang secara otomatis.",
+    "newLocation": "Lokasi baru",
+    "switchBackPrompt": "Butuh mode single-user kembali di mesin ini?",
+    "switchBackAction": "Kembali ke single user",
+    "cloudTitle": "Instance ini dipindahkan ke OpenShip Cloud",
+    "cloudBody": "Tim Anda sekarang berkolaborasi di URL di bawah. Instance lokal ini tidak lagi menyimpan proyek, pengaturan, atau deployment Anda — buka dashboard cloud untuk melanjutkan.",
+    "cloudCta": "Buka dashboard cloud",
+    "tunneledTitle": "OpenShip Anda sekarang dapat diakses melalui tunnel",
+    "tunneledBody": "Rekan tim bisa masuk di URL di bawah ketika mesin Anda online. Data masih tinggal di perangkat ini — tunnel hanya mengeksposnya melalui edge Oblien.",
+    "tunneledCta": "Buka URL tunnel",
+    "serverTitle": "Instance ini dipindahkan ke server Anda",
+    "serverBody": "Tim Anda sekarang berkolaborasi di URL di bawah. Instance lokal ini tidak lagi menyimpan proyek, pengaturan, atau deployment Anda — buka dashboard tim untuk melanjutkan.",
+    "serverCta": "Buka dashboard tim"
+  },
+  "notFound": {
+    "title": "Halaman tidak ditemukan",
+    "descGlobal": "Halaman yang Anda cari tidak ada atau sudah dipindahkan.",
+    "descDashboard": "Halaman ini tidak ada atau mungkin sudah dipindahkan. Periksa URL, atau kembali ke dashboard Anda.",
+    "backToDashboard": "Kembali ke dashboard",
+    "viewDeployments": "Lihat deployment",
+    "copyId": "Salin ID"
+  },
+  "error": {
+    "title": "Halaman ini mengalami kesalahan",
+    "description": "Sesuatu di layar ini gagal dirender. Mencoba lagi biasanya mengatasinya — tidak ada yang Anda deploy yang terpengaruh.",
+    "tryAgain": "Coba lagi",
+    "goToProjects": "Ke proyek",
+    "refCode": "Ref"
+  },
+  "apiDown": {
+    "title": "Tidak dapat menghubungi API",
+    "description": "Dashboard sedang berjalan, tetapi tidak dapat berkomunikasi dengan API OpenShip — jadi belum ada yang ditampilkan. Deployment Anda tetap berjalan.",
+    "hintStatus": "Periksa apakah API aktif: jalankan `openship status` di host.",
+    "hintStart": "Tidak berjalan? Mulai dengan `openship up`.",
+    "hintRemote": "Mengelola server remote? Pastikan URL-nya dan port API dapat diakses dari sini.",
+    "retry": "Coba lagi",
+    "docs": "Dokumentasi self-hosting"
+  },
+  "errorLinks": {
+    "docs": "Dokumentasi",
+    "github": "Laporkan masalah"
+  },
+  "window": {
+    "minimize": "Perkecil",
+    "maximize": "Perbesar",
+    "restore": "Pulihkan",
+    "close": "Tutup",
+    "navigation": "Navigasi",
+    "back": "Kembali",
+    "forward": "Maju",
+    "reload": "Muat ulang",
+    "devTools": "Alat pengembang"
+  }
+}
