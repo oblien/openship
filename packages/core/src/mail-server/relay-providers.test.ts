@@ -102,8 +102,19 @@ describe("relayProviderSpfInclude", () => {
 describe("relayMailFromRecords", () => {
   test("SES returns the regional feedback MX + its SPF", () => {
     expect(relayMailFromRecords({ provider: "ses", region: "us-east-1", mailFromDomain: "bounce.example.com" })).toEqual(
-      { mx: "feedback-smtp.us-east-1.amazonaws.com", spf: "v=spf1 include:amazonses.com ~all" },
+      { mx: "feedback-smtp.us-east-1.amazonses.com", spf: "v=spf1 include:amazonses.com ~all" },
     );
+  });
+
+  test("SES MAIL FROM MX uses amazonses.com, not the SMTP amazonaws.com suffix", () => {
+    // A shared {region}.amazonaws.com template looked tidy and produced a
+    // Health false positive against the MX AWS actually tells operators to
+    // publish. Keep the two hostnames on different suffixes so a future
+    // "cleanup" cannot fold them back together.
+    expect(resolveRelayHost({ provider: "ses", region: "eu-west-1" })).toBe("email-smtp.eu-west-1.amazonaws.com");
+    expect(
+      relayMailFromRecords({ provider: "ses", region: "eu-west-1", mailFromDomain: "mail.example.com" })?.mx,
+    ).toBe("feedback-smtp.eu-west-1.amazonses.com");
   });
 
   test("null without a MAIL FROM domain, an unsupported provider, or a missing region", () => {
