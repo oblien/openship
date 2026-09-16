@@ -11,6 +11,9 @@ import type { LanguageDetector, PortDetectionContext } from "./types";
 
 export type { LanguageDetector, PortDetectionContext } from "./types";
 
+/** Ruby's version files carry no deps, so this sits outside the detector API. */
+export { parseRubyVersion } from "./ruby";
+
 /**
  * All registered language detectors. Add a language family by:
  *   1. Implementing `LanguageDetector` in its own file under languages/.
