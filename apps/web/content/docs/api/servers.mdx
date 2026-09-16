@@ -157,6 +157,63 @@ Start / stop / delete a saved tunnel with `POST .../tunnels/:tunnelId/start`, `.
 `DELETE .../tunnels/:tunnelId`. A started tunnel returns the actually-bound `localPort` and a
 `http://localhost:<port>` URL.
 
+## Server clusters and private networking
+
+On a self-hosted OpenShip instance, clusters group 2–16 registered Linux
+servers on an **already configured private IPv4 network**. Read
+`ship.servers.clusterCapabilities()` for the available provider profiles and your
+management permissions. Local and desktop self-hosted controllers support
+cluster inventory and manual network checks. Oblien-managed Cloud does not offer
+cluster management. Future continuous reconciliation requires an always-on
+self-hosted controller.
+
+Create saves configuration; verify starts a separate, persisted operation.
+Reuse the same `requestId` when retrying an unchanged creation request. Update,
+verify, and remove require the cluster's current `revision`. Concurrent edits
+return a conflict, and active verification blocks configuration changes.
+
+```ts
+const cluster = await ship.servers.createCluster({
+  requestId: crypto.randomUUID(),
+  name: "Production EU",
+  network: {
+    mode: "native",
+    cidrs: ["10.20.0.0/24"],
+    mtu: 1400,
+    probePort: 51821,
+  },
+  members: [
+    { serverId: "srv_a", providerId: "hetzner-dedicated", privateIp: "10.20.0.2" },
+    { serverId: "srv_b", providerId: "hetzner-dedicated", privateIp: "10.20.0.3" },
+  ],
+});
+const verification = await ship.servers.verifyCluster({
+  clusterId: cluster.id,
+  revision: cluster.revision,
+});
+console.log(verification.id, verification.status);
+```
+
+Poll `ship.servers.getCluster({ clusterId })` to read progress and per-direction
+TCP, UDP, and MTU results. Hosts need Linux, Python 3, iproute2, a persistent
+machine identity, and working private interfaces and routes. The chosen probe
+port must permit TCP and UDP between members. The inspector
+`ship.servers.inspectNetwork(serverId)` reads interfaces without configuring them.
+
+Temporary authenticated listeners bind to the selected private addresses and
+expire locally if cleanup loses contact. Runs expire after four minutes;
+successful observations are considered stale after fifteen minutes. The probe
+tests its selected port and packet size. Encryption and application-port access
+are not verified.
+
+Cluster reads require fleet-wide server read access. Management requires
+fleet-wide server admin access, with each member also authorized. Removing a
+cluster removes its inventory records; servers and externally managed networks
+remain. A member must leave the cluster before its server entry can be removed.
+Clusters are not yet deployment targets. Provider provisioning, host network
+configuration, WireGuard, private service endpoints, and replicas are separate
+capabilities that this initial adoption workflow does not expose.
+
 ## Operations
 
 {/* api-operations:start */}
@@ -207,6 +264,19 @@ Start / stop / delete a saved tunnel with `POST .../tunnels/:tunnelId/start`, `.
 | Execute an authorized command on the server. | `servers.exec(id, input)` | `POST /api/system/servers/:id/exec`<br />`server:admin` · Self-hosted |
 | Run a server health check. | `servers.check(id, input?)` | `POST /api/system/check`<br />`server:admin` · Self-hosted |
 | Scan ports on an authorized server. | `servers.scanPorts(id)` | `POST /api/system/servers/:id/ports/scan`<br />`server:read` · Self-hosted |
+
+### Server clusters and private networking
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read infrastructure availability, provider profiles, and supported network operations. | `servers.clusterCapabilities()` | `GET /api/system/clusters/capabilities`<br />`Handler authentication` · Self-hosted |
+| List organization-owned server clusters and their latest verification. | `servers.listClusters()` | `GET /api/system/clusters`<br />`Handler authentication` · Self-hosted |
+| Read a cluster, its private network attachments, and verification report. | `servers.getCluster(input)` | `GET /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
+| Save a cluster on an existing private network using an idempotent request ID. | `servers.createCluster(input)` | `POST /api/system/clusters`<br />`Handler authentication` · Self-hosted |
+| Update an idle cluster using its current revision; invalidate earlier verification. | `servers.updateCluster(input)` | `PATCH /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
+| Start or reuse a bounded private TCP, UDP, and MTU verification run. | `servers.verifyCluster(input)` | `POST /api/system/clusters/:id/verify`<br />`Handler authentication` · Self-hosted |
+| Remove cluster inventory at the current revision, preserving servers and external networks. | `servers.removeCluster(input)` | `DELETE /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
+| Inspect a server’s machine identity and private interfaces without changing its network. | `servers.inspectNetwork(id)` | `POST /api/system/servers/:id/network/inspect`<br />`server:admin` · Self-hosted |
 
 ### Git credentials
 

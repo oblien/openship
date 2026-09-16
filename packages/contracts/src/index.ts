@@ -38,6 +38,7 @@ export * from "./project-transfer";
 export * from "./credential-inputs";
 export * from "./credentials";
 export * from "./servers";
+export * from "./server-clusters";
 export * from "./server-containers";
 export * from "./server-tunnels";
 export * from "./system";

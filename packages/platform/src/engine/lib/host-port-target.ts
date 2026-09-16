@@ -121,6 +121,12 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+/** Read-only physical identity for infrastructure enrollment, including local-host aliases. */
+export async function inspectHostIssuedIdentity(executor: CommandExecutor): Promise<string | null> {
+  const identity = await readValidatedTargetId(executor);
+  return identity ? `host:${fingerprint(identity.source, identity.value)}` : null;
+}
+
 /**
  * Persist a target-issued identity when the OS has no readable machine-id.
  *

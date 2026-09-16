@@ -1,5 +1,6 @@
 import type { ExecutionContext, PermissionInput } from "@repo/platform";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { withServerInventoryLock } from "@repo/platform/engine/lib/server-inventory-lock";
 
 /**
  * Removing a server has to resolve the fate of everything running on it.
@@ -30,6 +31,7 @@ type Teardown = {
 const ok = (): Teardown => ({ ok: true, rowDeleted: true, unrecoverable: [], orphaned: [] });
 
 const h = vi.hoisted(() => ({
+  clusterMembership: vi.fn(async () => null as { clusterId: string } | null),
   assert: vi.fn(async (_ctx: ExecutionContext, _input: PermissionInput) => {}),
   /** Call log in order, so "row deleted last" is checkable rather than assumed. */
   calls: [] as string[],
@@ -72,7 +74,9 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   repos: {
+    serverCluster: { membership: h.clusterMembership },
     server: {
       listByOrganization: vi.fn(async () => h.rows),
       getInOrganization: vi.fn(async (id: string) => h.rows.find((r) => r.id === id) ?? null),
@@ -147,6 +151,7 @@ const project = (id: string, over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.clusterMembership.mockResolvedValue(null);
   h.calls.length = 0;
   h.assert.mockImplementation(async () => {});
   h.teardown.mockImplementation(async (_ctx, id) => {
@@ -162,6 +167,37 @@ beforeEach(() => {
   h.github.mockImplementation(async () => undefined);
   h.destinations.mockImplementation(async () => []);
   h.workloads = [project("p1"), project("p2", { isApp: true, appTemplateId: "plausible" })];
+});
+
+it("refuses an enrolled server before tearing down any workload", async () => {
+  h.clusterMembership.mockResolvedValueOnce({ clusterId: "cluster-a" });
+  const { c } = context("srv1");
+  await expect(deleteServer(c)).rejects.toMatchObject({ code: "SERVER_IN_CLUSTER", statusCode: 409 });
+  expect(h.teardown).not.toHaveBeenCalled();
+  expect(h.serverDelete).not.toHaveBeenCalled();
+});
+
+it("rechecks membership after a concurrent enrollment releases the inventory lock", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const enrollment = withServerInventoryLock("org1", async () => {
+    entered();
+    await hold;
+    h.clusterMembership.mockResolvedValue({ clusterId: "cluster-a" });
+  });
+  await started;
+  const { c } = context("srv1", { destroyOnSource: "true" });
+  const removal = deleteServer(c);
+  const rejected = expect(removal).rejects.toMatchObject({ code: "SERVER_IN_CLUSTER" });
+  await Promise.resolve();
+  expect(h.teardown).not.toHaveBeenCalled();
+  release();
+  await enrollment;
+  await rejected;
+  expect(h.teardown).not.toHaveBeenCalled();
+  expect(h.serverDelete).not.toHaveBeenCalled();
 });
 
 describe("GET /servers/:id/deletion-preview", () => {

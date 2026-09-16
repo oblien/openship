@@ -954,6 +954,54 @@
       "description": "Test the supplied SSH connection configuration.",
       "route": "POST /api/system/test-connection"
     },
+    "servers.clusterCapabilities": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Read infrastructure availability, provider profiles, and supported network operations.",
+      "route": "GET /api/system/clusters/capabilities"
+    },
+    "servers.listClusters": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "List organization-owned server clusters and their latest verification.",
+      "route": "GET /api/system/clusters"
+    },
+    "servers.getCluster": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Read a cluster, its private network attachments, and verification report.",
+      "route": "GET /api/system/clusters/:id"
+    },
+    "servers.createCluster": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Save a cluster on an existing private network using an idempotent request ID.",
+      "route": "POST /api/system/clusters"
+    },
+    "servers.updateCluster": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Update an idle cluster using its current revision; invalidate earlier verification.",
+      "route": "PATCH /api/system/clusters/:id"
+    },
+    "servers.verifyCluster": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Start or reuse a bounded private TCP, UDP, and MTU verification run.",
+      "route": "POST /api/system/clusters/:id/verify"
+    },
+    "servers.removeCluster": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Remove cluster inventory at the current revision, preserving servers and external networks.",
+      "route": "DELETE /api/system/clusters/:id"
+    },
+    "servers.inspectNetwork": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Inspect a server’s machine identity and private interfaces without changing its network.",
+      "route": "POST /api/system/servers/:id/network/inspect"
+    },
     "servers.githubStatus": {
       "page": "servers",
       "section": "Git credentials",

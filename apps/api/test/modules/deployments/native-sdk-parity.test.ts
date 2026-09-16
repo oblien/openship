@@ -90,9 +90,11 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   schema: {},
   getDriver: () => "postgres",
   repos: {
+    serverCluster: { membership: async () => null },
     user: { findFoundingAdmin: async () => ({ id: "founder" }) },
     instanceSettings: { get: async () => h.settings, upsert: h.settingsUpsert, delete: h.settingsDelete },
     serverTunnel: {

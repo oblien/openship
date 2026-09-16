@@ -5,9 +5,18 @@ import { createRemoteResourceOperations, createRemoteScopedOperations } from "./
 
 export function createRemoteServerOperations(http: HttpClient): ServerOperations {
   const path = (id: string) => `/system/servers/${encodeURIComponent(id)}`;
+  const clusterPath = (input?: unknown) => `/system/clusters/${encodeURIComponent((input as { clusterId: string }).clusterId)}`;
+  const clusterBody = (input?: unknown) => { const { clusterId: _id, ...body } = input as Record<string, unknown>; return body; };
   const tunnelPath = (id: string, input: unknown) => path(id) + `/tunnels/${encodeURIComponent((input as { tunnelId: string }).tunnelId)}`;
   return Object.freeze({
     ...createRemoteScopedOperations(http, ServerCollectionSchemas, {
+      clusterCapabilities: { method: "GET", path: () => "/system/clusters/capabilities" },
+      listClusters: { method: "GET", path: () => "/system/clusters" },
+      getCluster: { method: "GET", path: clusterPath, inputLocation: "path" },
+      createCluster: { method: "POST", path: () => "/system/clusters" },
+      updateCluster: { method: "PATCH", path: clusterPath, body: clusterBody },
+      verifyCluster: { method: "POST", path: input => clusterPath(input) + "/verify", body: clusterBody },
+      removeCluster: { method: "DELETE", path: clusterPath, body: clusterBody },
       listAllContainers: { method: "GET", path: () => "/system/containers" },
       scanAllContainers: { method: "POST", path: () => "/system/containers/scan" },
       containersBehind: { method: "GET", path: () => "/system/containers/behind" },
@@ -19,6 +28,7 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
       testConnection: { method: "POST", path: () => "/system/test-connection", resultStatuses: [400, 502] },
     }),
     ...createRemoteResourceOperations(http, ServerResourceSchemas, {
+      inspectNetwork: { method: "POST", path: id => path(id) + "/network/inspect" },
       githubStatus: { method: "GET", path: id => `/system/servers/${encodeURIComponent(id)}/github` },
       connectGitHub: { method: "POST", path: id => `/system/servers/${encodeURIComponent(id)}/github/connect` },
       pollGitHubConnection: { method: "GET", path: id => `/system/servers/${encodeURIComponent(id)}/github/connect/poll`, envelope: "data" },

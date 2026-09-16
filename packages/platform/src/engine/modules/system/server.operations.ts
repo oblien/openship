@@ -27,6 +27,9 @@ import { serverCheckResources, testConnection } from "./server-check.operations"
 import { serverInstallationDependencies } from "./server-install.operations";
 import { serverGitHubResources } from "../github/server-github.operations";
 import { serverTunnelResources } from "./tunnels.operations";
+import { serverClusterCollection, serverClusterResources } from "./server-cluster.operations";
+import { withServerInventoryLock } from "../../lib/server-inventory-lock";
+import { authorization } from "../../lib/authorization";
 
 /** Public shape - what the controller returns to clients (no SSH secrets). */
 function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
@@ -443,6 +446,13 @@ async function serverDeletionPreview(ctx: ExecutionContext, id: string) {
  */
 async function deleteServer(ctx: ExecutionContext, id: string, input: Parameters<ServerOperations["remove"]>[1] = {}) {
   assertSelfHosted();
+  return withServerInventoryLock(ctx.organizationId, () => deleteServerUnderLock(ctx, id, input));
+}
+
+async function deleteServerUnderLock(ctx: ExecutionContext, id: string, input: NonNullable<Parameters<ServerOperations["remove"]>[1]>) {
+  // A queued operation must recheck access after acquiring the shared lock.
+  assertSelfHosted();
+  await authorization.authorize(ctx, { resourceType: "server", resourceId: id, action: "admin" });
 
   // Primary gate: deleting a server is admin-tier (destructive).
   // Org-scoped: refuse to delete a server outside the caller's org.
@@ -456,6 +466,10 @@ async function deleteServer(ctx: ExecutionContext, id: string, input: Parameters
   }
 
   const destroyOnSource = input.destroyOnSource === true;
+
+  if (await repos.serverCluster.membership(id)) {
+    return failServer({ error: "Remove this server from its cluster before deleting it.", code: "SERVER_IN_CLUSTER" }, 409);
+  }
 
   // Same coalesce the fleet chip and the preview use, so the set torn down here is
   // exactly the set the operator was shown.
@@ -671,7 +685,7 @@ function failServer(details: Record<string, unknown>, status: number): never {
 }
 
 export const serverDependencies: ServerDependencies = {
-  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection },
+  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection, ...serverClusterCollection },
   resources: {
     get: getServer, reachability: probeReachability, update: updateServer,
     deletionPreview: serverDeletionPreview, remove: deleteServer, exec: execOnServer,
@@ -679,6 +693,7 @@ export const serverDependencies: ServerDependencies = {
     ...serverCheckResources,
     ...serverContainerResources,
     ...serverTunnelResources,
+    ...serverClusterResources,
     ...serverGitHubResources,
   },
   installations: serverInstallationDependencies,

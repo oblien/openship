@@ -11,8 +11,23 @@ import * as serverContainers from "./server-containers.controller";
 import * as serverModules from "./server-modules.controller";
 import * as tunnels from "./tunnels.controller";
 import { SaveServerTunnelInputSchema } from "@repo/contracts";
+import { CreateClusterInputSchema, UpdateClusterInputSchema, ServerClusterCollectionSchemas } from "@repo/contracts";
+import * as clusters from "./server-clusters.controller";
 
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system", localOnly: true });
+
+// Organization-owned infrastructure. Shared operations enforce fleet-wide access
+// and authorize every selected server, including calls made through the native SDK.
+const clusterRead = { tag: "server:read", collection: true, authorizationHandledByOperation: true } as const;
+const clusterAdmin = { tag: "server:admin", collection: true, authorizationHandledByOperation: true, auditHandledByOperation: true } as const;
+r.get("/clusters/capabilities", clusterRead, clusters.capabilities);
+r.get("/clusters", clusterRead, clusters.list);
+r.get("/clusters/:id", clusterRead, clusters.get);
+r.post("/clusters", { ...clusterAdmin, body: CreateClusterInputSchema }, clusters.create);
+r.patch("/clusters/:id", { ...clusterAdmin, body: Type.Omit(UpdateClusterInputSchema, ["clusterId"]) }, clusters.update);
+r.post("/clusters/:id/verify", { ...clusterAdmin, body: Type.Omit(ServerClusterCollectionSchemas.verifyCluster.input, ["clusterId"]) }, clusters.verify);
+r.delete("/clusters/:id", { ...clusterAdmin, body: Type.Omit(ServerClusterCollectionSchemas.removeCluster.input, ["clusterId"]) }, clusters.remove);
+r.post("/servers/:id/network/inspect", { tag: "server:admin", readOnly: true, authorizationHandledByOperation: true }, clusters.inspect);
 
 r.get("/servers/:id/tunnels", { tag: "server:read", authorizationHandledByOperation: true }, tunnels.listTunnels);
 r.post("/servers/:id/tunnels", { tag: "server:write", body: SaveServerTunnelInputSchema, authorizationHandledByOperation: true, auditHandledByOperation: true }, tunnels.saveTunnel);

@@ -7,8 +7,8 @@ export interface ResourceOperationSchema {
   input?: TSchema;
   optionalInput?: true;
   output: TSchema;
-  /** Collection enumeration may filter individual grants inside its implementation. */
-  scope?: "list";
+  /** list permits filtered enumeration; all requires access to the whole collection. */
+  scope?: "list" | "all";
   /** A project-creating operation may accept a constrained create-only grant. */
   projectCreate?: true;
   /** Reuse domain validators for metadata with an existing authoritative schema. */

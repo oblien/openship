@@ -49,7 +49,8 @@ the provider configuration and release checks below pass.
 ## Observed account configuration, 2026-09-15
 
 Checks against the configured credentials, followed by staging default-policy
-setup after the user confirmed the account:
+setup after the user confirmed the account. Billing endpoints and the webhook
+registry were rechecked at 20:15 UTC:
 
 | Check | Result |
 | --- | --- |
@@ -57,15 +58,18 @@ setup after the user confirmed the account:
 | Automatic namespace defaults | Changed from unlimited to `quotaLimit=0`, `overdraft=0`, `suspendThreshold=0`, `autoApply=true` for staging |
 | Exhaustion action | `stop_workspaces` |
 | Subscription and top-up flags | Both disabled |
-| `.env.saas` webhook | No active account-wide webhook matched the configured callback |
+| Staging webhook registry | No webhooks registered |
 | `.env.local-saas` callback | Needs an explicit public HTTPS callback |
 | Account identity | User confirmed `.env.local-saas` is staging/test; `.env.saas` contains the same Oblien credentials |
-| New subscription API with staging key | Read, cancel, and resume returned `401 authentication_required` |
-| Portal for an unused staging namespace | Returned a Stripe customer lookup error, rather than the documented `404 no_customer` |
+| New subscription API with staging key | Read returned 200 with the correct namespace for existing and unused namespaces; cancel/resume returned the expected `404 no_subscription` for the unused namespace |
+| Portal for an unused staging namespace | Returned the documented `404 no_customer` |
 
-The same staging key returned 200 for `/namespaces` and `/billing/defaults`.
-The updated documentation/SDK is published, but the served billing API must be
-checked for a deployment or authentication mismatch. Openship rejects an
+The earlier `401 authentication_required` blocker is resolved. The same staging
+key also returned 200 for `/namespaces` and `/billing/defaults`. The read-only
+Openship readiness checker passed the SDK-backed catalog, default-policy, and
+namespace subscription checks; it still fails for the missing public HTTPS
+callback and disabled purchase flags. These probes do not yet verify management
+of a paid subscription or a complete payment/webhook cycle. Openship rejects an
 unscoped portal response; it never returns the owner's billing session.
 
 No namespace, token, checkout, workspace, or payment was created. The only
@@ -76,8 +80,8 @@ assuming the `.env.saas` filename indicates production provider credentials.
 
 ## Provider configuration
 
-1. Use the confirmed `.env.local-saas` staging key for integration tests. Resolve
-   the new endpoints' authentication/deployment mismatch first. Confirm Stripe
+1. Use the confirmed `.env.local-saas` staging key for integration tests. The new
+   endpoints now accept this key and return the documented responses. Confirm Stripe
    checkout is in test mode before completing a test payment. Confirm the
    production account's identity and `max_namespaces` capacity before launch.
 2. Configure finite **new-namespace defaults** in the production Oblien account.
@@ -160,8 +164,9 @@ in the response. Each namespace has its own Stripe customer. A legacy shared
 customer returns `409 billing_customer_conflict`; an inconsistent subscription
 identity returns `409 billing_identity_conflict`. Neither is bypassed in Openship.
 
-- Verify the new API deployment against staging. Then test two customer portals,
-  invoice/payment isolation, cancellation, resumption, and plan replacement.
+- Authentication and empty-namespace responses are verified against staging.
+  Test two customer portals, invoice/payment isolation, cancellation, resumption,
+  and plan replacement with paid test subscriptions.
   `GET /billing/subscription` exposes the provider's actual interval, period,
   and pending cancellation; this metadata is read live rather than inferred
   from the entitlement's status.

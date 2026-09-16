@@ -124,6 +124,7 @@ export {
   type NewInstanceSettings,
 } from "./instance-settings.repo";
 export { createServerRepo, type Server, type NewServer } from "./server.repo";
+export { createServerClusterRepo, type ServerClusterRecord, type ClusterVerificationRecord } from "./server-cluster.repo";
 export {
   createServerGithubAuthRepo,
   type ServerGithubAuth,
@@ -296,6 +297,7 @@ import { createServiceDeploymentRepo } from "./service-deployment.repo";
 import { createSettingsRepo } from "./settings.repo";
 import { createInstanceSettingsRepo } from "./instance-settings.repo";
 import { createServerRepo } from "./server.repo";
+import { createServerClusterRepo } from "./server-cluster.repo";
 import { createServerGithubAuthRepo } from "./server-github-auth.repo";
 import { createGithubDeployKeyRepo } from "./github-deploy-key.repo";
 import { createServerTunnelRepo } from "./server-tunnel.repo";
@@ -375,6 +377,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   settings: createSettingsRepo(db),
   instanceSettings: createInstanceSettingsRepo(db),
   server: createServerRepo(db),
+  serverCluster: createServerClusterRepo(db),
   serverGithubAuth: createServerGithubAuthRepo(db),
   githubDeployKey: createGithubDeployKeyRepo(db),
   serverTunnel: createServerTunnelRepo(db),

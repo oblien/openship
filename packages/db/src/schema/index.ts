@@ -36,6 +36,7 @@ export { service, serviceDeployment } from "./service";
 export { deploymentCheckRun } from "./deployment-check-run";
 export { userSettings, instanceSettings } from "./settings";
 export { servers } from "./servers";
+export { serverCluster, clusterNetwork, clusterMember, serverNetworkAttachment, clusterVerification } from "./server-cluster";
 export { serverGithubAuth, githubDeployKey } from "./server-github";
 export { serverTunnels } from "./server-tunnel";
 export { mailServers, mailInboundRule } from "./mail";

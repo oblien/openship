@@ -303,6 +303,10 @@ const TABLES: ReadonlyArray<TableSpec> = [
   },
 
   // Infra — instance-only.
+  { sqlName: "server_cluster", table: schema.serverCluster, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "cluster_network", table: schema.clusterNetwork, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "cluster_member", table: schema.clusterMember, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "server_network_attachment", table: schema.serverNetworkAttachment, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
   {
     sqlName: "servers",
     table: schema.servers,
@@ -760,6 +764,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   update_status: "cached upstream scan result; the next `updates:scan` refills it",
   server_container_status: "cached container drift; re-probed from the host",
   server_module_status: "cached module drift; re-probed from the host",
+  cluster_verification: "network observations and bounded probe runs; re-verify after instance restore",
 
   // History that is observability only — no config, no pending work, and prunable.
   job_run: "append-only tick log; job DEFINITIONS travel, executions do not",

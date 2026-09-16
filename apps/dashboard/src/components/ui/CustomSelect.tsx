@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Loader2, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { inputVariants } from "./input";
 
 const MENU_OFFSET = 8;
 const MENU_MAX_HEIGHT = 320;
@@ -33,11 +35,15 @@ interface DropdownPosition {
 }
 
 export interface CustomSelectProps<T extends string> {
+  id?: string;
+  "aria-label"?: string;
   value: T;
   options: Option<T>[];
   onChange: (value: T) => void;
   placeholder?: string;
   className?: string;
+  /** Input and filled use the shared Input appearance, with descriptions only in the menu. */
+  variant?: "default" | "input" | "filled";
   footerAction?: CustomSelectFooterAction;
   /** Fired once each time the menu opens — use to lazily load options. */
   onOpen?: () => void;
@@ -54,11 +60,14 @@ export interface CustomSelectProps<T extends string> {
 }
 
 export function CustomSelect<T extends string>({
+  id,
+  "aria-label": ariaLabel,
   value,
   options,
   onChange,
   placeholder = "Select",
   className = "",
+  variant = "default",
   footerAction,
   onOpen,
   disabled = false,
@@ -233,9 +242,7 @@ export function CustomSelect<T extends string>({
     if (filteredOptions.length === 0) return;
     const next = Math.min(Math.max(highlight + delta, 0), filteredOptions.length - 1);
     setHighlightedValue(filteredOptions[next].value);
-    listRef.current
-      ?.querySelector(`[data-index="${next}"]`)
-      ?.scrollIntoView({ block: "nearest" });
+    listRef.current?.querySelector(`[data-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
   };
 
   const handleMenuKeyDown = (event: React.KeyboardEvent) => {
@@ -308,6 +315,7 @@ export function CustomSelect<T extends string>({
               ref={listRef}
               id={listId}
               role="listbox"
+              aria-label={ariaLabel ?? placeholder}
               tabIndex={-1}
               onScroll={handleListScroll}
               className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5 touch-pan-y"
@@ -404,6 +412,7 @@ export function CustomSelect<T extends string>({
       {/* Select Button */}
       <button
         ref={triggerRef}
+        id={id}
         onClick={() => {
           if (disabled) return;
           if (!isOpen) onOpen?.();
@@ -412,7 +421,13 @@ export function CustomSelect<T extends string>({
         disabled={disabled}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        className={`
+        aria-label={ariaLabel}
+        aria-controls={isOpen ? listId : undefined}
+        aria-describedby={ariaLabel && selectedOption ? `${listId}-value` : undefined}
+        className={cn(
+          variant !== "default"
+            ? inputVariants({ variant: variant === "filled" ? "filled" : "default" })
+            : `
           w-full px-4 py-3 rounded-2xl text-sm font-medium
           transition-all duration-200 flex items-center justify-between gap-2
           border border-border/50
@@ -423,15 +438,24 @@ export function CustomSelect<T extends string>({
                 ? "bg-muted/80 border-border"
                 : "bg-muted/40 hover:bg-muted/60 hover:border-border"
           }
-        `}
+        `,
+          "items-center justify-between gap-2",
+        )}
         type="button"
       >
-        <span className="flex min-w-0 items-center gap-2 text-foreground/70">
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-2",
+            variant !== "default" ? "text-foreground" : "text-foreground/70",
+          )}
+        >
           {selectedOption?.icon}
           {selectedOption ? (
             <span className="flex min-w-0 flex-col text-start">
-              <span className="truncate">{selectedOption.label}</span>
-              {selectedOption.description && (
+              <span id={`${listId}-value`} className="truncate">
+                {selectedOption.label}
+              </span>
+              {variant === "default" && selectedOption.description && (
                 <span className="truncate text-xs font-normal text-muted-foreground/70">
                   {selectedOption.description}
                 </span>
