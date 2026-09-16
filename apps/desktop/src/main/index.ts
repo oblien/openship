@@ -721,8 +721,8 @@ app.on("before-quit", () => {
  *  work without a restart. `checkForUpdate` never throws. */
 async function ensurePendingUpdate(): Promise<void> {
   if (pendingUpdate) return;
-  const result = await checkForUpdate();
-  if (result.available) pendingUpdate = result;
+  const result = await checkForUpdate({ force: true });
+  pendingUpdate = result.available ? result : null;
 }
 
 ipcMain.handle("update:dismiss", () => {
@@ -733,9 +733,11 @@ ipcMain.handle("update:dismiss", () => {
 // Re-check GitHub on demand and stage the result — drives the dashboard's
 // "Check now" so a check happens without a restart. Returns the check result so
 // the renderer can reflect it.
-ipcMain.handle("update:check", async () => {
-  const result = await checkForUpdate();
-  if (result.available) pendingUpdate = result;
+ipcMain.handle("update:check", async (_event, force?: boolean) => {
+  const result = await checkForUpdate({ force: force === true });
+  // A successful check can invalidate an old offer. A failed network read
+  // says nothing about the installer we already staged.
+  if (result.latest) pendingUpdate = result.available ? result : null;
   return result;
 });
 

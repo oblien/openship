@@ -320,11 +320,15 @@ function useEndpoint<T>(
 
     promise
       .then((data) => {
-        cache.set(id, { kind: "ready", data });
+        // A retry/invalidation may already own this key with another promise.
+        const current = cache.get(id);
+        if (current?.kind === "loading" && current.promise === promise) {
+          cache.set(id, { kind: "ready", data });
+        }
         // Guard: don't write A's result into B's state if id has
         // changed since the effect started. Both flags together cover
         // synchronous (cancelled) and racy (idRef mismatch) cases.
-        if (cancelled || idRef.current !== id) return;
+        if (cancelled || idRef.current !== id || (revKey && getRevision(revKey) !== revision)) return;
         loadedIdRef.current = id;
         setState({ data, isLoading: false, error: null });
       })
@@ -332,8 +336,9 @@ function useEndpoint<T>(
         // Errors are NOT cached — drop the entry so a future mount /
         // refresh re-fires the request. Otherwise a transient 5xx
         // permanently bricks the page until full reload.
-        cache.delete(id);
-        if (cancelled || idRef.current !== id) return;
+        const current = cache.get(id);
+        if (current?.kind === "loading" && current.promise === promise) cache.delete(id);
+        if (cancelled || idRef.current !== id || (revKey && getRevision(revKey) !== revision)) return;
         const message = err instanceof Error ? err.message : "Request failed";
         // The data goes with the error, so the next revision must report loading again rather
         // than revalidating something that is no longer on screen.
@@ -356,10 +361,14 @@ function useEndpoint<T>(
     if (!id || !pollMs || pollMs <= 0) return;
     let cancelled = false;
     const handle = setInterval(() => {
+      const previous = cache.get(id);
+      if (previous?.kind === "loading") return;
+      const startedRevision = revKey ? getRevision(revKey) : 0;
       fetcher(id)
         .then((data) => {
+          if (cancelled || idRef.current !== id || cache.get(id) !== previous ||
+            (revKey && getRevision(revKey) !== startedRevision)) return;
           cache.set(id, { kind: "ready", data });
-          if (cancelled || idRef.current !== id) return;
           loadedIdRef.current = id;
           setState({ data, isLoading: false, error: null });
         })
@@ -369,7 +378,7 @@ function useEndpoint<T>(
       cancelled = true;
       clearInterval(handle);
     };
-  }, [id, cache, fetcher, pollMs]);
+  }, [id, cache, fetcher, pollMs, revKey]);
 
   return state;
 }
@@ -400,6 +409,9 @@ async function fetchProjectInfo(id: string): Promise<ProjectInfoData> {
 // first domain's cached numbers; `fetchOverview` splits it back apart.
 const OVERVIEW_KEY_SEP = "::";
 
+/** Analytics overview aggregates traffic server-side; high-traffic projects can exceed the 15s default. */
+const ANALYTICS_OVERVIEW_TIMEOUT_MS = 60_000;
+
 function overviewCacheKey(id: string, domain?: string | null): string {
   return domain ? `${id}${OVERVIEW_KEY_SEP}${domain}` : id;
 }
@@ -408,10 +420,14 @@ async function fetchOverview(key: string): Promise<AnalyticsOverviewResponse> {
   const sepIndex = key.indexOf(OVERVIEW_KEY_SEP);
   const projectId = sepIndex === -1 ? key : key.slice(0, sepIndex);
   const domain = sepIndex === -1 ? undefined : key.slice(sepIndex + OVERVIEW_KEY_SEP.length);
-  const response = await api.get<{ data: AnalyticsOverviewResponse; success?: boolean; error?: string }>(
-    endpoints.analytics.overview,
-    { params: { projectId, ...(domain ? { domain } : {}) } },
-  );
+  const response = await api.get<{
+    data: AnalyticsOverviewResponse;
+    success?: boolean;
+    error?: string;
+  }>(endpoints.analytics.overview, {
+    params: { projectId, ...(domain ? { domain } : {}) },
+    timeout: ANALYTICS_OVERVIEW_TIMEOUT_MS,
+  });
   if (response.success === false || !response.data) {
     throw new Error(response.error || "Failed to load analytics");
   }

@@ -401,6 +401,9 @@ export class SshConnectionManager {
   private servers = new Map<string, ServerConnection>();
   private connecting = new Map<string, Promise<CommandExecutor>>();
   private retainCounts = new Map<string, number>();
+  private activeCalls = new Map<CommandExecutor, number>();
+  private retired = new Map<CommandExecutor, string>();
+  private refreshing = new WeakMap<CommandExecutor, Promise<CommandExecutor>>();
   /**
    * Server-row ids we've classified as THIS host (they borrow the one host
    * channel under {@link HOST_CHANNEL_KEY}). Lets the sync lifecycle paths
@@ -704,7 +707,7 @@ export class SshConnectionManager {
   async withHostExecutor<T>(fn: (executor: CommandExecutor) => Promise<T>): Promise<T> {
     const exec = await this.acquireHostChannel();
     try {
-      const result = await fn(exec);
+      const result = await this.useExecutor(exec, fn);
       this.noteHostChannel(true);
       return result;
     } catch (err) {
@@ -727,7 +730,7 @@ export class SshConnectionManager {
     const startedAt = Date.now();
     const executor = await this.acquire(serverId);
     try {
-      const result = await fn(executor);
+      const result = await this.useExecutor(executor, fn);
       this.recordSuccess(serverId);
       debugSsh(`withExecutor:done server=${serverId} (${formatDuration(startedAt)})`);
       return result;
@@ -738,7 +741,7 @@ export class SshConnectionManager {
         this.dropServer(serverId);
         try {
           const freshExecutor = await this.acquire(serverId);
-          const result = await fn(freshExecutor);
+          const result = await this.useExecutor(freshExecutor, fn);
           this.recordSuccess(serverId);
           debugSsh(`withExecutor:retry-done server=${serverId} (${formatDuration(startedAt)})`);
           return result;
@@ -758,6 +761,77 @@ export class SshConnectionManager {
       if (isTransportFailure(err)) this.recordFailure(serverId);
       debugSsh(`withExecutor:failed server=${serverId} (${formatDuration(startedAt)}) ${msg}`);
       throw err;
+    }
+  }
+
+  /**
+   * Renew authentication after a login account's groups change. Future callers
+   * use the new connection; active commands and retained terminals keep theirs.
+   * Comparing the observed executor also coalesces simultaneous stale checks.
+   */
+  async refreshAuthentication(
+    serverId: string,
+    observed: CommandExecutor,
+  ): Promise<CommandExecutor> {
+    const current = await this.acquire(serverId);
+    if (this.destroyed) throw new Error("SshManager has been destroyed");
+    if (current !== observed) return current;
+    const pending = this.refreshing.get(observed);
+    if (pending) return pending;
+    const key = this.localHostRows.has(serverId) ? HOST_CHANNEL_KEY : serverId;
+    const connection = this.servers.get(key);
+    if (connection?.executor !== observed) return this.acquire(serverId);
+    const refresh = (async () => {
+      const fresh = key === HOST_CHANNEL_KEY ? createHostExecutor() : await this.connect(serverId);
+      // A bare local executor is a stateless singleton, not an SSH login. Its
+      // child processes inherit the control plane's groups until it restarts.
+      if (fresh === observed) return observed;
+      if (this.destroyed || this.servers.get(key) !== connection) {
+        await this.disposeBounded(fresh, 5_000);
+        return this.acquire(serverId);
+      }
+      if (connection.idleTimer) clearTimeout(connection.idleTimer);
+      try { connection.unsubDisconnect?.(); } catch { /* best-effort */ }
+      this.retired.set(observed, key);
+      this.cacheConnection(key, fresh);
+      if (key === HOST_CHANNEL_KEY) {
+        for (const id of this.localHostRows) this.cacheSharedMarker(id, fresh);
+      }
+      this.disposeRetired();
+      return fresh;
+    })();
+    this.refreshing.set(observed, refresh);
+    try {
+      return await refresh;
+    } finally {
+      this.refreshing.delete(observed);
+    }
+  }
+
+  private async useExecutor<T>(
+    executor: CommandExecutor,
+    fn: (executor: CommandExecutor) => Promise<T>,
+  ): Promise<T> {
+    this.activeCalls.set(executor, (this.activeCalls.get(executor) ?? 0) + 1);
+    try {
+      return await fn(executor);
+    } finally {
+      const remaining = (this.activeCalls.get(executor) ?? 1) - 1;
+      if (remaining) this.activeCalls.set(executor, remaining);
+      else this.activeCalls.delete(executor);
+      this.disposeRetired();
+    }
+  }
+
+  private disposeRetired(force?: string | true): void {
+    for (const [executor, key] of this.retired) {
+      if (force !== true && force !== key) {
+        if ((this.activeCalls.get(executor) ?? 0) > 0) continue;
+        if ((this.retainCounts.get(key) ?? 0) > 0) continue;
+        if (key === HOST_CHANNEL_KEY && this.anyLocalRowRetained()) continue;
+      }
+      this.retired.delete(executor);
+      void this.disposeBounded(executor, 5_000);
     }
   }
 
@@ -953,6 +1027,7 @@ export class SshConnectionManager {
       this.health.delete(serverId);
       this.lastHostHealth = null;
       this.hostChannelSuspect = false;
+      this.disposeRetired(serverId);
     } else {
       debugSsh("invalidate:all");
       for (const id of [...this.servers.keys()]) {
@@ -962,6 +1037,7 @@ export class SshConnectionManager {
       this.health.clear();
       this.lastHostHealth = null;
       this.hostChannelSuspect = false;
+      this.disposeRetired(true);
     }
   }
 
@@ -1022,6 +1098,7 @@ export class SshConnectionManager {
       this.retainCounts.set(serverId, count);
     }
     debugSsh(`release server=${serverId} count=${count}`);
+    this.disposeRetired();
   }
 
   /**
@@ -1043,19 +1120,20 @@ export class SshConnectionManager {
 
     // Snapshot executors, then clear bookkeeping synchronously so nothing
     // re-touches a half-torn-down connection while disposes are in flight.
-    const executors: CommandExecutor[] = [];
+    const executors = new Set<CommandExecutor>(this.retired.keys());
     for (const conn of this.servers.values()) {
       if (conn.idleTimer) clearTimeout(conn.idleTimer);
       if (conn.unsubDisconnect) {
         try { conn.unsubDisconnect(); } catch { /* best-effort */ }
       }
-      executors.push(conn.executor);
+      executors.add(conn.executor);
     }
     this.servers.clear();
     this.retainCounts.clear();
+    this.retired.clear();
 
     await Promise.allSettled(
-      executors.map((exec) => this.disposeBounded(exec, disposeTimeoutMs)),
+      [...executors].map((exec) => this.disposeBounded(exec, disposeTimeoutMs)),
     );
   }
 

@@ -69,6 +69,8 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isConnectedRef = useRef(false);
+  const onDisconnectRef = useRef(onDisconnect);
+  onDisconnectRef.current = onDisconnect;
   /** Buffer for incomplete SSE frames across chunks */
   const sseBufferRef = useRef('');
 
@@ -213,6 +215,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
       headers?: Record<string, string>;
       body?: any;
       idleTimeoutMs?: number;
+      connectTimeoutMs?: number;
     } = {}
   ) => {
     // Disconnect existing connection
@@ -226,6 +229,18 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
     // Create new abort controller
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const isCurrent = () => abortControllerRef.current === controller;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let connectTimedOut = false;
+    const connectTimer = options.connectTimeoutMs
+      ? setTimeout(() => {
+          connectTimedOut = true;
+          controller.abort();
+        }, options.connectTimeoutMs)
+      : null;
+    const clearConnectTimer = () => {
+      if (connectTimer) clearTimeout(connectTimer);
+    };
 
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
     const clearIdleTimer = () => {
@@ -258,6 +273,11 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal: controller.signal,
       });
+      clearConnectTimer();
+      if (!isCurrent()) {
+        await response.body?.cancel().catch(() => {});
+        return;
+      }
 
       if (!response.ok) {
         let message = response.statusText;
@@ -268,7 +288,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
         throw new Error(`SSE connection failed: ${message}`);
       }
 
-      const reader = response.body?.getReader();
+      reader = response.body?.getReader();
       if (!reader) {
         throw new Error('No reader available');
       }
@@ -282,6 +302,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
       // Read stream
       while (true) {
         const { value, done } = await reader.read();
+        if (!isCurrent()) return;
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
@@ -290,13 +311,18 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
       }
 
       clearIdleTimer();
-      releaseController();
       isConnectedRef.current = false;
+      releaseController();
       onDisconnect?.();
     } catch (err: any) {
-      clearIdleTimer();
+      // A replacement owns the status and parser now. Late aborts, failures and
+      // EOF from its predecessor must not disconnect it or mix their frames.
+      if (!isCurrent()) return;
       releaseController();
-      if (err.name === 'AbortError') {
+      if (connectTimedOut) {
+        isConnectedRef.current = false;
+        onError?.(new Error('Connecting to the log stream timed out. Try again.'));
+      } else if (err.name === 'AbortError') {
         // Connection was intentionally aborted
         isConnectedRef.current = false;
         onDisconnect?.();
@@ -305,6 +331,12 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
         isConnectedRef.current = false;
         onError?.(err);
       }
+    } finally {
+      clearConnectTimer();
+      clearIdleTimer();
+      releaseController();
+      await reader?.cancel().catch(() => {});
+      reader?.releaseLock();
     }
   }, [processSSEChunk, onConnect, onDisconnect, onError]);
 
@@ -312,12 +344,14 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
    * Disconnect from SSE
    */
   const disconnect = useCallback(() => {
+    const hadConnection = abortControllerRef.current !== null;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
     isConnectedRef.current = false;
     sseBufferRef.current = '';
+    if (hadConnection) onDisconnectRef.current?.();
   }, []);
 
   /**

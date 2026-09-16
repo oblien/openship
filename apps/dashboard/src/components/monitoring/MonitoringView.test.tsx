@@ -993,3 +993,21 @@ describe("the recent-hit list is opt-in", () => {
     expect(src).toContain("useState<boolean>(initialFeed)");
   });
 });
+
+
+describe("analytics failure isolation (#396)", () => {
+  it("shows the request failure while retaining independent resources and geography", () => {
+    const html = render({ analytics: null, analyticsError: "Request timed out", onRetryAnalytics: () => {} });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Request timed out");
+    expect(html).toContain("Retry");
+    expect(html).toContain("Resource usage");
+    expect(html).toContain("United States");
+    expect(html).not.toContain("Traffic overview");
+  });
+
+  it("preserves Monitoring's intentional All domains option", () => {
+    const html = render({ domains: ["a.example.com", "b.example.com"], domainScope: null, onDomainScopeChange: () => {} });
+    expect(html).toContain("All domains");
+  });
+});

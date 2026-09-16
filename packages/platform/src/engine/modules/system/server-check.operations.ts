@@ -4,7 +4,7 @@ import type { ExecutionContext } from "../../../context";
 import type { ServerDependencies } from "../../../servers";
 import { env } from "../../config";
 import {
-  checkComponents, type CommandExecutor, COMPONENT_INSTALLERS, COMPONENT_UNINSTALLERS,
+  checkComponents, needsDockerGroupRefresh, type CommandExecutor, COMPONENT_INSTALLERS, COMPONENT_UNINSTALLERS,
   getRemovalSupport, invalidateHostChannelAuth, isHostChannelUnavailableError, isSshAuthError,
   scanPorts, type SystemLog, SYSTEM_COMPONENTS, REMOTE_SERVER_REQUIRED_COMPONENTS, resolveSystemComponentInstallPlan,
 } from "@repo/adapters";
@@ -64,6 +64,25 @@ function resolveInfraComponents(): string[] {
   return SYSTEM_COMPONENTS
     .filter((c) => c.category === "infrastructure")
     .map((c) => c.name);
+}
+
+async function checkServerComponents(serverId: string, names: string[]) {
+  return sshManager.withExecutor(serverId, async (executor) => {
+    const components = await checkComponents(executor, names);
+    if (await needsDockerGroupRefresh(executor, components)) {
+      const fresh = await sshManager.refreshAuthentication(serverId, executor);
+      if (fresh !== executor) {
+        // Recheck once through the updated pool so health and subsequent server
+        // operations use the same authenticated session and group membership.
+        return sshManager.withExecutor(serverId, async (next) =>
+          withCapabilities(next, await checkComponents(next, names)),
+        );
+      }
+      const docker = components.find((component) => component.name === "docker")!;
+      docker.message += " Restart Openship to apply the updated user group membership.";
+    }
+    return withCapabilities(executor, components);
+  });
 }
 
 
@@ -235,9 +254,7 @@ export async function checkServer(ctx: ExecutionContext, serverId: string, body:
 
     let components;
     if (valid) {
-      components = await sshManager.withExecutor(serverId, async (executor) =>
-        withCapabilities(executor, await checkComponents(executor, valid)),
-      );
+      components = await checkServerComponents(serverId, valid);
     } else {
       // Check core required + all infrastructure components
       // Remote requirements come from the shared system policy. DEPLOY_MODE is
@@ -247,9 +264,7 @@ export async function checkServer(ctx: ExecutionContext, serverId: string, body:
       const requiredSet = new Set<string>(required);
       const allToCheck = [...required, ...infra.filter((n) => !requiredSet.has(n))];
 
-      const allResults = await sshManager.withExecutor(serverId, async (executor) =>
-        withCapabilities(executor, await checkComponents(executor, allToCheck)),
-      );
+      const allResults = await checkServerComponents(serverId, allToCheck);
 
       // Required components always shown; infra only shown when installed
       components = allResults

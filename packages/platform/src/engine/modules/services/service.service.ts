@@ -6,6 +6,7 @@ import {
   normalizeRoutingFields,
   repos,
   composeSpecDiff,
+  toComposeSpec,
   type Project,
   type Service,
   type ServicePublicEndpoint,
@@ -253,11 +254,15 @@ function withDrift(svc: Service) {
   // environment masker (and now may contain raw Compose expressions with
   // literal defaults); clients consume the already-masked `drift.changes` only.
   const { importedSpec: _importedSpec, driftSpec: _driftSpec, ...publicService } = svc;
+  let changes = svc.driftSpec ? composeSpecDiff(svc.importedSpec ?? {}, svc.driftSpec) : [];
+  // #893: a previous reconcile may already have advanced the baseline while
+  // leaving cached values in the live row. That still needs a visible decision.
+  if (svc.driftSpec && changes.length === 0) {
+    changes = composeSpecDiff(toComposeSpec(svc), svc.driftSpec);
+  }
   return {
     ...maskServiceEnv(publicService)!,
-    drift: svc.driftSpec
-      ? { changes: maskDriftChanges(composeSpecDiff(svc.importedSpec ?? {}, svc.driftSpec)) }
-      : null,
+    drift: svc.driftSpec ? { changes: maskDriftChanges(changes) } : null,
   };
 }
 
@@ -337,7 +342,32 @@ export async function acceptServiceDrift(
 export async function keepServiceDrift(ctx: RequestContext, projectId: string, serviceId: string) {
   const { svc } = await assertServiceAccess(ctx, projectId, serviceId);
   if (!svc.driftSpec) return withDrift(svc);
-  await repos.service.update(serviceId, { importedSpec: svc.driftSpec, driftSpec: null });
+  const advanced = svc.advanced as ComposeAdvanced | null;
+  const keptOverrideKeys = new Set(advanced?.environmentOverrideKeys ?? []);
+  const templateKeys = new Set(advanced?.environmentTemplateKeys ?? []);
+  const sourceKeys = svc.driftSpec.advanced?.environmentTemplateKeys ?? [];
+  for (const key of new Set([...templateKeys, ...sourceKeys])) {
+    if (keptOverrideKeys.has(key)) continue;
+    if (sourceKeys.includes(key) && svc.environment?.[key] === svc.driftSpec.environment?.[key]) {
+      templateKeys.add(key);
+    } else {
+      keptOverrideKeys.add(key);
+      // A known older expression remains dynamic when the user keeps it. A
+      // cached literal with a stale marker becomes an explicit literal instead.
+      const knownExpression = svc.importedSpec?.advanced?.environmentTemplateKeys?.includes(key) &&
+        svc.environment?.[key] === svc.importedSpec.environment?.[key];
+      if (!knownExpression) templateKeys.delete(key);
+    }
+  }
+  await repos.service.update(serviceId, {
+    importedSpec: svc.driftSpec, driftSpec: null,
+    ...(keptOverrideKeys.size || sourceKeys.length ? {
+      advanced: mergeAdvanced(advanced, {
+        environmentOverrideKeys: [...keptOverrideKeys],
+        environmentTemplateKeys: [...templateKeys],
+      }),
+    } : {}),
+  });
   const updated = await repos.service.findById(serviceId);
   return withDrift(updated!);
 }
@@ -661,6 +691,11 @@ export async function createService(
     // non-empty marker when interpolation is required.
     advanced.buildArgTemplateKeys = [];
   }
+  if (data.environment && Object.keys(data.environment).length) {
+    advanced.environmentOverrideKeys = Object.keys(data.environment);
+    advanced.environmentTemplateKeys = (advanced.environmentTemplateKeys ?? [])
+      .filter((key) => !Object.hasOwn(data.environment!, key));
+  }
   // Same alias gate as updateService — normalize + reject invalid/colliding
   // custom aliases BEFORE the insert, so a create can't persist an alias the
   // update path would refuse. No serviceId yet, so pass "" — every existing
@@ -782,6 +817,27 @@ export async function updateService(
       patch.advanced as ComposeAdvanced,
       project.internalAlias,
     );
+  }
+
+  if ("environment" in patch) {
+    // Record explicit edits separately from parser provenance. On a legacy row,
+    // editing one key cannot make every other cached key a deliberate override.
+    const advanced = ("advanced" in patch ? patch.advanced : svc.advanced) as ComposeAdvanced | null;
+    const overrideKeys = new Set(advanced?.environmentOverrideKeys ?? []);
+    const edited = data.environment === null
+      ? Object.keys(svc.environment ?? {})
+      : Object.entries(data.environment ?? {})
+          .filter(([key, value]) => !isMaskedValue(value) &&
+            (value !== svc.environment?.[key] || !advanced?.environmentTemplateKeys?.includes(key)))
+          .map(([key]) => key);
+    for (const key of edited) overrideKeys.add(key);
+    if (edited.length) {
+      patch.advanced = mergeAdvanced(advanced, {
+        environmentOverrideKeys: [...overrideKeys],
+        environmentTemplateKeys: (advanced?.environmentTemplateKeys ?? [])
+          .filter((key) => !edited.includes(key)),
+      });
+    }
   }
 
   if ("buildArgs" in patch && !Object.hasOwn(data.advanced ?? {}, "buildArgTemplateKeys")) {

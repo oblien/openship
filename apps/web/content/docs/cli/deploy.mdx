@@ -14,13 +14,25 @@ openship init --project proj_123
 openship deploy --watch
 ```
 
-Use `--project` to select a project without changing the local link. Select a branch, commit, preview
-environment, or registered server when needed:
+Use `--project` to select a project without changing the local link. Select a branch, commit,
+variable set, or registered server when needed:
 
 ```bash
 openship deploy --project proj_123 --branch main --env production --watch
 openship deploy --project proj_123 --server srv_123 --watch
 ```
+
+For a preview, first create or select a **non-production project environment** in the dashboard,
+then deploy its project ID. That row owns its own routes, runtime and active release:
+
+```bash
+openship deploy --project proj_preview --env preview --watch
+```
+
+`--env` selects stored variables within that project. It does not create a preview runtime or switch
+project IDs. Preview variables are refused on a production target before deployment starts.
+Omitting `--env` uses the project's default `production` variable set, including the values edited
+in the dashboard of a preview project.
 
 ## Deploy a folder
 

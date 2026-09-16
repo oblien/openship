@@ -263,6 +263,9 @@ export type ComposeAdvanced = {
    * Internal/compose-owned: API clients do not author this field.
    */
   environmentTemplateKeys?: string[];
+  /** Inline environment keys explicitly edited, removed, or kept during drift
+   * review. Names only; template provenance still controls interpolation. */
+  environmentOverrideKeys?: string[];
   /**
    * Build-argument keys whose stored value is the original expression from a
    * raw Compose file. Unlike `buildArgs` received from the CLI (already expanded

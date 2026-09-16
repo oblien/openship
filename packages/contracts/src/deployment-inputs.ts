@@ -120,7 +120,7 @@ export const BuildAccessBody = Type.Object({
   ),
   branch: Type.Optional(Type.String({ description: "Git branch (git-source projects)." })),
   environment: Type.Optional(
-    Type.String({ description: "production | preview (default production)." }),
+    Type.String({ description: "Variable set within the target project (default production). Non-production values require a non-production project; projectId selects the runtime." }),
   ),
   envVars: Type.Optional(
     Type.Record(Type.String(), Type.String(), { description: "Runtime env vars { KEY: value }." }),

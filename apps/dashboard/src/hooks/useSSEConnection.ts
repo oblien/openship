@@ -78,7 +78,12 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const activeTargetRef = useRef<string | null>(null);
+  const connectionGenerationRef = useRef(0);
+  // Consumers keep these controls in effect dependencies. Keep their identity
+  // stable while exposing current state, rather than getters over the first render.
+  const stateRef = useRef({ isConnected, isConnecting, error });
+  stateRef.current = { isConnected, isConnecting, error };
   const callbacksRef = useRef(callbacks);
   const onConnectRef = useRef(onConnect);
   const onDisconnectRef = useRef(onDisconnect);
@@ -138,16 +143,13 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
    * Connect to live logs stream
    */
 
-  const isConnectingRef = useRef(false);
   const connect = useCallback(async (target: string) => {
+    if (activeTargetRef.current === target) return;
+    const generation = ++connectionGenerationRef.current;
+    activeTargetRef.current = target;
     try {
-      if (isConnectingRef.current) return;
       setIsConnecting(true);
-      isConnectingRef.current = true;
       setError(null);
-
-      // Create abort controller
-      abortControllerRef.current = new AbortController();
 
       // Connect to runtime logs stream via local API
       const baseUrl = getApiBaseUrl();
@@ -159,18 +161,22 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
       
       await sseStream.connect(url, {
         method: 'GET',
+        connectTimeoutMs: 60_000,
         headers: {
           'Accept': 'text/event-stream',
         },
       });
     } catch (err: any) {
+      if (connectionGenerationRef.current !== generation) return;
       console.error('[useLogStream] Connection error:', err);
       setError(err);
       onErrorRef.current?.(err);
       throw err;
     } finally {
-      isConnectingRef.current = false;
-      setIsConnecting(false);
+      if (connectionGenerationRef.current === generation) {
+        activeTargetRef.current = null;
+        setIsConnecting(false);
+      }
     }
   }, [sseStream]);
 
@@ -178,22 +184,21 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
    * Disconnect from stream
    */
   const disconnect = useCallback(() => {
-    isConnectingRef.current = false;
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
+    connectionGenerationRef.current += 1;
+    activeTargetRef.current = null;
     sseStream.disconnect();
     setIsConnected(false);
     setIsConnecting(false);
   }, [sseStream]);
 
+  useEffect(() => () => disconnect(), [disconnect]);
+
   return useMemo(() => ({
     connect,
     disconnect,
-    get isConnected() { return isConnected; },
-    get isConnecting() { return isConnecting; },
-    get error() { return error; },
+    get isConnected() { return stateRef.current.isConnected; },
+    get isConnecting() { return stateRef.current.isConnecting; },
+    get error() { return stateRef.current.error; },
   }), [connect, disconnect]);
 };
 

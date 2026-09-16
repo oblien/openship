@@ -2,6 +2,7 @@
 
 import { posix as pathPosix } from "node:path";
 import { repos, type Project, type Deployment, type Domain } from "@repo/db";
+import { resolveDeploymentEnvironment } from "./deployment-environment";
 import {
   BUILD_ENV_VARS,
   safeErrorMessage,
@@ -224,6 +225,8 @@ export async function resolveServicePipelineMode(
  * `redeploy` we want to skip silently; for `triggerDeployment` we throw.
  */
 export async function kickoffBuild(project: Project, dep: Deployment): Promise<string | null> {
+  // Covers a legacy queued row submitted before the entry-point guard existed.
+  resolveDeploymentEnvironment(project, dep.environment);
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
   if (!buildSession) return null;
 

@@ -31,7 +31,7 @@ mlmmj   unix  -       n       n       -       -       pipe
 # to `encrypt` every inbound message defers with "TLS is required, but was not
 # offered": a complete INBOUND outage, from a setting that only looks like it
 # concerns outbound delivery. Saving an outbound relay with scope "all" sets
-# exactly that (apps/api/src/modules/mail/admin/outbound-relay.service.ts), and
+# exactly that (packages/platform/src/engine/modules/mail/admin/outbound-relay.service.ts), and
 # so does an operator hardening TLS by hand.
 #
 # TLS here would be meaningless anyway: the hop is loopback to a content filter
@@ -44,6 +44,7 @@ smtp-amavis unix -  -   n   -   PH_AMAVISD_MAX_SERVERS  smtp
     -o smtp_send_xforward_command=yes
     -o smtp_dns_support_level=disabled
     -o smtp_tls_security_level=none
+    -o smtp_tls_wrappermode=no
     -o max_use=20
 
 # smtp port used by Amavisd to re-inject scanned email back to Postfix

@@ -253,8 +253,9 @@ first reports.
 
 ## License
 
-Openship is **open-source** software, licensed under the [Apache License 2.0](LICENSE).
-
-You may use, run, modify, self-host, and distribute it — including in commercial
-and closed-source products — under the terms of the Apache 2.0 license. See
-[LICENSE](LICENSE) for the full text.
+Openship-authored code is licensed under the [Apache License 2.0](LICENSE).
+Bundled third-party components retain their own licenses. In particular,
+the [iRedMail engine](apps/email/engine/LICENSE) is GPL-licensed and is included
+in several control-plane distributions even when mail setup is not used.
+See the [component and packaging inventory](docs/licensing.md) for the recorded
+license boundaries and outstanding upstream notice review.

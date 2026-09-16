@@ -262,14 +262,15 @@ function generatePhpDockerfile(config: BuildConfig): string {
 
   if (assetBuildLine) {
     // The asset stage is a Node image running the JS build, so it needs the same
-    // PATH as a JS recipe — keyed off the command's own PM, not the project's
-    // ("composer" here). Without it a bare `vite build` override fails at 127.
+    // PATH as a JS recipe — keyed off the command's own PM, not the project's.
     const assetBinPath = nodeBinPathEnvLine(assetStagePackageManager(config), [sourceDir, "/workspace"]);
     lines.push(
       `FROM ${PHP_ASSET_BUILD_IMAGE} AS assets`,
       ...(assetBinPath ? [assetBinPath] : []),
       `WORKDIR /workspace`,
-      `COPY . /workspace`,
+      // Include Composer's installed packages and generated files. Copying the
+      // complete workspace also handles custom vendor-dir and monorepo installs.
+      `COPY --from=builder /workspace /workspace`,
       `WORKDIR ${sourceDir}`,
       assetBuildLine,
     );

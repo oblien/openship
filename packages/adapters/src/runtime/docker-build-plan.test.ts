@@ -113,6 +113,27 @@ describe("generateDockerfile — PHP with a JS asset pipeline", () => {
     expect(builderStage).not.toContain("npm run build");
   });
 
+  it("builds assets from the installed workspace, including Composer package assets", () => {
+    const assets = df.slice(df.indexOf("AS assets"), df.indexOf("AS runtime"));
+    expect(assets).toContain("COPY --from=builder /workspace /workspace");
+    expect(assets).not.toContain("COPY . /workspace");
+    expect(assets.indexOf("COPY --from=builder")).toBeLessThan(assets.indexOf("npm run build"));
+  });
+
+  it("keeps the whole workspace and builds in the selected monorepo application", () => {
+    const output = generateDockerfile(phpConfig({ rootDirectory: "apps/web", buildCommand: "npm run build" }));
+    const assets = output.slice(output.indexOf("AS assets"), output.indexOf("AS runtime"));
+    expect(assets).toContain("COPY --from=builder /workspace /workspace");
+    expect(assets).toContain("WORKDIR /workspace/apps/web");
+  });
+
+  it("does not require a vendor directory when the installation step is disabled", () => {
+    const output = generateDockerfile(phpConfig({ installCommand: "", buildCommand: "npm run build" }));
+    const assets = output.slice(output.indexOf("AS assets"), output.indexOf("AS runtime"));
+    expect(assets).not.toContain("/vendor");
+    expect(assets).toContain("npm run build");
+  });
+
   it("preludes corepack for a non-npm package manager in the asset stage", () => {
     const pnpm = generateDockerfile(phpConfig({ buildCommand: "pnpm install && pnpm build" }));
     // The project PM is `composer`, so the prelude has to come from the command.

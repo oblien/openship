@@ -539,6 +539,161 @@ describe("reapplyProjectLiveRoutes static (path-targeted) routes", () => {
   });
 });
 
+describe("container-served static project routes (#879)", () => {
+  const containerId = "798443c9428980abdd84aa886aed68885b49ab91e98f59465aa6158a8214eafe";
+  const project = {
+    id: "proj-site",
+    slug: "site",
+    port: 3001, // A stale project scalar must not override the live service.
+    activeDeploymentId: "dep-site",
+    organizationId: "org-1",
+    hasServer: false,
+    workloadType: "static" as const,
+    outputDirectory: "dist",
+  };
+  const service = { id: "svc-static", name: "nginx", enabled: true, ports: ["80"] };
+  const info = vi.fn();
+  const route = (targetPath = "/") =>
+    domainRow({
+      id: "dom-site",
+      hostname: "site.opsh.io",
+      projectId: project.id,
+      targetPort: null,
+      targetPath,
+      domainType: "free",
+    });
+
+  beforeEach(() => {
+    reconcile.mockReset().mockResolvedValue(undefined);
+    listByProject.mockReset().mockResolvedValue([route()]);
+    findDeployment.mockReset().mockResolvedValue({
+      id: "dep-site",
+      containerId,
+      imageRef: null,
+      meta: { workload: "static", runtimeMode: "docker", staticServeOutputDir: null },
+    });
+    listServicesByProject.mockResolvedValue([service]);
+    listServicesByDeployment.mockResolvedValue([
+      { serviceId: service.id, containerId, hostPorts: { "80": 20001 } },
+    ]);
+    info.mockReset().mockImplementation(async (id: string) => ({
+      containerId: id,
+      status: "running",
+      ip: "10.0.0.8",
+      hostPortByContainerPort: { 80: id === containerId ? 20001 : 20002 },
+    }));
+    resolveRuntime.mockReset().mockResolvedValue({
+      routing: { provider: "docker" },
+      runtime: {
+        name: "docker",
+        supports: (feature: string) => feature === "containerInfo" || feature === "containerIp",
+        getContainerInfo: info,
+        getContainerIp: async () => "10.0.0.8",
+      },
+      effectiveTarget: "local",
+      serverId: null,
+    });
+  });
+
+  it.each(["free", "custom"])(
+    "proxies a %s root route to the running static service",
+    async (domainType) => {
+      listByProject.mockResolvedValue([{ ...route(), domainType }]);
+      const onWarning = vi.fn();
+      await reapplyProjectLiveRoutes(project, [], { onWarning });
+      expect(reconcile.mock.calls[0][1].registers).toEqual([
+        {
+          hostname: "site.opsh.io",
+          isCustomDomain: domainType === "custom",
+          targetUrl: "http://127.0.0.1:20001",
+          observedLoopbackPublishes: [
+            { serviceId: service.id, containerPort: 80, hostPort: 20001 },
+          ],
+        },
+      ]);
+      expect(onWarning).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the primary container's service when a sibling declares the same port", async () => {
+    listServicesByProject.mockResolvedValue([
+      { id: "svc-other", name: "other", enabled: true, exposed: true, ports: ["80"] },
+      service,
+    ]);
+    listServicesByDeployment.mockResolvedValue([
+      { serviceId: "svc-other", containerId: "other-container", hostPorts: { "80": 20002 } },
+      { serviceId: service.id, containerId, hostPorts: { "80": 20001 } },
+    ]);
+    listByProject.mockResolvedValue([
+      route(),
+      domainRow({
+        id: "dom-other",
+        hostname: "other.example.com",
+        serviceId: "svc-other",
+        isPrimary: true,
+        targetPort: 80,
+      }),
+    ]);
+    await reapplyProjectLiveRoutes(project, []);
+    expect(reconcile.mock.calls[0][1].registers).toEqual([
+      expect.objectContaining({ targetUrl: "http://127.0.0.1:20001" }),
+    ]);
+    expect(info).toHaveBeenCalledWith(containerId);
+    expect(info).not.toHaveBeenCalledWith("other-container");
+  });
+
+  it("uses the selected route strategy for a static container too", async () => {
+    await reapplyProjectLiveRoutes({ ...project, routeStrategy: "container-ip" }, []);
+    expect(reconcile.mock.calls[0][1].registers).toEqual([
+      expect.objectContaining({ targetUrl: "http://10.0.0.8:80" }),
+    ]);
+  });
+
+  it.each(["stopped", "missing"])(
+    "refuses a %s container despite its cached publish",
+    async (status) => {
+      info.mockResolvedValue({ containerId, status, hostPortByContainerPort: { 80: 20001 } });
+      const onWarning = vi.fn();
+      await reapplyProjectLiveRoutes(project, [], { onWarning });
+      expect(reconcile.mock.calls[0][1].registers).toEqual([]);
+      expect(onWarning).toHaveBeenCalled();
+    },
+  );
+
+  it("retains the reserved host-port guard", async () => {
+    info.mockResolvedValue({
+      containerId,
+      status: "running",
+      hostPortByContainerPort: { 80: 3001 },
+    });
+    const onWarning = vi.fn();
+    await reapplyProjectLiveRoutes(project, [], { onWarning });
+    expect(reconcile.mock.calls[0][1].registers).toEqual([]);
+    expect(onWarning).toHaveBeenCalledWith(expect.stringContaining("refusing reserved loopback"));
+  });
+
+  it.each([
+    { ...service, ports: [] },
+    { ...service, enabled: false },
+  ])("does not invent a port for an unroutable primary service", async (unroutable) => {
+    listServicesByProject.mockResolvedValue([unroutable]);
+    await reapplyProjectLiveRoutes(project, []);
+    expect(reconcile.mock.calls[0][1].registers).toEqual([]);
+    expect(info).not.toHaveBeenCalled();
+  });
+
+  it.each(["/docs", "/../private"])(
+    "does not silently replace the filesystem subpath %s with a proxy root",
+    async (path) => {
+      listByProject.mockResolvedValue([route(path)]);
+      const onWarning = vi.fn();
+      await reapplyProjectLiveRoutes(project, [], { onWarning });
+      expect(reconcile.mock.calls[0][1].registers).toEqual([]);
+      expect(onWarning).toHaveBeenCalled();
+    },
+  );
+});
+
 /**
  * The submitted-route funnel. Project create/ensure/update and
  * POST /deployments/build/access all reach the domain rows through here, so this is

@@ -173,6 +173,11 @@ build can point at a test database while `production` points at the real one). T
 The dashboard editor manages your **production** values. To set values for `preview` or `development`, use
 the CLI (below) with the `--environment` flag.
 
+These are variable sets within a project. Runtime isolation comes from selecting a separate
+non-production project environment and deploying its project ID. Passing `--env preview` against
+a production project is rejected; it cannot promote that preview onto the production runtime.
+See [preview deployment](/docs/cli/deploy) for the complete flow.
+
 ## Apply without a full rebuild
 
 Rebuilding an app just to change a setting is slow — nothing about your _code_ changed. So when you save an

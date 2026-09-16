@@ -55,6 +55,9 @@ seed() { # <seed-subdir> <target>
 seed postfix /etc/postfix
 seed dovecot /etc/dovecot
 seed amavis-confd /etc/amavis/conf.d
+
+# An older bind-mounted master.cf hides corrected image defaults (#392).
+bash /opt/openship-mail/postfix-filter-tls.sh
 mkdir -p /var/vmail /var/spool/postfix /var/lib/dkim /var/lib/clamav
 
 # 2. Recreate the resolver view inside Postfix's persistent chroot on EVERY boot.

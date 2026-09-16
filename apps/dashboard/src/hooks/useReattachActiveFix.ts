@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * useReattachActiveFix — on mount, re-open the prepare modal for an edge/mail
+ * useReattachActiveFix — on mount, re-open the prepare view for an edge/mail
  * operation that is ALREADY running server-side, so a browser refresh (or first
  * navigation to a surface) during an install / image-swap resumes the live run
  * instead of losing it. It only ever READS the in-memory session state and
- * opens the modal in GET re-attach mode — it never POSTs, so it can never start
+ * opens the view in GET re-attach mode — it never POSTs, so it can never start
  * a run the user didn't ask for.
  *
  * Scope note: this is the container-updates + issues + mail-banner surface. The
@@ -16,7 +16,11 @@
 
 import { useEffect, useRef } from "react";
 import { systemApi } from "@/lib/api";
-import { useServerEdgeInstallModal, useContainerApplyModal } from "./useSystemPrepareModal";
+import {
+  useServerEdgeInstallModal,
+  useContainerApplyModal,
+  type SystemPreparePresenter,
+} from "./useSystemPrepareModal";
 
 interface ContainerTarget {
   serverId: string;
@@ -27,13 +31,16 @@ interface ContainerTarget {
   onDone?: () => void;
 }
 
-export function useReattachActiveFix(targets: {
-  /** Check the shared install/repair session (edge). Omit on wizard surfaces. */
-  install?: boolean;
-  containerTargets?: ContainerTarget[];
-}) {
-  const openEdgeInstall = useServerEdgeInstallModal();
-  const openContainerApply = useContainerApplyModal();
+export function useReattachActiveFix(
+  targets: {
+    /** Check the shared install/repair session (edge). Omit on wizard surfaces. */
+    install?: boolean;
+    containerTargets?: ContainerTarget[];
+  },
+  present?: SystemPreparePresenter,
+) {
+  const openEdgeInstall = useServerEdgeInstallModal(present);
+  const openContainerApply = useContainerApplyModal(present);
   // At most ONE modal, ever: once opened we never re-open (not on a dep change,
   // and not after the user closes it). StrictMode-safe alongside the `cancelled`
   // flag below — the discarded first pass can't sneak a modal open post-cleanup.
@@ -57,7 +64,14 @@ export function useReattachActiveFix(targets: {
       if (targets.install) {
         try {
           const s = await systemApi.getInstallSession();
-          if (!cancelled && !openedRef.current && s.active && s.status === "running" && s.sessionId && s.serverId) {
+          if (
+            !cancelled &&
+            !openedRef.current &&
+            s.active &&
+            s.status === "running" &&
+            s.sessionId &&
+            s.serverId
+          ) {
             openedRef.current = true;
             openEdgeInstall(s.serverId, { attachSessionId: s.sessionId });
             return;
@@ -71,7 +85,13 @@ export function useReattachActiveFix(targets: {
         if (cancelled || openedRef.current) return;
         try {
           const s = await systemApi.getContainerApplySession(target.serverId, target.component);
-          if (!cancelled && !openedRef.current && s.active && s.status === "running" && s.sessionId) {
+          if (
+            !cancelled &&
+            !openedRef.current &&
+            s.active &&
+            s.status === "running" &&
+            s.sessionId
+          ) {
             openedRef.current = true;
             openContainerApply(target.serverId, target.component, {
               label: target.label,

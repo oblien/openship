@@ -2,7 +2,7 @@
 import type { ServerDependencies } from "../../../servers";
 import { OperationError, type DeploymentEvent } from "@repo/contracts";
 import {
-  COMPONENT_INSTALLERS, checkComponents, ensureEdge, recoverInterruptedTakeover,
+  COMPONENT_INSTALLERS, checkComponents, ensureEdge, recoverInterruptedTakeover, SERVER_STATS_COMMAND,
   getSystemComponentDefinition, resolveSystemComponentInstallPlan, type PromptUserFn,
 } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
@@ -235,26 +235,6 @@ export const serverInstallationDependencies: NonNullable<ServerDependencies["ins
   },
 };
 
-const STATS_COMMAND = [
-  // CPU: sample /proc/stat twice (200ms apart) for accurate usage
-  'read cpu0_u cpu0_n cpu0_s cpu0_i cpu0_rest <<< $(head -1 /proc/stat | awk \'{print $2,$3,$4,$5}\');',
-  'sleep 0.2;',
-  'read cpu1_u cpu1_n cpu1_s cpu1_i cpu1_rest <<< $(head -1 /proc/stat | awk \'{print $2,$3,$4,$5}\');',
-  'cpu_d=$(( (cpu1_u-cpu0_u)+(cpu1_n-cpu0_n)+(cpu1_s-cpu0_s)+(cpu1_i-cpu0_i) ));',
-  'cpu_idle=$(( cpu1_i - cpu0_i ));',
-  '[ "$cpu_d" -gt 0 ] && cpu_pct=$(( 100 - (cpu_idle * 100 / cpu_d) )) || cpu_pct=0;',
-  // Memory
-  'read mem_t mem_a <<< $(awk \'/MemTotal/{t=$2} /MemAvailable/{a=$2} END{print t*1024, a*1024}\' /proc/meminfo);',
-  'mem_u=$((mem_t - mem_a));',
-  // Disk
-  'read disk_t disk_u disk_a <<< $(df -B1 / | awk \'NR==2{print $2,$3,$4}\');',
-  // Uptime + load
-  'read up_s _ <<< $(cat /proc/uptime);',
-  'read l1 l5 l15 _ _ <<< $(cat /proc/loadavg);',
-  // Output JSON
-  'printf \'{"cpu":%d,"memTotal":%s,"memUsed":%s,"memAvail":%s,"diskTotal":%s,"diskUsed":%s,"diskAvail":%s,"uptime":"%s","load1":"%s","load5":"%s","load15":"%s"}\\n\' "$cpu_pct" "$mem_t" "$mem_u" "$mem_a" "$disk_t" "$disk_u" "$disk_a" "$up_s" "$l1" "$l5" "$l15"',
-].join(" ");
-
 async function* monitorServer(serverId: string, signal?: AbortSignal): AsyncGenerator<DeploymentEvent> {
   const POLL_INTERVAL = 3_000;
   const STATS_TIMEOUT_MS = 12_000;
@@ -265,7 +245,7 @@ async function* monitorServer(serverId: string, signal?: AbortSignal): AsyncGene
       try {
         // Metrics samples keep the retained non-breaking acquire/exec path.
         const executor = await sshManager.acquire(serverId);
-        const raw = await executor.exec(STATS_COMMAND, { timeout: STATS_TIMEOUT_MS });
+        const raw = await executor.exec(SERVER_STATS_COMMAND, { timeout: STATS_TIMEOUT_MS });
         if (signal?.aborted) break;
         JSON.parse(raw);
         yield { event: "stats", data: raw };

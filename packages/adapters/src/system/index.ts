@@ -90,6 +90,7 @@ export {
   checkAll,
   checkComponents,
   checkDocker,
+  needsDockerGroupRefresh,
   checkGit,
   checkEdge,
   checkRsync,

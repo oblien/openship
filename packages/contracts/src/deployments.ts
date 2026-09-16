@@ -11,7 +11,9 @@ export const CreateDeploymentSchema = Type.Object({
   ),
   branch: Type.Optional(Type.String()),
   commitSha: Type.Optional(Type.String()),
-  environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")])),
+  environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")], {
+    description: "Variable set within the target project (default production). Preview values require a non-production project; projectId selects the runtime.",
+  })),
   forceAll: Type.Optional(Type.Boolean({ description: "Rebuild every enabled service." })),
   serviceIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
   smartRoute: Type.Optional(

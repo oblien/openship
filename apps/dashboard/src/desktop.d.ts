@@ -30,7 +30,7 @@ declare global {
       set: (key: DesktopConfigKey, value: unknown) => Promise<unknown>;
     };
     updates?: {
-      check: () => Promise<{ available: boolean; version?: string }>;
+      check: (force?: boolean) => Promise<import("@repo/core").DesktopUpdateSnapshot>;
       start: () => Promise<boolean>;
       open: () => Promise<boolean>;
       dismiss: () => Promise<boolean>;

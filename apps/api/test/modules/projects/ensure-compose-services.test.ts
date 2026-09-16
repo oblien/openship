@@ -130,6 +130,23 @@ describe("ensureProject compose services", () => {
     });
   });
 
+  it.each([false, true])("refuses preview source config before changing a production target (existing=%s, #195)", async (existing) => {
+    if (existing) projectRepo.findById.mockResolvedValue(existingProject);
+
+    await expect(ensureProject({
+      name: "my-stack",
+      ...(existing ? { projectId: existingProject.id } : {}),
+      deploymentEnvironment: "preview",
+      gitProvider: "upload",
+      services: scannedServices,
+    }, "org_1")).rejects.toMatchObject({ code: "DEPLOYMENT_ENVIRONMENT_TARGET_MISMATCH" });
+
+    expect(projectRepo.update).not.toHaveBeenCalled();
+    expect(projectRepo.create).not.toHaveBeenCalled();
+    expect(projectGroupRepo.create).not.toHaveBeenCalled();
+    expect(serviceRepo.syncFromCompose).not.toHaveBeenCalled();
+  });
+
   it("persists scanner-backed services through the create entry point used by local import", async () => {
     await createProject(
       {

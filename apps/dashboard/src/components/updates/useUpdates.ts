@@ -22,6 +22,7 @@ import {
   compareSemver,
   type AdvisoryManifest,
   type LatestRelease,
+  type ReleaseFeedSnapshot,
   type UpdateState,
 } from "@repo/core";
 import { useDeploymentInfo } from "@/hooks/useDeploymentInfo";
@@ -93,7 +94,8 @@ async function persistLastSeen(version: string): Promise<void> {
 
 // Session-scoped cache: fetch GitHub once per app session (GitHub rate-limits
 // unauthenticated calls to 60/hr/IP; navigation shouldn't re-hit it).
-let remoteCache: Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> | null = null;
+let remoteCache: Promise<ReleaseFeedSnapshot> | null = null;
+let remoteInFlight: Promise<ReleaseFeedSnapshot> | null = null;
 
 /** One uncached update read. Exported so the three-source failure isolation is testable. */
 export async function fetchRemoteUncached(
@@ -139,9 +141,18 @@ export async function fetchRemoteUncached(
   return { latest, manifest };
 }
 
-async function fetchRemote(): Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> {
-  remoteCache ??= fetchRemoteUncached();
-  return remoteCache;
+function fetchRemote(force = false): Promise<ReleaseFeedSnapshot> {
+  if (remoteInFlight) return remoteInFlight;
+  if (!force && remoteCache) return remoteCache;
+  // The native process owns desktop release I/O, including the launch check.
+  // Preserve notes and advisories even when its platform has no installer.
+  const check = isDesktop() ? window.desktop?.updates?.check : undefined;
+  const request: Promise<ReleaseFeedSnapshot> = check
+    ? check(force).catch(() => ({ latest: null, manifest: null }))
+    : fetchRemoteUncached();
+  remoteInFlight = request.finally(() => { remoteInFlight = null; });
+  remoteCache = remoteInFlight;
+  return remoteInFlight;
 }
 
 // The SaaS advisory source: operator-pushed platform notices from our own API
@@ -366,13 +377,10 @@ export function useUpdates(): UseUpdates {
       .catch(() => setUpdatePhase("idle"));
   }, []);
 
-  // Force a fresh GitHub check (the session cache is otherwise reused). Also
-  // prime the desktop main process so its pending-update state — which the
-  // native wizard + install act on — re-checks in lockstep with the renderer,
-  // instead of only being set by the boot check.
+  // Refresh the same snapshot that drives both the dashboard and native install.
+  // Concurrent consumers join the request instead of issuing duplicate checks.
   const refresh = useCallback(() => {
-    remoteCache = null;
-    void window.desktop?.updates?.check?.();
+    void fetchRemote(true);
     void load();
   }, [load]);
 

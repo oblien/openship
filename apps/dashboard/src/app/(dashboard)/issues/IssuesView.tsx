@@ -21,7 +21,11 @@ import { IssueSummary } from "@/components/issues/IssueSummary";
 import { useIssueActions } from "@/components/issues/useIssueActions";
 import { useReattachActiveFix } from "@/hooks/useReattachActiveFix";
 import { useInfraFleet } from "@/hooks/useInfraFleet";
-import { useContainerApplyModal } from "@/hooks/useSystemPrepareModal";
+import {
+  PrepareStreamContent,
+  useContainerApplyModal,
+  type SystemPrepareOptions,
+} from "@/hooks/useSystemPrepareModal";
 import { InfraFleetCard } from "@/components/infra/InfraFleetCard";
 import type { ContainerApplyActive, ContainerApplyIntent } from "@/lib/api/system";
 import { MonitoringHealth } from "@/components/issues/MonitoringHealth";
@@ -37,7 +41,7 @@ const SEVERITY_FILTERS: SeverityFilter[] = ["all", "outage", "action_required", 
  * fix each row carries. What's left here is genuinely presentational state (which
  * tab, which severity, the search box) plus dispatching a row's fix to the mechanism
  * that already performs it: an HTTP call for project/domain items, the shared
- * `useInfraFix` modal flow for managed containers.
+ * `useInfraFix` stream flow for managed containers.
  *
  * The one thing worth stating in code: this page NEVER decides that something is
  * fine. An empty list means every source reported nothing, not that a filter here
@@ -49,12 +53,30 @@ export function IssuesView() {
   const { selfHosted } = usePlatform();
   const { toast } = useToast();
   const infra = useInfraFleet(selfHosted);
-  const openContainerApply = useContainerApplyModal();
+  const [operation, setOperation] = useState<{
+    id: string;
+    opts: SystemPrepareOptions;
+  } | null>(null);
+  const operationSequence = useRef(0);
+  const presentOperation = useCallback((opts: SystemPrepareOptions) => {
+    const id = `issue-operation-${++operationSequence.current}`;
+    setOperation({
+      id,
+      opts: { ...opts, retryMode: opts.initialAttachSessionId ? "reattach" : "restart" },
+    });
+    return id;
+  }, []);
+  const presentRecoveredOperation = useCallback(
+    (opts: SystemPrepareOptions) =>
+      operationSequence.current === 0 ? presentOperation(opts) : "",
+    [presentOperation],
+  );
+  const openContainerApply = useContainerApplyModal(presentOperation);
 
   // Refresh recovery: if an edge install/repair is running (the fix a row here
-  // dispatches), re-open its live modal rather than leaving the operator on a
+  // dispatches), re-open its inline log rather than leaving the operator on a
   // static "issue" row with no sign the work is already underway.
-  useReattachActiveFix({ install: true });
+  useReattachActiveFix({ install: selfHosted }, presentRecoveredOperation);
 
   const [tab, setTab] = useState<"open" | "health" | "resolved">("open");
   const [issues, setIssues] = useState<SystemIssue[]>([]);
@@ -95,12 +117,12 @@ export function IssuesView() {
     [tab, c.loadFailed, c.toast.title, toast],
   );
 
-  const { busyId, resolve, infraFix } = useIssueActions(load);
+  const { busyId, resolve, infraFix } = useIssueActions(load, presentOperation);
 
   // Updates in the monitoring feed are fleet work, not modal work. The bulk API
   // accepts every eligible target immediately and the fleet hook follows the
-  // durable in-progress rows after navigation or refresh. A modal is opened only
-  // when the operator explicitly asks to inspect one target's replayable log.
+  // durable in-progress rows after navigation or refresh. The inline panel reads
+  // one target's replayable log without interrupting those background operations.
   const openApplyLog = useCallback(
     (target: ContainerApplyActive) => {
       if (!target.sessionId) return;
@@ -258,6 +280,20 @@ export function IssuesView() {
           </button>
         )}
       </div>
+
+      {operation && (
+        <section
+          className="mb-6 rounded-2xl border border-border/50 bg-card"
+          aria-label="Operation log"
+        >
+          <PrepareStreamContent
+            key={operation.id}
+            opts={operation.opts}
+            inline
+            onClose={() => setOperation(null)}
+          />
+        </section>
+      )}
 
       {/* Open / Resolved. Same geometry as the deployments status switch. */}
       <div className="mb-4 inline-flex items-center gap-1 rounded-xl bg-muted/35 p-1">

@@ -9,7 +9,7 @@
  *
  *   scope "all"      — a global `relayhost`. Every message leaves via the relay,
  *                      so relay-grade TLS (and implicit TLS on :465) can safely be
- *                      global too: there is no other outbound path to break.
+ *                      global too; the loopback content-filter transport is exempt.
  *
  *   scope "selected" — no global relayhost. Chosen envelope senders — whole
  *                      domains (`@example.com`) AND individual addresses
@@ -39,6 +39,7 @@
  *              smtp_sasl_security_options=noanonymous
  *              smtp_tls_security_level=encrypt|may
  *   postconf -P smtp-amavis/unix/smtp_tls_security_level=none
+ *               smtp-amavis/unix/smtp_tls_wrappermode=no
  *
  * That last line is the third way a global TLS level goes wrong, and the one
  * that bites hardest: `smtp-amavis` is an smtp CLIENT service inheriting
@@ -521,6 +522,14 @@ export async function configureOutboundRelay(
       ? `[${priorRelay.host}]:${priorRelay.port}`
       : undefined;
 
+  // The content-filter hop is loopback, even when outbound delivery uses
+  // implicit TLS on :465. Repair persisted configurations before changing any
+  // credentials or global TLS settings; an unsuccessful repair must be visible.
+  await engineExec.exec(engine(`postconf -P ${[
+    "smtp-amavis/unix/smtp_tls_security_level=none",
+    "smtp-amavis/unix/smtp_tls_wrappermode=no",
+  ].map(sq).join(" ")}`));
+
   // 1) Write the SASL map through a private 0600 sibling and atomically rename it
   //    (creds never touch a shell string). On the container flavor that's the host
   //    end of the bind mount; Postfix sees it at saslMap.engine.
@@ -548,28 +557,13 @@ export async function configureOutboundRelay(
     "smtp_sasl_security_options=noanonymous",
   ];
 
-  // 3a) Exempt the content filter from whatever global TLS level we are about to
-  //     set. `smtp-amavis` is an smtp CLIENT service, so it inherits
-  //     smtp_tls_security_level, and amavisd's :10024 offers no STARTTLS: a
-  //     global `encrypt` defers EVERY INBOUND message with "TLS is required, but
-  //     was not offered" (GH-392). New installs get this from
-  //     apps/email/engine/samples/postfix/master.cf, but a box deployed before
-  //     that fix has its own master.cf on the /etc/postfix bind mount and would
-  //     never pick it up — so repair it here, at the moment the global is
-  //     written. `postconf -P` edits the master.cf override in place and is
-  //     idempotent, so re-saving a relay is a no-op. Unconditional rather than
-  //     inside the "all" branch: "selected" leaves the global at `may` today,
-  //     but an operator may have hardened it by hand.
-  await engineExec
-    .exec(engine(`postconf -P ${sq("smtp-amavis/unix/smtp_tls_security_level=none")}`))
-    .catch(() => {});
 
   if (scope === "all") {
     // Everything leaves via the relay, so global relay-grade TLS is safe for
     // OUTBOUND. The Postfix→Amavis hop is exempted above; it is an inbound path
     // that happens to use the same smtp client.
     sasl.push("smtp_tls_security_level=encrypt");
-    if (input.port === IMPLICIT_TLS_PORT) sasl.push("smtp_tls_wrappermode=yes");
+    sasl.push(`smtp_tls_wrappermode=${input.port === IMPLICIT_TLS_PORT ? "yes" : "no"}`);
     await engineExec.exec(engine(`postconf -e ${[`relayhost=${nexthop}`, ...sasl].map(sq).join(" ")}`));
     // A per-nexthop policy would be redundant, and stale if we came from "selected".
     await dropRelayTlsPolicy(hostFiles, engineExec, engine, tlsPolicy);
@@ -586,14 +580,12 @@ export async function configureOutboundRelay(
     await engineExec.exec(engine("postconf -X relayhost") + " 2>/dev/null || true");
     // Opportunistic globally (the engine default) so non-relayed domains still
     // reach MXes without STARTTLS; `encrypt` applies to the relay hop only.
-    sasl.push("smtp_tls_security_level=may");
+    sasl.push("smtp_tls_security_level=may", "smtp_tls_wrappermode=no");
     const policyMaps = await pinRelayTlsPolicy(hostFiles, engineExec, engine, tlsPolicy, nexthop);
     await engineExec.exec(
       engine(`postconf -e ${[...sasl, `${TLS_POLICY_PARAM}=${policyMaps}`].map(sq).join(" ")}`),
     );
-    // Implicit TLS is global-only and `validate` rejects :465 here, but a box that
-    // previously relayed everything through :465 still has the flag set.
-    await engineExec.exec(engine("postconf -X smtp_tls_wrappermode") + " 2>/dev/null || true");
+
 
     // Sender rows: `@domain` for whole domains, bare address for single senders.
     // Postfix's map query is most-specific-first, so both may coexist.

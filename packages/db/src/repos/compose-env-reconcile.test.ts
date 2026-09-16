@@ -227,3 +227,104 @@ describe("Compose environment deletion safety", () => {
     expect(h.stored().driftSpec).toBeNull();
   });
 });
+
+
+describe("Compose cached environment recovery (#893)", () => {
+  const source = (value = "B") => ({
+    name: "api", image: "example/api:1",
+    environment: { MY_VAR: value },
+    environmentTemplates: { MY_VAR: "${MY_VAR}" },
+  });
+  const row = (overrides: Record<string, unknown> = {}) => existingService({
+    ports: [], volumes: [], environment: { MY_VAR: "A" }, importedSpec: null, ...overrides,
+  });
+
+  it("keeps an ambiguous cached value reviewable across repeated refreshes", async () => {
+    const h = harness(row());
+    for (const value of ["B", "C"]) {
+      const result = await h.repo.reconcileFromCompose("proj_1", [source(value)]);
+      expect(result.unresolvedEnvironment).toEqual([{ name: "api", keys: ["MY_VAR"] }]);
+      expect(result.driftedNames).toEqual(["api"]);
+      expect(h.stored().environment).toEqual({ MY_VAR: "A" });
+      expect(h.stored().importedSpec).toBeNull();
+      expect(h.stored().driftSpec).toEqual(toComposeSpec(source(value)));
+    }
+  });
+
+  it("restores an untouched old-baseline value even after the project value changes", async () => {
+    const h = harness(row({
+      importedSpec: toComposeSpec({ image: "example/api:1", environment: { MY_VAR: "A" } }),
+    }));
+    for (const value of ["B", "C"]) {
+      const result = await h.repo.reconcileFromCompose("proj_1", [source(value)]);
+      expect(result.unresolvedEnvironment).toEqual([]);
+      expect(h.stored().environment).toEqual({ MY_VAR: "${MY_VAR}" });
+      expect(h.stored().advanced?.environmentTemplateKeys).toEqual(["MY_VAR"]);
+      expect(h.stored().driftSpec).toBeNull();
+    }
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it("preserves a proven inline edit while upgrading an older baseline", async () => {
+    const h = harness(row({
+      environment: { MY_VAR: "manual" },
+      importedSpec: toComposeSpec({ image: "example/api:1", environment: { MY_VAR: "A" } }),
+    }));
+    await h.repo.reconcileFromCompose("proj_1", [source()]);
+    expect(h.stored().environment).toEqual({ MY_VAR: "manual" });
+    expect(h.stored().advanced).toMatchObject({
+      environmentTemplateKeys: [], environmentOverrideKeys: ["MY_VAR"],
+    });
+    expect((await h.repo.reconcileFromCompose("proj_1", [source("C")])).unresolvedEnvironment).toEqual([]);
+  });
+
+  it("detects an already-poisoned baseline without rewriting the same pending drift", async () => {
+    const h = harness(row({
+      advanced: { environmentTemplateKeys: ["MY_VAR"] },
+      importedSpec: toComposeSpec(source()),
+    }));
+    for (let i = 0; i < 2; i++) {
+      expect((await h.repo.reconcileFromCompose("proj_1", [source()])).unresolvedEnvironment)
+        .toEqual([{ name: "api", keys: ["MY_VAR"] }]);
+      expect(h.stored().environment).toEqual({ MY_VAR: "A" });
+    }
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it("still blocks ambiguous legacy values when the repo changes another field", async () => {
+    const h = harness(row({
+      advanced: { environmentTemplateKeys: ["MY_VAR"] },
+      importedSpec: toComposeSpec(source()),
+    }));
+    const proposed = { ...source(), image: "example/api:2" };
+    const result = await h.repo.reconcileFromCompose("proj_1", [proposed]);
+    expect(result.unresolvedEnvironment).toEqual([{ name: "api", keys: ["MY_VAR"] }]);
+    expect(h.stored().image).toBe("example/api:1");
+    expect(h.stored().driftSpec).toEqual(toComposeSpec(proposed));
+  });
+
+  it("does not let one explicit edit claim another cached value", async () => {
+    const h = harness(row({
+      environment: { MY_VAR: "A", PINNED: "manual" },
+      advanced: { environmentOverrideKeys: ["PINNED"] },
+    }));
+    const result = await h.repo.reconcileFromCompose("proj_1", [{
+      ...source(), environment: { MY_VAR: "B", PINNED: "new" },
+      environmentTemplates: { MY_VAR: "${MY_VAR}", PINNED: "${PINNED}" },
+    }]);
+    expect(result.unresolvedEnvironment).toEqual([{ name: "api", keys: ["MY_VAR"] }]);
+    expect(h.stored().environment).toEqual({ MY_VAR: "A", PINNED: "manual" });
+  });
+
+  it("retains explicit deletions and known kept templates on later refreshes", async () => {
+    for (const environment of [{}, { MY_VAR: "${OLD_VAR}" }]) {
+      const h = harness(row({
+        environment, importedSpec: toComposeSpec(source()),
+        advanced: { environmentOverrideKeys: ["MY_VAR"], environmentTemplateKeys: ["MY_VAR"] },
+      }));
+      expect((await h.repo.reconcileFromCompose("proj_1", [source()])).unresolvedEnvironment).toEqual([]);
+      expect(h.stored().environment).toEqual(environment);
+      expect(h.stored().advanced?.environmentTemplateKeys).toEqual(["MY_VAR"]);
+    }
+  });
+});

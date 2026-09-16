@@ -171,6 +171,9 @@ export {
 // ─── Infrastructure layer ────────────────────────────────────────────────────
 export type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./infra/types";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
+// For the upstream-down e2e in apps/api: it asserts on the real marker rather than a copy of
+// the string, which could drift from the page it is checking for.
+export { EDGE_UPSTREAM_DOWN_SENTINEL } from "./infra/edge-upstream-down";
 export {
   compileVercelRouting,
   sourceToLocation,
@@ -380,6 +383,7 @@ export { elevatedExecutor, elevateCommand } from "./system/elevated-executor";
 export type { Privileged, RootChecked } from "./system/privilege";
 export { privilegedExecutor, rootChecked, rootOrDegrade } from "./system/privilege";
 export { systemCatalog, MIN_DOCKER_VERSION } from "./system/catalog";
+export { SERVER_STATS_COMMAND } from "./system/server-stats";
 // Native-module versioning + migration framework (verify → reconcile).
 export {
   resolveVerifiedCatalog,
@@ -496,6 +500,7 @@ export {
   checkAll as checkAllComponents,
   checkComponents,
   checkDocker,
+  needsDockerGroupRefresh,
   checkGit,
   checkEdge,
   COMPONENT_CHECKS,

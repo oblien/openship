@@ -177,6 +177,7 @@ export function maskServiceEnv<
     advanced?: {
       imageTemplate?: unknown;
       environmentTemplateKeys?: string[];
+      environmentOverrideKeys?: string[];
       buildArgTemplateKeys?: string[];
       [key: string]: unknown;
     } | null;
@@ -193,7 +194,8 @@ export function maskServiceEnv<
     !svc.driftSpec &&
     !svc.environmentTemplates &&
     !svc.advanced?.imageTemplate &&
-    !svc.advanced?.environmentTemplateKeys
+    !svc.advanced?.environmentTemplateKeys &&
+    !svc.advanced?.environmentOverrideKeys
   ) {
     return svc;
   }
@@ -213,6 +215,7 @@ export function maskServiceEnv<
     // literal defaults embedded in `${VAR:-value}` through read APIs.
     delete advanced.imageTemplate;
     delete advanced.environmentTemplateKeys;
+    delete advanced.environmentOverrideKeys;
   }
   return {
     ...publicService,

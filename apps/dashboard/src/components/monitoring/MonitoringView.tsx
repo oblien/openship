@@ -29,6 +29,7 @@
 import React from "react";
 import { ArrowUpDown, Gauge, Server, Users } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { AnalyticsError } from "./AnalyticsError";
 import { ResourceCards } from "./ResourceCards";
 import { ResourceHistoryChart, type UsageHistoryBucket } from "./ResourceHistoryChart";
 import { VisitorMap } from "./VisitorMap";
@@ -58,6 +59,8 @@ export interface MonitoringViewProps {
   isUsageConnected: boolean;
   usageError: string | null;
   onReconnectUsage: () => void;
+  analyticsError?: string | null;
+  onRetryAnalytics?: () => void;
   /**
    * Scope for the resource views. null = All (the summed stack).
    *
@@ -136,6 +139,8 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
   isUsageConnected,
   usageError,
   onReconnectUsage,
+  analyticsError,
+  onRetryAnalytics,
   serviceKey,
   onServiceKeyChange,
   trafficChart,
@@ -149,6 +154,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
   live,
 }) => {
   const { t } = useI18n();
+  const showAnalyticsError = !!analyticsError && !isLoadingAnalytics;
   const m = t.projects.monitoring;
 
   const showResources = hasMeasurableWorkload(usage, usageError);
@@ -208,51 +214,54 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
       )}
 
       {/* ── Reference numbers, as a strip ─────────────────────────────────── */}
-      <div className="grid grid-cols-2 divide-border/50 overflow-hidden rounded-2xl bg-card sm:grid-cols-4 sm:divide-x">
-        <StatTile
-          icon={<Server className="size-4" />}
-          label={t.projects.stats.serverRequests}
-          value={hasAnalytics ? formatCount(analytics!.summary.totalRequests) : isLoadingAnalytics ? "…" : "0"}
-          hint={
-            hasAnalytics
-              ? interpolate(t.projects.stats.requestsSubtext, {
-                  total: formatCount(analytics!.summary.totalRequests),
-                  avg: String(analytics!.summary.avgRequestsPerHour ?? 0),
-                })
-              : undefined
-          }
-        />
-        <StatTile
-          icon={<Users className="size-4" />}
-          label={visitorsLabel}
-          value={visitors == null ? (isLoadingGeo ? "…" : "0") : formatCount(visitors)}
-          hint={geo?.approximate ? m.approximate : undefined}
-        />
-        <StatTile
-          icon={<Gauge className="size-4" />}
-          label={t.projects.stats.avgResponse}
-          value={
-            hasAnalytics
-              ? `${analytics!.performance.avgResponseTimeMs.toFixed(0)}ms`
-              : isLoadingAnalytics
-                ? "…"
-                : "—"
-          }
-          hint={t.projects.stats.responseTime}
-        />
-        <StatTile
-          icon={<ArrowUpDown className="size-4" />}
-          label={t.projects.stats.bandwidthOut}
-          value={hasAnalytics ? analytics!.bandwidth.totalOutFormatted : isLoadingAnalytics ? "…" : "0 B"}
-          hint={
-            hasAnalytics
-              ? interpolate(t.projects.stats.bandwidthInSubtext, {
-                  value: analytics!.bandwidth.totalInFormatted,
-                })
-              : undefined
-          }
-        />
-      </div>
+      {showAnalyticsError && <AnalyticsError error={analyticsError!} onRetry={onRetryAnalytics} />}
+      {!showAnalyticsError && (
+        <div className="grid grid-cols-2 divide-border/50 overflow-hidden rounded-2xl bg-card sm:grid-cols-4 sm:divide-x">
+          <StatTile
+            icon={<Server className="size-4" />}
+            label={t.projects.stats.serverRequests}
+            value={hasAnalytics ? formatCount(analytics!.summary.totalRequests) : isLoadingAnalytics ? "…" : "0"}
+            hint={
+              hasAnalytics
+                ? interpolate(t.projects.stats.requestsSubtext, {
+                    total: formatCount(analytics!.summary.totalRequests),
+                    avg: String(analytics!.summary.avgRequestsPerHour ?? 0),
+                  })
+                : undefined
+            }
+          />
+          <StatTile
+            icon={<Users className="size-4" />}
+            label={visitorsLabel}
+            value={visitors == null ? (isLoadingGeo ? "…" : "0") : formatCount(visitors)}
+            hint={geo?.approximate ? m.approximate : undefined}
+          />
+          <StatTile
+            icon={<Gauge className="size-4" />}
+            label={t.projects.stats.avgResponse}
+            value={
+              hasAnalytics
+                ? `${analytics!.performance.avgResponseTimeMs.toFixed(0)}ms`
+                : isLoadingAnalytics
+                  ? "…"
+                  : "—"
+            }
+            hint={t.projects.stats.responseTime}
+          />
+          <StatTile
+            icon={<ArrowUpDown className="size-4" />}
+            label={t.projects.stats.bandwidthOut}
+            value={hasAnalytics ? analytics!.bandwidth.totalOutFormatted : isLoadingAnalytics ? "…" : "0 B"}
+            hint={
+              hasAnalytics
+                ? interpolate(t.projects.stats.bandwidthInSubtext, {
+                    value: analytics!.bandwidth.totalInFormatted,
+                  })
+                : undefined
+            }
+          />
+        </div>
+      )}
 
       {/* ── Resources: now AND over time, one subject, one card ───────────── */}
       {showResources && (
@@ -292,7 +301,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
         </div>
       )}
 
-      {!isLoadingAnalytics && !hasAnalytics && (
+      {!showAnalyticsError && !isLoadingAnalytics && !hasAnalytics && (
         <div className="rounded-2xl bg-card px-5 py-4">
           <p className="text-sm font-medium text-foreground">{m.noDataTitle}</p>
           <p className="mt-1 text-sm text-muted-foreground">{m.noDataDescription}</p>
@@ -341,13 +350,15 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
           tooltip pinned to the primary domain, while this one has tooltips and follows the
           domain-scope selector above. So it folds down to one header row that still states
           the total, and the choice is remembered. */}
-      <CollapsibleCard
-        title={m.trafficTitle}
-        summary={trafficSummary}
-        storageKey="openship.monitoring.trafficOpen"
-      >
-        {trafficChart}
-      </CollapsibleCard>
+      {!showAnalyticsError && (
+        <CollapsibleCard
+          title={m.trafficTitle}
+          summary={trafficSummary}
+          storageKey="openship.monitoring.trafficOpen"
+        >
+          {trafficChart}
+        </CollapsibleCard>
+      )}
 
       {/* Two short lists, side by side rather than two more full-width screens. */}
       <div className="grid gap-5 lg:grid-cols-2">

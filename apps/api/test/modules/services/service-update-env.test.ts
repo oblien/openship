@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_MASK } from "@repo/core";
+import { toComposeSpec } from "@repo/db";
+import { mergeServiceDeployEnv } from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
 
 const projectRepo = vi.hoisted(() => ({
   findById: vi.fn(), listEnvVars: vi.fn(), bulkSetEnvVars: vi.fn(),
@@ -19,7 +21,7 @@ vi.mock("@repo/db", async (importOriginal) => {
 });
 
 import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
-import { revealServiceEnvVars, setServiceEnvVars, updateService } from "@repo/platform/engine/modules/services/service.service";
+import { acceptServiceDrift, keepServiceDrift, listServices, revealServiceEnvVars, setServiceEnvVars, updateService } from "@repo/platform/engine/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", internalAlias: null };
@@ -218,5 +220,96 @@ describe("updateService — environment partial updates merge rather than replac
     } as never);
 
     expect(written()).not.toHaveProperty("environment");
+  });
+});
+
+
+describe("inline environment ownership and Compose recovery (#893)", () => {
+  const source = toComposeSpec({
+    image: "inventar:latest", environmentTemplates: { MY_VAR: "${MY_VAR}" },
+  });
+  const stateful = (overrides: Record<string, unknown> = {}) => {
+    let stored = row({
+      environment: { MY_VAR: "cached-secret" },
+      advanced: { environmentTemplateKeys: ["MY_VAR"] },
+      importedSpec: source, driftSpec: source, ...overrides,
+    });
+    serviceRepo.findById.mockImplementation(async () => stored);
+    serviceRepo.listByProject.mockImplementation(async () => [stored]);
+    serviceRepo.update.mockImplementation(async (_id, patch) => { stored = { ...stored, ...patch }; });
+    return () => stored;
+  };
+
+  it("makes a direct inline edit literal without claiming untouched cached keys", async () => {
+    stateful({ environment: { MY_VAR: "cached-secret", OTHER: "old" } });
+    await updateService(ctx, project.id, "svc_inventar", { environment: { OTHER: "$HOME" } } as never);
+    expect(written().advanced).toMatchObject({
+      environmentOverrideKeys: ["OTHER"], environmentTemplateKeys: ["MY_VAR"],
+    });
+    expect(written().environment).toEqual({ MY_VAR: "cached-secret", OTHER: "$HOME" });
+  });
+
+  it("does not change template semantics for a masked or unchanged value", async () => {
+    stateful({ environment: { MY_VAR: "${MY_VAR}" } });
+    for (const value of [ENV_MASK, "${MY_VAR}"]) {
+      await updateService(ctx, project.id, "svc_inventar", { environment: { MY_VAR: value } } as never);
+      expect(written()).not.toHaveProperty("advanced");
+    }
+  });
+
+  it("records explicit removals without restoring the removed template later", async () => {
+    stateful();
+    await updateService(ctx, project.id, "svc_inventar", { environment: { MY_VAR: null } } as never);
+    expect(written().environment).toEqual({});
+    expect(written().advanced).toMatchObject({
+      environmentOverrideKeys: ["MY_VAR"], environmentTemplateKeys: [],
+    });
+  });
+
+  it("shows a masked live diff when a broken baseline already equals the source", async () => {
+    stateful();
+    const result = await listServices(ctx, project.id);
+    expect(result[0].drift?.changes.length).toBeGreaterThan(0);
+    expect(JSON.stringify(result)).not.toContain("cached-secret");
+    expect(result[0]).not.toHaveProperty("importedSpec");
+    expect(result[0]).not.toHaveProperty("driftSpec");
+  });
+
+  it("accepts the source once and uses every subsequent project value with existing precedence", async () => {
+    const stored = stateful();
+    await acceptServiceDrift(ctx, project.id, "svc_inventar");
+    for (const value of ["B", "C"]) {
+      const layers = {
+        project: { MY_VAR: value }, frozen: {}, service: {},
+        inline: stored().environment,
+        templateKeys: (stored() as any).advanced.environmentTemplateKeys,
+      };
+      expect(mergeServiceDeployEnv(layers, false).env.MY_VAR).toBe(value);
+      expect(mergeServiceDeployEnv({ ...layers, service: { MY_VAR: "service-override" } }, false).env.MY_VAR)
+        .toBe("service-override");
+      expect(mergeServiceDeployEnv({ ...layers, frozen: { MY_VAR: "release-value" } }, true).env.MY_VAR)
+        .toBe("release-value");
+    }
+    expect((stored() as any).driftSpec).toBeNull();
+  });
+
+  it("keeps a reviewed cached value as an explicit literal override", async () => {
+    const stored = stateful();
+    await keepServiceDrift(ctx, project.id, "svc_inventar");
+    expect(stored().environment).toEqual({ MY_VAR: "cached-secret" });
+    expect(written().advanced).toMatchObject({
+      environmentOverrideKeys: ["MY_VAR"], environmentTemplateKeys: [],
+    });
+  });
+
+  it("keeps a known older expression dynamic when declining a source edit", async () => {
+    stateful({
+      environment: { MY_VAR: "${OLD_VAR}" },
+      importedSpec: toComposeSpec({ environmentTemplates: { MY_VAR: "${OLD_VAR}" } }),
+    });
+    await keepServiceDrift(ctx, project.id, "svc_inventar");
+    expect(written().advanced).toMatchObject({
+      environmentOverrideKeys: ["MY_VAR"], environmentTemplateKeys: ["MY_VAR"],
+    });
   });
 });

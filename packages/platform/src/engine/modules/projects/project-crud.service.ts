@@ -76,6 +76,7 @@ import {
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
+import { resolveDeploymentEnvironment } from "../deployments/deployment-environment";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
 import { currentPlanTier, planProjectLimit, PlanUpgradeRequiredError } from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
@@ -1422,6 +1423,18 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (!project && desiredSlug !== nameSlug) {
     project = await findProjectByAppSlug(organizationId, desiredSlug, data.gitBranch);
   }
+  if (project && project.organizationId !== organizationId) {
+    throw new NotFoundError("Project", data.projectId ?? desiredSlug);
+  }
+  if (data.deploymentEnvironment !== undefined) {
+    // Source deployments ensure config before asking for build access. Reject a
+    // preview aimed at production here too, before overwriting services/config
+    // or leaving a newly created production project behind after the refusal.
+    resolveDeploymentEnvironment(
+      project ?? { id: desiredSlug, environmentType: "production" },
+      data.deploymentEnvironment,
+    );
+  }
   let created = false;
 
   if (!project) {
@@ -1431,13 +1444,6 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     project = await createProductionProject(data, desiredSlug, organizationId);
     created = true;
   } else {
-    // Defensive: if we matched an existing project but its org_id doesn't
-    // match the caller's active org, refuse. The auto-switch middleware
-    // should have made these match before we get here, but the bare
-    // ensure path can be called from edge code paths (CLI, deploy hooks).
-    if (project.organizationId !== organizationId) {
-      throw new NotFoundError("Project", data.projectId ?? desiredSlug);
-    }
     const update: Record<string, unknown> = {};
     if (data.framework !== undefined) update.framework = normalizeFramework(data.framework);
     if (data.packageManager !== undefined) update.packageManager = data.packageManager;

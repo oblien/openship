@@ -107,6 +107,7 @@ export {
   normalizeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
+  unresolvedComposeEnvironmentKeys,
   composeSpecDiff,
   type Service,
   type NewService,

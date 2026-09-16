@@ -100,9 +100,8 @@ contextBridge.exposeInMainWorld("desktop", {
 
   /** In-app updater (drives the update window). */
   updates: {
-    /** Re-check GitHub on demand and stage the result. Returns the check result
-     *  ({ available, version, ... } | { available: false }). */
-    check: () => ipcRenderer.invoke("update:check"),
+    /** Read the shared release snapshot, or refresh it on an explicit check. */
+    check: (force = false) => ipcRenderer.invoke("update:check", force === true),
     /** Begin download + install of the pending update (re-checks if none staged). */
     start: () => ipcRenderer.invoke("update:start"),
     /** Open the native update window (re-checks + stages if none pending). */

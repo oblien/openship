@@ -525,6 +525,10 @@ export const EnsureProjectBody = Type.Composite([
     projectId: Type.Optional(
       Type.String({ description: "Update this existing project instead of creating a new one." }),
     ),
+    deploymentEnvironment: Type.Optional({
+      ...EnvironmentEnum,
+      description: "Upcoming deployment variable set. Validates the runtime target before source configuration is changed.",
+    }),
     services: Type.Optional(
       Type.Array(ComposeServiceSchema, {
         maxItems: 100,

@@ -24,6 +24,7 @@
  */
 
 import type { Context } from "hono";
+import { randomUUID } from "node:crypto";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { trustedOrigins } from "@repo/platform/engine/config/env";
 import { upgradeWebSocket } from "../../lib/ws";
@@ -185,38 +186,43 @@ async function resolveServiceForOrg(
     };
   }
 
-  if (!runtime.supports("serviceShell") || !runtime.openServiceShell) {
-    disposeRuntime(runtime);
-    return {
-      ok: false,
-      code: "not_supported",
-      message: `Terminal not supported on ${runtime.name} runtime`,
-    };
+  let handedOff = false;
+  try {
+    if (!runtime.supports("serviceShell") || !runtime.openServiceShell) {
+      return {
+        ok: false,
+        code: "not_supported",
+        message: `Terminal not supported on ${runtime.name} runtime`,
+      };
+    }
+
+    // Resolve THIS service's own container via the shared resolver (never the
+    // compose primary — see containerIdForService), then VERIFY it against the
+    // host: a recorded id that a redeploy replaced would open a shell request on a
+    // dead container and fail with docker's "no such container".
+    const containerId = await liveContainerIdWithRuntime(runtime, {
+      service: { id: service.id, name: service.name },
+      projectId: project.id,
+      slug: project.slug,
+      tracked: await containerIdForService(dep, service),
+    });
+    if (!containerId) {
+      return {
+        ok: false,
+        code: "not_deployed",
+        message: "Service container not found — it may still be deploying.",
+      };
+    }
+
+    // On the ok path the CALLER owns `runtime`: the WS handshake hands it to the
+    // session (which disposes it when the session ends), and `issueTicket` — which
+    // only wants the validation — releases it straight away.
+    handedOff = true;
+    return { ok: true, containerId, runtime };
+  } finally {
+    if (!handedOff) disposeRuntime(runtime);
   }
 
-  // Resolve THIS service's own container via the shared resolver (never the
-  // compose primary — see containerIdForService), then VERIFY it against the
-  // host: a recorded id that a redeploy replaced would open a shell request on a
-  // dead container and fail with docker's "no such container".
-  const containerId = await liveContainerIdWithRuntime(runtime, {
-    service: { id: service.id, name: service.name },
-    projectId: project.id,
-    slug: project.slug,
-    tracked: await containerIdForService(dep, service),
-  });
-  if (!containerId) {
-    disposeRuntime(runtime);
-    return {
-      ok: false,
-      code: "not_deployed",
-      message: "Service container not found — it may still be deploying.",
-    };
-  }
-
-  // On the ok path the CALLER owns `runtime`: the WS handshake hands it to the
-  // session (which disposes it when the session ends), and `issueTicket` — which
-  // only wants the validation — releases it straight away.
-  return { ok: true, containerId, runtime };
 }
 
 // ─── Ticket endpoint ────────────────────────────────────────────────────────
@@ -329,33 +335,41 @@ export const serviceTerminalWsHandler = upgradeWebSocket(async (c) => {
     return openInitFailure(resolved.code, resolved.message, closeCode);
   }
 
-  // 4. Per-user concurrent cap (skip on resume).
-  if (!resumeToken) {
-    const inMem = countActiveServiceSessionsByUser(userId);
-    if (inMem >= maxServiceSessionsPerUser()) {
-      return openInitFailure("max_sessions", "Too many active sessions", 4429);
+  let handedOff = false;
+  try {
+    // 4. Per-user concurrent cap (skip on resume).
+    if (!resumeToken) {
+      const inMem = countActiveServiceSessionsByUser(userId);
+      if (inMem >= maxServiceSessionsPerUser()) {
+        return openInitFailure("max_sessions", "Too many active sessions", 4429);
+      }
+      const dbCount = await repos.serviceTerminalSession.countActiveByUser(userId);
+      if (dbCount >= maxServiceSessionsPerUser()) {
+        return openInitFailure("max_sessions", "Too many active sessions", 4429);
+      }
     }
-    const dbCount = await repos.serviceTerminalSession.countActiveByUser(userId);
-    if (dbCount >= maxServiceSessionsPerUser()) {
-      return openInitFailure("max_sessions", "Too many active sessions", 4429);
-    }
+
+    const clientIp = c.var.clientIp;
+    const userAgent = c.req.header("user-agent") ?? null;
+
+    const ctx: HandshakeCtx = {
+      userId,
+      serviceId: pathServiceId,
+      containerId: resolved.containerId,
+      runtime: resolved.runtime,
+      clientIp,
+      userAgent,
+      subprotocol: tokenProto,
+      resumeToken,
+    };
+
+    const handlers = buildHandlers(ctx);
+    handedOff = true;
+    return handlers;
+  } finally {
+    if (!handedOff) disposeRuntime(resolved.runtime);
   }
 
-  const clientIp = c.var.clientIp;
-  const userAgent = c.req.header("user-agent") ?? null;
-
-  const ctx: HandshakeCtx = {
-    userId,
-    serviceId: pathServiceId,
-    containerId: resolved.containerId,
-    runtime: resolved.runtime,
-    clientIp,
-    userAgent,
-    subprotocol: tokenProto,
-    resumeToken,
-  };
-
-  return buildHandlers(ctx);
 });
 
 // ─── Per-connection state ───────────────────────────────────────────────────
@@ -509,7 +523,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         console.error("[service-terminal] failed to write audit open row");
       }
 
-      const sessionId = auditId ?? `transient-${Date.now()}`;
+      const sessionId = auditId ?? `transient-${randomUUID()}`;
       const session = registerServiceSession({
         sessionId,
         userId: ctx.userId,
@@ -529,6 +543,25 @@ function buildHandlers(ctx: HandshakeCtx) {
         },
       });
       state.sessionId = sessionId;
+
+      // The WS can go away while we await the container shell and the
+      // audit-row insert — @hono/node-ws registers its 'close' listener as
+      // soon as this async onOpen suspends, so onClose runs against a state
+      // that has no sessionId yet. The client never received `ready`, so it
+      // holds no resumeToken and can never reattach: parking would strand the
+      // shell and leave the audit row open forever, permanently burning a slot
+      // in the per-user cap (which counts rows with endedAt IS NULL).
+      if (state.closed) {
+        unregisterServiceSession(sessionId);
+        await teardown(
+          state,
+          "client_close",
+          null,
+          /* alreadyUnregistered */ true,
+          /* forceClose */ true,
+        );
+        return;
+      }
 
       attachServiceWs(sessionId, dataPump);
       shell.stdout.on("data", (chunk: Buffer) =>
@@ -636,7 +669,14 @@ export async function teardown(
     state.heartbeatTimer = null;
   }
 
-  if (!forceClose && state.sessionId) {
+  // No session registered yet: onOpen is still awaiting the container shell /
+  // audit-row insert and owns the lifecycle of what it is about to create.
+  // Marking this connection `ended` here would make onOpen's abort check —
+  // and any later idle/cap timeout — a no-op, orphaning the audit row. Leave
+  // `closed` set: that is the flag onOpen reads to abort.
+  if (!state.sessionId) return;
+
+  if (!forceClose) {
     parkServiceSession(state.sessionId);
     return;
   }

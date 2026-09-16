@@ -64,6 +64,7 @@ export {
   normalizeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
+  unresolvedComposeEnvironmentKeys,
   composeSpecDiff,
   createSettingsRepo,
   createServerRepo,

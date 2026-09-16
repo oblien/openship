@@ -14,6 +14,7 @@ export async function deploySourceWorkflow(ship: { projects: ProjectOperations; 
   const hasBuild = Boolean(scan.buildCommand), hasServer = scan.workloadType !== "worker" && Boolean(scan.startCommand);
   const ensured = await ship.projects.ensure(parseInput(EnsureProjectBody, {
     name: scan.name || input.name || "app", projectId: input.projectId, serverId: input.serverId,
+    deploymentEnvironment: input.environment,
     gitProvider: "upload", uploadSessionId: session.sessionId,
     framework: scan.stack, projectType: scan.projectType, packageManager: scan.packageManager,
     installCommand: scan.installCommand, buildCommand: scan.buildCommand, startCommand: scan.startCommand || undefined,

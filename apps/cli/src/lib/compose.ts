@@ -2009,23 +2009,37 @@ const PGDATA_ROOT = "/var/lib/postgresql/data";
  *   unknown — docker/daemon unavailable — never guess
  */
 type PgProbe = "root" | "sub" | "empty" | "foreign" | "unknown";
-function probePgDataDir(volume: string): PgProbe {
+type PgDataRisk = { volume: string; reason?: "unavailable"; detail?: string };
+type PgDataResolution =
+  | { path: string; risk: null }
+  | { path: null; risk: PgDataRisk };
+
+function probePgDataDir(volume: string): { layout: PgProbe; detail?: string } {
   const r = spawnSync(
     "docker",
     [
       "run", "--rm",
       "-v", `${volume}:/from:ro`,
       "alpine:3", "sh", "-c",
-      "if [ -f /from/PG_VERSION ]; then echo root; " +
+      "entries=$(ls -A /from) || exit 1; " +
+        "if [ -f /from/PG_VERSION ]; then echo root; " +
         "elif [ -f /from/pgdata/PG_VERSION ]; then echo sub; " +
-        "elif [ -z \"$(ls -A /from 2>/dev/null | grep -v '^lost+found$')\" ]; then echo empty; " +
+        "elif [ -z \"$(printf '%s\\n' \"$entries\" | grep -v '^lost+found$')\" ]; then echo empty; " +
         "else echo foreign; fi",
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", timeout: 60_000 },
   );
-  if (r.status !== 0) return "unknown";
+  if (r.status !== 0) {
+    return {
+      layout: "unknown",
+      detail:
+        r.error?.message || r.stderr?.trim() || "The volume probe failed without an error message.",
+    };
+  }
   const out = `${r.stdout ?? ""}`.trim();
-  return out === "root" || out === "sub" || out === "empty" || out === "foreign" ? out : "unknown";
+  return out === "root" || out === "sub" || out === "empty" || out === "foreign"
+    ? { layout: out }
+    : { layout: "unknown", detail: "The volume probe returned no recognized layout." };
 }
 
 /**
@@ -2044,30 +2058,31 @@ function probePgDataDir(volume: string): PgProbe {
  * must READ the volume, not guess from its mere existence. The old heuristic
  * ("volume exists → root") wrote the root while the cluster was really in the
  * subdir, so Postgres ran initdb over a non-empty dir and the whole stack died
- * (#487). Take the root ONLY when PG_VERSION is actually there; anything else
- * resolves to the subdir (the compose default and how every install since #350
- * was created), and the `foreign` case is stopped by the gate before it matters.
+ * (#487). Unknown or unrecognized layouts have no resolved path. The preview
+ * reports that refusal, and the writer must stop before changing configuration.
  */
-function resolvePgData(prev: Record<string, string>): string {
+function resolvePgData(prev: Record<string, string>): PgDataResolution {
   const SUB = `${PGDATA_ROOT}/pgdata`;
-  if (prev.OPENSHIP_PGDATA) return prev.OPENSHIP_PGDATA; // decided already — never move it
+  if (prev.OPENSHIP_PGDATA) return { path: prev.OPENSHIP_PGDATA, risk: null };
   const volume = survivingDbVolume(prev);
-  if (!volume) return SUB; // fresh install → compose default
-  return probePgDataDir(volume) === "root" ? PGDATA_ROOT : SUB;
+  if (!volume) return { path: SUB, risk: null };
+  const probe = probePgDataDir(volume);
+  if (probe.layout === "unknown") {
+    return { path: null, risk: { volume, reason: "unavailable", detail: probe.detail } };
+  }
+  if (probe.layout === "foreign") return { path: null, risk: { volume } };
+  return { path: probe.layout === "root" ? PGDATA_ROOT : SUB, risk: null };
 }
 
 /**
  * #487: a data volume this run didn't create holds data we don't recognize — no
  * cluster at the root or the pgdata/ subdir, but not empty either. Writing a
  * guessed OPENSHIP_PGDATA here is how #487 destroyed installs, so callers stop and
- * make the operator pin the path themselves. Non-null ONLY for the `foreign` probe
- * result; `root`/`sub`/`empty`/`unknown` are all handled safely by resolvePgData.
+ * make the operator pin the path themselves. A failed probe is also unresolved;
+ * it cannot establish that either path is safe.
  */
-function pgDataDetectionRisk(prev: Record<string, string>): { volume: string } | null {
-  if (prev.OPENSHIP_PGDATA) return null; // already pinned — resolvePgData won't probe
-  const volume = survivingDbVolume(prev);
-  if (!volume) return null;
-  return probePgDataDir(volume) === "foreign" ? { volume } : null;
+function pgDataDetectionRisk(prev: Record<string, string>): PgDataRisk | null {
+  return resolvePgData(prev).risk;
 }
 
 /**
@@ -2077,7 +2092,7 @@ function pgDataDetectionRisk(prev: Record<string, string>): { volume: string } |
  * written every future run short-circuits in resolvePgData/pgDataDetectionRisk, so
  * paying for one extra `docker run` on that single run needs no memoization.
  */
-export function composePgDataRisk(_opts: ComposeUpOpts = {}): { volume: string } | null {
+export function composePgDataRisk(_opts: ComposeUpOpts = {}): PgDataRisk | null {
   // No opt waives this — unlike --reset-secrets for the rotation gate, "reset the secrets"
   // is not consent to guess where the cluster lives. The escape hatch is pinning the path.
   return pgDataDetectionRisk(readEnvFile());
@@ -2090,10 +2105,20 @@ export function composePgDataRisk(_opts: ComposeUpOpts = {}): { volume: string }
  * candidate paths, and the one-line escape hatch — pinning the key by hand.
  */
 export function renderPgDataRefusal(
-  risk: { volume: string },
+  risk: PgDataRisk,
   opts: { dryRun?: boolean } = {},
 ): string {
   const SUB = `${PGDATA_ROOT}/pgdata`;
+  if (risk.reason === "unavailable") {
+    return (
+      `\n  ${opts.dryRun ? "A real run would REFUSE here" : "Refusing to continue"}:` +
+      ` the Postgres data directory could not be inspected.\n\n` +
+      `    volume: ${risk.volume}\n` +
+      (risk.detail ? `    reason: ${risk.detail}\n` : "") +
+      `\n  No configuration has been written. Resolve the probe error above, then retry.\n` +
+      `  OPENSHIP_PGDATA must not be guessed from a failed probe.\n`
+    );
+  }
   return (
     `\n  ${opts.dryRun ? "A real run would REFUSE here" : "Refusing to continue"}:` +
     ` this install's data volume holds data, but not a Postgres cluster we recognize.\n\n` +
@@ -2893,6 +2918,7 @@ function managedEnvLines(
   host: { user: string; keyPath: string } | null,
   cfg: ReturnType<typeof resolveEnvConfig>,
   prev: Record<string, string>,
+  pgData: string,
 ): string[] {
   const lines: string[] = [
     "# Managed by `openship up`. Secrets are generated once and preserved.",
@@ -2916,8 +2942,8 @@ function managedEnvLines(
     `OPENSHIP_IMAGE_REGISTRY=${cfg.registry}`,
     `OPENSHIP_VERSION=${resolveImageVersion(opts)}`,
     `POSTGRES_PASSWORD=${keepSecret(prev, "POSTGRES_PASSWORD")}`,
-    // Pinned once (see resolvePgData): fresh install → subdir, existing volume → root.
-    `OPENSHIP_PGDATA=${resolvePgData(prev)}`,
+    // Pin the path established by resolvePgData; existing clusters may use either layout.
+    `OPENSHIP_PGDATA=${pgData}`,
     `BETTER_AUTH_SECRET=${keepSecret(prev, "BETTER_AUTH_SECRET")}`,
     `INTERNAL_TOKEN=${keepSecret(prev, "INTERNAL_TOKEN")}`,
     `API_PORT=${cfg.apiPort}`,
@@ -2976,8 +3002,9 @@ function renderEnvAndCarried(
   host: { user: string; keyPath: string } | null,
   cfg: ReturnType<typeof resolveEnvConfig>,
   prev: Record<string, string>,
+  pgData: string,
 ): { text: string; carried: string[] } {
-  const lines = managedEnvLines(opts, host, cfg, prev);
+  const lines = managedEnvLines(opts, host, cfg, prev, pgData);
   const managed = new Set(lines.map(envKeyOf).filter((k): k is string => !!k));
   const preserved = operatorEnvPassthrough(managed, prev);
   const body = preserved.length ? [...lines, "", PRESERVED_ENV_HEADER, ...preserved] : lines;
@@ -2985,14 +3012,6 @@ function renderEnvAndCarried(
     text: body.join("\n") + "\n",
     carried: preserved.map((line) => line.slice(0, line.indexOf("="))),
   };
-}
-
-function renderEnv(
-  opts: ComposeUpOpts,
-  host: { user: string; keyPath: string } | null,
-  cfg: ReturnType<typeof resolveEnvConfig>,
-): string {
-  return renderEnvAndCarried(opts, host, cfg, readEnvFile()).text;
 }
 
 /**
@@ -3039,8 +3058,14 @@ function materialize(opts: ComposeUpOpts): {
    */
   envChanged: boolean;
 } {
-  mkdirSync(COMPOSE_DIR, { recursive: true, mode: 0o700 });
   const prev = readEnvFile();
+  // Revalidate the exact input that will be written, before host provisioning or
+  // file mutation. Earlier UI/preflight checks cannot authorize a later guess.
+  const rotation = opts.resetSecrets ? null : secretRotationRisk(prev);
+  if (rotation) throw new Error(renderSecretRotationRefusal(rotation));
+  const pgData = resolvePgData(prev);
+  if (pgData.risk) throw new Error(renderPgDataRefusal(pgData.risk));
+  mkdirSync(COMPOSE_DIR, { recursive: true, mode: 0o700 });
   const cfg = resolveEnvConfig(prev, opts);
   // --no-host-control: never generate/authorize a host key in the first place, and on a
   // box that already had one, take it back rather than only stopping short of using it —
@@ -3081,7 +3106,7 @@ function materialize(opts: ComposeUpOpts): {
   } catch {
     /* first install — no previous env, so everything is "changed" */
   }
-  const { text: rendered, carried } = renderEnvAndCarried(opts, host, cfg, prev);
+  const { text: rendered, carried } = renderEnvAndCarried(opts, host, cfg, prev, pgData.path);
   writeFileSync(COMPOSE_FILE, renderComposeYaml());
   writeEnvFile(rendered, before);
   // #485: the old rewrite silently DROPPED operator-set keys. Now they survive — say so,
@@ -3129,7 +3154,7 @@ const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|HMAC_KEY)$/;
  * `materialize` WITHOUT the writes — everything a `--dry-run` needs to describe
  * the stack this run would install.
  *
- * The `.env` is rendered by `renderEnv` itself (masked), not re-listed here: a
+ * The `.env` uses the same renderer as the writer (masked), not a separate key list: a
  * hand-kept copy of the interesting keys is exactly how a preview starts lying —
  * a key added to the writer would silently go missing from the plan.
  */
@@ -3156,7 +3181,7 @@ export interface ComposePlan {
    * Set when a surviving data volume holds data we can't place (#487) — a real run
    * REFUSES rather than write a guessed OPENSHIP_PGDATA, so the preview names it too.
    */
-  pgDataRisk: { volume: string } | null;
+  pgDataRisk: PgDataRisk | null;
   /** True when a `.env` is already there — this would be a re-run, not a fresh install. */
   existing: boolean;
   /** Host directories the edge's bind mounts need (created on a real run). */
@@ -3174,7 +3199,11 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
   const hostChannel = previewHostChannel(cfg);
   const settings: Array<{ key: string; value: string }> = [];
   const newSecrets: string[] = [];
-  for (const line of renderEnv(opts, hostChannel, cfg).split("\n")) {
+  const pgData = resolvePgData(prev);
+  const rendered = renderEnvAndCarried(
+    opts, hostChannel, cfg, prev, pgData.path ?? "<unresolved>",
+  ).text;
+  for (const line of rendered.split("\n")) {
     const at = line.indexOf("=");
     if (at < 1 || line.startsWith("#")) continue;
     const key = line.slice(0, at);
@@ -3201,7 +3230,7 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
     settings,
     newSecrets,
     secretRotation: opts.resetSecrets ? null : secretRotationRisk(prev),
-    pgDataRisk: pgDataDetectionRisk(prev),
+    pgDataRisk: pgData.risk,
     existing: Object.keys(prev).length > 0,
     mountDirs: composeEdgeMounts().map((m) => m.host),
     buildDir,
@@ -3212,9 +3241,15 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
 /** Does this project's postgres data volume already exist (i.e. predate this run)? */
 function dbVolumeExists(project: string): boolean {
   const r = spawnSync("docker", ["volume", "inspect", `${project}_postgres_data`], {
-    stdio: "ignore",
+    encoding: "utf8",
+    timeout: 30_000,
   });
-  return r.status === 0;
+  if (r.status === 0) return true;
+  if (!r.error && /no such volume\b/i.test(r.stderr ?? "")) return false;
+  const reason = r.error?.message || r.stderr?.trim() || `docker exited ${r.status ?? "without a status"}`;
+  throw new Error(
+    `Cannot inspect database volume ${project}_postgres_data: ${reason}. Check Docker access and retry.`,
+  );
 }
 
 /** Run `docker compose <args>` in the compose dir, inheriting stdio. */
@@ -3334,6 +3369,11 @@ export function composePrefetch(opts: ComposeUpOpts): ComposePrefetchResult {
     console.error(renderSecretRotationRefusal(rotation));
     return { ok: false, envChanged: false };
   }
+  const pgData = composePgDataRisk(opts);
+  if (pgData) {
+    console.error(renderPgDataRefusal(pgData));
+    return { ok: false, envChanged: false };
+  }
   const { buildDir, envChanged } = materialize(opts);
   if (buildDir) {
     // From-source: the BUILD is the slow part, so it belongs on this side of the
@@ -3410,10 +3450,8 @@ export async function composeUp(
     // offer a retry, because nothing about re-running changes the answer.
     return { ok: false, refused: true, apiPort: pre.apiPort, dashPort: pre.dashPort };
   }
-  // #487: an existing data volume holds data we can't place. resolvePgData would fall back
-  // to the subdir, but if the cluster is elsewhere that still orphans it — so refuse and let
-  // the operator pin OPENSHIP_PGDATA rather than write a guess. Same "stop before materialize"
-  // reasoning as the rotation gate: once `.env` is rewritten the safe recovery is harder.
+  // #487: an existing data volume could not be inspected or holds data we can't place.
+  // Refuse before materialize: rewriting `.env` with a guess makes recovery harder.
   const pgData = composePgDataRisk(opts);
   if (pgData) {
     const pre = resolveEnvConfig(readEnvFile(), opts);

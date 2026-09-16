@@ -90,6 +90,12 @@ export interface LatestRelease {
   notes: string;
 }
 
+/** Release metadata shared with the renderer even when no installer is available. */
+export interface ReleaseFeedSnapshot {
+  latest: LatestRelease | null;
+  manifest: AdvisoryManifest | null;
+}
+
 export interface UpdateState {
   currentVersion: string;
   latestVersion: string | null;

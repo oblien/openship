@@ -1,5 +1,5 @@
 import { repos, type Domain, type Project } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { resolveWorkload, safeErrorMessage } from "@repo/core";
 import { edgeProxyFor, resolveServedStaticPath } from "@repo/adapters";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import {
@@ -18,7 +18,8 @@ import {
   describeCandidatePorts,
   resolveProjectServiceUpstream,
 } from "../../lib/project-service-upstream";
-import { isRealContainerRef } from "../../lib/container-ref";
+import { isArtifactRef, isRealContainerRef } from "../../lib/container-ref";
+import { resolveServicePort } from "../../lib/deployable-service";
 import { deregisterManagedEdgeRoutes, syncManagedEdgeRoutes } from "../../lib/managed-edge-proxy";
 import { syncProjectPublicRoutes } from "../../lib/project-route-store";
 import { resolveRouteRedirect } from "../../lib/domain-redirect";
@@ -532,7 +533,7 @@ export async function reapplyProjectLiveRoutes(
       return;
     }
 
-    const resolveTargetUrl = async (port: number, hostname: string) => {
+    const resolveTargetUrl = async (port: number, hostname: string, serviceId?: string) => {
       const strategy = resolveRouteStrategy(project.routeStrategy);
       // The port's owning SERVICE first, then the release's own primary container.
       // Both are attempted rather than one or the other, so nothing that resolved
@@ -554,6 +555,9 @@ export async function reapplyProjectLiveRoutes(
           runtime,
           port,
           ...serviceUpstreams,
+          ...(serviceId
+            ? { services: serviceUpstreams.services.filter((service) => service.id === serviceId) }
+            : {}),
           requireLiveObservation: true,
         });
         if (serviceResolved) {
@@ -619,6 +623,20 @@ export async function reapplyProjectLiveRoutes(
     // resolver the post-deploy output probe uses, so the vhost and the check that
     // audits it can never disagree about the directory.
     const staticRootBase = resolveDeploymentStaticRoot(deployment, project);
+    // Some static uploads are served by an nginx container, not an extracted host
+    // directory. Their root route follows the recorded primary container's service;
+    // picking any service on port 80 could send it to an unrelated sibling (#879).
+    const staticContainerService =
+      resolveWorkload(project.workloadType, project.hasServer) === "static" &&
+      runtime.name === "docker" &&
+      primaryContainerId &&
+      !isArtifactRef(primaryContainerId)
+        ? serviceDefs.find(
+            (service) =>
+              service.enabled !== false &&
+              serviceUpstreams?.rowByService.get(service.id)?.containerId === primaryContainerId,
+          )
+        : undefined;
 
     // A redirect only goes live when its target is one of the hostnames this
     // project currently routes — see resolveRouteRedirect.
@@ -651,19 +669,10 @@ export async function reapplyProjectLiveRoutes(
         ...(redirectHost ? { redirectHost } : {}),
       };
 
-      // A domain targets a PORT (proxy to the app) or a PATH (serve files) —
-      // exactly one, same rule the deploy path enforces. `continue`-ing on
-      // targetPath is what left static projects unrouted here: adding a domain to
-      // one wrote no vhost at all, so the hostname fell through to
-      // default_server, while the deploy path (which does emit a static root)
-      // made the same domain work — so it only ever "broke" on edit.
-      if (domain.targetPath) {
-        if (!staticRootBase) {
-          warn(
-            `[project-route] ${project.slug}: no static root for ${domain.hostname} (path ${domain.targetPath}) — skipping`,
-          );
-          continue;
-        }
+      // Prefer a real host artifact for path targets. A container-served static
+      // root instead enters the same proxy/ownership checks as an explicit port.
+      // Filesystem subpaths cannot be treated as a container's HTTP root.
+      if (domain.targetPath && staticRootBase) {
         try {
           // Same call the deploy path's route registration and the output probe
           // make — one rule for "which directory does this path serve".
@@ -685,7 +694,18 @@ export async function reapplyProjectLiveRoutes(
       // A Compose project's legacy scalar port is not a declaration for this
       // domain. It can be stale, or belong to a different service. Require the
       // operator's mapped port rather than forwarding to an arbitrary sibling.
-      const port = domain.targetPort ?? (serviceUpstreams && !opts.isSelfApp ? null : project.port);
+      let port = domain.targetPort ?? (serviceUpstreams && !opts.isSelfApp ? null : project.port);
+      let targetServiceId: string | undefined;
+      if (domain.targetPath) {
+        if (domain.targetPath !== "/" || !staticContainerService) {
+          warn(
+            `[project-route] ${project.slug}: no static root for ${domain.hostname} (path ${domain.targetPath}) — skipping`,
+          );
+          continue;
+        }
+        port = resolveServicePort(staticContainerService);
+        targetServiceId = staticContainerService.id;
+      }
       if (!port) {
         warn(
           `[project-route] ${project.slug}: select a target port for ${domain.hostname} in Domains & Routes` +
@@ -696,7 +716,7 @@ export async function reapplyProjectLiveRoutes(
         );
         continue;
       }
-      const target = await resolveTargetUrl(port, domain.hostname);
+      const target = await resolveTargetUrl(port, domain.hostname, targetServiceId);
       if (!target) continue;
       if (domain.serviceId && domain.serviceId !== target.owner.serviceId) {
         warn(

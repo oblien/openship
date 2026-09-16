@@ -292,3 +292,22 @@ describe("compose environment templates (#673)", () => {
     expect(patch.advanced.environmentTemplateKeys).toEqual(["DATABASE_URL"]);
   });
 });
+
+
+describe("environment provenance across writers (#893)", () => {
+  it("persists template metadata even when a parser supplies only the expression map", () => {
+    const patch = composeWritePatch({
+      name: "api", environment: { MY_VAR: "A" },
+      environmentTemplates: { MY_VAR: "${MY_VAR}" },
+    });
+    expect(patch.environment).toEqual({ MY_VAR: "${MY_VAR}" });
+    expect(patch.advanced.environmentTemplateKeys).toEqual(["MY_VAR"]);
+  });
+
+  it("clears explicit edits only when a source sync owns the whole configuration", () => {
+    const stored = { advanced: { environmentOverrideKeys: ["MY_VAR"], readiness: { enabled: true } } };
+    const parsed = { name: "api", environment: { MY_VAR: "literal" } };
+    expect(composeWritePatch(parsed, stored).advanced.environmentOverrideKeys).toEqual(["MY_VAR"]);
+    expect(composeWritePatch(parsed, stored, true).advanced).toEqual({ readiness: { enabled: true } });
+  });
+});

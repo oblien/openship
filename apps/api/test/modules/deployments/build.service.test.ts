@@ -153,6 +153,7 @@ function baseProject(overrides: Record<string, unknown> = {}) {
   return {
     id: "project-1",
     organizationId: "org-1",
+    environmentType: "production",
     appTemplateId: null,
     activeDeploymentId: null,
     gitUrl: null,
@@ -529,7 +530,7 @@ describe("triggerDeployment", () => {
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
     repos.project.listEnvVarChangeMeta.mockResolvedValue([]);
-    // Only read by the best-effort compose-drift reconcile (git projects).
+    // Read by the required Compose source reconcile (git projects).
     repos.service.listByProject.mockResolvedValue([]);
     repos.service.reconcileFromCompose.mockResolvedValue({ driftedNames: [] });
     repos.serviceDeployment.latestByProject.mockResolvedValue(new Map());
@@ -565,6 +566,46 @@ describe("triggerDeployment", () => {
     runPreflightChecks.mockResolvedValue({ ok: true, checks: [] });
     kickoffBuild.mockResolvedValue("session-1");
   });
+
+  it.each(["trigger", "refresh", "build-access"])(
+    "rejects a preview variable set on the production runtime before %s side effects (#195)",
+    async (entry) => {
+      const input = { projectId: "project-1", environment: "preview" };
+      const operation = entry === "build-access"
+        ? requestBuildAccess(ctx, { ...input, envVars: { DATABASE_URL: "preview-only" } })
+        : triggerDeployment(ctx, { ...input, refresh: entry === "refresh" });
+
+      await expect(operation).rejects.toMatchObject({
+        code: "DEPLOYMENT_ENVIRONMENT_TARGET_MISMATCH",
+      });
+      expect(repos.project.getEnvMap).not.toHaveBeenCalled();
+      expect(repos.project.update).not.toHaveBeenCalled();
+      expect(repos.project.bulkSetEnvVars).not.toHaveBeenCalled();
+      expect(repos.project.mergeEnvVars).not.toHaveBeenCalled();
+      expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
+      expect(syncProjectRouteState).not.toHaveBeenCalled();
+      expect(repos.deployment.create).not.toHaveBeenCalled();
+      expect(kickoffBuild).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, "production", "preview"])(
+    "keeps an isolated preview target on its own project with variable set %s (#195)",
+    async (environment) => {
+      const preview = baseProject({ id: "project-preview", environmentType: "preview" });
+      repos.project.findById.mockResolvedValue(preview);
+      repos.deployment.create.mockResolvedValue({ id: "dep-preview", projectId: preview.id });
+
+      await triggerDeployment(ctx, { projectId: preview.id, environment });
+
+      expect(repos.project.getEnvMap).toHaveBeenCalledWith(preview.id, environment ?? "production", null);
+      expect(repos.deployment.create).toHaveBeenCalledWith(expect.objectContaining({
+        projectId: preview.id,
+        environment: environment ?? "production",
+      }));
+      expect(kickoffBuild).toHaveBeenCalledWith(preview, expect.objectContaining({ projectId: preview.id }));
+    },
+  );
 
   it("passes compose service mode into preflight for manual services deploys", async () => {
     await triggerDeployment(ctx, {
@@ -1118,6 +1159,48 @@ describe("triggerDeployment", () => {
     expect(kickoffBuild).not.toHaveBeenCalled();
   });
 
+  it.each(["ECONNRESET", "GitHub API unavailable"])(
+    "stops before queuing when a required Compose source refresh fails: %s (#893)", async (message) => {
+      repos.project.findById.mockResolvedValue(baseProject({
+        composePath: "compose.yml", localPath: null,
+        gitOwner: "acme", gitRepo: "app", gitProvider: "github", gitUrl: "https://github.com/acme/app.git",
+      }));
+      repos.service.listByProject.mockResolvedValue(composeServices);
+      resolveProjectInfo.mockRejectedValueOnce(new Error(message));
+      await expect(triggerDeployment(ctx, { projectId: "project-1", branch: "main" }))
+        .rejects.toMatchObject({ statusCode: 502, message: expect.stringContaining(message) });
+      expect(repos.deployment.create).not.toHaveBeenCalled();
+      expect(kickoffBuild).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([null, "poisoned"])("requires review for a %s cached Compose value even on code-only webhooks (#893)", async (baseline) => {
+    const parsed = {
+      ...composeServices[0], environment: { MY_VAR: "B" },
+      environmentTemplates: { MY_VAR: "${MY_VAR}" },
+      advanced: { ...composeServices[0].advanced, environmentTemplateKeys: ["MY_VAR"] },
+    };
+    const state = installStatefulComposeRepo({
+      ...parsed, environmentTemplates: undefined, projectId: "project-1",
+      environment: { MY_VAR: "cached-private-value" },
+      importedSpec: baseline ? toComposeSpec(parsed) : null, driftSpec: null,
+    });
+    repos.project.findById.mockResolvedValue(baseProject({
+      composePath: "compose.yml", localPath: null,
+      gitOwner: "acme", gitRepo: "app", gitProvider: "github", gitUrl: "https://github.com/acme/app.git",
+    }));
+    resolveProjectInfo.mockResolvedValueOnce({ services: [parsed] });
+    const error = await triggerDeployment(ctx, {
+      projectId: "project-1", branch: "main", trigger: "webhook", changedPaths: ["src/index.ts"],
+    }).catch((error: unknown) => error);
+    expect(error).toMatchObject({ statusCode: 409, message: expect.stringContaining("MY_VAR") });
+    expect((error as Error).message).not.toContain("cached-private-value");
+    expect(state.stored().environment).toEqual({ MY_VAR: "cached-private-value" });
+    expect(state.stored().driftSpec).toEqual(toComposeSpec(parsed));
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
+  });
+
   it("keeps critical env through trigger reconciliation when a later preflight blocks deploy", async () => {
     const state = installStatefulComposeRepo(criticalApiService());
     repos.project.findById.mockResolvedValue(
@@ -1537,6 +1620,18 @@ describe("redeployBuildSession environment snapshot", () => {
     resolveProjectSourceEnv.mockResolvedValue(undefined);
     resolveStrategy.mockResolvedValue("local");
     kickoffBuild.mockResolvedValue("session-new");
+  });
+
+  it("refuses to replay a legacy preview deployment on the production runtime (#195)", async () => {
+    const old = await repos.deployment.findById();
+    repos.deployment.findById.mockResolvedValue({ ...old, environment: "preview" });
+
+    await expect(redeployBuildSession(ctx, "dep-old")).rejects.toMatchObject({
+      code: "DEPLOYMENT_ENVIRONMENT_TARGET_MISMATCH",
+    });
+    expect(repos.project.getEnvMap).not.toHaveBeenCalled();
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
   });
 
   it("uses current project env and keeps service scopes out of the flat snapshot", async () => {

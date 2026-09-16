@@ -4,10 +4,11 @@ import React from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
+import { AnalyticsError } from "@/components/monitoring/AnalyticsError";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
-import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
+import { useProjectInfo, useAnalyticsData, invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import {
@@ -48,7 +49,13 @@ export const OverviewTab = () => {
   // concurrent fetches across components (e.g. OverviewTab and
   // MonitoringTab share one summary fetch).
   const projectInfoQuery = useProjectInfo(id);
-  const analytics = useAnalyticsData(id, selectedDomain);
+  // Wait for this project's selected domain. An unscoped request aggregates
+  // every domain and can delay the scoped request that immediately follows it.
+  const analytics = useAnalyticsData(
+    projectData.id === id && selectedDomain ? id : null,
+    selectedDomain,
+  );
+  const showAnalyticsError = !!analytics.error && !analytics.isLoading;
   const analyticsData = analytics.data;
   const services = servicesData.services;
   const serviceCount = servicesData.isLoading
@@ -179,12 +186,10 @@ export const OverviewTab = () => {
 
   return (
     <div className="space-y-5">
-      {/* Only a catalog app's curated connection (URLs + generated keys) belongs on
-          the overview. A plain project's synthesized internal address is edited in
-          Settings → Advanced (single-app alias) and shown per service in the service
-          detail panel — surfacing it here too just clutters a plain project. Card
-          self-hides when the app declares no connection outputs. */}
-      {projectData.isApp && (
+      {/* The API resolves reachable outputs, including services attached to a
+          static project. The card hides itself when none exist. Synthesized
+          internal addresses are only useful on self-hosted targets. */}
+      {projectData.id && (projectData.isApp || deployTarget !== "cloud") && (
         <ConnectionCard
           projectId={projectData.id}
           appTemplateId={projectData.appTemplateId}
@@ -214,10 +219,10 @@ export const OverviewTab = () => {
             value={modeLabel}
             loading={showProjectInfoSkeleton}
           />
-          {/* Port row shown when loading (we don't know the workload yet) or
-              when it's a web app. A worker runs a process but listens on no
-              port, and a static site has none either — both hide the row. */}
-          {(showProjectInfoSkeleton || workload === "web") && (
+          {/* project.port belongs to the single-app runtime. Service projects
+              own their ports per service; showing this fallback for an adopted
+              stack contradicts its actual routing (#506). */}
+          {serviceCount === 0 && (showProjectInfoSkeleton || workload === "web") && (
             <Item
               label={t.projects.overview.port}
               value={String(projectData.port || 3000)}
@@ -300,7 +305,10 @@ export const OverviewTab = () => {
       </div>
 
       {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
-      {hasDomain && (
+      {hasDomain && showAnalyticsError && (
+        <AnalyticsError error={analytics.error!} onRetry={() => invalidateProjectCaches(id)} />
+      )}
+      {hasDomain && !showAnalyticsError && (
         <>
       {/* Compact stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

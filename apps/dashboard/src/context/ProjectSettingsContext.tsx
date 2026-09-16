@@ -519,17 +519,17 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     return { url: null, host: null, kind: "none", isLocal: false, urls: [] };
   }, [projectData]);
 
-  // Shared domain selection driving the overview URL + analytics: the sidebar
-  // switcher writes it, OverviewTab/MonitoringTab read it to refetch per-domain.
-  // Defaults to the primary and snaps back to it when the current pick drops out
-  // of the project's domains. (The /logs view keeps its own separate selection.)
-  const [selectedDomain, setSelectedDomain] = useState("");
-  useEffect(() => {
-    const available = (projectData.domains || [])
-      .map((d: any) => d?.domain)
-      .filter((d: unknown): d is string => typeof d === "string" && d.length > 0);
-    setSelectedDomain((current) => (current && available.includes(current) ? current : domain));
-  }, [domain, projectData.domains]);
+  // Derive the default during render: a parent effect runs after its children
+  // and would let Overview start an expensive unscoped analytics request first.
+  // Keep explicit choices tied to the project, and use the primary if removed.
+  const [domainChoice, setDomainChoice] = useState<{ projectId: string; domain: string } | null>(null);
+  const availableDomains = projectData.id === id ? projectData.domains ?? [] : [];
+  const selectedDomain = projectData.id !== id ? "" :
+    domainChoice?.projectId === id && availableDomains.some((d) => d.domain === domainChoice.domain)
+      ? domainChoice.domain : domain;
+  const setSelectedDomain = useCallback((domain: string) => {
+    setDomainChoice({ projectId: id, domain });
+  }, [id]);
 
   // Derived: do we have multi-service rendering paths to enable?
   // projectData hint OR serviceCount > 1 OR loaded services > 1.
@@ -1086,6 +1086,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       domain,
       access,
       selectedDomain,
+      setSelectedDomain,
       slug,
       activeTab,
       pendingDomainAction,

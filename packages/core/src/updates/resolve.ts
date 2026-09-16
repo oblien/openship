@@ -9,7 +9,7 @@
 
 import { compareSemver } from "./semver";
 import { findAnnouncement } from "./advisories";
-import type { Advisory, AdvisoryManifest } from "./types";
+import type { Advisory, AdvisoryManifest, ReleaseFeedSnapshot } from "./types";
 
 /** The GitHub `releases/latest` fields we consume. */
 export interface GithubReleasePayload {
@@ -39,6 +39,9 @@ export type DesktopUpdateCheck =
       announcement: Advisory | null;
     }
   | { available: false };
+
+/** One desktop-owned check feeds both the installer and dashboard advisories. */
+export type DesktopUpdateSnapshot = DesktopUpdateCheck & ReleaseFeedSnapshot;
 
 /**
  * Installer asset name the release pipeline publishes for a platform/arch.

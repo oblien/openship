@@ -473,6 +473,18 @@ describe("single-app prebuilt release-image pipeline", () => {
     );
   });
 
+  it("does not execute a legacy queued preview against a production target (#195)", async () => {
+    await expect(kickoffBuild(
+      project({ environmentType: "production" }),
+      deployment({ environment: "preview" }),
+    )).rejects.toMatchObject({ code: "DEPLOYMENT_ENVIRONMENT_TARGET_MISMATCH" });
+
+    expect(mocks.claimBuildExecution).not.toHaveBeenCalled();
+    expect(mocks.prepareImage).not.toHaveBeenCalled();
+    expect(mocks.runDeployPipeline).not.toHaveBeenCalled();
+    expect(mocks.onSuccess).not.toHaveBeenCalled();
+  });
+
   it("does not start a worker when deletion or another kickoff owns the execution claim", async () => {
     mocks.claimBuildExecution.mockResolvedValue("state_changed");
 

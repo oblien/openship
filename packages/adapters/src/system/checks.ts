@@ -39,6 +39,24 @@ function isSocketDenied(error: string | null): boolean {
   return error != null && /permission denied|eacces/i.test(error);
 }
 
+/** A cached SSH login keeps its original supplementary groups after usermod. */
+export async function needsDockerGroupRefresh(
+  executor: CommandExecutor,
+  components: ComponentStatus[],
+): Promise<boolean> {
+  const docker = components.find((component) => component.name === "docker");
+  if (!docker || docker.healthy || !isSocketDenied(docker.message)) return false;
+  const probe = await probeExec(executor, 'id -G && id -G "$(id -un)"', "checks");
+  const lines = probe.output?.trim().split(/\r?\n/);
+  // Failed or unexpected output is not evidence that reconnecting would help.
+  if (lines?.length !== 2 || lines.some((line) => !/^\d+(?:\s+\d+)*$/.test(line.trim()))) {
+    return false;
+  }
+  const current = new Set(lines[0]!.trim().split(/\s+/));
+  const account = new Set(lines[1]!.trim().split(/\s+/));
+  return current.size !== account.size || [...account].some((group) => !current.has(group));
+}
+
 function healthy(
   name: string,
   version: string,

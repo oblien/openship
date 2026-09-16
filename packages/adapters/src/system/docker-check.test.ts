@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { systemCatalog } from "./catalog";
-import { checkDocker } from "./checks";
+import { checkDocker, needsDockerGroupRefresh } from "./checks";
 import type { CommandExecutor } from "../types";
 
 /**
@@ -29,6 +29,35 @@ function box(answers: Array<[string, string | Error]>): CommandExecutor {
 }
 
 const VERSION = ["docker --version", "Docker version 29.7.1, build abc1234"] as const;
+
+describe("stale Docker login groups", () => {
+  const denied = async () => checkDocker(box([
+    [...VERSION], ["docker info", new Error("permission denied at /var/run/docker.sock")],
+  ]));
+
+  it("detects a newly granted supplementary group", async () => {
+    expect(await needsDockerGroupRefresh(box([["id -G", "1000 100\n1000 100 999\n"]]), [await denied()])).toBe(true);
+  });
+
+  it("does not reconnect just because group order differs", async () => {
+    expect(await needsDockerGroupRefresh(box([["id -G", "1000 999\n999 1000\n"]]), [await denied()])).toBe(false);
+  });
+
+  it.each(["", "1000\n", "1000\npermission denied", "1000\n1000\nextra", new Error("id failed")])(
+    "does not infer changed groups from an unsuccessful probe: %s", async (answer) => {
+      expect(await needsDockerGroupRefresh(box([["id -G", answer]]), [await denied()])).toBe(false);
+    },
+  );
+
+  it("does not probe groups for a healthy or stopped daemon", async () => {
+    const executor = box([]);
+    const healthy = await checkDocker(box([[...VERSION], ["docker info", "29.7.1"]]));
+    const stopped = await checkDocker(box([[...VERSION], ["docker info", new Error("Cannot connect to the Docker daemon")]]));
+    expect(await needsDockerGroupRefresh(executor, [healthy])).toBe(false);
+    expect(await needsDockerGroupRefresh(executor, [stopped])).toBe(false);
+    expect(executor.exec).not.toHaveBeenCalled();
+  });
+});
 
 describe("checkDocker", () => {
   it("reports healthy when the daemon names its version", async () => {
