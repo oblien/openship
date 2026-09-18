@@ -1,0 +1,215 @@
+{
+  "capacity": {
+    "title": "Kapasitas & penggunaan",
+    "subtitle": "Kapasitas yang disertakan dalam paket Anda dan berapa yang telah Anda gunakan. Angka langsung disinkronkan dari OpenShip Cloud.",
+    "routes": "Route gratis",
+    "runningServices": "Layanan aktif",
+    "projects": "Proyek",
+    "workspaces": "Workspace",
+    "unlimited": "Tidak terbatas",
+    "used": "digunakan",
+    "of": "dari {max}",
+    "syncing": "Menyinkronkan dari cloud"
+  },
+  "topupsComingSoon": "Isi ulang kredit satu kali segera hadir — Anda akan bisa menambah kredit di atas kuota bulanan Anda di sini.",
+  "header": {
+    "credits": "Komputasi",
+    "creditsSuffix": "dari {limit}",
+    "overQuota": "Melebihi kuota",
+    "bandwidth": "Bandwidth",
+    "bandwidthNote": "gabungan masuk + keluar",
+    "build": "Waktu build",
+    "min": "mnt",
+    "capacity": "Kapasitas",
+    "workspaces": "workspace",
+    "vcpus": "vCPU",
+    "ram": "RAM",
+    "diskCap": "disk"
+  },
+  "tabs": {
+    "overview": "Ringkasan",
+    "usage": "Penggunaan",
+    "plans": "Paket",
+    "topups": "Isi Ulang",
+    "payment": "Metode Pembayaran",
+    "invoices": "Faktur"
+  },
+  "portal": {
+    "openButton": "Buka Portal Stripe",
+    "errorMissingUrl": "URL portal hilang dari respons",
+    "errorOpenFailed": "Gagal membuka portal Stripe"
+  },
+  "unavailable": {
+    "notConnected": {
+      "title": "Hubungkan ke OpenShip Cloud untuk mengelola tagihan",
+      "description": "Instance lokal Anda belum terhubung ke OpenShip Cloud. Hubungkan untuk melihat status langganan, penggunaan, faktur, dan isi ulang.",
+      "connect": "Hubungkan ke OpenShip Cloud",
+      "connecting": "Menunggu masuk…"
+    },
+    "sessionExpired": {
+      "title": "Sesi OpenShip Cloud Anda kedaluwarsa",
+      "description": "Anda masih terhubung, tetapi token sesi yang dikeluarkan OpenShip Cloud tidak lagi valid. Hubungkan ulang untuk memperbaruinya — tidak perlu memutuskan hubungan terlebih dahulu.",
+      "reconnect": "Hubungkan ulang ke OpenShip Cloud",
+      "connecting": "Menunggu masuk…"
+    },
+    "unreachable": {
+      "title": "Tidak dapat menghubungi tagihan OpenShip Cloud",
+      "description": "Sesi cloud Anda mungkin kedaluwarsa atau cloud sementara tidak tersedia. Coba lagi, atau hubungkan ulang dari Pengaturan → Cloud.",
+      "tryAgain": "Coba lagi",
+      "reconnect": "Hubungkan ulang"
+    },
+    "notEnabled": {
+      "title": "Tagihan tidak diaktifkan untuk organisasi ini",
+      "description": "Tagihan dikonfigurasi tetapi tidak aktif untuk organisasi ini. Hubungi administrator Anda untuk mengaktifkannya."
+    }
+  },
+  "plansRoute": {
+    "loadError": "Gagal memuat paket",
+    "genericError": "Terjadi kesalahan",
+    "tryAgain": "Coba lagi",
+    "checkoutError": "Gagal memulai checkout"
+  },
+  "pricing": {
+    "custom": "Kustom",
+    "comingSoon": "Segera hadir",
+    "mostPopular": "Paling populer",
+    "currentPlan": "Paket saat ini",
+    "contactSales": "Hubungi sales",
+    "freeForever": "Gratis selamanya",
+    "upgrade": "Tingkatkan"
+  },
+  "topups": {
+    "loadError": "Gagal memuat paket isi ulang",
+    "title": "Isi ulang kredit",
+    "description": "Paket kredit satu kali yang dibebankan melalui Stripe. Kredit tidak pernah kedaluwarsa dan ditumpuk di atas kuota bulanan Anda.",
+    "tryAgain": "Coba lagi",
+    "credits": "menit komputasi",
+    "redirecting": "Mengalihkan…",
+    "buy": "Beli",
+    "empty": "Belum ada paket isi ulang yang tersedia.",
+    "receiptsTitle": "Isi ulang terbaru",
+    "receiptsDescription": "Kwitansi dikelola di Stripe — buka portal tagihan untuk melihat riwayat faktur dan mengunduh kwitansi.",
+    "opening": "Membuka…",
+    "openPortal": "Buka Portal Stripe",
+    "checkoutError": "Gagal memulai checkout",
+    "portalError": "Gagal membuka portal tagihan"
+  },
+  "overview": {
+    "creditsLeft": "menit komputasi tersisa",
+    "planLabel": "Paket {name}",
+    "usedThisPeriod": "Digunakan periode ini",
+    "resets": "Reset",
+    "resetsInDay": "Dalam {n} hari",
+    "resetsInDays": "Dalam {n} hari",
+    "none": "—",
+    "recentActivity": "Aktivitas terbaru",
+    "last7Days": "7 hari terakhir",
+    "viewFullUsage": "Lihat penggunaan lengkap",
+    "noUsageYet": "Belum ada penggunaan",
+    "usageError": "Gagal memuat penggunaan",
+    "needMoreCredits": "Butuh lebih banyak menit komputasi?",
+    "oneTimeTopups": "Isi ulang satu kali, tanpa perubahan langganan",
+    "seeAllPacks": "Lihat semua paket",
+    "packsError": "Gagal memuat paket",
+    "noPacks": "Tidak ada paket isi ulang yang tersedia.",
+    "creditsAmount": "{n} menit komputasi",
+    "oneTime": "{price} satu kali",
+    "buy": "Beli",
+    "checkoutError": "Gagal memulai checkout"
+  },
+  "usage": {
+    "loadError": "Gagal memuat penggunaan",
+    "kpi": {
+      "balance": "Saldo",
+      "balanceSuffix": "dari {limit} kredit",
+      "consumed": "Digunakan periode ini",
+      "credits": "menit komputasi",
+      "burnRate": "Laju pembakaran",
+      "burnRateSuffix": "kredit/hari (7 hari terakhir)",
+      "projected": "Proyeksi akhir periode",
+      "noPeriod": "tidak ada periode"
+    },
+    "granularity": {
+      "day": "hari",
+      "week": "minggu"
+    },
+    "chart": {
+      "title": "Penggunaan dari waktu ke waktu",
+      "subtitle": "Unit terukur bertumpuk per {unit}."
+    },
+    "breakdown": {
+      "title": "Rincian sumber daya",
+      "subtitle": "Kredit ditetapkan secara proporsional ke penggunaan sumber daya terukur dalam rentang yang dipilih.",
+      "resource": "Sumber Daya",
+      "units": "Unit",
+      "credits": "Menit Komputasi",
+      "percentOfTotal": "% dari total",
+      "loading": "Memuat…",
+      "empty": "Tidak ada penggunaan dalam rentang yang dipilih."
+    },
+    "resources": {
+      "cpu": {
+        "label": "Waktu CPU",
+        "units": "vCPU-jam"
+      },
+      "memory": {
+        "label": "Memori",
+        "units": "GB-jam"
+      },
+      "disk": {
+        "label": "Disk IO",
+        "units": "GB"
+      },
+      "network": {
+        "label": "Jaringan",
+        "units": "GB"
+      }
+    },
+    "toolbar": {
+      "workspace": "Workspace",
+      "workspaceTooltip": "Rincian per workspace hadir di v1.1",
+      "allWorkspaces": "Semua workspace",
+      "to": "ke"
+    },
+    "empty": "Tidak ada data penggunaan untuk rentang yang dipilih."
+  },
+  "chart": {
+    "cpu": "CPU",
+    "memory": "Memori",
+    "diskIo": "Disk IO",
+    "network": "Jaringan",
+    "weekTick": "Mg {n}"
+  },
+  "layout": {
+    "title": "Tagihan & Penggunaan",
+    "subtitle": "Kelola langganan, penggunaan, dan metode pembayaran Anda."
+  },
+  "sidebar": {
+    "planSuffix": "Paket {name}",
+    "status": "Status",
+    "statusInactive": "Tidak aktif",
+    "upgradeTo": "Tingkatkan ke {name}",
+    "contactSales": "Hubungi sales",
+    "freeForever": "Gratis selamanya",
+    "perMonth": "${price}/bln",
+    "statuses": {
+      "active": "Aktif",
+      "trialing": "Uji coba",
+      "past_due": "Terlambat",
+      "canceled": "Dibatalkan",
+      "incomplete": "Tidak lengkap",
+      "incomplete_expired": "Kedaluwarsa",
+      "unpaid": "Belum dibayar",
+      "paused": "Dijeda"
+    },
+    "includedTitle": "Yang termasuk"
+  },
+  "paymentPanel": {
+    "title": "Metode pembayaran",
+    "description": "Kartu, rekening bank, dan detail tagihan dikelola di Portal Pelanggan Stripe. Buka portal untuk menambah, menghapus, atau memperbarui metode pembayaran Anda."
+  },
+  "invoicesPanel": {
+    "title": "Faktur",
+    "description": "Faktur dan kwitansi berada di Portal Pelanggan Stripe. Buka portal untuk melihat riwayat tagihan Anda dan mengunduh faktur PDF."
+  }
+}
