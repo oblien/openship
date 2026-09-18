@@ -301,7 +301,7 @@ describe("DKIM key comparison", () => {
  */
 const DKIM_CNAME = { name: "abc._domainkey.example.com", value: "abc.dkim.amazonses.com" };
 const MAIL_FROM = "bounce.example.com";
-const SES_MX = "feedback-smtp.us-east-1.amazonaws.com";
+const SES_MX = "feedback-smtp.us-east-1.amazonses.com";
 
 /** BASE_STATE with sending moved to a provider — the shape applyRelayToState writes. */
 const RELAY_STATE = {

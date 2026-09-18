@@ -68,8 +68,14 @@ export const RELAY_PROVIDERS = [
     defaultPort: 587,
     spfInclude: "include:amazonses.com",
     providerDkim: true,
+    // SMTP submission is email-smtp.{region}.amazonaws.com; custom MAIL FROM
+    // bounce MX is feedback-smtp.{region}.amazonses.com. Those suffixes are
+    // different on purpose — AWS's documented feedback endpoints live under
+    // amazonses.com (https://docs.aws.amazon.com/general/latest/gr/ses.html).
+    // Matching the SMTP host's amazonaws.com suffix made Health warn on a
+    // correctly published SES MAIL FROM MX.
     mailFrom: {
-      mxTemplate: "feedback-smtp.{region}.amazonaws.com",
+      mxTemplate: "feedback-smtp.{region}.amazonses.com",
       spf: "v=spf1 include:amazonses.com ~all",
     },
   },
