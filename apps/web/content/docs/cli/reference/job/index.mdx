@@ -1,0 +1,128 @@
+---
+title: job
+description: Commands, arguments, and options for openship job.
+cliGroup: openship job
+---
+
+See the [workflow guide](/docs/cli/../guides/jobs) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship job
+
+Manage self-hosted jobs, schedules, and run logs
+
+```text
+openship job|jobs [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/job#openship-job-list) | List system and custom jobs |
+| [`get <key>`](/docs/cli/reference/job#openship-job-get) | Show a job's configuration and recent runs |
+| [`create [options]`](/docs/cli/reference/job#openship-job-create) | Create a custom job (name, server, command, and schedule required) |
+| [`update [options] <key>`](/docs/cli/reference/job#openship-job-update) | Update a job; built-ins accept schedule and enabled changes |
+| [`delete\|rm [options] <key>`](/docs/cli/reference/job#openship-job-delete) | Delete a custom job (system jobs cannot be deleted) |
+| [`run [options] <key>`](/docs/cli/reference/job#openship-job-run) | Run a job now; custom jobs return a run ID |
+| [`runs [options] <key>`](/docs/cli/reference/job#openship-job-runs) | List a job's run history |
+| [`logs [options] <runId>`](/docs/cli/reference/job#openship-job-logs) | Show stored run output, or the full run in JSON mode |
+
+## openship job create
+
+Create a custom job (name, server, command, and schedule required)
+
+```text
+openship job create [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Job label |
+| `--server <id>` | Target server ID |
+| `--command <command>` | Shell command to execute on the server |
+| `--schedule <type>` | Schedule type (choices: "recurring", "once", "manual") |
+| `--cron <expression>` | Five-field cron expression |
+| `--at <iso>` | Run time for a once schedule |
+| `--file <path>` | JSON API body (env, secrets, retry, etc.); flags override file values |
+
+## openship job delete
+
+Delete a custom job (system jobs cannot be deleted)
+
+```text
+openship job delete|rm [options] <key>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm deletion |
+
+## openship job get
+
+Show a job's configuration and recent runs
+
+```text
+openship job get [options] <key>
+```
+
+## openship job list
+
+List system and custom jobs
+
+```text
+openship job list [options]
+```
+
+## openship job logs
+
+Show stored run output, or the full run in JSON mode
+
+```text
+openship job logs [options] <runId>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-f, --follow` | Stream output until completion; exit nonzero on failure |
+
+## openship job run
+
+Run a job now; custom jobs return a run ID
+
+```text
+openship job run [options] <key>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-f, --follow` | Stream the custom run until completion |
+
+## openship job runs
+
+List a job's run history
+
+```text
+openship job runs [options] <key>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--limit <n>` | Maximum number of runs (default 50) |
+
+## openship job update
+
+Update a job; built-ins accept schedule and enabled changes
+
+```text
+openship job update [options] <key>
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name <name>` | Job label |
+| `--server <id>` | Target server ID |
+| `--command <command>` | Shell command to execute on the server |
+| `--schedule <type>` | Schedule type (choices: "recurring", "once", "manual") |
+| `--cron <expression>` | Five-field cron expression |
+| `--at <iso>` | Run time for a once schedule |
+| `--file <path>` | JSON API body (env, secrets, retry, etc.); flags override file values |
+| `--enabled` | Enable the job |
+| `--no-enabled` | Disable the job |

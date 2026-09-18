@@ -46,7 +46,7 @@ describe("cli smoke", { timeout: 40_000 }, () => {
     const { stdout, code } = await runCli(["--help"]);
     expect(code).toBe(0);
     expect(stdout).toContain("openship");
-    for (const cmd of ["deploy", "server", "project", "mail", "login"]) {
+    for (const cmd of ["deploy", "server", "project", "mail", "login", "job"]) {
       expect(stdout).toContain(cmd);
     }
   });
@@ -56,6 +56,14 @@ describe("cli smoke", { timeout: 40_000 }, () => {
     expect(code).toBe(0);
     expect(stdout.toLowerCase()).toContain("server");
     expect(stdout).toContain("--help");
+  });
+
+  it("renders the jobs alias and its subcommands", async () => {
+    const { stdout, code } = await runCli(["jobs", "--help"]);
+    expect(code).toBe(0);
+    for (const cmd of ["list", "get", "create", "update", "delete", "run", "runs", "logs"]) {
+      expect(stdout).toContain(cmd);
+    }
   });
 
   it("exits non-zero on an unknown command", async () => {

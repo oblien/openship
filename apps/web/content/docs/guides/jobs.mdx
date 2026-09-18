@@ -72,3 +72,36 @@ Openship validates the cron when you save and shows the **next run time**.
 Triggering a job manually with **Run now** is saved in history just like a
 scheduled run, marked as manual — so you always have a full record.
 </Callout>
+
+## CLI
+
+Use `openship job` (alias `jobs`) with your self-hosted connection context:
+
+```bash
+openship job list
+openship job create --name weekly-sync --server <server-id> \
+  --command 'cd /srv/app && npm run db:sync' --cron '17 4 * * 1'
+openship job get <key>
+openship job update <key> --no-enabled
+openship job update <key> --enabled --cron '0 3 * * *'
+openship job run <key> --follow
+openship job runs <key> --limit 10
+openship job logs <run-id> --follow
+openship job delete <key> --yes
+```
+
+Use the job **key** from `list` or `create`, not its database ID. For a one-time
+job, pass `--schedule once --at <ISO-timestamp>`. For manual execution only, pass
+`--schedule manual`. Recurring jobs use `--cron`.
+
+Both `create` and `update` accept `--file <path>` containing a JSON Jobs API body.
+Use it for `env`, `secrets`, `serverIds`, `retry`, `timeoutMs`, `dependsOn`,
+`triggerEvents`, or `notifyConfig`, or to supply the entire job configuration.
+Explicit flags override file values. Updates send only supplied fields. Keep
+files containing secrets private. The API encrypts secrets at rest.
+
+`--json` returns API data without the envelope. Followed runs emit JSON events.
+Without `--follow`, `run` returns a custom run ID immediately. With `--follow`,
+the CLI waits for the outcome and exits nonzero on failure or an interrupted
+stream. Built-in jobs return their summary directly. `logs` without `--follow`
+shows stored output, or the full run record with `--json`.

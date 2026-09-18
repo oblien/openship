@@ -8,7 +8,7 @@ const categories = {
   Connect: ["login", "logout", "context", "token", "api"],
   Deploy: ["init", "config", "deploy", "deployment", "logs"],
   Applications: ["project", "app", "service", "domain"],
-  Infrastructure: ["server", "backup", "edge", "mail", "system"],
+  Infrastructure: ["job", "server", "backup", "edge", "mail", "system"],
   "Local installation": [
     "up",
     "stop",
@@ -37,6 +37,7 @@ const guides = {
   app: "projects",
   service: "projects",
   domain: "projects",
+  job: "../guides/jobs",
   server: "self-host",
   backup: "self-host",
   edge: "edge",
