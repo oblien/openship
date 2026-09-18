@@ -4559,6 +4559,126 @@
           "defaultMode": "domain"
         }
       ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": true,
+      "verified": true,
+      "id": "beszel",
+      "name": "Beszel",
+      "description": "Lightweight server monitoring with historical metrics, Docker stats, alerts, and a clean web dashboard.",
+      "repository": "https://github.com/henrygd/beszel",
+      "kind": "template",
+      "logo": "beszel",
+      "category": "analytics",
+      "tags": [
+        "monitoring",
+        "metrics",
+        "docker",
+        "alerts"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "beszel",
+          "image": "henrygd/beszel:0.19.0",
+          "exposedPort": 8090,
+          "exposed": true,
+          "environment": {
+            "APP_URL": "{{publicUrl:beszel}}"
+          },
+          "secretEnv": [
+            "USER_PASSWORD"
+          ],
+          "volumes": [
+            "beszel_data:/beszel_data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "/beszel",
+              "health",
+              "--url",
+              "http://127.0.0.1:8090"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "10s"
+          },
+          "restart": "unless-stopped",
+          "ports": [
+            "8221:8090"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "key": "USER_EMAIL",
+          "service": "beszel",
+          "label": "Initial user email",
+          "help": "Email for the first Beszel account. Change it in Beszel after signing in if needed.",
+          "type": "text",
+          "default": "admin@openship.local",
+          "required": true
+        },
+        {
+          "key": "USER_PASSWORD",
+          "service": "beszel",
+          "label": "Initial user password",
+          "help": "Auto-generated password for the first Beszel account.",
+          "type": "password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Sign in to Beszel",
+        "description": "Open the monitoring hub, then install a Beszel agent on each system you want to monitor.",
+        "guide": {
+          "intro": "Beszel stores monitoring history in its persistent data volume. Agents connect back to this hub from each monitored system.",
+          "useHint": "Sign in first, add a system, then follow Beszel's generated agent installation instructions.",
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Beszel Hub",
+            "source": "publicUrl:beszel",
+            "kind": "url",
+            "recommended": true,
+            "help": "Open the monitoring dashboard in your browser."
+          },
+          {
+            "id": "email",
+            "label": "Initial email",
+            "source": "env:beszel:USER_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Initial password",
+            "source": "env:beszel:USER_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Use the generated credentials above, then change the email or password in Beszel if needed. Install agents from the Add System screen; the hub template does not mount the host Docker socket."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "beszel",
+          "port": 8090,
+          "label": "Beszel Hub",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ]
     }
   ]
 }
