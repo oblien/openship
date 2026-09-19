@@ -26,6 +26,7 @@
  */
 
 import type { NextRequest } from "next/server";
+import { rewriteUpstreamLocation } from "@/lib/proxy-response";
 
 // Hop-by-hop headers — MUST NOT be forwarded by a proxy.
 // Per RFC 7230 §6.1 (HTTP/1.1) — Next.js's fetch automatically handles
@@ -159,14 +160,21 @@ async function proxy(req: NextRequest, pathSegments: string[]): Promise<Response
   // Mirror response headers, minus the hop-by-hop ones that the runtime
   // will recompute on the OUTGOING response anyway.
   const responseHeaders = new Headers();
+  const publicOrigin = process.env.OPENSHIP_PUBLIC_URL?.trim() || req.url;
   for (const [name, value] of upstreamRes.headers) {
-    if (RESPONSE_HOP_BY_HOP.has(name.toLowerCase())) continue;
+    const normalizedName = name.toLowerCase();
+    if (RESPONSE_HOP_BY_HOP.has(normalizedName)) continue;
     // set-cookie is handled separately below: `.set()` overwrites, so a
     // multi-cookie auth response (Better Auth sends session_token +
     // session_data) would lose all but the last one and the browser would
     // never receive a session.
-    if (name.toLowerCase() === "set-cookie") continue;
-    responseHeaders.set(name, value);
+    if (normalizedName === "set-cookie") continue;
+    responseHeaders.set(
+      name,
+      normalizedName === "location"
+        ? rewriteUpstreamLocation(value, upstream, publicOrigin)
+        : value,
+    );
   }
 
   // Preserve EVERY Set-Cookie header individually. getSetCookie() is the
