@@ -3,6 +3,10 @@
 // back to English at runtime (see i18n/index.ts deepMerge), so drift is silent —
 // this surfaces it.
 //
+// Russian upstream-sync deltas live in `locales/ru-patch`. The checker overlays
+// those values on `locales/ru` and applies `_delete` metadata before comparing,
+// matching the effective dictionary produced by the runtime loader.
+//
 //   bun run i18n:check          → summary (counts per namespace), exit 1 on drift
 //   bun run i18n:check --full   → also list every missing/extra key
 //
@@ -13,6 +17,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SOURCE_LOCALE = "en";
+const PATCH_LOCALE = "ru";
+const PATCH_DIR_NAME = "ru-patch";
 
 /** Absolute path to the locales dir, resolved relative to this script. */
 export function defaultLocalesDir() {
@@ -41,6 +47,20 @@ function leafEntries(obj, prefix = "", out = {}) {
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function applyLocalePatch(localeEntries, patchFile) {
+  if (!fs.existsSync(patchFile)) return localeEntries;
+  const rawPatch = readJson(patchFile);
+  const deletes = Array.isArray(rawPatch._delete) ? rawPatch._delete : [];
+  const { _delete: _ignored, ...values } = rawPatch;
+  Object.assign(localeEntries, leafEntries(values));
+  for (const prefix of deletes) {
+    for (const key of Object.keys(localeEntries)) {
+      if (key === prefix || key.startsWith(`${prefix}.`)) delete localeEntries[key];
+    }
+  }
+  return localeEntries;
 }
 
 /**
@@ -79,7 +99,12 @@ export function checkI18nParity(localesDir = defaultLocalesDir()) {
     .map((f) => f.replace(/\.json$/, ""));
   const locales = fs
     .readdirSync(localesDir)
-    .filter((d) => d !== SOURCE_LOCALE && fs.statSync(path.join(localesDir, d)).isDirectory());
+    .filter(
+      (d) =>
+        d !== SOURCE_LOCALE &&
+        d !== PATCH_DIR_NAME &&
+        fs.statSync(path.join(localesDir, d)).isDirectory(),
+    );
 
   const missing = [];
   const extra = [];
@@ -96,6 +121,9 @@ export function checkI18nParity(localesDir = defaultLocalesDir()) {
       const file = path.join(localesDir, locale, `${ns}.json`);
       let localeEntries = {};
       if (fs.existsSync(file)) localeEntries = leafEntries(readJson(file));
+      if (locale === PATCH_LOCALE) {
+        localeEntries = applyLocalePatch(localeEntries, path.join(localesDir, PATCH_DIR_NAME, `${ns}.json`));
+      }
       const localeKeys = new Set(Object.keys(localeEntries));
       for (const k of base) if (!localeKeys.has(k)) missing.push({ locale, namespace: ns, key: k });
       for (const k of localeKeys) if (!baseSet.has(k)) extra.push({ locale, namespace: ns, key: k });
