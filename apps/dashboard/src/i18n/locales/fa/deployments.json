@@ -1,0 +1,194 @@
+{
+  "time": {
+    "secondsAgo": "{n} ثانیه پیش",
+    "minutesAgo": "{n} دقیقه پیش",
+    "hoursAgo": "{n} ساعت پیش",
+    "daysAgo": "{n} روز پیش",
+    "monthsAgo": "{n} ماه پیش",
+    "yearsAgo": "{n} سال پیش"
+  },
+  "header": {
+    "title": "استقرارها",
+    "loading": "در حال بارگذاری…",
+    "countProjectOne": "{count} استقرار",
+    "countProjectOther": "{count} استقرار",
+    "countAllOne": "{deployments} در مجموع در {projects} پروژه",
+    "countAllOther": "{deployments} در مجموع در {projects} پروژه"
+  },
+  "filters": {
+    "searchPlaceholder": "جستجوی استقرارها...",
+    "all": "همه",
+    "success": "موفق",
+    "failed": "ناموفق",
+    "building": "در حال ساخت",
+    "canceled": "لغو شده"
+  },
+  "projectFilter": {
+    "allProjects": "همهٔ پروژه‌ها"
+  },
+  "sidebar": {
+    "overview": {
+      "title": "نمای کلی",
+      "total": "مجموع",
+      "successful": "موفق",
+      "failed": "ناموفق",
+      "inProgress": "در حال انجام"
+    },
+    "autoDeploy": {
+      "title": "استقرار خودکار",
+      "description": "استقرار خودکار را فعال کنید تا با هر پوش به شاخهٔ اصلی، استقرار به‌طور خودکار شروع شود.",
+      "cta": "رفتن به تنظیمات پروژه"
+    },
+    "getStarted": {
+      "title": "شروع کنید",
+      "description": "یک مخزن Git وارد کنید یا از قالب برای ساخت اولین استقرار استفاده کنید.",
+      "cta": "استقرار یک پروژه"
+    },
+    "recent": {
+      "title": "اخیر",
+      "empty": "استقرارهای شما اینجا ظاهر می‌شوند",
+      "unknown": "نامشخص"
+    }
+  },
+  "stats": {
+    "total": "مجموع",
+    "projectCountOne": "{count} پروژه",
+    "projectCountOther": "{count} پروژه",
+    "success": "موفق",
+    "failed": "ناموفق",
+    "inProgress": "در حال انجام",
+    "buildingNow": "الان در حال ساخت"
+  },
+  "status": {
+    "deployed": "مستقر شده",
+    "failed": "ناموفق",
+    "canceled": "لغو شده",
+    "building": "در حال ساخت",
+    "deploying": "در حال استقرار",
+    "partial": "جزئی",
+    "actionRequired": "اقدام لازم است",
+    "rejected": "رد شده",
+    "verifying": "در حال تأیید",
+    "noChanges": "بدون تغییر",
+    "pending": "در انتظار"
+  },
+  "serviceStatus": {
+    "deployed": "مستقر شده",
+    "failed": "ناموفق",
+    "cancelled": "لغو شده",
+    "skipped": "رد شده",
+    "building": "در حال ساخت",
+    "deploying": "در حال استقرار",
+    "running": "در حال اجرا",
+    "removedOnHost": "از میزبان حذف شد",
+    "verifying": "در حال تأیید",
+    "pending": "در انتظار"
+  },
+  "card": {
+    "unknownProject": "پروژهٔ نامشخص",
+    "versionTitle": "نسخهٔ {version}",
+    "active": "فعال",
+    "activeTitle": "این استقراری است که الان پروژه را سرو می‌کند",
+    "pinned": "سنجاق‌شده",
+    "pinnedTitle": "سنجاق‌شده — از هرس نگهداری معاف است. برای همیشه قابل بازگردانی می‌ماند.",
+    "snapshotted": "اسنپ‌شات شده",
+    "snapshottedTitle": "آرتیفکت بایگانی شد — این نسخه برای بازگردانی در دسترس است",
+    "manualDeploy": "استقرار دستی",
+    "serviceTitle": "{name}: {label}",
+    "serviceTitleReason": "{name}: {label} ({reason})"
+  },
+  "empty": {
+    "filtered": {
+      "title": "استقراری پیدا نشد",
+      "description": "فیلترها را عوض کنید یا جستجو را پاک کنید."
+    },
+    "none": {
+      "title": "هنوز استقراری نیست",
+      "description": "اولین پروژه را مستقر کنید تا اینجا با وضعیت ساخت، جزئیات کامیت و معیارهای عملکرد ظاهر شود.",
+      "deployButton": "استقرار پروژه",
+      "browseButton": "مرور قالب‌ها"
+    }
+  },
+  "modal": {
+    "title": "جزئیات کامیت",
+    "project": "پروژه",
+    "unknownProject": "پروژهٔ نامشخص",
+    "domain": "دامنه",
+    "noDomain": "بدون دامنه",
+    "status": "وضعیت",
+    "environment": "محیط",
+    "statusName": {
+      "success": "موفق",
+      "failed": "ناموفق",
+      "building": "در حال ساخت",
+      "deploying": "در حال استقرار",
+      "canceled": "لغو شده",
+      "pending": "در انتظار"
+    },
+    "changedFiles": "فایل‌های تغییر یافته ({count})",
+    "fileTypes": {
+      "added": "+ افزوده‌شده",
+      "modified": "~ ویرایش‌شده",
+      "removed": "- حذف‌شده"
+    },
+    "viewOnGithub": "مشاهده در GitHub",
+    "visitSite": "بازدید از سایت",
+    "manual": {
+      "title": "استقرار دستی",
+      "description": "این استقرار به‌صورت دستی شروع شده و اطلاعات کامیت ندارد.",
+      "deploymentId": "شناسهٔ استقرار",
+      "created": "ایجاد شده",
+      "type": "نوع",
+      "typeManual": "دستی"
+    }
+  },
+  "menu": {
+    "openDeployment": "باز کردن استقرار",
+    "viewRepository": "مشاهدهٔ مخزن",
+    "copyDomainUrl": "کپی URL دامنه",
+    "copyBuildId": "کپی شناسهٔ ساخت",
+    "cancelDeployment": "لغو استقرار",
+    "rollback": "بازگردانی به این نسخه",
+    "rollbackTitle": {
+      "enabled": "پروژه را به این نسخه برگردانید (فقط کد — داده تغییر نمی‌کند)",
+      "active": "این از قبل نسخهٔ فعال است",
+      "pruned": "این استقرار ایمیج نگهداری‌شده و کامیتی برای ساخت دوباره ندارد",
+      "notReady": "فقط استقرارهای آماده قابل بازگردانی هستند",
+      "rebuildOnly": "این نسخه را با ساخت دوبارهٔ کامیتش برگردانید (ایمیجش هرس شده)"
+    },
+    "pin": "سنجاق",
+    "unpin": "برداشتن سنجاق",
+    "pinTitle": {
+      "pin": "این استقرار را برای همیشه قابل بازگردانی نگه دارید (سقف: ۱۰ سنجاق در هر پروژه)",
+      "unpin": "اجازه دهید وقتی ظرفیت نگهداری پر شد این استقرار هرس شود",
+      "pruned": "نمی‌توان سنجاق کرد — آرتیفکت از قبل هرس شده"
+    },
+    "deleteDeployment": "حذف استقرار",
+    "rollbackFailed": "بازگردانی ناموفق بود",
+    "pinFailed": "سنجاق کردن استقرار ناموفق بود",
+    "unpinFailed": "برداشتن سنجاق ناموفق بود",
+    "rollbackModeInstant": "بازگردانی فوری — ایمیج نگهداری‌شدهٔ این نسخه را دوباره استفاده می‌کند، بدون ساخت دوباره.",
+    "rollbackModeRebuild": "ساخت دوباره — ایمیج این نسخه دیگر روی میزبان نیست، پس کامیتش دوباره ساخته می‌شود.",
+    "rollbackModeMixed": "عمدتاً فوری — {count} سرویس ایمیجشان را از دست داده‌اند و دوباره ساخته می‌شوند."
+  },
+  "rollbackConfirm": {
+    "title": "به این نسخه بازگردانی شود؟",
+    "dataUnchanged": "این فقط کد برنامه را برمی‌گرداند. دادهٔ پایگاه‌داده و والیوم تغییر نمی‌کند.",
+    "envHeading": "متغیرهای محیطی",
+    "envSummaryOverlay": "{count} متغیر تغییر می‌کند — مقادیر این انتشار روی مقادیر فعلی بازنشانی می‌شود.",
+    "envSummaryReplace": "{count} متغیر تغییر می‌کند — محیط این انتشار دقیقاً همان‌طور که ثبت شده استفاده می‌شود.",
+    "envNoChanges": "هیچ متغیر محیطی تغییر نمی‌کند.",
+    "envUnchanged": "کانتینر موجود به‌جای بازسازی، ری‌استارت می‌شود؛ بنابراین محیطش دست‌نخورده می‌ماند.",
+    "envNoValues": "مقادیر اینجا هرگز نشان داده نمی‌شوند.",
+    "envTruncated": "نمایش {shown} از {total}.",
+    "dirFrozenWins": "به مقدار این انتشار برمی‌گردد",
+    "dirRemovedSince": "برمی‌گردد — از زمان این انتشار حذف شده بود",
+    "dirAddedSinceKept": "همان‌طور که الان هست نگه داشته می‌شود — از زمان این انتشار اضافه شده",
+    "dirAddedSinceDropped": "حذف می‌شود — از زمان این انتشار اضافه شده",
+    "scopeAmbiguous": "بدون محدودهٔ سرویس ثبت شده، بنابراین یک مقدار روی همهٔ سرویس‌ها می‌نشیند",
+    "untouchedHeading": "سرویس‌های اضافه‌شده از زمان این انتشار",
+    "untouchedNote": "این‌ها به اجرا ادامه می‌دهند و دست نخورده می‌مانند: {names}",
+    "confirm": "بازگردانی",
+    "cancel": "لغو"
+  }
+}

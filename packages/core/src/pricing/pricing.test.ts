@@ -759,9 +759,9 @@ describe("stripe price ids", () => {
 });
 
 describe("locale coverage matches the dashboard", () => {
-  it("covers exactly the dashboard's 9 locales", () => {
+  it("covers exactly the dashboard's 10 locales", () => {
     // Divergence would show a translated dashboard next to English prices.
-    expect([...PRICING_LOCALES].sort()).toEqual(["ar", "de", "en", "es", "fr", "ja", "pt", "tr", "zh"]);
+    expect([...PRICING_LOCALES].sort()).toEqual(["ar", "de", "en", "es", "fa", "fr", "ja", "pt", "tr", "zh"]);
   });
 });
 
