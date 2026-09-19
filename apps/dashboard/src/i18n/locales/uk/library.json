@@ -1,0 +1,187 @@
+{
+  "ghCliConsent": {
+    "title": "Читати ваші репозиторії?",
+    "body": "OpenShip може отримати список ваших репозиторіїв GitHub за допомогою gh CLI, у якому ви вже увійшли.",
+    "bodyWithLogin": "OpenShip може отримати список ваших репозиторіїв GitHub за допомогою gh CLI, у якому ви увійшли як @{login}.",
+    "pointNoCloud": "Нічого не надсилається в хмару — список ніколи не залишає цю машину.",
+    "pointDesktopOnly": "Працює лише в десктопному застосунку, використовуючи ваш локальний gh auth.",
+    "pointReadOnly": "Лише читання: список репозиторіїв потрібен, щоб ви могли обрати, який розгорнути.",
+    "allow": "Дозволити"
+  },
+  "page": {
+    "title": "Новий проєкт",
+    "subtitle": "Імпортуйте репозиторій, вставте URL-адресу або почніть із шаблону",
+    "tabs": {
+      "folder": "Папка",
+      "github": "GitHub",
+      "url": "URL Git",
+      "template": "Шаблон"
+    }
+  },
+  "connect": {
+    "connectGithub": "Підключити GitHub",
+    "manageInSettings": "Інші способи підключення",
+    "terminal": {
+      "title": "Підключити GitHub",
+      "checkConnection": "Перевірити з'єднання",
+      "afterLogin": "Після входу натисніть «Перевірити з'єднання», щоб продовжити."
+    },
+    "deviceFlow": {
+      "title": "Увійти в GitHub",
+      "goToPrefix": "Перейдіть на",
+      "goToSuffix": "Введіть цей код на GitHub, щоб завершити вхід.",
+      "waiting": "Очікування авторизації…",
+      "openGithub": "Відкрити GitHub",
+      "copyCode": "Натисніть, щоб скопіювати"
+    },
+    "default": {
+      "title": "Підключіть GitHub, щоб розгортати",
+      "descSelfHosted": "Оберіть, як Openship матиме доступ до ваших репозиторіїв.",
+      "descSaas": "Прив'яжіть обліковий запис GitHub, щоб переглядати репозиторії та розгортати їх при кожному push.",
+      "recommended": "Рекомендовано",
+      "cloudApp": "GitHub App Openship Cloud",
+      "cloudAppDesc": "Керований GitHub App — розгортання на віддалені сервери з короткоживучими токенами.",
+      "connectCloud": "Підключити Openship Cloud",
+      "manual": "Ручне підключення GitHub",
+      "manualDesc": "Налаштовується в Налаштуваннях — власний GitHub App/OAuth або gh CLI цього інстансу. Без облікового запису Openship.",
+      "manualCta": "Налаштувати в Налаштуваннях",
+      "localBuilds": "Локальні збірки",
+      "ghCli": "Увійти через GitHub",
+      "ghCliDesc": "Вхід у браузері за кодом пристрою. Без налаштування застосунку, без SSH, без облікового запису Openship.",
+      "useGhCli": "Увійти",
+      "connecting": "Підключення…",
+      "byoc": "SSH-ключ або токен доступу",
+      "byocDesc": "Використайте власні облікові дані — ключ розгортання для кожного сервера або токен. Без входу.",
+      "byocCta": "Налаштувати"
+    },
+    "token": {
+      "title": "Підключення за токеном GitHub",
+      "connect": "Підключити",
+      "create": "Створити токен на GitHub",
+      "failed": "Не вдалося зберегти токен."
+    }
+  },
+  "folderUpload": {
+    "emptyFolder": "Ця папка виглядає порожньою (або все було проігноровано). Оберіть папку проєкту.",
+    "uploadError": "Не вдалося завантажити папку",
+    "stackTitle": "Що ви розгортаєте?",
+    "stackDesc": "Оберіть стек для вашої папки — це визначить середовище збірки. Далі ви завантажите її.",
+    "backToStack": "Назад до вибору стеку",
+    "uploadTitle": "Завантажте вашу папку {stack}",
+    "uploadSubtitle": "Пакується у вашому браузері — node_modules, .git і результати збірки пропускаються",
+    "dropTitle": "Перетягніть папку проєкту сюди або натисніть, щоб обрати",
+    "dropSubtitle": "Уся папка завантажується та збирається як застосунок {stack}",
+    "filesSingular": "{count} файл",
+    "filesPlural": "{count} файлів",
+    "clearSelection": "Очистити вибір",
+    "packing": "Пакування папки…",
+    "uploading": "Завантаження…",
+    "continue": "Продовжити"
+  },
+  "localProjects": {
+    "title": "Локальні проєкти",
+    "loading": "Завантаження...",
+    "projectCountSingular": "{count} проєкт",
+    "projectCountPlural": "{count} проєктів",
+    "import": "Імпортувати",
+    "empty": {
+      "title": "Поки немає локальних проєктів",
+      "description": "Імпортуйте папку проєкту з вашої машини, щоб просканувати, зібрати та розгорнути її локально",
+      "importProject": "Імпортувати проєкт",
+      "howItWorks": "Як це працює",
+      "dropTitle": "Перетягніть або оберіть",
+      "dropDesc": "Оберіть будь-яку папку проєкту",
+      "autoDetectTitle": "Автовизначення",
+      "autoDetectDesc": "Знайдено фреймворк і конфігурацію",
+      "deployTitle": "Локальне розгортання",
+      "deployDesc": "Збірка та запуск на вашій машині"
+    },
+    "form": {
+      "title": "Імпорт із папки",
+      "scanErrorDefault": "Не вдалося просканувати каталог",
+      "dropTitle": "Перетягніть папку сюди або натисніть, щоб обрати",
+      "dropSubtitle": "Оберіть папку проєкту для автоматичного визначення фреймворку",
+      "folderViaBrowser": "Папку обрано через браузер — введіть повний абсолютний шлях і натисніть «Сканувати»",
+      "folderDropped": "Папку перетягнуто — введіть повний абсолютний шлях і натисніть «Сканувати»",
+      "pathPlaceholder": "/path/to/your/project",
+      "browse": "Огляд",
+      "scan": "Сканувати",
+      "importError": "Не вдалося імпортувати проєкт",
+      "projectName": "Назва проєкту",
+      "detected": "Визначено",
+      "build": "Збірка:",
+      "install": "Встановлення:",
+      "output": "Вихід:",
+      "start": "Запуск:",
+      "importing": "Імпортування...",
+      "importProject": "Імпортувати проєкт"
+    }
+  },
+  "repositoryList": {
+    "searchPlaceholder": "Пошук репозиторіїв...",
+    "visibility": {
+      "all": "Усі",
+      "public": "Публічні",
+      "private": "Приватні"
+    },
+    "sort": {
+      "recent": "Нещодавні",
+      "name": "Назва",
+      "stars": "Зірки"
+    },
+    "addAccount": "Додати обліковий запис GitHub",
+    "installTitle": "Встановити GitHub App",
+    "installDesc": "Встановіть GitHub App у вашому обліковому записі чи організації, щоб надати доступ до репозиторіїв.",
+    "installButton": "Встановити GitHub App",
+    "noMatching": "Немає відповідних репозиторіїв",
+    "noRepos": "Репозиторіїв не знайдено",
+    "noMatchingDesc": "Спробуйте інший пошуковий запит або змініть фільтри",
+    "noReposDesc": "У цього облікового запису поки немає жодного репозиторію",
+    "privateBadge": "Приватний",
+    "localOnly": "Лише локально",
+    "localOnlyTooltip": "Застосунок Openship не встановлено для {owner}. Доступні лише локальні збірки — встановіть застосунок для цього власника, щоб увімкнути віддалені розгортання.",
+    "repoCountSingular": "{count} репозиторій",
+    "repoCountPlural": "{count} репозиторіїв",
+    "matching": "відповідає \"{query}\"",
+    "pagination": {
+      "previous": "Назад",
+      "next": "Далі",
+      "pageOf": "Сторінка {page} з {total}"
+    },
+    "time": {
+      "justNow": "щойно",
+      "minutesAgo": "{n} хв тому",
+      "hoursAgo": "{n} год тому",
+      "daysAgo": "{n} дн тому",
+      "monthsAgo": "{n} міс тому"
+    }
+  },
+  "sidebar": {
+    "overview": "Огляд",
+    "total": "Усього",
+    "public": "Публічні",
+    "private": "Приватні",
+    "quickTip": "Порада",
+    "quickTipDesc": "Оберіть будь-який репозиторій, щоб миттєво розгорнути його. Налаштуйте автоматичні розгортання при кожному push.",
+    "connection": "Підключення",
+    "openshipGithubApp": "Openship GitHub App",
+    "connected": "Підключено",
+    "notConnected": "Не підключено",
+    "ghCli": "gh CLI",
+    "runGhAuth": "Виконайте `gh auth login`",
+    "openshipCloudApp": "Openship Cloud App",
+    "checking": "Перевірка…",
+    "notConnectedManage": "Не підключено — керуйте в Налаштуваннях",
+    "optional": "Необов'язково",
+    "footnote": "Локальний список через gh CLI; віддалені розгортання використовують короткоживучі токени —",
+    "manageGithubSettings": "керувати GitHub у Налаштуваннях",
+    "methodToken": "Токен GitHub",
+    "methodDevice": "Вхід через GitHub"
+  },
+  "urlImport": {
+    "invalidUrl": "Введіть коректну URL-адресу репозиторію GitHub",
+    "title": "Імпорт із Git URL",
+    "description": "Вставте URL-адресу публічного репозиторію для імпорту. Підключення GitHub не потрібне.",
+    "importButton": "Імпортувати репозиторій"
+  }
+}
