@@ -213,6 +213,10 @@ const PHP_EXTENSIONS = [
   "intl",
   "zip",
   "gd",
+  // spatie/image + spatie/laravel-medialibrary hard-require ext-exif, so a
+  // Laravel app doing image uploads fails `composer install`'s platform check
+  // without it. Bundled with PHP but off unless explicitly enabled.
+  "exif",
   "opcache",
 ] as const;
 

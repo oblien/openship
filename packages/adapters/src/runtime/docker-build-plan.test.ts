@@ -47,7 +47,16 @@ describe("generateDockerfile — PHP branch", () => {
     const installs = df.match(/RUN install-php-extensions [^\n]+/g) ?? [];
     expect(installs).toHaveLength(2);
     expect(installs[0]).toBe(installs[1]);
-    for (const ext of ["pdo_pgsql", "pdo_mysql", "redis", "pcntl", "intl", "gd", "opcache"]) {
+    for (const ext of [
+      "pdo_pgsql",
+      "pdo_mysql",
+      "redis",
+      "pcntl",
+      "intl",
+      "gd",
+      "exif",
+      "opcache",
+    ]) {
       expect(installs[0]).toContain(ext);
     }
   });
