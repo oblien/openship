@@ -87,6 +87,8 @@ export const APP_LOGO: Record<
   // MindWire's own monochrome mark is vendored so the catalog works offline and
   // the brand stays legible on both dashboard themes.
   mindwire: { src: "/app-logos/mindwire.svg", fill: true },
+  // Beszel is not on simpleicons; vendor its official gradient B mark.
+  beszel: { src: "/app-logos/beszel.svg" },
 };
 
 /**
