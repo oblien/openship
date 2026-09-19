@@ -11,6 +11,7 @@ import { useParams } from 'react-router';
 import { useTheme } from 'next-themes';
 import { useQueryState } from 'nuqs';
 import { useMemo } from 'react';
+import { useMailIdle } from './use-mail-idle';
 
 export const useThreads = () => {
   const { folder } = useParams<{ folder: string }>();
@@ -19,6 +20,8 @@ export const useThreads = () => {
   const isInQueue = useAtomValue(isThreadInBackgroundQueueAtom);
   const trpc = useTRPC();
   const { labels } = useSearchLabels();
+
+  useMailIdle(folder);
 
   const threadsQuery = useInfiniteQuery(
     trpc.mail.listThreads.infiniteQueryOptions(
